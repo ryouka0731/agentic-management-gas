@@ -231,6 +231,13 @@ describe('ラウンドトリップ', () => {
       blocks: [{ type: 'image', sha: 'abc123', alt: '組織図' }],
     },
     {
+      // Driveから削除された画像・リンク切れ画像では getBlob() が失敗し、
+      // バイト列が取得できない。その場合 sha に 'unavailable' を入れる。
+      // SHAは常に64桁hexなので、この値が実SHAと衝突することはない。
+      name: '実体を取得できない画像',
+      blocks: [{ type: 'image', sha: 'unavailable', alt: '組織図' }],
+    },
+    {
       name: 'エスケープが必要な文字',
       blocks: [{ type: 'paragraph', runs: [{ text: 'a < b & c > d' }] }],
     },

@@ -86,9 +86,25 @@ function docExtractImages_(para) {
     if (child.getType() !== DocumentApp.ElementType.INLINE_IMAGE) continue;
 
     var img = child.asInlineImage();
-    var blob = img.getBlob();
-    var sha = sha256HexBytes(blob);
-    objectPutBlob(sha, blob, imageExt_(blob.getContentType()));
+    var sha;
+    try {
+      var blob = img.getBlob();
+      sha = sha256HexBytes(blob);
+      objectPutBlob(sha, blob, imageExt_(blob.getContentType()));
+    } catch (e) {
+      // Driveから削除された画像、リンク切れ画像、権限のない画像に対しては
+      // getBlob() が "Invalid argument: imageId" を投げる。要素自体は正常で、
+      // サイズや代替テキストは取得できるが、バイト列の実体だけが存在しない。
+      //
+      // 版管理システムとして、画像1つのバイト列が取れないことで文書全体の
+      // レンダリングを落としてはならない。本文の差分は取れるべきである。
+      //
+      // SHAは常に64桁hexなので、'unavailable' が実SHAと衝突することはない。
+      // 画像が復活すれば実SHAに変わり、それは正しく差分として現れる。
+      sha = 'unavailable';
+      Logger.log('画像のバイト列を取得できません (alt=' +
+        (img.getAltDescription() || img.getAltTitle() || '') + '): ' + e.message);
+    }
 
     out.push({
       type: 'image',

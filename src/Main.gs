@@ -146,3 +146,86 @@ function debugLiveHtml() {
   Logger.log('--- HTML ---');
   Logger.log(a);
 }
+
+/**
+ * 1つのプローブを実行し、成功値かエラーメッセージをログに出す。
+ *
+ * @param {string} label
+ * @param {function} fn
+ */
+function probe_(label, fn) {
+  try {
+    Logger.log('    ' + label + ' => OK: ' + fn());
+  } catch (e) {
+    Logger.log('    ' + label + ' => ERROR: ' + e.message);
+  }
+}
+
+/**
+ * 画像要素の診断。docExtractImages_ の getBlob() が
+ * "Invalid argument: imageId" で落ちる原因を切り分けるために使う。
+ *
+ * メタデータが取れてバイト列だけ取れないのか、要素自体が壊れているのかを
+ * 判別する。
+ */
+function debugInspectImages() {
+  var body = DocumentApp.openById(debugFileId_()).getBody();
+  var ET = DocumentApp.ElementType;
+  var n = body.getNumChildren();
+  Logger.log('body の子要素数: ' + n);
+
+  var found = 0;
+  for (var i = 0; i < n; i++) {
+    var el = body.getChild(i);
+    var t = el.getType();
+    if (t !== ET.PARAGRAPH && t !== ET.LIST_ITEM) continue;
+
+    var para = (t === ET.PARAGRAPH) ? el.asParagraph() : el.asListItem();
+
+    // 段落に紐づく PositionedImage (テキスト折り返し配置の画像)
+    var positioned = para.getPositionedImages();
+    if (positioned && positioned.length) {
+      found++;
+      Logger.log('body[' + i + '] PositionedImage が ' + positioned.length + ' 個');
+      var pimg = positioned[0];
+      probe_('positioned.getId()', function () { return pimg.getId(); });
+      probe_('positioned.getBlob().getContentType()', function () {
+        return pimg.getBlob().getContentType();
+      });
+      probe_('positioned.getBlob().getBytes().length', function () {
+        return pimg.getBlob().getBytes().length;
+      });
+    }
+
+    var cn = para.getNumChildren();
+    for (var j = 0; j < cn; j++) {
+      var child = para.getChild(j);
+      var ct = child.getType();
+      if (ct !== ET.INLINE_IMAGE && ct !== ET.INLINE_DRAWING) continue;
+
+      found++;
+      Logger.log('body[' + i + '] child[' + j + '] type=' + ct);
+
+      if (ct === ET.INLINE_DRAWING) {
+        Logger.log('    → INLINE_DRAWING (図形描画)。getBlob() は存在しない');
+        continue;
+      }
+
+      var img = child.asInlineImage();
+      probe_('getWidth()', function () { return img.getWidth(); });
+      probe_('getHeight()', function () { return img.getHeight(); });
+      probe_('getAltTitle()', function () { return img.getAltTitle(); });
+      probe_('getAltDescription()', function () { return img.getAltDescription(); });
+      probe_('getLinkUrl()', function () { return img.getLinkUrl(); });
+      probe_('getBlob().getContentType()', function () {
+        return img.getBlob().getContentType();
+      });
+      probe_('getBlob().getBytes().length', function () {
+        return img.getBlob().getBytes().length;
+      });
+    }
+  }
+
+  if (found === 0) Logger.log('画像要素が1つも見つかりませんでした');
+  Logger.log('--- 診断終了 ---');
+}
