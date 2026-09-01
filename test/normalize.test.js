@@ -58,6 +58,27 @@ describe('mergeRuns', () => {
     ];
     expect(mergeRuns(input)).toEqual(input);
   });
+
+  it('リンク内の下線を落とす', () => {
+    // Docsはリンクに既定で下線を付けるため、下線は著者が指定した書式ではない。
+    // 落とさないと全リンクに <u> が付き、差分ノイズの原因になる。
+    expect(mergeRuns([run('x', { underline: true, link: 'https://example.com' })]))
+      .toEqual([run('x', { link: 'https://example.com' })]);
+  });
+
+  it('リンクでない下線は保持する', () => {
+    expect(mergeRuns([run('x', { underline: true })]))
+      .toEqual([run('x', { underline: true })]);
+  });
+
+  it('下線の有無だけが違うリンクRunは結合される', () => {
+    // 下線が落ちた結果、属性が同一になるため結合される
+    const input = [
+      run('a', { underline: true, link: 'https://example.com' }),
+      run('b', { link: 'https://example.com' }),
+    ];
+    expect(mergeRuns(input)).toEqual([run('ab', { link: 'https://example.com' })]);
+  });
 });
 
 describe('serializeBlocks', () => {
@@ -71,16 +92,35 @@ describe('serializeBlocks', () => {
     expect(serializeBlocks(blocks)).toBe('<p>第1条</p>\n');
   });
 
-  it('装飾をbold→italic→underline→strike→linkの固定順でネストする', () => {
+  it('装飾をbold→italic→underline→strikeの固定順でネストする', () => {
     const blocks = [{
       type: 'paragraph',
       runs: [run('x', {
         bold: true, italic: true, underline: true, strike: true,
-        link: 'https://example.com',
       })],
     }];
     expect(serializeBlocks(blocks)).toBe(
-      '<p><strong><em><u><s><a href="https://example.com">x</a></s></u></em></strong></p>\n'
+      '<p><strong><em><u><s>x</s></u></em></strong></p>\n'
+    );
+  });
+
+  it('リンクは最も内側に置く', () => {
+    const blocks = [{
+      type: 'paragraph',
+      runs: [run('x', { bold: true, strike: true, link: 'https://example.com' })],
+    }];
+    expect(serializeBlocks(blocks)).toBe(
+      '<p><strong><s><a href="https://example.com">x</a></s></strong></p>\n'
+    );
+  });
+
+  it('リンクに下線を出力しない', () => {
+    const blocks = [{
+      type: 'paragraph',
+      runs: [run('社内ポータル', { underline: true, link: 'https://example.com' })],
+    }];
+    expect(serializeBlocks(blocks)).toBe(
+      '<p><a href="https://example.com">社内ポータル</a></p>\n'
     );
   });
 
@@ -116,8 +156,24 @@ describe('serializeBlocks', () => {
     expect(serializeBlocks(blocks)).toBe('<img data-sha="abc123" alt="組織図">\n');
   });
 
-  it('空の段落も1行として出力する', () => {
-    expect(serializeBlocks([{ type: 'paragraph', runs: [] }])).toBe('<p></p>\n');
+  it('空の段落は出力しない', () => {
+    // Docs上の空行は書式であって内容ではない。空行を1つ足しただけで
+    // 差分が出るのを防ぐため、正規化の段階で落とす。
+    expect(serializeBlocks([{ type: 'paragraph', runs: [] }])).toBe('');
+  });
+
+  it('空白のみの段落も出力しない', () => {
+    expect(serializeBlocks([{ type: 'paragraph', runs: [run('   ')] }])).toBe('');
+  });
+
+  it('ブロックの間にある空段落を除去する', () => {
+    const blocks = [
+      { type: 'heading', level: 1, runs: [run('A')] },
+      { type: 'paragraph', runs: [] },
+      { type: 'paragraph', runs: [run('B')] },
+      { type: 'paragraph', runs: [] },
+    ];
+    expect(serializeBlocks(blocks)).toBe('<h1>A</h1>\n<p>B</p>\n');
   });
 
   it('同一入力から常に同一出力を返す(決定性)', () => {
@@ -200,12 +256,22 @@ describe('ラウンドトリップ', () => {
       ],
     },
     {
-      name: '全装飾とリンク',
+      name: 'リンクを含まない全装飾',
       blocks: [{
         type: 'paragraph',
         runs: [{
-          text: 'x', bold: true, italic: true, underline: true,
-          strike: true, link: 'https://example.com',
+          text: 'x', bold: true, italic: true, underline: true, strike: true,
+        }],
+      }],
+    },
+    {
+      // 下線はリンクに対して正規化で落とされるため、ここには含めない
+      name: 'リンクと装飾',
+      blocks: [{
+        type: 'paragraph',
+        runs: [{
+          text: 'x', bold: true, italic: true, strike: true,
+          link: 'https://example.com',
         }],
       }],
     },
@@ -255,4 +321,16 @@ describe('ラウンドトリップ', () => {
       expect(serializeBlocks(parseBlocks(html))).toBe(html);
     });
   }
+
+  it('正規化で落ちる要素を含む入力でも2回目以降は安定する(冪等性)', () => {
+    // 空段落とリンク下線は正規化で落ちるため parse(serialize(x)) === x は
+    // 成立しない。正規化に求められるのは可逆性ではなく冪等性である。
+    const blocks = [
+      { type: 'paragraph', runs: [] },
+      { type: 'paragraph', runs: [{ text: 'x', underline: true, link: 'https://e.example' }] },
+    ];
+    const once = serializeBlocks(blocks);
+    expect(once).toBe('<p><a href="https://e.example">x</a></p>\n');
+    expect(serializeBlocks(parseBlocks(once))).toBe(once);
+  });
 });

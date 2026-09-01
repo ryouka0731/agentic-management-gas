@@ -53,7 +53,29 @@ function sameRunAttrs_(a, b) {
 }
 
 /**
- * 同じ装飾を持つ連続Runを結合し、空文字のRunを除去する。
+ * Runを正規形にする。属性は true のときだけ持たせ、値の順序も固定する。
+ *
+ * リンクに対する下線は落とす。Google Docs はリンクに既定で下線を付けるため、
+ * これは著者が指定した書式ではなく表示上の既定にすぎない。落とさないと
+ * すべてのリンクに <u> が付き、差分ノイズの原因になる。
+ *
+ * @param {object} r
+ * @returns {object}
+ */
+function normalizeRun_(r) {
+  var copy = { text: r.text };
+  if (r.bold) copy.bold = true;
+  if (r.italic) copy.italic = true;
+  if (r.underline && !r.link) copy.underline = true;
+  if (r.strike) copy.strike = true;
+  if (r.link) copy.link = r.link;
+  return copy;
+}
+
+/**
+ * Runを正規形にしたうえで、同じ装飾を持つ連続Runを結合し、
+ * 空文字のRunを除去する。
+ *
  * 決定性を保つために必須の処理。DocumentAppは同じ装飾でもRunを
  * 分割して返すことがあるため、結合しないと差分ノイズになる。
  *
@@ -63,19 +85,13 @@ function sameRunAttrs_(a, b) {
 function mergeRuns(runs) {
   var out = [];
   for (var i = 0; i < runs.length; i++) {
-    var r = runs[i];
-    if (!r.text) continue;
+    if (!runs[i].text) continue;
+    var r = normalizeRun_(runs[i]);
     var last = out.length ? out[out.length - 1] : null;
     if (last && sameRunAttrs_(last, r)) {
       last.text += r.text;
     } else {
-      var copy = { text: r.text };
-      if (r.bold) copy.bold = true;
-      if (r.italic) copy.italic = true;
-      if (r.underline) copy.underline = true;
-      if (r.strike) copy.strike = true;
-      if (r.link) copy.link = r.link;
-      out.push(copy);
+      out.push(r);
     }
   }
   return out;
@@ -123,7 +139,10 @@ function serializeBlocks(blocks) {
       var lv = Math.min(6, Math.max(1, b.level));
       lines.push('<h' + lv + '>' + serializeRuns_(b.runs) + '</h' + lv + '>');
     } else if (b.type === 'paragraph') {
-      lines.push('<p>' + serializeRuns_(b.runs) + '</p>');
+      var inner = serializeRuns_(b.runs);
+      // 空段落は出力しない。Docs上の空行は書式であって内容ではないため、
+      // 空行を1つ足しただけで差分が出るのを防ぐ。
+      if (inner) lines.push('<p>' + inner + '</p>');
     } else if (b.type === 'listItem') {
       lines.push(
         '<li data-list="' + (b.ordered ? 'ol' : 'ul') + '"' +
