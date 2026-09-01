@@ -1,0 +1,133 @@
+/**
+ * テーブル定義。ヘッダ行のカラム名と順序を決める唯一の情報源。
+ *
+ * トップレベルのconstではなく関数として公開する。GASはファイルを
+ * ファイル名順に読み込むため、トップレベル初期化は順序依存になる。
+ *
+ * @returns {Object<string, string[]>}
+ */
+function DB_SCHEMA() {
+  return {
+    files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy'],
+    commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
+    branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
+    pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt'],
+    reviews: ['prNumber', 'reviewer', 'state', 'body', 'at'],
+    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt'],
+    project_items: ['issueNumber', 'column', 'order'],
+  };
+}
+
+/**
+ * テーブルに対応するシートを取得する。存在しなければヘッダ付きで作成する。
+ *
+ * @param {string} table
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
+function dbSheet_(table) {
+  var schema = DB_SCHEMA();
+  var cols = schema[table];
+  if (!cols) throw new Error('未定義のテーブルです: ' + table);
+
+  var ss = SpreadsheetApp.openById(repoConfig().dbId);
+  var sheet = ss.getSheetByName(table);
+  if (!sheet) {
+    sheet = ss.insertSheet(table);
+    sheet.getRange(1, 1, 1, cols.length).setValues([cols]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * テーブルの全行をオブジェクト配列として読む。
+ *
+ * 注意: 行数に比例して遅くなる。数万行規模ではシャーディングが必要
+ * (scaling doc §2.2 を参照)。
+ *
+ * @param {string} table
+ * @returns {object[]}
+ */
+function dbReadAll(table) {
+  var cols = DB_SCHEMA()[table];
+  var sheet = dbSheet_(table);
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+
+  var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var obj = {};
+    var empty = true;
+    for (var c = 0; c < cols.length; c++) {
+      obj[cols[c]] = values[r][c];
+      if (values[r][c] !== '' && values[r][c] !== null) empty = false;
+    }
+    if (!empty) out.push(obj);
+  }
+  return out;
+}
+
+/**
+ * テーブルに1行追記する。スキーマに無いキーは無視される。
+ *
+ * @param {string} table
+ * @param {object} obj
+ */
+function dbAppend(table, obj) {
+  var cols = DB_SCHEMA()[table];
+  var row = [];
+  for (var i = 0; i < cols.length; i++) {
+    var v = obj[cols[i]];
+    row.push(v === undefined || v === null ? '' : v);
+  }
+  dbSheet_(table).appendRow(row);
+}
+
+/**
+ * key === value を満たす最初の行を返す。見つからなければ null。
+ *
+ * @param {string} table
+ * @param {string} key
+ * @param {*} value
+ * @returns {object|null}
+ */
+function dbFindOne(table, key, value) {
+  var rows = dbReadAll(table);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][key]) === String(value)) return rows[i];
+  }
+  return null;
+}
+
+/**
+ * key === value を満たす最初の行に patch を適用する。
+ *
+ * @param {string} table
+ * @param {string} key
+ * @param {*} value
+ * @param {object} patch
+ * @returns {boolean} 更新した行があれば true
+ */
+function dbUpdate(table, key, value, patch) {
+  var cols = DB_SCHEMA()[table];
+  var sheet = dbSheet_(table);
+  var last = sheet.getLastRow();
+  if (last < 2) return false;
+
+  var keyCol = cols.indexOf(key);
+  if (keyCol < 0) throw new Error('未定義のカラムです: ' + key);
+
+  var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
+  for (var r = 0; r < values.length; r++) {
+    if (String(values[r][keyCol]) !== String(value)) continue;
+    for (var c = 0; c < cols.length; c++) {
+      if (Object.prototype.hasOwnProperty.call(patch, cols[c])) {
+        values[r][c] = patch[cols[c]];
+      }
+    }
+    sheet.getRange(r + 2, 1, 1, cols.length).setValues([values[r]]);
+    return true;
+  }
+  return false;
+}
