@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('ui/app.css') ?>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <h2>ファイル</h2>
+      <div id="file-list"></div>
+    </nav>
+    <div class="main">
+      <div class="toolbar">
+        <h1 id="doc-title">—</h1>
+        <span class="spacer"></span>
+        <a id="open-in-docs" href="#" target="_blank" hidden>Google ドキュメントで開く</a>
+      </div>
+      <iframe id="viewer" class="viewer" sandbox></iframe>
+      <div id="empty" class="empty">左からファイルを選択してください</div>
+    </div>
+  </div>
+  <?!= include('ui/app.js') ?>
+</body>
+</html>

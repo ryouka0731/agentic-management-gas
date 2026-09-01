@@ -1,0 +1,127 @@
+<script>
+(function () {
+  'use strict';
+
+  var listEl = document.getElementById('file-list');
+  var viewer = document.getElementById('viewer');
+  var empty = document.getElementById('empty');
+  var titleEl = document.getElementById('doc-title');
+  var openLink = document.getElementById('open-in-docs');
+
+  /**
+   * 連続する <li data-list="..." data-depth="N"> を対応する ul/ol でラップする。
+   *
+   * 正規化HTMLは差分粒度を優先して li を単独行で出力するため、
+   * 表示時にリスト構造へ復元する必要がある。
+   *
+   * @param {string} html
+   * @returns {string}
+   */
+  function wrapLists(html) {
+    var lines = html.split('\n');
+    var out = [];
+    var open = [];   // {tag, depth} のスタック
+
+    function closeTo(depth) {
+      while (open.length > depth) {
+        out.push('</' + open.pop().tag + '>');
+      }
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var m = /^<li data-list="(ul|ol)" data-depth="(\d+)">/.exec(line);
+      if (m) {
+        var tag = m[1];
+        var depth = Number(m[2]);
+        closeTo(depth);
+        if (open.length === depth) {
+          out.push('<' + tag + '>');
+          open.push({ tag: tag, depth: depth });
+        }
+        out.push(line);
+      } else {
+        closeTo(0);
+        out.push(line);
+      }
+    }
+    closeTo(0);
+    return out.join('\n');
+  }
+
+  /**
+   * 文書HTMLをiframeのsrcdocに流し込む。
+   *
+   * sandbox属性を値なしで指定しているため、スクリプト実行・フォーム送信・
+   * 同一オリジンアクセスがすべて禁止される。他人が編集した文書を
+   * 表示するため、これはセキュリティ上の必須要件である。
+   *
+   * @param {string} bodyHtml 正規化HTML
+   */
+  function renderIntoViewer(bodyHtml) {
+    var css =
+      'body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",' +
+      '"Noto Sans JP",sans-serif;line-height:1.9;color:#1a1a1a;' +
+      'padding:32px 48px;max-width:820px;margin:0 auto;}' +
+      'h1{font-size:24px;margin:1.6em 0 .6em;}' +
+      'h2{font-size:20px;margin:1.6em 0 .6em;}' +
+      'h3{font-size:17px;margin:1.4em 0 .5em;}' +
+      'table{border-collapse:collapse;margin:1em 0;width:100%;}' +
+      'td{border:1px solid #e0e0e0;padding:6px 10px;}' +
+      'li{margin:.3em 0;}' +
+      'img{max-width:100%;}';
+
+    viewer.srcdoc =
+      '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">' +
+      '<style>' + css + '</style></head><body>' + wrapLists(bodyHtml) + '</body></html>';
+  }
+
+  function selectFile(fileId, button) {
+    var buttons = listEl.querySelectorAll('.file-item');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute('aria-current', String(buttons[i] === button));
+    }
+
+    titleEl.textContent = '読み込み中…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        empty.hidden = true;
+        viewer.hidden = false;
+        titleEl.textContent = res.path;
+        openLink.href = res.url;
+        openLink.hidden = false;
+        renderIntoViewer(res.html);
+      })
+      .withFailureHandler(function (err) {
+        titleEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiGetFileHtml(fileId);
+  }
+
+  function renderFileList(files) {
+    listEl.textContent = '';
+    if (files.length === 0) {
+      var p = document.createElement('p');
+      p.style.cssText = 'padding:0 16px;color:#666;font-size:13px;';
+      p.textContent = '管理対象のファイルがありません。';
+      listEl.appendChild(p);
+      return;
+    }
+    files.forEach(function (f) {
+      var btn = document.createElement('button');
+      btn.className = 'file-item';
+      btn.textContent = f.path;
+      btn.addEventListener('click', function () { selectFile(f.fileId, btn); });
+      listEl.appendChild(btn);
+    });
+  }
+
+  viewer.hidden = true;
+  google.script.run
+    .withSuccessHandler(renderFileList)
+    .withFailureHandler(function (err) {
+      listEl.textContent = 'エラー: ' + err.message;
+    })
+    .apiListFiles();
+})();
+</script>
