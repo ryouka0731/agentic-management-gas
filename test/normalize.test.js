@@ -133,3 +133,119 @@ describe('serializeBlocks', () => {
     expect(serializeBlocks(blocks)).toBe('<img data-sha="x" alt="a&quot;b">\n');
   });
 });
+
+describe('parseBlocks', () => {
+  const { parseBlocks } = loadGas('src/core/Normalize.js');
+
+  it('見出しをパースする', () => {
+    expect(parseBlocks('<h2>就業規則</h2>\n')).toEqual([
+      { type: 'heading', level: 2, runs: [{ text: '就業規則' }] },
+    ]);
+  });
+
+  it('装飾のネストをパースする', () => {
+    const html = '<p><strong><em>x</em></strong></p>\n';
+    expect(parseBlocks(html)).toEqual([
+      { type: 'paragraph', runs: [{ text: 'x', bold: true, italic: true }] },
+    ]);
+  });
+
+  it('リンクをパースする', () => {
+    const html = '<p><a href="https://example.com">x</a></p>\n';
+    expect(parseBlocks(html)).toEqual([
+      { type: 'paragraph', runs: [{ text: 'x', link: 'https://example.com' }] },
+    ]);
+  });
+
+  it('リスト項目をパースする', () => {
+    const html = '<li data-list="ol" data-depth="2">項目</li>\n';
+    expect(parseBlocks(html)).toEqual([
+      { type: 'listItem', ordered: true, depth: 2, runs: [{ text: '項目' }] },
+    ]);
+  });
+
+  it('テーブルをパースする', () => {
+    const html = '<table>\n<tr><td>A</td><td>B</td></tr>\n</table>\n';
+    expect(parseBlocks(html)).toEqual([
+      { type: 'table', rows: [[[{ text: 'A' }], [{ text: 'B' }]]] },
+    ]);
+  });
+
+  it('画像をパースする', () => {
+    expect(parseBlocks('<img data-sha="abc" alt="図">\n')).toEqual([
+      { type: 'image', sha: 'abc', alt: '図' },
+    ]);
+  });
+
+  it('エスケープされた文字を復元する', () => {
+    expect(parseBlocks('<p>a &amp; b &lt; c</p>\n')).toEqual([
+      { type: 'paragraph', runs: [{ text: 'a & b < c' }] },
+    ]);
+  });
+
+  it('空文字列は空配列になる', () => {
+    expect(parseBlocks('')).toEqual([]);
+  });
+});
+
+describe('ラウンドトリップ', () => {
+  const { parseBlocks } = loadGas('src/core/Normalize.js');
+
+  const cases = [
+    {
+      name: '見出しと段落',
+      blocks: [
+        { type: 'heading', level: 1, runs: [{ text: '就業規則' }] },
+        { type: 'paragraph', runs: [{ text: '第1条 目的' }] },
+      ],
+    },
+    {
+      name: '全装飾とリンク',
+      blocks: [{
+        type: 'paragraph',
+        runs: [{
+          text: 'x', bold: true, italic: true, underline: true,
+          strike: true, link: 'https://example.com',
+        }],
+      }],
+    },
+    {
+      name: '混在するリスト',
+      blocks: [
+        { type: 'listItem', ordered: false, depth: 0, runs: [{ text: 'A' }] },
+        { type: 'listItem', ordered: true, depth: 1, runs: [{ text: 'B' }] },
+      ],
+    },
+    {
+      name: 'テーブル',
+      blocks: [{
+        type: 'table',
+        rows: [
+          [[{ text: '区分' }], [{ text: '日数' }]],
+          [[{ text: '正社員' }], [{ text: '3' }]],
+        ],
+      }],
+    },
+    {
+      name: '画像',
+      blocks: [{ type: 'image', sha: 'abc123', alt: '組織図' }],
+    },
+    {
+      name: 'エスケープが必要な文字',
+      blocks: [{ type: 'paragraph', runs: [{ text: 'a < b & c > d' }] }],
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: parse(serialize(x)) === x`, () => {
+      expect(parseBlocks(serializeBlocks(c.blocks))).toEqual(c.blocks);
+    });
+  }
+
+  for (const c of cases) {
+    it(`${c.name}: serialize(parse(serialize(x))) === serialize(x)`, () => {
+      const html = serializeBlocks(c.blocks);
+      expect(serializeBlocks(parseBlocks(html))).toBe(html);
+    });
+  }
+});

@@ -149,3 +149,147 @@ function serializeBlocks(blocks) {
   }
   return lines.length ? lines.join('\n') + '\n' : '';
 }
+
+/**
+ * escapeText の逆変換。&amp; を最後に戻して二重デコードを防ぐ。
+ *
+ * @param {string} s
+ * @returns {string}
+ */
+function unescapeText(s) {
+  return String(s == null ? '' : s)
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * インラインHTMLをRun配列にパースする。
+ * serializeRuns_ が出力する形式 (固定ネスト順) のみを対象とする。
+ *
+ * @param {string} inner
+ * @returns {object[]}
+ */
+function parseRuns_(inner) {
+  var runs = [];
+  var re = /<(strong|em|u|s|a)\b([^>]*)>|<\/(strong|em|u|s|a)>|([^<]+)/g;
+  var stack = [];
+  var m;
+  while ((m = re.exec(inner)) !== null) {
+    if (m[1]) {
+      var frame = { tag: m[1] };
+      if (m[1] === 'a') {
+        var href = /href="([^"]*)"/.exec(m[2] || '');
+        frame.link = href ? unescapeText(href[1]) : '';
+      }
+      stack.push(frame);
+    } else if (m[3]) {
+      for (var i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].tag === m[3]) { stack.splice(i, 1); break; }
+      }
+    } else if (m[4]) {
+      var run = { text: unescapeText(m[4]) };
+      for (var j = 0; j < stack.length; j++) {
+        var t = stack[j].tag;
+        if (t === 'strong') run.bold = true;
+        else if (t === 'em') run.italic = true;
+        else if (t === 'u') run.underline = true;
+        else if (t === 's') run.strike = true;
+        else if (t === 'a') run.link = stack[j].link;
+      }
+      runs.push(run);
+    }
+  }
+  return mergeRuns(runs);
+}
+
+/**
+ * <tr>...</tr> の1行をセルのRun配列の配列にパースする。
+ *
+ * @param {string} line
+ * @returns {object[][]}
+ */
+function parseTableRow_(line) {
+  var cells = [];
+  var re = /<td>([\s\S]*?)<\/td>/g;
+  var m;
+  while ((m = re.exec(line)) !== null) {
+    cells.push(parseRuns_(m[1]));
+  }
+  return cells;
+}
+
+/**
+ * 正規化HTML文字列をBlock配列にパースする。
+ *
+ * serializeBlocks が出力した形式のみを対象とする限定パーサである。
+ * 汎用HTMLは扱えないが、その必要はない。
+ *
+ * @param {string} html
+ * @returns {object[]}
+ */
+function parseBlocks(html) {
+  var blocks = [];
+  var lines = String(html == null ? '' : html).split('\n');
+  var table = null;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!line) continue;
+
+    if (table !== null) {
+      if (line === '</table>') {
+        blocks.push({ type: 'table', rows: table });
+        table = null;
+      } else if (line.indexOf('<tr>') === 0) {
+        table.push(parseTableRow_(line));
+      }
+      continue;
+    }
+
+    if (line === '<table>') { table = []; continue; }
+
+    var mh = /^<h([1-6])>([\s\S]*)<\/h\1>$/.exec(line);
+    if (mh) {
+      blocks.push({
+        type: 'heading',
+        level: Number(mh[1]),
+        runs: parseRuns_(mh[2]),
+      });
+      continue;
+    }
+
+    var mp = /^<p>([\s\S]*)<\/p>$/.exec(line);
+    if (mp) {
+      blocks.push({ type: 'paragraph', runs: parseRuns_(mp[1]) });
+      continue;
+    }
+
+    var ml = /^<li data-list="(ul|ol)" data-depth="(\d+)">([\s\S]*)<\/li>$/.exec(line);
+    if (ml) {
+      blocks.push({
+        type: 'listItem',
+        ordered: ml[1] === 'ol',
+        depth: Number(ml[2]),
+        runs: parseRuns_(ml[3]),
+      });
+      continue;
+    }
+
+    var mi = /^<img data-sha="([^"]*)" alt="([^"]*)">$/.exec(line);
+    if (mi) {
+      blocks.push({
+        type: 'image',
+        sha: unescapeText(mi[1]),
+        alt: unescapeText(mi[2]),
+      });
+      continue;
+    }
+  }
+
+  // <table> が閉じられずに終わった場合も取りこぼさない
+  if (table !== null) blocks.push({ type: 'table', rows: table });
+
+  return blocks;
+}
