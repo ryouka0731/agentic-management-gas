@@ -1,3 +1,3 @@
-**/**
-!src/**
-src/**/*.test.js
+# パターンは .clasp.json の rootDir (= src) 相対で評価される。
+# rootDir の外側 (test/ docs/ node_modules/) は最初から push 対象外。
+**/*.test.js
