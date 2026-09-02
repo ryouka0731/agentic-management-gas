@@ -10,6 +10,16 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * hidden 属性を確実に効かせる。
+ *
+ * ブラウザ標準の [hidden]{display:none} は UA スタイルシートにあるため、
+ * 作者スタイルの .empty{display:flex} に詳細度で負ける。その結果
+ * el.hidden = true にしても要素が消えず、レイアウトを占有し続ける。
+ * display を指定するクラスを持つ要素を JS で開閉する場合は必須。
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
@@ -77,10 +87,10 @@ body {
 .viewer { flex: 1; border: 0; width: 100%; background: var(--bg); }
 
 .empty {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
   color: var(--ink-2);
 }
 </style>
