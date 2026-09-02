@@ -3,15 +3,42 @@
 Google Workspace 上の文書に Git の概念（コミット / ブランチ / PR / Issue / Projects）を
 与えて管理するシステム。**GAS 標準サービスのみ**で構築され、外部 API を一切使用しない。
 
-## 現在の状態: Phase 1 完了 (2026-09-02)
+## 現在の状態: Phase 2 実装完了 (実機検証待ち)
 
-Google Docs を正規化 HTML に変換し、ブラウザ上でライブ表示する Wiki が動作する。
+Google Docs に対して commit / branch / Pull Request / 3-way merge が動作し、
+マージ結果を元の Doc に書き戻せる (fileId は維持されるため共有リンクは壊れない)。
 
-実機で検証済みの項目:
+### Git 操作の対応状況
+
+| 操作 | 状態 |
+|---|---|
+| コミット / 履歴 / 差分表示 | 実装済み |
+| `git status` 相当 (未コミット検出) | 実装済み |
+| ブランチ作成 (Doc の作業コピー) | 実装済み |
+| Pull Request / レビュー / 承認 | 実装済み |
+| 3-way merge | 実装済み |
+| コンフリクト解決 (ours / theirs / both) | 実装済み |
+| main への書き戻し | 実装済み |
+| 楽観的並行制御 (HEAD 検証) | 実装済み |
+
+### 書き戻しの安全機構
+
+`body.clear()` は破壊的操作であり、失敗すると文書の内容が失われる。
+そのため3段の防御を設けている。
+
+1. **事前検証** — `htmlWriterValidate` で復元できない要素を検出し、
+   `body.clear()` の前に中断する
+2. **取得不能な画像を含むマージは拒否** — `sha='unavailable'` の画像は
+   バイト列が存在せず、書き戻すと永久に失われるためマージ自体を止める
+3. **マージ前の自動退避コミット** — main の現在の内容を必ずコミットしてから
+   書き換える
+
+加えて、マージには1件以上の承認が必要で、PR作成者は自分のPRを承認できない。
+
+### Phase 1 で実機検証済みの項目
 
 | 項目 | 結果 |
 |---|---|
-| ローカルテスト | 62 件パス |
 | レンダリングの決定性 | 同一 Doc から常にバイト単位で同一の HTML |
 | ラウンドトリップ | 実際の Doc 出力で `parse(serialize(x)) === x` が成立 |
 | ライブ同期 | Docs 編集が次回閲覧時に自動反映 (同期ジョブなし) |
@@ -109,9 +136,17 @@ clasp push --force
 ```
 src/core/Hash.js       ★ピュア  → ローカルテスト可
 src/core/Normalize.js  ★ピュア  → ローカルテスト可
+src/core/Diff.js       ★ピュア  → ローカルテスト可 (Myers 行diff)
+src/core/Merge.js      ★ピュア  → ローカルテスト可 (3-way merge)
 src/core/Db.gs         GAS依存  → Web App 上で確認
+src/core/Commit.gs     GAS依存  → Web App 上で確認
+src/core/Branch.gs     GAS依存  → Web App 上で確認
+src/core/PullRequest.gs GAS依存 → Web App 上で確認
 src/render/*.gs        GAS依存  → Web App 上で確認
 ```
+
+diff / 3-way merge / HTML 正規化という、最もバグが出やすく、かつ
+システムの正しさを決定づけるロジックがすべてピュア側にある。
 
 ### 実際のDocでラウンドトリップを検証する
 
@@ -127,6 +162,7 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [設計仕様](docs/superpowers/specs/2026-09-02-gws-git-management-design.md)
 - [大規模版スケーリング構想](docs/superpowers/specs/2026-09-02-gws-git-management-scaling.md)
 - [Phase 1 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase1.md)
+- [Phase 2 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase2.md)
 
 ## 制約
 
@@ -139,8 +175,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 
 ## ロードマップ
 
-| Phase | 内容 |
-|---|---|
-| **1** | 基盤 + Docs レンダラ + ライブ Wiki |
-| 2 | commit / branch / PR / merge / 書き戻し |
-| 3 | Sheets / Slides レンダラ + Issue / Projects |
+| Phase | 内容 | 状態 |
+|---|---|---|
+| 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
+| **2** | commit / branch / PR / merge / 書き戻し | 実装完了・実機検証待ち |
+| 3 | Sheets / Slides レンダラ + Issue / Projects | 未着手 |
