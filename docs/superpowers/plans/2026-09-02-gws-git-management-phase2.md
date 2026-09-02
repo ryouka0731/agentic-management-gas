@@ -561,9 +561,13 @@ describe('merge3', () => {
     expect(r.conflicts.length).toBe(1);
   });
 
-  it('oursが空でtheirsが変更した場合', () => {
+  it('oursの削除とtheirsの隣接追加は独立した変更として両方適用される', () => {
+    // base[0..1) の削除と base[1..1) への挿入は区間が重ならないため、
+    // 独立した変更として扱う。文書の版管理では誤ってコンフリクトを増やすと
+    // 運用が回らないため、重ならない変更は自動マージする方針とする。
     const r = merge3(['a'], [], ['a', 'X']);
-    expect(r.clean).toBe(false);
+    expect(r.clean).toBe(true);
+    expect(r.lines).toEqual(['X']);
   });
 
   it('baseが空で両方が同じ内容を追加した場合は衝突しない', () => {
