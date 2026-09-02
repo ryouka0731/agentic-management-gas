@@ -192,7 +192,18 @@ function prReview(number, state, body) {
 
   var reviewer = Session.getActiveUser().getEmail();
   if (state === 'approve' && String(pr.author) === reviewer) {
-    throw new Error('自分が作成したPRは承認できません');
+    // 自己承認は既定で禁止する。ただし1人でのPoC検証ではマージまで
+    // 到達できなくなるため、スクリプトプロパティで一時的に緩められる。
+    // 本番運用では必ず未設定 (禁止) のままにすること
+    var allow = PropertiesService.getScriptProperties()
+      .getProperty('ALLOW_SELF_APPROVE');
+    if (String(allow) !== 'true') {
+      throw new Error(
+        '自分が作成したPRは承認できません。' +
+        '1人で検証する場合はスクリプトプロパティ ALLOW_SELF_APPROVE を true にしてください'
+      );
+    }
+    Logger.log('警告: 自己承認が許可されています (PR #' + number + ')');
   }
 
   var row = {
