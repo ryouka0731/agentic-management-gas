@@ -83,3 +83,23 @@ function objectGet(sha) {
 function objectExists(sha, ext) {
   return objectsFolder_().getFilesByName(objectPath_(sha, ext)).hasNext();
 }
+
+/**
+ * SHAに対応するバイナリblobを拡張子を問わず探す。
+ *
+ * Block型は拡張子を保持しないため、保存時に使いうる拡張子を順に試す。
+ * PoC規模では十分に速い。
+ *
+ * @param {string} sha
+ * @returns {GoogleAppsScript.Base.Blob|null}
+ */
+function objectFindBlob(sha) {
+  if (!/^[0-9a-f]{64}$/.test(String(sha || ''))) return null;
+  var exts = ['png', 'jpg', 'gif', 'webp', 'bmp', 'bin'];
+  var folder = objectsFolder_();
+  for (var i = 0; i < exts.length; i++) {
+    var it = folder.getFilesByName(objectPath_(sha, exts[i]));
+    if (it.hasNext()) return it.next().getBlob();
+  }
+  return null;
+}

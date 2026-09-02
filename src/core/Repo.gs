@@ -58,6 +58,18 @@ function repoInit(rootFolderName) {
   var sheet1 = db.getSheetByName('シート1') || db.getSheetByName('Sheet1');
   if (sheet1) db.deleteSheet(sheet1);
 
+  // main ブランチをテーブルに登録する。これが無いと commitFile が
+  // headSha を更新できない
+  dbAppend('branches', {
+    name: 'main',
+    headSha: '',
+    baseSha: '',
+    state: 'open',
+    workingFolderId: config.mainId,
+    createdBy: Session.getActiveUser().getEmail(),
+    createdAt: new Date(),
+  });
+
   Logger.log('リポジトリを初期化しました: ' + JSON.stringify(config));
   return config;
 }

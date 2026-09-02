@@ -229,3 +229,280 @@ function debugInspectImages() {
   if (found === 0) Logger.log('画像要素が1つも見つかりませんでした');
   Logger.log('--- 診断終了 ---');
 }
+
+// ===== Phase 2: コミット・ブランチ・PR の API =====
+
+/**
+ * 既存リポジトリに main ブランチ行が無い場合に補う (移行用)。
+ * repoInit を実行済みの環境で1回だけ実行する。
+ *
+ * @returns {string} 実行結果
+ */
+function debugEnsureMainBranch() {
+  if (dbFindOne('branches', 'name', 'main')) return 'main ブランチは既に存在します';
+  dbAppend('branches', {
+    name: 'main',
+    headSha: '',
+    baseSha: '',
+    state: 'open',
+    workingFolderId: repoConfig().mainId,
+    createdBy: Session.getActiveUser().getEmail(),
+    createdAt: new Date(),
+  });
+  return 'main ブランチを追加しました';
+}
+
+/**
+ * 論理パスからブランチ名を判定する。
+ * branches/<name>/... 形式なら <name>、そうでなければ 'main'。
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+function branchOfPath_(path) {
+  var m = /^branches\/([^\/]+)\//.exec(String(path || ''));
+  return m ? m[1] : 'main';
+}
+
+/**
+ * ファイルの状態を返す (Web App API)。
+ *
+ * @param {string} fileId
+ * @returns {{dirty:boolean, headSha:string|null, branch:string}}
+ */
+function apiFileStatus(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+  var branch = branchOfPath_(row.path);
+  var st = fileStatus(fileId, branch);
+  return { dirty: st.dirty, headSha: st.headSha, branch: branch };
+}
+
+/**
+ * ファイルをコミットする (Web App API)。
+ *
+ * @param {string} fileId
+ * @param {string} message
+ * @param {string|null} expectedHeadSha
+ * @returns {object}
+ */
+function apiCommit(fileId, message, expectedHeadSha) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+  var commit = commitFile(fileId, branchOfPath_(row.path), message, expectedHeadSha);
+  return { sha: commit.sha, message: commit.message };
+}
+
+/**
+ * コミット履歴を返す (Web App API)。
+ * Date は google.script.run で扱えないためISO文字列にする。
+ *
+ * @param {string} fileId
+ * @returns {object[]}
+ */
+function apiCommitHistory(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+
+  var rows = commitHistory(fileId, branchOfPath_(row.path));
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      sha: rows[i].sha,
+      parentSha: rows[i].parentSha,
+      author: rows[i].author,
+      message: rows[i].message,
+      timestamp: new Date(rows[i].timestamp).toISOString(),
+    });
+  }
+  return out;
+}
+
+/**
+ * 2つのコミット間の差分を返す (Web App API)。
+ * fromSha が空文字なら初回コミットとして扱う。
+ *
+ * @param {string} fromSha
+ * @param {string} toSha
+ * @returns {object[]} diff ops
+ */
+function apiCommitDiff(fromSha, toSha) {
+  var from = fromSha ? (commitHtml(fromSha) || '') : '';
+  var to = commitHtml(toSha);
+  if (to === null) throw new Error('コミットが見つかりません');
+  return diffHtml(from, to);
+}
+
+/**
+ * ブランチ一覧を返す (Web App API)。
+ *
+ * @returns {object[]}
+ */
+function apiBranchList() {
+  var rows = branchList();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].state) === 'deleted') continue;
+    out.push({
+      name: rows[i].name,
+      headSha: rows[i].headSha,
+      baseSha: rows[i].baseSha,
+      state: rows[i].state,
+      createdBy: rows[i].createdBy,
+      createdAt: rows[i].createdAt ? new Date(rows[i].createdAt).toISOString() : '',
+    });
+  }
+  return out;
+}
+
+/**
+ * ブランチを作成する (Web App API)。
+ *
+ * @param {string} name
+ * @param {string} fileId
+ * @returns {object}
+ */
+function apiBranchCreate(name, fileId) {
+  var row = branchCreate(name, fileId);
+  return { name: row.name, baseSha: row.baseSha };
+}
+
+/**
+ * ブランチを削除する (Web App API)。
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function apiBranchDelete(name) {
+  branchDelete(name);
+  return name;
+}
+
+/**
+ * PR一覧を返す (Web App API)。
+ *
+ * @returns {object[]}
+ */
+function apiPrList() {
+  var rows = prList();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      number: Number(rows[i].number),
+      title: rows[i].title,
+      sourceBranch: rows[i].sourceBranch,
+      targetBranch: rows[i].targetBranch,
+      state: rows[i].state,
+      author: rows[i].author,
+      createdAt: rows[i].createdAt ? new Date(rows[i].createdAt).toISOString() : '',
+    });
+  }
+  out.sort(function (a, b) { return b.number - a.number; });
+  return out;
+}
+
+/**
+ * PRを作成する (Web App API)。
+ *
+ * @param {string} title
+ * @param {string} body
+ * @param {string} sourceBranch
+ * @param {string} mainFileId
+ * @returns {object}
+ */
+function apiPrCreate(title, body, sourceBranch, mainFileId) {
+  var row = prCreate(title, body, sourceBranch, mainFileId);
+  return { number: row.number, title: row.title };
+}
+
+/**
+ * PRのマージプレビューを返す (Web App API)。
+ * 差分表示のため main HEAD とマージ結果の diff も返す。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiPrPreview(number) {
+  var preview = prPreviewMerge(number);
+  var mergedHtml = linesToHtml_(preview.lines);
+
+  return {
+    clean: preview.clean,
+    problems: preview.problems,
+    conflicts: preview.conflicts,
+    approvals: prApprovalCount(number),
+    ops: diffHtml(preview.oursHtml, mergedHtml),
+  };
+}
+
+/**
+ * PRにレビューを記録する (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} state
+ * @param {string} body
+ * @returns {object}
+ */
+function apiPrReview(number, state, body) {
+  var row = prReview(number, state, body);
+  return { prNumber: row.prNumber, state: row.state };
+}
+
+/**
+ * PRをマージする (Web App API)。
+ *
+ * @param {number} number
+ * @param {string[]} choices
+ * @returns {object}
+ */
+function apiPrMerge(number, choices) {
+  var row = prMerge(number, choices);
+  return { sha: row.sha, message: row.message };
+}
+
+/**
+ * 書き戻しの往復検証。Phase 2 で最も重要な検証。
+ *
+ * Doc → HTML → Doc → HTML と往復させ、2つのHTMLが一致すれば
+ * 書き戻しが情報を落としていないことになる。
+ *
+ * 破壊的操作を含むため、必ずブランチの作業コピーに対して実行すること。
+ * DEBUG_WRITE_FILE_ID に対象を設定する。
+ */
+function debugWriteRoundTrip() {
+  var fileId = PropertiesService.getScriptProperties()
+    .getProperty('DEBUG_WRITE_FILE_ID');
+  if (!fileId) {
+    throw new Error(
+      'スクリプトプロパティ DEBUG_WRITE_FILE_ID に、' +
+      '書き戻してよい作業コピーのfileIdを設定してください'
+    );
+  }
+
+  var before = renderDoc(fileId);
+  Logger.log('書き戻し前の長さ: ' + before.length);
+
+  var problems = htmlWriterValidate(parseBlocks(before));
+  if (problems.length > 0) {
+    Logger.log('検証で問題が見つかりました:\n' + problems.join('\n'));
+    return;
+  }
+
+  writeHtmlToDoc(fileId, before);
+  liveCacheInvalidate(fileId);
+
+  var after = renderDoc(fileId);
+  Logger.log('書き戻し後の長さ: ' + after.length);
+
+  if (before === after) {
+    Logger.log('往復一致: OK — 書き戻しは情報を落としていません');
+    return;
+  }
+
+  Logger.log('往復不一致: 差分は以下のとおり');
+  var ops = diffHtml(before, after);
+  for (var i = 0; i < ops.length; i++) {
+    if (ops[i].type === 'equal') continue;
+    Logger.log('  ' + (ops[i].type === 'insert' ? '+ ' : '- ') + ops[i].line);
+  }
+}

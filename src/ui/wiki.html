@@ -14,10 +14,42 @@
     <div class="main">
       <div class="toolbar">
         <h1 id="doc-title">—</h1>
+        <span id="branch-chip" class="chip" hidden></span>
+        <span id="dirty-badge" class="badge" hidden>未コミットの変更</span>
         <span class="spacer"></span>
+        <button id="commit-btn" class="btn" hidden>コミット</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>Google ドキュメントで開く</a>
       </div>
-      <iframe id="viewer" class="viewer" sandbox></iframe>
+
+      <div class="tabs" id="tabs" hidden>
+        <button class="tab" data-tab="content" aria-current="true">本文</button>
+        <button class="tab" data-tab="history">履歴</button>
+        <button class="tab" data-tab="branches">ブランチ</button>
+        <button class="tab" data-tab="pulls">プルリクエスト</button>
+      </div>
+
+      <div class="panel" id="panel-content" hidden>
+        <iframe id="viewer" class="viewer" sandbox></iframe>
+      </div>
+
+      <div class="panel" id="panel-history" hidden>
+        <div class="history-list" id="history-list"></div>
+        <div class="diff-view" id="diff-view"></div>
+      </div>
+
+      <div class="panel panel-col" id="panel-branches" hidden>
+        <div class="panel-actions">
+          <button id="branch-create-btn" class="btn">ブランチを作成</button>
+          <span class="row-meta">mainのファイルを選んでから作成してください</span>
+        </div>
+        <div class="list-area" id="branch-list"></div>
+      </div>
+
+      <div class="panel" id="panel-pulls" hidden>
+        <div class="history-list" id="pr-list"></div>
+        <div class="diff-view" id="pr-detail"></div>
+      </div>
+
       <div id="empty" class="empty">左からファイルを選択してください</div>
     </div>
   </div>

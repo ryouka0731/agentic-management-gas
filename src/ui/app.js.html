@@ -7,6 +7,24 @@
   var empty = document.getElementById('empty');
   var titleEl = document.getElementById('doc-title');
   var openLink = document.getElementById('open-in-docs');
+  var branchChip = document.getElementById('branch-chip');
+  var dirtyBadge = document.getElementById('dirty-badge');
+  var commitBtn = document.getElementById('commit-btn');
+  var tabsEl = document.getElementById('tabs');
+  var panelContent = document.getElementById('panel-content');
+  var panelHistory = document.getElementById('panel-history');
+  var panelBranches = document.getElementById('panel-branches');
+  var panelPulls = document.getElementById('panel-pulls');
+  var historyList = document.getElementById('history-list');
+  var diffView = document.getElementById('diff-view');
+  var branchListEl = document.getElementById('branch-list');
+  var branchCreateBtn = document.getElementById('branch-create-btn');
+  var prListEl = document.getElementById('pr-list');
+  var prDetail = document.getElementById('pr-detail');
+
+  var current = { fileId: null, headSha: null, branch: 'main' };
+
+  // ===== 表示ヘルパー =====
 
   /**
    * 連続する <li data-list="..." data-depth="N"> を対応する ul/ol でラップする。
@@ -20,12 +38,10 @@
   function wrapLists(html) {
     var lines = html.split('\n');
     var out = [];
-    var open = [];   // {tag, depth} のスタック
+    var open = [];
 
     function closeTo(depth) {
-      while (open.length > depth) {
-        out.push('</' + open.pop().tag + '>');
-      }
+      while (open.length > depth) out.push('</' + open.pop().tag + '>');
     }
 
     for (var i = 0; i < lines.length; i++) {
@@ -56,7 +72,7 @@
    * 同一オリジンアクセスがすべて禁止される。他人が編集した文書を
    * 表示するため、これはセキュリティ上の必須要件である。
    *
-   * @param {string} bodyHtml 正規化HTML
+   * @param {string} bodyHtml
    */
   function renderIntoViewer(bodyHtml) {
     var css =
@@ -76,21 +92,483 @@
       '<style>' + css + '</style></head><body>' + wrapLists(bodyHtml) + '</body></html>';
   }
 
+  /**
+   * diff操作列を色分けして表示する。
+   *
+   * 行の内容は textContent で入れる。innerHTML を使うと文書内容が
+   * そのままHTMLとして解釈され、XSSになる。
+   *
+   * @param {object[]} ops
+   * @param {HTMLElement} container
+   * @param {boolean} skipEqual equal行を省略するか
+   */
+  function renderDiffInto(ops, container, skipEqual) {
+    if (!ops || ops.length === 0) {
+      var p = document.createElement('p');
+      p.className = 'diff-empty';
+      p.textContent = '差分はありません';
+      container.appendChild(p);
+      return;
+    }
+    var shown = 0;
+    ops.forEach(function (op) {
+      if (skipEqual && op.type === 'equal') return;
+      var div = document.createElement('div');
+      div.className = 'diff-line diff-' + op.type;
+      var mark = op.type === 'insert' ? '+ ' : (op.type === 'delete' ? '- ' : '  ');
+      div.textContent = mark + op.line;
+      container.appendChild(div);
+      shown++;
+    });
+    if (shown === 0) {
+      var q = document.createElement('p');
+      q.className = 'diff-empty';
+      q.textContent = '差分はありません';
+      container.appendChild(q);
+    }
+  }
+
+  /**
+   * 状態バッジの要素を作る。
+   *
+   * @param {string} state
+   * @returns {HTMLElement}
+   */
+  function stateBadge(state) {
+    var span = document.createElement('span');
+    span.className = 'state state-' + state;
+    span.textContent = state;
+    return span;
+  }
+
+  // ===== タブ =====
+
+  function switchTab(name) {
+    var tabs = tabsEl.querySelectorAll('.tab');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].setAttribute('aria-current', String(tabs[i].dataset.tab === name));
+    }
+    panelContent.hidden = name !== 'content';
+    panelHistory.hidden = name !== 'history';
+    panelBranches.hidden = name !== 'branches';
+    panelPulls.hidden = name !== 'pulls';
+
+    if (name === 'history') loadHistory();
+    else if (name === 'branches') loadBranches();
+    else if (name === 'pulls') loadPulls();
+  }
+
+  // ===== 履歴 =====
+
+  function loadHistory() {
+    historyList.textContent = '読み込み中…';
+    diffView.textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function (commits) {
+        historyList.textContent = '';
+        if (commits.length === 0) {
+          var p = document.createElement('p');
+          p.style.cssText = 'padding:12px 16px;color:#666;font-size:13px;';
+          p.textContent = 'コミットがありません';
+          historyList.appendChild(p);
+          return;
+        }
+        commits.forEach(function (c) {
+          var btn = document.createElement('button');
+          btn.className = 'commit-item';
+
+          var msg = document.createElement('div');
+          msg.className = 'commit-message';
+          msg.textContent = c.message;
+
+          var meta = document.createElement('div');
+          meta.className = 'commit-meta';
+          meta.textContent =
+            c.sha.substring(0, 7) + ' · ' + c.author + ' · ' +
+            new Date(c.timestamp).toLocaleString('ja-JP');
+
+          btn.appendChild(msg);
+          btn.appendChild(meta);
+          btn.addEventListener('click', function () {
+            var items = historyList.querySelectorAll('.commit-item');
+            for (var i = 0; i < items.length; i++) {
+              items[i].setAttribute('aria-current', String(items[i] === btn));
+            }
+            diffView.textContent = '読み込み中…';
+            google.script.run
+              .withSuccessHandler(function (ops) {
+                diffView.textContent = '';
+                renderDiffInto(ops, diffView, false);
+              })
+              .withFailureHandler(function (err) {
+                diffView.textContent = 'エラー: ' + err.message;
+              })
+              .apiCommitDiff(c.parentSha || '', c.sha);
+          });
+          historyList.appendChild(btn);
+        });
+        historyList.firstChild.click();
+      })
+      .withFailureHandler(function (err) {
+        historyList.textContent = 'エラー: ' + err.message;
+      })
+      .apiCommitHistory(current.fileId);
+  }
+
+  // ===== コミット =====
+
+  function refreshStatus() {
+    google.script.run
+      .withSuccessHandler(function (st) {
+        current.headSha = st.headSha;
+        current.branch = st.branch;
+        branchChip.textContent = st.branch;
+        branchChip.hidden = false;
+        dirtyBadge.hidden = !st.dirty;
+        commitBtn.hidden = !st.dirty;
+      })
+      .withFailureHandler(function () { /* 状態表示の失敗は致命的ではない */ })
+      .apiFileStatus(current.fileId);
+  }
+
+  function doCommit() {
+    var message = window.prompt('コミットメッセージを入力してください');
+    if (!message) return;
+
+    commitBtn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function () {
+        commitBtn.disabled = false;
+        refreshStatus();
+        if (!panelHistory.hidden) loadHistory();
+      })
+      .withFailureHandler(function (err) {
+        commitBtn.disabled = false;
+        window.alert('コミットできませんでした: ' + err.message);
+      })
+      .apiCommit(current.fileId, message, current.headSha);
+  }
+
+  // ===== ブランチ =====
+
+  function loadBranches() {
+    branchListEl.textContent = '読み込み中…';
+    google.script.run
+      .withSuccessHandler(function (branches) {
+        branchListEl.textContent = '';
+        branches.forEach(function (b) {
+          var row = document.createElement('div');
+          row.className = 'row-item';
+
+          var title = document.createElement('span');
+          title.className = 'row-title';
+          title.textContent = b.name;
+          row.appendChild(title);
+          row.appendChild(stateBadge(b.state));
+
+          var meta = document.createElement('span');
+          meta.className = 'row-meta';
+          meta.textContent = b.createdBy +
+            (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString('ja-JP') : '');
+          row.appendChild(meta);
+
+          if (b.name !== 'main' && b.state === 'open') {
+            var spacer = document.createElement('span');
+            spacer.style.flex = '1';
+            row.appendChild(spacer);
+
+            var prBtn = document.createElement('button');
+            prBtn.className = 'btn';
+            prBtn.textContent = 'PRを作成';
+            prBtn.addEventListener('click', function () { createPr(b.name); });
+            row.appendChild(prBtn);
+          }
+
+          branchListEl.appendChild(row);
+        });
+      })
+      .withFailureHandler(function (err) {
+        branchListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiBranchList();
+  }
+
+  function createBranch() {
+    if (!current.fileId) {
+      window.alert('先にファイルを選択してください');
+      return;
+    }
+    if (current.branch !== 'main') {
+      window.alert('ブランチはmainのファイルからのみ作成できます');
+      return;
+    }
+    var name = window.prompt('ブランチ名を入力してください (例: 規則改訂)');
+    if (!name) return;
+
+    branchCreateBtn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function () {
+        branchCreateBtn.disabled = false;
+        loadBranches();
+        google.script.run.withSuccessHandler(renderFileList).apiListFiles();
+      })
+      .withFailureHandler(function (err) {
+        branchCreateBtn.disabled = false;
+        window.alert('作成できませんでした: ' + err.message);
+      })
+      .apiBranchCreate(name, current.fileId);
+  }
+
+  // ===== プルリクエスト =====
+
+  function createPr(branchName) {
+    if (!current.fileId || current.branch !== 'main') {
+      window.alert('先に main のファイルを選択してください');
+      return;
+    }
+    var title = window.prompt('PRのタイトルを入力してください');
+    if (!title) return;
+    var body = window.prompt('説明 (任意)') || '';
+
+    google.script.run
+      .withSuccessHandler(function () { switchTab('pulls'); })
+      .withFailureHandler(function (err) {
+        window.alert('作成できませんでした: ' + err.message);
+      })
+      .apiPrCreate(title, body, branchName, current.fileId);
+  }
+
+  /**
+   * コンフリクトの選択UIを作る。
+   *
+   * @param {object[]} conflicts
+   * @param {HTMLElement} container
+   * @returns {function(): string[]} 選択値を集める関数
+   */
+  function renderConflicts(conflicts, container) {
+    var selects = [];
+
+    conflicts.forEach(function (c, i) {
+      var block = document.createElement('div');
+      block.className = 'conflict-block';
+
+      var head = document.createElement('div');
+      head.className = 'conflict-head';
+      head.textContent = 'コンフリクト ' + (i + 1) + ' / ' + conflicts.length;
+      block.appendChild(head);
+
+      [['main側 (ours)', c.ours], ['ブランチ側 (theirs)', c.theirs]].forEach(
+        function (pair) {
+          var side = document.createElement('div');
+          side.className = 'conflict-side';
+
+          var label = document.createElement('div');
+          label.className = 'conflict-label';
+          label.textContent = pair[0];
+          side.appendChild(label);
+
+          if (!pair[1] || pair[1].length === 0) {
+            var del = document.createElement('div');
+            del.className = 'conflict-label';
+            del.textContent = '(削除)';
+            side.appendChild(del);
+          } else {
+            pair[1].forEach(function (line) {
+              var div = document.createElement('div');
+              div.className = 'diff-line';
+              div.textContent = line;
+              side.appendChild(div);
+            });
+          }
+          block.appendChild(side);
+        }
+      );
+
+      var choiceWrap = document.createElement('div');
+      choiceWrap.className = 'conflict-choice';
+      var sel = document.createElement('select');
+      [['ours', 'main側を採用'], ['theirs', 'ブランチ側を採用'],
+       ['both', '両方を残す']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        sel.appendChild(o);
+      });
+      choiceWrap.appendChild(sel);
+      block.appendChild(choiceWrap);
+      selects.push(sel);
+
+      container.appendChild(block);
+    });
+
+    return function () {
+      return selects.map(function (s) { return s.value; });
+    };
+  }
+
+  function showPrDetail(pr) {
+    prDetail.textContent = '読み込み中…';
+
+    google.script.run
+      .withSuccessHandler(function (preview) {
+        prDetail.textContent = '';
+
+        var head = document.createElement('div');
+        head.className = 'pr-title';
+        head.textContent = '#' + pr.number + ' ' + pr.title;
+        prDetail.appendChild(head);
+
+        var meta = document.createElement('div');
+        meta.className = 'commit-meta';
+        meta.style.marginBottom = '10px';
+        meta.textContent =
+          pr.sourceBranch + ' → ' + pr.targetBranch +
+          ' · ' + pr.author + ' · 承認 ' + preview.approvals + '件' +
+          ' · ' + (preview.clean ? 'マージ可能' : 'コンフリクトあり');
+        prDetail.appendChild(meta);
+
+        var getChoices = function () { return []; };
+
+        if (preview.problems && preview.problems.length > 0) {
+          var warn = document.createElement('div');
+          warn.className = 'conflict-head';
+          warn.style.marginBottom = '10px';
+          warn.textContent = '書き戻せません: ' + preview.problems.join(' / ');
+          prDetail.appendChild(warn);
+        }
+
+        if (!preview.clean) {
+          getChoices = renderConflicts(preview.conflicts, prDetail);
+        }
+
+        if (pr.state !== 'merged' && pr.state !== 'closed') {
+          var actions = document.createElement('div');
+          actions.className = 'pr-actions';
+
+          var approveBtn = document.createElement('button');
+          approveBtn.className = 'btn';
+          approveBtn.textContent = '承認する';
+          approveBtn.addEventListener('click', function () {
+            approveBtn.disabled = true;
+            google.script.run
+              .withSuccessHandler(function () { showPrDetail(pr); })
+              .withFailureHandler(function (err) {
+                approveBtn.disabled = false;
+                window.alert(err.message);
+              })
+              .apiPrReview(pr.number, 'approve', '');
+          });
+
+          var mergeBtn = document.createElement('button');
+          mergeBtn.className = 'btn';
+          mergeBtn.textContent = 'マージする';
+          mergeBtn.disabled = !!(preview.problems && preview.problems.length > 0);
+          mergeBtn.addEventListener('click', function () {
+            if (!window.confirm(
+              'mainの文書を書き換えます。実行前にmainの現在の内容は' +
+              '自動でコミットされます。続けますか?'
+            )) return;
+            mergeBtn.disabled = true;
+            google.script.run
+              .withSuccessHandler(function () {
+                window.alert('マージしました');
+                loadPulls();
+                refreshStatus();
+              })
+              .withFailureHandler(function (err) {
+                mergeBtn.disabled = false;
+                window.alert('マージできませんでした: ' + err.message);
+              })
+              .apiPrMerge(pr.number, getChoices());
+          });
+
+          actions.appendChild(approveBtn);
+          actions.appendChild(mergeBtn);
+          prDetail.appendChild(actions);
+        }
+
+        var diffHead = document.createElement('div');
+        diffHead.className = 'conflict-label';
+        diffHead.style.margin = '12px 0 6px';
+        diffHead.textContent = 'main に対する変更';
+        prDetail.appendChild(diffHead);
+
+        renderDiffInto(preview.ops, prDetail, true);
+      })
+      .withFailureHandler(function (err) {
+        prDetail.textContent = 'エラー: ' + err.message;
+      })
+      .apiPrPreview(pr.number);
+  }
+
+  function loadPulls() {
+    prListEl.textContent = '読み込み中…';
+    prDetail.textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function (prs) {
+        prListEl.textContent = '';
+        if (prs.length === 0) {
+          var p = document.createElement('p');
+          p.style.cssText = 'padding:12px 16px;color:#666;font-size:13px;';
+          p.textContent = 'プルリクエストがありません';
+          prListEl.appendChild(p);
+          return;
+        }
+        prs.forEach(function (pr) {
+          var btn = document.createElement('button');
+          btn.className = 'commit-item';
+
+          var msg = document.createElement('div');
+          msg.className = 'commit-message';
+          msg.textContent = '#' + pr.number + ' ' + pr.title;
+
+          var meta = document.createElement('div');
+          meta.className = 'commit-meta';
+          meta.textContent = pr.sourceBranch + ' → ' + pr.targetBranch +
+            ' · ' + pr.state;
+
+          btn.appendChild(msg);
+          btn.appendChild(meta);
+          btn.addEventListener('click', function () {
+            var items = prListEl.querySelectorAll('.commit-item');
+            for (var i = 0; i < items.length; i++) {
+              items[i].setAttribute('aria-current', String(items[i] === btn));
+            }
+            showPrDetail(pr);
+          });
+          prListEl.appendChild(btn);
+        });
+        prListEl.firstChild.click();
+      })
+      .withFailureHandler(function (err) {
+        prListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiPrList();
+  }
+
+  // ===== ファイル選択 =====
+
   function selectFile(fileId, button) {
     var buttons = listEl.querySelectorAll('.file-item');
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].setAttribute('aria-current', String(buttons[i] === button));
     }
 
+    current.fileId = fileId;
     titleEl.textContent = '読み込み中…';
+
     google.script.run
       .withSuccessHandler(function (res) {
         empty.hidden = true;
-        viewer.hidden = false;
+        tabsEl.hidden = false;
         titleEl.textContent = res.path;
         openLink.href = res.url;
         openLink.hidden = false;
         renderIntoViewer(res.html);
+        switchTab('content');
+        refreshStatus();
       })
       .withFailureHandler(function (err) {
         titleEl.textContent = 'エラー: ' + err.message;
@@ -116,7 +594,17 @@
     });
   }
 
-  viewer.hidden = true;
+  // ===== 初期化 =====
+
+  var tabButtons = tabsEl.querySelectorAll('.tab');
+  for (var t = 0; t < tabButtons.length; t++) {
+    (function (btn) {
+      btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
+    })(tabButtons[t]);
+  }
+  commitBtn.addEventListener('click', doCommit);
+  branchCreateBtn.addEventListener('click', createBranch);
+
   google.script.run
     .withSuccessHandler(renderFileList)
     .withFailureHandler(function (err) {
