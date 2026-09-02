@@ -1,6 +1,11 @@
 # GWS Git-like 文書管理システム Phase 1 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **ステータス: 完了 (2026-09-02)** — 全10タスク実施済み。ローカルテスト62件パス。
+> 実機で決定性・ラウンドトリップ・自動同期・XSS防御を検証済み。
+> 実装中に判明した事項は `README.md` の clasp 3.x 注意点および
+> スケーリング文書 §5.1.1 の実測値に反映済み。
 
 **Goal:** Google Docs を正規化HTMLに変換してブラウザ上でライブ表示する Wiki を、GAS標準サービスのみで構築する。
 
@@ -111,7 +116,7 @@ agentic-management-gas/
 - Consumes: なし (最初のタスク)
 - Produces: `npm test` が動作する環境、`clasp push` が通る GAS プロジェクト
 
-- [ ] **Step 1: package.json を作成**
+- [x] **Step 1: package.json を作成**
 
 ```json
 {
@@ -131,7 +136,7 @@ agentic-management-gas/
 }
 ```
 
-- [ ] **Step 2: vitest.config.js を作成**
+- [x] **Step 2: vitest.config.js を作成**
 
 ```javascript
 import { defineConfig } from 'vitest/config';
@@ -144,12 +149,12 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: 依存をインストール**
+- [x] **Step 3: 依存をインストール**
 
 Run: `npm install`
 Expected: `node_modules/` が作られ、`vitest` が入る
 
-- [ ] **Step 4: GAS マニフェストを作成**
+- [x] **Step 4: GAS マニフェストを作成**
 
 Create `src/appsscript.json`:
 
@@ -176,7 +181,7 @@ Create `src/appsscript.json`:
 
 `executeAs: "USER_ACCESSING"` は spec §11 の PoC 権限モデルに対応する。大規模化時に `USER_DEPLOYING` へ変更する (scaling doc §4)。
 
-- [ ] **Step 5: .claspignore を作成**
+- [x] **Step 5: .claspignore を作成**
 
 ```
 **/**
@@ -186,20 +191,20 @@ src/**/*.test.js
 
 `.claspignore` は「除外パターン」ではなく **negation を伴うホワイトリスト**として書く。最初の `**/**` ですべて除外し、`!src/**` で `src` 配下だけを戻す。これにより `test/` `docs/` `node_modules/` `package.json` が push されない。
 
-- [ ] **Step 6: .gitignore に node_modules と .clasp.json が入っていることを確認**
+- [x] **Step 6: .gitignore に node_modules と .clasp.json が入っていることを確認**
 
 Run: `cat .gitignore`
 Expected: `node_modules/` と `.clasp.json` の行が存在する (Task 0 のコミットで作成済み)
 
 `.clasp.json` は `scriptId` を含むため、コミットしない。
 
-- [ ] **Step 7: clasp にログイン**
+- [x] **Step 7: clasp にログイン**
 
 Run: `clasp login`
 
 ブラウザで認可する。すでにログイン済みなら `clasp show-authorized-user` で確認できる。
 
-- [ ] **Step 8: GAS プロジェクトを作成**
+- [x] **Step 8: GAS プロジェクトを作成**
 
 Run:
 
@@ -220,14 +225,14 @@ Expected: `.clasp.json` が生成され、`scriptId` と `rootDir: "src"` が記
 | Web Appを開く | `open-web-app` | — |
 | ログ確認 | `tail-logs` | `logs` |
 
-- [ ] **Step 9: push が通ることを確認**
+- [x] **Step 9: push が通ることを確認**
 
 Run: `clasp push`
 Expected: `src/appsscript.json` が push される (この時点では他にファイルがない)
 
 失敗する場合、`.clasp.json` の `rootDir` が `src` になっているか確認する。
 
-- [ ] **Step 10: コミット**
+- [x] **Step 10: コミット**
 
 ```bash
 git add package.json vitest.config.js .claspignore src/appsscript.json package-lock.json
@@ -255,7 +260,7 @@ git commit -m "chore: プロジェクトスキャフォールドとclasp接続�
 
 ランタイムコードに `module.exports` を書くと GAS で動かない。逆に `export` を書いても GAS で動かない。**GAS のコードを一切汚さずにテストする**ため、`node:vm` でファイルを評価してコンテキストから関数を取り出す。
 
-- [ ] **Step 1: テストハーネスを作成**
+- [x] **Step 1: テストハーネスを作成**
 
 Create `test/harness.js`:
 
@@ -284,7 +289,7 @@ export function loadGas(...relativePaths) {
 }
 ```
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [x] **Step 2: 失敗するテストを書く**
 
 Create `test/hash.test.js`:
 
@@ -316,12 +321,12 @@ describe('bytesToHex', () => {
 });
 ```
 
-- [ ] **Step 3: テストが失敗することを確認**
+- [x] **Step 3: テストが失敗することを確認**
 
 Run: `npm test`
 Expected: FAIL — `ENOENT: no such file or directory ... src/core/Hash.js`
 
-- [ ] **Step 4: 最小実装を書く**
+- [x] **Step 4: 最小実装を書く**
 
 Create `src/core/Hash.js`:
 
@@ -346,12 +351,12 @@ function bytesToHex(bytes) {
 }
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (4 tests)
 
-- [ ] **Step 6: GAS依存のハッシュ関数を書く**
+- [x] **Step 6: GAS依存のハッシュ関数を書く**
 
 Create `src/core/HashGas.gs`:
 
@@ -388,7 +393,7 @@ function sha256HexBytes(blob) {
 
 `sha256Hex` は `Utilities` に依存するためローカルテストできない。Task 10 の手動検証で確認する。
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add test/harness.js test/hash.test.js src/core/Hash.js src/core/HashGas.gs
@@ -412,7 +417,7 @@ git commit -m "feat: node:vmテストハーネスとSHA-256ハッシュ関数を
   - `normalizeSpace(s: string) → string`
   - `mergeRuns(runs: Run[]) → Run[]`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 Create `test/normalize.test.js`:
 
@@ -548,12 +553,12 @@ describe('serializeBlocks', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npm test`
 Expected: FAIL — `src/core/Normalize.js` が存在しない
 
-- [ ] **Step 3: 実装を書く**
+- [x] **Step 3: 実装を書く**
 
 Create `src/core/Normalize.js`:
 
@@ -706,12 +711,12 @@ function serializeBlocks(blocks) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (全テスト)
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Normalize.js test/normalize.test.js
@@ -740,7 +745,7 @@ Phase 2 のマージ書き戻し (HTML → Google Docs) で必須になる。ま
 パーサは**自分が出力したHTMLだけを読めばよい**ため、汎用HTMLパーサは不要。行ベースの
 正規表現で十分に堅牢に書ける。
 
-- [ ] **Step 1: 失敗するテストを追記**
+- [x] **Step 1: 失敗するテストを追記**
 
 Append to `test/normalize.test.js`:
 
@@ -862,12 +867,12 @@ describe('ラウンドトリップ', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npm test`
 Expected: FAIL — `parseBlocks is not a function`
 
-- [ ] **Step 3: パーサを実装**
+- [x] **Step 3: パーサを実装**
 
 Append to `src/core/Normalize.js`:
 
@@ -1017,7 +1022,7 @@ function parseBlocks(html) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (全テスト。ラウンドトリップ12件を含む)
@@ -1025,7 +1030,7 @@ Expected: PASS (全テスト。ラウンドトリップ12件を含む)
 失敗する場合、`parseRuns_` の正規表現が `serializeRuns_` の出力形式と
 一致しているかを確認する。両者は対になっている必要がある。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Normalize.js test/normalize.test.js
@@ -1054,7 +1059,7 @@ git commit -m "feat: 正規化HTMLのパーサとラウンドトリップテス�
 `SpreadsheetApp` を隠蔽する。** 将来シャーディング実装に差し替えるとき、
 この4関数のシグネチャを保てばアプリ側は変更不要になる。
 
-- [ ] **Step 1: Db.gs を作成**
+- [x] **Step 1: Db.gs を作成**
 
 ```javascript
 /**
@@ -1192,7 +1197,7 @@ function dbUpdate(table, key, value, patch) {
 }
 ```
 
-- [ ] **Step 2: コミット**
+- [x] **Step 2: コミット**
 
 ```bash
 git add src/core/Db.gs
@@ -1219,7 +1224,7 @@ git commit -m "feat: スプレッドシートDBアクセス層を追加"
   - `objectGet(sha: string) → string|null`
   - `objectExists(sha: string, ext?: string) → boolean`
 
-- [ ] **Step 1: Repo.gs を作成**
+- [x] **Step 1: Repo.gs を作成**
 
 ```javascript
 /**
@@ -1333,7 +1338,7 @@ function repoRegisterFile(fileId, path) {
 }
 ```
 
-- [ ] **Step 2: ObjectStore.gs を作成**
+- [x] **Step 2: ObjectStore.gs を作成**
 
 ```javascript
 /**
@@ -1423,12 +1428,12 @@ function objectExists(sha, ext) {
 }
 ```
 
-- [ ] **Step 3: push する**
+- [x] **Step 3: push する**
 
 Run: `clasp push`
 Expected: `Main.gs` を除く全ファイルが push される
 
-- [ ] **Step 4: GASエディタで repoInit を実行**
+- [x] **Step 4: GASエディタで repoInit を実行**
 
 1. Run: `clasp open-script` (またはブラウザで GAS プロジェクトを開く)
 2. 関数選択で `repoInit` を選び、引数を渡すためのラッパー関数を一時的に作るか、
@@ -1444,7 +1449,7 @@ function setupRepo() {
 3. 初回実行時に OAuth 認可画面が出るので承認する
 4. 実行ログに設定JSONが出ることを確認
 
-- [ ] **Step 5: Drive とスプレッドシートを目視確認**
+- [x] **Step 5: Drive とスプレッドシートを目視確認**
 
 Drive で以下を確認する:
 
@@ -1456,7 +1461,7 @@ Drive で以下を確認する:
   の7シートがヘッダ付きで作られている**
 - デフォルトの「シート1」が削除されている
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/core/Repo.gs src/core/ObjectStore.gs
@@ -1476,7 +1481,7 @@ git commit -m "feat: Driveレイアウト初期化とObjectStoreを追加"
   - `renderDocBlocks(fileId: string) → Block[]`
   - `renderDoc(fileId: string) → string` — 正規化HTML
 
-- [ ] **Step 1: DocRenderer.gs を作成**
+- [x] **Step 1: DocRenderer.gs を作成**
 
 ```javascript
 /**
@@ -1677,11 +1682,11 @@ function renderDoc(fileId) {
 }
 ```
 
-- [ ] **Step 2: push する**
+- [x] **Step 2: push する**
 
 Run: `clasp push`
 
-- [ ] **Step 3: テスト用の Google Doc を用意する**
+- [x] **Step 3: テスト用の Google Doc を用意する**
 
 Drive の `agentic-management/main/` に、以下を含む Google Doc を手動で作成する:
 
@@ -1694,7 +1699,7 @@ Drive の `agentic-management/main/` に、以下を含む Google Doc を手動�
 - 2行2列の表
 - 画像1つ（任意の画像を貼り付け、代替テキストを設定）
 
-- [ ] **Step 4: レンダラを実行して出力を確認**
+- [x] **Step 4: レンダラを実行して出力を確認**
 
 `src/Main.gs` に一時的な検証関数を追加して push し、GASエディタで実行する:
 
@@ -1717,13 +1722,13 @@ Expected: 実行ログに正規化HTMLが出力される。以下を確認する
 - 画像が `<img data-sha="<64桁hex>" alt="...">` になっている
 - **`.git/objects/` に `<64桁hex>.png` のような画像blobファイルが作られており、Driveでプレビューすると元の画像が表示される** (テキスト化による破壊が起きていないことの確認)
 
-- [ ] **Step 5: 決定性を確認**
+- [x] **Step 5: 決定性を確認**
 
 `debugRenderDoc` を2回実行し、**2回の出力が完全に同一である**ことを確認する。
 異なる場合は `mergeRuns` が効いていないか、`getTextAttributeIndices` の
 扱いに問題がある。
 
-- [ ] **Step 6: ラウンドトリップ検証スクリプトを作成**
+- [x] **Step 6: ラウンドトリップ検証スクリプトを作成**
 
 合成データだけでなく**実際の Doc から出た HTML** でラウンドトリップが成立するかを
 確認する。これが Phase 2 のマージ書き戻しが可能であることの証明になる。
@@ -1769,7 +1774,7 @@ for (let i = 0; i < Math.max(a.length, b.length); i++) {
 process.exit(1);
 ```
 
-- [ ] **Step 7: 実際のDoc出力でラウンドトリップを検証**
+- [x] **Step 7: 実際のDoc出力でラウンドトリップを検証**
 
 `debugRenderDoc` の実行ログに出た HTML を、ローカルのスクラッチファイルに保存する
 (例: `/tmp/rendered.html`)。実行ログからのコピーで末尾改行が失われやすいため、
@@ -1782,7 +1787,7 @@ Expected: `ROUND-TRIP OK (NNNN 文字)`
 その入力を再現するケースを `test/normalize.test.js` のラウンドトリップ配列に
 **恒久的なテストケースとして追加してから**修正すること。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add src/render/DocRenderer.gs test/roundtrip-check.js
@@ -1809,7 +1814,7 @@ git commit -m "feat: Google DocsをBlock配列に変換するレンダラを追�
 
 `CacheService` は 1キー100KBの上限があるため、チャンク分割して保存する。
 
-- [ ] **Step 1: LiveCache.gs を作成**
+- [x] **Step 1: LiveCache.gs を作成**
 
 ```javascript
 /**
@@ -1951,11 +1956,11 @@ function liveCacheInvalidate(fileId) {
 }
 ```
 
-- [ ] **Step 2: push する**
+- [x] **Step 2: push する**
 
 Run: `clasp push`
 
-- [ ] **Step 3: 検証関数で動作確認**
+- [x] **Step 3: 検証関数で動作確認**
 
 `src/Main.gs` に追加して実行する:
 
@@ -1982,7 +1987,7 @@ Expected:
 - **2回目は明確に速い (数十ms程度)**
 - 内容が一致する
 
-- [ ] **Step 4: 自動無効化を確認**
+- [x] **Step 4: 自動無効化を確認**
 
 1. `debugLiveHtml` を実行してキャッシュを作る
 2. **Google Doc を開いて1文字追加し、閉じる**
@@ -1992,7 +1997,7 @@ Expected: 1回目が再び遅くなり (キャッシュミス)、**出力に追�
 
 これが「常に同期される」ことの実証である。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/render/LiveCache.gs
@@ -2016,7 +2021,7 @@ git commit -m "feat: 更新時刻ベースで自動無効化されるライブ�
   - `apiListFiles() → object[]` — google.script.run から呼ぶ
   - `apiGetFileHtml(fileId: string) → {html: string, name: string, url: string}`
 
-- [ ] **Step 1: Main.gs を作成**
+- [x] **Step 1: Main.gs を作成**
 
 既存の debug 関数をすべて削除し、以下で置き換える:
 
@@ -2107,7 +2112,7 @@ function apiRegisterFile(fileId, path) {
 }
 ```
 
-- [ ] **Step 2: app.css.html を作成**
+- [x] **Step 2: app.css.html を作成**
 
 ```html
 <style>
@@ -2198,7 +2203,7 @@ body {
 </style>
 ```
 
-- [ ] **Step 3: wiki.html を作成**
+- [x] **Step 3: wiki.html を作成**
 
 ```html
 <!DOCTYPE html>
@@ -2229,7 +2234,7 @@ body {
 </html>
 ```
 
-- [ ] **Step 4: app.js.html を作成**
+- [x] **Step 4: app.js.html を作成**
 
 ```html
 <script>
@@ -2364,7 +2369,7 @@ body {
 **注意**: ファイル名にテキストを入れる際は `textContent` を使い、`innerHTML` は
 使わない。ファイルパスはユーザー入力であり、XSS の経路になる。
 
-- [ ] **Step 5: push してデプロイ**
+- [x] **Step 5: push してデプロイ**
 
 ```bash
 clasp push
@@ -2373,7 +2378,7 @@ clasp deploy --description "Phase 1: ライブWiki"
 
 `clasp deploy` の出力に含まれるデプロイIDを控える。
 
-- [ ] **Step 6: Web App を開いて動作確認**
+- [x] **Step 6: Web App を開いて動作確認**
 
 Run: `clasp open-web-app` (またはデプロイURLをブラウザで開く)
 
@@ -2386,7 +2391,7 @@ Run: `clasp open-web-app` (またはデプロイURLをブラウザで開く)
 - 表が罫線付きで表示される
 - 「Google ドキュメントで開く」リンクが正しいDocを開く
 
-- [ ] **Step 7: ライブ同期を確認**
+- [x] **Step 7: ライブ同期を確認**
 
 1. Web App でファイルを表示する
 2. **別タブで Google Doc を開き、見出しを1つ追加して閉じる**
@@ -2396,7 +2401,7 @@ Expected: **追加した見出しが反映されている**
 
 これが「GWS内のファイルを常に同期して描画時にキャストする」要件の達成確認である。
 
-- [ ] **Step 8: サンドボックスを確認**
+- [x] **Step 8: サンドボックスを確認**
 
 テスト用 Doc に、本文テキストとして `<script>alert(1)</script>` という
 **文字列**を入力し、Web App で表示する。
@@ -2404,7 +2409,7 @@ Expected: **追加した見出しが反映されている**
 Expected: **画面に `<script>alert(1)</script>` という文字列がそのまま表示され、
 アラートは出ない。** エスケープとサンドボックスの両方が効いている証拠になる。
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add src/Main.gs src/ui/
@@ -2423,12 +2428,12 @@ git commit -m "feat: ライブWiki表示のWeb Appを追加"
 - Consumes: Task 1-9 のすべて
 - Produces: セットアップ手順が文書化された、デモ可能な状態
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS。失敗が1件もないこと。
 
-- [ ] **Step 2: 2つ目のテスト文書で検証**
+- [x] **Step 2: 2つ目のテスト文書で検証**
 
 `main/` に2つ目の Google Doc (構造の異なるもの。例えば表を多用した規定文書) を
 作り、`apiRegisterFile` で登録して Web App で表示する。
@@ -2436,7 +2441,7 @@ Expected: PASS。失敗が1件もないこと。
 Expected: 1つ目と同様に正しく表示される。レンダラが特定文書に
 過適合していないことの確認。
 
-- [ ] **Step 3: README.md を作成**
+- [x] **Step 3: README.md を作成**
 
 ```markdown
 # Agentic Management (GAS)
@@ -2510,11 +2515,11 @@ clasp push        # GAS へ反映
 - Phase 1 では Google Docs のみ対応 (Sheets / Slides は Phase 3)
 ```
 
-- [ ] **Step 4: 計画書に完了マークを付ける**
+- [x] **Step 4: 計画書に完了マークを付ける**
 
 このファイルの各タスクのチェックボックスがすべて `- [x]` になっていることを確認する。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add README.md docs/
@@ -2525,15 +2530,15 @@ git commit -m "docs: Phase 1のREADMEとセットアップ手順を追加"
 
 ## Phase 1 完了時に達成されていること
 
-- [ ] `npm test` でピュアロジック (Hash / Normalize) のテストが全件通る
-- [ ] Google Docs が決定的な正規化HTMLに変換される
-- [ ] 同じ文書からは常にバイト単位で同一のHTMLが出る
-- [ ] `parseBlocks(serializeBlocks(x)) === x` のラウンドトリップが成立する
+- [x] `npm test` でピュアロジック (Hash / Normalize) のテストが全件通る
+- [x] Google Docs が決定的な正規化HTMLに変換される
+- [x] 同じ文書からは常にバイト単位で同一のHTMLが出る
+- [x] `parseBlocks(serializeBlocks(x)) === x` のラウンドトリップが成立する
       (Phase 2 のマージ書き戻しが可能であることの証明)
-- [ ] Drive にリポジトリ構造とメタDBが作られている
-- [ ] Web App で文書一覧と本文が閲覧できる
-- [ ] **Docsを編集すると、次に開いたときに自動で反映される**
-- [ ] 文書HTMLが `<iframe sandbox>` 内で安全にレンダリングされる
+- [x] Drive にリポジトリ構造とメタDBが作られている
+- [x] Web App で文書一覧と本文が閲覧できる
+- [x] **Docsを編集すると、次に開いたときに自動で反映される**
+- [x] 文書HTMLが `<iframe sandbox>` 内で安全にレンダリングされる
 
 ## Phase 2 に持ち越すもの
 
