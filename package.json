@@ -1,0 +1,15 @@
+{
+  "name": "agentic-management-gas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "push": "clasp push",
+    "deploy": "clasp create-deployment"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}

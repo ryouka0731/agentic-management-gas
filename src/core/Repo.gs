@@ -1,0 +1,109 @@
+/**
+ * リポジトリ設定を保存するPropertiesServiceのキー。
+ *
+ * @returns {string}
+ */
+function REPO_CONFIG_KEY() {
+  return 'repoConfig';
+}
+
+/**
+ * リポジトリのDriveレイアウトを作成し、設定をPropertiesServiceに保存する。
+ * 初回セットアップ時にGASエディタから手動で1回だけ実行する。
+ *
+ * 作成される構造 (spec §3.1):
+ *   <rootFolderName>/
+ *   ├── main/
+ *   ├── branches/
+ *   └── .git/
+ *       ├── objects/
+ *       └── repo-db (スプレッドシート)
+ *
+ * @param {string} rootFolderName ルートフォルダ名
+ * @returns {object} 保存された設定
+ */
+function repoInit(rootFolderName) {
+  if (!/^[^\/\\]{1,100}$/.test(String(rootFolderName || ''))) {
+    throw new Error('フォルダ名が不正です: ' + rootFolderName);
+  }
+
+  var root = DriveApp.createFolder(rootFolderName);
+  var main = root.createFolder('main');
+  var branches = root.createFolder('branches');
+  var git = root.createFolder('.git');
+  var objects = git.createFolder('objects');
+
+  var db = SpreadsheetApp.create(rootFolderName + ' repo-db');
+  var dbFile = DriveApp.getFileById(db.getId());
+  git.addFile(dbFile);
+  DriveApp.getRootFolder().removeFile(dbFile);
+
+  var config = {
+    rootId: root.getId(),
+    mainId: main.getId(),
+    branchesId: branches.getId(),
+    gitId: git.getId(),
+    objectsId: objects.getId(),
+    dbId: db.getId(),
+  };
+
+  PropertiesService.getScriptProperties()
+    .setProperty(REPO_CONFIG_KEY(), JSON.stringify(config));
+
+  // スキーマ定義済みのシートをすべて先に作っておく
+  var schema = DB_SCHEMA();
+  for (var table in schema) {
+    if (Object.prototype.hasOwnProperty.call(schema, table)) dbSheet_(table);
+  }
+  var sheet1 = db.getSheetByName('シート1') || db.getSheetByName('Sheet1');
+  if (sheet1) db.deleteSheet(sheet1);
+
+  Logger.log('リポジトリを初期化しました: ' + JSON.stringify(config));
+  return config;
+}
+
+/**
+ * 保存済みのリポジトリ設定を返す。未初期化ならエラーを投げる。
+ *
+ * @returns {{rootId:string, mainId:string, branchesId:string, gitId:string, objectsId:string, dbId:string}}
+ */
+function repoConfig() {
+  var raw = PropertiesService.getScriptProperties().getProperty(REPO_CONFIG_KEY());
+  if (!raw) {
+    throw new Error('リポジトリが初期化されていません。repoInit() を先に実行してください。');
+  }
+  return JSON.parse(raw);
+}
+
+/**
+ * 管理対象ファイルを登録する。
+ *
+ * @param {string} fileId Drive fileId
+ * @param {string} path リポジトリ内論理パス
+ * @returns {object} 登録された files 行
+ */
+function repoRegisterFile(fileId, path) {
+  if (!/^[^\\]{1,200}$/.test(String(path || ''))) {
+    throw new Error('パスが不正です: ' + path);
+  }
+  if (dbFindOne('files', 'fileId', fileId)) {
+    throw new Error('すでに登録されています: ' + fileId);
+  }
+
+  var mime = DriveApp.getFileById(fileId).getMimeType();
+  var type;
+  if (mime === MimeType.GOOGLE_DOCS) type = 'doc';
+  else if (mime === MimeType.GOOGLE_SHEETS) type = 'sheet';
+  else if (mime === MimeType.GOOGLE_SLIDES) type = 'slide';
+  else throw new Error('対応していないファイル種別です: ' + mime);
+
+  var row = {
+    fileId: fileId,
+    path: path,
+    type: type,
+    registeredAt: new Date(),
+    registeredBy: Session.getActiveUser().getEmail(),
+  };
+  dbAppend('files', row);
+  return row;
+}
