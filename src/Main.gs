@@ -1087,3 +1087,37 @@ function debugVerifyPhase3b() {
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
 }
+
+/**
+ * 実際の文書で Markdown の往復を確認する。
+ *
+ * 編集画面は「HTML → Markdown → 編集 → Markdown → HTML」と流れるため、
+ * 何も編集しなければ元の HTML に戻らなければならない。戻らない場合、
+ * 開いて保存しただけで差分が出る。
+ *
+ * DEBUG_FILE_ID に対象の fileId を設定してから実行する。
+ *
+ * @returns {string} 判定結果
+ */
+function debugMarkdownRoundTrip() {
+  var fileId = debugFileId_();
+  var before = liveHtml(fileId);
+  var md = blocksToMd(parseBlocks(before));
+  var after = serializeBlocks(mdToBlocks(md));
+
+  Logger.log('--- Markdown ---');
+  Logger.log(md);
+
+  if (before === after) {
+    Logger.log('往復一致: OK — 開いて保存しても差分は出ません');
+    return '往復一致: OK (' + before.length + '文字)';
+  }
+
+  Logger.log('往復不一致: 差分は以下のとおり');
+  var ops = diffHtml(before, after);
+  for (var i = 0; i < ops.length; i++) {
+    if (ops[i].type === 'equal') continue;
+    Logger.log('  ' + (ops[i].type === 'insert' ? '+ ' : '- ') + ops[i].line);
+  }
+  return '往復不一致 — ログの差分を確認してください';
+}
