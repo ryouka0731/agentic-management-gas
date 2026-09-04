@@ -49,16 +49,42 @@ function headCommit(fileId, branch) {
  */
 function commitHistory(fileId, branch) {
   var rows = dbReadAll('commits');
-  var out = [];
+  var mine = [];
+  var bySha = {};
+
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (String(r.fileId) !== String(fileId)) continue;
     if (String(r.branch) !== String(branch)) continue;
-    out.push(r);
+    mine.push(r);
+    bySha[String(r.sha)] = r;
   }
-  out.sort(function (x, y) {
-    return new Date(y.timestamp).getTime() - new Date(x.timestamp).getTime();
-  });
+  if (!mine.length) return [];
+
+  // timestamp だけで並べると、同じミリ秒に作られたコミットの順序が
+  // 不定になる。親チェーンを HEAD から辿れば、コミットの前後関係
+  // そのもので並ぶため決定的になる
+  var out = [];
+  var seen = {};
+  var cur = headCommit(fileId, branch);
+
+  while (cur && !seen[String(cur.sha)]) {
+    seen[String(cur.sha)] = true;
+    out.push(cur);
+    cur = bySha[String(cur.parentSha)] || null;
+  }
+
+  // チェーンから辿れない行が残った場合だけ、timestamp 順で後ろに足す
+  if (out.length !== mine.length) {
+    var rest = [];
+    for (var j = 0; j < mine.length; j++) {
+      if (!seen[String(mine[j].sha)]) rest.push(mine[j]);
+    }
+    rest.sort(function (x, y) {
+      return new Date(y.timestamp).getTime() - new Date(x.timestamp).getTime();
+    });
+    out = out.concat(rest);
+  }
   return out;
 }
 

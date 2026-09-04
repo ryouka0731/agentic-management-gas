@@ -34,6 +34,68 @@
   var stashBtn = document.getElementById('stash-btn');
 
   var current = { fileId: null, headSha: null, branch: 'main' };
+  var branchSelect = document.getElementById('branch-select');
+  var allFiles = [];
+  var currentBranch = 'main';
+
+  // ===== サーバ側と同じ純関数 =====
+  // src/core/FileUrl.js と src/core/Diff.js の diffPairs をここに写している。
+  // google.script.run の往復を増やさないための意図的な重複であり、
+  // 片方だけ直すと表示と実体がずれるため、変更時は必ず両方を直すこと。
+
+  /**
+   * ファイル種別と fileId から元ファイルの URL を作る。
+   *
+   * @param {string} type
+   * @param {string} fileId
+   * @returns {string}
+   */
+  function fileUrlOf(type, fileId) {
+    if (!fileId) return '';
+    var base = {
+      doc: 'https://docs.google.com/document/d/',
+      sheet: 'https://docs.google.com/spreadsheets/d/',
+      slide: 'https://docs.google.com/presentation/d/',
+    }[String(type)];
+    if (!base) return 'https://drive.google.com/file/d/' + fileId + '/view';
+    return base + fileId + '/edit';
+  }
+
+  /**
+   * diff の ops を左右2列の行に組み替える。
+   *
+   * @param {object[]} ops
+   * @returns {Array<{left:string|null, right:string|null, type:string}>}
+   */
+  function diffPairs(ops) {
+    var out = [];
+    var dels = [];
+    var ins = [];
+
+    function flush() {
+      var n = Math.max(dels.length, ins.length);
+      for (var i = 0; i < n; i++) {
+        var left = i < dels.length ? dels[i] : null;
+        var right = i < ins.length ? ins[i] : null;
+        var type = (left !== null && right !== null)
+          ? 'change'
+          : (left !== null ? 'delete' : 'insert');
+        out.push({ left: left, right: right, type: type });
+      }
+      dels = [];
+      ins = [];
+    }
+
+    for (var i = 0; i < (ops || []).length; i++) {
+      var op = ops[i];
+      if (op.type === 'delete') { dels.push(op.line); continue; }
+      if (op.type === 'insert') { ins.push(op.line); continue; }
+      flush();
+      out.push({ left: op.line, right: op.line, type: 'equal' });
+    }
+    flush();
+    return out;
+  }
 
   // ===== 表示ヘルパー =====
 
@@ -114,29 +176,47 @@
    * @param {boolean} skipEqual equal行を省略するか
    */
   function renderDiffInto(ops, container, skipEqual) {
-    if (!ops || ops.length === 0) {
+    var pairs = diffPairs(ops || []);
+    var shown = [];
+    for (var i = 0; i < pairs.length; i++) {
+      if (skipEqual && pairs[i].type === 'equal') continue;
+      shown.push(pairs[i]);
+    }
+
+    if (!shown.length) {
       var p = document.createElement('p');
       p.className = 'diff-empty';
       p.textContent = '差分はありません';
       container.appendChild(p);
       return;
     }
-    var shown = 0;
-    ops.forEach(function (op) {
-      if (skipEqual && op.type === 'equal') return;
-      var div = document.createElement('div');
-      div.className = 'diff-line diff-' + op.type;
-      var mark = op.type === 'insert' ? '+ ' : (op.type === 'delete' ? '- ' : '  ');
-      div.textContent = mark + op.line;
-      container.appendChild(div);
-      shown++;
+
+    var table = document.createElement('div');
+    table.className = 'diff-split';
+
+    shown.forEach(function (pair) {
+      var row = document.createElement('div');
+      row.className = 'diff-row';
+      row.appendChild(diffCell(pair.left, pair.type === 'equal' ? '' : 'del'));
+      row.appendChild(diffCell(pair.right, pair.type === 'equal' ? '' : 'ins'));
+      table.appendChild(row);
     });
-    if (shown === 0) {
-      var q = document.createElement('p');
-      q.className = 'diff-empty';
-      q.textContent = '差分はありません';
-      container.appendChild(q);
-    }
+    container.appendChild(table);
+  }
+
+  /**
+   * 差分の1セルを作る。中身が無ければ空セルにして行の高さを揃える。
+   *
+   * @param {string|null} text
+   * @param {string} kind '' | 'del' | 'ins'
+   * @returns {HTMLElement}
+   */
+  function diffCell(text, kind) {
+    var cell = document.createElement('div');
+    cell.className = 'diff-cell' +
+      (text === null ? ' empty' : (kind ? ' ' + kind : ''));
+    cell.textContent = text === null ? '' : text;
+    return cell;
   }
 
   /**
@@ -429,6 +509,134 @@
     };
   }
 
+  /**
+   * PRの会話タブを描く。本文と、レビュー・コメントを時系列で並べる。
+   *
+   * 表示は textContent のみで組み立てる。他人が書いた文章を出すため
+   * innerHTML は使わない。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} container
+   */
+  function renderConversation(pr, container) {
+    var first = document.createElement('div');
+    first.className = 'comment';
+
+    var head = document.createElement('div');
+    head.className = 'comment-head';
+    head.textContent = pr.author + ' が作成';
+    first.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'comment-body';
+    body.textContent = pr.body || '(説明なし)';
+    first.appendChild(body);
+    container.appendChild(first);
+
+    google.script.run
+      .withSuccessHandler(function (reviews) {
+        var labels = {
+          approve: '承認', request_changes: '変更を要求', comment: 'コメント',
+        };
+
+        reviews.forEach(function (r) {
+          var el = document.createElement('div');
+          el.className = 'comment';
+
+          var h = document.createElement('div');
+          h.className = 'comment-head';
+          h.textContent = r.reviewer + ' · ' + (labels[r.state] || r.state);
+          el.appendChild(h);
+
+          if (r.body) {
+            var b = document.createElement('div');
+            b.className = 'comment-body';
+            b.textContent = r.body;
+            el.appendChild(b);
+          }
+          container.appendChild(el);
+        });
+
+        container.appendChild(makeCommentForm(pr));
+      })
+      .withFailureHandler(function (err) {
+        container.textContent = 'エラー: ' + err.message;
+      })
+      .apiPrReviews(pr.number);
+  }
+
+  /**
+   * コメント投稿欄を作る。
+   *
+   * @param {object} pr
+   * @returns {HTMLElement}
+   */
+  function makeCommentForm(pr) {
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder = 'コメントを書く';
+    form.appendChild(input);
+
+    var send = document.createElement('button');
+    send.className = 'btn';
+    send.textContent = '投稿';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+      google.script.run
+        .withSuccessHandler(function () { showPrDetail(pr); })
+        .withFailureHandler(function (err) {
+          send.disabled = false;
+          window.alert(err.message);
+        })
+        .apiPrReview(pr.number, 'comment', input.value);
+    });
+    form.appendChild(send);
+    return form;
+  }
+
+  /**
+   * PRのコミットタブを描く。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} container
+   */
+  function renderPrCommits(pr, container) {
+    container.textContent = '読み込み中…';
+
+    google.script.run
+      .withSuccessHandler(function (commits) {
+        container.textContent = '';
+        if (!commits.length) {
+          container.textContent = 'コミットはありません';
+          return;
+        }
+
+        commits.forEach(function (c) {
+          var row = document.createElement('div');
+          row.className = 'row-item';
+
+          var title = document.createElement('div');
+          title.className = 'row-title';
+          title.textContent = c.message;
+          row.appendChild(title);
+
+          var meta = document.createElement('div');
+          meta.className = 'row-meta';
+          meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author;
+          row.appendChild(meta);
+
+          container.appendChild(row);
+        });
+      })
+      .withFailureHandler(function (err) {
+        container.textContent = 'エラー: ' + err.message;
+      })
+      .apiPrCommits(pr.number);
+  }
+
   function showPrDetail(pr) {
     prDetail.textContent = '読み込み中…';
 
@@ -509,13 +717,38 @@
           prDetail.appendChild(actions);
         }
 
-        var diffHead = document.createElement('div');
-        diffHead.className = 'conflict-label';
-        diffHead.style.margin = '12px 0 6px';
-        diffHead.textContent = 'main に対する変更';
-        prDetail.appendChild(diffHead);
+        // 会話 / コミット / 変更ファイルの3タブ。承認とマージのボタンは
+        // タブの外に置いてあるため、どのタブを見ていても操作できる
+        var prTabs = document.createElement('div');
+        prTabs.className = 'pr-tabs';
+        var prBody = document.createElement('div');
 
-        renderDiffInto(preview.ops, prDetail, true);
+        var views = {
+          conversation: function () { renderConversation(pr, prBody); },
+          commits: function () { renderPrCommits(pr, prBody); },
+          files: function () { renderDiffInto(preview.ops, prBody, true); },
+        };
+
+        [['conversation', '会話'], ['commits', 'コミット'], ['files', '変更ファイル']]
+          .forEach(function (t) {
+            var b = document.createElement('button');
+            b.className = 'pr-tab';
+            b.textContent = t[1];
+            b.setAttribute('aria-current', String(t[0] === 'conversation'));
+            b.addEventListener('click', function () {
+              var all = prTabs.querySelectorAll('.pr-tab');
+              for (var i = 0; i < all.length; i++) {
+                all[i].setAttribute('aria-current', String(all[i] === b));
+              }
+              prBody.textContent = '';
+              views[t[0]]();
+            });
+            prTabs.appendChild(b);
+          });
+
+        prDetail.appendChild(prTabs);
+        prDetail.appendChild(prBody);
+        views.conversation();
       })
       .withFailureHandler(function (err) {
         prDetail.textContent = 'エラー: ' + err.message;
@@ -817,21 +1050,102 @@
       .apiProjectBoard();
   }
 
+  /**
+   * 論理パスをブランチ名と表示用パスに分ける。
+   *
+   * @param {string} path
+   * @returns {{branch:string, path:string}}
+   */
+  function splitPath(path) {
+    var m = /^branches\/([^\/]+)\/([\s\S]*)$/.exec(String(path || ''));
+    return m
+      ? { branch: m[1], path: m[2] }
+      : { branch: 'main', path: String(path || '') };
+  }
+
+  /**
+   * 元ファイルへのリンクを作る。
+   *
+   * @param {string} type
+   * @param {string} fileId
+   * @returns {HTMLElement}
+   */
+  function makeFileLink(type, fileId) {
+    var a = document.createElement('a');
+    a.className = 'file-link';
+    a.href = fileUrlOf(type, fileId);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '↗';
+    a.title = '元ファイルを開く';
+    return a;
+  }
+
   function renderFileList(files) {
+    allFiles = files;
+
+    var branches = { main: true };
+    files.forEach(function (f) { branches[splitPath(f.path).branch] = true; });
+
+    branchSelect.textContent = '';
+    Object.keys(branches).forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      if (name === currentBranch) opt.selected = true;
+      branchSelect.appendChild(opt);
+    });
+
+    renderTree();
+  }
+
+  function renderTree() {
     listEl.textContent = '';
-    if (files.length === 0) {
+
+    var shown = allFiles.filter(function (f) {
+      return splitPath(f.path).branch === currentBranch;
+    });
+
+    if (!shown.length) {
       var p = document.createElement('p');
-      p.style.cssText = 'padding:0 16px;color:#666;font-size:13px;';
-      p.textContent = '管理対象のファイルがありません。';
+      p.className = 'tree-dir';
+      p.textContent = 'このブランチにファイルはありません';
       listEl.appendChild(p);
       return;
     }
-    files.forEach(function (f) {
+
+    shown.sort(function (a, b) {
+      return splitPath(a.path).path < splitPath(b.path).path ? -1 : 1;
+    });
+
+    var lastDir = null;
+    shown.forEach(function (f) {
+      var rel = splitPath(f.path).path;
+      var cut = rel.lastIndexOf('/');
+      var dir = cut < 0 ? '' : rel.substring(0, cut);
+      var name = cut < 0 ? rel : rel.substring(cut + 1);
+
+      if (dir !== lastDir) {
+        lastDir = dir;
+        if (dir) {
+          var head = document.createElement('div');
+          head.className = 'tree-dir';
+          head.textContent = dir + '/';
+          listEl.appendChild(head);
+        }
+      }
+
+      var row = document.createElement('div');
+      row.className = 'tree-row';
+
       var btn = document.createElement('button');
-      btn.className = 'file-item';
-      btn.textContent = f.path;
+      btn.className = dir ? 'file-item nested' : 'file-item';
+      btn.textContent = name;
       btn.addEventListener('click', function () { selectFile(f.fileId, btn); });
-      listEl.appendChild(btn);
+      row.appendChild(btn);
+      row.appendChild(makeFileLink(f.type, f.fileId));
+
+      listEl.appendChild(row);
     });
   }
 
@@ -855,6 +1169,10 @@
   commitBtn.addEventListener('click', doCommit);
   branchCreateBtn.addEventListener('click', createBranch);
   issueCreateBtn.addEventListener('click', createIssue);
+  branchSelect.addEventListener('change', function () {
+    currentBranch = branchSelect.value;
+    renderTree();
+  });
   editSaveBtn.addEventListener('click', saveEditor);
   stashBtn.addEventListener('click', stashMainDrift);
 

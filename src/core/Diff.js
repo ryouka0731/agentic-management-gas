@@ -183,3 +183,44 @@ function diffLines(a, b) {
 function diffHtml(aHtml, bHtml) {
   return diffLines(splitLines(aHtml), splitLines(bHtml));
 }
+
+/**
+ * diff の ops を左右2列の行に組み替える。
+ *
+ * 連続する delete と insert は同じ行に対応付けて change にする。
+ * これをしないと「左が全部消えて右が全部足された」ようにしか見えず、
+ * どこが書き換わったのかが読めない。GitHub の split view と同じ挙動。
+ *
+ * @param {object[]} ops diffHtml が返す配列
+ * @returns {Array<{left:string|null, right:string|null, type:string}>}
+ */
+function diffPairs(ops) {
+  var out = [];
+  var dels = [];
+  var ins = [];
+
+  function flush() {
+    var n = Math.max(dels.length, ins.length);
+    for (var i = 0; i < n; i++) {
+      var left = i < dels.length ? dels[i] : null;
+      var right = i < ins.length ? ins[i] : null;
+      var type = (left !== null && right !== null)
+        ? 'change'
+        : (left !== null ? 'delete' : 'insert');
+      out.push({ left: left, right: right, type: type });
+    }
+    dels = [];
+    ins = [];
+  }
+
+  for (var i = 0; i < (ops || []).length; i++) {
+    var op = ops[i];
+    if (op.type === 'delete') { dels.push(op.line); continue; }
+    if (op.type === 'insert') { ins.push(op.line); continue; }
+
+    flush();
+    out.push({ left: op.line, right: op.line, type: 'equal' });
+  }
+  flush();
+  return out;
+}
