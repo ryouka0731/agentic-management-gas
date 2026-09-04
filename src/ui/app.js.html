@@ -466,8 +466,7 @@
           mergeBtn.disabled = !!(preview.problems && preview.problems.length > 0);
           mergeBtn.addEventListener('click', function () {
             if (!window.confirm(
-              'mainの文書を書き換えます。実行前にmainの現在の内容は' +
-              '自動でコミットされます。続けますか?'
+              'mainの文書をこのマージ結果で書き換えます。続けますか?'
             )) return;
             mergeBtn.disabled = true;
             google.script.run

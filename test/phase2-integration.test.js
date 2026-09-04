@@ -167,31 +167,47 @@ describe('Phase 2 統合: 書き戻しの安全機構', () => {
     expect(ctx.prGet(pr.number).state).not.toBe('merged');
   });
 
-  it('マージ前に main の未コミット変更が自動で退避される', () => {
+  it('コンフリクトがあっても、取得不能な画像は事前に問題として出る', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(
+      ctx, fake, mainFileId,
+      html([P1, '<p>第2条 勤務時間 (ブランチ側)</p>', P3, '<img data-sha="unavailable" alt="壊れた画像">']),
+      html([P1, '<p>第2条 勤務時間 (main側)</p>', P3])
+    );
+
+    const pr = ctx.prCreate('画像つきの改訂', '', '改訂', mainFileId);
+    const preview = ctx.prPreviewMerge(pr.number);
+
+    // ここが空だと UI のマージボタンが有効のままになり、
+    // 押した瞬間にサーバ側の検証で落ちる
+    expect(preview.clean).toBe(false);
+    expect(preview.problems.length).toBe(1);
+    expect(preview.problems[0]).toContain('実体を取得できない画像');
+  });
+
+  it('main に未コミットの変更があるとマージを拒否する', () => {
     const { ctx, fake, mainFileId } = setup();
     divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
 
     // main を直接編集し、コミットせずに放置する
-    fake._docs.set(mainFileId, html([P1, P2, P3, '<p>退避されるべき下書き</p>']));
+    const draft = html([P1, P2, P3, '<p>まだコミットしていない下書き</p>']);
+    fake._docs.set(mainFileId, draft);
 
     const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
     fake._setUser('reviewer@example.com');
     ctx.prReview(pr.number, 'approve', '');
     fake._setUser('tester@example.com');
-    ctx.prMerge(pr.number, ['theirs']);
 
-    const messages = ctx.commitHistory(mainFileId, 'main').map((c) => c.message);
-    expect(messages.some((m) => String(m).indexOf('自動退避') >= 0)).toBe(true);
+    // 未コミットの編集は3-way mergeに参加できないため、
+    // 書き戻しで黙って失わせずに手前で止める
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/mainに未コミットの変更があります/);
+    expect(fake._docs.get(mainFileId)).toBe(draft);
+    expect(ctx.prGet(pr.number).state).not.toBe('merged');
 
-    const stashed = ctx.commitHistory(mainFileId, 'main')
-      .filter((c) => String(c.message).indexOf('自動退避') >= 0)[0];
-    expect(ctx.objectGet(stashed.blobSha)).toContain('退避されるべき下書き');
-
-    // 契約を明示しておく: 退避した下書きは3-way mergeには参加しない。
-    // prMerge はコミット済みのHEADを ours として先にプレビューを計算し、
-    // そのあとで退避コミットを作るため、下書きはマージ結果に残らない。
-    // 失われるわけではなく、退避コミットから復元できる
-    expect(fake._docs.get(mainFileId)).not.toContain('退避されるべき下書き');
+    // main をコミットすればマージできる
+    ctx.commitFile(mainFileId, 'main', '下書きをコミット', null);
+    expect(() => ctx.prMerge(pr.number, ['theirs'])).not.toThrow();
+    expect(fake._docs.get(mainFileId)).toContain('第3条 休日');
   });
 });
 

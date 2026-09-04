@@ -148,11 +148,15 @@ function prPreviewMerge(number) {
 
   var result = merge3Html(baseHtml, oursHtml, theirsHtml);
 
-  // クリーンな場合のみ、書き戻せるかを事前検証する。
-  // コンフリクトがある場合は解決後に改めて検証する
   var problems = [];
   if (result.clean) {
     problems = htmlWriterValidate(parseBlocks(linesToHtml_(result.lines)));
+  } else {
+    // コンフリクトがあると解決後の内容が確定しないが、どちら側にも
+    // 実体を取得できない画像が無いことは今の時点で分かる。
+    // ここを空にすると UI がマージ可能に見えてしまい、押した瞬間に
+    // サーバ側の検証で落ちる。選択に依存しない問題だけ先に出す
+    problems = htmlWriterProblemsEitherSide_(oursHtml, theirsHtml);
   }
 
   return {
@@ -163,6 +167,32 @@ function prPreviewMerge(number) {
     mainFileId: mainFileId,
     oursHtml: oursHtml,
   };
+}
+
+/**
+ * ours / theirs のどちらかに含まれる、選択に依存しない書き戻しの問題を返す。
+ *
+ * 実体を取得できない画像は、どちらを採用しても結果に残りうるうえ、
+ * 残った時点で書き戻しが拒否される。コンフリクトの解決前でも
+ * 判定できるため、先に出しておく。
+ *
+ * @param {string} oursHtml
+ * @param {string} theirsHtml
+ * @returns {string[]}
+ */
+function htmlWriterProblemsEitherSide_(oursHtml, theirsHtml) {
+  var all = htmlWriterValidate(parseBlocks(oursHtml))
+    .concat(htmlWriterValidate(parseBlocks(theirsHtml)));
+  var out = [];
+  var seen = {};
+
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].indexOf('実体を取得できない画像') < 0) continue;
+    if (seen[all[i]]) continue;
+    seen[all[i]] = true;
+    out.push(all[i]);
+  }
+  return out;
 }
 
 /**
@@ -267,6 +297,20 @@ function prMerge(number, choices) {
       throw new Error('マージには1件以上の承認が必要です');
     }
 
+    // main に未コミットの変更があるうちはマージしない。
+    // マージ結果はコミット済みのHEADを ours として計算されるため、
+    // 未コミットの編集はマージに参加できず、書き戻しで黙って
+    // 上書きされてしまう。git が dirty な作業ツリーでのマージを
+    // 拒むのと同じ理由による
+    var targetFileId = prTargetFileId_(pr.body);
+    if (!targetFileId) throw new Error('PRの対象ファイルを特定できません');
+    if (fileStatus(targetFileId, 'main').dirty) {
+      throw new Error(
+        'mainに未コミットの変更があります。' +
+        '先にmainをコミットしてからマージしてください'
+      );
+    }
+
     var preview = prPreviewMerge(number);
     var mainFileId = preview.mainFileId;
 
@@ -285,8 +329,9 @@ function prMerge(number, choices) {
       throw new Error('マージ結果を書き戻せません:\n' + problems.join('\n'));
     }
 
-    // 書き戻す前に main の現在の状態を退避する。
-    // これが無いと、書き戻しで失われた内容を復元できない
+    // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
+    // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
+    // 通常は上の検査で弾かれるためここは通らない
     var status = fileStatus(mainFileId, 'main');
     if (status.dirty) {
       commitFile(mainFileId, 'main', 'PR #' + number + ' マージ前の自動退避', null);
