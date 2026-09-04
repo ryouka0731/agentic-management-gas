@@ -131,3 +131,32 @@ function dbUpdate(table, key, value, patch) {
   }
   return false;
 }
+
+/**
+ * 条件に一致する行をすべて削除する。
+ *
+ * 行番号は削除のたびにずれるため、必ず下から消す。
+ *
+ * @param {string} table
+ * @param {string} key
+ * @param {*} value
+ * @returns {number} 削除した行数
+ */
+function dbDelete(table, key, value) {
+  var cols = DB_SCHEMA()[table];
+  var sheet = dbSheet_(table);
+  var last = sheet.getLastRow();
+  if (last < 2) return 0;
+
+  var keyCol = cols.indexOf(key);
+  if (keyCol < 0) throw new Error('未定義のカラムです: ' + key);
+
+  var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
+  var deleted = 0;
+  for (var r = values.length - 1; r >= 0; r--) {
+    if (String(values[r][keyCol]) !== String(value)) continue;
+    sheet.deleteRow(r + 2);
+    deleted++;
+  }
+  return deleted;
+}

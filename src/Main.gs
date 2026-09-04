@@ -530,3 +530,216 @@ function debugDisableSelfApprove() {
   PropertiesService.getScriptProperties().deleteProperty('ALLOW_SELF_APPROVE');
   return '自己承認を禁止に戻しました';
 }
+
+/**
+ * 指定した書き出しで始まる段落を探し、本文を置き換える。
+ *
+ * 検証ハーネスが Doc を機械的に編集するために使う。
+ * 段落インデックスではなく本文の先頭一致で探すのは、レンダリング側の
+ * 空段落の扱いに依存させないため。
+ *
+ * @param {string} fileId
+ * @param {string} prefix 探す段落の先頭文字列
+ * @param {string} newText 置き換える本文
+ * @returns {boolean} 置き換えたら true
+ */
+function debugEditParagraph_(fileId, prefix, newText) {
+  var doc = DocumentApp.openById(fileId);
+  var paragraphs = doc.getBody().getParagraphs();
+  var hit = false;
+
+  for (var i = 0; i < paragraphs.length; i++) {
+    if (paragraphs[i].getText().indexOf(prefix) !== 0) continue;
+    paragraphs[i].setText(newText);
+    hit = true;
+    break;
+  }
+
+  doc.saveAndClose();
+  liveCacheInvalidate(fileId);
+  return hit;
+}
+
+/**
+ * 検証で作った Doc・ブランチ・PR・メタDBの行を片付ける。
+ *
+ * @param {string} tag ブランチ名 兼 検証タグ
+ * @param {string|null} mainFileId
+ * @param {string|null} workFileId
+ * @param {number|null} prNumber
+ */
+function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber) {
+  if (workFileId) {
+    try {
+      branchDelete(tag);
+    } catch (e) {
+      Logger.log('ブランチを削除できません: ' + e.message);
+    }
+    dbDelete('files', 'fileId', workFileId);
+    dbDelete('commits', 'fileId', workFileId);
+  }
+  dbDelete('branches', 'name', tag);
+
+  if (prNumber) {
+    dbDelete('pulls', 'number', prNumber);
+    dbDelete('reviews', 'prNumber', prNumber);
+  }
+
+  if (mainFileId) {
+    dbDelete('files', 'fileId', mainFileId);
+    dbDelete('commits', 'fileId', mainFileId);
+    try {
+      DriveApp.getFileById(mainFileId).setTrashed(true);
+    } catch (e2) {
+      Logger.log('検証用Docを削除できません: ' + e2.message);
+    }
+  }
+}
+
+/**
+ * Phase 2 の受け入れ検証をサーバ側で通しで実行する (計画書 Task 9 の Step 2/4)。
+ *
+ * 使い捨ての Doc を1つ作り、コンフリクトの発生 → 解決 → マージ →
+ * main への書き戻し → 楽観的並行制御までを一度に確認する。
+ * 既存の管理対象ファイルには一切触れない。
+ *
+ * 事前に debugEnableSelfApprove() を実行しておくこと
+ * (PR作成者と承認者が同一人物になるため)。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifyPhase2() {
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  var tag = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  var mainFileId = null;
+  var workFileId = null;
+  var prNumber = null;
+
+  try {
+    // --- 使い捨ての検証用 Doc を作り、main に登録して初期コミットする ---
+    var doc = DocumentApp.create('【Phase2検証】' + tag);
+    mainFileId = doc.getId();
+    var body = doc.getBody();
+    body.appendParagraph('第1条 目的');
+    body.appendParagraph('この文書は Phase 2 の自動検証のために作られた使い捨ての文書である。');
+    body.appendParagraph('第2条 勤務時間');
+    body.appendParagraph('始業は9時、終業は18時とする。');
+    doc.saveAndClose();
+
+    var file = DriveApp.getFileById(mainFileId);
+    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
+    DriveApp.getRootFolder().removeFile(file);
+
+    repoRegisterFile(mainFileId, tag + '.doc');
+    liveCacheInvalidate(mainFileId);
+    commitFile(mainFileId, 'main', '検証用ドキュメントの初期状態', null);
+    check('検証用Docをmainに登録して初期コミットできた', !!headCommit(mainFileId, 'main'));
+
+    // --- ブランチを作る (Doc の作業コピーができる) ---
+    branchCreate(tag, mainFileId);
+    workFileId = branchWorkingFileId(tag, mainFileId);
+    check('ブランチの作業コピーが作られた', !!workFileId, String(workFileId));
+
+    // --- 同じ行をブランチ側と main 側で別々に書き換える ---
+    check(
+      'ブランチ側の同一行を書き換えた',
+      debugEditParagraph_(workFileId, '第2条', '第2条 勤務時間 (ブランチ側の変更)')
+    );
+    commitFile(workFileId, tag, 'ブランチ側で勤務時間を変更', null);
+
+    check(
+      'main側の同一行を書き換えた',
+      debugEditParagraph_(mainFileId, '第2条', '第2条 勤務時間 (main側の変更)')
+    );
+    commitFile(mainFileId, 'main', 'main側で勤務時間を変更', null);
+
+    // --- PR を作り、コンフリクトとして検出されることを確認する ---
+    var pr = prCreate('検証PR ' + tag, '自動検証で作成', tag, mainFileId);
+    prNumber = pr.number;
+
+    var preview = prPreviewMerge(prNumber);
+    check(
+      '同一行の相反する変更がコンフリクトとして検出された',
+      preview.clean === false && preview.conflicts.length >= 1,
+      'clean=' + preview.clean + ' conflicts=' + preview.conflicts.length
+    );
+
+    // --- 取得不能な画像を含む書き戻しが拒否されることを確認する (Step 3 の中核) ---
+    var imgProblems = htmlWriterValidate([{ type: 'image', sha: 'unavailable', alt: 'x' }]);
+    check(
+      '実体を取得できない画像は書き戻し検証で拒否される',
+      imgProblems.length === 1 && imgProblems[0].indexOf('実体を取得できない画像') >= 0,
+      imgProblems.join(' / ')
+    );
+
+    // --- 承認する (自己承認の許可が要る) ---
+    prReview(prNumber, 'approve', '自動検証による承認');
+    check('承認が記録された', prApprovalCount(prNumber) >= 1);
+
+    // --- ブランチ側を採用してマージする ---
+    var shaBeforeMerge = headCommit(mainFileId, 'main').sha;
+    var choices = [];
+    for (var c = 0; c < preview.conflicts.length; c++) choices.push('theirs');
+    prMerge(prNumber, choices);
+
+    liveCacheInvalidate(mainFileId);
+    var merged = renderDoc(mainFileId);
+    check('mainにブランチ側の内容が書き戻された', merged.indexOf('ブランチ側の変更') >= 0);
+    check('main側の内容は採用されていない', merged.indexOf('main側の変更') < 0);
+    check('書き戻し後もfileIdが維持されている',
+      DriveApp.getFileById(mainFileId).getId() === mainFileId);
+    check('マージ後もmainの他の行が残っている', merged.indexOf('第1条 目的') >= 0);
+
+    // --- 楽観的並行制御: 古い headSha でのコミットは拒否される ---
+    debugEditParagraph_(mainFileId, '第1条', '第1条 目的 (並行制御の検証)');
+
+    var rejected = '';
+    try {
+      commitFile(mainFileId, 'main', '古いHEADからのコミット', shaBeforeMerge);
+    } catch (e3) {
+      rejected = e3.message;
+    }
+    check('古いHEADでのコミットが拒否された',
+      rejected.indexOf('HEADが進んでいます') >= 0, rejected);
+
+    var accepted = true;
+    var acceptedMsg = '';
+    try {
+      commitFile(mainFileId, 'main', '最新HEADからのコミット',
+        headCommit(mainFileId, 'main').sha);
+    } catch (e4) {
+      accepted = false;
+      acceptedMsg = e4.message;
+    }
+    check('最新HEADでのコミットは成功する', accepted, acceptedMsg);
+  } catch (e) {
+    failed++;
+    log.push('EXCEPTION ' + e.message);
+    log.push(String(e.stack || ''));
+  }
+
+  if (failed === 0) {
+    debugCleanupVerify_(tag, mainFileId, workFileId, prNumber);
+    log.push('検証物を片付けました (Doc・ブランチ・PR・メタDBの行)');
+  } else {
+    log.push(
+      '失敗したため検証物を残しました: doc=' + mainFileId +
+      ' branch=' + tag + ' pr=' + prNumber +
+      ' — 調査後に debugCleanupVerify_ で片付けること'
+    );
+  }
+
+  var summary = (failed === 0)
+    ? 'すべて PASS (' + log.length + '行)'
+    : failed + ' 件 FAIL';
+  Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
+  return summary;
+}

@@ -131,6 +131,8 @@ function branchDelete(name) {
     } catch (e) {
       Logger.log('作業コピーを削除できません: ' + e.message);
     }
+    // 行を残すと Wiki の一覧にゴミ箱の中のファイルが並び続ける
+    dbDelete('files', 'fileId', files[i].fileId);
   }
 
   try {
