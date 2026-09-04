@@ -3,7 +3,7 @@
 Google Workspace 上の文書に Git の概念（コミット / ブランチ / PR / Issue / Projects）を
 与えて管理するシステム。**GAS 標準サービスのみ**で構築され、外部 API を一切使用しない。
 
-## 現在の状態: Phase 2 実装完了 (実機検証待ち)
+## 現在の状態: Phase 2 完了
 
 Google Docs に対して commit / branch / Pull Request / 3-way merge が動作し、
 マージ結果を元の Doc に書き戻せる (fileId は維持されるため共有リンクは壊れない)。
@@ -12,14 +12,30 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 
 | 操作 | 状態 |
 |---|---|
-| コミット / 履歴 / 差分表示 | 実装済み |
-| `git status` 相当 (未コミット検出) | 実装済み |
-| ブランチ作成 (Doc の作業コピー) | 実装済み |
-| Pull Request / レビュー / 承認 | 実装済み |
-| 3-way merge | 実装済み |
-| コンフリクト解決 (ours / theirs / both) | 実装済み |
-| main への書き戻し | 実装済み |
-| 楽観的並行制御 (HEAD 検証) | 実装済み |
+| コミット / 履歴 / 差分表示 | 動作 |
+| `git status` 相当 (未コミット検出) | 動作 |
+| ブランチ作成 (Doc の作業コピー) | 動作 |
+| Pull Request / レビュー / 承認 | 動作 |
+| 3-way merge | 動作 |
+| コンフリクト解決 (ours / theirs / both) | 動作 |
+| main への書き戻し | 動作 |
+| 楽観的並行制御 (HEAD 検証) | 動作 |
+
+### Phase 2 で実機検証済みの項目
+
+GAS エディタから `debugVerifyPhase2()` を実行して確認した (2026-09-04)。
+使い捨ての Doc を1つ作り、通しで実行して**15項目すべて PASS**。
+
+| 項目 | 結果 |
+|---|---|
+| コンフリクト検出 | 同一行の相反する変更を `clean=false conflicts=1` として検出 |
+| コンフリクト解決とマージ | ブランチ側を採用してマージし、main に書き戻される |
+| fileId の維持 | 書き戻し後も同じ fileId が更新される (共有リンクが壊れない) |
+| 書き戻し拒否 | 実体を取得できない画像を含む書き戻しは実行前に拒否される |
+| 楽観的並行制御 | 古い headSha でのコミットは拒否され、最新なら通る |
+
+同じシナリオは `test/phase2-integration.test.js` (疑似GAS) にも落としてあり、
+以後は `npm test` で回帰を検出できる。
 
 ### 書き戻しの安全機構
 

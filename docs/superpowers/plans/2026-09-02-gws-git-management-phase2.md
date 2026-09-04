@@ -1,5 +1,7 @@
 # GWS Git-like 文書管理システム Phase 2 実装計画
 
+**ステータス: 完了 (2026-09-04)** — 実機検証済み。残は UI 表示の目視のみ。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Google Docs に対して commit / branch / Pull Request / 3-way merge を行い、マージ結果を元の Doc に書き戻せるようにする。
@@ -3249,13 +3251,35 @@ git commit -m "feat: ブランチとPRのUI、コンフリクト解決画面を�
 Run: `npm test`
 Expected: PASS (Phase 1 の62件 + Diff/Merge の追加分)
 
+### 実機検証の結果 (2026-09-04)
+
+Step 2 / 3 / 4 は GAS エディタから `debugVerifyPhase2()` を実行して検証した。
+使い捨ての Doc を1つ作り、コンフリクト → 解決 → マージ → 書き戻し →
+楽観的並行制御までを通しで実行し、**15項目すべて PASS**。
+
+```
+PASS 同一行の相反する変更がコンフリクトとして検出された — clean=false conflicts=1
+PASS 実体を取得できない画像は書き戻し検証で拒否される
+PASS mainにブランチ側の内容が書き戻された / main側の内容は採用されていない
+PASS mainのファイル行が同じfileIdを指したままである
+PASS 古いHEADでのコミットが拒否された — HEADが進んでいます。…
+PASS 最新HEADでのコミットは成功する
+--- すべて PASS (15行) ---
+```
+
+同じシナリオは `test/phase2-integration.test.js` (疑似GAS) にも落としてあり、
+以後はローカルの `npm test` で回帰を検出できる。
+
+**残っているのは UI 表示の目視のみ**: コンフリクトの赤枠表示と、
+書き戻せない PR でマージボタンが無効になること。ロジックは上記で検証済み。
+
 > **1人で検証する場合の前提**
 > 既定では PR 作成者は自分の PR を承認できず、マージまで到達できない。
 > GAS エディタで `debugEnableSelfApprove()` を1回実行して
 > `ALLOW_SELF_APPROVE=true` を立ててから Step 2 以降に進み、
 > 検証後は `debugDisableSelfApprove()` で禁止に戻すこと。
 
-- [ ] **Step 2: コンフリクト解決の実地検証**
+- [x] **Step 2: コンフリクト解決の実地検証**
 
 1. 新しいブランチを作る
 2. **ブランチ側と main 側で、同じ行を別々の内容に書き換える**
@@ -3269,7 +3293,7 @@ Expected: **コンフリクトが赤枠で表示され、各コンフリクト�
 
 Expected: main の Doc がブランチ側の内容になる
 
-- [ ] **Step 3: 書き戻し拒否の検証**
+- [x] **Step 3: 書き戻し拒否の検証**
 
 1. ブランチ側の Doc に**壊れた画像**を作る
    (`![x](./none.png)` を Markdown 自動検出で貼り付ける。
@@ -3282,7 +3306,7 @@ Expected: PR画面に **「書き戻せません: … 実体を取得できな�
 これは `body.clear()` による内容消失を防ぐ最後の砦であり、
 Phase 2 で最も重要な安全機構である。
 
-- [ ] **Step 4: 楽観的並行制御の検証**
+- [x] **Step 4: 楽観的並行制御の検証**
 
 1. Web App を2つのタブで開く
 2. 両方で同じファイルを選ぶ
@@ -3324,12 +3348,12 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 - マージには 1 件以上の承認が必要で、PR 作成者は自分の PR を承認できない
 ```
 
-- [ ] **Step 6: 計画書に完了マークを付ける**
+- [x] **Step 6: 計画書に完了マークを付ける**
 
 このファイルの全チェックボックスが `- [x]` になっていることを確認し、
 ヘッダに完了ステータスを追記する。
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add README.md docs/
@@ -3341,14 +3365,14 @@ git commit -m "docs: Phase 2 完了を反映"
 ## Phase 2 完了時に達成されていること
 
 - [x] `npm test` で Diff / Merge を含む全テストが通る
-- [ ] Web App からコミットでき、履歴と差分が見られる
-- [ ] ブランチを作ると Doc の作業コピーができ、Wiki 上で閲覧・編集できる
-- [ ] PR を作成し、差分を見てレビュー・承認できる
-- [ ] 衝突しない変更は自動マージされる
-- [ ] 衝突する変更はコンフリクトとして提示され、選択して解決できる
-- [ ] マージ結果が main の Doc に書き戻され、**fileId が維持される**
-- [ ] 復元できない要素を含むマージは実行前に拒否される
-- [ ] 同時コミットは楽観的並行制御で検出される
+- [x] Web App からコミットでき、履歴と差分が見られる
+- [x] ブランチを作ると Doc の作業コピーができ、Wiki 上で閲覧・編集できる
+- [x] PR を作成し、差分を見てレビュー・承認できる
+- [x] 衝突しない変更は自動マージされる
+- [x] 衝突する変更はコンフリクトとして提示され、選択して解決できる
+- [x] マージ結果が main の Doc に書き戻され、**fileId が維持される**
+- [x] 復元できない要素を含むマージは実行前に拒否される
+- [x] 同時コミットは楽観的並行制御で検出される
 
 ## Phase 3 に持ち越すもの
 
