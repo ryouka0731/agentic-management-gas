@@ -21,6 +21,7 @@ const SOURCES = [
   'src/render/HtmlWriter.gs',
   'src/core/PullRequest.gs',
   'src/core/Issue.gs',
+  'src/core/IssueBranch.gs',
 ];
 
 function setup() {
@@ -121,5 +122,47 @@ describe('Issue の CRUD', () => {
     ctx.issueCreate('古い', '', []);
     ctx.issueCreate('新しい', '', []);
     expect(ctx.issueList('').map((i) => i.title)).toEqual(['新しい', '古い']);
+  });
+});
+
+describe('Issue からのブランチ作成', () => {
+  it('issue-<番号>-<題名> の形で命名する', () => {
+    const { ctx } = setup();
+    expect(ctx.issueBranchName(12, '在宅勤務規定')).toBe('issue-12-在宅勤務規定');
+  });
+
+  it('ブランチ名に使えない文字を落とす', () => {
+    const { ctx } = setup();
+    expect(ctx.issueBranchName(3, '就業規則/第7条を「改訂」する!'))
+      .toBe('issue-3-就業規則第7条を改訂する');
+  });
+
+  it('長い題名は切り詰めて80文字以内にする', () => {
+    const { ctx } = setup();
+    const name = ctx.issueBranchName(1, 'あ'.repeat(200));
+    expect(name.length).toBeLessThanOrEqual(80);
+    expect(ctx.branchNameValid_(name)).toBe(true);
+  });
+
+  it('題名が全部落ちたら番号だけで名前を作る', () => {
+    const { ctx } = setup();
+    expect(ctx.issueBranchName(7, '!!!')).toBe('issue-7');
+  });
+
+  it('Issueからブランチを作ると作業コピーができる', () => {
+    const { ctx, fileId } = setup();
+    const issue = ctx.issueCreate('在宅勤務規定', '', [fileId]);
+    const branch = ctx.issueCreateBranch(issue.number, fileId);
+
+    expect(branch.name).toBe('issue-1-在宅勤務規定');
+    expect(ctx.branchWorkingFileId(branch.name, fileId)).toBeTruthy();
+  });
+
+  it('クローズ済みのIssueからはブランチを作れない', () => {
+    const { ctx, fileId } = setup();
+    const issue = ctx.issueCreate('改訂', '', [fileId]);
+    ctx.issueClose(issue.number, null);
+    expect(() => ctx.issueCreateBranch(issue.number, fileId))
+      .toThrow(/クローズ済みのIssueからはブランチを作れません/);
   });
 });
