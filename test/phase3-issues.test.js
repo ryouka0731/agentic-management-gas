@@ -22,6 +22,7 @@ const SOURCES = [
   'src/core/PullRequest.gs',
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
+  'src/core/Project.gs',
 ];
 
 function setup() {
@@ -164,5 +165,74 @@ describe('Issue からのブランチ作成', () => {
     ctx.issueClose(issue.number, null);
     expect(() => ctx.issueCreateBranch(issue.number, fileId))
       .toThrow(/クローズ済みのIssueからはブランチを作れません/);
+  });
+});
+
+describe('カンバンボード', () => {
+  it('置いたカードが Backlog に並ぶ', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('改訂', '', []);
+    ctx.projectPlace(issue.number, 'Backlog');
+
+    const board = ctx.projectBoard();
+    expect(board['Backlog'].length).toBe(1);
+    expect(board['Backlog'][0].issueNumber).toBe(issue.number);
+    expect(board['In Progress'].length).toBe(0);
+  });
+
+  it('列を移すと元の列から消える', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('改訂', '', []);
+    ctx.projectPlace(issue.number, 'Backlog');
+    ctx.projectMove(issue.number, 'In Progress', 0);
+
+    const board = ctx.projectBoard();
+    expect(board['Backlog'].length).toBe(0);
+    expect(board['In Progress'].length).toBe(1);
+  });
+
+  it('order の昇順で並ぶ', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('A', '', []);
+    const b = ctx.issueCreate('B', '', []);
+    ctx.projectPlace(a.number, 'Backlog');
+    ctx.projectPlace(b.number, 'Backlog');
+    ctx.projectMove(b.number, 'Backlog', 0);
+    ctx.projectMove(a.number, 'Backlog', 1);
+
+    expect(ctx.projectBoard()['Backlog'].map((c) => c.issueNumber))
+      .toEqual([b.number, a.number]);
+  });
+
+  it('定義されていない列には置けない', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('改訂', '', []);
+    expect(() => ctx.projectPlace(issue.number, 'Someday')).toThrow(/列が不正です/);
+    expect(() => ctx.projectMove(issue.number, 'Someday', 0)).toThrow(/列が不正です/);
+  });
+
+  it('存在しないIssueは置けない', () => {
+    const { ctx } = setup();
+    expect(() => ctx.projectPlace(99, 'Backlog')).toThrow(/Issueが見つかりません/);
+  });
+
+  it('二重に置いても増えない', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('改訂', '', []);
+    ctx.projectPlace(issue.number, 'Backlog');
+    ctx.projectPlace(issue.number, 'In Progress');
+
+    expect(ctx.projectBoard()['Backlog'].length).toBe(1);
+    expect(ctx.projectBoard()['In Progress'].length).toBe(0);
+  });
+
+  it('カードにはIssueの題名と状態が載る', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('在宅勤務規定を改訂', '', []);
+    ctx.projectPlace(issue.number, 'Backlog');
+
+    const card = ctx.projectBoard()['Backlog'][0];
+    expect(card.title).toBe('在宅勤務規定を改訂');
+    expect(card.state).toBe('open');
   });
 });
