@@ -123,7 +123,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ピュアロジックのユニットテスト
+npm test          # ユニットテスト + 疑似GASによる統合テスト (119件)
 npm run test:watch
 clasp push --force
 ```
@@ -142,15 +142,30 @@ src/core/Hash.js       ★ピュア  → ローカルテスト可
 src/core/Normalize.js  ★ピュア  → ローカルテスト可
 src/core/Diff.js       ★ピュア  → ローカルテスト可 (Myers 行diff)
 src/core/Merge.js      ★ピュア  → ローカルテスト可 (3-way merge)
-src/core/Db.gs         GAS依存  → Web App 上で確認
-src/core/Commit.gs     GAS依存  → Web App 上で確認
-src/core/Branch.gs     GAS依存  → Web App 上で確認
-src/core/PullRequest.gs GAS依存 → Web App 上で確認
-src/render/*.gs        GAS依存  → Web App 上で確認
+src/core/Db.gs         GAS依存  → 疑似GASで統合テスト可
+src/core/Repo.gs       GAS依存  → 疑似GASで統合テスト可
+src/core/Commit.gs     GAS依存  → 疑似GASで統合テスト可
+src/core/Branch.gs     GAS依存  → 疑似GASで統合テスト可
+src/core/PullRequest.gs GAS依存 → 疑似GASで統合テスト可
+src/render/*.gs        GAS依存  → 実機で確認 (DocumentApp 依存)
 ```
 
 diff / 3-way merge / HTML 正規化という、最もバグが出やすく、かつ
 システムの正しさを決定づけるロジックがすべてピュア側にある。
+
+### 疑似GASによる統合テスト
+
+`test/fakegas.js` が DriveApp / SpreadsheetApp / PropertiesService /
+Session / LockService / Utilities を最小限だけ再現する。これにより
+commit → branch → PR → 3-way merge → 書き戻しという**組み立ての層を
+ローカルで通しで実行**できる (`test/phase2-integration.test.js`)。
+
+Docs の描画と書き戻しだけは `fileId → 正規化HTML` の写像に差し替える。
+描画の忠実さは Phase 1 で実機検証済みで、ここで確かめたいのは
+「どの順序で、どの条件を満たしたときに書き戻すか」だから。
+
+このため**書き戻しのラウンドトリップ欠落だけはローカルでは検出できない**。
+そこは実機の `debugWriteRoundTrip()` と `test/roundtrip-check.js` が担う。
 
 ### 実際のDocでラウンドトリップを検証する
 

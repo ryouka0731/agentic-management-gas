@@ -13,7 +13,20 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
  * @returns {object} 評価後のグローバルコンテキスト
  */
 export function loadGas(...relativePaths) {
-  const context = vm.createContext({ console });
+  return loadGasWith({ console }, ...relativePaths);
+}
+
+/**
+ * loadGas と同じだが、GASのサービスを模したグローバルを注入できる。
+ * Commit / Branch / PullRequest のように DriveApp や SpreadsheetApp に
+ * 依存するコードを、ローカルで通しで動かすために使う。
+ *
+ * @param {object} globals vm コンテキストに置くグローバル
+ * @param {...string} relativePaths リポジトリルートからの相対パス
+ * @returns {object} 評価後のグローバルコンテキスト
+ */
+export function loadGasWith(globals, ...relativePaths) {
+  const context = vm.createContext(globals);
   for (const rel of relativePaths) {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     vm.runInContext(src, context, { filename: rel });

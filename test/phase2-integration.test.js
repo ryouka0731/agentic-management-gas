@@ -1,0 +1,262 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { loadGasWith } from './harness.js';
+import { createFakeGas } from './fakegas.js';
+
+/**
+ * Phase 2 の「組み立ての層」(commit / branch / PR / merge / 書き戻し) を
+ * ローカルで通しで実行する統合テスト。
+ *
+ * Docs の描画と書き戻しだけは fileId → 正規化HTML の写像に置き換える。
+ * 描画の忠実さは Phase 1 で実機検証済みで、ここで確かめたいのは
+ * 「どの順序で、どの条件を満たしたときに書き戻すか」だから。
+ */
+
+const SOURCES = [
+  'src/core/Hash.js',
+  'src/core/HashGas.gs',
+  'src/core/Db.gs',
+  'src/core/Repo.gs',
+  'src/core/ObjectStore.gs',
+  'src/core/Normalize.js',
+  'src/core/Diff.js',
+  'src/core/Merge.js',
+  'src/core/Commit.gs',
+  'src/core/Branch.gs',
+  'src/render/HtmlWriter.gs',
+  'src/core/PullRequest.gs',
+];
+
+const P1 = '<p>第1条 目的</p>';
+const P2 = '<p>第2条 勤務時間</p>';
+const P3 = '<p>始業は9時、終業は18時とする。</p>';
+
+/** @param {string[]} lines */
+function html(lines) {
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * リポジトリを初期化し、main に Doc を1つ登録して初期コミットまで進める。
+ */
+function setup() {
+  const fake = createFakeGas();
+  const ctx = loadGasWith(fake, ...SOURCES);
+
+  // Docs の入出力を差し替える。ここだけが実機と異なる
+  ctx.liveHtml = (fileId) => fake._docs.get(fileId) || '';
+  ctx.renderDoc = ctx.liveHtml;
+  ctx.writeHtmlToDoc = (fileId, h) => { fake._docs.set(fileId, h); };
+  ctx.liveCacheInvalidate = () => {};
+
+  const config = ctx.repoInit('agentic-management');
+  const mainFileId = fake._createDoc('就業規則', html([P1, P2, P3]), config.mainId);
+  ctx.repoRegisterFile(mainFileId, '就業規則.doc');
+  ctx.commitFile(mainFileId, 'main', '初期状態', null);
+
+  return { ctx, fake, mainFileId };
+}
+
+/**
+ * ブランチを作り、ブランチ側と main 側をそれぞれ書き換えてコミットする。
+ *
+ * @returns {{workFileId:string}}
+ */
+function divergeBranch(ctx, fake, mainFileId, branchHtml, mainHtml) {
+  ctx.branchCreate('改訂', mainFileId);
+  const workFileId = ctx.branchWorkingFileId('改訂', mainFileId);
+
+  fake._docs.set(workFileId, branchHtml);
+  ctx.commitFile(workFileId, '改訂', 'ブランチ側の変更', null);
+
+  if (mainHtml) {
+    fake._docs.set(mainFileId, mainHtml);
+    ctx.commitFile(mainFileId, 'main', 'main側の変更', null);
+  }
+  return { workFileId };
+}
+
+describe('Phase 2 統合: コミットからマージまで', () => {
+  it('同一行の相反する変更はコンフリクトになり、ブランチ側を選ぶと書き戻される', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(
+      ctx, fake, mainFileId,
+      html([P1, '<p>第2条 勤務時間 (ブランチ側)</p>', P3]),
+      html([P1, '<p>第2条 勤務時間 (main側)</p>', P3])
+    );
+
+    const pr = ctx.prCreate('勤務時間の改訂', '', '改訂', mainFileId);
+    const preview = ctx.prPreviewMerge(pr.number);
+
+    expect(preview.clean).toBe(false);
+    expect(preview.conflicts.length).toBe(1);
+
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '確認しました');
+    fake._setUser('tester@example.com');
+
+    ctx.prMerge(pr.number, ['theirs']);
+
+    const merged = fake._docs.get(mainFileId);
+    expect(merged).toContain('ブランチ側');
+    expect(merged).not.toContain('main側');
+    expect(merged).toContain('第1条 目的');
+  });
+
+  it('衝突しない変更は自動マージされる', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(
+      ctx, fake, mainFileId,
+      html([P1, P2, P3, '<p>第3条 休日</p>']),
+      null
+    );
+
+    const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
+    const preview = ctx.prPreviewMerge(pr.number);
+
+    expect(preview.clean).toBe(true);
+    expect(preview.problems).toEqual([]);
+
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    ctx.prMerge(pr.number, []);
+
+    expect(fake._docs.get(mainFileId)).toContain('第3条 休日');
+  });
+
+  it('マージ後も fileId が変わらない (共有リンクが壊れない)', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
+
+    const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    ctx.prMerge(pr.number, []);
+
+    expect(ctx.DriveApp.getFileById(mainFileId).getId()).toBe(mainFileId);
+    expect(ctx.headCommit(mainFileId, 'main').fileId).toBe(mainFileId);
+  });
+});
+
+describe('Phase 2 統合: 書き戻しの安全機構', () => {
+  it('実体を取得できない画像を含むマージは拒否され、main は書き換わらない', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(
+      ctx, fake, mainFileId,
+      html([P1, P2, P3, '<img data-sha="unavailable" alt="壊れた画像">']),
+      null
+    );
+
+    const pr = ctx.prCreate('画像を追加', '', '改訂', mainFileId);
+    const preview = ctx.prPreviewMerge(pr.number);
+    expect(preview.problems.length).toBe(1);
+    expect(preview.problems[0]).toContain('実体を取得できない画像');
+
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+
+    const before = fake._docs.get(mainFileId);
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/書き戻せません/);
+    expect(fake._docs.get(mainFileId)).toBe(before);
+    expect(ctx.prGet(pr.number).state).not.toBe('merged');
+  });
+
+  it('マージ前に main の未コミット変更が自動で退避される', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
+
+    // main を直接編集し、コミットせずに放置する
+    fake._docs.set(mainFileId, html([P1, P2, P3, '<p>退避されるべき下書き</p>']));
+
+    const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    ctx.prMerge(pr.number, ['theirs']);
+
+    const messages = ctx.commitHistory(mainFileId, 'main').map((c) => c.message);
+    expect(messages.some((m) => String(m).indexOf('自動退避') >= 0)).toBe(true);
+
+    const stashed = ctx.commitHistory(mainFileId, 'main')
+      .filter((c) => String(c.message).indexOf('自動退避') >= 0)[0];
+    expect(ctx.objectGet(stashed.blobSha)).toContain('退避されるべき下書き');
+  });
+});
+
+describe('Phase 2 統合: 楽観的並行制御', () => {
+  it('古い headSha でのコミットは拒否され、最新なら通る', () => {
+    const { ctx, fake, mainFileId } = setup();
+    const staleSha = ctx.headCommit(mainFileId, 'main').sha;
+
+    fake._docs.set(mainFileId, html([P1, P2, '<p>1回目の変更</p>']));
+    ctx.commitFile(mainFileId, 'main', '1回目', staleSha);
+
+    fake._docs.set(mainFileId, html([P1, P2, '<p>2回目の変更</p>']));
+    expect(() => ctx.commitFile(mainFileId, 'main', '2回目', staleSha))
+      .toThrow(/HEADが進んでいます/);
+
+    const current = ctx.headCommit(mainFileId, 'main').sha;
+    expect(() => ctx.commitFile(mainFileId, 'main', '2回目', current)).not.toThrow();
+  });
+
+  it('内容が変わっていなければ空コミットを作らない', () => {
+    const { ctx, mainFileId } = setup();
+    expect(() => ctx.commitFile(mainFileId, 'main', '変更なし', null))
+      .toThrow(/変更がありません/);
+  });
+});
+
+describe('Phase 2 統合: 承認のゲート', () => {
+  let env;
+  beforeEach(() => {
+    env = setup();
+    divergeBranch(env.ctx, env.fake, env.mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
+    env.pr = env.ctx.prCreate('第3条を追加', '', '改訂', env.mainFileId);
+  });
+
+  it('承認が0件ならマージできない', () => {
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/1件以上の承認/);
+  });
+
+  it('自己承認は既定で拒否される', () => {
+    expect(() => env.ctx.prReview(env.pr.number, 'approve', ''))
+      .toThrow(/自分が作成したPRは承認できません/);
+  });
+
+  it('ALLOW_SELF_APPROVE が true のときだけ自己承認できる', () => {
+    env.ctx.PropertiesService.getScriptProperties()
+      .setProperty('ALLOW_SELF_APPROVE', 'true');
+    expect(() => env.ctx.prReview(env.pr.number, 'approve', '')).not.toThrow();
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
+  });
+
+  it('マージ済みのPRは再度マージできない', () => {
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+    env.ctx.prMerge(env.pr.number, []);
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/既にマージ済み/);
+  });
+});
+
+describe('Phase 2 統合: ブランチの後始末', () => {
+  it('ブランチを削除すると作業コピーの files 行も消える', () => {
+    const { ctx, fake, mainFileId } = setup();
+    const { workFileId } = divergeBranch(
+      ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null
+    );
+
+    expect(ctx.dbFindOne('files', 'fileId', workFileId)).not.toBeNull();
+    ctx.branchDelete('改訂');
+
+    expect(ctx.dbFindOne('files', 'fileId', workFileId)).toBeNull();
+    expect(ctx.dbFindOne('branches', 'name', '改訂').state).toBe('deleted');
+  });
+
+  it('main ブランチは削除できない', () => {
+    const { ctx } = setup();
+    expect(() => ctx.branchDelete('main')).toThrow(/main ブランチは削除できません/);
+  });
+});
