@@ -26,9 +26,12 @@
         <button class="tab" data-tab="history">履歴</button>
         <button class="tab" data-tab="branches">ブランチ</button>
         <button class="tab" data-tab="pulls">プルリクエスト</button>
+        <button class="tab" data-tab="issues">Issue</button>
+        <button class="tab" data-tab="board">ボード</button>
       </div>
 
-      <div class="panel" id="panel-content" hidden>
+      <div class="panel panel-col" id="panel-content" hidden>
+        <div class="linked-issues" id="linked-issues" hidden></div>
         <iframe id="viewer" class="viewer" sandbox></iframe>
       </div>
 
@@ -48,6 +51,18 @@
       <div class="panel" id="panel-pulls" hidden>
         <div class="history-list" id="pr-list"></div>
         <div class="diff-view" id="pr-detail"></div>
+      </div>
+
+      <div class="panel panel-col" id="panel-issues" hidden>
+        <div class="panel-actions">
+          <button id="issue-create-btn" class="btn">Issueを作成</button>
+          <span class="row-meta">選択中の文書に紐づけて作成します</span>
+        </div>
+        <div class="list-area" id="issue-list"></div>
+      </div>
+
+      <div class="panel" id="panel-board" hidden>
+        <div class="board" id="board"></div>
       </div>
 
       <div id="empty" class="empty">左からファイルを選択してください</div>

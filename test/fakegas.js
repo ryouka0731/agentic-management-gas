@@ -136,6 +136,7 @@ export function createFakeGas() {
   }
 
   const spreadsheets = new Map();
+  const sentMails = [];
 
   const SpreadsheetApp = {
     create: (name) => {
@@ -205,6 +206,9 @@ export function createFakeGas() {
       getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }),
     },
     Logger: { log: () => {} },
+    GmailApp: {
+      sendEmail: (to, subject, body) => { sentMails.push({ to, subject, body }); },
+    },
 
     // テストから使う操作
     _docs: docs,
@@ -213,6 +217,7 @@ export function createFakeGas() {
       docs.set(f.getId(), html);
       return f.getId();
     },
+    _sentMails: () => sentMails,
     _setUser: (email) => { activeUser = email; },
     _getUser: () => activeUser,
   };

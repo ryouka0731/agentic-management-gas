@@ -21,6 +21,12 @@
   var branchCreateBtn = document.getElementById('branch-create-btn');
   var prListEl = document.getElementById('pr-list');
   var prDetail = document.getElementById('pr-detail');
+  var panelIssues = document.getElementById('panel-issues');
+  var panelBoard = document.getElementById('panel-board');
+  var issueListEl = document.getElementById('issue-list');
+  var issueCreateBtn = document.getElementById('issue-create-btn');
+  var boardEl = document.getElementById('board');
+  var linkedIssuesEl = document.getElementById('linked-issues');
 
   var current = { fileId: null, headSha: null, branch: 'main' };
 
@@ -152,10 +158,14 @@
     panelHistory.hidden = name !== 'history';
     panelBranches.hidden = name !== 'branches';
     panelPulls.hidden = name !== 'pulls';
+    panelIssues.hidden = name !== 'issues';
+    panelBoard.hidden = name !== 'board';
 
     if (name === 'history') loadHistory();
     else if (name === 'branches') loadBranches();
     else if (name === 'pulls') loadPulls();
+    else if (name === 'issues') loadIssues();
+    else if (name === 'board') loadBoard();
   }
 
   // ===== 履歴 =====
@@ -566,6 +576,7 @@
         openLink.href = res.url;
         openLink.hidden = false;
         renderIntoViewer(res.html);
+        loadLinkedIssues(fileId);
         switchTab('content');
         refreshStatus();
       })
@@ -573,6 +584,164 @@
         titleEl.textContent = 'エラー: ' + err.message;
       })
       .apiGetFileHtml(fileId);
+  }
+
+  // ===== Issue =====
+
+  /**
+   * 文書に紐づく open Issue をチップとして並べる。
+   * Issueが引けなくても本文の表示は妨げない。
+   *
+   * @param {string} fileId
+   */
+  function loadLinkedIssues(fileId) {
+    linkedIssuesEl.textContent = '';
+    linkedIssuesEl.hidden = true;
+
+    google.script.run
+      .withSuccessHandler(function (issues) {
+        if (!issues.length) return;
+        issues.forEach(function (issue) {
+          var chip = document.createElement('span');
+          chip.className = 'linked-issue';
+          chip.textContent = '#' + issue.number + ' ' + issue.title;
+          linkedIssuesEl.appendChild(chip);
+        });
+        linkedIssuesEl.hidden = false;
+      })
+      .withFailureHandler(function () {})
+      .apiIssuesForFile(fileId);
+  }
+
+  function loadIssues() {
+    issueListEl.textContent = '読み込み中…';
+
+    google.script.run
+      .withSuccessHandler(function (issues) {
+        issueListEl.textContent = '';
+        if (!issues.length) {
+          issueListEl.textContent = 'Issueはありません';
+          return;
+        }
+
+        issues.forEach(function (issue) {
+          var row = document.createElement('div');
+          row.className = 'row-item';
+
+          var title = document.createElement('div');
+          title.className = 'row-title';
+          title.textContent = '#' + issue.number + ' ' + issue.title;
+          row.appendChild(title);
+
+          var meta = document.createElement('div');
+          meta.className = 'row-meta';
+          meta.textContent = issue.state +
+            (issue.assignee ? ' · ' + issue.assignee : '') +
+            (issue.labels ? ' · ' + issue.labels : '');
+          row.appendChild(meta);
+
+          if (issue.state === 'open' && current.fileId) {
+            var branchBtn = document.createElement('button');
+            branchBtn.className = 'btn';
+            branchBtn.textContent = 'このIssueでブランチを作る';
+            branchBtn.addEventListener('click', function () {
+              branchBtn.disabled = true;
+              google.script.run
+                .withSuccessHandler(function (b) {
+                  window.alert('ブランチを作りました: ' + b.name);
+                  loadFiles();
+                  loadIssues();
+                })
+                .withFailureHandler(function (err) {
+                  branchBtn.disabled = false;
+                  window.alert(err.message);
+                })
+                .apiIssueCreateBranch(issue.number, current.fileId);
+            });
+            row.appendChild(branchBtn);
+          }
+
+          issueListEl.appendChild(row);
+        });
+      })
+      .withFailureHandler(function (err) {
+        issueListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiIssueList('');
+  }
+
+  function createIssue() {
+    var title = window.prompt('Issueのタイトルを入力してください');
+    if (!title) return;
+    var body = window.prompt('説明 (任意)') || '';
+
+    google.script.run
+      .withSuccessHandler(function () { loadIssues(); })
+      .withFailureHandler(function (err) { window.alert(err.message); })
+      .apiIssueCreate(title, body, current.fileId ? [current.fileId] : []);
+  }
+
+  // ===== ボード =====
+
+  function loadBoard() {
+    boardEl.textContent = '読み込み中…';
+
+    google.script.run
+      .withSuccessHandler(function (board) {
+        boardEl.textContent = '';
+        ['Backlog', 'In Progress', 'In Review', 'Done'].forEach(function (column) {
+          var col = document.createElement('div');
+          col.className = 'board-column';
+
+          var head = document.createElement('h3');
+          head.textContent = column + ' (' + board[column].length + ')';
+          col.appendChild(head);
+
+          col.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            col.classList.add('drop-target');
+          });
+          col.addEventListener('dragleave', function () {
+            col.classList.remove('drop-target');
+          });
+          col.addEventListener('drop', function (e) {
+            e.preventDefault();
+            col.classList.remove('drop-target');
+
+            var issueNumber = Number(e.dataTransfer.getData('text/plain'));
+            if (!issueNumber) return;
+
+            google.script.run
+              .withSuccessHandler(function () { loadBoard(); })
+              .withFailureHandler(function (err) { window.alert(err.message); })
+              .apiProjectMove(issueNumber, column, board[column].length);
+          });
+
+          board[column].forEach(function (card) {
+            var el = document.createElement('div');
+            el.className = 'board-card';
+            el.draggable = true;
+            el.textContent = '#' + card.issueNumber + ' ' + card.title;
+
+            el.addEventListener('dragstart', function (e) {
+              e.dataTransfer.setData('text/plain', String(card.issueNumber));
+            });
+
+            var meta = document.createElement('span');
+            meta.className = 'row-meta';
+            meta.textContent = card.assignee || '未割当';
+            el.appendChild(meta);
+
+            col.appendChild(el);
+          });
+
+          boardEl.appendChild(col);
+        });
+      })
+      .withFailureHandler(function (err) {
+        boardEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiProjectBoard();
   }
 
   function renderFileList(files) {
@@ -593,6 +762,15 @@
     });
   }
 
+  function loadFiles() {
+    google.script.run
+      .withSuccessHandler(renderFileList)
+      .withFailureHandler(function (err) {
+        listEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiListFiles();
+  }
+
   // ===== 初期化 =====
 
   var tabButtons = tabsEl.querySelectorAll('.tab');
@@ -603,12 +781,8 @@
   }
   commitBtn.addEventListener('click', doCommit);
   branchCreateBtn.addEventListener('click', createBranch);
+  issueCreateBtn.addEventListener('click', createIssue);
 
-  google.script.run
-    .withSuccessHandler(renderFileList)
-    .withFailureHandler(function (err) {
-      listEl.textContent = 'エラー: ' + err.message;
-    })
-    .apiListFiles();
+  loadFiles();
 })();
 </script>

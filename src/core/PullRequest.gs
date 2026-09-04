@@ -70,6 +70,15 @@ function prCreate(title, body, sourceBranch, mainFileId) {
     mergedAt: '',
   };
   dbAppend('pulls', row);
+
+  // PR本文の closes #N に対応するカードを In Review に動かす。
+  // 人が動かさなくても文書の状態変化がボードに反映される (spec §6.2)
+  var opened = prClosesIssues_(row.body);
+  for (var k = 0; k < opened.length; k++) {
+    projectMoveIfExists_(opened[k], 'In Review');
+  }
+
+  notifyPrCreated(row);
   return row;
 }
 
@@ -269,6 +278,21 @@ function prClosesIssues_(body) {
 }
 
 /**
+ * Issueが存在すればカードを動かす。存在しなければ何もしない。
+ *
+ * PR本文の closes #N は人が手で書くため、番号が間違っていることがある。
+ * 間違いでPR作成やマージを失敗させない。
+ *
+ * @param {number} issueNumber
+ * @param {string} column
+ */
+function projectMoveIfExists_(issueNumber, column) {
+  if (!dbFindOne('issues', 'number', issueNumber)) return;
+  var item = dbFindOne('project_items', 'issueNumber', issueNumber);
+  projectMove(issueNumber, column, item ? Number(item.order) : 0);
+}
+
+/**
  * PRをマージし、結果を main の Doc に書き戻す。
  *
  * 書き戻しは破壊的操作であるため、以下の順序を厳守する:
@@ -353,15 +377,15 @@ function prMerge(number, choices) {
     });
     dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
 
+    // closes #N のIssueを閉じ、カードを Done に動かす
     var issues = prClosesIssues_(pr.body);
     for (var i = 0; i < issues.length; i++) {
-      if (dbFindOne('issues', 'number', issues[i])) {
-        dbUpdate('issues', 'number', issues[i], {
-          state: 'closed',
-          closedAt: new Date(),
-        });
-      }
+      if (!dbFindOne('issues', 'number', issues[i])) continue;
+      issueClose(issues[i], number);
+      projectMoveIfExists_(issues[i], 'Done');
     }
+
+    notifyPrMerged(pr);
 
     return mergeCommit;
   } finally {

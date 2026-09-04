@@ -21,6 +21,17 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### Issue と Projects
+
+- Issue は文書に紐づく。Wiki で文書を開くと、その文書の open Issue が本文の上に並ぶ
+- Issue から 1 クリックでブランチを作れる (`issue-<番号>-<題名>` で自動命名)
+- PR 本文に `closes #N` と書くと、マージ時に Issue が閉じて PR 番号が記録される
+- カンバンは PR の状態変化で自動的に動く
+  (Issue作成 → Backlog、ブランチ作成 → In Progress、PR作成 → In Review、マージ → Done)
+- カードはドラッグ&ドロップでも動かせる
+- 通知は `Notifier.gs` の `notify()` に隔離してある。`UrlFetchApp` が解禁されたら
+  Google Chat Webhook に差し替えられる。通知の失敗は本処理を巻き戻さない
+
 ### Phase 2 で実機検証済みの項目
 
 GAS エディタから `debugVerifyPhase2()` を実行して確認した (2026-09-04)。
@@ -147,7 +158,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (122件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (155件)
 npm run test:watch
 clasp push --force
 ```
@@ -171,6 +182,9 @@ src/core/Repo.gs       GAS依存  → 疑似GASで統合テスト可
 src/core/Commit.gs     GAS依存  → 疑似GASで統合テスト可
 src/core/Branch.gs     GAS依存  → 疑似GASで統合テスト可
 src/core/PullRequest.gs GAS依存 → 疑似GASで統合テスト可
+src/core/Issue.gs      GAS依存  → 疑似GASで統合テスト可
+src/core/Project.gs    GAS依存  → 疑似GASで統合テスト可
+src/core/Notifier.gs   GAS依存  → 疑似GASで統合テスト可
 src/render/*.gs        GAS依存  → 実機で確認 (DocumentApp 依存)
 ```
 
@@ -225,4 +239,4 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
 | 2 | commit / branch / PR / merge / 書き戻し | 完了 |
 | **3a** | Sheets / Slides レンダラ | 計画済み |
-| **3b** | Issue / Projects | 計画済み |
+| **3b** | Issue / Projects | 実装完了・実機検証待ち |

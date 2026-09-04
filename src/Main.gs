@@ -531,6 +531,87 @@ function debugDisableSelfApprove() {
   return '自己承認を禁止に戻しました';
 }
 
+// ===== Phase 3b: Issue と Projects の API =====
+
+/**
+ * Issue一覧を返す (Web App API)。
+ *
+ * @param {string} state 'open' | 'closed' | '' (空なら全件)
+ * @returns {object[]}
+ */
+function apiIssueList(state) {
+  return issueList(state || null);
+}
+
+/**
+ * Issueを作成し、Backlog に置く (Web App API)。
+ *
+ * @param {string} title
+ * @param {string} body
+ * @param {string[]} linkedFileIds
+ * @returns {object}
+ */
+function apiIssueCreate(title, body, linkedFileIds) {
+  var issue = issueCreate(title, body, linkedFileIds || []);
+  projectPlace(issue.number, 'Backlog');
+  return issue;
+}
+
+/**
+ * Issueを更新する (Web App API)。
+ *
+ * @param {number} number
+ * @param {object} patch
+ * @returns {object}
+ */
+function apiIssueUpdate(number, patch) {
+  return issueUpdate(number, patch || {});
+}
+
+/**
+ * Issueからブランチを作り、カードを In Progress に動かす (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} fileId
+ * @returns {{name:string}}
+ */
+function apiIssueCreateBranch(number, fileId) {
+  var branch = issueCreateBranch(number, fileId);
+  projectMoveIfExists_(number, 'In Progress');
+  return { name: branch.name };
+}
+
+/**
+ * 文書に紐づく open Issue を返す (Web App API)。
+ *
+ * @param {string} fileId
+ * @returns {object[]}
+ */
+function apiIssuesForFile(fileId) {
+  return issuesForFile(fileId);
+}
+
+/**
+ * カンバンボードを返す (Web App API)。
+ *
+ * @returns {Object<string, object[]>}
+ */
+function apiProjectBoard() {
+  return projectBoard();
+}
+
+/**
+ * カードを動かす (Web App API)。
+ *
+ * @param {number} issueNumber
+ * @param {string} column
+ * @param {number} order
+ * @returns {object}
+ */
+function apiProjectMove(issueNumber, column, order) {
+  return projectMove(issueNumber, column, order);
+}
+
 /**
  * 直近の検証実行の記録を保存するスクリプトプロパティのキー。
  *
@@ -786,6 +867,142 @@ function debugVerifyPhase2() {
   var summary = (failed === 0)
     ? 'すべて PASS (' + log.length + '行)'
     : failed + ' 件 FAIL';
+  Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
+  return summary;
+}
+
+/**
+ * Phase 3b の受け入れ検証をサーバ側で通しで実行する。
+ *
+ * 使い捨ての Doc を1つ作り、Issue作成 → ボード配置 → ブランチ作成 →
+ * PR作成 → 承認 → マージ までを実行して、Issueのクローズとカードの
+ * 自動移動を判定する。既存の管理対象ファイルには触れない。
+ *
+ * 事前に debugEnableSelfApprove() を実行しておくこと。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifyPhase3b() {
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  function columnOf(board, issueNumber) {
+    var cols = PROJECT_COLUMNS();
+    for (var i = 0; i < cols.length; i++) {
+      for (var j = 0; j < board[cols[i]].length; j++) {
+        if (Number(board[cols[i]][j].issueNumber) === Number(issueNumber)) return cols[i];
+      }
+    }
+    return '(未配置)';
+  }
+
+  var tag = 'verify3b-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  var mainFileId = null;
+  var branchName = null;
+  var prNumber = null;
+  var issueNumber = null;
+
+  try {
+    var doc = DocumentApp.create('【Phase3b検証】' + tag);
+    mainFileId = doc.getId();
+    doc.getBody().appendParagraph('第1条 目的');
+    doc.saveAndClose();
+
+    var file = DriveApp.getFileById(mainFileId);
+    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
+    DriveApp.getRootFolder().removeFile(file);
+
+    repoRegisterFile(mainFileId, tag + '.doc');
+    liveCacheInvalidate(mainFileId);
+    commitFile(mainFileId, 'main', '検証用ドキュメントの初期状態', null);
+
+    // --- Issue を作ると Backlog に載る ---
+    var issue = apiIssueCreate('第3条を追加する', '自動検証', [mainFileId]);
+    issueNumber = issue.number;
+    check('Issueを作るとBacklogに載る',
+      columnOf(apiProjectBoard(), issueNumber) === 'Backlog',
+      columnOf(apiProjectBoard(), issueNumber));
+
+    check('文書に紐づくopen Issueとして引ける',
+      apiIssuesForFile(mainFileId).length === 1);
+
+    // --- Issue からブランチを作ると In Progress に動く ---
+    var branch = apiIssueCreateBranch(issueNumber, mainFileId);
+    branchName = branch.name;
+    check('ブランチ名がissue-<番号>-<題名>になる',
+      branchName === issueBranchName(issueNumber, issue.title), branchName);
+    check('ブランチ作成でIn Progressに動く',
+      columnOf(apiProjectBoard(), issueNumber) === 'In Progress',
+      columnOf(apiProjectBoard(), issueNumber));
+
+    // --- ブランチ側を編集してコミット ---
+    var workFileId = branchWorkingFileId(branchName, mainFileId);
+    debugEditParagraph_(workFileId, '第1条', '第1条 目的 (改訂)');
+    commitFile(workFileId, branchName, 'ブランチ側の変更', null);
+
+    // --- PR を作ると In Review に動く ---
+    var pr = prCreate('第3条を追加する', 'closes #' + issueNumber, branchName, mainFileId);
+    prNumber = pr.number;
+    check('PR作成でIn Reviewに動く',
+      columnOf(apiProjectBoard(), issueNumber) === 'In Review',
+      columnOf(apiProjectBoard(), issueNumber));
+
+    // --- マージすると Issue が閉じ、Done に動く ---
+    prReview(prNumber, 'approve', '自動検証による承認');
+    prMerge(prNumber, []);
+
+    check('マージでIssueがクローズされる', issueGet(issueNumber).state === 'closed');
+    check('IssueにPR番号が記録される',
+      Number(issueGet(issueNumber).linkedPr) === Number(prNumber));
+    check('マージでDoneに動く',
+      columnOf(apiProjectBoard(), issueNumber) === 'Done',
+      columnOf(apiProjectBoard(), issueNumber));
+    check('クローズ後は文書に紐づくopen Issueから消える',
+      apiIssuesForFile(mainFileId).length === 0);
+  } catch (e) {
+    failed++;
+    log.push('EXCEPTION ' + e.message);
+    log.push(String(e.stack || ''));
+  }
+
+  PropertiesService.getScriptProperties().setProperty(
+    LAST_VERIFY_RUN_KEY(),
+    JSON.stringify({
+      tag: branchName,
+      mainFileId: mainFileId,
+      workFileId: branchName ? branchWorkingFileId(branchName, mainFileId) : null,
+      prNumber: prNumber,
+    })
+  );
+
+  if (failed === 0) {
+    debugCleanupVerify_(
+      branchName,
+      mainFileId,
+      branchName ? branchWorkingFileId(branchName, mainFileId) : null,
+      prNumber
+    );
+    if (issueNumber) {
+      dbDelete('issues', 'number', issueNumber);
+      dbDelete('project_items', 'issueNumber', issueNumber);
+    }
+    PropertiesService.getScriptProperties().deleteProperty(LAST_VERIFY_RUN_KEY());
+    log.push('検証物を片付けました (Doc・ブランチ・PR・Issue・カード)');
+  } else {
+    log.push(
+      '失敗したため検証物を残しました: doc=' + mainFileId +
+      ' branch=' + branchName + ' pr=' + prNumber + ' issue=' + issueNumber +
+      ' — 調査後に debugCleanupLastVerify() を実行して片付けること'
+    );
+  }
+
+  var summary = (failed === 0) ? 'すべて PASS (' + log.length + '行)' : failed + ' 件 FAIL';
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
 }
