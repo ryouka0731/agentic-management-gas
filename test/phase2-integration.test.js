@@ -124,7 +124,7 @@ describe('Phase 2 統合: コミットからマージまで', () => {
     expect(fake._docs.get(mainFileId)).toContain('第3条 休日');
   });
 
-  it('マージ後も fileId が変わらない (共有リンクが壊れない)', () => {
+  it('マージ後も同じ fileId が更新される (共有リンクが壊れない)', () => {
     const { ctx, fake, mainFileId } = setup();
     divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
 
@@ -134,8 +134,12 @@ describe('Phase 2 統合: コミットからマージまで', () => {
     fake._setUser('tester@example.com');
     ctx.prMerge(pr.number, []);
 
-    expect(ctx.DriveApp.getFileById(mainFileId).getId()).toBe(mainFileId);
-    expect(ctx.headCommit(mainFileId, 'main').fileId).toBe(mainFileId);
+    // 別のDocに差し替わっていないこと。パスが指す fileId が変わらず、
+    // その fileId のDocが生きていて、マージ結果を持っていることを見る
+    const row = ctx.dbFindOne('files', 'path', '就業規則.doc');
+    expect(row.fileId).toBe(mainFileId);
+    expect(ctx.DriveApp.getFileById(mainFileId).isTrashed()).toBe(false);
+    expect(fake._docs.get(mainFileId)).toContain('第3条 休日');
   });
 });
 
@@ -182,6 +186,12 @@ describe('Phase 2 統合: 書き戻しの安全機構', () => {
     const stashed = ctx.commitHistory(mainFileId, 'main')
       .filter((c) => String(c.message).indexOf('自動退避') >= 0)[0];
     expect(ctx.objectGet(stashed.blobSha)).toContain('退避されるべき下書き');
+
+    // 契約を明示しておく: 退避した下書きは3-way mergeには参加しない。
+    // prMerge はコミット済みのHEADを ours として先にプレビューを計算し、
+    // そのあとで退避コミットを作るため、下書きはマージ結果に残らない。
+    // 失われるわけではなく、退避コミットから復元できる
+    expect(fake._docs.get(mainFileId)).not.toContain('退避されるべき下書き');
   });
 });
 
@@ -242,17 +252,45 @@ describe('Phase 2 統合: 承認のゲート', () => {
 });
 
 describe('Phase 2 統合: ブランチの後始末', () => {
-  it('ブランチを削除すると作業コピーの files 行も消える', () => {
+  it('ブランチを削除すると作業コピーが一覧から消える', () => {
     const { ctx, fake, mainFileId } = setup();
     const { workFileId } = divergeBranch(
       ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null
     );
 
-    expect(ctx.dbFindOne('files', 'fileId', workFileId)).not.toBeNull();
+    const before = ctx.filesVisibleInWiki().map((r) => r.fileId);
+    expect(before).toContain(workFileId);
+
     ctx.branchDelete('改訂');
 
-    expect(ctx.dbFindOne('files', 'fileId', workFileId)).toBeNull();
+    const after = ctx.filesVisibleInWiki().map((r) => r.fileId);
+    expect(after).not.toContain(workFileId);
+    expect(after).toContain(mainFileId);
     expect(ctx.dbFindOne('branches', 'name', '改訂').state).toBe('deleted');
+  });
+
+  it('ブランチを削除してもマージ済みPRを開ける', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
+
+    const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    ctx.prMerge(pr.number, []);
+
+    ctx.branchDelete('改訂');
+
+    // files 行を消すと branchWorkingFileId が解決できなくなり、
+    // 履歴として残るはずのPRが二度と開けなくなる
+    expect(() => ctx.prPreviewMerge(pr.number)).not.toThrow();
+  });
+
+  it('空の値では dbDelete できない', () => {
+    const { ctx } = setup();
+    expect(() => ctx.dbDelete('files', 'fileId', '')).toThrow(/削除条件の値が空です/);
+    expect(() => ctx.dbDelete('files', 'fileId', null)).toThrow(/削除条件の値が空です/);
+    expect(ctx.dbReadAll('files').length).toBe(1);
   });
 
   it('main ブランチは削除できない', () => {

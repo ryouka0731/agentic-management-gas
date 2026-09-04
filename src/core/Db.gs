@@ -143,6 +143,13 @@ function dbUpdate(table, key, value, patch) {
  * @returns {number} 削除した行数
  */
 function dbDelete(table, key, value) {
+  // 空の値を許すと「キー列が空の行」をまとめて消してしまう。
+  // メタDBは人が直接編集できるスプレッドシートであり、手で消された
+  // セルが1つあるだけで無関係な行まで巻き添えになる
+  if (value === '' || value === null || value === undefined) {
+    throw new Error('削除条件の値が空です: ' + table + '.' + key);
+  }
+
   var cols = DB_SCHEMA()[table];
   var sheet = dbSheet_(table);
   var last = sheet.getLastRow();

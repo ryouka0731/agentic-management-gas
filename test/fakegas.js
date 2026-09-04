@@ -40,7 +40,9 @@ export function createFakeGas() {
       isTrashed: () => f._trashed,
       getBlob: () => ({
         getDataAsString: () => f._content,
-        getBytes: () => Array.from(Buffer.from(String(f._content), 'utf8')),
+        // GAS の Blob.getBytes() は符号付き byte を返す
+        getBytes: () => Array.from(Buffer.from(String(f._content), 'utf8'))
+          .map((b) => (b > 127 ? b - 256 : b)),
       }),
       makeCopy: (newName, folder) => {
         const copy = makeFile(newName, f._content, folder.getId(), f._mime);
@@ -172,9 +174,14 @@ export function createFakeGas() {
     DigestAlgorithm: { SHA_256: 'SHA_256' },
     Charset: { UTF_8: 'UTF_8' },
     computeDigest: (_alg, content) => {
-      const buf = crypto.createHash('sha256')
-        .update(Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8'))
-        .digest();
+      // sha256HexBytes は符号付き byte の配列を渡してくる。
+      // String() 化すると "104,101,..." を hash してしまい実機と食い違う
+      var input;
+      if (Buffer.isBuffer(content)) input = content;
+      else if (Array.isArray(content)) input = Buffer.from(content.map((b) => b & 0xff));
+      else input = Buffer.from(String(content), 'utf8');
+
+      const buf = crypto.createHash('sha256').update(input).digest();
       // GAS は符号付き byte の配列を返す
       return Array.from(buf).map((b) => (b > 127 ? b - 256 : b));
     },

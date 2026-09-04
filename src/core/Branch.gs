@@ -131,8 +131,6 @@ function branchDelete(name) {
     } catch (e) {
       Logger.log('作業コピーを削除できません: ' + e.message);
     }
-    // 行を残すと Wiki の一覧にゴミ箱の中のファイルが並び続ける
-    dbDelete('files', 'fileId', files[i].fileId);
   }
 
   try {
@@ -142,4 +140,42 @@ function branchDelete(name) {
   }
 
   dbUpdate('branches', 'name', name, { state: 'deleted' });
+}
+
+/**
+ * 削除済みブランチ名の集合を返す。
+ *
+ * @returns {Object<string, boolean>}
+ */
+function branchDeletedNames() {
+  var rows = dbReadAll('branches');
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].state) === 'deleted') out[String(rows[i].name)] = true;
+  }
+  return out;
+}
+
+/**
+ * Wiki の一覧に出すファイル行を返す。
+ *
+ * 削除済みブランチの作業コピーは Drive 上ではゴミ箱に入っているため、
+ * 一覧から隠す。ただし files 行そのものは消さない。消すと
+ * branchWorkingFileId が解決できなくなり、そのブランチから作られた
+ * マージ済み PR を二度と開けなくなる (prPreviewMerge が作業コピーを
+ * 必要とするため)。
+ *
+ * @returns {object[]} files 行
+ */
+function filesVisibleInWiki() {
+  var deleted = branchDeletedNames();
+  var rows = dbReadAll('files');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    var m = /^branches\/([^\/]+)\//.exec(String(rows[i].path || ''));
+    if (m && deleted[m[1]]) continue;
+    out.push(rows[i]);
+  }
+  return out;
 }

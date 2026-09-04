@@ -40,7 +40,7 @@ function setupRepo() {
  * @returns {object[]} {fileId, path, type} の配列
  */
 function apiListFiles() {
-  var rows = dbReadAll('files');
+  var rows = filesVisibleInWiki();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     out.push({
@@ -532,6 +532,34 @@ function debugDisableSelfApprove() {
 }
 
 /**
+ * 直近の検証実行の記録を保存するスクリプトプロパティのキー。
+ *
+ * @returns {string}
+ */
+function LAST_VERIFY_RUN_KEY() {
+  return 'lastVerifyRun';
+}
+
+/**
+ * 直近の debugVerifyPhase2() が残した検証物を片付ける。
+ *
+ * 検証が失敗すると調査のために Doc・ブランチ・PR が残る。
+ * 末尾アンダースコアの関数は GAS エディタの実行対象に出ないため、
+ * 引数なしで呼べる入口をここに用意する。
+ *
+ * @returns {string}
+ */
+function debugCleanupLastVerify() {
+  var raw = PropertiesService.getScriptProperties().getProperty(LAST_VERIFY_RUN_KEY());
+  if (!raw) return '片付ける検証物はありません';
+
+  var run = JSON.parse(raw);
+  debugCleanupVerify_(run.tag, run.mainFileId, run.workFileId, run.prNumber);
+  PropertiesService.getScriptProperties().deleteProperty(LAST_VERIFY_RUN_KEY());
+  return '検証物を片付けました: ' + raw;
+}
+
+/**
  * 指定した書き出しで始まる段落を探し、本文を置き換える。
  *
  * 検証ハーネスが Doc を機械的に編集するために使う。
@@ -569,16 +597,21 @@ function debugEditParagraph_(fileId, prefix, newText) {
  * @param {number|null} prNumber
  */
 function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber) {
-  if (workFileId) {
+  // branchDelete は files 行を prefix で辿って作業コピーをゴミ箱に入れる。
+  // workFileId が解決できなかった場合こそ呼ぶ必要があるため、
+  // workFileId の有無で条件分岐してはいけない
+  if (tag && dbFindOne('branches', 'name', tag)) {
     try {
       branchDelete(tag);
     } catch (e) {
       Logger.log('ブランチを削除できません: ' + e.message);
     }
+  }
+  if (workFileId) {
     dbDelete('files', 'fileId', workFileId);
     dbDelete('commits', 'fileId', workFileId);
   }
-  dbDelete('branches', 'name', tag);
+  if (tag) dbDelete('branches', 'name', tag);
 
   if (prNumber) {
     dbDelete('pulls', 'number', prNumber);
@@ -694,8 +727,15 @@ function debugVerifyPhase2() {
     var merged = renderDoc(mainFileId);
     check('mainにブランチ側の内容が書き戻された', merged.indexOf('ブランチ側の変更') >= 0);
     check('main側の内容は採用されていない', merged.indexOf('main側の変更') < 0);
-    check('書き戻し後もfileIdが維持されている',
-      DriveApp.getFileById(mainFileId).getId() === mainFileId);
+    // getFileById(id).getId() === id は常に真なので検証にならない。
+    // 確かめたいのは「別のDocに差し替わっていないこと」なので、
+    // files 行が同じ fileId を指したままか、Doc が生きているかを見る
+    var fileRow = dbFindOne('files', 'fileId', mainFileId);
+    check('mainのファイル行が同じfileIdを指したままである',
+      !!fileRow && String(fileRow.path) === tag + '.doc',
+      fileRow ? String(fileRow.path) : '行なし');
+    check('書き戻し先のDocがゴミ箱に入っていない',
+      DriveApp.getFileById(mainFileId).isTrashed() === false);
     check('マージ後もmainの他の行が残っている', merged.indexOf('第1条 目的') >= 0);
 
     // --- 楽観的並行制御: 古い headSha でのコミットは拒否される ---
@@ -726,14 +766,20 @@ function debugVerifyPhase2() {
     log.push(String(e.stack || ''));
   }
 
+  PropertiesService.getScriptProperties().setProperty(
+    LAST_VERIFY_RUN_KEY(),
+    JSON.stringify({ tag: tag, mainFileId: mainFileId, workFileId: workFileId, prNumber: prNumber })
+  );
+
   if (failed === 0) {
     debugCleanupVerify_(tag, mainFileId, workFileId, prNumber);
+    PropertiesService.getScriptProperties().deleteProperty(LAST_VERIFY_RUN_KEY());
     log.push('検証物を片付けました (Doc・ブランチ・PR・メタDBの行)');
   } else {
     log.push(
       '失敗したため検証物を残しました: doc=' + mainFileId +
       ' branch=' + tag + ' pr=' + prNumber +
-      ' — 調査後に debugCleanupVerify_ で片付けること'
+      ' — 調査後に debugCleanupLastVerify() を実行して片付けること'
     );
   }
 
