@@ -206,6 +206,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [大規模版スケーリング構想](docs/superpowers/specs/2026-09-02-gws-git-management-scaling.md)
 - [Phase 1 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase1.md)
 - [Phase 2 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase2.md)
+- [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
+- [Phase 3b 実装計画 (Issue / Projects)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md)
 
 ## 制約
 
@@ -222,4 +224,5 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 |---|---|---|
 | 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
 | 2 | commit / branch / PR / merge / 書き戻し | 完了 |
-| **3** | Sheets / Slides レンダラ + Issue / Projects | 計画済み |
+| **3a** | Sheets / Slides レンダラ | 計画済み |
+| **3b** | Issue / Projects | 計画済み |
