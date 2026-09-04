@@ -1,5 +1,7 @@
 # Phase 4c (GitHub ライクな UI) 実装計画
 
+**ステータス: 実装完了 (2026-09-04)** — 残は実機での目視のみ。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** GitHub を使ったことがある人が説明なしで操作できる画面にする。
@@ -54,7 +56,7 @@
     GitHub の split view はこれをやるため、これが無いと「左が全部消えて
     右が全部足された」ようにしか見えない
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `test/diff.test.js` の末尾に追記する。
 
@@ -111,12 +113,12 @@ describe('diffPairs', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/diff.test.js`
 Expected: FAIL (`diffPairs is not defined`)
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 `src/core/Diff.js` の末尾に足す。
 
@@ -163,12 +165,12 @@ function diffPairs(ops) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Diff.js test/diff.test.js
@@ -190,7 +192,7 @@ git commit -m "feat: 差分を左右2列に組み替えるdiffPairsを追加"
 ファイル数だけ Drive を叩くことになる。URL は種別と fileId から決まるので、
 計算で出す。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -219,12 +221,12 @@ describe('fileUrlOf', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/fileurl.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -251,12 +253,12 @@ function fileUrlOf(type, fileId) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/FileUrl.js test/fileurl.test.js
@@ -276,7 +278,7 @@ git commit -m "feat: 元ファイルのURLを種別から作るfileUrlOfを追�
   - `apiPrReviews(number) -> object[]` (古い順。`{reviewer, state, body, at}`)
   - `apiPrCommits(number) -> object[]` (新しい順。`{sha, message, author, timestamp}`)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `test/phase4-edit.test.js` と同じ SOURCES / `setup()` を使う。
 
@@ -324,12 +326,12 @@ describe('PRの会話とコミット', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase4-ui.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 `src/Main.gs` の Phase 4b の API 群の後ろに足す。
 
@@ -387,12 +389,12 @@ function apiPrCommits(number) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/Main.gs test/phase4-ui.test.js
@@ -408,7 +410,7 @@ git commit -m "feat: PRの会話とコミット一覧のAPIを追加"
 - Modify: `src/ui/app.js.html`
 - Modify: `src/ui/app.css.html`
 
-- [ ] **Step 1: ブランチ選択を左ペインに足す**
+- [x] **Step 1: ブランチ選択を左ペインに足す**
 
 `wiki.html` のファイル一覧 (`id="file-list"`) の**直前**に足す。
 
@@ -418,7 +420,7 @@ git commit -m "feat: PRの会話とコミット一覧のAPIを追加"
         </div>
 ```
 
-- [ ] **Step 2: スタイルを足す**
+- [x] **Step 2: スタイルを足す**
 
 ```css
 .branch-switch { padding: 8px 12px; border-bottom: 1px solid var(--line); }
@@ -449,7 +451,7 @@ git commit -m "feat: PRの会話とコミット一覧のAPIを追加"
 }
 ```
 
-- [ ] **Step 3: ブランチで絞り込んでツリーに並べる**
+- [x] **Step 3: ブランチで絞り込んでツリーに並べる**
 
 `app.js.html` の `renderFileList` を差し替える。論理パスから
 ブランチ部分を取り除き、残りを `/` で階層化する。
@@ -579,7 +581,7 @@ git commit -m "feat: PRの会話とコミット一覧のAPIを追加"
   });
 ```
 
-- [ ] **Step 4: push して確認**
+- [x] **Step 4: push して確認**
 
 ```bash
 npx clasp push -f
@@ -589,7 +591,7 @@ npx clasp create-deployment -i <既存のデプロイID> -d "Phase 4c: ブラン
 Expected: 左上でブランチを選ぶと、そのブランチのファイルだけが出る。
 main を選ぶと元の一覧に戻る。各行の `↗` で元ファイルが開く
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/ui/
@@ -604,7 +606,7 @@ git commit -m "feat: 左ペインにブランチ切替とファイルツリー�
 - Modify: `src/ui/app.js.html`
 - Modify: `src/ui/app.css.html`
 
-- [ ] **Step 1: スタイルを足す**
+- [x] **Step 1: スタイルを足す**
 
 ```css
 .diff-split { display: table; width: 100%; border-collapse: collapse; }
@@ -628,7 +630,7 @@ git commit -m "feat: 左ペインにブランチ切替とファイルツリー�
 .diff-cell.empty { background: var(--bg-2); }
 ```
 
-- [ ] **Step 2: 描画関数を差し替える**
+- [x] **Step 2: 描画関数を差し替える**
 
 `renderDiffInto` を左右2列版に置き換える。**`textContent` のみを使う。**
 
@@ -689,12 +691,12 @@ git commit -m "feat: 左ペインにブランチ切替とファイルツリー�
 `diffPairs` もサーバ側の関数なので、**UI 側に同じ実装を写す**。
 Task 4 の `fileUrlOf` と同じ理由であり、同じくコメントで明記する。
 
-- [ ] **Step 3: push して確認**
+- [x] **Step 3: push して確認**
 
 Expected: 履歴の差分と PR の差分が左右2列になり、書き換わった行が
 左右に並んで見える
 
-- [ ] **Step 4: コミット**
+- [x] **Step 4: コミット**
 
 ```bash
 git add src/ui/
@@ -709,7 +711,7 @@ git commit -m "feat: 差分を左右2列で表示する"
 - Modify: `src/ui/app.js.html`
 - Modify: `src/ui/app.css.html`
 
-- [ ] **Step 1: スタイルを足す**
+- [x] **Step 1: スタイルを足す**
 
 ```css
 .pr-tabs { display: flex; gap: 4px; margin: 10px 0; }
@@ -749,7 +751,7 @@ git commit -m "feat: 差分を左右2列で表示する"
 }
 ```
 
-- [ ] **Step 2: showPrDetail を3タブ構成にする**
+- [x] **Step 2: showPrDetail を3タブ構成にする**
 
 タイトルとメタ情報の直後にタブを置き、その下に「会話 / コミット /
 変更ファイル」の中身を切り替えて出す。**操作ボタン (承認・マージ) は
@@ -789,7 +791,7 @@ git commit -m "feat: 差分を左右2列で表示する"
     views.conversation();
 ```
 
-- [ ] **Step 3: 会話タブを実装する**
+- [x] **Step 3: 会話タブを実装する**
 
 ```javascript
   function renderConversation(pr, container) {
@@ -862,7 +864,7 @@ git commit -m "feat: 差分を左右2列で表示する"
   }
 ```
 
-- [ ] **Step 4: コミットタブと変更ファイルタブを実装する**
+- [x] **Step 4: コミットタブと変更ファイルタブを実装する**
 
 ```javascript
   function renderPrCommits(pr, container) {
@@ -903,12 +905,12 @@ git commit -m "feat: 差分を左右2列で表示する"
   }
 ```
 
-- [ ] **Step 5: push して確認**
+- [x] **Step 5: push して確認**
 
 Expected: PR を開くと「会話 / コミット / 変更ファイル」が並び、
 会話にコメントを投稿できる。承認とマージのボタンはタブに関係なく見える
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/ui/
@@ -923,7 +925,7 @@ git commit -m "feat: PR詳細を会話・コミット・変更ファイルの3�
 - Modify: `README.md`
 - Modify: この計画書
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS
@@ -935,13 +937,13 @@ Expected: PASS
 3. PR を開き、3タブが動くこと、コメントを投稿できることを確認
 4. 各行の `↗` から元ファイルが開くことを確認
 
-- [ ] **Step 3: README を更新**
+- [x] **Step 3: README を更新**
 
 「現在の状態」に UI の節を足し、ロードマップの 4c を「実装完了」にする。
 
-- [ ] **Step 4: 計画書に完了マークを付ける**
+- [x] **Step 4: 計画書に完了マークを付ける**
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add README.md docs/

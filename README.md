@@ -21,6 +21,17 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### 画面
+
+GitHub を使ったことがあれば説明なしで操作できることを目標にしている。
+
+- 左ペインで**ブランチを切り替える**と、そのブランチのファイルだけがパスで
+  階層化されて並ぶ。各行の `↗` から元ファイル (Docs / Sheets / Slides) を開ける
+- 差分は**左右2列**。書き換わった行は左右に並ぶ
+- PR は**会話 / コミット / 変更ファイル**の3タブ。会話にコメントを投稿できる。
+  承認とマージのボタンはタブの外にあり、どのタブからでも操作できる
+- タブ構成は 本文 / 編集 / 履歴 / ブランチ / プルリクエスト / Issue / ボード
+
 ### アプリ内での編集と main の保護
 
 - ブランチ上の文書は**アプリ内で Markdown として編集**できる。保存しても
@@ -170,7 +181,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (191件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (205件)
 npm run test:watch
 clasp push --force
 ```
@@ -190,6 +201,7 @@ src/core/Normalize.js  ★ピュア  → ローカルテスト可
 src/core/Diff.js       ★ピュア  → ローカルテスト可 (Myers 行diff)
 src/core/Merge.js      ★ピュア  → ローカルテスト可 (3-way merge)
 src/core/Markdown.js   ★ピュア  → ローカルテスト可 (Markdown変換)
+src/core/FileUrl.js    ★ピュア  → ローカルテスト可 (元ファイルURL)
 src/core/Db.gs         GAS依存  → 疑似GASで統合テスト可
 src/core/Repo.gs       GAS依存  → 疑似GASで統合テスト可
 src/core/Commit.gs     GAS依存  → 疑似GASで統合テスト可
@@ -237,6 +249,7 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [Phase 3b 実装計画 (Issue / Projects)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md)
 - [Phase 4 設計仕様](docs/superpowers/specs/2026-09-04-gws-git-management-phase4-design.md)
 - [Phase 4b 実装計画 (Markdown編集 + main保護)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4b-markdown-edit.md)
+- [Phase 4c 実装計画 (GitHub ライクな UI)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4c-github-ui.md)
 
 ## 制約
 
@@ -256,6 +269,6 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | **3a** | Sheets / Slides レンダラ | 計画済み |
 | 3b | Issue / Projects | 実装完了・実機検証待ち |
 | **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
-| 4c | GitHub ライクな UI | 計画待ち |
+| **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |
 | 4a | コマンドキュー (ローカル連携) | 計画待ち |
 | 4d | アプリ内ガイド | 計画待ち |
