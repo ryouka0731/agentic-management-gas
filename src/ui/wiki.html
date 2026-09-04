@@ -18,11 +18,13 @@
         <span id="dirty-badge" class="badge" hidden>未コミットの変更</span>
         <span class="spacer"></span>
         <button id="commit-btn" class="btn" hidden>コミット</button>
+        <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>Google ドキュメントで開く</a>
       </div>
 
       <div class="tabs" id="tabs" hidden>
         <button class="tab" data-tab="content" aria-current="true">本文</button>
+        <button class="tab" data-tab="edit">編集</button>
         <button class="tab" data-tab="history">履歴</button>
         <button class="tab" data-tab="branches">ブランチ</button>
         <button class="tab" data-tab="pulls">プルリクエスト</button>
@@ -33,6 +35,14 @@
       <div class="panel panel-col" id="panel-content" hidden>
         <div class="linked-issues" id="linked-issues" hidden></div>
         <iframe id="viewer" class="viewer" sandbox></iframe>
+      </div>
+
+      <div class="panel panel-col" id="panel-edit" hidden>
+        <div class="panel-actions">
+          <button id="edit-save-btn" class="btn">保存</button>
+          <span class="row-meta" id="edit-hint"></span>
+        </div>
+        <textarea id="editor" class="editor" spellcheck="false"></textarea>
       </div>
 
       <div class="panel" id="panel-history" hidden>

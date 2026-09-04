@@ -27,6 +27,11 @@
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
   var linkedIssuesEl = document.getElementById('linked-issues');
+  var panelEdit = document.getElementById('panel-edit');
+  var editorEl = document.getElementById('editor');
+  var editSaveBtn = document.getElementById('edit-save-btn');
+  var editHint = document.getElementById('edit-hint');
+  var stashBtn = document.getElementById('stash-btn');
 
   var current = { fileId: null, headSha: null, branch: 'main' };
 
@@ -155,6 +160,7 @@
       tabs[i].setAttribute('aria-current', String(tabs[i].dataset.tab === name));
     }
     panelContent.hidden = name !== 'content';
+    panelEdit.hidden = name !== 'edit';
     panelHistory.hidden = name !== 'history';
     panelBranches.hidden = name !== 'branches';
     panelPulls.hidden = name !== 'pulls';
@@ -166,6 +172,7 @@
     else if (name === 'pulls') loadPulls();
     else if (name === 'issues') loadIssues();
     else if (name === 'board') loadBoard();
+    else if (name === 'edit') loadEditor();
   }
 
   // ===== 履歴 =====
@@ -236,7 +243,12 @@
         branchChip.textContent = st.branch;
         branchChip.hidden = false;
         dirtyBadge.hidden = !st.dirty;
-        commitBtn.hidden = !st.dirty;
+
+        // main は保護されているため通常のコミットはできない。
+        // 代わりに直接編集を記録するための退避ボタンを出す
+        var isMain = st.branch === 'main';
+        commitBtn.hidden = isMain || !st.dirty;
+        stashBtn.hidden = !isMain || !st.dirty;
       })
       .withFailureHandler(function () { /* 状態表示の失敗は致命的ではない */ })
       .apiFileStatus(current.fileId);
@@ -586,6 +598,67 @@
       .apiGetFileHtml(fileId);
   }
 
+  // ===== 編集 =====
+
+  function loadEditor() {
+    if (!current.fileId) return;
+
+    editorEl.value = '読み込み中…';
+    editorEl.disabled = true;
+    editSaveBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        editorEl.value = res.markdown;
+        editorEl.disabled = !res.editable;
+        editSaveBtn.disabled = !res.editable;
+        editHint.textContent = res.editable
+          ? 'Markdownで編集できます。保存してもコミットはされません'
+          : 'mainは保護されています。ブランチを作って編集してください';
+      })
+      .withFailureHandler(function (err) {
+        editorEl.value = '';
+        editHint.textContent = 'エラー: ' + err.message;
+      })
+      .apiGetMarkdown(current.fileId);
+  }
+
+  function saveEditor() {
+    editSaveBtn.disabled = true;
+    editHint.textContent = '保存中…';
+
+    google.script.run
+      .withSuccessHandler(function () {
+        editSaveBtn.disabled = false;
+        editHint.textContent = '保存しました。コミットは「本文」タブから';
+        refreshStatus();
+      })
+      .withFailureHandler(function (err) {
+        editSaveBtn.disabled = false;
+        editHint.textContent = '';
+        window.alert(err.message);
+      })
+      .apiSaveMarkdown(current.fileId, editorEl.value);
+  }
+
+  function stashMainDrift() {
+    if (!window.confirm(
+      'mainをDocs上で直接編集した分を、退避用のコミットとして記録します。続けますか?'
+    )) return;
+
+    stashBtn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function () {
+        stashBtn.disabled = false;
+        refreshStatus();
+      })
+      .withFailureHandler(function (err) {
+        stashBtn.disabled = false;
+        window.alert(err.message);
+      })
+      .apiStashMainDrift(current.fileId);
+  }
+
   // ===== Issue =====
 
   /**
@@ -782,6 +855,8 @@
   commitBtn.addEventListener('click', doCommit);
   branchCreateBtn.addEventListener('click', createBranch);
   issueCreateBtn.addEventListener('click', createIssue);
+  editSaveBtn.addEventListener('click', saveEditor);
+  stashBtn.addEventListener('click', stashMainDrift);
 
   loadFiles();
 })();
