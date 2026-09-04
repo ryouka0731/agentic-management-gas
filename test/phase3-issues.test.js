@@ -236,3 +236,79 @@ describe('カンバンボード', () => {
     expect(card.state).toBe('open');
   });
 });
+
+describe('PRの状態変化がボードとIssueを動かす', () => {
+  function prepare() {
+    const env = setup();
+    const issue = env.ctx.issueCreate('第3条を追加', '', [env.fileId]);
+    env.ctx.projectPlace(issue.number, 'Backlog');
+    env.ctx.issueCreateBranch(issue.number, env.fileId);
+
+    const branchName = env.ctx.issueBranchName(issue.number, issue.title);
+    const workFileId = env.ctx.branchWorkingFileId(branchName, env.fileId);
+    env.fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条 休日</p>\n');
+    env.ctx.commitFile(workFileId, branchName, '第3条を追加', null);
+
+    return Object.assign(env, { issue: issue, branchName: branchName });
+  }
+
+  function approveAndMerge(env, pr) {
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+    env.ctx.prMerge(pr.number, []);
+  }
+
+  it('PRを作ると In Review に動く', () => {
+    const env = prepare();
+    env.ctx.prCreate('第3条を追加', 'closes #' + env.issue.number,
+      env.branchName, env.fileId);
+
+    expect(env.ctx.projectBoard()['In Review'].length).toBe(1);
+    expect(env.ctx.projectBoard()['Backlog'].length).toBe(0);
+  });
+
+  it('マージすると Issue が閉じ、Done に動く', () => {
+    const env = prepare();
+    const pr = env.ctx.prCreate('第3条を追加', 'closes #' + env.issue.number,
+      env.branchName, env.fileId);
+    approveAndMerge(env, pr);
+
+    expect(env.ctx.issueGet(env.issue.number).state).toBe('closed');
+    expect(env.ctx.issueGet(env.issue.number).linkedPr).toBe(pr.number);
+    expect(env.ctx.projectBoard()['Done'].length).toBe(1);
+  });
+
+  it('closes 記法が無ければ Issue は閉じない', () => {
+    const env = prepare();
+    const pr = env.ctx.prCreate('第3条を追加', '', env.branchName, env.fileId);
+    approveAndMerge(env, pr);
+
+    expect(env.ctx.issueGet(env.issue.number).state).toBe('open');
+    expect(env.ctx.projectBoard()['Backlog'].length).toBe(1);
+  });
+
+  it('存在しないIssue番号を closes に書いてもPR作成とマージが失敗しない', () => {
+    const env = prepare();
+    const pr = env.ctx.prCreate('第3条を追加', 'closes #999',
+      env.branchName, env.fileId);
+    expect(() => approveAndMerge(env, pr)).not.toThrow();
+  });
+
+  it('ボードに未配置のIssueでもマージで Done に載る', () => {
+    const env = setup();
+    const issue = env.ctx.issueCreate('第3条を追加', '', [env.fileId]);
+    env.ctx.issueCreateBranch(issue.number, env.fileId);
+
+    const branchName = env.ctx.issueBranchName(issue.number, issue.title);
+    const workFileId = env.ctx.branchWorkingFileId(branchName, env.fileId);
+    env.fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条 休日</p>\n');
+    env.ctx.commitFile(workFileId, branchName, '第3条を追加', null);
+
+    const pr = env.ctx.prCreate('第3条を追加', 'closes #' + issue.number,
+      branchName, env.fileId);
+    approveAndMerge(env, pr);
+
+    expect(env.ctx.projectBoard()['Done'].length).toBe(1);
+  });
+});
