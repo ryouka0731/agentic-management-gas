@@ -23,6 +23,7 @@ const SOURCES = [
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',
+  'src/core/Notifier.gs',
 ];
 
 function setup() {
@@ -310,5 +311,56 @@ describe('PRの状態変化がボードとIssueを動かす', () => {
     approveAndMerge(env, pr);
 
     expect(env.ctx.projectBoard()['Done'].length).toBe(1);
+  });
+});
+
+describe('通知', () => {
+  it('宛先が空なら送らない', () => {
+    const { ctx, fake } = setup();
+    ctx.notify('', '件名', '本文');
+    expect(fake._sentMails().length).toBe(0);
+  });
+
+  it('通知に失敗してもエラーを投げない', () => {
+    const { ctx } = setup();
+    ctx.GmailApp.sendEmail = () => { throw new Error('quota exceeded'); };
+    expect(() => ctx.notify('a@example.com', '件名', '本文')).not.toThrow();
+  });
+
+  it('PR作成で作成者に通知が飛ぶ', () => {
+    const { ctx, fake } = setup();
+    ctx.notifyPrCreated({ number: 3, title: '改訂', author: 'a@example.com' });
+
+    const mails = fake._sentMails();
+    expect(mails.length).toBe(1);
+    expect(mails[0].to).toBe('a@example.com');
+    expect(mails[0].subject).toContain('PR #3');
+  });
+
+  it('PRマージで通知が飛ぶ', () => {
+    const { ctx, fake } = setup();
+    ctx.notifyPrMerged({ number: 3, title: '改訂', author: 'a@example.com' });
+
+    const mails = fake._sentMails();
+    expect(mails[0].subject).toContain('マージされました');
+  });
+
+  it('PR作成とマージの一連の流れで2通届く', () => {
+    const env = setup();
+    const issue = env.ctx.issueCreate('第3条を追加', '', [env.fileId]);
+    env.ctx.issueCreateBranch(issue.number, env.fileId);
+
+    const branchName = env.ctx.issueBranchName(issue.number, issue.title);
+    const workFileId = env.ctx.branchWorkingFileId(branchName, env.fileId);
+    env.fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条 休日</p>\n');
+    env.ctx.commitFile(workFileId, branchName, '第3条を追加', null);
+
+    const pr = env.ctx.prCreate('第3条を追加', '', branchName, env.fileId);
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+    env.ctx.prMerge(pr.number, []);
+
+    expect(env.fake._sentMails().length).toBe(2);
   });
 });

@@ -78,6 +78,7 @@ function prCreate(title, body, sourceBranch, mainFileId) {
     projectMoveIfExists_(opened[k], 'In Review');
   }
 
+  notifyPrCreated(row);
   return row;
 }
 
@@ -383,6 +384,8 @@ function prMerge(number, choices) {
       issueClose(issues[i], number);
       projectMoveIfExists_(issues[i], 'Done');
     }
+
+    notifyPrMerged(pr);
 
     return mergeCommit;
   } finally {
