@@ -241,6 +241,60 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
 }
 
+.linked-issues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.linked-issue {
+  font-size: 12px;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  align-items: start;
+}
+
+.board-column {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 80px;
+}
+
+.board-column h3 {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 0 0 8px;
+}
+
+.board-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: grab;
+}
+
+.board-card .row-meta { display: block; margin-top: 4px; }
+
+.board-column.drop-target { border-color: var(--accent); }
+
 .conflict-block {
   border: 1px solid #fca5a5;
   border-radius: 4px;

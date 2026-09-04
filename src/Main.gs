@@ -531,6 +531,87 @@ function debugDisableSelfApprove() {
   return '自己承認を禁止に戻しました';
 }
 
+// ===== Phase 3b: Issue と Projects の API =====
+
+/**
+ * Issue一覧を返す (Web App API)。
+ *
+ * @param {string} state 'open' | 'closed' | '' (空なら全件)
+ * @returns {object[]}
+ */
+function apiIssueList(state) {
+  return issueList(state || null);
+}
+
+/**
+ * Issueを作成し、Backlog に置く (Web App API)。
+ *
+ * @param {string} title
+ * @param {string} body
+ * @param {string[]} linkedFileIds
+ * @returns {object}
+ */
+function apiIssueCreate(title, body, linkedFileIds) {
+  var issue = issueCreate(title, body, linkedFileIds || []);
+  projectPlace(issue.number, 'Backlog');
+  return issue;
+}
+
+/**
+ * Issueを更新する (Web App API)。
+ *
+ * @param {number} number
+ * @param {object} patch
+ * @returns {object}
+ */
+function apiIssueUpdate(number, patch) {
+  return issueUpdate(number, patch || {});
+}
+
+/**
+ * Issueからブランチを作り、カードを In Progress に動かす (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} fileId
+ * @returns {{name:string}}
+ */
+function apiIssueCreateBranch(number, fileId) {
+  var branch = issueCreateBranch(number, fileId);
+  projectMoveIfExists_(number, 'In Progress');
+  return { name: branch.name };
+}
+
+/**
+ * 文書に紐づく open Issue を返す (Web App API)。
+ *
+ * @param {string} fileId
+ * @returns {object[]}
+ */
+function apiIssuesForFile(fileId) {
+  return issuesForFile(fileId);
+}
+
+/**
+ * カンバンボードを返す (Web App API)。
+ *
+ * @returns {Object<string, object[]>}
+ */
+function apiProjectBoard() {
+  return projectBoard();
+}
+
+/**
+ * カードを動かす (Web App API)。
+ *
+ * @param {number} issueNumber
+ * @param {string} column
+ * @param {number} order
+ * @returns {object}
+ */
+function apiProjectMove(issueNumber, column, order) {
+  return projectMove(issueNumber, column, order);
+}
+
 /**
  * 直近の検証実行の記録を保存するスクリプトプロパティのキー。
  *
