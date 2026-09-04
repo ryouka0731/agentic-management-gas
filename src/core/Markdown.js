@@ -141,3 +141,180 @@ function blocksToMd(blocks) {
   }
   return out ? out + '\n' : '';
 }
+
+/**
+ * 先頭の装飾を1つ剥がし、中身を再帰的に解析する。
+ *
+ * @param {string} rest
+ * @returns {{runs: object[], rest: string}|null} 剥がせなければ null
+ */
+function mdTakeDecorated_(rest) {
+  var forms = [
+    { open: '**', close: '**', attr: 'bold' },
+    { open: '~~', close: '~~', attr: 'strike' },
+    { open: '<u>', close: '</u>', attr: 'underline' },
+    { open: '*', close: '*', attr: 'italic' },
+  ];
+
+  for (var i = 0; i < forms.length; i++) {
+    var f = forms[i];
+    if (rest.indexOf(f.open) !== 0) continue;
+
+    var end = rest.indexOf(f.close, f.open.length);
+    if (end < 0) continue;
+
+    var inner = rest.substring(f.open.length, end);
+    var runs = mdToRuns_(inner);
+    for (var r = 0; r < runs.length; r++) runs[r][f.attr] = true;
+    return { runs: runs, rest: rest.substring(end + f.close.length) };
+  }
+
+  var link = /^\[([\s\S]*?)\]\(([^)]*)\)/.exec(rest);
+  if (link) {
+    var lruns = mdToRuns_(link[1]);
+    for (var k = 0; k < lruns.length; k++) lruns[k].link = link[2];
+    return { runs: lruns, rest: rest.substring(link[0].length) };
+  }
+  return null;
+}
+
+/**
+ * Markdown のインライン記法を Run配列にする。
+ *
+ * 外側から順に装飾を剥がす。runsToMd_ と対称にすることで往復が成立する。
+ *
+ * @param {string} md
+ * @returns {object[]}
+ */
+function mdToRuns_(md) {
+  var re = /(\*\*|\*|<u>|~~|\[)/;
+  var rest = String(md);
+  var runs = [];
+  var plain = '';
+
+  function flush() {
+    if (!plain) return;
+    runs.push({ text: unescapeMd_(plain) });
+    plain = '';
+  }
+
+  while (rest) {
+    // エスケープされた文字は記法として解釈しない
+    if (rest.charAt(0) === '\\' && rest.length > 1) {
+      plain += rest.substring(0, 2);
+      rest = rest.substring(2);
+      continue;
+    }
+
+    var m = re.exec(rest);
+    if (!m) { plain += rest; break; }
+
+    if (m.index > 0) {
+      plain += rest.substring(0, m.index);
+      rest = rest.substring(m.index);
+      continue;
+    }
+
+    var parsed = mdTakeDecorated_(rest);
+    if (!parsed) {
+      plain += rest.charAt(0);
+      rest = rest.substring(1);
+      continue;
+    }
+
+    flush();
+    for (var i = 0; i < parsed.runs.length; i++) runs.push(parsed.runs[i]);
+    rest = parsed.rest;
+  }
+  flush();
+  return runs;
+}
+
+/**
+ * GFM テーブルの1行をセル配列にする。区切り行なら null を返す。
+ *
+ * @param {string} line
+ * @returns {Array<object[]>|null}
+ */
+function mdTableRow_(line) {
+  var body = line.replace(/^\|/, '').replace(/\|$/, '');
+  var parts = body.split('|');
+  var cells = [];
+  var separator = true;
+
+  for (var i = 0; i < parts.length; i++) {
+    var text = parts[i].replace(/^ /, '').replace(/ $/, '');
+    if (!/^-{3,}$/.test(text)) separator = false;
+    cells.push(mdToRuns_(text));
+  }
+  return separator ? null : cells;
+}
+
+/**
+ * Markdown を Block配列にする。
+ *
+ * blocksToMd が出力した形式を対象とする限定パーサである。
+ * 汎用の Markdown は扱えないが、その必要はない。
+ *
+ * @param {string} markdown
+ * @returns {object[]}
+ */
+function mdToBlocks(markdown) {
+  var lines = String(markdown == null ? '' : markdown).split('\n');
+  var blocks = [];
+  var para = [];
+
+  function flushPara() {
+    if (!para.length) return;
+    blocks.push({ type: 'paragraph', runs: mdToRuns_(para.join(' ')) });
+    para = [];
+  }
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!line.replace(/^\s+|\s+$/g, '')) { flushPara(); continue; }
+
+    var mh = /^(#{1,6}) ([\s\S]*)$/.exec(line);
+    if (mh) {
+      flushPara();
+      blocks.push({ type: 'heading', level: mh[1].length, runs: mdToRuns_(mh[2]) });
+      continue;
+    }
+
+    var mi = /^!\[([\s\S]*)\]\(sha:([0-9a-f]{64}|unavailable)\)$/.exec(line);
+    if (mi) {
+      flushPara();
+      blocks.push({ type: 'image', sha: mi[2], alt: unescapeMd_(mi[1]) });
+      continue;
+    }
+
+    var ml = /^( *)(- |\d+\. )([\s\S]*)$/.exec(line);
+    if (ml) {
+      flushPara();
+      blocks.push({
+        type: 'listItem',
+        ordered: ml[2] !== '- ',
+        depth: Math.floor(ml[1].length / 2),
+        runs: mdToRuns_(ml[3]),
+      });
+      continue;
+    }
+
+    if (line.indexOf('|') === 0) {
+      flushPara();
+      var rows = [];
+      while (i < lines.length && lines[i].indexOf('|') === 0) {
+        var cells = mdTableRow_(lines[i]);
+        if (cells !== null) rows.push(cells);
+        i++;
+      }
+      i--;
+      blocks.push({ type: 'table', rows: rows });
+      continue;
+    }
+
+    para.push(line);
+  }
+  flushPara();
+  return blocks;
+}
