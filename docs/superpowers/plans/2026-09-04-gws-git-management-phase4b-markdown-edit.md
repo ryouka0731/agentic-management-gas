@@ -1,5 +1,7 @@
 # Phase 4b (Markdown 編集 + main のブランチ保護) 実装計画
 
+**ステータス: 実装完了 (2026-09-04)** — 残は実機での目視と往復確認のみ。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** ブランチ上の文書をアプリ内で Markdown として編集できるようにし、main は
@@ -63,7 +65,7 @@ Diff / Merge / 書き戻しは一切変更しない。保護は API 層 (`apiCom
 **Interfaces:**
 - Produces: `blocksToMd(blocks) -> string`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -134,12 +136,12 @@ describe('blocksToMd', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/markdown.test.js`
 Expected: FAIL (`blocksToMd is not defined`)
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -281,12 +283,12 @@ function tableToMd_(rows) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Markdown.js test/markdown.test.js
@@ -304,7 +306,7 @@ git commit -m "feat: Block配列をMarkdownに変換する"
 **Interfaces:**
 - Produces: `mdToBlocks(markdown) -> object[]`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('mdToBlocks', () => {
@@ -385,12 +387,12 @@ describe('往復', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/markdown.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: インラインの解析を実装する**
+- [x] **Step 3: インラインの解析を実装する**
 
 ```javascript
 /**
@@ -479,7 +481,7 @@ function mdTakeDecorated_(rest) {
 }
 ```
 
-- [ ] **Step 4: ブロックの解析を実装する**
+- [x] **Step 4: ブロックの解析を実装する**
 
 ```javascript
 /**
@@ -573,13 +575,13 @@ function mdTableRow_(line) {
 }
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS。往復テストが落ちる場合は `runsToMd_` と `mdTakeDecorated_` の
 順序が対称かを最初に疑うこと
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/core/Markdown.js test/markdown.test.js
@@ -601,7 +603,7 @@ git commit -m "feat: MarkdownをBlock配列に戻す"
   - `apiSaveMarkdown(fileId, markdown) -> {ok:true}`
   - `apiStashMainDrift(fileId) -> object` (commits 行)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `test/phase4-edit.test.js` を新規作成する。SOURCES は
 `test/phase3-issues.test.js` と同じものに `'src/core/Markdown.js'` を足す。
@@ -699,12 +701,12 @@ describe('mainの直接編集の退避', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase4-edit.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 `src/Main.gs` の Phase 3b の API 群の後ろに足す。
 
@@ -798,12 +800,12 @@ function apiCommit(fileId, message, expectedHeadSha) {
   // 以降は既存のまま
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS。Phase 2/3b の統合テストも全て通ること
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/Main.gs test/phase4-edit.test.js
@@ -819,7 +821,7 @@ git commit -m "feat: Markdown編集APIとmainのブランチ保護を追加"
 - Modify: `src/ui/app.js.html`
 - Modify: `src/ui/app.css.html`
 
-- [ ] **Step 1: 編集パネルを足す**
+- [x] **Step 1: 編集パネルを足す**
 
 `wiki.html` のタブに足す。
 
@@ -839,7 +841,7 @@ git commit -m "feat: Markdown編集APIとmainのブランチ保護を追加"
       </div>
 ```
 
-- [ ] **Step 2: スタイルを足す**
+- [x] **Step 2: スタイルを足す**
 
 ```css
 .editor {
@@ -858,7 +860,7 @@ git commit -m "feat: Markdown編集APIとmainのブランチ保護を追加"
 .editor:disabled { background: var(--bg-2); color: var(--ink-2); }
 ```
 
-- [ ] **Step 3: 編集の読み書きを足す**
+- [x] **Step 3: 編集の読み書きを足す**
 
 `app.js.html` に足す。`switchTab` に `edit` の分岐を追加すること。
 
@@ -903,7 +905,7 @@ git commit -m "feat: Markdown編集APIとmainのブランチ保護を追加"
   }
 ```
 
-- [ ] **Step 4: 退避ボタンを足す**
+- [x] **Step 4: 退避ボタンを足す**
 
 `refreshStatus` の中で、main かつ dirty のときだけ「直接編集を退避」ボタンを
 出す。コミットボタンは main では出さない。
@@ -929,7 +931,7 @@ git commit -m "feat: Markdown編集APIとmainのブランチ保護を追加"
   });
 ```
 
-- [ ] **Step 5: push して再デプロイ**
+- [x] **Step 5: push して再デプロイ**
 
 ```bash
 npx clasp push -f
@@ -951,7 +953,7 @@ Expected: Markdown が表示され、編集して保存できる。保存後に
 
 Expected: コミットボタンではなく**「直接編集を退避」**が出る
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add src/ui/
@@ -966,7 +968,7 @@ git commit -m "feat: Markdown編集画面とmain直接編集の退避ボタン�
 - Modify: `README.md`
 - Modify: この計画書
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS
@@ -979,13 +981,13 @@ Expected: 見出し・リスト・表・装飾が Markdown として読める形
 **何も編集せずに保存**して、「未コミットの変更あり」が**出ない**こと
 (往復で内容が変わっていない証拠になる)
 
-- [ ] **Step 3: README を更新**
+- [x] **Step 3: README を更新**
 
 「現在の状態」に編集と保護の節を足し、ロードマップに Phase 4b を足す。
 
-- [ ] **Step 4: 計画書に完了マークを付ける**
+- [x] **Step 4: 計画書に完了マークを付ける**
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add README.md docs/

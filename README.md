@@ -21,6 +21,18 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### アプリ内での編集と main の保護
+
+- ブランチ上の文書は**アプリ内で Markdown として編集**できる。保存しても
+  コミットはされず、「未コミットの変更あり」になる (Docs で編集した場合と同じ)
+- 対応する記法は正規化HTMLの語彙に閉じる。下線だけ Markdown に記法がないため
+  `<u>` タグを許す
+- **main は保護されている。** 編集も直接コミットもできず、変更は必ず PR 経由になる
+  (GitHub の branch protection 相当)
+- Docs 側で main を直接編集した場合だけは、`apiStashMainDrift` (画面では
+  「直接編集を退避」) で専用のコミットとして記録できる。これが無いと、
+  未コミットの main はマージも拒否されるため行き止まりになる
+
 ### Issue と Projects
 
 - Issue は文書に紐づく。Wiki で文書を開くと、その文書の open Issue が本文の上に並ぶ
@@ -158,7 +170,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (155件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (191件)
 npm run test:watch
 clasp push --force
 ```
@@ -177,6 +189,7 @@ src/core/Hash.js       ★ピュア  → ローカルテスト可
 src/core/Normalize.js  ★ピュア  → ローカルテスト可
 src/core/Diff.js       ★ピュア  → ローカルテスト可 (Myers 行diff)
 src/core/Merge.js      ★ピュア  → ローカルテスト可 (3-way merge)
+src/core/Markdown.js   ★ピュア  → ローカルテスト可 (Markdown変換)
 src/core/Db.gs         GAS依存  → 疑似GASで統合テスト可
 src/core/Repo.gs       GAS依存  → 疑似GASで統合テスト可
 src/core/Commit.gs     GAS依存  → 疑似GASで統合テスト可
@@ -222,6 +235,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [Phase 2 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase2.md)
 - [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
 - [Phase 3b 実装計画 (Issue / Projects)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md)
+- [Phase 4 設計仕様](docs/superpowers/specs/2026-09-04-gws-git-management-phase4-design.md)
+- [Phase 4b 実装計画 (Markdown編集 + main保護)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4b-markdown-edit.md)
 
 ## 制約
 
@@ -239,4 +254,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
 | 2 | commit / branch / PR / merge / 書き戻し | 完了 |
 | **3a** | Sheets / Slides レンダラ | 計画済み |
-| **3b** | Issue / Projects | 実装完了・実機検証待ち |
+| 3b | Issue / Projects | 実装完了・実機検証待ち |
+| **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
+| 4c | GitHub ライクな UI | 計画待ち |
+| 4a | コマンドキュー (ローカル連携) | 計画待ち |
+| 4d | アプリ内ガイド | 計画待ち |

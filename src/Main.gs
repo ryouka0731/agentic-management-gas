@@ -287,6 +287,7 @@ function apiFileStatus(fileId) {
  * @returns {object}
  */
 function apiCommit(fileId, message, expectedHeadSha) {
+  assertNotProtected_(fileId);
   var row = dbFindOne('files', 'fileId', fileId);
   if (!row) throw new Error('管理対象に登録されていません');
   var commit = commitFile(fileId, branchOfPath_(row.path), message, expectedHeadSha);
@@ -529,6 +530,86 @@ function debugEnableSelfApprove() {
 function debugDisableSelfApprove() {
   PropertiesService.getScriptProperties().deleteProperty('ALLOW_SELF_APPROVE');
   return '自己承認を禁止に戻しました';
+}
+
+// ===== Phase 4b: 編集と main のブランチ保護 =====
+
+/**
+ * mainのファイルに対する人間の直接操作を拒否する。
+ *
+ * PR経由の書き戻しは prMerge が commitFile / writeHtmlToDoc を直接呼ぶため
+ * この検査を通らない。人間の操作だけを止める (GitHub の branch protection)。
+ *
+ * @param {string} fileId
+ */
+function assertNotProtected_(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+  if (branchOfPath_(row.path) !== 'main') return;
+
+  throw new Error(
+    'mainは保護されています。ブランチを作って変更し、PRでマージしてください'
+  );
+}
+
+/**
+ * ファイルの内容を Markdown で返す (Web App API)。
+ *
+ * @param {string} fileId
+ * @returns {{markdown:string, branch:string, editable:boolean}}
+ */
+function apiGetMarkdown(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+
+  var branch = branchOfPath_(row.path);
+  return {
+    markdown: blocksToMd(parseBlocks(liveHtml(fileId))),
+    branch: branch,
+    editable: branch !== 'main',
+  };
+}
+
+/**
+ * Markdown を文書に書き戻す (Web App API)。コミットはしない。
+ *
+ * 保存後は「未コミットの変更あり」になる。Docsで編集した場合と挙動を揃える。
+ *
+ * @param {string} fileId
+ * @param {string} markdown
+ * @returns {{ok:boolean}}
+ */
+function apiSaveMarkdown(fileId, markdown) {
+  assertNotProtected_(fileId);
+
+  var blocks = mdToBlocks(markdown);
+  var problems = htmlWriterValidate(blocks);
+  if (problems.length > 0) {
+    throw new Error('書き戻せません:\n' + problems.join('\n'));
+  }
+
+  writeHtmlToDoc(fileId, serializeBlocks(blocks));
+  liveCacheInvalidate(fileId);
+  return { ok: true };
+}
+
+/**
+ * mainをDocs上で直接編集してしまった分を、専用のコミットとして退避する。
+ *
+ * mainは保護されているため通常のコミットができない。一方でマージは
+ * 未コミットの変更があると拒否される。この2つが噛み合うと行き止まりに
+ * なるため、逃げ道をここに1つだけ用意する (spec §5.6)。
+ *
+ * @param {string} fileId
+ * @returns {object} 作成された commits 行
+ */
+function apiStashMainDrift(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+  if (branchOfPath_(row.path) !== 'main') {
+    throw new Error('mainのファイルにのみ使えます');
+  }
+  return commitFile(fileId, 'main', 'mainへの直接編集を退避', null);
 }
 
 // ===== Phase 3b: Issue と Projects の API =====
@@ -1005,4 +1086,38 @@ function debugVerifyPhase3b() {
   var summary = (failed === 0) ? 'すべて PASS (' + log.length + '行)' : failed + ' 件 FAIL';
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
+}
+
+/**
+ * 実際の文書で Markdown の往復を確認する。
+ *
+ * 編集画面は「HTML → Markdown → 編集 → Markdown → HTML」と流れるため、
+ * 何も編集しなければ元の HTML に戻らなければならない。戻らない場合、
+ * 開いて保存しただけで差分が出る。
+ *
+ * DEBUG_FILE_ID に対象の fileId を設定してから実行する。
+ *
+ * @returns {string} 判定結果
+ */
+function debugMarkdownRoundTrip() {
+  var fileId = debugFileId_();
+  var before = liveHtml(fileId);
+  var md = blocksToMd(parseBlocks(before));
+  var after = serializeBlocks(mdToBlocks(md));
+
+  Logger.log('--- Markdown ---');
+  Logger.log(md);
+
+  if (before === after) {
+    Logger.log('往復一致: OK — 開いて保存しても差分は出ません');
+    return '往復一致: OK (' + before.length + '文字)';
+  }
+
+  Logger.log('往復不一致: 差分は以下のとおり');
+  var ops = diffHtml(before, after);
+  for (var i = 0; i < ops.length; i++) {
+    if (ops[i].type === 'equal') continue;
+    Logger.log('  ' + (ops[i].type === 'insert' ? '+ ' : '- ') + ops[i].line);
+  }
+  return '往復不一致 — ログの差分を確認してください';
 }
