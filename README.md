@@ -34,6 +34,10 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
    書き換える
 
 加えて、マージには1件以上の承認が必要で、PR作成者は自分のPRを承認できない。
+ただし1人で検証する場合は承認者を確保できずマージまで到達できないため、
+スクリプトプロパティ `ALLOW_SELF_APPROVE=true`（`debugEnableSelfApprove()` で設定）
+のときだけ自己承認を許可する。許可時は警告ログが残る。本番運用では
+`debugDisableSelfApprove()` で必ず禁止に戻すこと。
 
 ### Phase 1 で実機検証済みの項目
 

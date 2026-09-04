@@ -129,7 +129,7 @@ Web App の `doGet` はページ遷移のたびにサーバーラウンドトリ
   - `splitLines(html: string) → string[]` — 正規化HTMLを行配列に (末尾の空要素を除く)
   - `diffHtml(aHtml: string, bHtml: string) → Op[]`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 Create `test/diff.test.js`:
 
@@ -244,12 +244,12 @@ describe('diffHtml', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npm test`
 Expected: FAIL — `src/core/Diff.js` が存在しない
 
-- [ ] **Step 3: 実装を書く**
+- [x] **Step 3: 実装を書く**
 
 Create `src/core/Diff.js`:
 
@@ -433,7 +433,7 @@ function diffHtml(aHtml, bHtml) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (全テスト)
@@ -441,7 +441,7 @@ Expected: PASS (全テスト)
 失敗する場合、`backtrack_` の `trace` インデックスがずれている可能性が高い。
 `trace[dd]` は「dd 回目のラウンドに入る前の v」でなければならない。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Diff.js test/diff.test.js
@@ -482,7 +482,7 @@ theirs: [A, Z, C, D]     → hunk: base[1..2) を [Z] に置換
                          → 同じ区間で内容が違う → コンフリクト
 ```
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 Create `test/merge.test.js`:
 
@@ -631,12 +631,12 @@ describe('resolveConflicts', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npm test`
 Expected: FAIL — `src/core/Merge.js` が存在しない
 
-- [ ] **Step 3: 実装を書く**
+- [x] **Step 3: 実装を書く**
 
 Create `src/core/Merge.js`:
 
@@ -845,12 +845,12 @@ function resolveConflicts(result, choices) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (全テスト)
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Merge.js test/merge.test.js
@@ -874,7 +874,7 @@ git commit -m "feat: 3-way mergeとコンフリクト解決を追加"
   - `commitHtml(sha: string) → string|null`
   - `fileStatus(fileId: string, branch: string) → {dirty: boolean, headSha: string|null, ops: object[]}`
 
-- [ ] **Step 1: Commit.gs を作成**
+- [x] **Step 1: Commit.gs を作成**
 
 ```javascript
 /**
@@ -1045,7 +1045,7 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
 }
 ```
 
-- [ ] **Step 2: main ブランチの初期化を Repo.gs に追加**
+- [x] **Step 2: main ブランチの初期化を Repo.gs に追加**
 
 `main` ブランチが `branches` テーブルに存在しないと `commitFile` が
 headSha を更新できない。`repoInit` の末尾で登録する。
@@ -1067,7 +1067,7 @@ Modify `src/core/Repo.gs` — `Logger.log('リポジトリを初期化しまし�
 **既に `repoInit` を実行済みの環境では、この行は反映されない。**
 Task 3 Step 4 の `debugEnsureMainBranch` で補う。
 
-- [ ] **Step 3: Main.gs に API と検証関数を追加**
+- [x] **Step 3: Main.gs に API と検証関数を追加**
 
 Append to `src/Main.gs`:
 
@@ -1171,7 +1171,7 @@ function debugCommit() {
 }
 ```
 
-- [ ] **Step 4: push して動作確認**
+- [x] **Step 4: push して動作確認**
 
 Run: `clasp push --force`
 
@@ -1186,25 +1186,25 @@ Expected:
 - コミット後: **`dirty=false`** (ライブ内容とコミット内容が一致)
 - 履歴件数: 1
 
-- [ ] **Step 5: 空コミットが拒否されることを確認**
+- [x] **Step 5: 空コミットが拒否されることを確認**
 
 **`debugCommit`** をもう一度実行する。
 
 Expected: `変更がありません` というエラーで停止する
 
-- [ ] **Step 6: 変更後のコミットを確認**
+- [x] **Step 6: 変更後のコミットを確認**
 
 1. Doc を開いて1行追加して閉じる
 2. **`debugCommit`** を実行
 
 Expected: 2件目のコミットが作られ、`履歴件数: 2` になる
 
-- [ ] **Step 7: メタDBを目視確認**
+- [x] **Step 7: メタDBを目視確認**
 
 `.git/agentic-management repo-db` を開き、`commits` シートに2行あること、
 `branches` シートの `main` 行の `headSha` が最新コミットと一致することを確認する。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add src/core/Commit.gs src/core/Repo.gs src/Main.gs
@@ -1224,7 +1224,7 @@ git commit -m "feat: コミットの作成と履歴取得を追加"
 - Consumes: Task 3 の `apiFileStatus`, `apiCommit`, `apiCommitHistory`, `apiCommitDiff`
 - Produces: ブラウザ上で動作する履歴画面
 
-- [ ] **Step 1: wiki.html にタブと履歴パネルを追加**
+- [x] **Step 1: wiki.html にタブと履歴パネルを追加**
 
 Replace the `<div class="main">` block in `src/ui/wiki.html`:
 
@@ -1256,7 +1256,7 @@ Replace the `<div class="main">` block in `src/ui/wiki.html`:
     </div>
 ```
 
-- [ ] **Step 2: app.css.html にスタイルを追加**
+- [x] **Step 2: app.css.html にスタイルを追加**
 
 Append before `</style>` in `src/ui/app.css.html`:
 
@@ -1357,7 +1357,7 @@ Append before `</style>` in `src/ui/app.css.html`:
 .diff-empty { color: var(--ink-2); font-family: inherit; }
 ```
 
-- [ ] **Step 3: app.js.html に履歴機能を追加**
+- [x] **Step 3: app.js.html に履歴機能を追加**
 
 Replace the entire `<script>` block in `src/ui/app.js.html`:
 
@@ -1628,7 +1628,7 @@ Replace the entire `<script>` block in `src/ui/app.js.html`:
 </script>
 ```
 
-- [ ] **Step 4: push して再デプロイ**
+- [x] **Step 4: push して再デプロイ**
 
 ```bash
 clasp push --force
@@ -1637,7 +1637,7 @@ clasp update-deployment <deploymentId>
 
 `<deploymentId>` は `clasp list-deployments` で確認する (`@HEAD` ではない方)。
 
-- [ ] **Step 5: Web App で動作確認**
+- [x] **Step 5: Web App で動作確認**
 
 確認項目:
 
@@ -1648,7 +1648,7 @@ clasp update-deployment <deploymentId>
 - コミットを選ぶと**差分が緑 (追加) / 赤 (削除) で表示される**
 - `<p>` などのHTMLタグが**タグとして解釈されず、文字列として表示される** (diff表示のXSS対策)
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/ui/
@@ -1682,7 +1682,7 @@ Doc コピーを置く。
 `files` テーブルに `path` を `branches/<name>/<元のpath>` として登録する。
 これにより Wiki のファイル一覧にブランチ版も現れ、そのまま閲覧・コミットできる。
 
-- [ ] **Step 1: Branch.gs を作成**
+- [x] **Step 1: Branch.gs を作成**
 
 ```javascript
 /**
@@ -1827,7 +1827,7 @@ function branchDelete(name) {
 }
 ```
 
-- [ ] **Step 2: Main.gs に API を追加**
+- [x] **Step 2: Main.gs に API を追加**
 
 Append to `src/Main.gs`:
 
@@ -1891,7 +1891,7 @@ function debugBranch() {
 }
 ```
 
-- [ ] **Step 3: push して動作確認**
+- [x] **Step 3: push して動作確認**
 
 Run: `clasp push --force`
 
@@ -1904,13 +1904,13 @@ Expected:
 - `branches` シートに1行、`files` シートに作業コピーの行、
   `commits` シートにブランチの初回コミットが増えている
 
-- [ ] **Step 4: 同名ブランチが拒否されることを確認**
+- [x] **Step 4: 同名ブランチが拒否されることを確認**
 
 **`debugBranch`** をもう一度実行する。
 
 Expected: `同名のブランチが既に存在します` で停止する
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Branch.gs src/Main.gs
@@ -1945,7 +1945,7 @@ git commit -m "feat: ブランチの作成・一覧・削除を追加"
    マージ自体を拒否する
 3. **書き戻し前に必ずコミットを取る** — 呼び出し側 (Task 7) の責務
 
-- [ ] **Step 1: ObjectStore.gs に blob 検索を追加**
+- [x] **Step 1: ObjectStore.gs に blob 検索を追加**
 
 Append to `src/core/ObjectStore.gs`:
 
@@ -1970,7 +1970,7 @@ function objectFindBlob(sha) {
 }
 ```
 
-- [ ] **Step 2: HtmlWriter.gs を作成**
+- [x] **Step 2: HtmlWriter.gs を作成**
 
 ```javascript
 /**
@@ -2161,7 +2161,7 @@ function writeHtmlToDoc(fileId, html) {
 }
 ```
 
-- [ ] **Step 3: Main.gs に往復検証を追加**
+- [x] **Step 3: Main.gs に往復検証を追加**
 
 Append to `src/Main.gs`:
 
@@ -2214,7 +2214,7 @@ function debugWriteRoundTrip() {
 }
 ```
 
-- [ ] **Step 4: push して往復検証を実行**
+- [x] **Step 4: push して往復検証を実行**
 
 Run: `clasp push --force`
 
@@ -2225,7 +2225,7 @@ Run: `clasp push --force`
 
 Expected: `往復一致: OK — 書き戻しは情報を落としていません`
 
-- [ ] **Step 5: 往復が一致しない場合の対処**
+- [x] **Step 5: 往復が一致しない場合の対処**
 
 差分ログを見て原因を特定する。よくある原因:
 
@@ -2239,12 +2239,12 @@ Expected: `往復一致: OK — 書き戻しは情報を落としていません
 **修正したら、その症状を再現する Block 配列を `test/normalize.test.js` の
 ラウンドトリップケースに追加してから直すこと。**
 
-- [ ] **Step 6: Doc を目視確認**
+- [x] **Step 6: Doc を目視確認**
 
 書き戻した作業コピーを Google Docs で開き、見出し・装飾・リスト・表・画像が
 元と同じように見えることを確認する。
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add src/render/HtmlWriter.gs src/core/ObjectStore.gs src/Main.gs
@@ -2269,7 +2269,7 @@ git commit -m "feat: 正規化HTMLをGoogle Docsに書き戻す機能を追加"
   - `prReview(number, state, body) → object`
   - `prMerge(number, choices: string[]) → object`
 
-- [ ] **Step 1: PullRequest.gs を作成**
+- [x] **Step 1: PullRequest.gs を作成**
 
 ```javascript
 /**
@@ -2573,7 +2573,7 @@ function prMerge(number, choices) {
 }
 ```
 
-- [ ] **Step 2: Main.gs に API を追加**
+- [x] **Step 2: Main.gs に API を追加**
 
 Append to `src/Main.gs`:
 
@@ -2682,7 +2682,7 @@ function debugPr() {
 }
 ```
 
-- [ ] **Step 3: push して動作確認**
+- [x] **Step 3: push して動作確認**
 
 Run: `clasp push --force`
 
@@ -2697,7 +2697,7 @@ Expected:
 - `コンフリクト数: 0`
 - `書き戻しの問題: []`
 
-- [ ] **Step 4: コンフリクトを意図的に起こして確認**
+- [x] **Step 4: コンフリクトを意図的に起こして確認**
 
 1. **main の Doc** で、ブランチ側で書き換えたのと**同じ行**を別の内容に書き換える
 2. Web App で main のファイルをコミットする
@@ -2714,7 +2714,7 @@ function debugPrPreviewOnly() {
 Expected: `マージ可能: false` となり、コンフリクトの `ours` / `theirs` に
 それぞれの内容が入っている
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/PullRequest.gs src/Main.gs
@@ -2734,7 +2734,7 @@ git commit -m "feat: Pull Requestの作成・レビュー・3-wayマージを追
 - Consumes: Task 5 の `apiBranchList` / `apiBranchCreate`、Task 7 の `apiPrList` / `apiPrCreate` / `apiPrPreview` / `apiPrReview` / `apiPrMerge`
 - Produces: ブラウザ上で PR を作成・レビュー・マージできる画面
 
-- [ ] **Step 1: wiki.html にタブとパネルを追加**
+- [x] **Step 1: wiki.html にタブとパネルを追加**
 
 Modify the `.tabs` block and add two panels in `src/ui/wiki.html`:
 
@@ -2763,7 +2763,7 @@ Add after `<div class="panel" id="panel-history" hidden>…</div>`:
       </div>
 ```
 
-- [ ] **Step 2: app.css.html にスタイルを追加**
+- [x] **Step 2: app.css.html にスタイルを追加**
 
 Append before `</style>`:
 
@@ -2839,7 +2839,7 @@ Append before `</style>`:
 }
 ```
 
-- [ ] **Step 3: app.js.html にブランチ・PR機能を追加**
+- [x] **Step 3: app.js.html にブランチ・PR機能を追加**
 
 Insert before the final initialization block (before `panelContent.hidden = true;`)
 in `src/ui/app.js.html`:
@@ -3159,7 +3159,7 @@ in `src/ui/app.js.html`:
   branchCreateBtn.addEventListener('click', createBranch);
 ```
 
-- [ ] **Step 4: switchTab を新しいタブに対応させる**
+- [x] **Step 4: switchTab を新しいタブに対応させる**
 
 Replace the `switchTab` function in `src/ui/app.js.html`:
 
@@ -3185,7 +3185,7 @@ Step 3 の挿入位置 (末尾の初期化ブロックの直前) で問題ない
 実際に呼ばれるのはユーザーがファイルを選んだ後であり、その時点では
 `var` 宣言の初期化が完了しているためである。変数を先頭に移す必要はない。
 
-- [ ] **Step 5: 初期状態で全パネルを閉じる**
+- [x] **Step 5: 初期状態で全パネルを閉じる**
 
 Modify the initialization block at the bottom:
 
@@ -3196,14 +3196,14 @@ Modify the initialization block at the bottom:
   panelPulls.hidden = true;
 ```
 
-- [ ] **Step 6: push して再デプロイ**
+- [x] **Step 6: push して再デプロイ**
 
 ```bash
 clasp push --force
 clasp update-deployment <deploymentId>
 ```
 
-- [ ] **Step 7: Web App で一連の流れを確認**
+- [x] **Step 7: Web App で一連の流れを確認**
 
 1. main のファイルを選ぶ
 2. 「ブランチ」タブ → 「ブランチを作成」→ 名前を入力
@@ -3217,7 +3217,7 @@ clasp update-deployment <deploymentId>
 
 Expected: **main の Doc の内容がブランチの変更を取り込んだものに変わる**
 
-- [ ] **Step 8: main の Doc を目視確認**
+- [x] **Step 8: main の Doc を目視確認**
 
 Google Docs で main の原本を開き、以下を確認する:
 
@@ -3225,7 +3225,7 @@ Google Docs で main の原本を開き、以下を確認する:
 - **見出し・装飾・リスト・表・画像が壊れていない**
 - **URLが変わっていない** (fileId が維持されている)
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add src/ui/
@@ -3244,10 +3244,16 @@ git commit -m "feat: ブランチとPRのUI、コンフリクト解決画面を�
 - Consumes: Task 1-8 のすべて
 - Produces: Phase 2 完了状態
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS (Phase 1 の62件 + Diff/Merge の追加分)
+
+> **1人で検証する場合の前提**
+> 既定では PR 作成者は自分の PR を承認できず、マージまで到達できない。
+> GAS エディタで `debugEnableSelfApprove()` を1回実行して
+> `ALLOW_SELF_APPROVE=true` を立ててから Step 2 以降に進み、
+> 検証後は `debugDisableSelfApprove()` で禁止に戻すこと。
 
 - [ ] **Step 2: コンフリクト解決の実地検証**
 
@@ -3287,7 +3293,7 @@ Phase 2 で最も重要な安全機構である。
 Expected: タブBで **「HEADが進んでいます。画面を再読み込みしてから
 再度コミットしてください」** というエラーが出る
 
-- [ ] **Step 5: README を更新**
+- [x] **Step 5: README を更新**
 
 Replace the "現在の状態" section in `README.md`:
 
@@ -3334,7 +3340,7 @@ git commit -m "docs: Phase 2 完了を反映"
 
 ## Phase 2 完了時に達成されていること
 
-- [ ] `npm test` で Diff / Merge を含む全テストが通る
+- [x] `npm test` で Diff / Merge を含む全テストが通る
 - [ ] Web App からコミットでき、履歴と差分が見られる
 - [ ] ブランチを作ると Doc の作業コピーができ、Wiki 上で閲覧・編集できる
 - [ ] PR を作成し、差分を見てレビュー・承認できる

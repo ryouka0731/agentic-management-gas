@@ -506,3 +506,27 @@ function debugWriteRoundTrip() {
     Logger.log('  ' + (ops[i].type === 'insert' ? '+ ' : '- ') + ops[i].line);
   }
 }
+
+/**
+ * 自己承認の許可を切り替える (検証用)。
+ *
+ * 1人で PoC を検証するときは承認者を確保できずマージまで到達できないため、
+ * スクリプトプロパティ ALLOW_SELF_APPROVE を一時的に立てる。
+ * 本番運用に移す前に必ず debugDisableSelfApprove() で戻すこと。
+ *
+ * @returns {string}
+ */
+function debugEnableSelfApprove() {
+  PropertiesService.getScriptProperties().setProperty('ALLOW_SELF_APPROVE', 'true');
+  return '自己承認を許可しました (検証用)。検証後は debugDisableSelfApprove() で戻すこと';
+}
+
+/**
+ * 自己承認の許可を取り消す。
+ *
+ * @returns {string}
+ */
+function debugDisableSelfApprove() {
+  PropertiesService.getScriptProperties().deleteProperty('ALLOW_SELF_APPROVE');
+  return '自己承認を禁止に戻しました';
+}
