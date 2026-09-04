@@ -612,6 +612,58 @@ function apiStashMainDrift(fileId) {
   return commitFile(fileId, 'main', 'mainへの直接編集を退避', null);
 }
 
+/**
+ * PRに付いたレビューとコメントを古い順で返す (Web App API)。
+ *
+ * reviews テーブルは Phase 2 から state に 'comment' を許している。
+ * 会話のために新しいテーブルは要らない。
+ *
+ * @param {number} number
+ * @returns {object[]}
+ */
+function apiPrReviews(number) {
+  var rows = dbReadAll('reviews');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (Number(rows[i].prNumber) !== Number(number)) continue;
+    out.push({
+      reviewer: rows[i].reviewer,
+      state: rows[i].state,
+      body: rows[i].body,
+      at: rows[i].at,
+    });
+  }
+  return out;
+}
+
+/**
+ * PRのソースブランチのコミットを新しい順で返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object[]}
+ */
+function apiPrCommits(number) {
+  var pr = prGet(number);
+  var mainFileId = prTargetFileId_(pr.body);
+  if (!mainFileId) return [];
+
+  var workFileId = branchWorkingFileId(pr.sourceBranch, mainFileId);
+  if (!workFileId) return [];
+
+  var commits = commitHistory(workFileId, pr.sourceBranch);
+  var out = [];
+  for (var i = 0; i < commits.length; i++) {
+    out.push({
+      sha: commits[i].sha,
+      message: commits[i].message,
+      author: commits[i].author,
+      timestamp: commits[i].timestamp,
+    });
+  }
+  return out;
+}
+
 // ===== Phase 3b: Issue と Projects の API =====
 
 /**

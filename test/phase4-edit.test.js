@@ -150,3 +150,45 @@ describe('mainの直接編集の退避', () => {
     expect(() => ctx.prMerge(pr.number, ['theirs'])).not.toThrow();
   });
 });
+
+describe('PRの会話とコミット', () => {
+  function prepare() {
+    const env = setup();
+    env.ctx.branchCreate('改訂', env.fileId);
+    const workFileId = env.ctx.branchWorkingFileId('改訂', env.fileId);
+    env.fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条</p>\n');
+    env.ctx.commitFile(workFileId, '改訂', '第3条を追加', null);
+    const pr = env.ctx.prCreate('第3条を追加', '', '改訂', env.fileId);
+    return Object.assign(env, { pr: pr, workFileId: workFileId });
+  }
+
+  it('コメントを時系列で返す', () => {
+    const env = prepare();
+    env.fake._setUser('a@example.com');
+    env.ctx.prReview(env.pr.number, 'comment', '第3条の文言が気になります');
+    env.fake._setUser('b@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '直りました');
+
+    const reviews = env.ctx.apiPrReviews(env.pr.number);
+    expect(reviews.length).toBe(2);
+    expect(reviews[0].body).toBe('第3条の文言が気になります');
+    expect(reviews[0].reviewer).toBe('a@example.com');
+    expect(reviews[1].state).toBe('approve');
+  });
+
+  it('他のPRのコメントは混ざらない', () => {
+    const env = prepare();
+    env.ctx.prReview(env.pr.number, 'comment', 'こちらのPR');
+    expect(env.ctx.apiPrReviews(999)).toEqual([]);
+  });
+
+  it('ブランチのコミットを新しい順で返す', () => {
+    const env = prepare();
+    const commits = env.ctx.apiPrCommits(env.pr.number);
+
+    expect(commits.length).toBe(2);
+    expect(commits[0].message).toBe('第3条を追加');
+    expect(commits[1].message).toContain('ブランチ 改訂 を作成');
+    expect(commits[0].sha.length).toBe(64);
+  });
+});

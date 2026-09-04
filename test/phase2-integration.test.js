@@ -319,3 +319,19 @@ describe('Phase 2 統合: ブランチの後始末', () => {
     expect(() => ctx.branchDelete('main')).toThrow(/main ブランチは削除できません/);
   });
 });
+
+describe('Phase 2 統合: 履歴の並び', () => {
+  it('同じミリ秒に作られたコミットでも親チェーンの順で並ぶ', () => {
+    const { ctx, fake, mainFileId } = setup();
+
+    // 疑似GASでは連続実行が同一ミリ秒に収まるため、timestamp だけで
+    // 並べる実装ではここで順序が崩れる
+    fake._docs.set(mainFileId, html([P1, P2, '<p>2回目</p>']));
+    ctx.commitFile(mainFileId, 'main', '2回目', null);
+    fake._docs.set(mainFileId, html([P1, P2, '<p>3回目</p>']));
+    ctx.commitFile(mainFileId, 'main', '3回目', null);
+
+    const messages = ctx.commitHistory(mainFileId, 'main').map((c) => c.message);
+    expect(messages).toEqual(['3回目', '2回目', '初期状態']);
+  });
+});
