@@ -118,3 +118,62 @@ describe('diffHtml', () => {
     expect(diffHtml('', '<p>a</p>\n')).toEqual(ops([['insert', '<p>a</p>']]));
   });
 });
+
+describe('diffPairs', () => {
+  const gas = loadGas('src/core/Diff.js');
+
+  it('equal は左右に同じ行を置く', () => {
+    expect(gas.diffPairs([{ type: 'equal', line: 'a' }]))
+      .toEqual([{ left: 'a', right: 'a', type: 'equal' }]);
+  });
+
+  it('delete は左だけ、insert は右だけに置く', () => {
+    expect(gas.diffPairs([
+      { type: 'delete', line: 'x' },
+      { type: 'equal', line: 'a' },
+    ])).toEqual([
+      { left: 'x', right: null, type: 'delete' },
+      { left: 'a', right: 'a', type: 'equal' },
+    ]);
+
+    expect(gas.diffPairs([{ type: 'insert', line: 'y' }]))
+      .toEqual([{ left: null, right: 'y', type: 'insert' }]);
+  });
+
+  it('連続する delete と insert を1行の change にまとめる', () => {
+    expect(gas.diffPairs([
+      { type: 'delete', line: '古い' },
+      { type: 'insert', line: '新しい' },
+    ])).toEqual([{ left: '古い', right: '新しい', type: 'change' }]);
+  });
+
+  it('数が違う場合は余った側だけを残す', () => {
+    expect(gas.diffPairs([
+      { type: 'delete', line: 'd1' },
+      { type: 'delete', line: 'd2' },
+      { type: 'insert', line: 'i1' },
+    ])).toEqual([
+      { left: 'd1', right: 'i1', type: 'change' },
+      { left: 'd2', right: null, type: 'delete' },
+    ]);
+  });
+
+  it('insert が先に来ても対応付ける', () => {
+    expect(gas.diffPairs([
+      { type: 'insert', line: 'i1' },
+      { type: 'delete', line: 'd1' },
+    ])).toEqual([{ left: 'd1', right: 'i1', type: 'change' }]);
+  });
+
+  it('空なら空を返す', () => {
+    expect(gas.diffPairs([])).toEqual([]);
+  });
+
+  it('実際の diffHtml の出力を組み替えられる', () => {
+    const result = gas.diffHtml('<p>a</p>\n<p>b</p>\n', '<p>a</p>\n<p>c</p>\n');
+    expect(gas.diffPairs(result)).toEqual([
+      { left: '<p>a</p>', right: '<p>a</p>', type: 'equal' },
+      { left: '<p>b</p>', right: '<p>c</p>', type: 'change' },
+    ]);
+  });
+});
