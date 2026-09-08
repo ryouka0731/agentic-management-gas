@@ -42,7 +42,7 @@
 **Interfaces:**
 - Produces: `apiWhoAmI() -> {activeUser:string, effectiveUser:string, sameUser:boolean}`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('身元の実測', () => {
@@ -78,12 +78,12 @@ describe('身元の実測', () => {
 `createFakeGas` に `let effectiveUser = 'tester@example.com';` と
 `_setEffectiveUser` を足す。
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase4-edit.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -106,12 +106,12 @@ function apiWhoAmI() {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ---
 
@@ -120,7 +120,7 @@ Expected: PASS
 **Files:**
 - Modify: `src/ui/wiki.html` / `app.js.html` / `app.css.html`
 
-- [ ] **Step 1: タブとパネルを足す**
+- [x] **Step 1: タブとパネルを足す**
 
 タブ列の末尾に `<button class="tab" data-tab="help">ヘルプ</button>` を置き、
 `panel-help` に次の3節を静的 markup で書く。
@@ -132,7 +132,7 @@ Expected: PASS
 
 末尾に身元を出す領域 `<div id="whoami" class="row-meta"></div>` を置く。
 
-- [ ] **Step 2: 身元を表示する**
+- [x] **Step 2: 身元を表示する**
 
 `switchTab` に `help` を足し、開いたときだけ `apiWhoAmI()` を呼ぶ。
 
@@ -152,23 +152,23 @@ Expected: PASS
   }
 ```
 
-- [ ] **Step 3: push して再デプロイ**
+- [x] **Step 3: push して再デプロイ**
 
 - [ ] **Step 4: 別アカウントで開いて身元を確認**
 
 Expected: ヘルプの末尾に相手のメールアドレスが出る。空だと出た場合、
 `executeAs: ME` への切り替えは**してはいけない**
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ---
 
 ## Task 3: ドキュメント更新
 
-- [ ] **Step 1: 全テストを実行**
-- [ ] **Step 2: README に社内展開の節を足す**
-- [ ] **Step 3: 計画書に完了マークを付ける**
-- [ ] **Step 4: コミット**
+- [x] **Step 1: 全テストを実行**
+- [x] **Step 2: README に社内展開の節を足す**
+- [x] **Step 3: 計画書に完了マークを付ける**
+- [x] **Step 4: コミット**
 
 ---
 
