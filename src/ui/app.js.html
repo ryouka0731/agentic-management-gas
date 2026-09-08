@@ -147,6 +147,179 @@
     writeTheme(next);
   }
 
+  // ===== モードレスな通知と入力 =====
+
+  var snackTimer = null;
+
+  /**
+   * バナー通知を出す。
+   *
+   * alert はモーダルで操作を止め、取り消しの手段も与えない。
+   * 「実行しますか」ではなく「実行しておきました。取り消しますか」に
+   * 寄せるため、undo を受け取れるようにしている。
+   *
+   * @param {string} text
+   * @param {{kind?: string, undo?: function, ms?: number}} [opts]
+   */
+  function showSnack(text, opts) {
+    var options = opts || {};
+
+    var old = document.getElementById('snackbar');
+    if (old) old.remove();
+    if (snackTimer) window.clearTimeout(snackTimer);
+
+    var bar = document.createElement('div');
+    bar.id = 'snackbar';
+    bar.className = 'snackbar' + (options.kind ? ' ' + options.kind : '');
+    // 読み上げを妨げずに伝える
+    bar.setAttribute('role', 'status');
+    bar.setAttribute('aria-live', 'polite');
+
+    var span = document.createElement('span');
+    span.className = 'snackbar-text';
+    span.textContent = text;
+    bar.appendChild(span);
+
+    if (options.undo) {
+      var undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.textContent = '取り消す';
+      undoBtn.addEventListener('click', function () {
+        bar.remove();
+        options.undo();
+      });
+      bar.appendChild(undoBtn);
+    }
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '閉じる';
+    closeBtn.addEventListener('click', function () { bar.remove(); });
+    bar.appendChild(closeBtn);
+
+    document.body.appendChild(bar);
+
+    // 取り消せる通知は長めに出す
+    var ms = options.ms || (options.undo ? 10000 : 5000);
+    snackTimer = window.setTimeout(function () { bar.remove(); }, ms);
+  }
+
+  /**
+   * 画面内に入力フォームを開く。prompt の置き換え。
+   *
+   * @param {HTMLElement} host フォームを差し込む先 (先頭に挿入する)
+   * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean}>} fields
+   * @param {string} submitLabel
+   * @param {function(Object<string,string>): void} onSubmit
+   */
+  function openInlineForm(host, fields, submitLabel, onSubmit) {
+    var existing = host.querySelector('.inline-form');
+    if (existing) existing.remove();
+
+    var form = document.createElement('form');
+    form.className = 'inline-form';
+
+    var inputs = {};
+    fields.forEach(function (f) {
+      var label = document.createElement('label');
+      label.textContent = f.label;
+
+      var input = document.createElement(f.multiline ? 'textarea' : 'input');
+      if (!f.multiline) input.type = 'text';
+      if (f.required) input.required = true;
+      label.appendChild(input);
+
+      inputs[f.name] = input;
+      form.appendChild(label);
+    });
+
+    var actions = document.createElement('div');
+    actions.className = 'inline-form-actions';
+
+    var submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'btn';
+    submit.textContent = submitLabel;
+    actions.appendChild(submit);
+
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'やめる';
+    cancel.addEventListener('click', function () { form.remove(); });
+    actions.appendChild(cancel);
+
+    form.appendChild(actions);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var values = {};
+      var missing = false;
+
+      fields.forEach(function (f) {
+        values[f.name] = inputs[f.name].value;
+        if (f.required && !values[f.name]) missing = true;
+      });
+
+      if (missing) {
+        showSnack('必須の項目が空です', { kind: 'ng' });
+        return;
+      }
+      form.remove();
+      onSubmit(values);
+    });
+
+    // Escape で閉じられる。閉じ道を必ず用意する
+    form.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') form.remove();
+    });
+
+    host.insertBefore(form, host.firstChild);
+    inputs[fields[0].name].focus();
+  }
+
+  /**
+   * その場で確認を取る帯を出す。confirm の置き換え。
+   *
+   * 破壊的な操作は取り消せないため、実行前に一度だけ確認する。
+   * ただしモーダルにはせず、操作の文脈に留まったまま確認する。
+   *
+   * @param {HTMLElement} host
+   * @param {string} text
+   * @param {string} label
+   * @param {function} onConfirm
+   */
+  function openConfirmStrip(host, text, label, onConfirm) {
+    var existing = host.querySelector('.confirm-strip');
+    if (existing) existing.remove();
+
+    var strip = document.createElement('div');
+    strip.className = 'confirm-strip';
+    strip.setAttribute('role', 'alert');
+
+    var span = document.createElement('span');
+    span.textContent = text;
+    strip.appendChild(span);
+
+    var ok = document.createElement('button');
+    ok.className = 'btn';
+    ok.textContent = label;
+    ok.addEventListener('click', function () {
+      strip.remove();
+      onConfirm();
+    });
+    strip.appendChild(ok);
+
+    var no = document.createElement('button');
+    no.className = 'btn';
+    no.textContent = 'やめる';
+    no.addEventListener('click', function () { strip.remove(); });
+    strip.appendChild(no);
+
+    host.insertBefore(strip, host.firstChild);
+    ok.focus();
+  }
+
   // ===== 表示ヘルパー =====
 
   /**
@@ -573,21 +746,26 @@
   }
 
   function doCommit() {
-    var message = window.prompt('コミットメッセージを入力してください');
-    if (!message) return;
-
-    commitBtn.disabled = true;
-    google.script.run
-      .withSuccessHandler(function () {
-        commitBtn.disabled = false;
-        refreshStatus();
-        if (!panelHistory.hidden) loadHistory();
-      })
-      .withFailureHandler(function (err) {
-        commitBtn.disabled = false;
-        window.alert('コミットできませんでした: ' + err.message);
-      })
-      .apiCommit(current.fileId, message, current.headSha);
+    openInlineForm(
+      panelContent,
+      [{ name: 'message', label: 'コミットメッセージ', required: true }],
+      'コミットする',
+      function (v) {
+        commitBtn.disabled = true;
+        google.script.run
+          .withSuccessHandler(function () {
+            commitBtn.disabled = false;
+            showSnack('コミットしました', { kind: 'ok' });
+            refreshStatus();
+            if (!panelHistory.hidden) loadHistory();
+          })
+          .withFailureHandler(function (err) {
+            commitBtn.disabled = false;
+            showSnack('コミットできませんでした: ' + err.message, { kind: 'ng' });
+          })
+          .apiCommit(current.fileId, v.message, current.headSha);
+      }
+    );
   }
 
   // ===== ブランチ =====
@@ -636,47 +814,55 @@
 
   function createBranch() {
     if (!current.fileId) {
-      window.alert('先にファイルを選択してください');
+      showSnack('先にファイルを選択してください', { kind: 'ng' });
       return;
     }
     if (current.branch !== 'main') {
-      window.alert('ブランチはmainのファイルからのみ作成できます');
+      showSnack('ブランチはmainのファイルからのみ作成できます', { kind: 'ng' });
       return;
     }
-    var name = window.prompt('ブランチ名を入力してください (例: 規則改訂)');
-    if (!name) return;
 
-    branchCreateBtn.disabled = true;
-    google.script.run
-      .withSuccessHandler(function () {
-        branchCreateBtn.disabled = false;
-        loadBranches();
-        google.script.run.withSuccessHandler(renderFileList).apiListFiles();
-      })
-      .withFailureHandler(function (err) {
-        branchCreateBtn.disabled = false;
-        window.alert('作成できませんでした: ' + err.message);
-      })
-      .apiBranchCreate(name, current.fileId);
+    openInlineForm(
+      panelBranches,
+      [{ name: 'name', label: 'ブランチ名 (例: 規則改訂)', required: true }],
+      'ブランチを作る',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('ブランチ ' + v.name + ' を作りました', { kind: 'ok' });
+            loadBranches();
+            loadFiles();
+          })
+          .withFailureHandler(function (err) {
+            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
+          })
+          .apiBranchCreate(v.name, current.fileId);
+      }
+    );
   }
 
   // ===== プルリクエスト =====
 
   function createPr(branchName) {
-    if (!current.fileId || current.branch !== 'main') {
-      window.alert('先に main のファイルを選択してください');
-      return;
-    }
-    var title = window.prompt('PRのタイトルを入力してください');
-    if (!title) return;
-    var body = window.prompt('説明 (任意)') || '';
-
-    google.script.run
-      .withSuccessHandler(function () { switchTab('pulls'); })
-      .withFailureHandler(function (err) {
-        window.alert('作成できませんでした: ' + err.message);
-      })
-      .apiPrCreate(title, body, branchName, current.fileId);
+    openInlineForm(
+      panelPulls,
+      [
+        { name: 'title', label: 'PRのタイトル', required: true },
+        { name: 'body', label: '説明 (任意)', multiline: true },
+      ],
+      'PRを作る',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('PRを作りました', { kind: 'ok' });
+            loadPulls();
+          })
+          .withFailureHandler(function (err) {
+            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
+          })
+          .apiPrCreate(v.title, v.body, branchName, mainFileId);
+      }
+    );
   }
 
   /**
@@ -827,7 +1013,7 @@
         .withSuccessHandler(function () { showPrDetail(pr); })
         .withFailureHandler(function (err) {
           send.disabled = false;
-          window.alert(err.message);
+          showSnack(err.message, { kind: 'ng' });
         })
         .apiPrReview(pr.number, 'comment', input.value);
     });
@@ -923,7 +1109,7 @@
               .withSuccessHandler(function () { showPrDetail(pr); })
               .withFailureHandler(function (err) {
                 approveBtn.disabled = false;
-                window.alert(err.message);
+                showSnack(err.message, { kind: 'ng' });
               })
               .apiPrReview(pr.number, 'approve', '');
           });
@@ -933,21 +1119,27 @@
           mergeBtn.textContent = 'マージする';
           mergeBtn.disabled = !!(preview.problems && preview.problems.length > 0);
           mergeBtn.addEventListener('click', function () {
-            if (!window.confirm(
-              'mainの文書をこのマージ結果で書き換えます。続けますか?'
-            )) return;
-            mergeBtn.disabled = true;
-            google.script.run
-              .withSuccessHandler(function () {
-                window.alert('マージしました');
-                loadPulls();
-                refreshStatus();
-              })
-              .withFailureHandler(function (err) {
-                mergeBtn.disabled = false;
-                window.alert('マージできませんでした: ' + err.message);
-              })
-              .apiPrMerge(pr.number, getChoices());
+            // マージは取り消せないため一度だけ確認する。ただしモーダルには
+            // せず、PRの文脈に留まったまま確認する
+            openConfirmStrip(
+              prDetail,
+              'mainの文書をこのマージ結果で書き換えます。取り消せません。',
+              'マージする',
+              function () {
+                mergeBtn.disabled = true;
+                google.script.run
+                  .withSuccessHandler(function () {
+                    showSnack('PR #' + pr.number + ' をマージしました', { kind: 'ok' });
+                    loadPulls();
+                    refreshStatus();
+                  })
+                  .withFailureHandler(function (err) {
+                    mergeBtn.disabled = false;
+                    showSnack('マージできませんでした: ' + err.message, { kind: 'ng' });
+                  })
+                  .apiPrMerge(pr.number, getChoices());
+              }
+            );
           });
 
           actions.appendChild(approveBtn);
@@ -1107,25 +1299,31 @@
       .withFailureHandler(function (err) {
         editSaveBtn.disabled = false;
         editHint.textContent = '';
-        window.alert(err.message);
+        showSnack(err.message, { kind: 'ng' });
       })
       .apiSaveMarkdown(current.fileId, editorEl.value);
   }
 
   function stashMainDrift() {
-    if (!window.confirm(
-      'mainをDocs上で直接編集した分を、退避用のコミットとして記録します。続けますか?'
-    )) return;
+    openConfirmStrip(
+      panelContent,
+      'mainをDocs上で直接編集した分を、退避用のコミットとして記録します。',
+      '退避する',
+      doStash
+    );
+  }
 
+  function doStash() {
     stashBtn.disabled = true;
     google.script.run
       .withSuccessHandler(function () {
         stashBtn.disabled = false;
+        showSnack('直接編集を退避コミットとして記録しました', { kind: 'ok' });
         refreshStatus();
       })
       .withFailureHandler(function (err) {
         stashBtn.disabled = false;
-        window.alert(err.message);
+        showSnack(err.message, { kind: 'ng' });
       })
       .apiStashMainDrift(current.fileId);
   }
@@ -1196,7 +1394,7 @@
               branchBtn.disabled = true;
               google.script.run
                 .withSuccessHandler(function (b) {
-                  window.alert('ブランチを作りました: ' + b.name);
+                  showSnack('ブランチ ' + b.name + ' を作りました', { kind: 'ok' });
                   // タブとボタンにアイコンを付ける。文字だけだと走査しづらい
   var TAB_ICONS = {
     content: 'file-text',
@@ -1231,7 +1429,7 @@
                 })
                 .withFailureHandler(function (err) {
                   branchBtn.disabled = false;
-                  window.alert(err.message);
+                  showSnack(err.message, { kind: 'ng' });
                 })
                 .apiIssueCreateBranch(issue.number, current.fileId);
             });
@@ -1248,17 +1446,26 @@
   }
 
   function createIssue() {
-    var title = window.prompt('Issueのタイトルを入力してください');
-    if (!title) return;
-    var body = window.prompt('説明 (任意)') || '';
-
-    google.script.run
-      .withSuccessHandler(function () {
-        loadIssues();
-        if (!panelBoard.hidden) loadBoard();
-      })
-      .withFailureHandler(function (err) { window.alert(err.message); })
-      .apiIssueCreate(title, body, current.fileId ? [current.fileId] : []);
+    openInlineForm(
+      panelIssues.hidden ? panelBoard : panelIssues,
+      [
+        { name: 'title', label: 'Issueのタイトル', required: true },
+        { name: 'body', label: '説明 (任意)', multiline: true },
+      ],
+      'Issueを作る',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('Issueを作りました', { kind: 'ok' });
+            loadIssues();
+            if (!panelBoard.hidden) loadBoard();
+          })
+          .withFailureHandler(function (err) {
+            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
+          })
+          .apiIssueCreate(v.title, v.body, current.fileId ? [current.fileId] : []);
+      }
+    );
   }
 
   // ===== ボード =====
@@ -1308,7 +1515,7 @@
 
             google.script.run
               .withSuccessHandler(function () { loadBoard(); })
-              .withFailureHandler(function (err) { window.alert(err.message); })
+              .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
               .apiProjectMove(issueNumber, column, board[column].length);
           });
 

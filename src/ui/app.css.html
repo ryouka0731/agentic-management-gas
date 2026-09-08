@@ -769,4 +769,118 @@ button:disabled {
   stroke-width: 1.25;
   color: var(--ink-2);
 }
+
+/* =====================================================================
+ * モードレスな通知と入力
+ *
+ * ブラウザの alert / confirm / prompt はモーダルであり、操作を中断させ、
+ * 取り消しの手段も与えない。バナー通知と画面内フォームに置き換える。
+ * ===================================================================== */
+
+.snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-5);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: min(560px, calc(100vw - 32px));
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  z-index: 100;
+}
+
+.snackbar.ok { border-left-color: var(--success); }
+.snackbar.ng { border-left-color: var(--danger); }
+
+.snackbar-text { flex: 1; min-width: 0; }
+
+.snackbar button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+
+.snackbar button:hover { background: var(--bg-3); }
+
+.inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.inline-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.inline-form input, .inline-form textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.inline-form textarea { min-height: 56px; resize: vertical; }
+
+.inline-form-actions { display: flex; gap: var(--sp-2); }
+
+.confirm-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--ink);
+  font-size: 13px;
+  margin: var(--sp-2) 0;
+}
+
+.confirm-strip .btn { margin-left: auto; }
+
+/*
+ * タブの2群化。
+ *
+ * 「選択中の文書に対するビュー」と「リポジトリ全体のオブジェクト」は
+ * スコープが違う。並べて置くと、どれが今の文書に効く操作なのかが
+ * 読めなくなる。見出しを付けて分ける。
+ */
+.tab-group-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  text-transform: none;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  align-self: center;
+  white-space: nowrap;
+}
+
+.tab-group-label:first-child { padding-left: 0; }
+
+.tab-spacer { flex: 1; }
+
+.tabs { flex-wrap: wrap; }
 </style>

@@ -165,3 +165,26 @@ describe('テーマのトークン', () => {
     });
   });
 });
+
+describe('モードレスなUI', () => {
+  it('ブラウザのモーダル (alert / confirm / prompt) を使っていない', () => {
+    const js = read('src/ui/app.js.html');
+
+    // モーダルは操作を中断させ、取り消しの手段も与えない。
+    // バナー通知 (showSnack) と画面内フォーム (openInlineForm) を使う
+    const found = (js.match(/window\.(alert|confirm|prompt)\s*\(/g) || []);
+    expect(found).toEqual([]);
+  });
+
+  it('通知は読み上げに載る', () => {
+    const js = read('src/ui/app.js.html');
+    expect(js).toContain("setAttribute('role', 'status')");
+    expect(js).toContain("setAttribute('aria-live', 'polite')");
+  });
+
+  it('タブが文書スコープとリポジトリスコープに分かれている', () => {
+    const html = read('src/ui/wiki.html');
+    expect(html).toContain('この文書');
+    expect(html).toContain('リポジトリ');
+  });
+});
