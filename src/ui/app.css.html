@@ -1417,4 +1417,48 @@ button:disabled {
 
 .nav-section { padding: var(--sp-2) 0; }
 .sidebar { padding: var(--sp-3) 0; }
+
+/* =====================================================================
+ * 読み込み中の骨組み (スケルトン)
+ *
+ * 「読み込み中…」の文字より、これから出る形をそのまま見せたほうが
+ * 待ち時間が短く感じられ、出たときに位置もずれない。
+ * ===================================================================== */
+
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--bg-2) 25%, var(--bg-3) 37%, var(--bg-2) 63%);
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* 動きを減らす設定では光らせない。形だけ見せる */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--bg-3); }
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.sk-dot { width: 16px; height: 16px; border-radius: 50%; flex: 0 0 16px; }
+.sk-lines { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.sk-line { height: 12px; }
+.sk-line.short { width: 32%; height: 10px; }
+.sk-line.mid { width: 62%; }
+.sk-chip { width: 64px; height: 20px; border-radius: 999px; flex: 0 0 64px; }
+
+.sk-board { display: flex; gap: var(--sp-3); padding: var(--sp-4); }
+.sk-col { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sk-card { height: 56px; }
+.sk-block { height: 100%; min-height: 120px; margin: var(--sp-4); }
 </style>

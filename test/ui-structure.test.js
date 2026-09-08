@@ -349,3 +349,25 @@ describe('概念モデルとの対応', () => {
     expect(js).toContain("loadFiles(function () { switchTab('docs'); })");
   });
 });
+
+describe('読み込み中の見せ方', () => {
+  const js = read('src/ui/app.js.html');
+  const css = read('src/ui/app.css.html');
+
+  it('「読み込み中」の文字を画面に出さない', () => {
+    // 出来上がりの形を見せたほうが待ち時間が短く感じられ、
+    // 中身が入ったときに位置もずれない
+    const code = js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toContain('読み込み中');
+  });
+
+  it('骨組みを出す仕組みがある', () => {
+    expect(js).toContain('function showSkeleton(');
+    expect(css).toContain('.skeleton');
+  });
+
+  it('動きを減らす設定では光らせない', () => {
+    const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toContain('.skeleton { animation: none;');
+  });
+});

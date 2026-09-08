@@ -518,6 +518,81 @@
     return a;
   }
 
+  // ===== 読み込み中の骨組み =====
+
+  /**
+   * これから出る形を先に見せる。
+   *
+   * 「読み込み中…」の文字より、出来上がりの形を見せたほうが待ち時間が
+   * 短く感じられ、中身が入ったときに位置もずれない。
+   *
+   * @param {HTMLElement} container
+   * @param {string} kind 'list' | 'graph' | 'doc' | 'board' | 'block'
+   * @param {number} [count]
+   */
+  function showSkeleton(container, kind, count) {
+    container.textContent = '';
+    var n = count || 4;
+
+    if (kind === 'board') {
+      var board = document.createElement('div');
+      board.className = 'sk-board';
+
+      for (var c = 0; c < 4; c++) {
+        var col = document.createElement('div');
+        col.className = 'sk-col';
+        for (var k = 0; k < 2; k++) {
+          var card = document.createElement('div');
+          card.className = 'skeleton sk-card';
+          col.appendChild(card);
+        }
+        board.appendChild(col);
+      }
+      container.appendChild(board);
+      return;
+    }
+
+    if (kind === 'block') {
+      var block = document.createElement('div');
+      block.className = 'skeleton sk-block';
+      container.appendChild(block);
+      return;
+    }
+
+    for (var i = 0; i < n; i++) {
+      var row = document.createElement('div');
+      row.className = 'sk-row';
+
+      if (kind === 'graph' || kind === 'doc') {
+        var dot = document.createElement('div');
+        dot.className = 'skeleton sk-dot';
+        row.appendChild(dot);
+      }
+
+      var lines = document.createElement('div');
+      lines.className = 'sk-lines';
+
+      var main = document.createElement('div');
+      main.className = 'skeleton sk-line' + (i % 2 ? ' mid' : '');
+      lines.appendChild(main);
+
+      if (kind !== 'doc') {
+        var sub = document.createElement('div');
+        sub.className = 'skeleton sk-line short';
+        lines.appendChild(sub);
+      }
+      row.appendChild(lines);
+
+      if (kind === 'graph' || kind === 'list') {
+        var chip = document.createElement('div');
+        chip.className = 'skeleton sk-chip';
+        row.appendChild(chip);
+      }
+
+      container.appendChild(row);
+    }
+  }
+
   // ===== 本文の描画 =====
 
   /**
@@ -784,8 +859,12 @@
   }
 
   function loadDocs() {
-    if (!allFiles.length) loadFiles(renderDocs);
-    else renderDocs();
+    if (!allFiles.length) {
+      showSkeleton(docListEl, 'doc', 3);
+      loadFiles(renderDocs);
+    } else {
+      renderDocs();
+    }
     loadOverview();
   }
 
@@ -909,6 +988,7 @@
     modeEditBtn.setAttribute('aria-pressed', String(editing));
 
     viewer.hidden = editing;
+    if (!editing) showEditorSkeleton(false);
     editorEl.hidden = !editing;
     editSaveBtn.hidden = !editing;
 
@@ -916,15 +996,36 @@
     else editHint.textContent = '';
   }
 
+  /**
+   * 編集欄の骨組みを出し入れする。
+   *
+   * @param {boolean} on
+   */
+  function showEditorSkeleton(on) {
+    var existing = document.getElementById('editor-skeleton');
+    if (existing) existing.remove();
+
+    editorEl.hidden = on;
+    if (!on) return;
+
+    var wrap = document.createElement('div');
+    wrap.id = 'editor-skeleton';
+    wrap.style.flex = '1';
+    showSkeleton(wrap, 'list', 6);
+    editorEl.parentNode.appendChild(wrap);
+  }
+
   function loadEditor() {
     if (!current.fileId) return;
 
-    editorEl.value = '読み込み中…';
+    editorEl.value = '';
     editorEl.disabled = true;
     editSaveBtn.disabled = true;
+    showEditorSkeleton(true);
 
     google.script.run
       .withSuccessHandler(function (res) {
+        showEditorSkeleton(false);
         editorEl.value = res.markdown;
         editorEl.disabled = !res.editable;
         editSaveBtn.disabled = !res.editable;
@@ -933,6 +1034,7 @@
           : OFFICIAL + 'は直接なおせません。改訂版を作って直してください';
       })
       .withFailureHandler(function (err) {
+        showEditorSkeleton(false);
         editorEl.value = '';
         editHint.textContent = 'エラー: ' + err.message;
       })
@@ -1085,7 +1187,7 @@
   function loadHistory() {
     if (!current.fileId) return;
 
-    historyList.textContent = '読み込み中…';
+    showSkeleton(historyList, 'graph', 6);
     diffView.textContent = '';
 
     google.script.run
@@ -1149,7 +1251,7 @@
             for (var i = 0; i < items.length; i++) {
               items[i].setAttribute('aria-current', String(items[i] === btn));
             }
-            diffView.textContent = '読み込み中…';
+            showSkeleton(diffView, 'block');
             google.script.run
               .withSuccessHandler(function (ops) {
                 diffView.textContent = '';
@@ -1247,7 +1349,7 @@
   // ===== 改訂中の版 (横断) =====
 
   function loadBranches() {
-    branchListEl.textContent = '読み込み中…';
+    showSkeleton(branchListEl, 'list', 3);
 
     google.script.run
       .withSuccessHandler(function (branches) {
@@ -1486,7 +1588,7 @@
   }
 
   function loadPulls() {
-    prListEl.textContent = '読み込み中…';
+    showSkeleton(prListEl, 'list', 4);
     prDetail.textContent = '';
 
     google.script.run
@@ -1686,7 +1788,7 @@
   }
 
   function renderPrCommits(pr, container) {
-    container.textContent = '読み込み中…';
+    showSkeleton(container, 'list', 3);
 
     google.script.run
       .withSuccessHandler(function (commits) {
@@ -1720,7 +1822,7 @@
   }
 
   function showPrDetail(pr) {
-    prDetail.textContent = '読み込み中…';
+    showSkeleton(prDetail, 'block');
 
     google.script.run
       .withSuccessHandler(function (preview) {
@@ -1855,7 +1957,7 @@
   // ===== やること =====
 
   function loadIssues() {
-    issueListEl.textContent = '読み込み中…';
+    showSkeleton(issueListEl, 'list', 4);
 
     google.script.run
       .withSuccessHandler(function (issues) {
@@ -1954,7 +2056,7 @@
   ];
 
   function loadBoard() {
-    boardEl.textContent = '読み込み中…';
+    showSkeleton(boardEl, 'board');
 
     google.script.run
       .withSuccessHandler(function (board) {
