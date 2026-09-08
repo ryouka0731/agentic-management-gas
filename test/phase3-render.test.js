@@ -145,3 +145,34 @@ describe('renderSlides', () => {
     expect(ctx.renderSlides(id)).toBe(ctx.renderSlides(id));
   });
 });
+
+describe('種別ごとの分岐', () => {
+  const SRC = [
+    'src/render/SheetRenderer.gs',
+    'src/render/SheetWriter.gs',
+    'src/render/HtmlWriter.gs',
+  ];
+
+  it('slide には書き戻せない', () => {
+    const { ctx } = setup(...SRC);
+    expect(() => ctx.writeHtmlToFile('x', '', 'slide'))
+      .toThrow(/Slidesには書き戻せません/);
+  });
+
+  it('未知の種別は明示的に拒否する', () => {
+    const { ctx } = setup(...SRC);
+    expect(() => ctx.writeHtmlToFile('x', '', 'pdf'))
+      .toThrow(/対応していないファイル種別/);
+  });
+
+  it('sheet は writeHtmlToSheet に回る', () => {
+    const { ctx } = setup(...SRC);
+    const ss = ctx.SpreadsheetApp.create('売上表');
+    ss.insertSheet('S').appendRow(['a']);
+
+    ctx.writeHtmlToFile(ss.getId(),
+      '<table data-sheet="S">\n<tr><td>b</td></tr>\n</table>\n', 'sheet');
+
+    expect(ctx.renderSheet(ss.getId())).toContain('<td>b</td>');
+  });
+});
