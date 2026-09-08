@@ -2720,6 +2720,10 @@
         chart.style.setProperty('--gantt-days', String(g.days));
         chart.style.setProperty('--gantt-col', COL + 'px');
 
+        // 目盛りの週の区切りを、先頭の日から月曜までのずれで合わせる
+        var firstDay = new Date(g.from).getDay();
+        chart.style.setProperty('--week-offset', String((firstDay + 6) % 7));
+
         // 上段に月、下段に日を出す。日だけでは何月か分からない
         var monthHead = document.createElement('div');
         monthHead.className = 'gantt-head';

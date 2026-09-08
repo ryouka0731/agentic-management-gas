@@ -493,3 +493,39 @@ describe('工程表の使い勝手', () => {
     });
   });
 });
+
+describe('線に頼らない表現', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('触れる対象は影で持ち上げる', () => {
+    // 枠は境界の記号であって、触れることの記号ではない
+    ['.board-card {', '.btn {', '.gantt-bar {'].forEach((sel) => {
+      const rule = css.slice(css.indexOf(sel), css.indexOf('}', css.indexOf(sel)));
+      expect(rule).toContain('box-shadow');
+      expect(rule).not.toContain('border: 1px solid');
+    });
+  });
+
+  it('カードと束ねは塗りでまとまりを作る', () => {
+    const column = css.slice(css.indexOf('.board-column {'),
+      css.indexOf('}', css.indexOf('.board-column {')));
+    expect(column).toContain('border: 0');
+    expect(column).toContain('background: var(--bg-2)');
+  });
+
+  it('工程表の目盛りは日ごとに線を引かない', () => {
+    const day = css.slice(css.indexOf('.gantt-day {'),
+      css.indexOf('}', css.indexOf('.gantt-day {')));
+    expect(day).not.toContain('border-left');
+
+    // 週ごとの区切りだけを敷く
+    expect(css).toContain('repeating-linear-gradient');
+    expect(css).toContain('--week-offset');
+  });
+
+  it('罫線の総数を増やしすぎない', () => {
+    // 線が増えるほど、どれが意味のある境界か読めなくなる
+    const lines = (css.match(/1px solid/g) || []).length;
+    expect(lines).toBeLessThanOrEqual(28);
+  });
+});
