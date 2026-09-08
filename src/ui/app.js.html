@@ -33,10 +33,12 @@
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
   var linkedIssuesEl = document.getElementById('linked-issues');
-  var panelEdit = document.getElementById('panel-edit');
+  var modeViewBtn = document.getElementById('mode-view');
+  var modeEditBtn = document.getElementById('mode-edit');
+  var docModes = document.getElementById('mode-hint');
   var editorEl = document.getElementById('editor');
   var editSaveBtn = document.getElementById('edit-save-btn');
-  var editHint = document.getElementById('edit-hint');
+  var editHint = document.getElementById('mode-hint');
   var stashBtn = document.getElementById('stash-btn');
 
   var current = { fileId: null, headSha: null, branch: 'main' };
@@ -610,12 +612,13 @@
   // ===== タブ =====
 
   function switchTab(name) {
-    var tabs = tabsEl.querySelectorAll('.tab');
-    for (var i = 0; i < tabs.length; i++) {
-      tabs[i].setAttribute('aria-current', String(tabs[i].dataset.tab === name));
+    // タブ (この文書のビュー) と左のナビ (リポジトリ) を1つの仕組みで扱う。
+    // 現在地は片方だけに出す
+    var targets = document.querySelectorAll('[data-tab]');
+    for (var i = 0; i < targets.length; i++) {
+      targets[i].setAttribute('aria-current', String(targets[i].dataset.tab === name));
     }
     panelContent.hidden = name !== 'content';
-    panelEdit.hidden = name !== 'edit';
     panelHistory.hidden = name !== 'history';
     panelBranches.hidden = name !== 'branches';
     panelPulls.hidden = name !== 'pulls';
@@ -628,7 +631,6 @@
     else if (name === 'pulls') loadPulls();
     else if (name === 'issues') loadIssues();
     else if (name === 'board') loadBoard();
-    else if (name === 'edit') loadEditor();
     else if (name === 'help') loadHelp();
   }
 
@@ -1334,6 +1336,7 @@
         openLink.hidden = false;
         renderIntoViewer(res.html);
         loadLinkedIssues(fileId);
+        setDocMode('view');
         switchTab('content');
         refreshStatus();
       })
@@ -1344,6 +1347,28 @@
   }
 
   // ===== 編集 =====
+
+  /**
+   * 本文の見せ方を切り替える。
+   *
+   * 「編集」は文書に対する動作であってビューではないため、タブではなく
+   * 本文の中のモードとして扱う。
+   *
+   * @param {string} mode 'view' | 'edit'
+   */
+  function setDocMode(mode) {
+    var editing = mode === 'edit';
+
+    modeViewBtn.setAttribute('aria-pressed', String(!editing));
+    modeEditBtn.setAttribute('aria-pressed', String(editing));
+
+    viewer.hidden = editing;
+    editorEl.hidden = !editing;
+    editSaveBtn.hidden = !editing;
+
+    if (editing) loadEditor();
+    else editHint.textContent = '';
+  }
 
   function loadEditor() {
     if (!current.fileId) return;
@@ -1561,44 +1586,7 @@
               google.script.run
                 .withSuccessHandler(function (b) {
                   showSnack('ブランチ ' + b.name + ' を作りました', { kind: 'ok' });
-                  // タブとボタンにアイコンを付ける。文字だけだと走査しづらい
-  var TAB_ICONS = {
-    content: 'file-text',
-    edit: 'pencil',
-    history: 'git-commit',
-    branches: 'git-branch',
-    pulls: 'git-pull-request',
-    issues: 'circle-dot',
-    board: 'columns',
-    help: 'help-circle',
-  };
-
-  for (var ti = 0; ti < tabButtons.length; ti++) {
-    var icon = TAB_ICONS[tabButtons[ti].dataset.tab];
-    if (icon) tabButtons[ti].insertBefore(makeIcon(icon), tabButtons[ti].firstChild);
-  }
-
-  [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
-   [bulkCommitBtn, 'check'],
-   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save']]
-    .forEach(function (pair) {
-      if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
-    });
-
-  google.script.run
-    .withSuccessHandler(function (who) { currentUser = who.activeUser; })
-    .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
-    .apiWhoAmI();
-
-  restoreSidebarWidth();
-  initResizer();
-  applyTheme(readTheme());
-  themeBtn.addEventListener('click', cycleTheme);
-
-  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
-  // ヘルプに辿り着けない
-  tabsEl.hidden = false;
-  loadFiles();
+                  loadFiles();
                   loadIssues();
                 })
                 .withFailureHandler(function (err) {
@@ -1839,7 +1827,7 @@
 
   // ===== 初期化 =====
 
-  var tabButtons = tabsEl.querySelectorAll('.tab');
+  var tabButtons = document.querySelectorAll('[data-tab]');
   for (var t = 0; t < tabButtons.length; t++) {
     (function (btn) {
       btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
@@ -1876,8 +1864,47 @@
       : currentBranch + ' の未コミット変更をまとめてコミットします';
   }
   editSaveBtn.addEventListener('click', saveEditor);
+  modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
+  modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
   stashBtn.addEventListener('click', stashMainDrift);
 
+  // タブとボタンにアイコンを付ける。文字だけだと走査しづらい
+  var TAB_ICONS = {
+    content: 'file-text',
+    history: 'git-commit',
+    branches: 'git-branch',
+    pulls: 'git-pull-request',
+    issues: 'circle-dot',
+    board: 'columns',
+    help: 'help-circle',
+  };
+
+  var navTargets = document.querySelectorAll('[data-tab]');
+  for (var ti = 0; ti < navTargets.length; ti++) {
+    var icon = TAB_ICONS[navTargets[ti].dataset.tab];
+    if (icon) navTargets[ti].insertBefore(makeIcon(icon), navTargets[ti].firstChild);
+  }
+
+  [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
+   [bulkCommitBtn, 'check'], [modeEditBtn, 'pencil'], [modeViewBtn, 'file-text'],
+   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save']]
+    .forEach(function (pair) {
+      if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
+    });
+
+  google.script.run
+    .withSuccessHandler(function (who) { currentUser = who.activeUser; })
+    .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
+    .apiWhoAmI();
+
+  restoreSidebarWidth();
+  initResizer();
+  applyTheme(readTheme());
+  themeBtn.addEventListener('click', cycleTheme);
+
+  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
+  // ヘルプに辿り着けない
+  tabsEl.hidden = false;
   loadFiles();
 })();
 </script>

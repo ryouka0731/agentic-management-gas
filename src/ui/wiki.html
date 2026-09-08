@@ -8,11 +8,22 @@
 <body>
   <div class="layout">
     <nav class="sidebar">
-      <h2>ファイル</h2>
-      <div class="branch-switch">
-        <select id="branch-select" aria-label="ブランチ"></select>
+      <div class="nav-section">
+        <h2>リポジトリ</h2>
+        <button class="nav-item" data-tab="branches">ブランチ</button>
+        <button class="nav-item" data-tab="pulls">プルリクエスト</button>
+        <button class="nav-item" data-tab="issues">Issue</button>
+        <button class="nav-item" data-tab="board">ボード</button>
+        <button class="nav-item" data-tab="help">ヘルプ</button>
       </div>
-      <div id="file-list"></div>
+
+      <div class="nav-section">
+        <h2>文書</h2>
+        <div class="branch-switch">
+          <select id="branch-select" aria-label="ブランチ"></select>
+        </div>
+        <div id="file-list"></div>
+      </div>
     </nav>
     <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
          tabindex="0" aria-label="ペインの幅を変える"></div>
@@ -30,32 +41,25 @@
       </div>
 
       <div class="tabs" id="tabs" hidden>
-        <span class="tab-group-label">この文書</span>
         <button class="tab" data-tab="content" aria-current="true">本文</button>
-        <button class="tab" data-tab="edit">編集</button>
         <button class="tab" data-tab="history">履歴</button>
-
-        <span class="tab-group-label">リポジトリ</span>
-        <button class="tab" data-tab="branches">ブランチ</button>
-        <button class="tab" data-tab="pulls">プルリクエスト</button>
-        <button class="tab" data-tab="issues">Issue</button>
-        <button class="tab" data-tab="board">ボード</button>
-
-        <span class="tab-spacer"></span>
-        <button class="tab" data-tab="help">ヘルプ</button>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>
         <div class="linked-issues" id="linked-issues" hidden></div>
-        <iframe id="viewer" class="viewer" sandbox></iframe>
-      </div>
 
-      <div class="panel panel-col" id="panel-edit" hidden>
-        <div class="panel-actions">
-          <button id="edit-save-btn" class="btn">保存</button>
-          <span class="row-meta" id="edit-hint"></span>
+        <div class="doc-modes">
+          <div class="segmented" role="group" aria-label="表示のしかた">
+            <button class="seg" id="mode-view" aria-pressed="true">表示</button>
+            <button class="seg" id="mode-edit" aria-pressed="false">編集</button>
+          </div>
+          <span class="row-meta" id="mode-hint"></span>
+          <span class="spacer"></span>
+          <button id="edit-save-btn" class="btn" hidden>保存</button>
         </div>
-        <textarea id="editor" class="editor" spellcheck="false"></textarea>
+
+        <iframe id="viewer" class="viewer" sandbox></iframe>
+        <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
       </div>
 
       <div class="panel" id="panel-history" hidden>

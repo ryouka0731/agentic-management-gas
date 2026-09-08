@@ -182,9 +182,25 @@ describe('モードレスなUI', () => {
     expect(js).toContain("setAttribute('aria-live', 'polite')");
   });
 
-  it('タブが文書スコープとリポジトリスコープに分かれている', () => {
+  it('リポジトリのナビは左、文書のビューは上のタブに分かれている', () => {
     const html = read('src/ui/wiki.html');
-    expect(html).toContain('この文書');
-    expect(html).toContain('リポジトリ');
+
+    const sidebar = html.slice(html.indexOf('<nav class="sidebar">'), html.indexOf('</nav>'));
+    const tabs = html.slice(html.indexOf('<div class="tabs"'), html.indexOf('</div>', html.indexOf('<div class="tabs"')));
+
+    ['branches', 'pulls', 'issues', 'board', 'help'].forEach((name) => {
+      expect(sidebar).toContain('data-tab="' + name + '"');
+    });
+    expect(tabs).toContain('data-tab="content"');
+    expect(tabs).toContain('data-tab="history"');
+  });
+
+  it('タブに動詞を置かない', () => {
+    const html = read('src/ui/wiki.html');
+
+    // 「編集」は文書に対する動作であってビューではない。
+    // タブはオブジェクトとそのビューだけにする
+    expect(html).not.toContain('data-tab="edit"');
+    expect(html).toContain('id="mode-edit"');
   });
 });

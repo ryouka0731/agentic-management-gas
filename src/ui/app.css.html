@@ -869,21 +869,6 @@ button:disabled {
  * スコープが違う。並べて置くと、どれが今の文書に効く操作なのかが
  * 読めなくなる。見出しを付けて分ける。
  */
-.tab-group-label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--ink-2);
-  text-transform: none;
-  padding: 0 var(--sp-1) 0 var(--sp-2);
-  align-self: center;
-  white-space: nowrap;
-}
-
-.tab-group-label:first-child { padding-left: 0; }
-
-.tab-spacer { flex: 1; }
-
-.tabs { flex-wrap: wrap; }
 
 /*
  * ペインの境界。掴んで幅を変えられる。
@@ -928,4 +913,118 @@ button:disabled {
 }
 
 .bulk-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* =====================================================================
+ * ナビゲーション
+ *
+ * 「リポジトリ全体のオブジェクト」は左に縦で置き、「選択中の文書の
+ * ビュー」だけを上のタブに残す。8個を横一列に並べると、どれが今の
+ * 文書に効くのか読めず、走査もしづらい。
+ *
+ * 近接と共通領域でまとまりを作る (ゲシュタルト)。同じ枠の中にあり、
+ * 間隔が近いものは同じ仲間だと読める。
+ * ===================================================================== */
+
+.nav-section { padding: var(--sp-3) 0; }
+
+.nav-section + .nav-section {
+  border-top: 1px solid var(--line);
+}
+
+.nav-section h2 {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin: 0 var(--sp-4) var(--sp-2);
+  text-transform: none;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  /* 44px の当たり判定を確保する */
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-align: left;
+}
+
+.nav-item:hover { background: var(--bg-3); color: var(--ink); }
+
+/* 現在地は色だけでなく、線と太さでも示す */
+.nav-item[aria-current="true"] {
+  color: var(--ink);
+  background: var(--bg-3);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+/* =====================================================================
+ * 表示 / 編集の切り替え
+ * ===================================================================== */
+
+.doc-modes {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.seg + .seg { border-left: 1px solid var(--line); }
+.seg:hover { background: var(--bg-3); color: var(--ink); }
+
+.seg[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.seg[aria-pressed="true"] .icon { opacity: 1; }
+
+/* =====================================================================
+ * 余白の調整
+ *
+ * 情報の階層に合わせて間隔を変える。すべて同じ間隔だと、どこで話題が
+ * 変わるのかが読めない。
+ * ===================================================================== */
+
+.toolbar { padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
+.tabs { padding: 0 var(--sp-4); gap: var(--sp-1); }
+
+.tab {
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.panel-actions { padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
+.list-area { padding: var(--sp-2) 0; }
+.row-item { padding: var(--sp-3) var(--sp-4); }
+.file-item { padding: var(--sp-2) var(--sp-4); min-height: 36px; }
 </style>
