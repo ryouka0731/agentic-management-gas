@@ -483,15 +483,6 @@ describe('工程表の使い勝手', () => {
     });
   });
 
-  it('やることと工程表を束ねられる', () => {
-    expect(html).toContain('id="issue-group"');
-    expect(html).toContain('id="gantt-group"');
-    expect(js).toContain('function groupIssues(');
-
-    ['文書ごと', '担当者ごと', '状態ごと', 'ラベルごと'].forEach((label) => {
-      expect(html).toContain(label);
-    });
-  });
 });
 
 describe('線に頼らない表現', () => {
@@ -510,7 +501,7 @@ describe('線に頼らない表現', () => {
     const column = css.slice(css.indexOf('.board-column {'),
       css.indexOf('}', css.indexOf('.board-column {')));
     expect(column).toContain('border: 0');
-    expect(column).toContain('background: var(--bg-2)');
+    expect(column).toMatch(/background: var\(--bg-[23]\)/);
   });
 
   it('工程表の目盛りは日ごとに線を引かない', () => {
@@ -549,5 +540,47 @@ describe('骨組みの形', () => {
     expect(js).toContain("showSkeleton(historyList, 'graph'");
     expect(js).toContain("showSkeleton(docListEl, 'doc'");
     expect(js).toContain("showSkeleton(boardEl, 'board')");
+  });
+});
+
+describe('サイドバーと見え方', () => {
+  const html = read('src/ui/wiki.html');
+  const js = read('src/ui/app.js.html');
+
+  it('左のメニューを役割で束ねる', () => {
+    const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
+
+    expect(sidebar).toContain('管理するもの');
+    expect(sidebar).toContain('進行中');
+    expect((sidebar.match(/nav-section/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('やることは1つの行き先で、見え方を切り替える', () => {
+    // 対象は同じで見せ方だけが違う。行き先を3つに割らない
+    expect(html).toContain('id="view-list"');
+    expect(html).toContain('id="view-board"');
+    expect(html).toContain('id="view-gantt"');
+    expect(html).not.toContain('data-tab="board"');
+    expect(html).not.toContain('data-tab="gantt"');
+
+    expect(js).toContain('function setIssueView(');
+  });
+
+  it('絞り込みと束ねを共通の帯に置く', () => {
+    const bar = html.slice(html.indexOf('<div class="view-bar">'),
+      html.indexOf('</div>', html.indexOf('id="issue-group"')));
+    expect(bar).toContain('id="issue-filter"');
+    expect(bar).toContain('id="issue-group"');
+  });
+
+  it('束ねは畳める', () => {
+    expect(js).toContain("head.setAttribute('aria-expanded'");
+    expect(js).toContain('collapsed[group.key]');
+  });
+
+  it('カードに番号・ラベル・担当を出す', () => {
+    expect(js).toContain('function makeLabels(');
+    expect(js).toContain('function makeAvatar(');
+    expect(js).toContain("num.className = 'card-number'");
   });
 });

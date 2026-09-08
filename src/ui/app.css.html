@@ -52,9 +52,9 @@
   --radius-sm: 4px;
   --shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
   /* 押せることを示す影。段が上がるほど手前に見える (Material の elevation) */
-  --elev-1: 0 1px 0 rgba(31, 35, 40, 0.06), 0 1px 3px rgba(31, 35, 40, 0.12);
-  --elev-2: 0 2px 4px rgba(31, 35, 40, 0.14), 0 4px 10px rgba(31, 35, 40, 0.10);
-  --hairline: inset 0 0 0 1px rgba(31, 35, 40, 0.10);
+  --elev-1: 0 1px 2px rgba(31, 35, 40, 0.16), 0 2px 6px rgba(31, 35, 40, 0.10);
+  --elev-2: 0 3px 6px rgba(31, 35, 40, 0.20), 0 8px 20px rgba(31, 35, 40, 0.14);
+  --hairline: inset 0 0 0 1px rgba(31, 35, 40, 0.14);
   --motion: 160ms;
   --sidebar-w: 260px;
   /* 系統の列幅。枝の本数に応じて画面側が書き換える */
@@ -619,8 +619,9 @@ body {
 }
 
 .board-column {
-  /* 囲いではなく塗りでまとまりを作る (共通領域) */
-  background: var(--bg-2);
+  /* 囲いではなく塗りでまとまりを作る (共通領域)。
+     白いカードを載せるため、面のほうを一段沈める */
+  background: var(--bg-3);
   border: 0;
   border-radius: 10px;
   padding: var(--sp-3);
@@ -1500,23 +1501,34 @@ button:disabled {
 .gantt-head, .gantt-row {
   display: flex;
   align-items: stretch;
-  gap: var(--sp-2);
+  gap: var(--sp-4);
 }
 
 .gantt-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   background: var(--bg);
   padding: var(--sp-2) 0;
 }
 
+.gantt-head .gantt-name { z-index: 4; }
+
 /* 見出しの下だけは境界を示す。ただし2段の一番下に1本だけ */
 .gantt-head + .gantt-head { box-shadow: 0 1px 0 var(--line); }
 
+/*
+ * 名前の列は左に貼り付けておく。横に流すと棒だけが残り、
+ * どの行が何の作業なのか対応が取れなくなる。
+ */
 .gantt-name {
-  flex: 0 0 200px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 220px;
   min-width: 0;
+  display: flex;
+  align-items: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1524,8 +1536,10 @@ button:disabled {
   color: var(--ink);
   text-align: left;
   border: 0;
-  background: transparent;
-  padding: var(--sp-1) 0;
+  background: var(--bg);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  /* 面の切り替わりを影で示す。線は引かない */
+  box-shadow: 6px 0 6px -6px rgba(31, 35, 40, 0.18);
 }
 
 button.gantt-name { cursor: pointer; border-radius: var(--radius-sm); }
@@ -1537,6 +1551,8 @@ button.gantt-name:hover { color: var(--accent); }
   flex: 0 0 auto;
 }
 
+.gantt-scale { align-items: end; }
+
 .gantt-day {
   font-size: 10px;
   color: var(--ink-2);
@@ -1546,9 +1562,10 @@ button.gantt-name:hover { color: var(--accent); }
 
 .gantt-day.today { color: var(--accent); font-weight: 600; }
 
-/* 行は線で区切らず、余白で離す */
-.gantt-row { padding: var(--sp-2) 0; }
-.gantt-row:hover { background: var(--bg-2); border-radius: var(--radius); }
+/* 行は線で区切らず、余白で離す。高さは揃える */
+.gantt-row { padding: var(--sp-1) 0; min-height: 40px; align-items: center; }
+.gantt-row:hover .gantt-name { background: var(--bg-2); }
+.gantt-row:hover .gantt-track { filter: brightness(0.985); }
 
 .gantt-track {
   position: relative;
@@ -1785,6 +1802,20 @@ button.gantt-name:hover { color: var(--accent); }
 
 .group-head:first-child { padding-top: var(--sp-3); }
 
+/*
+ * 工程表の見出しも左に貼り付ける。横に流すと、どの束を見ているのかが
+ * 分からなくなる。
+ */
+.gantt .group-head {
+  position: sticky;
+  left: 0;
+  width: 220px;
+  padding: var(--sp-5) var(--sp-2) var(--sp-1);
+  background: var(--bg);
+}
+
+.gantt .group-head:first-child { padding-top: var(--sp-2); }
+
 .group-head .row-meta { margin-left: auto; }
 
 .group-switch {
@@ -1828,4 +1859,95 @@ button.gantt-name:hover { color: var(--accent); }
 }
 
 .diff-text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+
+/* =====================================================================
+ * 見え方の切り替えと絞り込み
+ * ===================================================================== */
+
+.view-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-2);
+}
+
+.filter-box { display: flex; flex: 0 1 260px; }
+
+.filter-box input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: var(--hairline);
+}
+
+/* 束ねの見出しは押して畳める */
+.group-head {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.group-head:hover { color: var(--accent); }
+.group-mark { flex: 0 0 auto; color: var(--ink-2); font-size: 10px; }
+
+.group-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* カードと行の中身 */
+.labels { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: var(--sp-2); }
+
+.label-pill {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.avatar.none { background: var(--bg-3); color: var(--ink-2); }
+
+.card-number { font-size: 11px; color: var(--ink-2); }
+.card-title { font-size: 13px; line-height: 1.5; margin: 2px 0 var(--sp-2); }
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.card-foot .row-meta { flex: 1; }
+.board-card .labels { margin: 0; }
 </style>

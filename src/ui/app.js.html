@@ -58,7 +58,6 @@
   var panelBranches = document.getElementById('panel-branches');
   var panelPulls = document.getElementById('panel-pulls');
   var panelIssues = document.getElementById('panel-issues');
-  var panelBoard = document.getElementById('panel-board');
   var panelHelp = document.getElementById('panel-help');
 
   var docListEl = document.getElementById('doc-list');
@@ -82,16 +81,20 @@
   var issueListEl = document.getElementById('issue-list');
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
-  var boardCreateBtn = document.getElementById('board-create-btn');
   var guideEl = document.getElementById('guide');
   var sidePanel = document.getElementById('side-panel');
   var sideTitle = document.getElementById('side-title');
   var sideBody = document.getElementById('side-body');
   var sideClose = document.getElementById('side-close');
-  var panelGantt = document.getElementById('panel-gantt');
   var ganttEl = document.getElementById('gantt');
-  var ganttGroupSel = document.getElementById('gantt-group');
   var issueGroupSel = document.getElementById('issue-group');
+  var issueFilterEl = document.getElementById('issue-filter');
+  var issueCountEl = document.getElementById('issue-count');
+  var viewBtns = {
+    list: document.getElementById('view-list'),
+    board: document.getElementById('view-board'),
+    gantt: document.getElementById('view-gantt'),
+  };
 
   // ===== 状態 =====
 
@@ -107,6 +110,9 @@
   var allFiles = [];
   var currentUser = '';
   var currentTab = 'docs';
+  var issueView = 'list';
+  var collapsed = {};
+  var lastIssues = [];
 
   /** 業務での呼び方。画面には Git の用語を出さない */
   var OFFICIAL = '正式版';
@@ -1019,8 +1025,6 @@
     panelBranches.hidden = name !== 'branches';
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
-    panelBoard.hidden = name !== 'board';
-    panelGantt.hidden = name !== 'gantt';
     panelHelp.hidden = name !== 'help';
 
     tabsEl.hidden = !current.fileId || !DOC_TABS[name];
@@ -1032,9 +1036,7 @@
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
     else if (name === 'pulls') loadPulls();
-    else if (name === 'issues') loadIssues();
-    else if (name === 'board') loadBoard();
-    else if (name === 'gantt') loadGantt();
+    else if (name === 'issues') reloadIssueView();
     else if (name === 'help') loadHelp();
   }
 
@@ -2241,14 +2243,138 @@
 
   // ===== やること =====
 
+  /**
+   * やることの見え方を切り替える。
+   *
+   * 対象は同じで、見せ方だけが違う。GitHub の Projects と同じく、
+   * 1つの行き先に複数のビューを持たせる。
+   *
+   * @param {string} view 'list' | 'board' | 'gantt'
+   */
+  /**
+   * ラベルを小さな札にして並べる。
+   *
+   * @param {string} labels カンマ区切り
+   * @returns {HTMLElement|null}
+   */
+  function makeLabels(labels) {
+    var list = String(labels || '').split(',')
+      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return !!x; });
+
+    if (!list.length) return null;
+
+    var wrap = document.createElement('span');
+    wrap.className = 'labels';
+
+    list.forEach(function (name) {
+      var pill = document.createElement('span');
+      pill.className = 'label-pill';
+      pill.textContent = name;
+      wrap.appendChild(pill);
+    });
+    return wrap;
+  }
+
+  /**
+   * 担当者のしるし。頭文字を丸で示す。
+   *
+   * @param {string} email
+   * @returns {HTMLElement}
+   */
+  function makeAvatar(email) {
+    var who = String(email || '');
+    var el = document.createElement('span');
+    el.className = 'avatar' + (who ? '' : ' none');
+    el.textContent = who ? who.charAt(0).toUpperCase() : '?';
+    el.title = who || '担当なし';
+    el.setAttribute('aria-label', who || '担当なし');
+    return el;
+  }
+
+  function setIssueView(view) {
+    issueView = view;
+
+    Object.keys(viewBtns).forEach(function (k) {
+      viewBtns[k].setAttribute('aria-pressed', String(k === view));
+    });
+
+    issueListEl.hidden = view !== 'list';
+    boardEl.hidden = view !== 'board';
+    ganttEl.hidden = view !== 'gantt';
+
+    try {
+      window.localStorage.setItem('issueView', view);
+    } catch (e) { /* 保存できなくても切り替えは効く */ }
+
+    reloadIssueView();
+  }
+
+  function reloadIssueView() {
+    if (issueView === 'board') loadBoard();
+    else if (issueView === 'gantt') loadGantt();
+    else loadIssues();
+  }
+
+  /**
+   * 絞り込みの文字で残すかどうかを決める。
+   *
+   * 題名・担当・ラベル・番号のどれかに含まれていれば残す。
+   *
+   * @param {object} issue
+   * @returns {boolean}
+   */
+  function matchesFilter(issue) {
+    var q = String(issueFilterEl.value || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    if (!q) return true;
+
+    var hay = ['#' + issue.number, issue.title, issue.assignee, issue.labels]
+      .join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }
+
+  /**
+   * 束ねの見出し。押すと畳める。
+   *
+   * @param {string} key
+   * @param {string} label
+   * @param {number} count
+   * @returns {HTMLElement}
+   */
+  function makeGroupHead(label, count, key) {
+    var head = document.createElement('button');
+    head.className = 'group-head';
+    head.setAttribute('aria-expanded', String(!collapsed[key]));
+
+    var mark = document.createElement('span');
+    mark.className = 'group-mark';
+    mark.textContent = collapsed[key] ? '▸' : '▾';
+    head.appendChild(mark);
+
+    var name = document.createElement('span');
+    name.textContent = label;
+    head.appendChild(name);
+
+    var n = document.createElement('span');
+    n.className = 'group-count';
+    n.textContent = count;
+    head.appendChild(n);
+
+    head.addEventListener('click', function () {
+      collapsed[key] = !collapsed[key];
+      reloadIssueView();
+    });
+    return head;
+  }
+
   function loadIssues() {
     showSkeleton(issueListEl, 'list', 4);
 
     google.script.run
       .withSuccessHandler(function (list) {
         var issues = list || [];
+        lastIssues = issues;
         issueListEl.textContent = '';
-        setPanelCount(panelIssues, issues.length + '件');
 
         if (!issues.length) {
           issueListEl.appendChild(makeBlankState(
@@ -2259,8 +2385,21 @@
           return;
         }
 
-        groupIssues(issues, issueGroupSel.value).forEach(function (group) {
-          issueListEl.appendChild(makeGroupHead(group.label, group.issues.length));
+        var shown = issues.filter(matchesFilter);
+        issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+
+        if (!shown.length) {
+          issueListEl.appendChild(makeBlankState(
+            '絞り込みに合うやることがありません',
+            '絞り込みを消すか、別の言葉で試してください。'
+          ));
+          return;
+        }
+
+        groupIssues(shown, issueGroupSel.value).forEach(function (group) {
+          issueListEl.appendChild(
+            makeGroupHead(group.label, group.issues.length, group.key));
+          if (collapsed[group.key]) return;
           group.issues.forEach(renderIssueRow);
         });
 
@@ -2278,10 +2417,11 @@
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = (issue.state === 'open' ? '未着手・対応中' : '完了') +
-            (issue.assignee ? ' · ' + issue.assignee : ' · 担当なし') +
-            (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '') +
-            (issue.labels ? ' · ' + issue.labels : '');
+          meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
+            (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
+
+          var labelEls = makeLabels(issue.labels);
+          if (labelEls) meta.appendChild(labelEls);
           main.appendChild(meta);
 
           var open = document.createElement('button');
@@ -2292,6 +2432,7 @@
             openIssueDetail(issue, row);
           });
           row.appendChild(open);
+          row.appendChild(makeAvatar(issue.assignee));
 
           if (issue.state === 'open' && current.docFileId) {
             var branchBtn = document.createElement('button');
@@ -2456,9 +2597,7 @@
   }
 
   function refreshIssueViews() {
-    if (!panelIssues.hidden) loadIssues();
-    if (!panelBoard.hidden) loadBoard();
-    if (!panelGantt.hidden) loadGantt();
+    if (!panelIssues.hidden) reloadIssueView();
     loadOverview();
   }
 
@@ -2475,11 +2614,8 @@
           .withSuccessHandler(function () {
             showSnack('やることを作りました', { kind: 'ok' });
             // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
-            if (panelIssues.hidden && panelBoard.hidden && panelGantt.hidden) {
-              switchTab('issues');
-            } else {
-              refreshIssueViews();
-            }
+            if (panelIssues.hidden) switchTab('issues');
+            else refreshIssueViews();
           })
           .withFailureHandler(function (err) {
             showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
@@ -2685,29 +2821,6 @@
   }
 
   /**
-   * 見出しの行を作る。
-   *
-   * @param {string} label
-   * @param {number} count
-   * @returns {HTMLElement}
-   */
-  function makeGroupHead(label, count) {
-    var head = document.createElement('div');
-    head.className = 'group-head';
-
-    var name = document.createElement('span');
-    name.textContent = label;
-    head.appendChild(name);
-
-    var n = document.createElement('span');
-    n.className = 'row-meta';
-    n.textContent = count + '件';
-    head.appendChild(n);
-
-    return head;
-  }
-
-  /**
    * 棒を掴んで日付を変える。
    *
    * 端を掴めば片側だけ、真ん中を掴めば全体が動く。放したときに保存する。
@@ -2804,8 +2917,11 @@
         var issues = list || [];
         ganttEl.textContent = '';
 
+        lastIssues = issues;
+        issues = issues.filter(matchesFilter);
+
         var g = ganttLayout(issues, new Date());
-        setPanelCount(panelGantt, issues.length + '件のうち ' + g.rows.length + '件を表示');
+        issueCountEl.textContent = g.rows.length + ' / ' + issues.length + '件';
 
         if (!g.rows.length) {
           ganttEl.appendChild(makeBlankState(
@@ -2876,13 +2992,14 @@
         var byNumber = {};
         g.rows.forEach(function (r) { byNumber[r.number] = r; });
 
-        groupIssues(issues, ganttGroupSel.value).forEach(function (group) {
+        groupIssues(issues, issueGroupSel.value).forEach(function (group) {
           var shown = group.issues
             .map(function (i) { return byNumber[i.number]; })
             .filter(function (r) { return !!r; });
 
           if (!shown.length) return;
-          chart.appendChild(makeGroupHead(group.label, shown.length));
+          chart.appendChild(makeGroupHead(group.label, shown.length, group.key));
+          if (collapsed[group.key]) return;
 
           shown.forEach(function (r) {
             var row = document.createElement('div');
@@ -2946,15 +3063,37 @@
   function loadBoard() {
     showSkeleton(boardEl, 'board');
 
+    // 絞り込みに使うため、やることの中身も持っておく
+    if (!lastIssues.length) {
+      google.script.run
+        .withSuccessHandler(function (list) { lastIssues = list || []; })
+        .withFailureHandler(function () {})
+        .apiIssueList('');
+    }
+
     google.script.run
       .withSuccessHandler(function (result) {
         var board = result || {};
         COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
         boardEl.textContent = '';
 
+        // 絞り込みは番号で当てる。カードは中身を全部持っていない
+        var keep = null;
+        if (String(issueFilterEl.value || '')) {
+          keep = {};
+          (lastIssues || []).filter(matchesFilter).forEach(function (i) {
+            keep[i.number] = true;
+          });
+          COLUMNS.forEach(function (c) {
+            board[c[0]] = board[c[0]].filter(function (card) {
+              return keep[card.issueNumber];
+            });
+          });
+        }
+
         var total = 0;
         COLUMNS.forEach(function (c) { total += board[c[0]].length; });
-        setPanelCount(panelBoard, total + '枚');
+        issueCountEl.textContent = total + '枚';
 
         if (total === 0) {
           boardEl.appendChild(makeBlankState(
@@ -3002,7 +3141,19 @@
             var el = document.createElement('div');
             el.className = 'board-card';
             el.draggable = true;
-            el.textContent = '#' + card.issueNumber + ' ' + card.title;
+
+            var num = document.createElement('span');
+            num.className = 'card-number';
+            num.textContent = '#' + card.issueNumber;
+            el.appendChild(num);
+
+            var title = document.createElement('div');
+            title.className = 'card-title';
+            title.textContent = card.title;
+            el.appendChild(title);
+
+            var labelEls = makeLabels(card.labels);
+            if (labelEls) el.appendChild(labelEls);
 
             el.addEventListener('dragstart', function (e) {
               e.dataTransfer.setData('text/plain', String(card.issueNumber));
@@ -3019,11 +3170,16 @@
               openIssueByNumber(card.issueNumber, el);
             });
 
-            var meta = document.createElement('span');
-            meta.className = 'row-meta';
-            meta.textContent = (card.assignee || '担当なし') +
-              (card.dueDate ? ' · 期限 ' + String(card.dueDate).substring(0, 10) : '');
-            el.appendChild(meta);
+            var foot = document.createElement('div');
+            foot.className = 'card-foot';
+
+            var when = document.createElement('span');
+            when.className = 'row-meta';
+            when.textContent = card.dueDate
+              ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
+            foot.appendChild(when);
+            foot.appendChild(makeAvatar(card.assignee));
+            el.appendChild(foot);
 
             col.appendChild(el);
           });
@@ -3124,7 +3280,8 @@
 
   [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
    [draftCreateBtn, 'git-branch'], [bulkCommitBtn, 'check'],
-   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save'],
+   [issueCreateBtn, 'plus'], [editSaveBtn, 'save'],
+   [viewBtns.list, 'circle-dot'], [viewBtns.board, 'columns'], [viewBtns.gantt, 'calendar'],
    [modeEditBtn, 'pencil'], [modeViewBtn, 'file-text'], [crumbBack, 'back']]
     .forEach(function (pair) {
       if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
@@ -3151,11 +3308,13 @@
   });
   bulkCommitBtn.addEventListener('click', bulkCommit);
   issueCreateBtn.addEventListener('click', createIssue);
-  boardCreateBtn.addEventListener('click', createIssue);
   themeBtn.addEventListener('click', cycleTheme);
   sideClose.addEventListener('click', closeSide);
-  ganttGroupSel.addEventListener('change', loadGantt);
-  issueGroupSel.addEventListener('change', loadIssues);
+  issueGroupSel.addEventListener('change', reloadIssueView);
+  issueFilterEl.addEventListener('input', reloadIssueView);
+  Object.keys(viewBtns).forEach(function (k) {
+    viewBtns[k].addEventListener('click', function () { setIssueView(k); });
+  });
 
   // どこにいても Escape で入力を閉じられる
   document.addEventListener('keydown', function (e) {
@@ -3170,6 +3329,12 @@
   restoreSidebarWidth();
   initResizer();
   applyTheme(readTheme());
+
+  try {
+    var savedView = window.localStorage.getItem('issueView');
+    if (savedView && viewBtns[savedView]) issueView = savedView;
+  } catch (e) { /* 既定の一覧でよい */ }
+  setIssueView(issueView);
 
   loadFiles(function () { switchTab('docs'); });
 })();

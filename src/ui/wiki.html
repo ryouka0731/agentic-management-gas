@@ -8,37 +8,39 @@
 <body>
   <div class="layout">
     <nav class="sidebar" aria-label="対象の切り替え">
-      <button class="nav-item" data-tab="docs">
-        <span class="nav-label">文書</span>
-        <span class="nav-desc">管理している文書</span>
-      </button>
-      <button class="nav-item" data-tab="branches">
-        <span class="nav-label">改訂中の版</span>
-        <span class="nav-count" id="count-drafts" hidden></span>
-        <span class="nav-desc">直している途中の版</span>
-      </button>
-      <button class="nav-item" data-tab="pulls">
-        <span class="nav-label">確認依頼</span>
-        <span class="nav-count" id="count-requests" hidden></span>
-        <span class="nav-desc">正式版に反映してよいか尋ねる</span>
-      </button>
-      <button class="nav-item" data-tab="issues">
-        <span class="nav-label">やること</span>
-        <span class="nav-count" id="count-todos" hidden></span>
-        <span class="nav-desc">誰かがやるべき作業</span>
-      </button>
-      <button class="nav-item" data-tab="board">
-        <span class="nav-label">進捗ボード</span>
-        <span class="nav-desc">やることの進み具合</span>
-      </button>
-      <button class="nav-item" data-tab="gantt">
-        <span class="nav-label">工程表</span>
-        <span class="nav-desc">期限と進み具合を時系列で</span>
-      </button>
-      <button class="nav-item" data-tab="help">
-        <span class="nav-label">使い方</span>
-        <span class="nav-desc">はじめての方へ</span>
-      </button>
+      <div class="nav-section">
+        <h2>管理するもの</h2>
+        <button class="nav-item" data-tab="docs">
+          <span class="nav-label">文書</span>
+          <span class="nav-desc">正式版と改訂版</span>
+        </button>
+        <button class="nav-item" data-tab="issues">
+          <span class="nav-label">やること</span>
+          <span class="nav-count" id="count-todos" hidden></span>
+          <span class="nav-desc">一覧・ボード・工程表</span>
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <h2>進行中</h2>
+        <button class="nav-item" data-tab="branches">
+          <span class="nav-label">改訂中の版</span>
+          <span class="nav-count" id="count-drafts" hidden></span>
+          <span class="nav-desc">直している途中の版</span>
+        </button>
+        <button class="nav-item" data-tab="pulls">
+          <span class="nav-label">確認依頼</span>
+          <span class="nav-count" id="count-requests" hidden></span>
+          <span class="nav-desc">正式版に反映してよいか尋ねる</span>
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <button class="nav-item" data-tab="help">
+          <span class="nav-label">使い方</span>
+          <span class="nav-desc">はじめての方へ</span>
+        </button>
+      </div>
     </nav>
 
     <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
@@ -168,8 +170,18 @@
       </div>
 
       <div class="panel panel-col" id="panel-issues" hidden>
-        <div class="panel-actions">
-          <button id="issue-create-btn" class="btn btn-primary">やることを作る</button>
+        <div class="view-bar">
+          <div class="segmented" role="group" aria-label="見え方">
+            <button class="seg" id="view-list" aria-pressed="true">一覧</button>
+            <button class="seg" id="view-board" aria-pressed="false">ボード</button>
+            <button class="seg" id="view-gantt" aria-pressed="false">工程表</button>
+          </div>
+
+          <label class="filter-box">
+            <input id="issue-filter" type="search" placeholder="題名・担当・ラベルで絞る"
+                   aria-label="やることを絞り込む">
+          </label>
+
           <label class="group-switch">
             <span class="row-meta">まとめ方</span>
             <select id="issue-group" aria-label="やることのまとめ方">
@@ -180,33 +192,15 @@
               <option value="none">まとめない</option>
             </select>
           </label>
+
+          <span class="spacer"></span>
+          <span class="row-meta panel-count" id="issue-count"></span>
+          <button id="issue-create-btn" class="btn btn-primary">やることを作る</button>
         </div>
+
         <div class="list-area" id="issue-list"></div>
-      </div>
-
-      <div class="panel panel-col" id="panel-board" hidden>
-        <div class="panel-actions">
-          <button id="board-create-btn" class="btn btn-primary">やることを作る</button>
-          <span class="row-meta">カードはやることです</span>
-        </div>
-        <div class="board" id="board"></div>
-      </div>
-
-      <div class="panel panel-col" id="panel-gantt" hidden>
-        <div class="panel-actions">
-          <label class="group-switch">
-            <span class="row-meta">まとめ方</span>
-            <select id="gantt-group" aria-label="工程表のまとめ方">
-              <option value="doc">文書ごと</option>
-              <option value="assignee">担当者ごと</option>
-              <option value="state">状態ごと</option>
-              <option value="label">ラベルごと</option>
-              <option value="none">まとめない</option>
-            </select>
-          </label>
-          <span class="row-meta">棒の端を掴むと期限を、真ん中を掴むと全体を動かせます</span>
-        </div>
-        <div class="gantt-scroll" id="gantt"></div>
+        <div class="board" id="board" hidden></div>
+        <div class="gantt-scroll" id="gantt" hidden></div>
       </div>
 
       <div class="panel" id="panel-help" hidden>
