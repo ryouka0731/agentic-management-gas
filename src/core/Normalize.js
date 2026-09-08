@@ -375,3 +375,62 @@ function parseBlocks(html) {
 
   return blocks;
 }
+
+/**
+ * 正規化HTMLの1行を、人が読める形に直す。
+ *
+ * 差分をタグのまま見せると、何が変わったのかを読むのに知識が要る。
+ * 種別と本文に分けて示す。
+ *
+ * @param {string} line
+ * @returns {{kind:string, text:string}}
+ */
+function describeLine(line) {
+  var raw = String(line == null ? '' : line);
+
+  var mh = /^<h([1-6])>([\s\S]*)<\/h\1>$/.exec(raw);
+  if (mh) return { kind: '見出し' + mh[1], text: stripTags_(mh[2]) };
+
+  var mp = /^<p>([\s\S]*)<\/p>$/.exec(raw);
+  if (mp) return { kind: '段落', text: stripTags_(mp[1]) };
+
+  var ml = /^<li data-list="(ul|ol)" data-depth="(\d+)">([\s\S]*)<\/li>$/.exec(raw);
+  if (ml) {
+    return {
+      kind: (ml[1] === 'ol' ? '番号' : '箇条') + '書き',
+      text: new Array(Number(ml[2]) + 1).join('  ') + stripTags_(ml[3]),
+    };
+  }
+
+  var mi = /^<img data-sha="([^"]*)" alt="([^"]*)">$/.exec(raw);
+  if (mi) return { kind: '画像', text: unescapeText(mi[2]) || '(説明なし)' };
+
+  var ms = /^<table data-sheet="([^"]*)">$/.exec(raw);
+  if (ms) return { kind: 'シート', text: unescapeText(ms[1]) };
+
+  var msl = /^<section data-slide="(\d+)">$/.exec(raw);
+  if (msl) return { kind: 'スライド', text: msl[1] + '枚目' };
+
+  if (raw === '<table>') return { kind: '表', text: '開始' };
+  if (raw === '</table>') return { kind: '表', text: '終わり' };
+
+  if (raw.indexOf('<tr>') === 0) {
+    var cells = [];
+    var re = /<td(?: data-formula="[^"]*")?>([\s\S]*?)<\/td>/g;
+    var m;
+    while ((m = re.exec(raw)) !== null) cells.push(stripTags_(m[1]));
+    return { kind: '行', text: cells.join(' | ') };
+  }
+
+  return { kind: '', text: stripTags_(raw) };
+}
+
+/**
+ * タグを外して本文だけにする。
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function stripTags_(html) {
+  return unescapeText(String(html == null ? '' : html).replace(/<[^>]*>/g, ''));
+}

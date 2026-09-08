@@ -799,11 +799,87 @@
     container.appendChild(table);
   }
 
+  /**
+   * 正規化HTMLの1行を、人が読める形に直す。
+   *
+   * src/core/Normalize.js の describeLine と同じもの。タグのまま見せると
+   * 何が変わったのかを読むのに知識が要る。
+   *
+   * @param {string} line
+   * @returns {{kind:string, text:string}}
+   */
+  function describeLine(line) {
+    var raw = String(line == null ? '' : line);
+
+    function strip(html) {
+      var el = document.createElement('div');
+      el.innerHTML = '';
+      // タグを外し、実体参照は textarea を通さず自前で戻す
+      var text = String(html).replace(/<[^>]*>/g, '');
+      return text
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+    }
+
+    var mh = /^<h([1-6])>([\s\S]*)<\/h\1>$/.exec(raw);
+    if (mh) return { kind: '見出し' + mh[1], text: strip(mh[2]) };
+
+    var mp = /^<p>([\s\S]*)<\/p>$/.exec(raw);
+    if (mp) return { kind: '段落', text: strip(mp[1]) };
+
+    var ml = /^<li data-list="(ul|ol)" data-depth="(\d+)">([\s\S]*)<\/li>$/.exec(raw);
+    if (ml) {
+      return {
+        kind: (ml[1] === 'ol' ? '番号' : '箇条') + '書き',
+        text: new Array(Number(ml[2]) + 1).join('  ') + strip(ml[3]),
+      };
+    }
+
+    var mi = /^<img data-sha="([^"]*)" alt="([^"]*)">$/.exec(raw);
+    if (mi) return { kind: '画像', text: strip(mi[2]) || '(説明なし)' };
+
+    var ms = /^<table data-sheet="([^"]*)">$/.exec(raw);
+    if (ms) return { kind: 'シート', text: strip(ms[1]) };
+
+    var msl = /^<section data-slide="(\d+)">$/.exec(raw);
+    if (msl) return { kind: 'スライド', text: msl[1] + '枚目' };
+
+    if (raw === '<table>') return { kind: '表', text: '開始' };
+    if (raw === '</table>') return { kind: '表', text: '終わり' };
+
+    if (raw.indexOf('<tr>') === 0) {
+      var cells = [];
+      var re = /<td(?: data-formula="[^"]*")?>([\s\S]*?)<\/td>/g;
+      var m;
+      while ((m = re.exec(raw)) !== null) cells.push(strip(m[1]));
+      return { kind: '行', text: cells.join(' | ') };
+    }
+
+    return { kind: '', text: strip(raw) };
+  }
+
   function diffCell(text, kind) {
     var cell = document.createElement('div');
     cell.className = 'diff-cell' +
       (text === null ? ' empty' : (kind ? ' ' + kind : ''));
-    cell.textContent = text === null ? '' : text;
+
+    if (text === null) return cell;
+
+    var d = describeLine(text);
+    if (d.kind) {
+      var tag = document.createElement('span');
+      tag.className = 'diff-kind';
+      tag.textContent = d.kind;
+      cell.appendChild(tag);
+    }
+
+    var body = document.createElement('span');
+    body.className = 'diff-text';
+    body.textContent = d.text;
+    body.title = text;
+    cell.appendChild(body);
+
     return cell;
   }
 
@@ -822,9 +898,16 @@
     if (DOC_TABS[name] && !current.fileId) name = 'docs';
     currentTab = name;
 
+    // 文書のビューを見ているときは、左の「文書」を現在地にする。
+    // どこにいるのか分からなくなるため
+    var navName = DOC_TABS[name] ? 'docs' : name;
+
     var targets = document.querySelectorAll('[data-tab]');
     for (var i = 0; i < targets.length; i++) {
-      targets[i].setAttribute('aria-current', String(targets[i].dataset.tab === name));
+      var el = targets[i];
+      var isTab = el.classList.contains('tab');
+      el.setAttribute('aria-current',
+        String(el.dataset.tab === (isTab ? name : navName)));
     }
 
     panelDocs.hidden = name !== 'docs';
@@ -1292,6 +1375,12 @@
           return;
         }
 
+        // 系統の列幅を見出しと行で揃える。ずれると読み手が列を追えない
+        var laneWidth = Math.max(1, graph.laneCount) * 14 + 6;
+        historyList.style.setProperty('--graph-w', laneWidth + 'px');
+        document.querySelector('.graph-head').style.setProperty(
+          '--graph-w', laneWidth + 'px');
+
         var headOf = {};
         graph.rows.forEach(function (c) {
           if (!headOf[c.branch]) headOf[c.branch] = c.sha;
@@ -1350,7 +1439,7 @@
               .withFailureHandler(function (err) {
                 diffView.textContent = 'エラー: ' + err.message;
               })
-              .apiCommitDiff(c.parentSha || '', c.sha);
+              .apiCommitDiff(c.diffFrom || c.parentSha || '', c.sha);
           });
 
           historyList.appendChild(btn);

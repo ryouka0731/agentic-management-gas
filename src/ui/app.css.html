@@ -57,6 +57,8 @@
   --hairline: inset 0 0 0 1px rgba(31, 35, 40, 0.10);
   --motion: 160ms;
   --sidebar-w: 260px;
+  /* 系統の列幅。枝の本数に応じて画面側が書き換える */
+  --graph-w: 60px;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -807,7 +809,7 @@ button:disabled {
   gap: var(--sp-2);
 }
 
-.graph-cell { flex: 0 0 auto; }
+.graph-cell { flex: 0 0 var(--graph-w); }
 
 .graph-body { flex: 1; min-width: 0; padding: var(--sp-1) 0; }
 
@@ -1144,7 +1146,7 @@ button:disabled {
   text-align: left;
 }
 
-.graph-col-graph { flex: 0 0 60px; }
+.graph-col-graph { flex: 0 0 var(--graph-w); }
 .graph-col-desc { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
 .graph-col-date { flex: 0 0 130px; font-size: 11px; color: var(--ink-2); }
 .graph-col-author { flex: 0 0 90px; font-size: 11px; color: var(--ink-2); }
@@ -1157,6 +1159,8 @@ button:disabled {
 }
 
 .graph-row .commit-message {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1171,8 +1175,10 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  flex: 0 0 auto;
-  max-width: 40%;
+  /* 説明を潰さないよう、名前のほうが縮む */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 140px;
   padding: 1px 8px 1px 6px;
   border-radius: 999px;
   border: 1px solid currentColor;
@@ -1761,4 +1767,30 @@ button.gantt-name:hover { color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
+
+/*
+ * 差分は種別と本文に分けて見せる。
+ *
+ * タグのまま出すと、何が変わったのかを読むのに知識が要る。
+ */
+.diff-cell {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 10px;
+}
+
+.diff-kind {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.diff-text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
 </style>

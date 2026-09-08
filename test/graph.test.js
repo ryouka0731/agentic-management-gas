@@ -93,3 +93,23 @@ describe('commitGraph', () => {
     expect(gas.graphLaneCount([])).toBe(1);
   });
 });
+
+describe('差分の起点', () => {
+  it('ふつうの記録は1つ前を起点にする', () => {
+    const rows = gas.commitGraph([
+      { name: 'main', baseSha: '', commits: [c('c2', 'c1', 3), c('c1', '', 1)] },
+    ]);
+    expect(rows[0].diffFrom).toBe('c1');
+  });
+
+  it('分岐の最初の記録は分岐元を起点にする', () => {
+    const rows = gas.commitGraph([
+      { name: 'main', baseSha: '', commits: [c('m1', '', 1)] },
+      { name: '改訂', baseSha: 'm1', commits: [c('b1', '', 3)] },
+    ]);
+
+    // 親が無いまま差分を取ると全文が「追加」になってしまう
+    const b1 = rows.filter((r) => r.sha === 'b1')[0];
+    expect(b1.diffFrom).toBe('m1');
+  });
+});

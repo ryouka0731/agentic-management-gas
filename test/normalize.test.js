@@ -418,3 +418,46 @@ describe('slide ブロック', () => {
     expect(gas.parseBlocks(gas.serializeBlocks(blocks))).toEqual(blocks);
   });
 });
+
+describe('describeLine', () => {
+  const gas = loadGas('src/core/Normalize.js');
+
+  it('見出しと段落を種別と本文に分ける', () => {
+    expect(gas.describeLine('<h2>第1章 総則</h2>'))
+      .toEqual({ kind: '見出し2', text: '第1章 総則' });
+    expect(gas.describeLine('<p>本文です。</p>'))
+      .toEqual({ kind: '段落', text: '本文です。' });
+  });
+
+  it('装飾のタグを外す', () => {
+    expect(gas.describeLine('<p>制定日は<strong>2026年4月1日</strong>とする</p>').text)
+      .toBe('制定日は2026年4月1日とする');
+  });
+
+  it('エスケープを戻す', () => {
+    expect(gas.describeLine('<p>a &lt; b &amp; c</p>').text).toBe('a < b & c');
+  });
+
+  it('箇条書きは深さを字下げで表す', () => {
+    expect(gas.describeLine('<li data-list="ul" data-depth="1">子</li>'))
+      .toEqual({ kind: '箇条書き', text: '  子' });
+    expect(gas.describeLine('<li data-list="ol" data-depth="0">番号</li>').kind)
+      .toBe('番号書き');
+  });
+
+  it('画像は説明を出す', () => {
+    expect(gas.describeLine('<img data-sha="abc" alt="組織図">'))
+      .toEqual({ kind: '画像', text: '組織図' });
+    expect(gas.describeLine('<img data-sha="abc" alt="">').text).toBe('(説明なし)');
+  });
+
+  it('表の行はセルを区切って並べる', () => {
+    expect(gas.describeLine('<tr><td>正社員</td><td>可</td></tr>'))
+      .toEqual({ kind: '行', text: '正社員 | 可' });
+  });
+
+  it('シートとスライドの境界を示す', () => {
+    expect(gas.describeLine('<table data-sheet="売上">').kind).toBe('シート');
+    expect(gas.describeLine('<section data-slide="3">').text).toBe('3枚目');
+  });
+});

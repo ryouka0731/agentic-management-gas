@@ -31,6 +31,7 @@ function commitGraph(chains) {
         author: commit.author,
         timestamp: commit.timestamp,
         lane: i,
+        diffFrom: String(commit.parentSha || ''),
         activeLanes: [],
         fork: false,
         forkLane: -1,
@@ -73,6 +74,10 @@ function commitGraph(chains) {
       var rootIdx = indexOf[String(c.commits[c.commits.length - 1].sha)];
       rows[rootIdx].fork = true;
       rows[rootIdx].forkLane = laneOf['main'] === undefined ? 0 : laneOf['main'];
+
+      // 分岐の最初の記録は親を持たない。そのまま差分を取ると全文が
+      // 「追加」になってしまうため、分岐元と比べる
+      rows[rootIdx].diffFrom = String(c.baseSha);
     }
   }
   return rows;
