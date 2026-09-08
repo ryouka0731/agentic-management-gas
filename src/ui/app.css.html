@@ -263,6 +263,53 @@ body {
 .tree-row .file-item { flex: 1; }
 .file-item.nested { padding-left: 28px; }
 
+.guide {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  max-width: 760px;
+  color: var(--ink);
+  line-height: 1.9;
+  font-size: 14px;
+}
+
+.guide h2 {
+  font-size: 16px;
+  margin: 28px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.guide h2:first-child { margin-top: 0; }
+.guide h3 { font-size: 14px; margin: 20px 0 4px; }
+.guide p { margin: 6px 0; }
+.guide ol { margin: 8px 0; padding-left: 24px; }
+.guide li { margin: 6px 0; }
+
+.guide code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--bg-2);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.guide-table { border-collapse: collapse; margin: 8px 0; }
+
+.guide-table td {
+  border: 1px solid var(--line);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.guide-table td:first-child { color: var(--ink-2); white-space: nowrap; }
+
+.guide-foot {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .type-badge {
   font-size: 10px;
   color: var(--ink-2);

@@ -33,6 +33,7 @@
         <button class="tab" data-tab="pulls">プルリクエスト</button>
         <button class="tab" data-tab="issues">Issue</button>
         <button class="tab" data-tab="board">ボード</button>
+        <button class="tab" data-tab="help">ヘルプ</button>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>
@@ -76,6 +77,86 @@
 
       <div class="panel" id="panel-board" hidden>
         <div class="board" id="board"></div>
+      </div>
+
+      <div class="panel" id="panel-help" hidden>
+        <div class="guide">
+          <h2>このアプリについて</h2>
+          <p>
+            Google ドキュメント / スプレッドシート / スライドに、Git と同じ考え方の
+            版管理を与えるものです。文書を直接書き換えるのではなく、
+            <strong>ブランチを作って変更し、レビューを経て main に反映する</strong>
+            という流れで進めます。
+          </p>
+
+          <h2>GitHub との用語の対応</h2>
+          <table class="guide-table">
+            <tr><td>リポジトリ</td><td>Drive の <code>agentic-management/</code> フォルダ</td></tr>
+            <tr><td>ファイル</td><td>Google ドキュメント / スプレッドシート / スライド</td></tr>
+            <tr><td>コミット</td><td>その時点の文書内容の記録（文書自体は書き換わりません）</td></tr>
+            <tr><td>ブランチ</td><td>文書の作業コピー。Drive 上に別ファイルとして作られます</td></tr>
+            <tr><td>プルリクエスト</td><td>ブランチの変更を main に取り込む提案</td></tr>
+            <tr><td>Issue</td><td>文書に紐づく作業。ここからブランチを1クリックで作れます</td></tr>
+          </table>
+
+          <h2>基本の流れ</h2>
+          <ol>
+            <li><strong>Issue を作る</strong> — 「Issue」タブで、何を直すかを書きます</li>
+            <li><strong>ブランチを作る</strong> — Issue の「このIssueでブランチを作る」を押します。
+              <code>issue-12-在宅勤務規定</code> のような名前が自動で付きます</li>
+            <li><strong>編集する</strong> — 左上でそのブランチに切り替えてファイルを開き、
+              「編集」タブで書き換えます。Google ドキュメントを直接開いて編集しても構いません</li>
+            <li><strong>コミットする</strong> — 「本文」タブの「コミット」を押します。
+              ここで初めて履歴に残ります</li>
+            <li><strong>PR を作る</strong> — 「ブランチ」タブの「PRを作る」を押します。
+              説明に <code>closes #12</code> と書くと、マージ時に Issue が自動で閉じます</li>
+            <li><strong>レビューして マージする</strong> — 「プルリクエスト」タブで差分を見て、
+              承認してからマージします。main の文書が書き換わります</li>
+          </ol>
+
+          <h2>つまずきやすい点</h2>
+
+          <h3>main が編集できません</h3>
+          <p>
+            意図的にそうしています。main を直接書き換えると誰がいつ何を変えたのかが
+            残らないため、変更は必ず PR を通します。Google ドキュメント側で main を
+            直接編集してしまった場合は、「直接編集を退避」ボタンで記録してください。
+            退避しないとマージができません。
+          </p>
+
+          <h3>「コンフリクトあり」と出ました</h3>
+          <p>
+            同じ行を main 側とブランチ側の両方で書き換えたときに出ます。赤枠の中で
+            「main側を採用 / ブランチ側を採用 / 両方を残す」を選んでからマージしてください。
+            別々の行を直しただけなら自動で統合されます。
+          </p>
+
+          <h3>「書き戻せません」と出てマージできません</h3>
+          <p>
+            文書の中に、このアプリが復元できない要素があります。ほとんどの場合は
+            <strong>実体を取得できない画像</strong>です。そのままマージすると画像が
+            永久に失われるため、手前で止めています。Google ドキュメント側で画像を
+            貼り直してからやり直してください。
+          </p>
+
+          <h3>色やフォントが履歴に出ません</h3>
+          <p>
+            色・フォント・文字サイズは版管理の対象外です。このアプリは
+            「文書の意味内容」を管理するもので、見た目の変更は差分になりません。
+            全角スペースによる字下げも同様に失われます。
+          </p>
+
+          <h3>スライドで PR が作れません</h3>
+          <p>
+            スライドは閲覧・履歴・差分までの対応です。図形の位置や大きさを
+            復元できないため、マージには対応していません。反映は Google スライド上で
+            直接行ってください。
+          </p>
+
+          <div class="guide-foot">
+            <span id="whoami" class="row-meta"></span>
+          </div>
+        </div>
       </div>
 
       <div id="empty" class="empty">左からファイルを選択してください</div>

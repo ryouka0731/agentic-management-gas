@@ -23,6 +23,8 @@
   var prDetail = document.getElementById('pr-detail');
   var panelIssues = document.getElementById('panel-issues');
   var panelBoard = document.getElementById('panel-board');
+  var panelHelp = document.getElementById('panel-help');
+  var whoamiEl = document.getElementById('whoami');
   var issueListEl = document.getElementById('issue-list');
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
@@ -256,6 +258,7 @@
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelBoard.hidden = name !== 'board';
+    panelHelp.hidden = name !== 'help';
 
     if (name === 'history') loadHistory();
     else if (name === 'branches') loadBranches();
@@ -263,11 +266,36 @@
     else if (name === 'issues') loadIssues();
     else if (name === 'board') loadBoard();
     else if (name === 'edit') loadEditor();
+    else if (name === 'help') loadHelp();
+  }
+
+  /**
+   * ヘルプを開いたときに、アプリが利用者を誰と認識しているかを出す。
+   *
+   * 社内展開で webapp.executeAs を切り替える前に、別アカウントで
+   * この表示を見れば判定できる。空になる環境では、コミットの作者と
+   * 承認者が記録されない
+   */
+  function loadHelp() {
+    google.script.run
+      .withSuccessHandler(function (who) {
+        whoamiEl.textContent = who.activeUser
+          ? 'このアプリはあなたを ' + who.activeUser + ' として認識しています'
+          : '警告: 利用者を特定できていません。' +
+            'この状態ではコミットの作者と承認者が記録されません';
+      })
+      .withFailureHandler(function () { whoamiEl.textContent = ''; })
+      .apiWhoAmI();
   }
 
   // ===== 履歴 =====
 
   function loadHistory() {
+    if (!current.fileId) {
+      historyList.textContent = '左からファイルを選択してください';
+      diffView.textContent = '';
+      return;
+    }
     historyList.textContent = '読み込み中…';
     diffView.textContent = '';
 
@@ -965,7 +993,10 @@
               google.script.run
                 .withSuccessHandler(function (b) {
                   window.alert('ブランチを作りました: ' + b.name);
-                  loadFiles();
+                  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
+  // ヘルプに辿り着けない
+  tabsEl.hidden = false;
+  loadFiles();
                   loadIssues();
                 })
                 .withFailureHandler(function (err) {
