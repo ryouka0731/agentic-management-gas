@@ -19,9 +19,6 @@
 
       <div class="nav-section">
         <h2>文書</h2>
-        <div class="branch-switch">
-          <select id="branch-select" aria-label="ブランチ"></select>
-        </div>
         <div id="file-list"></div>
       </div>
     </nav>
@@ -30,6 +27,10 @@
 
     <div class="main">
       <div class="toolbar">
+        <label class="branch-switch">
+          <span class="row-meta">ブランチ</span>
+          <select id="branch-select" aria-label="表示するブランチ"></select>
+        </label>
         <h1 id="doc-title">—</h1>
         <span id="branch-chip" class="chip" hidden></span>
         <span id="dirty-badge" class="badge" hidden>未コミットの変更</span>
@@ -41,8 +42,8 @@
       </div>
 
       <div class="tabs" id="tabs" hidden>
-        <button class="tab" data-tab="content" aria-current="true">本文</button>
-        <button class="tab" data-tab="history">履歴</button>
+        <button class="tab" data-tab="history" aria-current="true">グラフ</button>
+        <button class="tab" data-tab="content">本文</button>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>
@@ -62,9 +63,18 @@
         <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
       </div>
 
-      <div class="panel" id="panel-history" hidden>
-        <div class="history-list" id="history-list"></div>
-        <div class="diff-view" id="diff-view"></div>
+      <div class="panel panel-col" id="panel-history" hidden>
+        <div class="graph-head">
+          <span class="graph-col-graph">グラフ</span>
+          <span class="graph-col-desc">説明</span>
+          <span class="graph-col-date">日時</span>
+          <span class="graph-col-author">作成者</span>
+          <span class="graph-col-sha">コミット</span>
+        </div>
+        <div class="graph-split">
+          <div class="history-list" id="history-list"></div>
+          <div class="diff-view" id="diff-view"></div>
+        </div>
       </div>
 
       <div class="panel panel-col" id="panel-branches" hidden>

@@ -216,6 +216,32 @@ describe('モードレスなUI', () => {
     expect(tabs).toContain('data-tab="history"');
   });
 
+  it('ホームはコミットグラフ', () => {
+    const html = read('src/ui/wiki.html');
+    const tabs = html.slice(html.indexOf('<div class="tabs"'),
+      html.indexOf('</div>', html.indexOf('<div class="tabs"')));
+
+    // 最初に現在地が入っているタブがホームになる
+    const first = tabs.indexOf('aria-current="true"');
+    const graph = tabs.indexOf('data-tab="history"');
+    const content = tabs.indexOf('data-tab="content"');
+
+    expect(graph).toBeLessThan(content);
+    expect(first).toBeGreaterThan(graph);
+    expect(first).toBeLessThan(content);
+  });
+
+  it('ブランチ選択は上部に1つだけ', () => {
+    const html = read('src/ui/wiki.html');
+
+    // 2箇所にあると、どちらが何を支配するのか読めなくなる
+    expect((html.match(/id="branch-select"/g) || []).length).toBe(1);
+
+    const toolbar = html.slice(html.indexOf('<div class="toolbar">'),
+      html.indexOf('<div class="tabs"'));
+    expect(toolbar).toContain('id="branch-select"');
+  });
+
   it('タブに動詞を置かない', () => {
     const html = read('src/ui/wiki.html');
 

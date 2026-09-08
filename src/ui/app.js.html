@@ -775,32 +775,65 @@
           return;
         }
 
-        graph.rows.forEach(function (c) {
+        // 選んでいるブランチだけに絞る。'*' はすべて
+        var shown = graph.rows.filter(function (c) {
+          return currentBranch === '*' || c.branch === currentBranch ||
+                 c.branch === 'main';
+        });
+
+        if (!shown.length) {
+          historyList.appendChild(makeBlankState(
+            'このブランチにコミットがありません',
+            '上のブランチ選択を変えるか、文書を編集してコミットしてください。'
+          ));
+          return;
+        }
+
+        // ブランチの先頭コミットにだけラベルを出す
+        var headOf = {};
+        shown.forEach(function (c) {
+          if (!headOf[c.branch]) headOf[c.branch] = c.sha;
+        });
+
+        shown.forEach(function (c) {
           var btn = document.createElement('button');
           btn.className = 'commit-item graph-row';
           btn.appendChild(makeGraphCell(c, graph.laneCount));
 
-          var body = document.createElement('div');
-          body.className = 'graph-body';
+          var desc = document.createElement('div');
+          desc.className = 'graph-col-desc';
 
-          var msg = document.createElement('div');
+          if (headOf[c.branch] === c.sha) {
+            var label = document.createElement('span');
+            label.className = 'branch-label lane-' + (c.lane % 4);
+            label.appendChild(makeIcon('git-branch'));
+            label.appendChild(document.createTextNode(c.branch));
+            desc.appendChild(label);
+          }
+
+          var msg = document.createElement('span');
           msg.className = 'commit-message';
           msg.textContent = c.message;
-          body.appendChild(msg);
+          desc.appendChild(msg);
+          btn.appendChild(desc);
 
-          var meta = document.createElement('div');
-          meta.className = 'commit-meta';
-          meta.textContent =
-            String(c.sha).substring(0, 7) + ' · ' + c.author + ' · ' +
-            new Date(c.timestamp).toLocaleString('ja-JP');
-          body.appendChild(meta);
+          var date = document.createElement('span');
+          date.className = 'graph-col-date';
+          date.textContent = new Date(c.timestamp).toLocaleString('ja-JP', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+          btn.appendChild(date);
 
-          btn.appendChild(body);
+          var author = document.createElement('span');
+          author.className = 'graph-col-author';
+          author.textContent = String(c.author).replace(/@.*$/, '');
+          btn.appendChild(author);
 
-          var chip = document.createElement('span');
-          chip.className = 'chip lane-chip lane-' + (c.lane % 4);
-          chip.textContent = c.branch;
-          btn.appendChild(chip);
+          var sha = document.createElement('span');
+          sha.className = 'graph-col-sha';
+          sha.textContent = String(c.sha).substring(0, 7);
+          btn.appendChild(sha);
 
           btn.addEventListener('click', function () {
             var items = historyList.querySelectorAll('.commit-item');
@@ -1372,7 +1405,6 @@
         renderIntoViewer(res.html);
         loadLinkedIssues(fileId);
         setDocMode('view');
-        switchTab('content');
         refreshStatus();
       })
       .withFailureHandler(function (err) {
@@ -1782,13 +1814,19 @@
     files.forEach(function (f) { branches[splitPath(f.path).branch] = true; });
 
     branchSelect.textContent = '';
+
+    var all = document.createElement('option');
+    all.value = '*';
+    all.textContent = 'すべてのブランチ';
+    branchSelect.appendChild(all);
+
     Object.keys(branches).forEach(function (name) {
       var opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
-      if (name === currentBranch) opt.selected = true;
       branchSelect.appendChild(opt);
     });
+    branchSelect.value = currentBranch;
 
     renderTree();
   }
@@ -1797,7 +1835,7 @@
     listEl.textContent = '';
 
     var shown = allFiles.filter(function (f) {
-      return splitPath(f.path).branch === currentBranch;
+      return currentBranch === '*' || splitPath(f.path).branch === currentBranch;
     });
 
     if (!shown.length) {
@@ -1878,6 +1916,7 @@
     currentBranch = branchSelect.value;
     renderTree();
     updateBranchActions();
+    if (!panelHistory.hidden) loadHistory();
   });
 
   /**
@@ -1887,6 +1926,15 @@
    */
   function updateBranchActions() {
     var onMain = currentBranch === 'main';
+    var isAll = currentBranch === '*';
+
+    if (isAll) {
+      branchCreateBtn.disabled = true;
+      branchCreateBtn.title = 'ブランチを1つ選んでください';
+      bulkCommitBtn.disabled = true;
+      bulkCommitBtn.title = 'ブランチを1つ選んでください';
+      return;
+    }
 
     branchCreateBtn.disabled = !onMain;
     branchCreateBtn.title = onMain
@@ -1941,5 +1989,6 @@
   // ヘルプに辿り着けない
   tabsEl.hidden = false;
   loadFiles();
+  switchTab('history');
 })();
 </script>

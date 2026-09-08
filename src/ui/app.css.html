@@ -352,10 +352,16 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
 }
 
-.branch-switch { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+/* ブランチ選択は上部に1つだけ置く。ファイル一覧とグラフの両方を支配する */
+.branch-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
 
 .branch-switch select {
-  width: 100%;
+  min-width: 150px;
   padding: 4px 6px;
   font-size: 12px;
   color: var(--ink);
@@ -1038,4 +1044,87 @@ button:disabled {
 .list-area { padding: var(--sp-2) 0; }
 .row-item { padding: var(--sp-3) var(--sp-4); }
 .file-item { padding: var(--sp-2) var(--sp-4); min-height: 36px; }
+
+/* =====================================================================
+ * コミットグラフの表
+ *
+ * 列を固定して、走査するときに視線が縦に落ちるようにする。
+ * ===================================================================== */
+
+.graph-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.graph-split { display: flex; flex: 1; min-height: 0; }
+.graph-split .history-list { flex: 3; overflow-y: auto; border-right: 1px solid var(--line); }
+.graph-split .diff-view { flex: 4; overflow: auto; }
+
+.graph-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 0 var(--sp-4);
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.graph-col-graph { flex: 0 0 60px; }
+.graph-col-desc { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
+.graph-col-date { flex: 0 0 130px; font-size: 11px; color: var(--ink-2); }
+.graph-col-author { flex: 0 0 90px; font-size: 11px; color: var(--ink-2); }
+
+.graph-col-sha {
+  flex: 0 0 66px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.graph-row .commit-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.graph-row[aria-current="true"] { background: var(--bg-3); }
+
+/* ブランチ名の札。先頭コミットにだけ出す */
+.branch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  max-width: 40%;
+  padding: 1px 8px 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.branch-label .icon { width: 12px; height: 12px; flex: 0 0 12px; }
+.branch-label.lane-0 { color: var(--ink-2); }
+.branch-label.lane-1 { color: var(--accent); }
+.branch-label.lane-2 { color: var(--success); }
+.branch-label.lane-3 { color: var(--warn); }
+
+@media (max-width: 1023px) {
+  /* 狭いと5列は入らない。作成者と日時を落とす */
+  .graph-col-author, .graph-col-date { display: none; }
+  .graph-split { flex-direction: column; }
+  .graph-split .history-list { border-right: 0; border-bottom: 1px solid var(--line); }
+}
 </style>
