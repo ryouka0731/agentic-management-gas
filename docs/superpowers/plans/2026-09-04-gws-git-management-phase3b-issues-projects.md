@@ -1,5 +1,7 @@
 # GWS Git-like 文書管理システム Phase 3b (Issue / Projects) 実装計画
 
+**ステータス: 完了 (2026-09-08)** — 実機検証済み（9項目すべて PASS）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 文書に紐づく Issue と、PR の状態変化で自動的に動くカンバンボードを実装し、
@@ -63,7 +65,7 @@ UI を単一ページのタブ構成にしたため、本計画でもタブと�
   - `issueClose(number, prNumber) -> object`
   - `issuesForFile(fileId) -> object[]` (open のみ)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `test/phase3-issues.test.js` を新規作成する。
 
@@ -167,12 +169,12 @@ describe('Issue の CRUD', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-issues.test.js`
 Expected: FAIL (`issueCreate is not defined`)
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -324,12 +326,12 @@ function issueClose(number, prNumber) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Issue.gs test/phase3-issues.test.js
@@ -350,7 +352,7 @@ git commit -m "feat: Issueの作成・取得・更新・クローズを追加"
   - `issueBranchName(number, title) -> string`
   - `issueCreateBranch(number, fileId) -> object` (branches 行)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('Issue からのブランチ作成', () => {
@@ -388,12 +390,12 @@ describe('Issue からのブランチ作成', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-issues.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -432,12 +434,12 @@ function issueCreateBranch(number, fileId) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/IssueBranch.gs test/phase3-issues.test.js
@@ -460,7 +462,7 @@ git commit -m "feat: Issueからブランチを1クリックで作れるよう�
   - `projectPlace(issueNumber, column) -> object` (未配置なら末尾に追加)
   - `projectMove(issueNumber, column, order) -> object`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('カンバンボード', () => {
@@ -516,12 +518,12 @@ describe('カンバンボード', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-issues.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -630,12 +632,12 @@ function projectMove(issueNumber, column, order) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Project.gs test/phase3-issues.test.js
@@ -653,7 +655,7 @@ git commit -m "feat: Issueを載せるカンバンボードを追加"
 **Interfaces:**
 - Consumes: `prClosesIssues_` (既存) / `issueClose` (Task 1) / `projectMove` (Task 3)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `SOURCES` に `'src/core/Project.gs'` と `'src/core/IssueBranch.gs'` を足してから書く。
 
@@ -722,12 +724,12 @@ describe('PRの状態変化がボードとIssueを動かす', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-issues.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: `prCreate` にフックを足す**
+- [x] **Step 3: `prCreate` にフックを足す**
 
 `dbAppend('pulls', row);` の直後、`return row;` の前に足す。
 
@@ -759,7 +761,7 @@ function projectMoveIfExists_(issueNumber, column) {
 }
 ```
 
-- [ ] **Step 4: `prMerge` にフックを足す**
+- [x] **Step 4: `prMerge` にフックを足す**
 
 マージコミットを作った直後、`dbUpdate('pulls', ...)` で `merged` にする処理の後ろに足す。
 
@@ -773,12 +775,12 @@ function projectMoveIfExists_(issueNumber, column) {
     }
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (Phase 2 の統合テストも全て通ること)
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/core/PullRequest.gs test/phase3-issues.test.js
@@ -797,7 +799,7 @@ git commit -m "feat: PRの作成とマージでIssueとボードを自動で動�
 **Interfaces:**
 - Produces: `notify(to, subject, body)` / `notifyPrCreated(pr)` / `notifyPrMerged(pr)`
 
-- [ ] **Step 1: 疑似GASに GmailApp を足す**
+- [x] **Step 1: 疑似GASに GmailApp を足す**
 
 `test/fakegas.js` の戻り値に足す。
 
@@ -810,7 +812,7 @@ git commit -m "feat: PRの作成とマージでIssueとボードを自動で動�
 
 `createFakeGas` の先頭に `const sentMails = [];` を足す。
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [x] **Step 2: 失敗するテストを書く**
 
 ```javascript
 describe('通知', () => {
@@ -837,12 +839,12 @@ describe('通知', () => {
 });
 ```
 
-- [ ] **Step 3: テストが失敗することを確認**
+- [x] **Step 3: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-issues.test.js`
 Expected: FAIL
 
-- [ ] **Step 4: 実装する**
+- [x] **Step 4: 実装する**
 
 ```javascript
 /**
@@ -893,7 +895,7 @@ function notifyPrMerged(pr) {
 }
 ```
 
-- [ ] **Step 5: PullRequest.gs から呼ぶ**
+- [x] **Step 5: PullRequest.gs から呼ぶ**
 
 `prCreate` の `return row;` の直前に足す。
 
@@ -907,12 +909,12 @@ function notifyPrMerged(pr) {
     notifyPrMerged(pr);
 ```
 
-- [ ] **Step 6: テストが通ることを確認**
+- [x] **Step 6: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add src/core/Notifier.gs src/core/PullRequest.gs test/fakegas.js test/phase3-issues.test.js
@@ -932,7 +934,7 @@ git commit -m "feat: PR作成とマージのメール通知を単一アダプタ
 **Interfaces:**
 - Consumes: Task 1-5 のすべて
 
-- [ ] **Step 1: Main.gs に API を足す**
+- [x] **Step 1: Main.gs に API を足す**
 
 `src/Main.gs` の末尾 (`debugWriteRoundTrip` の前) に足す。
 
@@ -1017,7 +1019,7 @@ function apiProjectMove(issueNumber, column, order) {
 }
 ```
 
-- [ ] **Step 2: wiki.html にタブとパネルを足す**
+- [x] **Step 2: wiki.html にタブとパネルを足す**
 
 `<button class="tab" data-tab="pulls">プルリクエスト</button>` の直後に足す。
 
@@ -1042,7 +1044,7 @@ function apiProjectMove(issueNumber, column, order) {
       </div>
 ```
 
-- [ ] **Step 3: app.css.html にボードのスタイルを足す**
+- [x] **Step 3: app.css.html にボードのスタイルを足す**
 
 既存のデザイントークン (`--ink` / `--ink-2` / `--line`) を使う。
 
@@ -1082,7 +1084,7 @@ function apiProjectMove(issueNumber, column, order) {
     .board-card .row-meta { display: block; margin-top: 4px; }
 ```
 
-- [ ] **Step 4: app.js.html に Issue とボードの表示を足す**
+- [x] **Step 4: app.js.html に Issue とボードの表示を足す**
 
 `switchTab` の分岐に `issues` と `board` を足し、以下の関数を追加する。
 **テキストは必ず `textContent` で入れる。`innerHTML` は使わない** (XSS対策)。
@@ -1197,7 +1199,7 @@ Issue 作成ボタンの処理を足す。
   });
 ```
 
-- [ ] **Step 5: 文書を開いたときに紐づく open Issue を並べる**
+- [x] **Step 5: 文書を開いたときに紐づく open Issue を並べる**
 
 spec §6.1 の「文書中心の作業管理」の核心はここにある。
 `wiki.html` の `panel-content` の iframe の**前**に足す。
@@ -1256,7 +1258,7 @@ spec §6.1 の「文書中心の作業管理」の核心はここにある。
   }
 ```
 
-- [ ] **Step 6: カードをドラッグ&ドロップで動かせるようにする**
+- [x] **Step 6: カードをドラッグ&ドロップで動かせるようにする**
 
 `loadBoard` の中でカードを作っている箇所に足す。HTML5 の drag イベントを使う。
 
@@ -1287,14 +1289,14 @@ spec §6.1 の「文書中心の作業管理」の核心はここにある。
 > そのまま参照してよい。`var` のループ変数を使うと最後の列に固定される
 > 罠があるので、`forEach` のままにすること。
 
-- [ ] **Step 7: push して再デプロイ**
+- [x] **Step 7: push して再デプロイ**
 
 ```bash
 npx clasp push -f
 npx clasp create-deployment -i <既存のデプロイID> -d "Phase 3b: Issue/Projects"
 ```
 
-- [ ] **Step 8: Web App で一連の流れを確認**
+- [x] **Step 8: Web App で一連の流れを確認**
 
 1. 文書を選び、Issue タブで「Issueを作成」
 2. ボードタブを開く
@@ -1313,7 +1315,7 @@ Expected: ボードで **In Review** に動く
 
 Expected: Issue が closed になり、ボードで **Done** に動く。作成者にメールが届く
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add src/Main.gs src/ui/
@@ -1328,18 +1330,18 @@ git commit -m "feat: IssueタブとカンバンボードをWeb Appに追加"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md`
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 2: 間違った番号への耐性を確認**
+- [x] **Step 2: 間違った番号への耐性を確認**
 
 PR 本文に `closes #999` と書いてマージする。
 
 Expected: マージは成功し、ログにもエラーが出ない
 
-- [ ] **Step 3: README を更新**
+- [x] **Step 3: README を更新**
 
 「現在の状態」に Issue / Projects の節を足す。
 
@@ -1357,11 +1359,11 @@ Expected: マージは成功し、ログにもエラーが出ない
 
 ロードマップの Phase 3 行を「完了」にする。
 
-- [ ] **Step 4: 計画書に完了マークを付ける**
+- [x] **Step 4: 計画書に完了マークを付ける**
 
 全チェックボックスが `- [x]` になっていることを確認し、ヘッダに完了ステータスを追記する。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add README.md docs/
@@ -1372,14 +1374,14 @@ git commit -m "docs: Phase 3b 完了を反映"
 
 ## Phase 3b 完了時に達成されていること
 
-- [ ] `npm test` で Issue / ボード / PR連動を含む全テストが通る
-- [ ] Issue を作成・更新・クローズでき、文書に紐づけられる
-- [ ] Wiki で文書を開くと、その文書の open Issue が見える
-- [ ] Issue から 1 クリックでブランチができ、命名が `issue-<番号>-<題名>` になる
-- [ ] PR 本文の `closes #N` でマージ時に Issue が閉じる
-- [ ] カンバンがブランチ作成・PR作成・マージで自動的に動く
-- [ ] 存在しない Issue 番号を `closes` に書いてもマージが失敗しない
-- [ ] PR 作成時とマージ時にメール通知が届く
-- [ ] 通知の失敗が本処理を巻き戻さない
-- [ ] Wiki で文書を開くと紐づく open Issue がチップとして並ぶ
-- [ ] ボードのカードをドラッグ&ドロップで別の列に動かせる
+- [x] `npm test` で Issue / ボード / PR連動を含む全テストが通る
+- [x] Issue を作成・更新・クローズでき、文書に紐づけられる
+- [x] Wiki で文書を開くと、その文書の open Issue が見える
+- [x] Issue から 1 クリックでブランチができ、命名が `issue-<番号>-<題名>` になる
+- [x] PR 本文の `closes #N` でマージ時に Issue が閉じる
+- [x] カンバンがブランチ作成・PR作成・マージで自動的に動く
+- [x] 存在しない Issue 番号を `closes` に書いてもマージが失敗しない
+- [x] PR 作成時とマージ時にメール通知が届く
+- [x] 通知の失敗が本処理を巻き戻さない
+- [x] Wiki で文書を開くと紐づく open Issue がチップとして並ぶ
+- [x] ボードのカードをドラッグ&ドロップで別の列に動かせる

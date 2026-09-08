@@ -136,6 +136,11 @@ GitHub を使ったことがあれば説明なしで操作できることを目�
 
 ### Issue と Projects
 
+実機で検証済み（2026-09-08、`debugVerifyPhase3b()` で9項目すべて PASS）。
+Issue作成 → Backlog → ブランチ作成 → In Progress → PR作成 → In Review →
+マージ → Done と Issue のクローズまでが通しで動く。
+
+
 - Issue は文書に紐づく。Wiki で文書を開くと、その文書の open Issue が本文の上に並ぶ
 - Issue から 1 クリックでブランチを作れる (`issue-<番号>-<題名>` で自動命名)
 - PR 本文に `closes #N` と書くと、マージ時に Issue が閉じて PR 番号が記録される
@@ -366,8 +371,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | 2 | commit / branch / PR / merge / 書き戻し | 完了 |
 | **3a** | Sheets / Slides レンダラ | 計画済み |
 | **3a** | Sheets / Slides レンダラ | 実装完了・実機検証待ち |
-| 3b | Issue / Projects | 実装完了・実機検証待ち |
-| **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
+| **3b** | Issue / Projects | **完了（実機検証済み）** |
+| **4b** | Markdown編集 + main のブランチ保護 | **完了（往復を実機検証済み）** |
 | **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |
 | **4a** | コマンドキュー (ローカル連携) | **完了（実機検証済み）** |
 | **4d** | アプリ内ガイド | 実装完了・実機検証待ち |

@@ -1313,3 +1313,30 @@ function debugVerifyCommandQueue() {
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
 }
+
+/**
+ * 検証ハーネスが残した Issue とカードを片付ける。
+ *
+ * debugVerifyPhase3b が作る Issue は題名と本文が固定されているため、
+ * それで判別できる。issueNumber を記録していなかった時期の実行が
+ * 残した分を掃除するために使う。
+ *
+ * @returns {string} 削除した件数
+ */
+function debugCleanupVerifyIssues() {
+  var rows = dbReadAll('issues');
+  var removed = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].title) !== '第3条を追加する') continue;
+    if (String(rows[i].body) !== '自動検証') continue;
+
+    var number = rows[i].number;
+    dbDelete('issues', 'number', number);
+    dbDelete('project_items', 'issueNumber', number);
+    removed.push('#' + number);
+  }
+
+  if (!removed.length) return '片付ける検証用Issueはありません';
+  return '検証用Issueを削除しました: ' + removed.join(', ');
+}
