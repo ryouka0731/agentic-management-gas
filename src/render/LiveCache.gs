@@ -89,6 +89,8 @@ function liveCacheGet_(prefix) {
  */
 function renderByType_(fileId, type) {
   if (type === 'doc') return renderDoc(fileId);
+  if (type === 'sheet') return renderSheet(fileId);
+  if (type === 'slide') return renderSlides(fileId);
   throw new Error('このファイル種別はまだ対応していません: ' + type);
 }
 

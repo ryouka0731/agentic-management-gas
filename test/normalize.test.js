@@ -334,3 +334,87 @@ describe('ラウンドトリップ', () => {
     expect(serializeBlocks(parseBlocks(once))).toBe(once);
   });
 });
+
+describe('sheet ブロック', () => {
+  const gas = loadGas('src/core/Normalize.js');
+
+  it('シート名と値を直列化する', () => {
+    const html = gas.serializeBlocks([{
+      type: 'sheet',
+      name: '売上',
+      rows: [
+        [{ value: '月' }, { value: '金額' }],
+        [{ value: '1月' }, { value: '100' }],
+      ],
+    }]);
+    expect(html).toBe(
+      '<table data-sheet="売上">\n' +
+      '<tr><td>月</td><td>金額</td></tr>\n' +
+      '<tr><td>1月</td><td>100</td></tr>\n' +
+      '</table>\n'
+    );
+  });
+
+  it('数式のあるセルだけ data-formula を持つ', () => {
+    const html = gas.serializeBlocks([{
+      type: 'sheet',
+      name: 'Sheet1',
+      rows: [[{ value: '300', formula: '=SUM(A1:A2)' }, { value: '固定値' }]],
+    }]);
+    expect(html).toContain('<td data-formula="=SUM(A1:A2)">300</td>');
+    expect(html).toContain('<td>固定値</td>');
+  });
+
+  it('往復して同じブロックに戻る', () => {
+    const blocks = [{
+      type: 'sheet',
+      name: '売上 <2026>',
+      rows: [
+        [{ value: 'A&B' }, { value: '', formula: '=NOW()' }],
+        [{ value: '"引用"' }, { value: '普通' }],
+      ],
+    }];
+    expect(gas.parseBlocks(gas.serializeBlocks(blocks))).toEqual(blocks);
+  });
+
+  it('Docs の table とは別物として扱う', () => {
+    const docTable = '<table>\n<tr><td>あ</td></tr>\n</table>\n';
+    const blocks = gas.parseBlocks(docTable);
+    expect(blocks[0].type).toBe('table');
+    expect(gas.serializeBlocks(blocks)).toBe(docTable);
+  });
+
+  it('セル内の改行を正規化し、1ブロック=1行を保つ', () => {
+    // Sheets のセルは Alt+Enter で改行を含められる。そのまま出すと
+    // <tr> が複数行に割れ、行ベース diff とパースが壊れる
+    const html = gas.serializeBlocks([{
+      type: 'sheet',
+      name: 'S',
+      rows: [[{ value: '1行目\n2行目' }]],
+    }]);
+    expect(html).toBe('<table data-sheet="S">\n<tr><td>1行目 2行目</td></tr>\n</table>\n');
+  });
+});
+
+describe('slide ブロック', () => {
+  const gas = loadGas('src/core/Normalize.js');
+
+  it('スライド境界を1行で表す', () => {
+    const html = gas.serializeBlocks([
+      { type: 'slide', index: 1 },
+      { type: 'paragraph', runs: [{ text: 'タイトル' }] },
+      { type: 'slide', index: 2 },
+    ]);
+    expect(html).toBe(
+      '<section data-slide="1">\n<p>タイトル</p>\n<section data-slide="2">\n'
+    );
+  });
+
+  it('往復して同じブロックに戻る', () => {
+    const blocks = [
+      { type: 'slide', index: 1 },
+      { type: 'paragraph', runs: [{ text: '本文' }] },
+    ];
+    expect(gas.parseBlocks(gas.serializeBlocks(blocks))).toEqual(blocks);
+  });
+});

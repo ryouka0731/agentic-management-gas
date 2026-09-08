@@ -158,7 +158,17 @@
       'table{border-collapse:collapse;margin:1em 0;width:100%;}' +
       'td{border:1px solid #e0e0e0;padding:6px 10px;}' +
       'li{margin:.3em 0;}' +
-      'img{max-width:100%;}';
+      'img{max-width:100%;}' +
+      // Sheets: シート名を表の上に出し、数式セルを淡く塗り分ける
+      'table[data-sheet]{width:auto;font-size:13px;}' +
+      'table[data-sheet] td{white-space:nowrap;}' +
+      'table[data-sheet]::before{content:attr(data-sheet);display:block;' +
+      'font-size:11px;color:#666;margin-bottom:4px;}' +
+      'td[data-formula]{background:#f8fafc;color:#666;}' +
+      // Slides: スライド境界に区切りと番号を出す
+      'section[data-slide]{border-top:2px solid #e0e0e0;margin-top:24px;' +
+      'padding-top:6px;font-size:11px;color:#666;}' +
+      'section[data-slide]::before{content:"スライド " attr(data-slide);}';
 
     viewer.srcdoc =
       '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">' +
@@ -1143,6 +1153,14 @@
       btn.textContent = name;
       btn.addEventListener('click', function () { selectFile(f.fileId, btn); });
       row.appendChild(btn);
+
+      if (f.type !== 'doc') {
+        var badge = document.createElement('span');
+        badge.className = 'type-badge';
+        badge.textContent = { sheet: 'Sheet', slide: 'Slides' }[f.type] || f.type;
+        row.appendChild(badge);
+      }
+
       row.appendChild(makeFileLink(f.type, f.fileId));
 
       listEl.appendChild(row);

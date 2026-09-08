@@ -200,3 +200,24 @@ function writeBlocksToDoc(fileId, blocks) {
 function writeHtmlToDoc(fileId, html) {
   writeBlocksToDoc(fileId, parseBlocks(html));
 }
+
+/**
+ * ファイル種別に応じて書き戻し先を選ぶ。
+ *
+ * Slides は図形の座標やレイアウトを HTML から復元できないため、
+ * 書き戻し自体を提供しない (spec §5.7)。
+ *
+ * @param {string} fileId
+ * @param {string} html
+ * @param {string} type 'doc' | 'sheet' | 'slide'
+ */
+function writeHtmlToFile(fileId, html, type) {
+  if (type === 'doc') return writeHtmlToDoc(fileId, html);
+  if (type === 'sheet') return writeHtmlToSheet(fileId, html);
+  if (type === 'slide') {
+    throw new Error(
+      'Slidesには書き戻せません。図形の座標やレイアウトを復元できないためです'
+    );
+  }
+  throw new Error('対応していないファイル種別です: ' + type);
+}
