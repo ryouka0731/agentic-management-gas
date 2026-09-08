@@ -21,6 +21,35 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### 社内展開
+
+**リポジトリを配るのではなく、1つのインスタンスを共有して Web App の URL を配る。**
+文書・履歴・メタDB はすべて Drive 側にあり、このリポジトリには入らない。
+各自が `setupRepo()` を実行すると、それぞれの Drive に別々の空リポジトリができる。
+
+共有するには `src/appsscript.json` の `webapp` を変える。
+
+```json
+"webapp": {
+  "executeAs": "USER_ACCESSING",
+  "access": "MYSELF"
+}
+```
+
+| | `USER_ACCESSING` | `ME`（オーナー権限で実行） |
+|---|---|---|
+| 利用者に必要な Drive 権限 | メタDBと全文書への編集権限 | 不要（アプリ経由のみ） |
+| main の直接編集 | Docs を開けばできてしまう | できない（権限が無い） |
+| Drive のリビジョン履歴 | 実際の編集者が残る | 全部オーナー名になる |
+| 実行クォータ | 各自 | オーナーに集中 |
+
+`ME` を推奨する。アプリ側の main 保護は「アプリ経由の操作」しか止められないため、
+`USER_ACCESSING` だと Docs を直接開く抜け道が残る。
+
+**ただし切り替える前に、別アカウントでヘルプタブを開いて身元表示を確認すること。**
+`executeAs: ME` では `Session.getActiveUser().getEmail()` が空文字を返す環境があり、
+その場合はコミットの作者とレビュアーがすべて空になって自己承認の禁止が誤作動する。
+
 ### 対応するファイル種別
 
 | 種別 | 閲覧・履歴・diff | ブランチ・PR | マージ書き戻し |
@@ -192,7 +221,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (229件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (232件)
 npm run test:watch
 clasp push --force
 ```
@@ -289,4 +318,4 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
 | **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |
 | 4a | コマンドキュー (ローカル連携) | 計画待ち |
-| 4d | アプリ内ガイド | 計画待ち |
+| **4d** | アプリ内ガイド | 実装完了・実機検証待ち |

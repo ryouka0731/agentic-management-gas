@@ -181,6 +181,7 @@ export function createFakeGas() {
   };
 
   let activeUser = 'tester@example.com';
+  let effectiveUser = 'tester@example.com';
 
   const Utilities = {
     DigestAlgorithm: { SHA_256: 'SHA_256' },
@@ -212,7 +213,10 @@ export function createFakeGas() {
       GOOGLE_SLIDES: 'application/vnd.google-apps.presentation',
       PLAIN_TEXT: 'text/plain',
     },
-    Session: { getActiveUser: () => ({ getEmail: () => activeUser }) },
+    Session: {
+      getActiveUser: () => ({ getEmail: () => activeUser }),
+      getEffectiveUser: () => ({ getEmail: () => effectiveUser }),
+    },
     LockService: {
       getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }),
     },
@@ -254,6 +258,7 @@ export function createFakeGas() {
       return file.getId();
     },
     _setUser: (email) => { activeUser = email; },
+    _setEffectiveUser: (email) => { effectiveUser = email; },
     _getUser: () => activeUser,
   };
 }

@@ -532,6 +532,27 @@ function debugDisableSelfApprove() {
   return '自己承認を禁止に戻しました';
 }
 
+/**
+ * アプリが利用者を誰として認識しているかを返す (Web App API)。
+ *
+ * webapp.executeAs を ME に切り替える前に、別アカウントでこの値を
+ * 確かめる必要がある。activeUser が空になる環境では、コミットの作者と
+ * レビュアーがすべて空文字になり、自己承認の禁止が「全員が同一人物」
+ * として誤作動する。
+ *
+ * @returns {{activeUser:string, effectiveUser:string, sameUser:boolean}}
+ */
+function apiWhoAmI() {
+  var active = String(Session.getActiveUser().getEmail() || '');
+  var effective = String(Session.getEffectiveUser().getEmail() || '');
+
+  return {
+    activeUser: active,
+    effectiveUser: effective,
+    sameUser: active !== '' && active === effective,
+  };
+}
+
 // ===== Phase 4b: 編集と main のブランチ保護 =====
 
 /**
