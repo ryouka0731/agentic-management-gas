@@ -584,3 +584,35 @@ describe('サイドバーと見え方', () => {
     expect(js).toContain("num.className = 'card-number'");
   });
 });
+
+describe('面と面の見分け', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('カードは触れても面の色を変えない', () => {
+    // 載っている面と同じ色になると、触れた瞬間に同化する
+    const generic = css.slice(css.indexOf('.file-item:hover'),
+      css.indexOf('}', css.indexOf('.file-item:hover')));
+    expect(generic).not.toContain('.board-card');
+
+    const hover = css.slice(css.indexOf('.board-card:hover {'),
+      css.indexOf('}', css.indexOf('.board-card:hover {')));
+    expect(hover).toContain('var(--surface-raised)');
+  });
+
+  it('編集中は塗りではなく輪郭で示す', () => {
+    const editing = css.slice(css.indexOf('.board-card.editing {'),
+      css.indexOf('}', css.indexOf('.board-card.editing {')));
+    expect(editing).toContain('0 0 0 2px var(--accent)');
+    expect(editing).toContain('var(--surface-raised)');
+  });
+
+  it('行は自前の面を持ち、器のほうを沈める', () => {
+    const row = css.slice(css.indexOf('.row-item {'),
+      css.indexOf('}', css.indexOf('.row-item {')));
+    expect(row).toContain('var(--surface-raised)');
+
+    const area = css.slice(css.indexOf('.list-area {'),
+      css.indexOf('}', css.indexOf('.list-area {')));
+    expect(area).toContain('var(--bg-2)');
+  });
+});

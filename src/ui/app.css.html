@@ -343,7 +343,13 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.list-area { flex: 1; overflow-y: auto; }
+/* 一覧の器。行を浮かせるため、地を一段沈める */
+.list-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-3) 0 var(--sp-6);
+  background: var(--bg-2);
+}
 
 .history-list {
   width: 320px;
@@ -392,13 +398,7 @@ body {
 
 .diff-empty { color: var(--ink-2); font-family: inherit; }
 
-.row-item {
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+
 
 .row-title { font-size: 13px; }
 .row-meta { font-size: 11px; color: var(--ink-2); }
@@ -655,6 +655,7 @@ body {
 }
 
 .board-card:hover {
+  background: var(--surface-raised);
   box-shadow: var(--hairline), var(--elev-2);
   transform: translateY(-2px);
 }
@@ -743,7 +744,12 @@ button:disabled {
 
 .btn:hover:not(:disabled) { background: var(--bg-3); }
 .tab:hover { color: var(--ink); }
-.file-item:hover, .row-item:hover, .board-card:hover { background: var(--bg-3); }
+/*
+ * 触れたときに面を変えるのは、地の上に直接置かれているものだけ。
+ * カードは自前の面を持つため、色を変えると載っている面と同化する。
+ * 持ち上げて示す。
+ */
+.file-item:hover { background: var(--bg-3); }
 .file-link:hover { background: var(--bg-3); }
 
 /* 現在地を色だけで示さない。太さと下線も併せて変える */
@@ -1137,8 +1143,6 @@ button:disabled {
 }
 
 .panel-actions { padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
-.list-area { padding: var(--sp-2) 0 var(--sp-5); }
-.row-item { padding: var(--sp-3) var(--sp-4); }
 .file-item { padding: var(--sp-2) var(--sp-4); min-height: 36px; }
 
 /* =====================================================================
@@ -1413,15 +1417,28 @@ button:disabled {
 .row-open:hover { background: var(--bg-3); }
 .row-main { flex: 1; min-width: 0; }
 
+/*
+ * 一覧の行。
+ *
+ * 自前の面を持たせ、器のほうを一段沈める。地の上に直接置くと、
+ * 触れたときに面の色を変えるしかなくなり、載っている面と同化する。
+ */
 .row-item {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin: 0 var(--sp-3) var(--sp-1);
+  margin: 0 var(--sp-4) var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+  transition: box-shadow var(--motion) ease-out, transform var(--motion) ease-out;
 }
 
-.row-item:hover { background: var(--bg-2); }
+.row-item:hover {
+  box-shadow: var(--hairline), var(--elev-2);
+  transform: translateY(-1px);
+}
 
 /* 戻り道 */
 .crumb-back {
@@ -1730,14 +1747,16 @@ button.gantt-name:hover { color: var(--accent); }
  * 直したつもりの対象を取り違える。色だけでなく左の帯でも示す。
  */
 .editing {
-  background: var(--accent-bg);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 2px var(--accent), var(--elev-2);
   border-radius: var(--radius);
 }
 
 .board-card.editing {
+  /* 塗りを変えると載っている面と近くなる。輪郭で示す */
+  background: var(--surface-raised);
   box-shadow: 0 0 0 2px var(--accent), var(--elev-2);
-  background: var(--accent-bg);
+  transform: translateY(-2px);
 }
 
 .gantt-row.editing { background: var(--accent-bg); box-shadow: none; }
@@ -1793,7 +1812,7 @@ button.gantt-name:hover { color: var(--accent); }
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-5) var(--sp-4) var(--sp-2);
+  padding: var(--sp-4) var(--sp-4) var(--sp-2);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
