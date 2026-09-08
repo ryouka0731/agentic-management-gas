@@ -34,6 +34,11 @@
   --merged: #8250df;
   --merged-bg: #fbefff;
 
+  /* accent の上に載る文字。地の明るさが逆転するため対で持つ */
+  --on-accent: #ffffff;
+  /* 浮いて見せる面。ライトでは白、ダークでは地より明るくする */
+  --surface-raised: #ffffff;
+
   /* 余白 (4pt スケール) */
   --sp-1: 4px;
   --sp-2: 8px;
@@ -63,8 +68,8 @@
     --bg: #0d1117;
     --bg-2: #161b22;
     --bg-3: #21262d;
-    --line: #30363d;
-    --line-strong: #484f58;
+    --line: #3d444d;
+    --line-strong: #6e7681;
 
     --ink: #e6edf3;
     --ink-2: #9198a1;
@@ -79,6 +84,9 @@
     --warn-bg: #2b2413;
     --merged: #ab7df8;
     --merged-bg: #1d1626;
+
+    --on-accent: #0d1117;
+    --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
   }
@@ -88,8 +96,8 @@
     --bg: #0d1117;
     --bg-2: #161b22;
     --bg-3: #21262d;
-    --line: #30363d;
-    --line-strong: #484f58;
+    --line: #3d444d;
+    --line-strong: #6e7681;
 
     --ink: #e6edf3;
     --ink-2: #9198a1;
@@ -104,6 +112,9 @@
     --warn-bg: #2b2413;
     --merged: #ab7df8;
     --merged-bg: #1d1626;
+
+    --on-accent: #0d1117;
+    --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
 }
@@ -200,8 +211,8 @@ body {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warn-bg);
+  color: var(--warn);
 }
 
 .chip {
@@ -305,8 +316,8 @@ body {
 }
 
 .diff-equal  { color: var(--ink-2); }
-.diff-insert { background: #e6ffed; color: #22863a; }
-.diff-delete { background: #ffeef0; color: #b31d28; }
+.diff-insert { background: var(--success-bg); color: var(--success); }
+.diff-delete { background: var(--danger-bg); color: var(--danger); }
 
 .diff-empty { color: var(--ink-2); font-family: inherit; }
 
@@ -329,9 +340,9 @@ body {
   color: var(--ink-2);
 }
 
-.state-open { background: #dcfce7; color: #166534; }
-.state-approved { background: #dbeafe; color: #1e40af; }
-.state-merged { background: #ede9fe; color: #5b21b6; }
+.state-open { background: var(--success-bg); color: var(--success); }
+.state-approved { background: var(--accent-bg); color: var(--accent); }
+.state-merged { background: var(--merged-bg); color: var(--merged); }
 
 .pr-actions {
   display: flex;
@@ -537,7 +548,7 @@ body {
 }
 
 .board-card {
-  background: var(--bg);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 8px;
@@ -1001,7 +1012,7 @@ button:disabled {
 
 .seg[aria-pressed="true"] {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 

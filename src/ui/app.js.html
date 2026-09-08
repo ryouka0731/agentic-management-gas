@@ -150,6 +150,9 @@
     var next = THEME_ORDER[(THEME_ORDER.indexOf(themeMode) + 1) % THEME_ORDER.length];
     applyTheme(next);
     writeTheme(next);
+
+    // 文書は iframe の中にあり、外側のテーマ変更が届かない。描き直す
+    if (current.fileId && !panelContent.hidden) selectFile(current.fileId, null);
   }
 
   // ===== ペインの幅 =====
@@ -514,27 +517,59 @@
    *
    * @param {string} bodyHtml
    */
+  /**
+   * 現在のテーマのトークンを読む。
+   *
+   * 文書は iframe の中に描くため、外側のCSS変数が届かない。
+   * 描画のたびに実際の値を読んで流し込む。
+   *
+   * @returns {Object<string,string>}
+   */
+  /**
+   * 文書内のリンク色。地の明るさに合わせて accent を使う。
+   *
+   * @returns {string}
+   */
+  function linkColor() {
+    return String(
+      getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#0969da'
+    ).trim();
+  }
+
+  function themeColors() {
+    var style = getComputedStyle(document.documentElement);
+    var names = ['--ink', '--ink-2', '--bg', '--bg-2', '--line'];
+    var out = {};
+
+    names.forEach(function (n) {
+      out[n] = String(style.getPropertyValue(n) || '').trim();
+    });
+    return out;
+  }
+
   function renderIntoViewer(bodyHtml) {
+    var c = themeColors();
+
     var css =
       'body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",' +
-      '"Noto Sans JP",sans-serif;line-height:1.9;color:#1a1a1a;' +
+      '"Noto Sans JP",sans-serif;line-height:1.9;' +
+      'color:' + c['--ink'] + ';background:' + c['--bg'] + ';' +
       'padding:32px 48px;max-width:820px;margin:0 auto;}' +
       'h1{font-size:24px;margin:1.6em 0 .6em;}' +
       'h2{font-size:20px;margin:1.6em 0 .6em;}' +
       'h3{font-size:17px;margin:1.4em 0 .5em;}' +
+      'a{color:' + linkColor() + ';}' +
       'table{border-collapse:collapse;margin:1em 0;width:100%;}' +
-      'td{border:1px solid #e0e0e0;padding:6px 10px;}' +
+      'td{border:1px solid ' + c['--line'] + ';padding:6px 10px;}' +
       'li{margin:.3em 0;}' +
       'img{max-width:100%;}' +
-      // Sheets: シート名を表の上に出し、数式セルを淡く塗り分ける
       'table[data-sheet]{width:auto;font-size:13px;}' +
       'table[data-sheet] td{white-space:nowrap;}' +
       'table[data-sheet]::before{content:attr(data-sheet);display:block;' +
-      'font-size:11px;color:#666;margin-bottom:4px;}' +
-      'td[data-formula]{background:#f8fafc;color:#666;}' +
-      // Slides: スライド境界に区切りと番号を出す
-      'section[data-slide]{border-top:2px solid #e0e0e0;margin-top:24px;' +
-      'padding-top:6px;font-size:11px;color:#666;}' +
+      'font-size:11px;color:' + c['--ink-2'] + ';margin-bottom:4px;}' +
+      'td[data-formula]{background:' + c['--bg-2'] + ';color:' + c['--ink-2'] + ';}' +
+      'section[data-slide]{border-top:2px solid ' + c['--line'] + ';margin-top:24px;' +
+      'padding-top:6px;font-size:11px;color:' + c['--ink-2'] + ';}' +
       'section[data-slide]::before{content:"スライド " attr(data-slide);}';
 
     viewer.srcdoc =
@@ -1279,7 +1314,7 @@
         prListEl.textContent = '';
         if (prs.length === 0) {
           var p = document.createElement('p');
-          p.style.cssText = 'padding:12px 16px;color:#666;font-size:13px;';
+          p.className = 'blank-state';
           p.textContent = 'プルリクエストがありません';
           prListEl.appendChild(p);
           return;

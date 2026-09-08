@@ -157,6 +157,27 @@ describe('テーマのトークン', () => {
       });
     });
 
+    it(name + ': accent の上の文字が読める', () => {
+      const c = t();
+      // セグメント選択中など、accent を塗った上に文字を置く箇所がある。
+      // 地の明るさがテーマで逆転するため、載せる文字色も対で持つ
+      expect(contrast(c['--on-accent'], c['--accent'])).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(name + ': 浮いた面の上の文字が読める', () => {
+      const c = t();
+      expect(contrast(c['--ink'], c['--surface-raised'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c['--ink-2'], c['--surface-raised'])).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(name + ': 状態バッジが読める', () => {
+      const c = t();
+      [['--success', '--success-bg'], ['--accent', '--accent-bg'],
+       ['--merged', '--merged-bg'], ['--warn', '--warn-bg']].forEach(([fg, bg]) => {
+        expect(contrast(c[fg], c[bg])).toBeGreaterThanOrEqual(4.5);
+      });
+    });
+
     it(name + ': グラフのレーンが地に対して 3:1 以上ある', () => {
       const c = t();
       ['--ink-2', '--accent', '--success', '--warn'].forEach((stroke) => {
@@ -202,5 +223,31 @@ describe('モードレスなUI', () => {
     // タブはオブジェクトとそのビューだけにする
     expect(html).not.toContain('data-tab="edit"');
     expect(html).toContain('id="mode-edit"');
+  });
+});
+
+describe('色の指定', () => {
+  it('CSSに直書きの色が残っていない', () => {
+    const css = read('src/ui/app.css.html');
+
+    // トークン定義の行だけを取り除いてから探す。直書きが残ると
+    // 片方のテーマで取り残されて読めなくなる
+    const withoutTokens = css.replace(/^\s*--[a-z0-9-]+:.*$/gm, '');
+    const hardcoded = withoutTokens.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+
+    expect(hardcoded).toEqual([]);
+  });
+
+  it('文書ビューの色をテーマから取っている', () => {
+    const js = read('src/ui/app.js.html');
+
+    // iframe の中には外側のCSS変数が届かないため、描画のたびに
+    // 実際の値を読んで流し込む必要がある
+    expect(js).toContain('function themeColors()');
+    expect(js).toContain("getPropertyValue(n)");
+
+    const viewer = js.slice(js.indexOf('function renderIntoViewer'),
+      js.indexOf('viewer.srcdoc'));
+    expect(viewer.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
   });
 });
