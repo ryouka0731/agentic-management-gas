@@ -435,3 +435,26 @@ describe('入力の置き場所', () => {
     expect(fn).toContain('closeSide();');
   });
 });
+
+describe('編集中の対象', () => {
+  const js = read('src/ui/app.js.html');
+  const css = read('src/ui/app.css.html');
+
+  it('どれを編集しているかに印を付ける', () => {
+    expect(js).toContain('function setSideSource(');
+    expect(js).toContain("classList.add('editing')");
+    expect(css).toContain('.editing');
+  });
+
+  it('閉じたら印も外す', () => {
+    const fn = js.slice(js.indexOf('function closeSide()'),
+      js.indexOf('function openInlineForm'));
+    expect(fn).toContain('setSideSource(null)');
+  });
+
+  it('一覧・ボード・工程表のどれからでも対象を渡している', () => {
+    expect(js).toContain('openIssueDetail(issue, row)');
+    expect(js).toContain('openIssueByNumber(card.issueNumber, el)');
+    expect(js).toContain('openIssueByNumber(r.number, row)');
+  });
+});

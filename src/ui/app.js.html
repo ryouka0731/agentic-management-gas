@@ -400,8 +400,26 @@
    * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
+   * @param {HTMLElement} [sourceEl] この入力が対象としている要素
    * @returns {HTMLElement} 差し込んだフォーム
    */
+  /** いま編集している対象の要素。印を付け外しするために覚えておく */
+  var sideSource = null;
+
+  /**
+   * どれを編集しているのかを画面上で示す。
+   *
+   * 右に入力が出ても、一覧のどの行に対するものかが分からないと、
+   * 直したつもりの対象を取り違える。
+   *
+   * @param {HTMLElement|null} el
+   */
+  function setSideSource(el) {
+    if (sideSource) sideSource.classList.remove('editing');
+    sideSource = el || null;
+    if (sideSource) sideSource.classList.add('editing');
+  }
+
   /**
    * 右のパネルを閉じる。
    */
@@ -409,6 +427,7 @@
     sidePanel.hidden = true;
     sideBody.textContent = '';
     sideTitle.textContent = '';
+    setSideSource(null);
   }
 
   /**
@@ -423,7 +442,8 @@
    * @param {function(Object<string,string>): void} onSubmit
    * @returns {HTMLElement} 差し込んだフォーム
    */
-  function openInlineForm(title, fields, submitLabel, onSubmit) {
+  function openInlineForm(title, fields, submitLabel, onSubmit, sourceEl) {
+    setSideSource(sourceEl);
     sideBody.textContent = '';
     sideTitle.textContent = title;
     sidePanel.hidden = false;
@@ -2071,7 +2091,7 @@
           open.appendChild(makeIcon('circle-dot'));
           open.appendChild(main);
           open.addEventListener('click', function () {
-            openIssueDetail(issue);
+            openIssueDetail(issue, row);
           });
           row.appendChild(open);
 
@@ -2112,8 +2132,9 @@
    * 対象が同じなら編集の場所も同じにする。
    *
    * @param {object} issue issues 行
+   * @param {HTMLElement} [sourceEl] 一覧の行やカードなど、対象の要素
    */
-  function openIssueDetail(issue) {
+  function openIssueDetail(issue, sourceEl) {
     var form = openInlineForm(
       'やること #' + issue.number,
       [
@@ -2137,7 +2158,8 @@
             title: v.title, body: v.body, assignee: v.assignee,
             dueDate: v.dueDate, labels: v.labels,
           });
-      }
+      },
+      sourceEl
     );
 
     var inputs = form.querySelectorAll('input, textarea');
@@ -2272,8 +2294,9 @@
    * ボードのカードや工程表の棒は中身を全部持っていないため、引き直す。
    *
    * @param {number} number
+   * @param {HTMLElement} [sourceEl]
    */
-  function openIssueByNumber(number) {
+  function openIssueByNumber(number, sourceEl) {
     google.script.run
       .withSuccessHandler(function (list) {
         var found = (list || []).filter(function (i) {
@@ -2284,7 +2307,7 @@
           showSnack('やること #' + number + ' が見つかりません', { kind: 'ng' });
           return;
         }
-        openIssueDetail(found);
+        openIssueDetail(found, sourceEl);
       })
       .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
       .apiIssueList('');
@@ -2413,7 +2436,7 @@
           name.textContent = '#' + r.number + ' ' + r.title;
           name.title = (r.assignee || '担当なし');
           name.addEventListener('click', function () {
-            openIssueByNumber(r.number);
+            openIssueByNumber(r.number, row);
           });
           row.appendChild(name);
 
@@ -2430,7 +2453,7 @@
           bar.title = '#' + r.number + ' ' + r.title +
             (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '');
           bar.addEventListener('click', function () {
-            openIssueByNumber(r.number);
+            openIssueByNumber(r.number, row);
           });
           track.appendChild(bar);
 
@@ -2529,13 +2552,13 @@
 
             // 掴んで動かすだけでなく、押して中身を直せるようにする
             el.addEventListener('click', function () {
-              openIssueByNumber(card.issueNumber);
+              openIssueByNumber(card.issueNumber, el);
             });
             el.tabIndex = 0;
             el.addEventListener('keydown', function (e) {
               if (e.key !== 'Enter' && e.key !== ' ') return;
               e.preventDefault();
-              openIssueByNumber(card.issueNumber);
+              openIssueByNumber(card.issueNumber, el);
             });
 
             var meta = document.createElement('span');

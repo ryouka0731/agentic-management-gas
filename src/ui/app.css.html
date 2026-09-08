@@ -1666,4 +1666,24 @@ button.gantt-name:hover { color: var(--accent); }
     box-shadow: var(--elev-2);
   }
 }
+
+/*
+ * 編集中の対象。
+ *
+ * 右に入力が出ても、一覧のどの行に対するものかが分からないと、
+ * 直したつもりの対象を取り違える。色だけでなく左の帯でも示す。
+ */
+.editing {
+  background: var(--accent-bg);
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-radius: var(--radius);
+}
+
+.board-card.editing {
+  box-shadow: 0 0 0 2px var(--accent), var(--elev-2);
+  background: var(--accent-bg);
+}
+
+.gantt-row.editing { background: var(--accent-bg); box-shadow: none; }
+.gantt-row.editing .gantt-bar { box-shadow: 0 0 0 2px var(--accent); }
 </style>
