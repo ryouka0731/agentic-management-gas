@@ -1569,4 +1569,27 @@ button.gantt-name:hover { color: var(--accent); }
   opacity: 0.5;
   pointer-events: none;
 }
+
+/*
+ * 画面側のエラー。
+ *
+ * この画面は入れ子の iframe の中で動くため、ブラウザのコンソールには
+ * 既定で出てこない。人の目に触れる場所に出す。
+ */
+.fatal-error {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 200;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-bottom: 1px solid var(--danger);
+  font-size: 12px;
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+.panel-count { margin-left: auto; }
 </style>

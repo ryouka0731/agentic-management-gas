@@ -2,6 +2,37 @@
 (function () {
   'use strict';
 
+  /**
+   * 画面側で起きたエラーを、画面の中に出す。
+   *
+   * この画面は入れ子の iframe (userCodeAppPanel) の中で動くため、
+   * ブラウザのコンソールは既定で最上位フレームしか見ておらず、
+   * ここで起きた例外が人の目に触れない。自分で出す。
+   *
+   * @param {string} text
+   */
+  function reportError(text) {
+    var bar = document.getElementById('fatal-error');
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'fatal-error';
+      bar.className = 'fatal-error';
+      bar.setAttribute('role', 'alert');
+      document.body.appendChild(bar);
+    }
+    bar.textContent = '画面側のエラー: ' + text;
+  }
+
+  window.addEventListener('error', function (e) {
+    reportError((e.message || '不明') +
+      (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : ''));
+  });
+
+  window.addEventListener('unhandledrejection', function (e) {
+    reportError('処理されなかった失敗: ' + (e.reason && e.reason.message || e.reason));
+  });
+
   // ===== 要素 =====
 
   var sidebarEl = document.querySelector('.sidebar');
@@ -1969,6 +2000,7 @@
     google.script.run
       .withSuccessHandler(function (issues) {
         issueListEl.textContent = '';
+        setPanelCount(panelIssues, issues.length + '件');
 
         if (!issues.length) {
           issueListEl.appendChild(makeBlankState(
@@ -2145,6 +2177,27 @@
   }
 
   /** やることを扱う画面をまとめて描き直す */
+  /**
+   * パネルの操作列に件数を出す。
+   *
+   * 何件返ってきたのかが見えないと、空なのか描けていないのか分からない。
+   *
+   * @param {HTMLElement} panel
+   * @param {string} text
+   */
+  function setPanelCount(panel, text) {
+    var actions = panel.querySelector('.panel-actions');
+    if (!actions) return;
+
+    var el = actions.querySelector('.panel-count');
+    if (!el) {
+      el = document.createElement('span');
+      el.className = 'panel-count row-meta';
+      actions.appendChild(el);
+    }
+    el.textContent = text;
+  }
+
   function refreshIssueViews() {
     if (!panelIssues.hidden) loadIssues();
     if (!panelBoard.hidden) loadBoard();
@@ -2277,6 +2330,8 @@
         ganttEl.textContent = '';
 
         var g = ganttLayout(issues, new Date());
+        setPanelCount(panelGantt, issues.length + '件のうち ' + g.rows.length + '件を表示');
+
         if (!g.rows.length) {
           ganttEl.appendChild(makeBlankState(
             'やることがありません',
@@ -2382,6 +2437,7 @@
 
         var total = 0;
         COLUMNS.forEach(function (c) { total += board[c[0]].length; });
+        setPanelCount(panelBoard, total + '枚');
 
         if (total === 0) {
           boardEl.appendChild(makeBlankState(
