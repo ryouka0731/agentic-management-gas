@@ -52,7 +52,7 @@ op はホワイトリストで縛り、既存の `api*` 関数に委譲するだ
 - 処理済みの命令は `queue-done/` に移す。結果ファイルは `queue/` に残す
 - 1件の失敗でキュー全体を止めない。例外は握って `ok:false` の結果にする
 
-- [ ] **Step 1: 疑似GAS に getFiles を足す**
+- [x] **Step 1: 疑似GAS に getFiles を足す**
 
 `makeFolder` の戻り値に足す。
 
@@ -69,7 +69,7 @@ op はホワイトリストで縛り、既存の `api*` 関数に委譲するだ
 
 `getBlob().getDataAsString` は引数を無視して内容を返す実装が既にあるため、そのままでよい。
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [x] **Step 2: 失敗するテストを書く**
 
 ```javascript
 describe('コマンドキュー', () => {
@@ -170,20 +170,20 @@ function readResult(ctx, id) {
 }
 ```
 
-- [ ] **Step 3: テストが失敗することを確認**
+- [x] **Step 3: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase4-queue.test.js`
 Expected: FAIL
 
-- [ ] **Step 4: 実装する**
+- [x] **Step 4: 実装する**
 
 `src/core/CommandQueue.gs` を作る（本文は Task 1 の実装ステップを参照）。
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ---
 
@@ -195,27 +195,27 @@ Run: `npm test`
 **Interfaces:**
 - Produces: `setupCommandQueue()` / `debugVerifyCommandQueue()`
 
-- [ ] **Step 1: setupCommandQueue を実装する**
+- [x] **Step 1: setupCommandQueue を実装する**
 
 同名トリガーを先に消してから作る。二度実行しても増えないようにする。
 
-- [ ] **Step 2: debugVerifyCommandQueue を実装する**
+- [x] **Step 2: debugVerifyCommandQueue を実装する**
 
 命令を1件置いて `processCommandQueue()` を呼び、結果を判定して片付ける。
 エディタから1回実行するだけで、キューが実際に動くか確かめられるようにする。
 
 - [ ] **Step 3: push して確認**
 
-- [ ] **Step 4: コミット**
+- [x] **Step 4: コミット**
 
 ---
 
 ## Task 3: ドキュメント更新
 
-- [ ] **Step 1: 全テストを実行**
-- [ ] **Step 2: README にローカル連携の使い方を書く**（命令の形式、op 一覧、遅延）
-- [ ] **Step 3: 計画書に完了マークを付ける**
-- [ ] **Step 4: コミット**
+- [x] **Step 1: 全テストを実行**
+- [x] **Step 2: README にローカル連携の使い方を書く**（命令の形式、op 一覧、遅延）
+- [x] **Step 3: 計画書に完了マークを付ける**
+- [x] **Step 4: コミット**
 
 ---
 
