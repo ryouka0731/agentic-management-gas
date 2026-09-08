@@ -182,6 +182,8 @@ function serializeBlocks(blocks) {
         lines.push('<tr>' + scells + '</tr>');
       }
       lines.push('</table>');
+    } else if (b.type === 'slide') {
+      lines.push('<section data-slide="' + Number(b.index) + '">');
     }
   }
   return lines.length ? lines.join('\n') + '\n' : '';
@@ -347,6 +349,12 @@ function parseBlocks(html) {
         depth: Number(ml[2]),
         runs: parseRuns_(ml[3]),
       });
+      continue;
+    }
+
+    var msl = /^<section data-slide="(\d+)">$/.exec(line);
+    if (msl) {
+      blocks.push({ type: 'slide', index: Number(msl[1]) });
       continue;
     }
 

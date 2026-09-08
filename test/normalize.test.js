@@ -395,3 +395,26 @@ describe('sheet ブロック', () => {
     expect(html).toBe('<table data-sheet="S">\n<tr><td>1行目 2行目</td></tr>\n</table>\n');
   });
 });
+
+describe('slide ブロック', () => {
+  const gas = loadGas('src/core/Normalize.js');
+
+  it('スライド境界を1行で表す', () => {
+    const html = gas.serializeBlocks([
+      { type: 'slide', index: 1 },
+      { type: 'paragraph', runs: [{ text: 'タイトル' }] },
+      { type: 'slide', index: 2 },
+    ]);
+    expect(html).toBe(
+      '<section data-slide="1">\n<p>タイトル</p>\n<section data-slide="2">\n'
+    );
+  });
+
+  it('往復して同じブロックに戻る', () => {
+    const blocks = [
+      { type: 'slide', index: 1 },
+      { type: 'paragraph', runs: [{ text: '本文' }] },
+    ];
+    expect(gas.parseBlocks(gas.serializeBlocks(blocks))).toEqual(blocks);
+  });
+});
