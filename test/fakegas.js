@@ -107,6 +107,15 @@ export function createFakeGas() {
       setFrozenRows: () => sheet,
       appendRow: (vals) => { rows.push(vals.slice()); return sheet; },
       deleteRow: (r) => { rows.splice(r - 1, 1); return sheet; },
+      getDataRange: () => ({
+        getDisplayValues: () => rows.map((r) => r.map(
+          (v) => (v === undefined || v === null ? '' : String(v))
+        )),
+        getFormulas: () => rows.map((r) => r.map(
+          (v) => (String(v === undefined ? '' : v).indexOf('=') === 0 ? String(v) : '')
+        )),
+      }),
+      clear: () => { rows.length = 0; return sheet; },
       getRange: (row, col, numRows, numCols) => ({
         getValues: () => {
           const out = [];
@@ -137,6 +146,7 @@ export function createFakeGas() {
 
   const spreadsheets = new Map();
   const sentMails = [];
+  const presentations = new Map();
 
   const SpreadsheetApp = {
     create: (name) => {
@@ -144,6 +154,7 @@ export function createFakeGas() {
       const sheets = new Map();
       const ss = {
         getId: () => file.getId(),
+        getSheets: () => Array.from(sheets.values()),
         getSheetByName: (n) => sheets.get(n) || null,
         insertSheet: (n) => { const s = makeSheet(n); sheets.set(n, s); return s; },
         deleteSheet: (s) => { sheets.delete(s.getName()); },
@@ -210,6 +221,13 @@ export function createFakeGas() {
       getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }),
     },
     Logger: { log: () => {} },
+    SlidesApp: {
+      openById: (id) => {
+        const pres = presentations.get(id);
+        if (!pres) throw new Error('プレゼンテーションが見つかりません: ' + id);
+        return pres;
+      },
+    },
     GmailApp: {
       sendEmail: (to, subject, body) => { sentMails.push({ to, subject, body }); },
     },
@@ -222,6 +240,23 @@ export function createFakeGas() {
       return f.getId();
     },
     _sentMails: () => sentMails,
+    _createSlides: (name, slideDefs) => {
+      const file = makeFile(name, '', rootFolder.getId(),
+        'application/vnd.google-apps.presentation');
+      presentations.set(file.getId(), {
+        getSlides: () => slideDefs.map((d) => ({
+          getShapes: () => (d.shapes || []).map((t) => ({
+            getText: () => ({ asString: () => t }),
+          })),
+          getNotesPage: () => ({
+            getSpeakerNotesShape: () => (d.notes
+              ? { getText: () => ({ asString: () => d.notes }) }
+              : null),
+          }),
+        })),
+      });
+      return file.getId();
+    },
     _setUser: (email) => { activeUser = email; },
     _setEffectiveUser: (email) => { effectiveUser = email; },
     _getUser: () => activeUser,

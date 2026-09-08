@@ -164,6 +164,26 @@ function serializeBlocks(blocks) {
         '<img data-sha="' + escapeAttr(b.sha) + '"' +
         ' alt="' + escapeAttr(b.alt || '') + '">'
       );
+    } else if (b.type === 'sheet') {
+      lines.push('<table data-sheet="' + escapeAttr(normalizeSpace(b.name || '')) + '">');
+
+      for (var sr = 0; sr < b.rows.length; sr++) {
+        var scells = '';
+        for (var sc = 0; sc < b.rows[sr].length; sc++) {
+          var cell = b.rows[sr][sc] || {};
+          // Sheets のセルは Alt+Enter で改行を含められる。そのまま出すと
+          // <tr> が複数行に割れ、1ブロック=1行が壊れて行ベースdiffが
+          // 意味を失う
+          var open = cell.formula
+            ? '<td data-formula="' + escapeAttr(normalizeSpace(cell.formula)) + '">'
+            : '<td>';
+          scells += open + escapeText(normalizeSpace(cell.value || '')) + '</td>';
+        }
+        lines.push('<tr>' + scells + '</tr>');
+      }
+      lines.push('</table>');
+    } else if (b.type === 'slide') {
+      lines.push('<section data-slide="' + Number(b.index) + '">');
     }
   }
   return lines.length ? lines.join('\n') + '\n' : '';
@@ -240,6 +260,27 @@ function parseTableRow_(line) {
 }
 
 /**
+ * シート行をセル配列にパースする。
+ *
+ * Docsの表と違い、セルは装飾を持たない素の文字列と数式である。
+ *
+ * @param {string} line
+ * @returns {Array<{value:string, formula?:string}>}
+ */
+function parseSheetRow_(line) {
+  var cells = [];
+  var re = /<td(?: data-formula="([^"]*)")?>([\s\S]*?)<\/td>/g;
+  var m;
+
+  while ((m = re.exec(line)) !== null) {
+    var cell = { value: unescapeText(m[2]) };
+    if (m[1] !== undefined) cell.formula = unescapeText(m[1]);
+    cells.push(cell);
+  }
+  return cells;
+}
+
+/**
  * 正規化HTML文字列をBlock配列にパースする。
  *
  * serializeBlocks が出力した形式のみを対象とする限定パーサである。
@@ -252,10 +293,22 @@ function parseBlocks(html) {
   var blocks = [];
   var lines = String(html == null ? '' : html).split('\n');
   var table = null;
+  var sheet = null;
+  var sheetName = '';
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     if (!line) continue;
+
+    if (sheet !== null) {
+      if (line === '</table>') {
+        blocks.push({ type: 'sheet', name: sheetName, rows: sheet });
+        sheet = null;
+      } else if (line.indexOf('<tr>') === 0) {
+        sheet.push(parseSheetRow_(line));
+      }
+      continue;
+    }
 
     if (table !== null) {
       if (line === '</table>') {
@@ -266,6 +319,9 @@ function parseBlocks(html) {
       }
       continue;
     }
+
+    var ms = /^<table data-sheet="([^"]*)">$/.exec(line);
+    if (ms) { sheet = []; sheetName = unescapeText(ms[1]); continue; }
 
     if (line === '<table>') { table = []; continue; }
 
@@ -296,6 +352,12 @@ function parseBlocks(html) {
       continue;
     }
 
+    var msl = /^<section data-slide="(\d+)">$/.exec(line);
+    if (msl) {
+      blocks.push({ type: 'slide', index: Number(msl[1]) });
+      continue;
+    }
+
     var mi = /^<img data-sha="([^"]*)" alt="([^"]*)">$/.exec(line);
     if (mi) {
       blocks.push({
@@ -309,6 +371,7 @@ function parseBlocks(html) {
 
   // <table> が閉じられずに終わった場合も取りこぼさない
   if (table !== null) blocks.push({ type: 'table', rows: table });
+  if (sheet !== null) blocks.push({ type: 'sheet', name: sheetName, rows: sheet });
 
   return blocks;
 }

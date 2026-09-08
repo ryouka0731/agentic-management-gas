@@ -21,6 +21,17 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### 対応するファイル種別
+
+| 種別 | 閲覧・履歴・diff | ブランチ・PR | マージ書き戻し |
+|---|---|---|---|
+| Docs | 対応 | 対応 | 対応 |
+| Sheets | 対応 | 対応 | 対応（`setValues`、数式は `data-formula` で保持） |
+| Slides | 対応 | — | **非対応**（PR 作成の時点で拒否） |
+
+Sheets は表示値を内容とし、数式を `data-formula` 属性に退避する。セルの改行は
+正規化で潰す（1ブロック = 1行が壊れると行ベース diff が意味を失うため）。
+
 ### 画面
 
 GitHub を使ったことがあれば説明なしで操作できることを目標にしている。
@@ -181,7 +192,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (205件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (229件)
 npm run test:watch
 clasp push --force
 ```
@@ -210,7 +221,10 @@ src/core/PullRequest.gs GAS依存 → 疑似GASで統合テスト可
 src/core/Issue.gs      GAS依存  → 疑似GASで統合テスト可
 src/core/Project.gs    GAS依存  → 疑似GASで統合テスト可
 src/core/Notifier.gs   GAS依存  → 疑似GASで統合テスト可
-src/render/*.gs        GAS依存  → 実機で確認 (DocumentApp 依存)
+src/render/SheetRenderer.gs  GAS依存 → 疑似GASで統合テスト可
+src/render/SheetWriter.gs    GAS依存 → 疑似GASで統合テスト可
+src/render/SlidesRenderer.gs GAS依存 → 疑似GASで統合テスト可
+src/render/DocRenderer.gs    GAS依存 → 実機で確認 (DocumentApp 依存)
 ```
 
 diff / 3-way merge / HTML 正規化という、最もバグが出やすく、かつ
@@ -247,6 +261,7 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [Phase 2 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase2.md)
 - [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
 - [Phase 3b 実装計画 (Issue / Projects)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md)
+- [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
 - [Phase 4 設計仕様](docs/superpowers/specs/2026-09-04-gws-git-management-phase4-design.md)
 - [Phase 4b 実装計画 (Markdown編集 + main保護)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4b-markdown-edit.md)
 - [Phase 4c 実装計画 (GitHub ライクな UI)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4c-github-ui.md)
@@ -257,8 +272,10 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - Drive のネイティブ版履歴は取得できないため、独自スナップショット方式を採る
 - 色・フォント・サイズは版管理の対象外（意図的な割り切り）。
   全角スペースによる字下げも正規化で失われる
-- Phase 1 では Google Docs のみ対応（Sheets / Slides は Phase 3）
-- Slides はマージ非対応（図形座標を HTML から復元できないため）
+- Google Docs / Sheets に対応。Slides は閲覧・履歴・diff のみ（マージ非対応）
+- Slides はマージ非対応（図形座標を HTML から復元できないため）。
+  PR 作成の時点で拒否する。spec の「ブランチのコピーを採用する fast-forward」案は
+  fileId が変わるため採らない
 
 ## ロードマップ
 
@@ -267,6 +284,7 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
 | 2 | commit / branch / PR / merge / 書き戻し | 完了 |
 | **3a** | Sheets / Slides レンダラ | 計画済み |
+| **3a** | Sheets / Slides レンダラ | 実装完了・実機検証待ち |
 | 3b | Issue / Projects | 実装完了・実機検証待ち |
 | **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
 | **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |

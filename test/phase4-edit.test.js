@@ -223,3 +223,23 @@ describe('身元の実測', () => {
     expect(who.sameUser).toBe(false);
   });
 });
+
+describe('Slides の扱い', () => {
+  it('SlidesではPRを作れない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+
+    const slideId = fake._createSlides('提案書', [{ shapes: ['表紙'] }]);
+    ctx.repoRegisterFile(slideId, '提案書.slide');
+
+    expect(() => ctx.prCreate('改訂', '', '改訂', slideId))
+      .toThrow(/Slidesはマージに対応していません/);
+  });
+
+  it('Slidesも管理対象として登録できる', () => {
+    const { ctx, fake } = setup();
+    const slideId = fake._createSlides('提案書', [{ shapes: ['表紙'] }]);
+    const row = ctx.repoRegisterFile(slideId, '提案書.slide');
+    expect(row.type).toBe('slide');
+  });
+});

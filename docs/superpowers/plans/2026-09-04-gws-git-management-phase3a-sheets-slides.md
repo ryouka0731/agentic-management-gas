@@ -1,5 +1,7 @@
 # GWS Git-like 文書管理システム Phase 3a (Sheets / Slides レンダラ) 実装計画
 
+**ステータス: 実装完了 (2026-09-08)** — 残は実機での目視と Sheets のマージ確認のみ。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Google Sheets と Google Slides を Docs と同じ正規化 HTML に載せ、Sheets は
@@ -65,7 +67,7 @@ Slides は閲覧・履歴・diff のみを提供し、反映は人が Slides 上
   直列化形は `<table data-sheet="名前">` / `<tr><td>値</td></tr>` / `</table>`。
   数式のあるセルだけ `<td data-formula="=SUM(A1:A2)">` になる
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `test/normalize.test.js` の末尾に追記する。
 
@@ -121,12 +123,12 @@ describe('sheet ブロック', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/normalize.test.js`
 Expected: FAIL (`sheet` ブロックが無視され、空文字列が返る)
 
-- [ ] **Step 3: 直列化を実装する**
+- [x] **Step 3: 直列化を実装する**
 
 `serializeBlocks` の `image` 分岐の直後 (`}` の前) に足す。
 
@@ -148,7 +150,7 @@ Expected: FAIL (`sheet` ブロックが無視され、空文字列が返る)
     }
 ```
 
-- [ ] **Step 4: パースを実装する**
+- [x] **Step 4: パースを実装する**
 
 `parseTableRow_` の直後に足す。
 
@@ -209,12 +211,12 @@ function parseSheetRow_(line) {
   if (sheet !== null) blocks.push({ type: 'sheet', name: sheetName, rows: sheet });
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (既存 122 件 + 追加 4 件)
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/core/Normalize.js test/normalize.test.js
@@ -233,7 +235,7 @@ git commit -m "feat: 正規化HTMLにsheetブロックを追加"
 - Produces: ブロック型 `{type:'slide', index:number}`。直列化形は `<section data-slide="3">`。
   スライドの中身は後続の `heading` / `paragraph` ブロックとして並ぶ (境界マーカ方式)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('slide ブロック', () => {
@@ -260,12 +262,12 @@ describe('slide ブロック', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/normalize.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 `serializeBlocks` の `sheet` 分岐の直後に足す。
 
@@ -285,12 +287,12 @@ Expected: FAIL
     }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/core/Normalize.js test/normalize.test.js
@@ -309,7 +311,7 @@ git commit -m "feat: 正規化HTMLにslideブロックを追加"
 - Consumes: `serializeBlocks` (Task 1)
 - Produces: `renderSheet(fileId) -> string`
 
-- [ ] **Step 1: 疑似GASに SpreadsheetApp のシート走査を足す**
+- [x] **Step 1: 疑似GASに SpreadsheetApp のシート走査を足す**
 
 `test/fakegas.js` の `SpreadsheetApp` に `getSheets` を持つシートを作れるようにする。
 `makeSheet` の戻り値に以下を足す。
@@ -329,7 +331,7 @@ git commit -m "feat: 正規化HTMLにslideブロックを追加"
         getSheets: () => Array.from(sheets.values()),
 ```
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [x] **Step 2: 失敗するテストを書く**
 
 `test/phase3-render.test.js` を新規作成する。
 
@@ -373,12 +375,12 @@ describe('renderSheet', () => {
 });
 ```
 
-- [ ] **Step 3: テストが失敗することを確認**
+- [x] **Step 3: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-render.test.js`
 Expected: FAIL (`renderSheet is not defined`)
 
-- [ ] **Step 4: 実装する**
+- [x] **Step 4: 実装する**
 
 ```javascript
 /**
@@ -446,12 +448,12 @@ function trimTrailingEmptyRows_(rows) {
 }
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/render/SheetRenderer.gs test/phase3-render.test.js test/fakegas.js
@@ -470,7 +472,7 @@ git commit -m "feat: SheetsをレンダリングするSheetRenderer.gsを追加"
 - Consumes: `parseBlocks` (Task 1)
 - Produces: `sheetWriterValidate(blocks) -> string[]` / `writeHtmlToSheet(fileId, html)`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('writeHtmlToSheet', () => {
@@ -493,12 +495,12 @@ describe('writeHtmlToSheet', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-render.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 ```javascript
 /**
@@ -583,12 +585,12 @@ function writeHtmlToSheet(fileId, html) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認**
+- [x] **Step 4: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/render/SheetWriter.gs test/phase3-render.test.js
@@ -607,7 +609,7 @@ git commit -m "feat: Sheetsへの書き戻しとその事前検証を追加"
 - Consumes: `serializeBlocks` (Task 2)
 - Produces: `renderSlides(fileId) -> string`
 
-- [ ] **Step 1: 疑似GASに SlidesApp を足す**
+- [x] **Step 1: 疑似GASに SlidesApp を足す**
 
 `test/fakegas.js` の戻り値に足す。テストからスライドを組み立てられればよい。
 
@@ -641,7 +643,7 @@ git commit -m "feat: Sheetsへの書き戻しとその事前検証を追加"
 
 `createFakeGas` の先頭に `const presentations = new Map();` を足す。
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [x] **Step 2: 失敗するテストを書く**
 
 ```javascript
 describe('renderSlides', () => {
@@ -671,12 +673,12 @@ describe('renderSlides', () => {
 });
 ```
 
-- [ ] **Step 3: テストが失敗することを確認**
+- [x] **Step 3: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-render.test.js`
 Expected: FAIL
 
-- [ ] **Step 4: 実装する**
+- [x] **Step 4: 実装する**
 
 ```javascript
 /**
@@ -738,12 +740,12 @@ function slideNotes_(slide) {
 }
 ```
 
-- [ ] **Step 5: テストが通ることを確認**
+- [x] **Step 5: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add src/render/SlidesRenderer.gs test/phase3-render.test.js test/fakegas.js
@@ -764,7 +766,7 @@ git commit -m "feat: Slidesを読み取り専用でレンダリングする"
 - Consumes: `renderSheet` (Task 3) / `renderSlides` (Task 5) / `writeHtmlToSheet` (Task 4)
 - Produces: `writeHtmlToFile(fileId, html, type)`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```javascript
 describe('種別ごとの分岐', () => {
@@ -786,12 +788,12 @@ describe('種別ごとの分岐', () => {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `npx vitest run test/phase3-render.test.js`
 Expected: FAIL
 
-- [ ] **Step 3: `renderByType_` を広げる**
+- [x] **Step 3: `renderByType_` を広げる**
 
 `src/render/LiveCache.gs` の該当関数を置き換える。
 
@@ -804,7 +806,7 @@ function renderByType_(fileId, type) {
 }
 ```
 
-- [ ] **Step 4: `writeHtmlToFile` を足す**
+- [x] **Step 4: `writeHtmlToFile` を足す**
 
 `src/render/HtmlWriter.gs` の末尾に足す。
 
@@ -831,7 +833,7 @@ function writeHtmlToFile(fileId, html, type) {
 }
 ```
 
-- [ ] **Step 5: `prMerge` を分岐経由にする**
+- [x] **Step 5: `prMerge` を分岐経由にする**
 
 `src/core/PullRequest.gs` の `writeHtmlToDoc(mainFileId, mergedHtml);` を置き換える。
 
@@ -853,7 +855,7 @@ function writeHtmlToFile(fileId, html, type) {
 > `targetFileId` を得た直後に `var targetRow = dbFindOne('files', 'fileId', targetFileId);`
 > を置き、以降はそれを使う。
 
-- [ ] **Step 6: Slides の PR 作成を拒否する**
+- [x] **Step 6: Slides の PR 作成を拒否する**
 
 `src/core/PullRequest.gs` の `prCreate` で、対象ファイルの存在確認の直後に足す。
 
@@ -870,13 +872,13 @@ function writeHtmlToFile(fileId, html, type) {
 
 既存の `if (!dbFindOne('files', 'fileId', mainFileId)) { ... }` は上に置き換わるため削除する。
 
-- [ ] **Step 7: テストが通ることを確認**
+- [x] **Step 7: テストが通ることを確認**
 
 Run: `npm test`
 Expected: PASS (Phase 2 の統合テストも全て通ること。通らなければ `targetRow` の
 参照位置を見直す)
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add src/render/LiveCache.gs src/render/HtmlWriter.gs src/core/PullRequest.gs test/phase3-render.test.js
@@ -894,7 +896,7 @@ git commit -m "feat: ファイル種別ごとにレンダリングと書き戻�
 **Interfaces:**
 - Consumes: `apiListFiles` の `type` (既存)
 
-- [ ] **Step 1: シートとスライドのスタイルを足す**
+- [x] **Step 1: シートとスライドのスタイルを足す**
 
 `src/ui/app.css.html` の `.conflict-*` 定義の前に足す。既存のデザイントークン
 (`--ink` / `--ink-2` / `--line`) を使い、未定義変数 + フォールバックの形は使わない。
@@ -934,7 +936,7 @@ git commit -m "feat: ファイル種別ごとにレンダリングと書き戻�
 > iframe に注入している側の CSS に足すこと。`renderIntoViewer` が
 > どの CSS を注入しているかを `src/ui/app.js.html` で確認してから置く。
 
-- [ ] **Step 2: ファイル一覧に種別バッジを出す**
+- [x] **Step 2: ファイル一覧に種別バッジを出す**
 
 `src/ui/app.js.html` の `renderFileList` で、行の `path` の後ろに足す。
 
@@ -945,7 +947,7 @@ git commit -m "feat: ファイル種別ごとにレンダリングと書き戻�
       row.appendChild(badge);
 ```
 
-- [ ] **Step 3: push して再デプロイ**
+- [x] **Step 3: push して再デプロイ**
 
 ```bash
 npx clasp push -f
@@ -967,7 +969,7 @@ Expected: スライド境界に「スライド N」の見出しが出て、本�
 
 Expected: **「Slidesはマージに対応していません」** で拒否される
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/ui/
@@ -982,7 +984,7 @@ git commit -m "feat: シートとスライドの表示を整える"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md`
 
-- [ ] **Step 1: 全テストを実行**
+- [x] **Step 1: 全テストを実行**
 
 Run: `npm test`
 Expected: PASS
@@ -1001,7 +1003,7 @@ Expected: 両方の変更が入った状態で main の Sheets が更新され�
 
 Expected: 該当行がコンフリクトとして赤枠で表示される
 
-- [ ] **Step 4: README を更新**
+- [x] **Step 4: README を更新**
 
 制約の記述を差し替える。
 
@@ -1011,11 +1013,11 @@ Expected: 該当行がコンフリクトとして赤枠で表示される
 
 ロードマップの Phase 3 行を「Sheets / Slides レンダラ 完了 / Issue・Projects 未着手」に更新する。
 
-- [ ] **Step 5: 計画書に完了マークを付ける**
+- [x] **Step 5: 計画書に完了マークを付ける**
 
 全チェックボックスが `- [x]` になっていることを確認し、ヘッダに完了ステータスを追記する。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add README.md docs/

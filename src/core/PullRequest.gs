@@ -43,8 +43,16 @@ function prCreate(title, body, sourceBranch, mainFileId) {
   if (String(branch.state) !== 'open') {
     throw new Error('このブランチは既に閉じられています: ' + sourceBranch);
   }
-  if (!dbFindOne('files', 'fileId', mainFileId)) {
-    throw new Error('対象ファイルが管理対象にありません');
+  var targetRow = dbFindOne('files', 'fileId', mainFileId);
+  if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
+
+  // Slides は書き戻せないため、PRを作らせない。閲覧・履歴・diff は使える。
+  // fast-forward でコピーを採用する案は fileId が変わるため採らない
+  if (String(targetRow.type) === 'slide') {
+    throw new Error(
+      'Slidesはマージに対応していません。履歴とdiffは見られますが、' +
+      '反映はSlides上で直接行ってください'
+    );
   }
 
   var existing = dbReadAll('pulls');
@@ -347,8 +355,13 @@ function prMerge(number, choices) {
 
     var mergedHtml = linesToHtml_(lines);
 
-    // 書き戻せるかを body.clear() の前に必ず検証する
-    var problems = htmlWriterValidate(parseBlocks(mergedHtml));
+    // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
+    var mergeRow = dbFindOne('files', 'fileId', mainFileId);
+    var mergeType = mergeRow ? String(mergeRow.type) : 'doc';
+    var mergedBlocks = parseBlocks(mergedHtml);
+    var problems = (mergeType === 'sheet')
+      ? sheetWriterValidate(mergedBlocks)
+      : htmlWriterValidate(mergedBlocks);
     if (problems.length > 0) {
       throw new Error('マージ結果を書き戻せません:\n' + problems.join('\n'));
     }
@@ -361,7 +374,7 @@ function prMerge(number, choices) {
       commitFile(mainFileId, 'main', 'PR #' + number + ' マージ前の自動退避', null);
     }
 
-    writeHtmlToDoc(mainFileId, mergedHtml);
+    writeHtmlToFile(mainFileId, mergedHtml, mergeType);
     liveCacheInvalidate(mainFileId);
 
     var mergeCommit = commitFile(
