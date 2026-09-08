@@ -7,13 +7,17 @@
  * @returns {Object<string, string[]>}
  */
 function DB_SCHEMA() {
+  // 列を増やすときは必ず**末尾に足す**。途中に挿入すると、既にシートに
+  // 書かれている行を新しい順序で読むことになり、値が1つずつずれる。
+  // dueDate を createdAt の前に入れて実際に壊した (作成日時が空になり、
+  // 工程表が全行を読み飛ばした)。順序は test/schema.test.js で固定している
   return {
     files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy'],
     commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at'],
-    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'dueDate', 'createdAt', 'closedAt'],
+    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate'],
     project_items: ['issueNumber', 'column', 'order'],
   };
 }

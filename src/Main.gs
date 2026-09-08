@@ -1584,6 +1584,19 @@ function debugDumpIssues() {
 
     var items = dbReadAll('project_items');
     log.push('カードの件数: ' + items.length);
+
+    // 列がずれていないかを、値の形で確かめる
+    var bad = [];
+    for (var k = 0; k < raw.length; k++) {
+      if (raw[k].createdAt === '' || raw[k].createdAt === null) {
+        bad.push('#' + raw[k].number + ' の作成日時が空');
+      }
+      if (raw[k].dueDate && !/^\d{4}-\d{2}-\d{2}/.test(String(raw[k].dueDate)) &&
+          Object.prototype.toString.call(raw[k].dueDate) !== '[object Date]') {
+        bad.push('#' + raw[k].number + ' の期限が日付として読めない');
+      }
+    }
+    log.push(bad.length ? '列のずれ: ' + bad.join(' / ') : '列のずれ: なし');
   } catch (e) {
     log.push('EXCEPTION ' + e.message);
     log.push(String(e.stack || ''));

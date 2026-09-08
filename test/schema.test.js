@@ -1,0 +1,37 @@
+import { describe, it, expect } from 'vitest';
+import { loadGas } from './harness.js';
+
+const gas = loadGas('src/core/Db.gs');
+
+/**
+ * メタDBの列順を固定する。
+ *
+ * シートに書かれた行は列の位置でしか意味を持たない。途中に列を挿入すると、
+ * 既存の行を新しい順序で読むことになり、値が1つずつずれる。
+ * 実際に dueDate を createdAt の前に入れて壊したため、ここで留める。
+ *
+ * 列を増やすときは、この表の**末尾に足す**こと。
+ */
+const EXPECTED = {
+  files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy'],
+  commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
+  branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
+  pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt'],
+  reviews: ['prNumber', 'reviewer', 'state', 'body', 'at'],
+  issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate'],
+  project_items: ['issueNumber', 'column', 'order'],
+};
+
+describe('メタDBの列順', () => {
+  const schema = gas.DB_SCHEMA();
+
+  Object.keys(EXPECTED).forEach((table) => {
+    it(table + ' の列と順序が変わっていない', () => {
+      expect(schema[table]).toEqual(EXPECTED[table]);
+    });
+  });
+
+  it('定義されているテーブルが増減していない', () => {
+    expect(Object.keys(schema).sort()).toEqual(Object.keys(EXPECTED).sort());
+  });
+});
