@@ -1194,3 +1194,92 @@ function debugMarkdownRoundTrip() {
   }
   return '往復不一致 — ログの差分を確認してください';
 }
+
+/**
+ * コマンドキューの時間主導トリガーを設置する。
+ *
+ * GASエディタから1回実行する。同名のトリガーを先に消してから作るため、
+ * 二度実行しても増えない。
+ *
+ * @returns {string}
+ */
+function setupCommandQueue() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() !== 'processCommandQueue') continue;
+    ScriptApp.deleteTrigger(triggers[i]);
+    removed++;
+  }
+
+  ScriptApp.newTrigger('processCommandQueue')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+
+  var queueId = commandQueueFolder_().getId();
+  Logger.log('キューのフォルダ: ' + queueId);
+
+  return '1分間隔のトリガーを設置しました' +
+    (removed ? ' (古いトリガーを' + removed + '件削除)' : '') +
+    '。キューのフォルダID: ' + queueId;
+}
+
+/**
+ * コマンドキューが実際に動くかを確かめる。
+ *
+ * 命令を1件置いて processCommandQueue() を呼び、結果を判定して片付ける。
+ * トリガーの設置とは独立に、実行経路だけを確かめられる。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifyCommandQueue() {
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
+    if (!ok) failed++;
+  }
+
+  var id = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  var queue = commandQueueFolder_();
+
+  try {
+    queue.createFile(
+      id + '.cmd.json',
+      JSON.stringify({ op: 'listFiles', args: {} }),
+      MimeType.PLAIN_TEXT
+    );
+    check('命令ファイルを置けた', true);
+
+    processCommandQueue();
+
+    var it = queue.getFilesByName(id + '.result.json');
+    check('結果ファイルが書き出された', it.hasNext());
+
+    if (it.hasNext()) {
+      var resultFile = it.next();
+      var res = JSON.parse(resultFile.getBlob().getDataAsString('UTF-8'));
+      check('命令が成功した', res.ok === true, res.error || '');
+      check('管理対象の一覧が返った', !!res.result && res.result.length >= 0,
+        res.result ? res.result.length + '件' : 'なし');
+      resultFile.setTrashed(true);
+    }
+
+    var doneIt = commandDoneFolder_().getFilesByName(id + '.cmd.json');
+    check('処理済みの命令が queue-done に移った', doneIt.hasNext());
+    if (doneIt.hasNext()) doneIt.next().setTrashed(true);
+
+    var leftover = queue.getFilesByName(id + '.cmd.json');
+    check('未処理のキューに命令が残っていない', !leftover.hasNext());
+  } catch (e) {
+    failed++;
+    log.push('EXCEPTION ' + e.message);
+  }
+
+  var summary = (failed === 0) ? 'すべて PASS' : failed + ' 件 FAIL';
+  Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
+  return summary;
+}

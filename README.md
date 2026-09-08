@@ -21,6 +21,54 @@ Google Docs に対して commit / branch / Pull Request / 3-way merge が動作�
 | main への書き戻し | 動作 |
 | 楽観的並行制御 (HEAD 検証) | 動作 |
 
+### ローカルからの操作（コマンドキュー）
+
+GCP プロジェクトが使えない環境では `clasp run`（Apps Script API）が使えない。
+公開エンドポイントも作らない方針のため、**Drive 上のキューを介した非同期実行**で
+ローカルから操作する。
+
+```
+.git/
+├── queue/          未処理の命令と結果
+│   ├── <id>.cmd.json
+│   └── <id>.result.json
+└── queue-done/     処理済みの命令
+```
+
+セットアップは GAS エディタで **`setupCommandQueue()`** を1回実行するだけ
+（1分間隔の時間主導トリガーを設置する。二度実行しても増えない）。
+
+命令ファイル `<id>.cmd.json` を `queue/` に置くと、1分以内に実行されて
+`<id>.result.json` が同じフォルダに出る。
+
+```json
+{ "op": "commit", "args": { "fileId": "1AbC...", "message": "第3条を改訂" } }
+```
+
+```json
+{ "ok": true, "op": "commit", "result": { "sha": "9f8e..." }, "at": "2026-09-08T09:00:00.000Z" }
+```
+
+| op | args |
+|---|---|
+| `listFiles` | なし |
+| `status` | `fileId` |
+| `readMarkdown` / `writeMarkdown` | `fileId` / `fileId`, `markdown` |
+| `commit` | `fileId`, `message`, `expectedHeadSha`(任意) |
+| `stashMainDrift` | `fileId` |
+| `branchCreate` | `name`, `fileId` |
+| `issueCreate` / `issueCreateBranch` | `title`,`body`,`linkedFileIds` / `number`,`fileId` |
+| `prCreate` / `prPreview` / `prMerge` | PR の作成・下見・マージ |
+
+**ホワイトリストに無い op は実行しない。** キューは Drive の共有相手なら誰でも
+書けるため、op を任意の関数名にすると事実上の RPC になる。
+
+**`prReview` は含めない。** トリガーはオーナー権限で走るので、キュー経由の承認は
+常に自己承認になる。承認は人が画面で行う操作として残している。
+
+main の保護などの安全機構はキュー経由でも同じように効く。
+遅延は最大1分（時間主導トリガーの最小間隔）。
+
 ### 社内展開
 
 **リポジトリを配るのではなく、1つのインスタンスを共有して Web App の URL を配る。**
@@ -221,7 +269,7 @@ clasp open-web-app
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (232件)
+npm test          # ユニットテスト + 疑似GASによる統合テスト (241件)
 npm run test:watch
 clasp push --force
 ```
@@ -294,6 +342,8 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 - [Phase 4 設計仕様](docs/superpowers/specs/2026-09-04-gws-git-management-phase4-design.md)
 - [Phase 4b 実装計画 (Markdown編集 + main保護)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4b-markdown-edit.md)
 - [Phase 4c 実装計画 (GitHub ライクな UI)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4c-github-ui.md)
+- [Phase 4d 実装計画 (アプリ内ガイド)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4d-guide.md)
+- [Phase 4a 実装計画 (コマンドキュー)](docs/superpowers/plans/2026-09-08-gws-git-management-phase4a-command-queue.md)
 
 ## 制約
 
@@ -317,5 +367,5 @@ node test/roundtrip-check.js <レンダリング結果を保存したhtmlファ�
 | 3b | Issue / Projects | 実装完了・実機検証待ち |
 | **4b** | Markdown編集 + main のブランチ保護 | 実装完了・実機検証待ち |
 | **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |
-| 4a | コマンドキュー (ローカル連携) | 計画待ち |
+| **4a** | コマンドキュー (ローカル連携) | 実装完了・実機検証待ち |
 | **4d** | アプリ内ガイド | 実装完了・実機検証待ち |
