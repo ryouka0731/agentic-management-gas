@@ -1,5 +1,7 @@
 # Phase 4a (コマンドキュー / ローカル連携) 実装計画
 
+**ステータス: 完了 (2026-09-08)** — 実機検証済み（6項目すべて PASS）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** ローカルの Claude から、Drive 上のキューを介して版管理の操作を実行できるようにする。
@@ -204,7 +206,7 @@ Run: `npm test`
 命令を1件置いて `processCommandQueue()` を呼び、結果を判定して片付ける。
 エディタから1回実行するだけで、キューが実際に動くか確かめられるようにする。
 
-- [ ] **Step 3: push して確認**
+- [x] **Step 3: push して確認**
 
 - [x] **Step 4: コミット**
 
@@ -221,9 +223,9 @@ Run: `npm test`
 
 ## Phase 4a 完了時に達成されていること
 
-- [ ] `.git/queue/` に命令 JSON を置くと、1分以内に実行されて結果 JSON が出る
-- [ ] ホワイトリストにない op は実行されない
-- [ ] `prReview` は op に含まれない（キュー経由の自己承認を防ぐ）
-- [ ] 壊れた JSON や失敗した命令が、他の命令の処理を止めない
-- [ ] 処理済みの命令は二度実行されない
-- [ ] main の保護など既存の安全機構はキュー経由でも効く
+- [x] `.git/queue/` に命令 JSON を置くと、1分以内に実行されて結果 JSON が出る
+- [x] ホワイトリストにない op は実行されない
+- [x] `prReview` は op に含まれない（キュー経由の自己承認を防ぐ）
+- [x] 壊れた JSON や失敗した命令が、他の命令の処理を止めない
+- [x] 処理済みの命令は二度実行されない
+- [x] main の保護など既存の安全機構はキュー経由でも効く
