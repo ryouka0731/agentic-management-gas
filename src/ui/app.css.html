@@ -1686,4 +1686,79 @@ button.gantt-name:hover { color: var(--accent); }
 
 .gantt-row.editing { background: var(--accent-bg); box-shadow: none; }
 .gantt-row.editing .gantt-bar { box-shadow: 0 0 0 2px var(--accent); }
+
+/* =====================================================================
+ * 工程表: 月の見出し・束ね・棒の伸縮
+ * ===================================================================== */
+
+.gantt-month {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-strong);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 土日は薄く敷いて、週の切れ目を読めるようにする */
+.gantt-day.weekend { background: var(--bg-2); }
+
+.gantt-bar { cursor: grab; touch-action: none; }
+.gantt-bar.dragging { cursor: grabbing; box-shadow: var(--elev-2); opacity: 0.9; }
+
+/* 掴める端を示す */
+.gantt-bar::before, .gantt-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  border-radius: 999px;
+}
+
+.gantt-bar { position: relative; }
+.gantt-bar::before { left: 0; }
+.gantt-bar::after { right: 0; }
+
+.gantt-bar:hover::before, .gantt-bar:hover::after {
+  background: var(--on-accent);
+  opacity: 0.5;
+}
+
+.gantt-bar.nodue:hover::before, .gantt-bar.nodue:hover::after {
+  background: var(--ink-2);
+}
+
+/* 束ねの見出し */
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  margin-top: var(--sp-2);
+}
+
+.group-head .row-meta { margin-left: auto; }
+
+.group-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.group-switch select {
+  min-width: 120px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
 </style>

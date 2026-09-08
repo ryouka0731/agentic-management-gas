@@ -44,7 +44,9 @@ function ganttLayout(issues, today) {
 
   for (var i = 0; i < (issues || []).length; i++) {
     var issue = issues[i];
-    var start = ganttStartOfDay(issue.createdAt);
+    // 開始日を入れていればそれを使う。無ければ作った日を仮の起点にする
+    var planned = ganttStartOfDay(issue.startDate);
+    var start = planned !== null ? planned : ganttStartOfDay(issue.createdAt);
     var due = ganttStartOfDay(issue.dueDate);
 
     if (start === null) continue;
@@ -60,6 +62,7 @@ function ganttLayout(issues, today) {
       state: issue.state,
       assignee: issue.assignee,
       hasDue: due !== null,
+      hasStart: planned !== null,
       overdue: due !== null && String(issue.state) === 'open' && due < now,
       _start: start,
       _end: end,
@@ -88,4 +91,50 @@ function ganttLayout(issues, today) {
     todayOffset: Math.round((now - from) / GANTT_DAY_MS()),
     rows: rows,
   };
+}
+
+
+/**
+ * 目盛りの月の並びを返す。
+ *
+ * 日付だけでは何月を見ているのか分からない。月ごとにまとめて幅を返し、
+ * 上段の見出しにする。
+ *
+ * @param {number} from 先頭の日 (ミリ秒)
+ * @param {number} days 日数
+ * @returns {Array<{label:string, span:number, year:number, month:number}>}
+ */
+function ganttMonths(from, days) {
+  var out = [];
+
+  for (var i = 0; i < days; i++) {
+    var d = new Date(from + i * GANTT_DAY_MS());
+    var year = d.getFullYear();
+    var month = d.getMonth() + 1;
+    var last = out.length ? out[out.length - 1] : null;
+
+    if (last && last.year === year && last.month === month) {
+      last.span++;
+      continue;
+    }
+    out.push({ year: year, month: month, span: 1, label: year + '年' + month + '月' });
+  }
+  return out;
+}
+
+/**
+ * 列の位置を日付に直す。棒を掴んで動かしたときに使う。
+ *
+ * @param {number} from 先頭の日 (ミリ秒)
+ * @param {number} offset 列の位置 (0始まり)
+ * @returns {string} YYYY-MM-DD
+ */
+function ganttDateAt(from, offset) {
+  var d = new Date(from + offset * GANTT_DAY_MS());
+  var m = String(d.getMonth() + 1);
+  var day = String(d.getDate());
+
+  return d.getFullYear() + '-' +
+    (m.length < 2 ? '0' + m : m) + '-' +
+    (day.length < 2 ? '0' + day : day);
 }

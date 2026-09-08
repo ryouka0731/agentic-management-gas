@@ -890,6 +890,7 @@ function issueToPlain_(row) {
     createdAt: iso(row.createdAt),
     closedAt: iso(row.closedAt),
     dueDate: iso(row.dueDate),
+    startDate: iso(row.startDate),
   };
 }
 

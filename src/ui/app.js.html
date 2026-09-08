@@ -90,6 +90,8 @@
   var sideClose = document.getElementById('side-close');
   var panelGantt = document.getElementById('panel-gantt');
   var ganttEl = document.getElementById('gantt');
+  var ganttGroupSel = document.getElementById('gantt-group');
+  var issueGroupSel = document.getElementById('issue-group');
 
   // ===== 状態 =====
 
@@ -2066,7 +2068,12 @@
           return;
         }
 
-        issues.forEach(function (issue) {
+        groupIssues(issues, issueGroupSel.value).forEach(function (group) {
+          issueListEl.appendChild(makeGroupHead(group.label, group.issues.length));
+          group.issues.forEach(renderIssueRow);
+        });
+
+        function renderIssueRow(issue) {
           var row = document.createElement('div');
           row.className = 'row-item';
 
@@ -2117,7 +2124,7 @@
           }
 
           issueListEl.appendChild(row);
-        });
+        }
       })
       .withFailureHandler(function (err) {
         issueListEl.textContent = 'エラー: ' + err.message;
@@ -2141,6 +2148,7 @@
         { name: 'title', label: 'やること', required: true },
         { name: 'body', label: '補足', multiline: true },
         { name: 'assignee', label: '担当者 (メールアドレス)' },
+        { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
         { name: 'labels', label: 'ラベル (カンマ区切り)' },
       ],
@@ -2156,7 +2164,7 @@
           })
           .apiIssueUpdate(issue.number, {
             title: v.title, body: v.body, assignee: v.assignee,
-            dueDate: v.dueDate, labels: v.labels,
+            startDate: v.startDate, dueDate: v.dueDate, labels: v.labels,
           });
       },
       sourceEl
@@ -2166,10 +2174,12 @@
     inputs[0].value = issue.title || '';
     inputs[1].value = issue.body || '';
     inputs[2].value = issue.assignee || '';
-    inputs[3].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
-    inputs[4].value = issue.labels || '';
+    inputs[3].value = issue.startDate ? String(issue.startDate).substring(0, 10) : '';
+    inputs[4].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
+    inputs[5].value = issue.labels || '';
 
     inputs[3].type = 'date';
+    inputs[4].type = 'date';
     inputs[2].setAttribute('list', 'people-list');
     attachPeopleList(form);
 
@@ -2378,6 +2388,223 @@
     };
   }
 
+  /**
+   * 月ごとの幅を返す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number} from
+   * @param {number} days
+   * @returns {Array<{label:string, span:number}>}
+   */
+  function ganttMonths(from, days) {
+    var DAY = 24 * 60 * 60 * 1000;
+    var out = [];
+
+    for (var i = 0; i < days; i++) {
+      var d = new Date(from + i * DAY);
+      var year = d.getFullYear();
+      var month = d.getMonth() + 1;
+      var last = out.length ? out[out.length - 1] : null;
+
+      if (last && last.year === year && last.month === month) {
+        last.span++;
+        continue;
+      }
+      out.push({ year: year, month: month, span: 1, label: year + '年' + month + '月' });
+    }
+    return out;
+  }
+
+  /**
+   * 列の位置を日付に直す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number} from
+   * @param {number} offset
+   * @returns {string} YYYY-MM-DD
+   */
+  function ganttDateAt(from, offset) {
+    var d = new Date(from + offset * 24 * 60 * 60 * 1000);
+    var m = String(d.getMonth() + 1);
+    var day = String(d.getDate());
+    return d.getFullYear() + '-' +
+      (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+  }
+
+  /**
+   * やることを束ねる。src/core/Grouping.js と同じもの。
+   *
+   * @param {object[]} issues
+   * @param {string} by
+   * @returns {Array<{key:string, label:string, issues:object[]}>}
+   */
+  function groupIssues(issues, by) {
+    var names = {};
+    allFiles.forEach(function (f) {
+      if (splitPath(f.path).branch === 'main') names[f.fileId] = f.path;
+    });
+
+    var order = [];
+    var buckets = {};
+
+    function put(key, label, issue) {
+      if (!buckets[key]) {
+        buckets[key] = { key: key, label: label, issues: [] };
+        order.push(key);
+      }
+      buckets[key].issues.push(issue);
+    }
+
+    (issues || []).forEach(function (issue) {
+      if (by === 'none') { put('all', 'すべて', issue); return; }
+
+      if (by === 'assignee') {
+        var who = String(issue.assignee || '');
+        put(who || '(未割当)', who || '担当なし', issue);
+        return;
+      }
+
+      if (by === 'state') {
+        var open = String(issue.state) === 'open';
+        put(open ? 'open' : 'closed', open ? '未完了' : '完了', issue);
+        return;
+      }
+
+      if (by === 'label') {
+        var added = false;
+        String(issue.labels || '').split(',').forEach(function (raw) {
+          var label = raw.replace(/^\s+|\s+$/g, '');
+          if (!label) return;
+          put(label, label, issue);
+          added = true;
+        });
+        if (!added) put('(ラベルなし)', 'ラベルなし', issue);
+        return;
+      }
+
+      var linked = false;
+      String(issue.linkedFileIds || '').split(',').forEach(function (raw) {
+        var id = raw.replace(/^\s+|\s+$/g, '');
+        if (!id) return;
+        put(id, names[id] || id, issue);
+        linked = true;
+      });
+      if (!linked) put('(未紐付け)', '文書に紐づいていない', issue);
+    });
+
+    return order.map(function (k) { return buckets[k]; });
+  }
+
+  /**
+   * 見出しの行を作る。
+   *
+   * @param {string} label
+   * @param {number} count
+   * @returns {HTMLElement}
+   */
+  function makeGroupHead(label, count) {
+    var head = document.createElement('div');
+    head.className = 'group-head';
+
+    var name = document.createElement('span');
+    name.textContent = label;
+    head.appendChild(name);
+
+    var n = document.createElement('span');
+    n.className = 'row-meta';
+    n.textContent = count + '件';
+    head.appendChild(n);
+
+    return head;
+  }
+
+  /**
+   * 棒を掴んで日付を変える。
+   *
+   * 端を掴めば片側だけ、真ん中を掴めば全体が動く。放したときに保存する。
+   * 数字を打ち込むより、期間を見ながら決めるほうが早い。
+   *
+   * @param {HTMLElement} bar
+   * @param {object} row ganttLayout の行
+   * @param {object} g ganttLayout の結果
+   * @param {number} colWidth 1日の幅
+   */
+  function makeBarDraggable(bar, row, g, colWidth) {
+    var mode = null;
+    var startX = 0;
+    var origin = { offset: row.offset, span: row.span };
+
+    function apply(offset, span) {
+      bar.style.gridColumn = (offset + 1) + ' / span ' + Math.max(1, span);
+    }
+
+    bar.addEventListener('pointerdown', function (e) {
+      var rect = bar.getBoundingClientRect();
+      var edge = 10;
+
+      if (e.clientX - rect.left <= edge) mode = 'start';
+      else if (rect.right - e.clientX <= edge) mode = 'end';
+      else mode = 'move';
+
+      startX = e.clientX;
+      origin = { offset: row.offset, span: row.span };
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add('dragging');
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    bar.addEventListener('pointermove', function (e) {
+      if (!mode) {
+        // 掴める場所を形で示す
+        var rect = bar.getBoundingClientRect();
+        var near = e.clientX - rect.left <= 10 || rect.right - e.clientX <= 10;
+        bar.style.cursor = near ? 'ew-resize' : 'grab';
+        return;
+      }
+
+      var moved = Math.round((e.clientX - startX) / colWidth);
+
+      if (mode === 'move') {
+        row.offset = Math.max(0, origin.offset + moved);
+        row.span = origin.span;
+      } else if (mode === 'end') {
+        row.span = Math.max(1, origin.span + moved);
+      } else {
+        var offset = Math.min(origin.offset + origin.span - 1,
+          Math.max(0, origin.offset + moved));
+        row.span = origin.span + (origin.offset - offset);
+        row.offset = offset;
+      }
+      apply(row.offset, row.span);
+    });
+
+    bar.addEventListener('pointerup', function (e) {
+      if (!mode) return;
+
+      var was = mode;
+      mode = null;
+      bar.classList.remove('dragging');
+      bar.releasePointerCapture(e.pointerId);
+
+      if (row.offset === origin.offset && row.span === origin.span) return;
+
+      var patch = { dueDate: ganttDateAt(g.from, row.offset + row.span - 1) };
+      if (was !== 'end') patch.startDate = ganttDateAt(g.from, row.offset);
+
+      google.script.run
+        .withSuccessHandler(function () {
+          showSnack('#' + row.number + ' の期間を ' +
+            ganttDateAt(g.from, row.offset) + ' 〜 ' + patch.dueDate + ' にしました',
+            { kind: 'ok' });
+          loadGantt();
+        })
+        .withFailureHandler(function (err) {
+          showSnack(err.message, { kind: 'ng' });
+          loadGantt();
+        })
+        .apiIssueUpdate(row.number, patch);
+    });
+  }
+
   function loadGantt() {
     showSkeleton(ganttEl, 'list', 5);
 
@@ -2404,7 +2631,27 @@
         chart.style.setProperty('--gantt-days', String(g.days));
         chart.style.setProperty('--gantt-col', COL + 'px');
 
-        // 日付の目盛り
+        // 上段に月、下段に日を出す。日だけでは何月か分からない
+        var monthHead = document.createElement('div');
+        monthHead.className = 'gantt-head';
+
+        var monthName = document.createElement('div');
+        monthName.className = 'gantt-name';
+        monthHead.appendChild(monthName);
+
+        var monthScale = document.createElement('div');
+        monthScale.className = 'gantt-scale';
+
+        ganttMonths(g.from, g.days).forEach(function (m) {
+          var cell = document.createElement('div');
+          cell.className = 'gantt-month';
+          cell.style.gridColumn = 'span ' + m.span;
+          cell.textContent = m.label;
+          monthScale.appendChild(cell);
+        });
+        monthHead.appendChild(monthScale);
+        chart.appendChild(monthHead);
+
         var head = document.createElement('div');
         head.className = 'gantt-head';
 
@@ -2418,8 +2665,11 @@
 
         for (var d = 0; d < g.days; d++) {
           var day = new Date(g.from + d * 24 * 60 * 60 * 1000);
+          var weekend = day.getDay() === 0 || day.getDay() === 6;
+
           var cell = document.createElement('div');
-          cell.className = 'gantt-day' + (d === g.todayOffset ? ' today' : '');
+          cell.className = 'gantt-day' +
+            (d === g.todayOffset ? ' today' : '') + (weekend ? ' weekend' : '');
           cell.textContent = day.getDate();
           cell.title = day.toLocaleDateString('ja-JP');
           scale.appendChild(cell);
@@ -2427,45 +2677,57 @@
         head.appendChild(scale);
         chart.appendChild(head);
 
-        g.rows.forEach(function (r) {
-          var row = document.createElement('div');
-          row.className = 'gantt-row';
+        // 行を束ねて見出しを付ける
+        var byNumber = {};
+        g.rows.forEach(function (r) { byNumber[r.number] = r; });
 
-          var name = document.createElement('button');
-          name.className = 'gantt-name';
-          name.textContent = '#' + r.number + ' ' + r.title;
-          name.title = (r.assignee || '担当なし');
-          name.addEventListener('click', function () {
-            openIssueByNumber(r.number, row);
+        groupIssues(issues, ganttGroupSel.value).forEach(function (group) {
+          var shown = group.issues
+            .map(function (i) { return byNumber[i.number]; })
+            .filter(function (r) { return !!r; });
+
+          if (!shown.length) return;
+          chart.appendChild(makeGroupHead(group.label, shown.length));
+
+          shown.forEach(function (r) {
+            var row = document.createElement('div');
+            row.className = 'gantt-row';
+
+            var name = document.createElement('button');
+            name.className = 'gantt-name';
+            name.textContent = '#' + r.number + ' ' + r.title;
+            name.title = (r.assignee || '担当なし');
+            name.addEventListener('click', function () {
+              openIssueByNumber(r.number, row);
+            });
+            row.appendChild(name);
+
+            var track = document.createElement('div');
+            track.className = 'gantt-track';
+
+            var bar = document.createElement('button');
+            bar.className = 'gantt-bar' +
+              (String(r.state) === 'closed' ? ' done' : '') +
+              (r.overdue ? ' overdue' : '') +
+              (r.hasDue ? '' : ' nodue');
+            bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
+            bar.textContent = r.assignee ? String(r.assignee).replace(/@.*$/, '') : '';
+            bar.title = '#' + r.number + ' ' + r.title +
+              (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
+              ' — 端を掴むと期限、真ん中を掴むと全体を動かせます';
+            track.appendChild(bar);
+            makeBarDraggable(bar, r, g, COL);
+
+            if (g.todayOffset >= 0 && g.todayOffset < g.days) {
+              var line = document.createElement('div');
+              line.className = 'gantt-today';
+              line.style.gridColumn = (g.todayOffset + 1) + ' / span 1';
+              track.appendChild(line);
+            }
+
+            row.appendChild(track);
+            chart.appendChild(row);
           });
-          row.appendChild(name);
-
-          var track = document.createElement('div');
-          track.className = 'gantt-track';
-
-          var bar = document.createElement('button');
-          bar.className = 'gantt-bar' +
-            (String(r.state) === 'closed' ? ' done' : '') +
-            (r.overdue ? ' overdue' : '') +
-            (r.hasDue ? '' : ' nodue');
-          bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
-          bar.textContent = r.assignee ? String(r.assignee).replace(/@.*$/, '') : '';
-          bar.title = '#' + r.number + ' ' + r.title +
-            (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '');
-          bar.addEventListener('click', function () {
-            openIssueByNumber(r.number, row);
-          });
-          track.appendChild(bar);
-
-          if (g.todayOffset >= 0 && g.todayOffset < g.days) {
-            var line = document.createElement('div');
-            line.className = 'gantt-today';
-            line.style.gridColumn = (g.todayOffset + 1) + ' / span 1';
-            track.appendChild(line);
-          }
-
-          row.appendChild(track);
-          chart.appendChild(row);
         });
 
         ganttEl.appendChild(chart);
@@ -2475,6 +2737,7 @@
       })
       .apiIssueList('');
   }
+
 
   // ===== 進捗ボード =====
 
@@ -2696,6 +2959,8 @@
   boardCreateBtn.addEventListener('click', createIssue);
   themeBtn.addEventListener('click', cycleTheme);
   sideClose.addEventListener('click', closeSide);
+  ganttGroupSel.addEventListener('change', loadGantt);
+  issueGroupSel.addEventListener('change', loadIssues);
 
   // どこにいても Escape で入力を閉じられる
   document.addEventListener('keydown', function (e) {

@@ -170,7 +170,16 @@
       <div class="panel panel-col" id="panel-issues" hidden>
         <div class="panel-actions">
           <button id="issue-create-btn" class="btn btn-primary">やることを作る</button>
-          <span class="row-meta">選んでいる文書に紐づきます</span>
+          <label class="group-switch">
+            <span class="row-meta">まとめ方</span>
+            <select id="issue-group" aria-label="やることのまとめ方">
+              <option value="doc">文書ごと</option>
+              <option value="assignee">担当者ごと</option>
+              <option value="state">状態ごと</option>
+              <option value="label">ラベルごと</option>
+              <option value="none">まとめない</option>
+            </select>
+          </label>
         </div>
         <div class="list-area" id="issue-list"></div>
       </div>
@@ -185,7 +194,17 @@
 
       <div class="panel panel-col" id="panel-gantt" hidden>
         <div class="panel-actions">
-          <span class="row-meta">期限を入れたやることが棒で並びます。棒を押すと中身を直せます</span>
+          <label class="group-switch">
+            <span class="row-meta">まとめ方</span>
+            <select id="gantt-group" aria-label="工程表のまとめ方">
+              <option value="doc">文書ごと</option>
+              <option value="assignee">担当者ごと</option>
+              <option value="state">状態ごと</option>
+              <option value="label">ラベルごと</option>
+              <option value="none">まとめない</option>
+            </select>
+          </label>
+          <span class="row-meta">棒の端を掴むと期限を、真ん中を掴むと全体を動かせます</span>
         </div>
         <div class="gantt-scroll" id="gantt"></div>
       </div>

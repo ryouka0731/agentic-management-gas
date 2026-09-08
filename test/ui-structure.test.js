@@ -458,3 +458,38 @@ describe('編集中の対象', () => {
     expect(js).toContain('openIssueByNumber(r.number, row)');
   });
 });
+
+describe('工程表の使い勝手', () => {
+  const js = read('src/ui/app.js.html');
+  const html = read('src/ui/wiki.html');
+
+  it('月の見出しを出す', () => {
+    // 日だけでは何月を見ているのか分からない
+    expect(js).toContain('function ganttMonths(');
+    expect(js).toContain("cell.className = 'gantt-month'");
+  });
+
+  it('棒を掴んで期間を変えられる', () => {
+    expect(js).toContain('function makeBarDraggable(');
+    expect(js).toContain("bar.addEventListener('pointerdown'");
+    expect(js).toContain('apiIssueUpdate(row.number, patch)');
+  });
+
+  it('端と真ん中で動き方を変える', () => {
+    const fn = js.slice(js.indexOf('function makeBarDraggable('),
+      js.indexOf('function loadGantt()'));
+    ["mode = 'start'", "mode = 'end'", "mode = 'move'"].forEach((m) => {
+      expect(fn).toContain(m);
+    });
+  });
+
+  it('やることと工程表を束ねられる', () => {
+    expect(html).toContain('id="issue-group"');
+    expect(html).toContain('id="gantt-group"');
+    expect(js).toContain('function groupIssues(');
+
+    ['文書ごと', '担当者ごと', '状態ごと', 'ラベルごと'].forEach((label) => {
+      expect(html).toContain(label);
+    });
+  });
+});
