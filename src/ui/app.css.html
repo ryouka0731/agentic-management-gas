@@ -47,6 +47,7 @@
   --radius-sm: 4px;
   --shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
   --motion: 160ms;
+  --sidebar-w: 260px;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -132,8 +133,8 @@ body {
 .layout { display: flex; height: 100vh; }
 
 .sidebar {
-  width: 260px;
-  flex: 0 0 260px;
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
   border-right: 1px solid var(--line);
   background: var(--bg-2);
   overflow-y: auto;
@@ -883,4 +884,48 @@ button:disabled {
 .tab-spacer { flex: 1; }
 
 .tabs { flex-wrap: wrap; }
+
+/*
+ * ペインの境界。掴んで幅を変えられる。
+ *
+ * 画面の使い方は人によって違う。ファイル名が長い人は左を広げ、
+ * 差分を読みたい人は右を広げる。固定幅にすると必ずどちらかが困る。
+ */
+.resizer {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color var(--motion) ease-out;
+}
+
+.resizer:hover, .resizer:focus-visible, .resizer.dragging { background: var(--accent); }
+
+@media (max-width: 767px) {
+  /* 縦積みになるため境界は掴めない */
+  .resizer { display: none; }
+}
+
+/* 一括操作の対象選択 */
+.bulk-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.bulk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--ink);
+  padding: 2px 0;
+}
+
+.bulk-row input { width: 16px; height: 16px; accent-color: var(--accent); }
 </style>

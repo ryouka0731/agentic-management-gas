@@ -27,6 +27,8 @@
   var whoamiEl = document.getElementById('whoami');
   var boardCreateBtn = document.getElementById('board-create-btn');
   var themeBtn = document.getElementById('theme-btn');
+  var resizer = document.getElementById('resizer');
+  var bulkCommitBtn = document.getElementById('bulk-commit-btn');
   var issueListEl = document.getElementById('issue-list');
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
@@ -41,6 +43,7 @@
   var branchSelect = document.getElementById('branch-select');
   var allFiles = [];
   var currentBranch = 'main';
+  var currentUser = '';
 
   // ===== サーバ側と同じ純関数 =====
   // src/core/FileUrl.js と src/core/Diff.js の diffPairs をここに写している。
@@ -145,6 +148,71 @@
     var next = THEME_ORDER[(THEME_ORDER.indexOf(themeMode) + 1) % THEME_ORDER.length];
     applyTheme(next);
     writeTheme(next);
+  }
+
+  // ===== ペインの幅 =====
+
+  var SIDEBAR_MIN = 180;
+  var SIDEBAR_MAX = 560;
+
+  function setSidebarWidth(px) {
+    var w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(px)));
+    document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+    return w;
+  }
+
+  function saveSidebarWidth(px) {
+    try {
+      window.localStorage.setItem('sidebarWidth', String(px));
+    } catch (e) { /* 保存できなくても操作はできる */ }
+  }
+
+  function restoreSidebarWidth() {
+    try {
+      var saved = Number(window.localStorage.getItem('sidebarWidth'));
+      if (saved) setSidebarWidth(saved);
+    } catch (e) { /* 既定幅のままでよい */ }
+  }
+
+  /**
+   * 境界を掴んで左ペインの幅を変えられるようにする。
+   *
+   * 掴む操作だけを用意すると、キーボードだけの利用者が幅を変えられない。
+   * 矢印キーでも動かせるようにする。
+   */
+  function initResizer() {
+    var dragging = false;
+
+    resizer.addEventListener('pointerdown', function (e) {
+      dragging = true;
+      resizer.classList.add('dragging');
+      resizer.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    resizer.addEventListener('pointermove', function (e) {
+      if (dragging) setSidebarWidth(e.clientX);
+    });
+
+    resizer.addEventListener('pointerup', function (e) {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      resizer.releasePointerCapture(e.pointerId);
+      saveSidebarWidth(setSidebarWidth(e.clientX));
+    });
+
+    resizer.addEventListener('keydown', function (e) {
+      var now = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10
+      ) || 260;
+
+      if (e.key === 'ArrowLeft') saveSidebarWidth(setSidebarWidth(now - 16));
+      else if (e.key === 'ArrowRight') saveSidebarWidth(setSidebarWidth(now + 16));
+      else return;
+
+      e.preventDefault();
+    });
   }
 
   // ===== モードレスな通知と入力 =====
@@ -574,6 +642,7 @@
   function loadHelp() {
     google.script.run
       .withSuccessHandler(function (who) {
+        currentUser = who.activeUser;
         whoamiEl.textContent = who.activeUser
           ? 'このアプリはあなたを ' + who.activeUser + ' として認識しています'
           : '警告: 利用者を特定できていません。' +
@@ -1103,6 +1172,13 @@
           var approveBtn = document.createElement('button');
           approveBtn.className = 'btn';
           approveBtn.textContent = '承認する';
+
+          // 押してからエラーを出さない。できない操作は理由と共に無効にする
+          if (currentUser && String(pr.author) === currentUser) {
+            approveBtn.disabled = true;
+            approveBtn.title = '自分が作成したPRは承認できません';
+          }
+
           approveBtn.addEventListener('click', function () {
             approveBtn.disabled = true;
             google.script.run
@@ -1117,7 +1193,13 @@
           var mergeBtn = document.createElement('button');
           mergeBtn.className = 'btn';
           mergeBtn.textContent = 'マージする';
-          mergeBtn.disabled = !!(preview.problems && preview.problems.length > 0);
+          if (preview.problems && preview.problems.length > 0) {
+            mergeBtn.disabled = true;
+            mergeBtn.title = '書き戻せない内容が含まれています: ' + preview.problems[0];
+          } else if (preview.approvals < 1) {
+            mergeBtn.disabled = true;
+            mergeBtn.title = 'マージには1件以上の承認が必要です';
+          }
           mergeBtn.addEventListener('click', function () {
             // マージは取り消せないため一度だけ確認する。ただしモーダルには
             // せず、PRの文脈に留まったまま確認する
@@ -1328,6 +1410,90 @@
       .apiStashMainDrift(current.fileId);
   }
 
+  /**
+   * 未コミットの文書をまとめてコミットする。
+   *
+   * 対象は既定ですべて選ぶ。毎回選び直す作業は、ほとんどの場合
+   * 「全部」を選ぶだけの手間にしかならない。
+   */
+  function bulkCommit() {
+    bulkCommitBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (files) {
+        bulkCommitBtn.disabled = false;
+
+        if (!files.length) {
+          showSnack(currentBranch + ' に未コミットの変更はありません');
+          return;
+        }
+
+        var form = document.createElement('div');
+        var checks = [];
+
+        var list = document.createElement('div');
+        list.className = 'bulk-list';
+
+        files.forEach(function (f) {
+          var row = document.createElement('label');
+          row.className = 'bulk-row';
+
+          var box = document.createElement('input');
+          box.type = 'checkbox';
+          box.checked = true;
+          box.value = f.fileId;
+          checks.push(box);
+          row.appendChild(box);
+
+          var name = document.createElement('span');
+          name.textContent = f.path;
+          row.appendChild(name);
+
+          list.appendChild(row);
+        });
+
+        openInlineForm(
+          panelBranches,
+          [{ name: 'message', label: files.length + '件の未コミット変更をまとめてコミット', required: true }],
+          'コミットする',
+          function (v) {
+            var ids = checks.filter(function (c) { return c.checked; })
+              .map(function (c) { return c.value; });
+
+            if (!ids.length) {
+              showSnack('対象が選ばれていません', { kind: 'ng' });
+              return;
+            }
+
+            google.script.run
+              .withSuccessHandler(function (res) {
+                var text = res.committed.length + '件コミットしました';
+                if (res.failed.length) {
+                  text += ' / ' + res.failed.length + '件失敗: ' +
+                    res.failed[0].path + ' ' + res.failed[0].error;
+                }
+                showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+                refreshStatus();
+                loadBranches();
+              })
+              .withFailureHandler(function (err) {
+                showSnack(err.message, { kind: 'ng' });
+              })
+              .apiCommitMany(ids, v.message);
+          }
+        );
+
+        // 対象一覧はフォームの中に差し込む
+        var inserted = panelBranches.querySelector('.inline-form');
+        inserted.insertBefore(list, inserted.querySelector('.inline-form-actions'));
+      })
+      .withFailureHandler(function (err) {
+        bulkCommitBtn.disabled = false;
+        showSnack(err.message, { kind: 'ng' });
+      })
+      .apiDirtyFiles(currentBranch);
+  }
+
   // ===== Issue =====
 
   /**
@@ -1413,11 +1579,19 @@
   }
 
   [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
+   [bulkCommitBtn, 'check'],
    [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save']]
     .forEach(function (pair) {
       if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
     });
 
+  google.script.run
+    .withSuccessHandler(function (who) { currentUser = who.activeUser; })
+    .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
+    .apiWhoAmI();
+
+  restoreSidebarWidth();
+  initResizer();
   applyTheme(readTheme());
   themeBtn.addEventListener('click', cycleTheme);
 
@@ -1673,12 +1847,34 @@
   }
   commitBtn.addEventListener('click', doCommit);
   branchCreateBtn.addEventListener('click', createBranch);
+  bulkCommitBtn.addEventListener('click', bulkCommit);
+  updateBranchActions();
   issueCreateBtn.addEventListener('click', createIssue);
   boardCreateBtn.addEventListener('click', createIssue);
   branchSelect.addEventListener('change', function () {
     currentBranch = branchSelect.value;
     renderTree();
+    updateBranchActions();
   });
+
+  /**
+   * ブランチ操作のボタンを、今のブランチでできることに合わせる。
+   *
+   * 押せるのに失敗する状態を作らない。
+   */
+  function updateBranchActions() {
+    var onMain = currentBranch === 'main';
+
+    branchCreateBtn.disabled = !onMain;
+    branchCreateBtn.title = onMain
+      ? 'mainのファイルから新しいブランチを作ります'
+      : 'ブランチはmainのファイルからのみ作成できます';
+
+    bulkCommitBtn.disabled = onMain;
+    bulkCommitBtn.title = onMain
+      ? 'mainは保護されているため、まとめてコミットできません'
+      : currentBranch + ' の未コミット変更をまとめてコミットします';
+  }
   editSaveBtn.addEventListener('click', saveEditor);
   stashBtn.addEventListener('click', stashMainDrift);
 

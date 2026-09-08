@@ -14,6 +14,9 @@
       </div>
       <div id="file-list"></div>
     </nav>
+    <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
+         tabindex="0" aria-label="ペインの幅を変える"></div>
+
     <div class="main">
       <div class="toolbar">
         <h1 id="doc-title">—</h1>
@@ -63,6 +66,7 @@
       <div class="panel panel-col" id="panel-branches" hidden>
         <div class="panel-actions">
           <button id="branch-create-btn" class="btn">ブランチを作成</button>
+          <button id="bulk-commit-btn" class="btn">まとめてコミット</button>
           <span class="row-meta">mainのファイルを選んでから作成してください</span>
         </div>
         <div class="list-area" id="branch-list"></div>

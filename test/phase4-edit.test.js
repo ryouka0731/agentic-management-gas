@@ -285,3 +285,77 @@ describe('コミットグラフ', () => {
     expect(ctx.apiCommitGraph(fileId).branches).toEqual(['main']);
   });
 });
+
+describe('一括コミット', () => {
+  function twoFileBranch() {
+    const env = setup();
+    const config = env.ctx.repoConfig();
+
+    const second = env.fake._createDoc('賃金規程', '<p>第1条</p>\n', config.mainId);
+    env.ctx.repoRegisterFile(second, '賃金規程.doc');
+    env.ctx.commitFile(second, 'main', '初期状態', null);
+
+    env.ctx.branchCreate('改訂', env.fileId);
+    env.ctx.branchCreate('改訂2', second);
+
+    return Object.assign(env, { second: second });
+  }
+
+  it('未コミットの文書だけを返す', () => {
+    const env = twoFileBranch();
+    const workA = env.ctx.branchWorkingFileId('改訂', env.fileId);
+
+    expect(env.ctx.apiDirtyFiles('改訂')).toEqual([]);
+
+    env.fake._docs.set(workA, '<p>編集した</p>\n');
+    const dirty = env.ctx.apiDirtyFiles('改訂');
+
+    expect(dirty.length).toBe(1);
+    expect(dirty[0].fileId).toBe(workA);
+  });
+
+  it('まとめてコミットできる', () => {
+    const env = twoFileBranch();
+    const workA = env.ctx.branchWorkingFileId('改訂', env.fileId);
+    const workB = env.ctx.branchWorkingFileId('改訂2', env.second);
+
+    env.fake._docs.set(workA, '<p>Aを編集</p>\n');
+    env.fake._docs.set(workB, '<p>Bを編集</p>\n');
+
+    const result = env.ctx.apiCommitMany([workA, workB], 'まとめて改訂');
+
+    expect(result.committed.length).toBe(2);
+    expect(result.failed).toEqual([]);
+    expect(env.ctx.headCommit(workA, '改訂').message).toBe('まとめて改訂');
+    expect(env.ctx.headCommit(workB, '改訂2').message).toBe('まとめて改訂');
+  });
+
+  it('1件失敗しても他は通す', () => {
+    const env = twoFileBranch();
+    const workA = env.ctx.branchWorkingFileId('改訂', env.fileId);
+    env.fake._docs.set(workA, '<p>Aを編集</p>\n');
+
+    // 変更のないファイルは「変更がありません」で落ちる
+    const workB = env.ctx.branchWorkingFileId('改訂2', env.second);
+    const result = env.ctx.apiCommitMany([workA, workB], 'まとめて改訂');
+
+    expect(result.committed.length).toBe(1);
+    expect(result.failed.length).toBe(1);
+    expect(result.failed[0].error).toContain('変更がありません');
+  });
+
+  it('mainのファイルは保護されて失敗する', () => {
+    const env = twoFileBranch();
+    env.fake._docs.set(env.fileId, '<p>直接編集</p>\n');
+
+    const result = env.ctx.apiCommitMany([env.fileId], 'main を直接');
+
+    expect(result.committed).toEqual([]);
+    expect(result.failed[0].error).toContain('mainは保護されています');
+  });
+
+  it('対象が空なら拒否する', () => {
+    const { ctx } = setup();
+    expect(() => ctx.apiCommitMany([], 'x')).toThrow(/対象が選ばれていません/);
+  });
+});

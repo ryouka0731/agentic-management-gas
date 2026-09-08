@@ -603,6 +603,68 @@ function apiCommitGraph(fileId) {
   return { rows: rows, laneCount: graphLaneCount(rows), branches: names };
 }
 
+/**
+ * ブランチ上の未コミットの文書を返す (Web App API)。
+ *
+ * 一括コミットの対象を選ぶために使う。ファイルごとにレンダリングが
+ * 走るため、対象が多いと時間がかかる。
+ *
+ * @param {string} branch
+ * @returns {Array<{fileId:string, path:string, dirty:boolean}>}
+ */
+function apiDirtyFiles(branch) {
+  var rows = filesVisibleInWiki();
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (branchOfPath_(rows[i].path) !== String(branch)) continue;
+
+    var status;
+    try {
+      status = fileStatus(rows[i].fileId, branch);
+    } catch (e) {
+      continue;
+    }
+    if (!status.dirty) continue;
+
+    out.push({ fileId: rows[i].fileId, path: rows[i].path, dirty: true });
+  }
+  return out;
+}
+
+/**
+ * 複数の文書を同じメッセージでまとめてコミットする (Web App API)。
+ *
+ * 1件の失敗で全体を止めない。どれが通ってどれが落ちたかを返す。
+ * 途中で止めると「半分だけコミットされたが、どれが済んだのか
+ * 分からない」状態になるため。
+ *
+ * @param {string[]} fileIds
+ * @param {string} message
+ * @returns {{committed: object[], failed: object[]}}
+ */
+function apiCommitMany(fileIds, message) {
+  var ids = fileIds || [];
+  if (!ids.length) throw new Error('対象が選ばれていません');
+
+  var committed = [];
+  var failed = [];
+
+  for (var i = 0; i < ids.length; i++) {
+    var row = dbFindOne('files', 'fileId', ids[i]);
+    var path = row ? row.path : ids[i];
+
+    try {
+      assertNotProtected_(ids[i]);
+      var commit = commitFile(ids[i], branchOfPath_(path), message, null);
+      committed.push({ path: path, sha: commit.sha });
+    } catch (e) {
+      failed.push({ path: path, error: e.message });
+    }
+  }
+  return { committed: committed, failed: failed };
+}
+
 // ===== Phase 4b: 編集と main のブランチ保護 =====
 
 /**
