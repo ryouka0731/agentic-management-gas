@@ -2,63 +2,81 @@
 (function () {
   'use strict';
 
-  var listEl = document.getElementById('file-list');
-  var viewer = document.getElementById('viewer');
-  var empty = document.getElementById('empty');
+  // ===== 要素 =====
+
+  var sidebarEl = document.querySelector('.sidebar');
+  var resizer = document.getElementById('resizer');
+  var themeBtn = document.getElementById('theme-btn');
+
+  var crumbBack = document.getElementById('crumb-back');
+  var crumbSep = document.getElementById('crumb-sep');
   var titleEl = document.getElementById('doc-title');
-  var openLink = document.getElementById('open-in-docs');
   var branchChip = document.getElementById('branch-chip');
   var dirtyBadge = document.getElementById('dirty-badge');
+  var branchSwitch = document.getElementById('branch-switch');
+  var branchSelect = document.getElementById('branch-select');
   var commitBtn = document.getElementById('commit-btn');
+  var stashBtn = document.getElementById('stash-btn');
+  var openLink = document.getElementById('open-in-docs');
+
   var tabsEl = document.getElementById('tabs');
+  var panelDocs = document.getElementById('panel-docs');
   var panelContent = document.getElementById('panel-content');
   var panelHistory = document.getElementById('panel-history');
+  var panelDrafts = document.getElementById('panel-drafts');
   var panelBranches = document.getElementById('panel-branches');
   var panelPulls = document.getElementById('panel-pulls');
-  var historyList = document.getElementById('history-list');
-  var diffView = document.getElementById('diff-view');
-  var branchListEl = document.getElementById('branch-list');
-  var branchCreateBtn = document.getElementById('branch-create-btn');
-  var prListEl = document.getElementById('pr-list');
-  var prDetail = document.getElementById('pr-detail');
   var panelIssues = document.getElementById('panel-issues');
   var panelBoard = document.getElementById('panel-board');
   var panelHelp = document.getElementById('panel-help');
-  var whoamiEl = document.getElementById('whoami');
-  var boardCreateBtn = document.getElementById('board-create-btn');
-  var themeBtn = document.getElementById('theme-btn');
-  var resizer = document.getElementById('resizer');
-  var bulkCommitBtn = document.getElementById('bulk-commit-btn');
-  var issueListEl = document.getElementById('issue-list');
-  var issueCreateBtn = document.getElementById('issue-create-btn');
-  var boardEl = document.getElementById('board');
+
+  var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
-  var modeViewBtn = document.getElementById('mode-view');
-  var modeEditBtn = document.getElementById('mode-edit');
-  var docModes = document.getElementById('mode-hint');
+  var viewer = document.getElementById('viewer');
   var editorEl = document.getElementById('editor');
   var editSaveBtn = document.getElementById('edit-save-btn');
   var editHint = document.getElementById('mode-hint');
-  var stashBtn = document.getElementById('stash-btn');
+  var modeViewBtn = document.getElementById('mode-view');
+  var modeEditBtn = document.getElementById('mode-edit');
 
-  var current = { fileId: null, headSha: null, branch: 'main' };
-  var branchSelect = document.getElementById('branch-select');
+  var historyList = document.getElementById('history-list');
+  var diffView = document.getElementById('diff-view');
+  var draftListEl = document.getElementById('draft-list');
+  var draftCreateBtn = document.getElementById('draft-create-btn');
+  var branchListEl = document.getElementById('branch-list');
+  var branchCreateBtn = document.getElementById('branch-create-btn');
+  var bulkCommitBtn = document.getElementById('bulk-commit-btn');
+  var prListEl = document.getElementById('pr-list');
+  var prDetail = document.getElementById('pr-detail');
+  var issueListEl = document.getElementById('issue-list');
+  var issueCreateBtn = document.getElementById('issue-create-btn');
+  var boardEl = document.getElementById('board');
+  var boardCreateBtn = document.getElementById('board-create-btn');
+  var guideEl = document.getElementById('guide');
+
+  // ===== 状態 =====
+
+  /**
+   * 開いている文書。fileId は「いま画面に出している版」を指す。
+   * docFileId は正式版の fileId で、版を切り替えても変わらない。
+   */
+  var current = {
+    fileId: null, docFileId: null, docPath: null,
+    headSha: null, branch: 'main',
+  };
+
   var allFiles = [];
-  var currentBranch = 'main';
   var currentUser = '';
+  var currentTab = 'docs';
+
+  /** 業務での呼び方。画面には Git の用語を出さない */
+  var OFFICIAL = '正式版';
 
   // ===== サーバ側と同じ純関数 =====
-  // src/core/FileUrl.js と src/core/Diff.js の diffPairs をここに写している。
+  // src/core/FileUrl.js と src/core/Diff.js の diffPairs を写している。
   // google.script.run の往復を増やさないための意図的な重複であり、
   // 片方だけ直すと表示と実体がずれるため、変更時は必ず両方を直すこと。
 
-  /**
-   * ファイル種別と fileId から元ファイルの URL を作る。
-   *
-   * @param {string} type
-   * @param {string} fileId
-   * @returns {string}
-   */
   function fileUrlOf(type, fileId) {
     if (!fileId) return '';
     var base = {
@@ -70,12 +88,6 @@
     return base + fileId + '/edit';
   }
 
-  /**
-   * diff の ops を左右2列の行に組み替える。
-   *
-   * @param {object[]} ops
-   * @returns {Array<{left:string|null, right:string|null, type:string}>}
-   */
   function diffPairs(ops) {
     var out = [];
     var dels = [];
@@ -87,8 +99,7 @@
         var left = i < dels.length ? dels[i] : null;
         var right = i < ins.length ? ins[i] : null;
         var type = (left !== null && right !== null)
-          ? 'change'
-          : (left !== null ? 'delete' : 'insert');
+          ? 'change' : (left !== null ? 'delete' : 'insert');
         out.push({ left: left, right: right, type: type });
       }
       dels = [];
@@ -106,14 +117,84 @@
     return out;
   }
 
-  // ===== テーマ =====
+  /**
+   * 論理パスを版の名前と表示用パスに分ける。
+   *
+   * @param {string} path
+   * @returns {{branch:string, path:string}}
+   */
+  function splitPath(path) {
+    var m = /^branches\/([^\/]+)\/([\s\S]*)$/.exec(String(path || ''));
+    return m
+      ? { branch: m[1], path: m[2] }
+      : { branch: 'main', path: String(path || '') };
+  }
+
+  /** @param {string} name @returns {string} 画面に出す版の名前 */
+  function branchLabel(name) {
+    return name === 'main' ? OFFICIAL : name;
+  }
+
+  // ===== アイコン =====
 
   /**
-   * 表示テーマ。'system' はブラウザの設定に従う。
+   * SVGアイコンを作る。
    *
-   * localStorage は GAS の Web App が埋め込まれる文脈によっては
-   * 例外を投げるため、必ず try/catch で包む。
+   * 絵文字は環境によって字形が変わり、色や太さを揃えられないため使わない。
+   *
+   * @param {string} name
+   * @returns {SVGElement}
    */
+  function makeIcon(name) {
+    var paths = {
+      'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+      plus: ['M12 5v14', 'M5 12h14'],
+      inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
+      'file-text': ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
+      pencil: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
+      'git-commit': ['M12 3v6', 'M12 15v6'],
+      'git-branch': ['M6 3v12', 'M18 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0z', 'M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M15 9a9 9 0 0 1-9 9'],
+      'git-pull-request': ['M18 6v9', 'M6 9v12', 'M13 6h3a2 2 0 0 1 2 2v1'],
+      'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
+      columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
+      'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
+      save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
+      archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
+      check: ['M20 6L9 17l-5-5'],
+      back: ['M19 12H5', 'M12 19l-7-7 7-7'],
+      sun: ['M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 1v2', 'M12 21v2', 'M4.2 4.2l1.4 1.4', 'M18.4 18.4l1.4 1.4', 'M1 12h2', 'M21 12h2', 'M4.2 19.8l1.4-1.4', 'M18.4 5.6l1.4-1.4'],
+      moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+      monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
+    };
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+
+    (paths[name] || []).forEach(function (d) {
+      var path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  var TAB_ICONS = {
+    docs: 'file-text',
+    content: 'file-text',
+    history: 'git-commit',
+    drafts: 'git-branch',
+    branches: 'git-branch',
+    pulls: 'git-pull-request',
+    issues: 'circle-dot',
+    board: 'columns',
+    help: 'help-circle',
+  };
+
+  // ===== テーマ =====
+
   var THEME_ORDER = ['system', 'light', 'dark'];
   var themeMode = 'system';
 
@@ -137,12 +218,12 @@
     if (mode === 'system') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', mode);
 
-    var label = { system: 'システム設定に従う', light: 'ライト', dark: 'ダーク' }[mode];
+    var label = { system: '端末の設定に従う', light: '明るい', dark: '暗い' }[mode];
     var icon = { system: 'monitor', light: 'sun', dark: 'moon' }[mode];
 
     themeBtn.textContent = '';
     themeBtn.appendChild(makeIcon(icon));
-    themeBtn.title = '表示テーマ: ' + label + ' (押すと切り替え)';
+    themeBtn.title = '画面の明るさ: ' + label + ' (押すと切り替え)';
     themeBtn.setAttribute('aria-label', themeBtn.title);
   }
 
@@ -151,8 +232,8 @@
     applyTheme(next);
     writeTheme(next);
 
-    // 文書は iframe の中にあり、外側のテーマ変更が届かない。描き直す
-    if (current.fileId && !panelContent.hidden) selectFile(current.fileId, null);
+    // 本文は iframe の中にあり、外側のテーマ変更が届かない。描き直す
+    if (current.fileId && !panelContent.hidden) openDoc(current.fileId, current.docPath);
   }
 
   // ===== ペインの幅 =====
@@ -183,7 +264,6 @@
    * 境界を掴んで左ペインの幅を変えられるようにする。
    *
    * 掴む操作だけを用意すると、キーボードだけの利用者が幅を変えられない。
-   * 矢印キーでも動かせるようにする。
    */
   function initResizer() {
     var dragging = false;
@@ -228,8 +308,6 @@
    * バナー通知を出す。
    *
    * alert はモーダルで操作を止め、取り消しの手段も与えない。
-   * 「実行しますか」ではなく「実行しておきました。取り消しますか」に
-   * 寄せるため、undo を受け取れるようにしている。
    *
    * @param {string} text
    * @param {{kind?: string, undo?: function, ms?: number}} [opts]
@@ -244,7 +322,6 @@
     var bar = document.createElement('div');
     bar.id = 'snackbar';
     bar.className = 'snackbar' + (options.kind ? ' ' + options.kind : '');
-    // 読み上げを妨げずに伝える
     bar.setAttribute('role', 'status');
     bar.setAttribute('aria-live', 'polite');
 
@@ -272,7 +349,6 @@
 
     document.body.appendChild(bar);
 
-    // 取り消せる通知は長めに出す
     var ms = options.ms || (options.undo ? 10000 : 5000);
     snackTimer = window.setTimeout(function () { bar.remove(); }, ms);
   }
@@ -280,10 +356,11 @@
   /**
    * 画面内に入力フォームを開く。prompt の置き換え。
    *
-   * @param {HTMLElement} host フォームを差し込む先 (先頭に挿入する)
+   * @param {HTMLElement} host
    * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
+   * @returns {HTMLElement} 差し込んだフォーム
    */
   function openInlineForm(host, fields, submitLabel, onSubmit) {
     var existing = host.querySelector('.inline-form');
@@ -342,20 +419,18 @@
       onSubmit(values);
     });
 
-    // Escape で閉じられる。閉じ道を必ず用意する
+    // 閉じ道を必ず用意する
     form.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') form.remove();
     });
 
     host.insertBefore(form, host.firstChild);
     inputs[fields[0].name].focus();
+    return form;
   }
 
   /**
    * その場で確認を取る帯を出す。confirm の置き換え。
-   *
-   * 破壊的な操作は取り消せないため、実行前に一度だけ確認する。
-   * ただしモーダルにはせず、操作の文脈に留まったまま確認する。
    *
    * @param {HTMLElement} host
    * @param {string} text
@@ -393,51 +468,6 @@
     ok.focus();
   }
 
-  // ===== 表示ヘルパー =====
-
-  /**
-   * SVGアイコンを作る。
-   *
-   * 絵文字は環境によって字形が変わり、色や太さを揃えられないため使わない。
-   *
-   * @param {string} name
-   * @returns {SVGElement}
-   */
-  function makeIcon(name) {
-    var paths = {
-      'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
-      plus: ['M12 5v14', 'M5 12h14'],
-      inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
-      'file-text': ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
-      pencil: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
-      'git-commit': ['M12 3v6', 'M12 15v6'],
-      'git-branch': ['M6 3v12', 'M18 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0z', 'M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M15 9a9 9 0 0 1-9 9'],
-      'git-pull-request': ['M18 6v9', 'M6 9v12', 'M13 6h3a2 2 0 0 1 2 2v1'],
-      'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
-      columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
-      'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
-      save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
-      archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
-      check: ['M20 6L9 17l-5-5'],
-      sun: ['M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 1v2', 'M12 21v2', 'M4.2 4.2l1.4 1.4', 'M18.4 18.4l1.4 1.4', 'M1 12h2', 'M21 12h2', 'M4.2 19.8l1.4-1.4', 'M18.4 5.6l1.4-1.4'],
-      moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
-      monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
-    };
-
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('class', 'icon');
-    svg.setAttribute('aria-hidden', 'true');
-
-    (paths[name] || []).forEach(function (d) {
-      var path = document.createElementNS(ns, 'path');
-      path.setAttribute('d', d);
-      svg.appendChild(path);
-    });
-    return svg;
-  }
-
   /**
    * 空の状態を作る。「何も無い」ではなく次の一手を示す。
    *
@@ -470,75 +500,67 @@
   }
 
   /**
-   * 連続する <li data-list="..." data-depth="N"> を対応する ul/ol でラップする。
+   * 元のファイルへのリンクを作る。
    *
-   * 正規化HTMLは差分粒度を優先して li を単独行で出力するため、
-   * 表示時にリスト構造へ復元する必要がある。
+   * @param {string} type
+   * @param {string} fileId
+   * @returns {HTMLElement}
+   */
+  function makeFileLink(type, fileId) {
+    var a = document.createElement('a');
+    a.className = 'file-link';
+    a.href = fileUrlOf(type, fileId);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.appendChild(makeIcon('external-link'));
+    a.title = '元のファイルを開く';
+    a.setAttribute('aria-label', '元のファイルを開く');
+    return a;
+  }
+
+  // ===== 本文の描画 =====
+
+  /**
+   * 連続する <li> を対応する ul/ol でラップする。
    *
    * @param {string} html
    * @returns {string}
    */
   function wrapLists(html) {
-    var lines = html.split('\n');
+    var lines = String(html || '').split('\n');
     var out = [];
-    var open = [];
+    var open = null;
 
-    function closeTo(depth) {
-      while (open.length > depth) out.push('</' + open.pop().tag + '>');
-    }
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
+    lines.forEach(function (line) {
       var m = /^<li data-list="(ul|ol)" data-depth="(\d+)">/.exec(line);
-      if (m) {
-        var tag = m[1];
-        var depth = Number(m[2]);
-        closeTo(depth);
-        if (open.length === depth) {
-          out.push('<' + tag + '>');
-          open.push({ tag: tag, depth: depth });
-        }
+      if (!m) {
+        if (open) { out.push('</' + open + '>'); open = null; }
         out.push(line);
-      } else {
-        closeTo(0);
-        out.push(line);
+        return;
       }
-    }
-    closeTo(0);
+      if (open !== m[1]) {
+        if (open) out.push('</' + open + '>');
+        out.push('<' + m[1] + '>');
+        open = m[1];
+      }
+      out.push(line);
+    });
+
+    if (open) out.push('</' + open + '>');
     return out.join('\n');
   }
 
   /**
-   * 文書HTMLをiframeのsrcdocに流し込む。
-   *
-   * sandbox属性を値なしで指定しているため、スクリプト実行・フォーム送信・
-   * 同一オリジンアクセスがすべて禁止される。他人が編集した文書を
-   * 表示するため、これはセキュリティ上の必須要件である。
-   *
-   * @param {string} bodyHtml
-   */
-  /**
    * 現在のテーマのトークンを読む。
    *
-   * 文書は iframe の中に描くため、外側のCSS変数が届かない。
+   * 本文は iframe の中に描くため、外側のCSS変数が届かない。
    * 描画のたびに実際の値を読んで流し込む。
    *
    * @returns {Object<string,string>}
    */
-  /**
-   * 文書内のリンク色。地の明るさに合わせて accent を使う。
-   *
-   * @returns {string}
-   */
-  function linkColor() {
-    return String(
-      getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#0969da'
-    ).trim();
-  }
-
   function themeColors() {
     var style = getComputedStyle(document.documentElement);
-    var names = ['--ink', '--ink-2', '--bg', '--bg-2', '--line'];
+    var names = ['--ink', '--ink-2', '--bg', '--bg-2', '--line', '--accent'];
     var out = {};
 
     names.forEach(function (n) {
@@ -558,7 +580,7 @@
       'h1{font-size:24px;margin:1.6em 0 .6em;}' +
       'h2{font-size:20px;margin:1.6em 0 .6em;}' +
       'h3{font-size:17px;margin:1.4em 0 .5em;}' +
-      'a{color:' + linkColor() + ';}' +
+      'a{color:' + c['--accent'] + ';}' +
       'table{border-collapse:collapse;margin:1em 0;width:100%;}' +
       'td{border:1px solid ' + c['--line'] + ';padding:6px 10px;}' +
       'li{margin:.3em 0;}' +
@@ -577,19 +599,21 @@
       '<style>' + css + '</style></head><body>' + wrapLists(bodyHtml) + '</body></html>';
   }
 
+  // ===== 差分 =====
+
   /**
-   * diff操作列を色分けして表示する。
+   * 差分を左右2列で描画する。
    *
-   * 行の内容は textContent で入れる。innerHTML を使うと文書内容が
-   * そのままHTMLとして解釈され、XSSになる。
+   * 片側しか無い行にも空のセルを置いて、左右の行がずれないようにする。
    *
    * @param {object[]} ops
    * @param {HTMLElement} container
-   * @param {boolean} skipEqual equal行を省略するか
+   * @param {boolean} skipEqual
    */
   function renderDiffInto(ops, container, skipEqual) {
     var pairs = diffPairs(ops || []);
     var shown = [];
+
     for (var i = 0; i < pairs.length; i++) {
       if (skipEqual && pairs[i].type === 'equal') continue;
       shown.push(pairs[i]);
@@ -598,7 +622,7 @@
     if (!shown.length) {
       var p = document.createElement('p');
       p.className = 'diff-empty';
-      p.textContent = '差分はありません';
+      p.textContent = '違いはありません';
       container.appendChild(p);
       return;
     }
@@ -616,13 +640,6 @@
     container.appendChild(table);
   }
 
-  /**
-   * 差分の1セルを作る。中身が無ければ空セルにして行の高さを揃える。
-   *
-   * @param {string|null} text
-   * @param {string} kind '' | 'del' | 'ins'
-   * @returns {HTMLElement}
-   */
   function diffCell(text, kind) {
     var cell = document.createElement('div');
     cell.className = 'diff-cell' +
@@ -631,37 +648,42 @@
     return cell;
   }
 
+  // ===== 画面の切り替え =====
+
+  var DOC_TABS = { content: 1, history: 1, drafts: 1 };
+
   /**
-   * 状態バッジの要素を作る。
+   * 画面を切り替える。
    *
-   * @param {string} state
-   * @returns {HTMLElement}
+   * タブは開いている文書のビューなので、文書を選んでいないときは出さない。
+   *
+   * @param {string} name
    */
-  function stateBadge(state) {
-    var span = document.createElement('span');
-    span.className = 'state state-' + state;
-    span.textContent = state;
-    return span;
-  }
-
-  // ===== タブ =====
-
   function switchTab(name) {
-    // タブ (この文書のビュー) と左のナビ (リポジトリ) を1つの仕組みで扱う。
-    // 現在地は片方だけに出す
+    if (DOC_TABS[name] && !current.fileId) name = 'docs';
+    currentTab = name;
+
     var targets = document.querySelectorAll('[data-tab]');
     for (var i = 0; i < targets.length; i++) {
       targets[i].setAttribute('aria-current', String(targets[i].dataset.tab === name));
     }
+
+    panelDocs.hidden = name !== 'docs';
     panelContent.hidden = name !== 'content';
     panelHistory.hidden = name !== 'history';
+    panelDrafts.hidden = name !== 'drafts';
     panelBranches.hidden = name !== 'branches';
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelBoard.hidden = name !== 'board';
     panelHelp.hidden = name !== 'help';
 
-    if (name === 'history') loadHistory();
+    tabsEl.hidden = !current.fileId || !DOC_TABS[name];
+    updateCrumbs();
+
+    if (name === 'docs') loadDocs();
+    else if (name === 'history') loadHistory();
+    else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
     else if (name === 'pulls') loadPulls();
     else if (name === 'issues') loadIssues();
@@ -670,34 +692,346 @@
   }
 
   /**
-   * ヘルプを開いたときに、アプリが利用者を誰と認識しているかを出す。
-   *
-   * 社内展開で webapp.executeAs を切り替える前に、別アカウントで
-   * この表示を見れば判定できる。空になる環境では、コミットの作者と
-   * 承認者が記録されない
+   * 現在の位置を出す。文書を開いているときだけ戻り道を見せる。
    */
-  function loadHelp() {
-    google.script.run
-      .withSuccessHandler(function (who) {
-        currentUser = who.activeUser;
-        whoamiEl.textContent = who.activeUser
-          ? 'このアプリはあなたを ' + who.activeUser + ' として認識しています'
-          : '警告: 利用者を特定できていません。' +
-            'この状態ではコミットの作者と承認者が記録されません';
-      })
-      .withFailureHandler(function () { whoamiEl.textContent = ''; })
-      .apiWhoAmI();
+  function updateCrumbs() {
+    var inDoc = !!current.fileId && !!DOC_TABS[currentTab];
+
+    crumbBack.hidden = !inDoc;
+    crumbSep.hidden = !inDoc;
+    branchSwitch.hidden = !inDoc;
+    openLink.hidden = !inDoc;
+
+    if (!inDoc) {
+      var names = {
+        docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
+        issues: 'やること', board: '進捗ボード', help: '使い方',
+      };
+      titleEl.textContent = names[currentTab] || '文書';
+      branchChip.hidden = true;
+      dirtyBadge.hidden = true;
+      commitBtn.hidden = true;
+      stashBtn.hidden = true;
+      return;
+    }
+    titleEl.textContent = current.docPath || '';
   }
 
-  // ===== 履歴 =====
+  // ===== 文書の一覧 (ホーム) =====
+
+  function loadFiles(then) {
+    google.script.run
+      .withSuccessHandler(function (files) {
+        allFiles = files;
+        if (then) then();
+      })
+      .withFailureHandler(function (err) {
+        docListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiListFiles();
+  }
 
   /**
-   * コミットのレーンを描く。
+   * 正式版の文書だけを並べる。改訂版は文書に従属するため一覧に混ぜない。
+   */
+  function renderDocs() {
+    docListEl.textContent = '';
+
+    var docs = allFiles.filter(function (f) {
+      return splitPath(f.path).branch === 'main';
+    });
+
+    if (!docs.length) {
+      docListEl.appendChild(makeBlankState(
+        '管理している文書がありません',
+        'Google ドライブの agentic-management/main に文書を置き、' +
+        'GASエディタで debugRegisterFile() を実行すると現れます。'
+      ));
+      return;
+    }
+
+    docs.forEach(function (f) {
+      var drafts = allFiles.filter(function (o) {
+        return splitPath(o.path).branch !== 'main' &&
+               splitPath(o.path).path === f.path;
+      });
+
+      var row = document.createElement('div');
+      row.className = 'doc-card';
+
+      var open = document.createElement('button');
+      open.className = 'doc-open';
+      open.appendChild(makeIcon('file-text'));
+
+      var name = document.createElement('span');
+      name.className = 'doc-name';
+      name.textContent = f.path;
+      open.appendChild(name);
+
+      if (drafts.length) {
+        var chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = '改訂中 ' + drafts.length + '件';
+        open.appendChild(chip);
+      }
+
+      open.addEventListener('click', function () { openDoc(f.fileId, f.path); });
+      row.appendChild(open);
+      row.appendChild(makeFileLink(f.type, f.fileId));
+
+      docListEl.appendChild(row);
+    });
+  }
+
+  function loadDocs() {
+    if (!allFiles.length) loadFiles(renderDocs);
+    else renderDocs();
+    loadOverview();
+  }
+
+  /**
+   * 関係の流れに実数を入れる。
    *
-   * git log --graph と同じで、ブランチごとに縦の列を持ち、分岐点まで
-   * 線を通す。線が無いと、どのコミットがどの枝のものか読めない。
+   * 何がいくつあるかが見えないと、次に何をすればよいか分からない。
+   */
+  function loadOverview() {
+    google.script.run
+      .withSuccessHandler(function (o) {
+        document.getElementById('flow-issues').textContent = o.openIssues;
+        document.getElementById('flow-branches').textContent = o.branches;
+        document.getElementById('flow-prs').textContent = o.openPrs;
+        document.getElementById('flow-docs').textContent = o.docs;
+
+        setCount('count-drafts', o.branches);
+        setCount('count-requests', o.openPrs);
+        setCount('count-todos', o.openIssues);
+      })
+      .withFailureHandler(function () { /* 数が出なくても操作はできる */ })
+      .apiOverview();
+  }
+
+  function setCount(id, n) {
+    var el = document.getElementById(id);
+    el.textContent = n;
+    el.hidden = !n;
+  }
+
+  // ===== 文書を開く =====
+
+  /**
+   * 文書を開く。版の選択肢もここで作る。
    *
-   * @param {object} row apiCommitGraph の行
+   * @param {string} fileId 開く版の fileId
+   * @param {string} docPath 正式版の論理パス
+   */
+  function openDoc(fileId, docPath) {
+    var doc = allFiles.filter(function (f) {
+      return splitPath(f.path).branch === 'main' && f.path === docPath;
+    })[0];
+
+    current.docPath = docPath;
+    current.docFileId = doc ? doc.fileId : fileId;
+    current.fileId = fileId;
+
+    titleEl.textContent = docPath;
+    renderVersionSelect();
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        openLink.href = res.url;
+        renderIntoViewer(res.html);
+        loadLinkedIssues(fileId);
+        setDocMode('view');
+        refreshStatus();
+        switchTab('content');
+      })
+      .withFailureHandler(function (err) {
+        showSnack('開けませんでした: ' + err.message, { kind: 'ng' });
+      })
+      .apiGetFileHtml(fileId);
+  }
+
+  /**
+   * この文書が持つ版を選択肢にする。正式版を先頭に置く。
+   */
+  function renderVersionSelect() {
+    branchSelect.textContent = '';
+
+    var versions = allFiles.filter(function (f) {
+      return splitPath(f.path).path === current.docPath;
+    });
+
+    versions.sort(function (a, b) {
+      return splitPath(a.path).branch === 'main' ? -1 : 1;
+    });
+
+    versions.forEach(function (f) {
+      var branch = splitPath(f.path).branch;
+      var opt = document.createElement('option');
+      opt.value = f.fileId;
+      opt.textContent = branchLabel(branch);
+      if (f.fileId === current.fileId) opt.selected = true;
+      branchSelect.appendChild(opt);
+    });
+  }
+
+  function refreshStatus() {
+    google.script.run
+      .withSuccessHandler(function (st) {
+        current.headSha = st.headSha;
+        current.branch = st.branch;
+
+        branchChip.textContent = branchLabel(st.branch);
+        branchChip.hidden = false;
+        dirtyBadge.hidden = !st.dirty;
+
+        var isOfficial = st.branch === 'main';
+        commitBtn.hidden = isOfficial || !st.dirty;
+        stashBtn.hidden = !isOfficial || !st.dirty;
+      })
+      .withFailureHandler(function () { /* 状態表示の失敗は致命的ではない */ })
+      .apiFileStatus(current.fileId);
+  }
+
+  // ===== 本文: 読む / 直す =====
+
+  /**
+   * 本文の見せ方を切り替える。
+   *
+   * 「直す」は文書に対する動作であってビューではないため、タブにしない。
+   *
+   * @param {string} mode 'view' | 'edit'
+   */
+  function setDocMode(mode) {
+    var editing = mode === 'edit';
+
+    modeViewBtn.setAttribute('aria-pressed', String(!editing));
+    modeEditBtn.setAttribute('aria-pressed', String(editing));
+
+    viewer.hidden = editing;
+    editorEl.hidden = !editing;
+    editSaveBtn.hidden = !editing;
+
+    if (editing) loadEditor();
+    else editHint.textContent = '';
+  }
+
+  function loadEditor() {
+    if (!current.fileId) return;
+
+    editorEl.value = '読み込み中…';
+    editorEl.disabled = true;
+    editSaveBtn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        editorEl.value = res.markdown;
+        editorEl.disabled = !res.editable;
+        editSaveBtn.disabled = !res.editable;
+        editHint.textContent = res.editable
+          ? '保存しても記録はされません。記録は上の「変更を記録」から'
+          : OFFICIAL + 'は直接なおせません。改訂版を作って直してください';
+      })
+      .withFailureHandler(function (err) {
+        editorEl.value = '';
+        editHint.textContent = 'エラー: ' + err.message;
+      })
+      .apiGetMarkdown(current.fileId);
+  }
+
+  function saveEditor() {
+    editSaveBtn.disabled = true;
+    editHint.textContent = '保存中…';
+
+    google.script.run
+      .withSuccessHandler(function () {
+        editSaveBtn.disabled = false;
+        editHint.textContent = '保存しました';
+        refreshStatus();
+      })
+      .withFailureHandler(function (err) {
+        editSaveBtn.disabled = false;
+        editHint.textContent = '';
+        showSnack(err.message, { kind: 'ng' });
+      })
+      .apiSaveMarkdown(current.fileId, editorEl.value);
+  }
+
+  function doCommit() {
+    openInlineForm(
+      panelContent,
+      [{ name: 'message', label: 'この変更をひとことで', required: true }],
+      '記録する',
+      function (v) {
+        commitBtn.disabled = true;
+        google.script.run
+          .withSuccessHandler(function () {
+            commitBtn.disabled = false;
+            showSnack('変更を記録しました', { kind: 'ok' });
+            refreshStatus();
+            loadOverview();
+          })
+          .withFailureHandler(function (err) {
+            commitBtn.disabled = false;
+            showSnack('記録できませんでした: ' + err.message, { kind: 'ng' });
+          })
+          .apiCommit(current.fileId, v.message, current.headSha);
+      }
+    );
+  }
+
+  function stashMainDrift() {
+    openConfirmStrip(
+      panelContent,
+      OFFICIAL + 'を直接なおした分を、退避用の記録として残します。',
+      '退避する',
+      doStash
+    );
+  }
+
+  function doStash() {
+    stashBtn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function () {
+        stashBtn.disabled = false;
+        showSnack('直接編集を退避しました', { kind: 'ok' });
+        refreshStatus();
+      })
+      .withFailureHandler(function (err) {
+        stashBtn.disabled = false;
+        showSnack(err.message, { kind: 'ng' });
+      })
+      .apiStashMainDrift(current.fileId);
+  }
+
+  function loadLinkedIssues(fileId) {
+    linkedIssuesEl.textContent = '';
+    linkedIssuesEl.hidden = true;
+
+    google.script.run
+      .withSuccessHandler(function (issues) {
+        if (!issues.length) return;
+        issues.forEach(function (issue) {
+          var chip = document.createElement('span');
+          chip.className = 'linked-issue';
+          chip.textContent = 'やること #' + issue.number + ' ' + issue.title;
+          linkedIssuesEl.appendChild(chip);
+        });
+        linkedIssuesEl.hidden = false;
+      })
+      .withFailureHandler(function () {})
+      .apiIssuesForFile(fileId);
+  }
+
+  // ===== 改訂の履歴 =====
+
+  /**
+   * 変更の記録の系統を描く。
+   *
+   * 版ごとに縦の列を持ち、分かれた地点まで線を通す。線が無いと、
+   * どの記録がどの版のものか読めない。
+   *
+   * @param {object} row
    * @param {number} laneCount
    * @returns {SVGElement}
    */
@@ -715,7 +1049,6 @@
 
     function x(lane) { return lane * step + step / 2 + 2; }
 
-    // 通過しているレーンの縦線
     row.activeLanes.forEach(function (lane) {
       var line = document.createElementNS(ns, 'line');
       line.setAttribute('x1', String(x(lane)));
@@ -726,7 +1059,6 @@
       svg.appendChild(line);
     });
 
-    // 分岐: 自分のレーンから main のレーンへ下向きに曲げる
     if (row.fork && row.forkLane >= 0) {
       var path = document.createElementNS(ns, 'path');
       var from = x(row.lane);
@@ -750,36 +1082,9 @@
     return svg;
   }
 
-  /**
-   * 関係の流れに実数を入れる。
-   *
-   * 何がいくつあるかが見えないと、次に何をすればよいかが分からない。
-   *
-   */
-  function loadOverview() {
-    google.script.run
-      .withSuccessHandler(function (o) {
-        document.getElementById('crumb-repo').textContent = o.repo;
-        document.getElementById('flow-issues').textContent = o.openIssues;
-        document.getElementById('flow-branches').textContent = o.branches;
-        document.getElementById('flow-commits').textContent = o.commits;
-        document.getElementById('flow-prs').textContent = o.openPrs;
-        document.getElementById('flow-docs').textContent = o.docs;
-      })
-      .withFailureHandler(function () { /* 数が出なくても操作はできる */ })
-      .apiOverview();
-  }
-
   function loadHistory() {
-    if (!current.fileId) {
-      historyList.textContent = '';
-      historyList.appendChild(makeBlankState(
-        'ファイルが選ばれていません',
-        '左の一覧から文書を選ぶと、その文書のコミットグラフが出ます。'
-      ));
-      diffView.textContent = '';
-      return;
-    }
+    if (!current.fileId) return;
+
     historyList.textContent = '読み込み中…';
     diffView.textContent = '';
 
@@ -789,33 +1094,18 @@
 
         if (!graph.rows.length) {
           historyList.appendChild(makeBlankState(
-            'コミットがありません',
-            '文書を編集してから「本文」タブでコミットすると、ここに履歴が並びます。'
+            'まだ記録がありません',
+            '本文を直して「変更を記録」を押すと、ここに残ります。'
           ));
           return;
         }
 
-        // 選んでいるブランチだけに絞る。'*' はすべて
-        var shown = graph.rows.filter(function (c) {
-          return currentBranch === '*' || c.branch === currentBranch ||
-                 c.branch === 'main';
-        });
-
-        if (!shown.length) {
-          historyList.appendChild(makeBlankState(
-            'このブランチにコミットがありません',
-            '上のブランチ選択を変えるか、文書を編集してコミットしてください。'
-          ));
-          return;
-        }
-
-        // ブランチの先頭コミットにだけラベルを出す
         var headOf = {};
-        shown.forEach(function (c) {
+        graph.rows.forEach(function (c) {
           if (!headOf[c.branch]) headOf[c.branch] = c.sha;
         });
 
-        shown.forEach(function (c) {
+        graph.rows.forEach(function (c) {
           var btn = document.createElement('button');
           btn.className = 'commit-item graph-row';
           btn.appendChild(makeGraphCell(c, graph.laneCount));
@@ -827,7 +1117,7 @@
             var label = document.createElement('span');
             label.className = 'branch-label lane-' + (c.lane % 4);
             label.appendChild(makeIcon('git-branch'));
-            label.appendChild(document.createTextNode(c.branch));
+            label.appendChild(document.createTextNode(branchLabel(c.branch)));
             desc.appendChild(label);
           }
 
@@ -840,8 +1130,7 @@
           var date = document.createElement('span');
           date.className = 'graph-col-date';
           date.textContent = new Date(c.timestamp).toLocaleString('ja-JP', {
-            year: 'numeric', month: 'short', day: 'numeric',
-            hour: '2-digit', minute: '2-digit',
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
           });
           btn.appendChild(date);
 
@@ -883,85 +1172,144 @@
       .apiCommitGraph(current.fileId);
   }
 
-  // ===== コミット =====
+  // ===== この文書の改訂版 =====
 
-  function refreshStatus() {
-    google.script.run
-      .withSuccessHandler(function (st) {
-        current.headSha = st.headSha;
-        current.branch = st.branch;
-        branchChip.textContent = st.branch;
-        branchChip.hidden = false;
-        dirtyBadge.hidden = !st.dirty;
+  function loadDrafts() {
+    draftListEl.textContent = '';
 
-        // main は保護されているため通常のコミットはできない。
-        // 代わりに直接編集を記録するための退避ボタンを出す
-        var isMain = st.branch === 'main';
-        commitBtn.hidden = isMain || !st.dirty;
-        stashBtn.hidden = !isMain || !st.dirty;
-      })
-      .withFailureHandler(function () { /* 状態表示の失敗は致命的ではない */ })
-      .apiFileStatus(current.fileId);
+    var drafts = allFiles.filter(function (f) {
+      var s = splitPath(f.path);
+      return s.branch !== 'main' && s.path === current.docPath;
+    });
+
+    if (!drafts.length) {
+      draftListEl.appendChild(makeBlankState(
+        'この文書の改訂版はありません',
+        OFFICIAL + 'をコピーして改訂版を作ると、正式版に影響を与えずに直せます。',
+        { label: 'この文書の改訂版を作る', onClick: createDraft }
+      ));
+      return;
+    }
+
+    drafts.forEach(function (f) {
+      var branch = splitPath(f.path).branch;
+
+      var row = document.createElement('div');
+      row.className = 'row-item';
+
+      var open = document.createElement('button');
+      open.className = 'row-open';
+      open.appendChild(makeIcon('git-branch'));
+
+      var title = document.createElement('span');
+      title.className = 'row-title';
+      title.textContent = branch;
+      open.appendChild(title);
+
+      open.addEventListener('click', function () {
+        openDoc(f.fileId, current.docPath);
+      });
+      row.appendChild(open);
+      row.appendChild(makeFileLink(f.type, f.fileId));
+
+      draftListEl.appendChild(row);
+    });
   }
 
-  function doCommit() {
+  function createDraft() {
+    if (!current.docFileId) {
+      showSnack('先に文書を選んでください', { kind: 'ng' });
+      return;
+    }
+
     openInlineForm(
-      panelContent,
-      [{ name: 'message', label: 'コミットメッセージ', required: true }],
-      'コミットする',
+      panelDrafts,
+      [{ name: 'name', label: '改訂版の名前 (例: 在宅勤務規定の見直し)', required: true }],
+      '作る',
       function (v) {
-        commitBtn.disabled = true;
         google.script.run
           .withSuccessHandler(function () {
-            commitBtn.disabled = false;
-            showSnack('コミットしました', { kind: 'ok' });
-            refreshStatus();
+            showSnack('改訂版「' + v.name + '」を作りました', { kind: 'ok' });
+            loadFiles(function () {
+              loadDrafts();
+              renderVersionSelect();
+            });
             loadOverview();
-            if (!panelHistory.hidden) loadHistory();
           })
           .withFailureHandler(function (err) {
-            commitBtn.disabled = false;
-            showSnack('コミットできませんでした: ' + err.message, { kind: 'ng' });
+            showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiCommit(current.fileId, v.message, current.headSha);
+          .apiBranchCreate(v.name, current.docFileId);
       }
     );
   }
 
-  // ===== ブランチ =====
+  // ===== 改訂中の版 (横断) =====
 
   function loadBranches() {
     branchListEl.textContent = '読み込み中…';
+
     google.script.run
       .withSuccessHandler(function (branches) {
         branchListEl.textContent = '';
-        branches.forEach(function (b) {
+
+        var drafts = branches.filter(function (b) { return b.name !== 'main'; });
+        if (!drafts.length) {
+          branchListEl.appendChild(makeBlankState(
+            '改訂中の版はありません',
+            '文書を開いて「この文書の改訂版」から作れます。'
+          ));
+          return;
+        }
+
+        drafts.forEach(function (b) {
           var row = document.createElement('div');
           row.className = 'row-item';
 
-          var title = document.createElement('span');
+          var main = document.createElement('div');
+          main.className = 'row-main';
+
+          var title = document.createElement('div');
           title.className = 'row-title';
           title.textContent = b.name;
-          row.appendChild(title);
-          row.appendChild(stateBadge(b.state));
+          main.appendChild(title);
 
-          var meta = document.createElement('span');
+          var meta = document.createElement('div');
           meta.className = 'row-meta';
           meta.textContent = b.createdBy +
-            (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString('ja-JP') : '');
-          row.appendChild(meta);
+            (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中');
+          main.appendChild(meta);
+          row.appendChild(main);
 
-          if (b.name !== 'main' && b.state === 'open') {
-            var spacer = document.createElement('span');
-            spacer.style.flex = '1';
-            row.appendChild(spacer);
-
+          if (b.state !== 'merged') {
             var prBtn = document.createElement('button');
-            prBtn.className = 'btn';
-            prBtn.textContent = 'PRを作成';
-            prBtn.addEventListener('click', function () { createPr(b.name); });
+            prBtn.className = 'btn btn-primary';
+            prBtn.textContent = '確認を依頼する';
+            prBtn.addEventListener('click', function () { createRequest(b.name); });
             row.appendChild(prBtn);
           }
+
+          var del = document.createElement('button');
+          del.className = 'btn';
+          del.textContent = '捨てる';
+          del.addEventListener('click', function () {
+            openConfirmStrip(panelBranches,
+              '改訂版「' + b.name + '」を捨てます。中の変更は元に戻せません。',
+              '捨てる',
+              function () {
+                google.script.run
+                  .withSuccessHandler(function () {
+                    showSnack('改訂版を捨てました', { kind: 'ok' });
+                    loadFiles(loadBranches);
+                    loadOverview();
+                  })
+                  .withFailureHandler(function (err) {
+                    showSnack(err.message, { kind: 'ng' });
+                  })
+                  .apiBranchDelete(b.name);
+              });
+          });
+          row.appendChild(del);
 
           branchListEl.appendChild(row);
         });
@@ -972,66 +1320,235 @@
       .apiBranchList();
   }
 
-  function createBranch() {
-    if (!current.fileId) {
-      showSnack('先にファイルを選択してください', { kind: 'ng' });
+  /**
+   * 改訂版の変更を、正式版に反映してよいか尋ねる。
+   *
+   * @param {string} branchName
+   */
+  function createRequest(branchName) {
+    var work = allFiles.filter(function (f) {
+      return splitPath(f.path).branch === branchName;
+    })[0];
+
+    if (!work) {
+      showSnack('対象の文書が見つかりません', { kind: 'ng' });
       return;
     }
-    if (current.branch !== 'main') {
-      showSnack('ブランチはmainのファイルからのみ作成できます', { kind: 'ng' });
+
+    var docPath = splitPath(work.path).path;
+    var doc = allFiles.filter(function (f) {
+      return splitPath(f.path).branch === 'main' && f.path === docPath;
+    })[0];
+
+    if (!doc) {
+      showSnack(OFFICIAL + 'の文書が見つかりません', { kind: 'ng' });
       return;
     }
 
     openInlineForm(
       panelBranches,
-      [{ name: 'name', label: 'ブランチ名 (例: 規則改訂)', required: true }],
-      'ブランチを作る',
+      [
+        { name: 'title', label: '何を変えたか', required: true },
+        { name: 'body', label: '補足 (任意)', multiline: true },
+      ],
+      '確認を依頼する',
       function (v) {
         google.script.run
           .withSuccessHandler(function () {
-            showSnack('ブランチ ' + v.name + ' を作りました', { kind: 'ok' });
-            loadBranches();
+            showSnack('確認を依頼しました', { kind: 'ok' });
+            switchTab('pulls');
             loadOverview();
-            loadFiles();
           })
           .withFailureHandler(function (err) {
-            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
+            showSnack('依頼できませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiBranchCreate(v.name, current.fileId);
+          .apiPrCreate(v.title, v.body, branchName, doc.fileId);
       }
     );
   }
 
-  // ===== プルリクエスト =====
+  function bulkCommit() {
+    bulkCommitBtn.disabled = true;
 
-  function createPr(branchName) {
-    openInlineForm(
-      panelPulls,
-      [
-        { name: 'title', label: 'PRのタイトル', required: true },
-        { name: 'body', label: '説明 (任意)', multiline: true },
-      ],
-      'PRを作る',
-      function (v) {
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('PRを作りました', { kind: 'ok' });
-            loadPulls();
-          })
-          .withFailureHandler(function (err) {
-            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
-          })
-          .apiPrCreate(v.title, v.body, branchName, mainFileId);
-      }
-    );
+    google.script.run
+      .withSuccessHandler(function (branches) {
+        bulkCommitBtn.disabled = false;
+
+        var drafts = branches.filter(function (b) {
+          return b.name !== 'main' && b.state !== 'merged';
+        });
+
+        if (!drafts.length) {
+          showSnack('改訂中の版がありません');
+          return;
+        }
+        collectDirty(drafts.map(function (b) { return b.name; }));
+      })
+      .withFailureHandler(function (err) {
+        bulkCommitBtn.disabled = false;
+        showSnack(err.message, { kind: 'ng' });
+      })
+      .apiBranchList();
   }
 
   /**
-   * コンフリクトの選択UIを作る。
+   * 記録していない変更を集めてから、まとめて記録する。
+   *
+   * 対象は既定ですべて選ぶ。毎回選び直す作業は、ほとんどの場合
+   * 「全部」を選ぶだけの手間にしかならない。
+   *
+   * @param {string[]} branchNames
+   */
+  function collectDirty(branchNames) {
+    var pending = branchNames.length;
+    var files = [];
+
+    branchNames.forEach(function (name) {
+      google.script.run
+        .withSuccessHandler(function (dirty) {
+          files = files.concat(dirty);
+          if (--pending === 0) askBulkCommit(files);
+        })
+        .withFailureHandler(function () {
+          if (--pending === 0) askBulkCommit(files);
+        })
+        .apiDirtyFiles(name);
+    });
+  }
+
+  function askBulkCommit(files) {
+    if (!files.length) {
+      showSnack('記録していない変更はありません');
+      return;
+    }
+
+    var checks = [];
+    var list = document.createElement('div');
+    list.className = 'bulk-list';
+
+    files.forEach(function (f) {
+      var row = document.createElement('label');
+      row.className = 'bulk-row';
+
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.value = f.fileId;
+      checks.push(box);
+      row.appendChild(box);
+
+      var name = document.createElement('span');
+      name.textContent = f.path;
+      row.appendChild(name);
+
+      list.appendChild(row);
+    });
+
+    var form = openInlineForm(
+      panelBranches,
+      [{ name: 'message', label: files.length + '件の変更をまとめて記録', required: true }],
+      '記録する',
+      function (v) {
+        var ids = checks.filter(function (c) { return c.checked; })
+          .map(function (c) { return c.value; });
+
+        if (!ids.length) {
+          showSnack('対象が選ばれていません', { kind: 'ng' });
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function (res) {
+            var text = res.committed.length + '件記録しました';
+            if (res.failed.length) {
+              text += ' / ' + res.failed.length + '件できませんでした: ' +
+                res.failed[0].path + ' ' + res.failed[0].error;
+            }
+            showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+            loadOverview();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiCommitMany(ids, v.message);
+      }
+    );
+    form.insertBefore(list, form.querySelector('.inline-form-actions'));
+  }
+
+  // ===== 確認依頼 =====
+
+  function stateLabel(state) {
+    return {
+      open: '確認待ち', approved: '承認済み',
+      merged: '反映済み', closed: '取り下げ',
+    }[state] || state;
+  }
+
+  function loadPulls() {
+    prListEl.textContent = '読み込み中…';
+    prDetail.textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function (prs) {
+        prListEl.textContent = '';
+
+        if (!prs.length) {
+          prListEl.appendChild(makeBlankState(
+            '確認依頼はありません',
+            '改訂版を直したら「改訂中の版」から確認を依頼してください。'
+          ));
+          return;
+        }
+
+        prs.forEach(function (pr) {
+          var btn = document.createElement('button');
+          btn.className = 'row-item';
+
+          var main = document.createElement('div');
+          main.className = 'row-main';
+
+          var title = document.createElement('div');
+          title.className = 'row-title';
+          title.textContent = '#' + pr.number + ' ' + pr.title;
+          main.appendChild(title);
+
+          var meta = document.createElement('div');
+          meta.className = 'row-meta';
+          meta.textContent = pr.sourceBranch + ' → ' + OFFICIAL + ' · ' + pr.author;
+          main.appendChild(meta);
+          btn.appendChild(main);
+
+          var state = document.createElement('span');
+          state.className = 'state state-' + pr.state;
+          state.textContent = stateLabel(pr.state);
+          btn.appendChild(state);
+
+          btn.addEventListener('click', function () {
+            var items = prListEl.querySelectorAll('.row-item');
+            for (var i = 0; i < items.length; i++) {
+              items[i].setAttribute('aria-current', String(items[i] === btn));
+            }
+            showPrDetail(pr);
+          });
+
+          prListEl.appendChild(btn);
+        });
+
+        prListEl.firstChild.click();
+      })
+      .withFailureHandler(function (err) {
+        prListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiPrList();
+  }
+
+  /**
+   * 食い違いの解決を選ばせる。
    *
    * @param {object[]} conflicts
    * @param {HTMLElement} container
-   * @returns {function(): string[]} 選択値を集める関数
+   * @returns {function(): string[]}
    */
   function renderConflicts(conflicts, container) {
     var selects = [];
@@ -1042,46 +1559,46 @@
 
       var head = document.createElement('div');
       head.className = 'conflict-head';
-      head.textContent = 'コンフリクト ' + (i + 1) + ' / ' + conflicts.length;
+      head.textContent = '同じ場所が両方で変わっています ' + (i + 1) + ' / ' + conflicts.length;
       block.appendChild(head);
 
-      [['main側 (ours)', c.ours], ['ブランチ側 (theirs)', c.theirs]].forEach(
-        function (pair) {
-          var side = document.createElement('div');
-          side.className = 'conflict-side';
+      [[OFFICIAL + '側', c.ours], ['改訂版側', c.theirs]].forEach(function (pair) {
+        var side = document.createElement('div');
+        side.className = 'conflict-side';
 
-          var label = document.createElement('div');
-          label.className = 'conflict-label';
-          label.textContent = pair[0];
-          side.appendChild(label);
+        var label = document.createElement('div');
+        label.className = 'conflict-label';
+        label.textContent = pair[0];
+        side.appendChild(label);
 
-          if (!pair[1] || pair[1].length === 0) {
-            var del = document.createElement('div');
-            del.className = 'conflict-label';
-            del.textContent = '(削除)';
-            side.appendChild(del);
-          } else {
-            pair[1].forEach(function (line) {
-              var div = document.createElement('div');
-              div.className = 'diff-line';
-              div.textContent = line;
-              side.appendChild(div);
-            });
-          }
-          block.appendChild(side);
+        if (!pair[1] || !pair[1].length) {
+          var del = document.createElement('div');
+          del.className = 'conflict-label';
+          del.textContent = '(削除)';
+          side.appendChild(del);
+        } else {
+          pair[1].forEach(function (line) {
+            var div = document.createElement('div');
+            div.className = 'diff-line';
+            div.textContent = line;
+            side.appendChild(div);
+          });
         }
-      );
+        block.appendChild(side);
+      });
 
       var choiceWrap = document.createElement('div');
       choiceWrap.className = 'conflict-choice';
+
       var sel = document.createElement('select');
-      [['ours', 'main側を採用'], ['theirs', 'ブランチ側を採用'],
+      [['ours', OFFICIAL + '側を残す'], ['theirs', '改訂版側を採用'],
        ['both', '両方を残す']].forEach(function (opt) {
         var o = document.createElement('option');
         o.value = opt[0];
         o.textContent = opt[1];
         sel.appendChild(o);
       });
+
       choiceWrap.appendChild(sel);
       block.appendChild(choiceWrap);
       selects.push(sel);
@@ -1094,34 +1611,25 @@
     };
   }
 
-  /**
-   * PRの会話タブを描く。本文と、レビュー・コメントを時系列で並べる。
-   *
-   * 表示は textContent のみで組み立てる。他人が書いた文章を出すため
-   * innerHTML は使わない。
-   *
-   * @param {object} pr
-   * @param {HTMLElement} container
-   */
   function renderConversation(pr, container) {
     var first = document.createElement('div');
     first.className = 'comment';
 
     var head = document.createElement('div');
     head.className = 'comment-head';
-    head.textContent = pr.author + ' が作成';
+    head.textContent = pr.author + ' が依頼';
     first.appendChild(head);
 
     var body = document.createElement('div');
     body.className = 'comment-body';
-    body.textContent = pr.body || '(説明なし)';
+    body.textContent = pr.body || '(補足なし)';
     first.appendChild(body);
     container.appendChild(first);
 
     google.script.run
       .withSuccessHandler(function (reviews) {
         var labels = {
-          approve: '承認', request_changes: '変更を要求', comment: 'コメント',
+          approve: '承認', request_changes: '直してほしい', comment: 'コメント',
         };
 
         reviews.forEach(function (r) {
@@ -1150,12 +1658,6 @@
       .apiPrReviews(pr.number);
   }
 
-  /**
-   * コメント投稿欄を作る。
-   *
-   * @param {object} pr
-   * @returns {HTMLElement}
-   */
   function makeCommentForm(pr) {
     var form = document.createElement('div');
     form.className = 'comment-form';
@@ -1166,7 +1668,7 @@
 
     var send = document.createElement('button');
     send.className = 'btn btn-primary';
-    send.textContent = '投稿';
+    send.textContent = '書き込む';
     send.addEventListener('click', function () {
       if (!input.value) return;
       send.disabled = true;
@@ -1178,16 +1680,11 @@
         })
         .apiPrReview(pr.number, 'comment', input.value);
     });
+
     form.appendChild(send);
     return form;
   }
 
-  /**
-   * PRのコミットタブを描く。
-   *
-   * @param {object} pr
-   * @param {HTMLElement} container
-   */
   function renderPrCommits(pr, container) {
     container.textContent = '読み込み中…';
 
@@ -1195,7 +1692,7 @@
       .withSuccessHandler(function (commits) {
         container.textContent = '';
         if (!commits.length) {
-          container.textContent = 'コミットはありません';
+          container.textContent = '記録はありません';
           return;
         }
 
@@ -1235,27 +1732,23 @@
         prDetail.appendChild(head);
 
         var meta = document.createElement('div');
-        meta.className = 'commit-meta';
-        meta.style.marginBottom = '10px';
+        meta.className = 'row-meta';
         meta.textContent =
-          pr.sourceBranch + ' → ' + pr.targetBranch +
-          ' · ' + pr.author + ' · 承認 ' + preview.approvals + '件' +
-          ' · ' + (preview.clean ? 'マージ可能' : 'コンフリクトあり');
+          pr.sourceBranch + ' → ' + OFFICIAL + ' · ' + pr.author +
+          ' · 承認 ' + preview.approvals + '件 · ' +
+          (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
         prDetail.appendChild(meta);
 
         var getChoices = function () { return []; };
 
-        if (preview.problems && preview.problems.length > 0) {
+        if (preview.problems && preview.problems.length) {
           var warn = document.createElement('div');
-          warn.className = 'conflict-head';
-          warn.style.marginBottom = '10px';
-          warn.textContent = '書き戻せません: ' + preview.problems.join(' / ');
+          warn.className = 'confirm-strip';
+          warn.textContent = '反映できません: ' + preview.problems.join(' / ');
           prDetail.appendChild(warn);
         }
 
-        if (!preview.clean) {
-          getChoices = renderConflicts(preview.conflicts, prDetail);
-        }
+        if (!preview.clean) getChoices = renderConflicts(preview.conflicts, prDetail);
 
         if (pr.state !== 'merged' && pr.state !== 'closed') {
           var actions = document.createElement('div');
@@ -1265,10 +1758,10 @@
           approveBtn.className = 'btn';
           approveBtn.textContent = '承認する';
 
-          // 押してからエラーを出さない。できない操作は理由と共に無効にする
+          // 押せるのに失敗する状態を作らない
           if (currentUser && String(pr.author) === currentUser) {
             approveBtn.disabled = true;
-            approveBtn.title = '自分が作成したPRは承認できません';
+            approveBtn.title = '自分が出した依頼は自分で承認できません';
           }
 
           approveBtn.addEventListener('click', function () {
@@ -1284,33 +1777,33 @@
 
           var mergeBtn = document.createElement('button');
           mergeBtn.className = 'btn btn-primary';
-          mergeBtn.textContent = 'マージする';
-          if (preview.problems && preview.problems.length > 0) {
+          mergeBtn.textContent = OFFICIAL + 'に反映する';
+
+          if (preview.problems && preview.problems.length) {
             mergeBtn.disabled = true;
-            mergeBtn.title = '書き戻せない内容が含まれています: ' + preview.problems[0];
+            mergeBtn.title = '反映できない内容が含まれています';
           } else if (preview.approvals < 1) {
             mergeBtn.disabled = true;
-            mergeBtn.title = 'マージには1件以上の承認が必要です';
+            mergeBtn.title = '反映には1件以上の承認が必要です';
           }
+
           mergeBtn.addEventListener('click', function () {
-            // マージは取り消せないため一度だけ確認する。ただしモーダルには
-            // せず、PRの文脈に留まったまま確認する
             openConfirmStrip(
               prDetail,
-              'mainの文書をこのマージ結果で書き換えます。取り消せません。',
-              'マージする',
+              OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。',
+              '反映する',
               function () {
                 mergeBtn.disabled = true;
                 google.script.run
                   .withSuccessHandler(function () {
-                    showSnack('PR #' + pr.number + ' をマージしました', { kind: 'ok' });
+                    showSnack('#' + pr.number + ' を' + OFFICIAL + 'に反映しました',
+                      { kind: 'ok' });
                     loadPulls();
                     loadOverview();
-                    refreshStatus();
                   })
                   .withFailureHandler(function (err) {
                     mergeBtn.disabled = false;
-                    showSnack('マージできませんでした: ' + err.message, { kind: 'ng' });
+                    showSnack('反映できませんでした: ' + err.message, { kind: 'ng' });
                   })
                   .apiPrMerge(pr.number, getChoices());
               }
@@ -1322,8 +1815,6 @@
           prDetail.appendChild(actions);
         }
 
-        // 会話 / コミット / 変更ファイルの3タブ。承認とマージのボタンは
-        // タブの外に置いてあるため、どのタブを見ていても操作できる
         var prTabs = document.createElement('div');
         prTabs.className = 'pr-tabs';
         var prBody = document.createElement('div');
@@ -1334,7 +1825,7 @@
           files: function () { renderDiffInto(preview.ops, prBody, true); },
         };
 
-        [['conversation', '会話'], ['commits', 'コミット'], ['files', '変更ファイル']]
+        [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '違い']]
           .forEach(function (t) {
             var b = document.createElement('button');
             b.className = 'pr-tab';
@@ -1361,280 +1852,7 @@
       .apiPrPreview(pr.number);
   }
 
-  function loadPulls() {
-    prListEl.textContent = '読み込み中…';
-    prDetail.textContent = '';
-
-    google.script.run
-      .withSuccessHandler(function (prs) {
-        prListEl.textContent = '';
-        if (prs.length === 0) {
-          var p = document.createElement('p');
-          p.className = 'blank-state';
-          p.textContent = 'プルリクエストがありません';
-          prListEl.appendChild(p);
-          return;
-        }
-        prs.forEach(function (pr) {
-          var btn = document.createElement('button');
-          btn.className = 'commit-item';
-
-          var msg = document.createElement('div');
-          msg.className = 'commit-message';
-          msg.textContent = '#' + pr.number + ' ' + pr.title;
-
-          var meta = document.createElement('div');
-          meta.className = 'commit-meta';
-          meta.textContent = pr.sourceBranch + ' → ' + pr.targetBranch +
-            ' · ' + pr.state;
-
-          btn.appendChild(msg);
-          btn.appendChild(meta);
-          btn.addEventListener('click', function () {
-            var items = prListEl.querySelectorAll('.commit-item');
-            for (var i = 0; i < items.length; i++) {
-              items[i].setAttribute('aria-current', String(items[i] === btn));
-            }
-            showPrDetail(pr);
-          });
-          prListEl.appendChild(btn);
-        });
-        prListEl.firstChild.click();
-      })
-      .withFailureHandler(function (err) {
-        prListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiPrList();
-  }
-
-  // ===== ファイル選択 =====
-
-  function selectFile(fileId, button) {
-    var buttons = listEl.querySelectorAll('.file-item');
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].setAttribute('aria-current', String(buttons[i] === button));
-    }
-
-    current.fileId = fileId;
-    titleEl.textContent = '読み込み中…';
-
-    google.script.run
-      .withSuccessHandler(function (res) {
-        empty.hidden = true;
-        tabsEl.hidden = false;
-        titleEl.textContent = res.path;
-        openLink.href = res.url;
-        openLink.hidden = false;
-        renderIntoViewer(res.html);
-        loadLinkedIssues(fileId);
-        setDocMode('view');
-        refreshStatus();
-      })
-      .withFailureHandler(function (err) {
-        titleEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiGetFileHtml(fileId);
-  }
-
-  // ===== 編集 =====
-
-  /**
-   * 本文の見せ方を切り替える。
-   *
-   * 「編集」は文書に対する動作であってビューではないため、タブではなく
-   * 本文の中のモードとして扱う。
-   *
-   * @param {string} mode 'view' | 'edit'
-   */
-  function setDocMode(mode) {
-    var editing = mode === 'edit';
-
-    modeViewBtn.setAttribute('aria-pressed', String(!editing));
-    modeEditBtn.setAttribute('aria-pressed', String(editing));
-
-    viewer.hidden = editing;
-    editorEl.hidden = !editing;
-    editSaveBtn.hidden = !editing;
-
-    if (editing) loadEditor();
-    else editHint.textContent = '';
-  }
-
-  function loadEditor() {
-    if (!current.fileId) return;
-
-    editorEl.value = '読み込み中…';
-    editorEl.disabled = true;
-    editSaveBtn.disabled = true;
-
-    google.script.run
-      .withSuccessHandler(function (res) {
-        editorEl.value = res.markdown;
-        editorEl.disabled = !res.editable;
-        editSaveBtn.disabled = !res.editable;
-        editHint.textContent = res.editable
-          ? 'Markdownで編集できます。保存してもコミットはされません'
-          : 'mainは保護されています。ブランチを作って編集してください';
-      })
-      .withFailureHandler(function (err) {
-        editorEl.value = '';
-        editHint.textContent = 'エラー: ' + err.message;
-      })
-      .apiGetMarkdown(current.fileId);
-  }
-
-  function saveEditor() {
-    editSaveBtn.disabled = true;
-    editHint.textContent = '保存中…';
-
-    google.script.run
-      .withSuccessHandler(function () {
-        editSaveBtn.disabled = false;
-        editHint.textContent = '保存しました。コミットは「本文」タブから';
-        refreshStatus();
-      })
-      .withFailureHandler(function (err) {
-        editSaveBtn.disabled = false;
-        editHint.textContent = '';
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiSaveMarkdown(current.fileId, editorEl.value);
-  }
-
-  function stashMainDrift() {
-    openConfirmStrip(
-      panelContent,
-      'mainをDocs上で直接編集した分を、退避用のコミットとして記録します。',
-      '退避する',
-      doStash
-    );
-  }
-
-  function doStash() {
-    stashBtn.disabled = true;
-    google.script.run
-      .withSuccessHandler(function () {
-        stashBtn.disabled = false;
-        showSnack('直接編集を退避コミットとして記録しました', { kind: 'ok' });
-        refreshStatus();
-      })
-      .withFailureHandler(function (err) {
-        stashBtn.disabled = false;
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiStashMainDrift(current.fileId);
-  }
-
-  /**
-   * 未コミットの文書をまとめてコミットする。
-   *
-   * 対象は既定ですべて選ぶ。毎回選び直す作業は、ほとんどの場合
-   * 「全部」を選ぶだけの手間にしかならない。
-   */
-  function bulkCommit() {
-    bulkCommitBtn.disabled = true;
-
-    google.script.run
-      .withSuccessHandler(function (files) {
-        bulkCommitBtn.disabled = false;
-
-        if (!files.length) {
-          showSnack(currentBranch + ' に未コミットの変更はありません');
-          return;
-        }
-
-        var form = document.createElement('div');
-        var checks = [];
-
-        var list = document.createElement('div');
-        list.className = 'bulk-list';
-
-        files.forEach(function (f) {
-          var row = document.createElement('label');
-          row.className = 'bulk-row';
-
-          var box = document.createElement('input');
-          box.type = 'checkbox';
-          box.checked = true;
-          box.value = f.fileId;
-          checks.push(box);
-          row.appendChild(box);
-
-          var name = document.createElement('span');
-          name.textContent = f.path;
-          row.appendChild(name);
-
-          list.appendChild(row);
-        });
-
-        openInlineForm(
-          panelBranches,
-          [{ name: 'message', label: files.length + '件の未コミット変更をまとめてコミット', required: true }],
-          'コミットする',
-          function (v) {
-            var ids = checks.filter(function (c) { return c.checked; })
-              .map(function (c) { return c.value; });
-
-            if (!ids.length) {
-              showSnack('対象が選ばれていません', { kind: 'ng' });
-              return;
-            }
-
-            google.script.run
-              .withSuccessHandler(function (res) {
-                var text = res.committed.length + '件コミットしました';
-                if (res.failed.length) {
-                  text += ' / ' + res.failed.length + '件失敗: ' +
-                    res.failed[0].path + ' ' + res.failed[0].error;
-                }
-                showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
-                refreshStatus();
-                loadBranches();
-              })
-              .withFailureHandler(function (err) {
-                showSnack(err.message, { kind: 'ng' });
-              })
-              .apiCommitMany(ids, v.message);
-          }
-        );
-
-        // 対象一覧はフォームの中に差し込む
-        var inserted = panelBranches.querySelector('.inline-form');
-        inserted.insertBefore(list, inserted.querySelector('.inline-form-actions'));
-      })
-      .withFailureHandler(function (err) {
-        bulkCommitBtn.disabled = false;
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiDirtyFiles(currentBranch);
-  }
-
-  // ===== Issue =====
-
-  /**
-   * 文書に紐づく open Issue をチップとして並べる。
-   * Issueが引けなくても本文の表示は妨げない。
-   *
-   * @param {string} fileId
-   */
-  function loadLinkedIssues(fileId) {
-    linkedIssuesEl.textContent = '';
-    linkedIssuesEl.hidden = true;
-
-    google.script.run
-      .withSuccessHandler(function (issues) {
-        if (!issues.length) return;
-        issues.forEach(function (issue) {
-          var chip = document.createElement('span');
-          chip.className = 'linked-issue';
-          chip.textContent = '#' + issue.number + ' ' + issue.title;
-          linkedIssuesEl.appendChild(chip);
-        });
-        linkedIssuesEl.hidden = false;
-      })
-      .withFailureHandler(function () {})
-      .apiIssuesForFile(fileId);
-  }
+  // ===== やること =====
 
   function loadIssues() {
     issueListEl.textContent = '読み込み中…';
@@ -1642,11 +1860,12 @@
     google.script.run
       .withSuccessHandler(function (issues) {
         issueListEl.textContent = '';
+
         if (!issues.length) {
           issueListEl.appendChild(makeBlankState(
-            'Issueがありません',
-            '直したい文書を選んでからIssueを作ると、その文書に紐づきます。',
-            { label: 'Issueを作成', onClick: createIssue }
+            'やることがありません',
+            '直したい文書を選んでから作ると、その文書に紐づきます。',
+            { label: 'やることを作る', onClick: createIssue }
           ));
           return;
         }
@@ -1655,35 +1874,39 @@
           var row = document.createElement('div');
           row.className = 'row-item';
 
+          var main = document.createElement('div');
+          main.className = 'row-main';
+
           var title = document.createElement('div');
           title.className = 'row-title';
           title.textContent = '#' + issue.number + ' ' + issue.title;
-          row.appendChild(title);
+          main.appendChild(title);
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = issue.state +
+          meta.textContent = (issue.state === 'open' ? '未着手・対応中' : '完了') +
             (issue.assignee ? ' · ' + issue.assignee : '') +
             (issue.labels ? ' · ' + issue.labels : '');
-          row.appendChild(meta);
+          main.appendChild(meta);
+          row.appendChild(main);
 
-          if (issue.state === 'open' && current.fileId) {
+          if (issue.state === 'open' && current.docFileId) {
             var branchBtn = document.createElement('button');
-            branchBtn.className = 'btn';
-            branchBtn.textContent = 'このIssueでブランチを作る';
+            branchBtn.className = 'btn btn-primary';
+            branchBtn.textContent = 'この作業の改訂版を作る';
             branchBtn.addEventListener('click', function () {
               branchBtn.disabled = true;
               google.script.run
                 .withSuccessHandler(function (b) {
-                  showSnack('ブランチ ' + b.name + ' を作りました', { kind: 'ok' });
-                  loadFiles();
-                  loadIssues();
+                  showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
+                  loadFiles(function () { loadIssues(); });
+                  loadOverview();
                 })
                 .withFailureHandler(function (err) {
                   branchBtn.disabled = false;
                   showSnack(err.message, { kind: 'ng' });
                 })
-                .apiIssueCreateBranch(issue.number, current.fileId);
+                .apiIssueCreateBranch(issue.number, current.docFileId);
             });
             row.appendChild(branchBtn);
           }
@@ -1701,27 +1924,34 @@
     openInlineForm(
       panelIssues.hidden ? panelBoard : panelIssues,
       [
-        { name: 'title', label: 'Issueのタイトル', required: true },
-        { name: 'body', label: '説明 (任意)', multiline: true },
+        { name: 'title', label: 'やること', required: true },
+        { name: 'body', label: '補足 (任意)', multiline: true },
       ],
-      'Issueを作る',
+      '作る',
       function (v) {
         google.script.run
           .withSuccessHandler(function () {
-            showSnack('Issueを作りました', { kind: 'ok' });
+            showSnack('やることを作りました', { kind: 'ok' });
             loadIssues();
-            loadOverview();
             if (!panelBoard.hidden) loadBoard();
+            loadOverview();
           })
           .withFailureHandler(function (err) {
-            showSnack('作成できませんでした: ' + err.message, { kind: 'ng' });
+            showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiIssueCreate(v.title, v.body, current.fileId ? [current.fileId] : []);
+          .apiIssueCreate(v.title, v.body, current.docFileId ? [current.docFileId] : []);
       }
     );
   }
 
-  // ===== ボード =====
+  // ===== 進捗ボード =====
+
+  var COLUMNS = [
+    ['Backlog', 'これから'],
+    ['In Progress', '作業中'],
+    ['In Review', '確認中'],
+    ['Done', '完了'],
+  ];
 
   function loadBoard() {
     boardEl.textContent = '読み込み中…';
@@ -1731,25 +1961,26 @@
         boardEl.textContent = '';
 
         var total = 0;
-        ['Backlog', 'In Progress', 'In Review', 'Done'].forEach(function (c) {
-          total += board[c].length;
-        });
+        COLUMNS.forEach(function (c) { total += board[c[0]].length; });
 
         if (total === 0) {
           boardEl.appendChild(makeBlankState(
             'カードがありません',
-            'カードはIssueです。Issueを作るとBacklogに並び、ブランチ作成やPRに応じて自動で右に動きます。',
-            { label: 'Issueを作成', onClick: createIssue }
+            'カードは「やること」です。作ると「これから」に並び、' +
+            '改訂版や確認依頼に応じて自動で右に動きます。',
+            { label: 'やることを作る', onClick: createIssue }
           ));
           return;
         }
 
-        ['Backlog', 'In Progress', 'In Review', 'Done'].forEach(function (column) {
+        COLUMNS.forEach(function (pair) {
+          var column = pair[0];
+
           var col = document.createElement('div');
           col.className = 'board-column';
 
           var head = document.createElement('h3');
-          head.textContent = column + ' (' + board[column].length + ')';
+          head.textContent = pair[1] + ' (' + board[column].length + ')';
           col.appendChild(head);
 
           col.addEventListener('dragover', function (e) {
@@ -1768,7 +1999,9 @@
 
             google.script.run
               .withSuccessHandler(function () { loadBoard(); })
-              .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
+              .withFailureHandler(function (err) {
+                showSnack(err.message, { kind: 'ng' });
+              })
               .apiProjectMove(issueNumber, column, board[column].length);
           });
 
@@ -1784,7 +2017,7 @@
 
             var meta = document.createElement('span');
             meta.className = 'row-meta';
-            meta.textContent = card.assignee || '未割当';
+            meta.textContent = card.assignee || '担当なし';
             el.appendChild(meta);
 
             col.appendChild(el);
@@ -1799,205 +2032,122 @@
       .apiProjectBoard();
   }
 
-  /**
-   * 論理パスをブランチ名と表示用パスに分ける。
-   *
-   * @param {string} path
-   * @returns {{branch:string, path:string}}
-   */
-  function splitPath(path) {
-    var m = /^branches\/([^\/]+)\/([\s\S]*)$/.exec(String(path || ''));
-    return m
-      ? { branch: m[1], path: m[2] }
-      : { branch: 'main', path: String(path || '') };
-  }
+  // ===== 使い方 =====
 
-  /**
-   * 元ファイルへのリンクを作る。
-   *
-   * @param {string} type
-   * @param {string} fileId
-   * @returns {HTMLElement}
-   */
-  function makeFileLink(type, fileId) {
-    var a = document.createElement('a');
-    a.className = 'file-link';
-    a.href = fileUrlOf(type, fileId);
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.appendChild(makeIcon('external-link'));
-    a.title = '元ファイルを開く';
-    a.setAttribute('aria-label', '元ファイルを開く');
-    return a;
-  }
+  var GUIDE = [
+    ['このアプリについて', [
+      '文書を直接なおさず、コピー（改訂版）で変更し、確認を経て正式版に反映します。',
+      '誰がいつ何を変えたかがすべて残り、いつでも前の状態と見比べられます。',
+    ]],
+    ['言葉の意味', [
+      '正式版 — いま効力を持つ版。全員が見るもの',
+      '改訂版 — 直している途中の版。正式版には影響しない',
+      '変更の記録 — ある時点の中身を丸ごと残したもの',
+      '確認依頼 — 改訂版を正式版に反映してよいか尋ねるもの',
+      'やること — 誰かがやるべき作業。文書に紐づく',
+    ]],
+    ['基本の流れ', [
+      '1. 文書を開く',
+      '2.「この文書の改訂版」で改訂版を作る',
+      '3.「本文」の「直す」で書き換え、保存する',
+      '4.「変更を記録」でその時点を残す',
+      '5.「改訂中の版」から確認を依頼する',
+      '6. 承認されたら「正式版に反映する」',
+    ]],
+    ['つまずきやすい点', [
+      '正式版は直接なおせません。誰がいつ変えたか残らなくなるためです。改訂版を作ってください。',
+      '同じ場所を両方で変えると「同じ場所が両方で変わっています」と出ます。どちらを残すか選んでから反映してください。',
+      '「反映できません」と出るのは、元に戻せない要素（実体を取れない画像など）がある場合です。元のファイルで貼り直してください。',
+      '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
+      'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
+    ]],
+  ];
 
-  function renderFileList(files) {
-    allFiles = files;
+  function loadHelp() {
+    if (guideEl.dataset.ready) return;
 
-    var branches = { main: true };
-    files.forEach(function (f) { branches[splitPath(f.path).branch] = true; });
+    GUIDE.forEach(function (section) {
+      var h = document.createElement('h2');
+      h.textContent = section[0];
+      guideEl.appendChild(h);
 
-    branchSelect.textContent = '';
-
-    var all = document.createElement('option');
-    all.value = '*';
-    all.textContent = 'すべてのブランチ';
-    branchSelect.appendChild(all);
-
-    Object.keys(branches).forEach(function (name) {
-      var opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      branchSelect.appendChild(opt);
-    });
-    branchSelect.value = currentBranch;
-
-    renderTree();
-  }
-
-  function renderTree() {
-    listEl.textContent = '';
-
-    var shown = allFiles.filter(function (f) {
-      return currentBranch === '*' || splitPath(f.path).branch === currentBranch;
+      var ul = document.createElement('ul');
+      section[1].forEach(function (line) {
+        var li = document.createElement('li');
+        li.textContent = line;
+        ul.appendChild(li);
+      });
+      guideEl.appendChild(ul);
     });
 
-    if (!shown.length) {
-      var p = document.createElement('p');
-      p.className = 'tree-dir';
-      p.textContent = 'このブランチにファイルはありません';
-      listEl.appendChild(p);
-      return;
-    }
+    var foot = document.createElement('div');
+    foot.className = 'guide-foot';
 
-    shown.sort(function (a, b) {
-      return splitPath(a.path).path < splitPath(b.path).path ? -1 : 1;
-    });
+    var who = document.createElement('span');
+    who.className = 'row-meta';
+    who.id = 'whoami';
+    foot.appendChild(who);
+    guideEl.appendChild(foot);
 
-    var lastDir = null;
-    shown.forEach(function (f) {
-      var rel = splitPath(f.path).path;
-      var cut = rel.lastIndexOf('/');
-      var dir = cut < 0 ? '' : rel.substring(0, cut);
-      var name = cut < 0 ? rel : rel.substring(cut + 1);
+    guideEl.dataset.ready = '1';
 
-      if (dir !== lastDir) {
-        lastDir = dir;
-        if (dir) {
-          var head = document.createElement('div');
-          head.className = 'tree-dir';
-          head.textContent = dir + '/';
-          listEl.appendChild(head);
-        }
-      }
-
-      var row = document.createElement('div');
-      row.className = 'tree-row';
-
-      var btn = document.createElement('button');
-      btn.className = dir ? 'file-item nested' : 'file-item';
-      btn.textContent = name;
-      btn.addEventListener('click', function () { selectFile(f.fileId, btn); });
-      row.appendChild(btn);
-
-      if (f.type !== 'doc') {
-        var badge = document.createElement('span');
-        badge.className = 'type-badge';
-        badge.textContent = { sheet: 'Sheet', slide: 'Slides' }[f.type] || f.type;
-        row.appendChild(badge);
-      }
-
-      row.appendChild(makeFileLink(f.type, f.fileId));
-
-      listEl.appendChild(row);
-    });
-  }
-
-  function loadFiles() {
     google.script.run
-      .withSuccessHandler(renderFileList)
-      .withFailureHandler(function (err) {
-        listEl.textContent = 'エラー: ' + err.message;
+      .withSuccessHandler(function (info) {
+        currentUser = info.activeUser;
+        who.textContent = info.activeUser
+          ? 'このアプリはあなたを ' + info.activeUser + ' として認識しています'
+          : '警告: 利用者を特定できていません。この状態では記録に名前が残りません';
       })
-      .apiListFiles();
+      .withFailureHandler(function () { who.textContent = ''; })
+      .apiWhoAmI();
   }
 
   // ===== 初期化 =====
 
-  var tabButtons = document.querySelectorAll('[data-tab]');
-  for (var t = 0; t < tabButtons.length; t++) {
-    (function (btn) {
-      btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
-    })(tabButtons[t]);
-  }
-  commitBtn.addEventListener('click', doCommit);
-  branchCreateBtn.addEventListener('click', createBranch);
-  bulkCommitBtn.addEventListener('click', bulkCommit);
-  updateBranchActions();
-  issueCreateBtn.addEventListener('click', createIssue);
-  boardCreateBtn.addEventListener('click', createIssue);
-  branchSelect.addEventListener('change', function () {
-    currentBranch = branchSelect.value;
-    renderTree();
-    updateBranchActions();
-    if (!panelHistory.hidden) loadHistory();
-  });
-
-  /**
-   * ブランチ操作のボタンを、今のブランチでできることに合わせる。
-   *
-   * 押せるのに失敗する状態を作らない。
-   */
-  function updateBranchActions() {
-    var onMain = currentBranch === 'main';
-    var isAll = currentBranch === '*';
-
-    if (isAll) {
-      branchCreateBtn.disabled = true;
-      branchCreateBtn.title = 'ブランチを1つ選んでください';
-      bulkCommitBtn.disabled = true;
-      bulkCommitBtn.title = 'ブランチを1つ選んでください';
-      return;
-    }
-
-    branchCreateBtn.disabled = !onMain;
-    branchCreateBtn.title = onMain
-      ? 'mainのファイルから新しいブランチを作ります'
-      : 'ブランチはmainのファイルからのみ作成できます';
-
-    bulkCommitBtn.disabled = onMain;
-    bulkCommitBtn.title = onMain
-      ? 'mainは保護されているため、まとめてコミットできません'
-      : currentBranch + ' の未コミット変更をまとめてコミットします';
-  }
-  editSaveBtn.addEventListener('click', saveEditor);
-  modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
-  modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
-  stashBtn.addEventListener('click', stashMainDrift);
-
-  // タブとボタンにアイコンを付ける。文字だけだと走査しづらい
-  var TAB_ICONS = {
-    content: 'file-text',
-    history: 'git-commit',
-    branches: 'git-branch',
-    pulls: 'git-pull-request',
-    issues: 'circle-dot',
-    board: 'columns',
-    help: 'help-circle',
-  };
-
   var navTargets = document.querySelectorAll('[data-tab]');
-  for (var ti = 0; ti < navTargets.length; ti++) {
-    var icon = TAB_ICONS[navTargets[ti].dataset.tab];
-    if (icon) navTargets[ti].insertBefore(makeIcon(icon), navTargets[ti].firstChild);
+  for (var i = 0; i < navTargets.length; i++) {
+    (function (btn) {
+      var icon = TAB_ICONS[btn.dataset.tab];
+      if (icon && btn.classList.contains('nav-item')) {
+        btn.insertBefore(makeIcon(icon), btn.firstChild);
+      } else if (icon && btn.classList.contains('tab')) {
+        btn.insertBefore(makeIcon(icon), btn.firstChild);
+      }
+      btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
+    })(navTargets[i]);
   }
 
   [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
-   [bulkCommitBtn, 'check'], [modeEditBtn, 'pencil'], [modeViewBtn, 'file-text'],
-   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save']]
+   [draftCreateBtn, 'git-branch'], [bulkCommitBtn, 'check'],
+   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save'],
+   [modeEditBtn, 'pencil'], [modeViewBtn, 'file-text'], [crumbBack, 'back']]
     .forEach(function (pair) {
       if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
     });
+
+  crumbBack.addEventListener('click', function () {
+    current.fileId = null;
+    switchTab('docs');
+  });
+
+  branchSelect.addEventListener('change', function () {
+    openDoc(branchSelect.value, current.docPath);
+  });
+
+  commitBtn.addEventListener('click', doCommit);
+  stashBtn.addEventListener('click', stashMainDrift);
+  editSaveBtn.addEventListener('click', saveEditor);
+  modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
+  modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
+  draftCreateBtn.addEventListener('click', createDraft);
+  branchCreateBtn.addEventListener('click', function () {
+    showSnack('文書を開いてから「この文書の改訂版」で作ってください');
+    switchTab('docs');
+  });
+  bulkCommitBtn.addEventListener('click', bulkCommit);
+  issueCreateBtn.addEventListener('click', createIssue);
+  boardCreateBtn.addEventListener('click', createIssue);
+  themeBtn.addEventListener('click', cycleTheme);
 
   google.script.run
     .withSuccessHandler(function (who) { currentUser = who.activeUser; })
@@ -2007,13 +2157,7 @@
   restoreSidebarWidth();
   initResizer();
   applyTheme(readTheme());
-  themeBtn.addEventListener('click', cycleTheme);
 
-  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
-  // ヘルプに辿り着けない
-  tabsEl.hidden = false;
-  loadFiles();
-  switchTab('history');
-  loadOverview();
+  loadFiles(function () { switchTab('docs'); });
 })();
 </script>

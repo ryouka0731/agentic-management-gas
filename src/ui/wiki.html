@@ -7,47 +7,108 @@
 </head>
 <body>
   <div class="layout">
-    <nav class="sidebar">
-      <div class="nav-section">
-        <h2>リポジトリ</h2>
-        <button class="nav-item" data-tab="branches"><span class="nav-label">ブランチ</span><span class="nav-desc">文書の下書き</span></button>
-        <button class="nav-item" data-tab="pulls"><span class="nav-label">プルリクエスト</span><span class="nav-desc">反映の依頼</span></button>
-        <button class="nav-item" data-tab="issues"><span class="nav-label">Issue</span><span class="nav-desc">やること</span></button>
-        <button class="nav-item" data-tab="board"><span class="nav-label">ボード</span><span class="nav-desc">進み具合</span></button>
-        <button class="nav-item" data-tab="help"><span class="nav-label">ヘルプ</span><span class="nav-desc">使い方</span></button>
-      </div>
-
-      <div class="nav-section">
-        <h2>文書</h2>
-        <div id="file-list"></div>
-      </div>
+    <nav class="sidebar" aria-label="対象の切り替え">
+      <button class="nav-item" data-tab="docs">
+        <span class="nav-label">文書</span>
+        <span class="nav-desc">管理している文書</span>
+      </button>
+      <button class="nav-item" data-tab="branches">
+        <span class="nav-label">改訂中の版</span>
+        <span class="nav-count" id="count-drafts" hidden></span>
+        <span class="nav-desc">直している途中の版</span>
+      </button>
+      <button class="nav-item" data-tab="pulls">
+        <span class="nav-label">確認依頼</span>
+        <span class="nav-count" id="count-requests" hidden></span>
+        <span class="nav-desc">正式版に反映してよいか尋ねる</span>
+      </button>
+      <button class="nav-item" data-tab="issues">
+        <span class="nav-label">やること</span>
+        <span class="nav-count" id="count-todos" hidden></span>
+        <span class="nav-desc">誰かがやるべき作業</span>
+      </button>
+      <button class="nav-item" data-tab="board">
+        <span class="nav-label">進捗ボード</span>
+        <span class="nav-desc">やることの進み具合</span>
+      </button>
+      <button class="nav-item" data-tab="help">
+        <span class="nav-label">使い方</span>
+        <span class="nav-desc">はじめての方へ</span>
+      </button>
     </nav>
+
     <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
          tabindex="0" aria-label="ペインの幅を変える"></div>
 
     <div class="main">
       <div class="toolbar">
         <nav class="crumbs" aria-label="現在の位置">
-          <span class="crumb-repo" id="crumb-repo">リポジトリ</span>
-          <span class="crumb-sep" aria-hidden="true">/</span>
-          <label class="branch-switch">
-            <select id="branch-select" aria-label="表示するブランチ"></select>
-          </label>
-          <span class="crumb-sep" aria-hidden="true">/</span>
-          <h1 id="doc-title">文書を選んでください</h1>
+          <button class="crumb-back" id="crumb-back" hidden>文書</button>
+          <span class="crumb-sep" id="crumb-sep" aria-hidden="true" hidden>/</span>
+          <h1 id="doc-title">文書</h1>
+          <span id="branch-chip" class="chip" hidden></span>
+          <span id="dirty-badge" class="badge" hidden>記録していない変更</span>
         </nav>
-        <span id="branch-chip" class="chip" hidden></span>
-        <span id="dirty-badge" class="badge" hidden>未コミットの変更</span>
+
         <span class="spacer"></span>
-        <button id="commit-btn" class="btn btn-primary" hidden>コミット</button>
+        <label class="branch-switch" id="branch-switch" hidden>
+          <span class="row-meta">版</span>
+          <select id="branch-select" aria-label="表示する版"></select>
+        </label>
+        <button id="commit-btn" class="btn btn-primary" hidden>変更を記録</button>
         <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
-        <a id="open-in-docs" href="#" target="_blank" hidden>Google ドキュメントで開く</a>
+        <a id="open-in-docs" href="#" target="_blank" hidden>元のファイルを開く</a>
         <button id="theme-btn" class="theme-btn" type="button"></button>
       </div>
 
       <div class="tabs" id="tabs" hidden>
-        <button class="tab" data-tab="history" aria-current="true">グラフ</button>
-        <button class="tab" data-tab="content">本文</button>
+        <button class="tab" data-tab="content" aria-current="true">本文</button>
+        <button class="tab" data-tab="history">改訂の履歴</button>
+        <button class="tab" data-tab="drafts">この文書の改訂版</button>
+      </div>
+
+      <div class="panel panel-col" id="panel-docs">
+        <div class="flow" id="flow">
+          <p class="flow-lead">
+            文書を直接なおさず、<strong>改訂版</strong>で変更し、
+            <strong>確認依頼</strong>を経て<strong>正式版</strong>に反映します。
+          </p>
+          <ol class="flow-steps">
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="issues">
+                <span class="flow-name">やること</span>
+                <span class="flow-count" id="flow-issues">—</span>
+              </button>
+              <span class="flow-desc">何をするか決める</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="branches">
+                <span class="flow-name">改訂版</span>
+                <span class="flow-count" id="flow-branches">—</span>
+              </button>
+              <span class="flow-desc">文書を直す</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="pulls">
+                <span class="flow-name">確認依頼</span>
+                <span class="flow-count" id="flow-prs">—</span>
+              </button>
+              <span class="flow-desc">見てもらう</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="docs">
+                <span class="flow-name">正式版</span>
+                <span class="flow-count" id="flow-docs">—</span>
+              </button>
+              <span class="flow-desc">反映される</span>
+            </li>
+          </ol>
+        </div>
+
+        <div class="list-area" id="doc-list"></div>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>
@@ -55,8 +116,8 @@
 
         <div class="doc-modes">
           <div class="segmented" role="group" aria-label="表示のしかた">
-            <button class="seg" id="mode-view" aria-pressed="true">表示</button>
-            <button class="seg" id="mode-edit" aria-pressed="false">編集</button>
+            <button class="seg" id="mode-view" aria-pressed="true">読む</button>
+            <button class="seg" id="mode-edit" aria-pressed="false">直す</button>
           </div>
           <span class="row-meta" id="mode-hint"></span>
           <span class="spacer"></span>
@@ -68,60 +129,12 @@
       </div>
 
       <div class="panel panel-col" id="panel-history" hidden>
-        <div class="flow" id="flow">
-          <p class="flow-lead">
-            文書を直接なおさず、<strong>下書き（ブランチ）</strong>で変更して、
-            <strong>確認（プルリクエスト）</strong>を経て確定版（main）に反映します。
-          </p>
-          <ol class="flow-steps">
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="issues">
-                <span class="flow-name">Issue</span>
-                <span class="flow-count" id="flow-issues">—</span>
-              </button>
-              <span class="flow-desc">やること</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="branches">
-                <span class="flow-name">ブランチ</span>
-                <span class="flow-count" id="flow-branches">—</span>
-              </button>
-              <span class="flow-desc">文書の下書き</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="history">
-                <span class="flow-name">コミット</span>
-                <span class="flow-count" id="flow-commits">—</span>
-              </button>
-              <span class="flow-desc">変更の記録</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="pulls">
-                <span class="flow-name">プルリクエスト</span>
-                <span class="flow-count" id="flow-prs">—</span>
-              </button>
-              <span class="flow-desc">反映の依頼と確認</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="content">
-                <span class="flow-name">main</span>
-                <span class="flow-count" id="flow-docs">—</span>
-              </button>
-              <span class="flow-desc">確定版の文書</span>
-            </li>
-          </ol>
-        </div>
-
         <div class="graph-head">
-          <span class="graph-col-graph">グラフ</span>
-          <span class="graph-col-desc">説明</span>
+          <span class="graph-col-graph">系統</span>
+          <span class="graph-col-desc">変更の内容</span>
           <span class="graph-col-date">日時</span>
-          <span class="graph-col-author">作成者</span>
-          <span class="graph-col-sha">コミット</span>
+          <span class="graph-col-author">記録した人</span>
+          <span class="graph-col-sha">記録番号</span>
         </div>
         <div class="graph-split">
           <div class="history-list" id="history-list"></div>
@@ -129,11 +142,18 @@
         </div>
       </div>
 
+      <div class="panel panel-col" id="panel-drafts" hidden>
+        <div class="panel-actions">
+          <button id="draft-create-btn" class="btn btn-primary">この文書の改訂版を作る</button>
+          <span class="row-meta">正式版をコピーして、直す用の版を作ります</span>
+        </div>
+        <div class="list-area" id="draft-list"></div>
+      </div>
+
       <div class="panel panel-col" id="panel-branches" hidden>
         <div class="panel-actions">
-          <button id="branch-create-btn" class="btn btn-primary">ブランチを作成</button>
-          <button id="bulk-commit-btn" class="btn">まとめてコミット</button>
-          <span class="row-meta">mainのファイルを選んでから作成してください</span>
+          <button id="branch-create-btn" class="btn btn-primary">改訂版を作る</button>
+          <button id="bulk-commit-btn" class="btn">まとめて記録</button>
         </div>
         <div class="list-area" id="branch-list"></div>
       </div>
@@ -145,101 +165,23 @@
 
       <div class="panel panel-col" id="panel-issues" hidden>
         <div class="panel-actions">
-          <button id="issue-create-btn" class="btn btn-primary">Issueを作成</button>
-          <span class="row-meta">選択中の文書に紐づけて作成します</span>
+          <button id="issue-create-btn" class="btn btn-primary">やることを作る</button>
+          <span class="row-meta">選んでいる文書に紐づきます</span>
         </div>
         <div class="list-area" id="issue-list"></div>
       </div>
 
       <div class="panel panel-col" id="panel-board" hidden>
         <div class="panel-actions">
-          <button id="board-create-btn" class="btn btn-primary">Issueを作成</button>
-          <span class="row-meta">カードはIssueです。作るとBacklogに並びます</span>
+          <button id="board-create-btn" class="btn btn-primary">やることを作る</button>
+          <span class="row-meta">カードはやることです</span>
         </div>
         <div class="board" id="board"></div>
       </div>
 
       <div class="panel" id="panel-help" hidden>
-        <div class="guide">
-          <h2>このアプリについて</h2>
-          <p>
-            Google ドキュメント / スプレッドシート / スライドに、Git と同じ考え方の
-            版管理を与えるものです。文書を直接書き換えるのではなく、
-            <strong>ブランチを作って変更し、レビューを経て main に反映する</strong>
-            という流れで進めます。
-          </p>
-
-          <h2>GitHub との用語の対応</h2>
-          <table class="guide-table">
-            <tr><td>リポジトリ</td><td>Drive の <code>agentic-management/</code> フォルダ</td></tr>
-            <tr><td>ファイル</td><td>Google ドキュメント / スプレッドシート / スライド</td></tr>
-            <tr><td>コミット</td><td>その時点の文書内容の記録（文書自体は書き換わりません）</td></tr>
-            <tr><td>ブランチ</td><td>文書の作業コピー。Drive 上に別ファイルとして作られます</td></tr>
-            <tr><td>プルリクエスト</td><td>ブランチの変更を main に取り込む提案</td></tr>
-            <tr><td>Issue</td><td>文書に紐づく作業。ここからブランチを1クリックで作れます</td></tr>
-          </table>
-
-          <h2>基本の流れ</h2>
-          <ol>
-            <li><strong>Issue を作る</strong> — 「Issue」タブで、何を直すかを書きます</li>
-            <li><strong>ブランチを作る</strong> — Issue の「このIssueでブランチを作る」を押します。
-              <code>issue-12-在宅勤務規定</code> のような名前が自動で付きます</li>
-            <li><strong>編集する</strong> — 左上でそのブランチに切り替えてファイルを開き、
-              「編集」タブで書き換えます。Google ドキュメントを直接開いて編集しても構いません</li>
-            <li><strong>コミットする</strong> — 「本文」タブの「コミット」を押します。
-              ここで初めて履歴に残ります</li>
-            <li><strong>PR を作る</strong> — 「ブランチ」タブの「PRを作る」を押します。
-              説明に <code>closes #12</code> と書くと、マージ時に Issue が自動で閉じます</li>
-            <li><strong>レビューして マージする</strong> — 「プルリクエスト」タブで差分を見て、
-              承認してからマージします。main の文書が書き換わります</li>
-          </ol>
-
-          <h2>つまずきやすい点</h2>
-
-          <h3>main が編集できません</h3>
-          <p>
-            意図的にそうしています。main を直接書き換えると誰がいつ何を変えたのかが
-            残らないため、変更は必ず PR を通します。Google ドキュメント側で main を
-            直接編集してしまった場合は、「直接編集を退避」ボタンで記録してください。
-            退避しないとマージができません。
-          </p>
-
-          <h3>「コンフリクトあり」と出ました</h3>
-          <p>
-            同じ行を main 側とブランチ側の両方で書き換えたときに出ます。赤枠の中で
-            「main側を採用 / ブランチ側を採用 / 両方を残す」を選んでからマージしてください。
-            別々の行を直しただけなら自動で統合されます。
-          </p>
-
-          <h3>「書き戻せません」と出てマージできません</h3>
-          <p>
-            文書の中に、このアプリが復元できない要素があります。ほとんどの場合は
-            <strong>実体を取得できない画像</strong>です。そのままマージすると画像が
-            永久に失われるため、手前で止めています。Google ドキュメント側で画像を
-            貼り直してからやり直してください。
-          </p>
-
-          <h3>色やフォントが履歴に出ません</h3>
-          <p>
-            色・フォント・文字サイズは版管理の対象外です。このアプリは
-            「文書の意味内容」を管理するもので、見た目の変更は差分になりません。
-            全角スペースによる字下げも同様に失われます。
-          </p>
-
-          <h3>スライドで PR が作れません</h3>
-          <p>
-            スライドは閲覧・履歴・差分までの対応です。図形の位置や大きさを
-            復元できないため、マージには対応していません。反映は Google スライド上で
-            直接行ってください。
-          </p>
-
-          <div class="guide-foot">
-            <span id="whoami" class="row-meta"></span>
-          </div>
-        </div>
+        <div class="guide" id="guide"></div>
       </div>
-
-      <div id="empty" class="empty">左からファイルを選択してください</div>
     </div>
   </div>
   <?!= include('ui/app.js') ?>

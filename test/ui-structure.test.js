@@ -203,44 +203,8 @@ describe('モードレスなUI', () => {
     expect(js).toContain("setAttribute('aria-live', 'polite')");
   });
 
-  it('リポジトリのナビは左、文書のビューは上のタブに分かれている', () => {
-    const html = read('src/ui/wiki.html');
 
-    const sidebar = html.slice(html.indexOf('<nav class="sidebar">'), html.indexOf('</nav>'));
-    const tabs = html.slice(html.indexOf('<div class="tabs"'), html.indexOf('</div>', html.indexOf('<div class="tabs"')));
 
-    ['branches', 'pulls', 'issues', 'board', 'help'].forEach((name) => {
-      expect(sidebar).toContain('data-tab="' + name + '"');
-    });
-    expect(tabs).toContain('data-tab="content"');
-    expect(tabs).toContain('data-tab="history"');
-  });
-
-  it('ホームはコミットグラフ', () => {
-    const html = read('src/ui/wiki.html');
-    const tabs = html.slice(html.indexOf('<div class="tabs"'),
-      html.indexOf('</div>', html.indexOf('<div class="tabs"')));
-
-    // 最初に現在地が入っているタブがホームになる
-    const first = tabs.indexOf('aria-current="true"');
-    const graph = tabs.indexOf('data-tab="history"');
-    const content = tabs.indexOf('data-tab="content"');
-
-    expect(graph).toBeLessThan(content);
-    expect(first).toBeGreaterThan(graph);
-    expect(first).toBeLessThan(content);
-  });
-
-  it('ブランチ選択は上部に1つだけ', () => {
-    const html = read('src/ui/wiki.html');
-
-    // 2箇所にあると、どちらが何を支配するのか読めなくなる
-    expect((html.match(/id="branch-select"/g) || []).length).toBe(1);
-
-    const toolbar = html.slice(html.indexOf('<div class="toolbar">'),
-      html.indexOf('<div class="tabs"'));
-    expect(toolbar).toContain('id="branch-select"');
-  });
 
   it('タブに動詞を置かない', () => {
     const html = read('src/ui/wiki.html');
@@ -314,37 +278,14 @@ describe('シグニファイア', () => {
 describe('関係の分かりやすさ', () => {
   const html = read('src/ui/wiki.html');
 
-  it('現在の位置を包含関係で示す', () => {
-    // リポジトリ / ブランチ / 文書 の順に並べ、今どこにいるかを常に出す
-    const crumbs = html.slice(html.indexOf('<nav class="crumbs"'),
-      html.indexOf('</nav>', html.indexOf('<nav class="crumbs"')));
 
-    expect(crumbs.indexOf('crumb-repo'))
-      .toBeLessThan(crumbs.indexOf('branch-select'));
-    expect(crumbs.indexOf('branch-select'))
-      .toBeLessThan(crumbs.indexOf('doc-title'));
-  });
-
-  it('対象どうしの流れをホームに出す', () => {
-    const flow = html.slice(html.indexOf('<div class="flow"'),
-      html.indexOf('<div class="graph-head">'));
-
-    // Issue → ブランチ → コミット → PR → main の順に並んでいる
-    const order = ['issues', 'branches', 'history', 'pulls', 'content'];
-    let last = -1;
-    order.forEach((tab) => {
-      const at = flow.indexOf('data-tab="' + tab + '"');
-      expect(at).toBeGreaterThan(last);
-      last = at;
-    });
-  });
 
   it('専門用語に平易な言い換えを添える', () => {
     // 覚えていることを前提にしない (認識より想起を避ける)
     expect(html).toContain('やること');
-    expect(html).toContain('文書の下書き');
-    expect(html).toContain('反映の依頼');
-    expect(html).toContain('確定版');
+    expect(html).toContain('直している途中の版');
+    expect(html).toContain('正式版に反映してよいか尋ねる');
+    expect(html).toContain('正式版');
   });
 
   it('ナビの各項目に一行の説明がある', () => {
@@ -354,5 +295,57 @@ describe('関係の分かりやすさ', () => {
     const items = sidebar.match(/class="nav-item"/g) || [];
     const descs = sidebar.match(/class="nav-desc"/g) || [];
     expect(descs.length).toBe(items.length);
+  });
+});
+
+describe('概念モデルとの対応', () => {
+  const html = read('src/ui/wiki.html');
+
+  it('画面の名前は対象だけで、動作を使わない', () => {
+    const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
+    const tabs = html.slice(html.indexOf('<div class="tabs"'),
+      html.indexOf('</div>', html.indexOf('<div class="tabs"')));
+
+    ['編集', 'コミット', 'マージ'].forEach((verb) => {
+      expect(sidebar).not.toContain('>' + verb + '<');
+      expect(tabs).not.toContain('>' + verb + '<');
+    });
+  });
+
+  it('Git の用語を画面に出さない', () => {
+    const visible = html
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/data-tab="[^"]*"/g, '')
+      .replace(/id="[^"]*"/g, '')
+      .replace(/class="[^"]*"/g, '');
+
+    ['リポジトリ', 'ブランチ', 'プルリクエスト', 'コミット'].forEach((term) => {
+      expect(visible).not.toContain(term);
+    });
+  });
+
+  it('文書を根に置き、そのビューをタブにする', () => {
+    const tabs = html.slice(html.indexOf('<div class="tabs"'),
+      html.indexOf('</div>', html.indexOf('<div class="tabs"')));
+
+    // 文書に従属するビューだけがタブになる
+    ['content', 'history', 'drafts'].forEach((t) => {
+      expect(tabs).toContain('data-tab="' + t + '"');
+    });
+    expect(tabs).not.toContain('data-tab="pulls"');
+    expect(tabs).not.toContain('data-tab="issues"');
+  });
+
+  it('文書を選ぶまでタブを出さない', () => {
+    const js = read('src/ui/app.js.html');
+
+    // 対象が無ければそのビューは意味を持たない
+    expect(js).toContain('tabsEl.hidden = !current.fileId');
+    expect(js).toContain("if (DOC_TABS[name] && !current.fileId) name = 'docs';");
+  });
+
+  it('ホームは文書の一覧', () => {
+    const js = read('src/ui/app.js.html');
+    expect(js).toContain("loadFiles(function () { switchTab('docs'); })");
   });
 });

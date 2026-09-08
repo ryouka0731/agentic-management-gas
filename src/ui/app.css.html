@@ -1322,4 +1322,99 @@ button:disabled {
 }
 
 .nav-item[aria-current="true"] .nav-desc { color: var(--ink-2); }
+
+/* =====================================================================
+ * 文書の一覧 (ホーム)
+ * ===================================================================== */
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+}
+
+.doc-open {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--motion) ease-out;
+}
+
+.doc-open:hover { background: var(--bg-3); }
+
+.doc-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 一覧の行のうち、開くための部分 */
+.row-open {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.row-open:hover { background: var(--bg-3); }
+.row-main { flex: 1; min-width: 0; }
+
+.row-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* 戻り道 */
+.crumb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.crumb-back:hover { background: var(--bg-3); color: var(--ink); }
+
+/* 左ナビの件数 */
+.nav-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.nav-section { padding: var(--sp-2) 0; }
+.sidebar { padding: var(--sp-3) 0; }
 </style>
