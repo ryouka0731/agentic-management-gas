@@ -53,6 +53,8 @@
   var boardEl = document.getElementById('board');
   var boardCreateBtn = document.getElementById('board-create-btn');
   var guideEl = document.getElementById('guide');
+  var panelGantt = document.getElementById('panel-gantt');
+  var ganttEl = document.getElementById('gantt');
 
   // ===== 状態 =====
 
@@ -165,6 +167,8 @@
       sun: ['M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 1v2', 'M12 21v2', 'M4.2 4.2l1.4 1.4', 'M18.4 18.4l1.4 1.4', 'M1 12h2', 'M21 12h2', 'M4.2 19.8l1.4-1.4', 'M18.4 5.6l1.4-1.4'],
       moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
       monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
+      calendar: ['M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z', 'M16 2v4', 'M8 2v4', 'M3 10h18'],
+      user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
     };
 
     var ns = 'http://www.w3.org/2000/svg';
@@ -190,6 +194,7 @@
     pulls: 'git-pull-request',
     issues: 'circle-dot',
     board: 'columns',
+    gantt: 'calendar',
     help: 'help-circle',
   };
 
@@ -751,6 +756,7 @@
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelBoard.hidden = name !== 'board';
+    panelGantt.hidden = name !== 'gantt';
     panelHelp.hidden = name !== 'help';
 
     tabsEl.hidden = !current.fileId || !DOC_TABS[name];
@@ -763,6 +769,7 @@
     else if (name === 'pulls') loadPulls();
     else if (name === 'issues') loadIssues();
     else if (name === 'board') loadBoard();
+    else if (name === 'gantt') loadGantt();
     else if (name === 'help') loadHelp();
   }
 
@@ -1987,10 +1994,19 @@
           var meta = document.createElement('div');
           meta.className = 'row-meta';
           meta.textContent = (issue.state === 'open' ? '未着手・対応中' : '完了') +
-            (issue.assignee ? ' · ' + issue.assignee : '') +
+            (issue.assignee ? ' · ' + issue.assignee : ' · 担当なし') +
+            (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '') +
             (issue.labels ? ' · ' + issue.labels : '');
           main.appendChild(meta);
-          row.appendChild(main);
+
+          var open = document.createElement('button');
+          open.className = 'row-open';
+          open.appendChild(makeIcon('circle-dot'));
+          open.appendChild(main);
+          open.addEventListener('click', function () {
+            openIssueDetail(issue, panelIssues);
+          });
+          row.appendChild(open);
 
           if (issue.state === 'open' && current.docFileId) {
             var branchBtn = document.createElement('button');
@@ -2022,6 +2038,120 @@
       .apiIssueList('');
   }
 
+  /**
+   * やることの中身を直す。
+   *
+   * 一覧からも工程表からも進捗ボードからも同じ画面を開く。
+   * 対象が同じなら編集の場所も同じにする。
+   *
+   * @param {object} issue issues 行
+   * @param {HTMLElement} host
+   */
+  function openIssueDetail(issue, host) {
+    var form = openInlineForm(
+      host,
+      [
+        { name: 'title', label: 'やること', required: true },
+        { name: 'body', label: '補足', multiline: true },
+        { name: 'assignee', label: '担当者 (メールアドレス)' },
+        { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
+        { name: 'labels', label: 'ラベル (カンマ区切り)' },
+      ],
+      '保存する',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
+            refreshIssueViews();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiIssueUpdate(issue.number, {
+            title: v.title, body: v.body, assignee: v.assignee,
+            dueDate: v.dueDate, labels: v.labels,
+          });
+      }
+    );
+
+    var inputs = form.querySelectorAll('input, textarea');
+    inputs[0].value = issue.title || '';
+    inputs[1].value = issue.body || '';
+    inputs[2].value = issue.assignee || '';
+    inputs[3].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
+    inputs[4].value = issue.labels || '';
+
+    inputs[3].type = 'date';
+    inputs[2].setAttribute('list', 'people-list');
+    attachPeopleList(form);
+
+    var extra = document.createElement('div');
+    extra.className = 'inline-form-actions';
+
+    var mine = document.createElement('button');
+    mine.type = 'button';
+    mine.className = 'btn';
+    mine.appendChild(makeIcon('user'));
+    mine.appendChild(document.createTextNode('自分に割り当てる'));
+    mine.addEventListener('click', function () { inputs[2].value = currentUser; });
+    extra.appendChild(mine);
+
+    if (String(issue.state) === 'open') {
+      var done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'btn';
+      done.appendChild(makeIcon('check'));
+      done.appendChild(document.createTextNode('完了にする'));
+      done.addEventListener('click', function () {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+            form.remove();
+            refreshIssueViews();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiIssueClose(issue.number);
+      });
+      extra.appendChild(done);
+    }
+
+    form.insertBefore(extra, form.querySelector('.inline-form-actions'));
+  }
+
+  /**
+   * 担当者の候補を用意する。名簿を別に持たず、関わった人から集める。
+   *
+   * @param {HTMLElement} form
+   */
+  function attachPeopleList(form) {
+    if (document.getElementById('people-list')) return;
+
+    var list = document.createElement('datalist');
+    list.id = 'people-list';
+    form.appendChild(list);
+
+    google.script.run
+      .withSuccessHandler(function (people) {
+        people.forEach(function (email) {
+          var opt = document.createElement('option');
+          opt.value = email;
+          list.appendChild(opt);
+        });
+      })
+      .withFailureHandler(function () { /* 候補が無くても手で書ける */ })
+      .apiKnownPeople();
+  }
+
+  /** やることを扱う画面をまとめて描き直す */
+  function refreshIssueViews() {
+    if (!panelIssues.hidden) loadIssues();
+    if (!panelBoard.hidden) loadBoard();
+    if (!panelGantt.hidden) loadGantt();
+    loadOverview();
+  }
+
   function createIssue() {
     openInlineForm(
       panelIssues.hidden ? panelBoard : panelIssues,
@@ -2034,9 +2164,12 @@
         google.script.run
           .withSuccessHandler(function () {
             showSnack('やることを作りました', { kind: 'ok' });
-            loadIssues();
-            if (!panelBoard.hidden) loadBoard();
-            loadOverview();
+            // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
+            if (panelIssues.hidden && panelBoard.hidden && panelGantt.hidden) {
+              switchTab('issues');
+            } else {
+              refreshIssueViews();
+            }
           })
           .withFailureHandler(function (err) {
             showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
@@ -2044,6 +2177,191 @@
           .apiIssueCreate(v.title, v.body, current.docFileId ? [current.docFileId] : []);
       }
     );
+  }
+
+  /**
+   * 番号だけ分かっているやることを開く。
+   *
+   * ボードのカードや工程表の棒は中身を全部持っていないため、引き直す。
+   *
+   * @param {number} number
+   * @param {HTMLElement} host
+   */
+  function openIssueByNumber(number, host) {
+    google.script.run
+      .withSuccessHandler(function (issues) {
+        var found = issues.filter(function (i) {
+          return Number(i.number) === Number(number);
+        })[0];
+
+        if (!found) {
+          showSnack('やること #' + number + ' が見つかりません', { kind: 'ng' });
+          return;
+        }
+        openIssueDetail(found, host);
+      })
+      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
+      .apiIssueList('');
+  }
+
+  // ===== 工程表 =====
+
+  /**
+   * 期限つきのやることを時系列の棒で並べる。
+   *
+   * 配置の計算は src/core/Gantt.js の純関数と同じものをここに写している。
+   * google.script.run の往復を増やさないための意図的な重複であり、
+   * 片方だけ直すと表示と実体がずれる。
+   *
+   * @param {object[]} issues
+   * @param {Date} today
+   * @returns {object}
+   */
+  function ganttLayout(issues, today) {
+    var DAY = 24 * 60 * 60 * 1000;
+
+    function startOfDay(value) {
+      if (value === null || value === undefined || value === '') return null;
+      var d = new Date(value);
+      if (isNaN(d.getTime())) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
+
+    var now = startOfDay(today || new Date());
+    var rows = [];
+    var from = null;
+    var to = null;
+
+    (issues || []).forEach(function (issue) {
+      var start = startOfDay(issue.createdAt);
+      var due = startOfDay(issue.dueDate);
+      if (start === null) return;
+
+      var end = (due === null) ? start : Math.max(due, start);
+      if (from === null || start < from) from = start;
+      if (to === null || end > to) to = end;
+
+      rows.push({
+        number: Number(issue.number), title: issue.title, state: issue.state,
+        assignee: issue.assignee, hasDue: due !== null,
+        overdue: due !== null && String(issue.state) === 'open' && due < now,
+        _start: start, _end: end,
+      });
+    });
+
+    if (!rows.length) return { from: now, to: now, days: 1, todayOffset: 0, rows: [] };
+
+    if (now < from) from = now;
+    if (now > to) to = now;
+
+    rows.forEach(function (r) {
+      r.offset = Math.round((r._start - from) / DAY);
+      r.span = Math.round((r._end - r._start) / DAY) + 1;
+      delete r._start;
+      delete r._end;
+    });
+
+    return {
+      from: from, to: to,
+      days: Math.round((to - from) / DAY) + 1,
+      todayOffset: Math.round((now - from) / DAY),
+      rows: rows,
+    };
+  }
+
+  function loadGantt() {
+    showSkeleton(ganttEl, 'list', 5);
+
+    google.script.run
+      .withSuccessHandler(function (issues) {
+        ganttEl.textContent = '';
+
+        var g = ganttLayout(issues, new Date());
+        if (!g.rows.length) {
+          ganttEl.appendChild(makeBlankState(
+            'やることがありません',
+            '期限を入れたやることが、ここに時系列の棒で並びます。',
+            { label: 'やることを作る', onClick: createIssue }
+          ));
+          return;
+        }
+
+        var COL = 26;
+        var chart = document.createElement('div');
+        chart.className = 'gantt';
+        chart.style.setProperty('--gantt-days', String(g.days));
+        chart.style.setProperty('--gantt-col', COL + 'px');
+
+        // 日付の目盛り
+        var head = document.createElement('div');
+        head.className = 'gantt-head';
+
+        var headName = document.createElement('div');
+        headName.className = 'gantt-name';
+        headName.textContent = 'やること';
+        head.appendChild(headName);
+
+        var scale = document.createElement('div');
+        scale.className = 'gantt-scale';
+
+        for (var d = 0; d < g.days; d++) {
+          var day = new Date(g.from + d * 24 * 60 * 60 * 1000);
+          var cell = document.createElement('div');
+          cell.className = 'gantt-day' + (d === g.todayOffset ? ' today' : '');
+          cell.textContent = day.getDate();
+          cell.title = day.toLocaleDateString('ja-JP');
+          scale.appendChild(cell);
+        }
+        head.appendChild(scale);
+        chart.appendChild(head);
+
+        g.rows.forEach(function (r) {
+          var row = document.createElement('div');
+          row.className = 'gantt-row';
+
+          var name = document.createElement('button');
+          name.className = 'gantt-name';
+          name.textContent = '#' + r.number + ' ' + r.title;
+          name.title = (r.assignee || '担当なし');
+          name.addEventListener('click', function () {
+            openIssueByNumber(r.number, panelGantt);
+          });
+          row.appendChild(name);
+
+          var track = document.createElement('div');
+          track.className = 'gantt-track';
+
+          var bar = document.createElement('button');
+          bar.className = 'gantt-bar' +
+            (String(r.state) === 'closed' ? ' done' : '') +
+            (r.overdue ? ' overdue' : '') +
+            (r.hasDue ? '' : ' nodue');
+          bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
+          bar.textContent = r.assignee ? String(r.assignee).replace(/@.*$/, '') : '';
+          bar.title = '#' + r.number + ' ' + r.title +
+            (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '');
+          bar.addEventListener('click', function () {
+            openIssueByNumber(r.number, panelGantt);
+          });
+          track.appendChild(bar);
+
+          if (g.todayOffset >= 0 && g.todayOffset < g.days) {
+            var line = document.createElement('div');
+            line.className = 'gantt-today';
+            line.style.gridColumn = (g.todayOffset + 1) + ' / span 1';
+            track.appendChild(line);
+          }
+
+          row.appendChild(track);
+          chart.appendChild(row);
+        });
+
+        ganttEl.appendChild(chart);
+      })
+      .withFailureHandler(function (err) {
+        ganttEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiIssueList('');
   }
 
   // ===== 進捗ボード =====
@@ -2117,9 +2435,21 @@
               e.dataTransfer.setData('text/plain', String(card.issueNumber));
             });
 
+            // 掴んで動かすだけでなく、押して中身を直せるようにする
+            el.addEventListener('click', function () {
+              openIssueByNumber(card.issueNumber, panelBoard);
+            });
+            el.tabIndex = 0;
+            el.addEventListener('keydown', function (e) {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              openIssueByNumber(card.issueNumber, panelBoard);
+            });
+
             var meta = document.createElement('span');
             meta.className = 'row-meta';
-            meta.textContent = card.assignee || '担当なし';
+            meta.textContent = (card.assignee || '担当なし') +
+              (card.dueDate ? ' · 期限 ' + String(card.dueDate).substring(0, 10) : '');
             el.appendChild(meta);
 
             col.appendChild(el);

@@ -13,7 +13,7 @@ function DB_SCHEMA() {
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at'],
-    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt'],
+    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'dueDate', 'createdAt', 'closedAt'],
     project_items: ['issueNumber', 'column', 'order'],
   };
 }
@@ -31,11 +31,23 @@ function dbSheet_(table) {
 
   var ss = SpreadsheetApp.openById(repoConfig().dbId);
   var sheet = ss.getSheetByName(table);
+
   if (!sheet) {
     sheet = ss.insertSheet(table);
     sheet.getRange(1, 1, 1, cols.length).setValues([cols]);
     sheet.setFrozenRows(1);
+    return sheet;
   }
+
+  // 列を増やしたとき、既存シートの見出し行が古いままだと
+  // 人が開いたときに何の列か分からなくなる。合わせておく
+  var header = sheet.getRange(1, 1, 1, cols.length).getValues()[0];
+  var stale = false;
+  for (var h = 0; h < cols.length; h++) {
+    if (String(header[h]) !== cols[h]) stale = true;
+  }
+  if (stale) sheet.getRange(1, 1, 1, cols.length).setValues([cols]);
+
   return sheet;
 }
 

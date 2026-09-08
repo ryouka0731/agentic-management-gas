@@ -371,3 +371,36 @@ describe('読み込み中の見せ方', () => {
     expect(reduced).toContain('.skeleton { animation: none;');
   });
 });
+
+describe('やることの操作', () => {
+  const js = read('src/ui/app.js.html');
+
+  it('一覧・ボード・工程表のどこからでも中身を直せる', () => {
+    // 対象が同じなら編集の場所も同じにする
+    expect(js).toContain('function openIssueDetail(');
+    expect((js.match(/openIssueDetail\(/g) || []).length).toBeGreaterThanOrEqual(2);
+    expect(js).toContain('function openIssueByNumber(');
+  });
+
+  it('担当者と期限を入力できる', () => {
+    expect(js).toContain("label: '担当者 (メールアドレス)'");
+    expect(js).toContain("label: '期限 (例: 2026-09-30)'");
+    expect(js).toContain('自分に割り当てる');
+  });
+
+  it('担当者の候補を関わった人から出す', () => {
+    expect(js).toContain('apiKnownPeople()');
+    expect(js).toContain("setAttribute('list', 'people-list')");
+  });
+
+  it('ボードのカードはキーボードでも開ける', () => {
+    // 掴む操作しか無いと、キーボードだけの利用者が中身を見られない
+    expect(js).toContain('el.tabIndex = 0;');
+  });
+
+  it('工程表の配置はサーバ側と同じ計算を使う', () => {
+    const gantt = read('src/core/Gantt.js');
+    expect(gantt).toContain('function ganttLayout(');
+    expect(js).toContain('function ganttLayout(');
+  });
+});

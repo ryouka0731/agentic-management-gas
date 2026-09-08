@@ -882,6 +882,51 @@ function apiIssueUpdate(number, patch) {
 }
 
 /**
+ * やることを完了にする (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiIssueClose(number) {
+  var row = issueClose(number, null);
+  projectMoveIfExists_(number, 'Done');
+  return row;
+}
+
+/**
+ * 担当者になりうる人を返す (Web App API)。
+ *
+ * これまでに記録や確認をした人を集める。名簿を別に持たない。
+ *
+ * @returns {string[]}
+ */
+function apiKnownPeople() {
+  var seen = {};
+  var out = [];
+
+  function add(email) {
+    var v = String(email || '');
+    if (!v || seen[v]) return;
+    seen[v] = true;
+    out.push(v);
+  }
+
+  add(Session.getActiveUser().getEmail());
+
+  var commits = dbReadAll('commits');
+  for (var i = 0; i < commits.length; i++) add(commits[i].author);
+
+  var reviews = dbReadAll('reviews');
+  for (var r = 0; r < reviews.length; r++) add(reviews[r].reviewer);
+
+  var issues = dbReadAll('issues');
+  for (var q = 0; q < issues.length; q++) add(issues[q].assignee);
+
+  out.sort();
+  return out;
+}
+
+/**
  * Issueからブランチを作り、カードを In Progress に動かす (Web App API)。
  *
  * @param {number} number

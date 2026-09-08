@@ -42,6 +42,7 @@ function issueCreate(title, body, linkedFileIds) {
     labels: '',
     linkedFileIds: ids.join(','),
     linkedPr: '',
+    dueDate: '',
     createdAt: new Date(),
     closedAt: '',
   };
@@ -118,7 +119,7 @@ function issueUpdate(number, patch) {
   }
 
   var allowed = {};
-  var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds'];
+  var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate'];
   for (var i = 0; i < keys.length; i++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[i])) {
       allowed[keys[i]] = patch[keys[i]];

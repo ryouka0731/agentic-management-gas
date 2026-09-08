@@ -1461,4 +1461,112 @@ button:disabled {
 .sk-col { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); }
 .sk-card { height: 56px; }
 .sk-block { height: 100%; min-height: 120px; margin: var(--sp-4); }
+
+/* =====================================================================
+ * 工程表 (ガントチャート)
+ *
+ * 1列 = 1日。棒の位置と長さを列で表すため、日付とずれない。
+ * ===================================================================== */
+
+.gantt-scroll { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); }
+
+.gantt {
+  --gantt-days: 1;
+  --gantt-col: 26px;
+  min-width: 100%;
+  display: inline-block;
+}
+
+.gantt-head, .gantt-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+
+.gantt-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: var(--sp-2) 0;
+}
+
+.gantt-name {
+  flex: 0 0 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink);
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: var(--sp-1) 0;
+}
+
+button.gantt-name { cursor: pointer; border-radius: var(--radius-sm); }
+button.gantt-name:hover { color: var(--accent); }
+
+.gantt-scale, .gantt-track {
+  display: grid;
+  grid-template-columns: repeat(var(--gantt-days), var(--gantt-col));
+  flex: 0 0 auto;
+}
+
+.gantt-day {
+  font-size: 10px;
+  color: var(--ink-2);
+  text-align: center;
+  border-left: 1px solid var(--line);
+}
+
+.gantt-day.today { color: var(--accent); font-weight: 600; }
+
+.gantt-row { padding: 3px 0; }
+
+.gantt-track {
+  position: relative;
+  min-height: 24px;
+  align-items: center;
+}
+
+.gantt-bar {
+  grid-row: 1;
+  min-height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  box-shadow: var(--elev-1);
+  cursor: pointer;
+}
+
+.gantt-bar:hover { box-shadow: var(--elev-2); }
+.gantt-bar.done { background: var(--success); }
+.gantt-bar.overdue { background: var(--danger); }
+
+/* 期限が無いものは点で置く。長さに意味を持たせない */
+.gantt-bar.nodue {
+  background: var(--bg-3);
+  color: var(--ink-2);
+  box-shadow: var(--hairline);
+}
+
+.gantt-today {
+  grid-row: 1;
+  justify-self: center;
+  width: 2px;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.5;
+  pointer-events: none;
+}
 </style>

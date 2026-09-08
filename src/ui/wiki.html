@@ -31,6 +31,10 @@
         <span class="nav-label">進捗ボード</span>
         <span class="nav-desc">やることの進み具合</span>
       </button>
+      <button class="nav-item" data-tab="gantt">
+        <span class="nav-label">工程表</span>
+        <span class="nav-desc">期限と進み具合を時系列で</span>
+      </button>
       <button class="nav-item" data-tab="help">
         <span class="nav-label">使い方</span>
         <span class="nav-desc">はじめての方へ</span>
@@ -177,6 +181,13 @@
           <span class="row-meta">カードはやることです</span>
         </div>
         <div class="board" id="board"></div>
+      </div>
+
+      <div class="panel panel-col" id="panel-gantt" hidden>
+        <div class="panel-actions">
+          <span class="row-meta">期限を入れたやることが棒で並びます。棒を押すと中身を直せます</span>
+        </div>
+        <div class="gantt-scroll" id="gantt"></div>
       </div>
 
       <div class="panel" id="panel-help" hidden>

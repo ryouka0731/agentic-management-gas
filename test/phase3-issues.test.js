@@ -24,6 +24,7 @@ const SOURCES = [
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',
   'src/core/Notifier.gs',
+  'src/Main.gs',
 ];
 
 function setup() {
@@ -362,5 +363,49 @@ describe('通知', () => {
     env.ctx.prMerge(pr.number, []);
 
     expect(env.fake._sentMails().length).toBe(2);
+  });
+});
+
+describe('やることの更新と担当', () => {
+  it('担当とラベルを更新できる', () => {
+    const { ctx } = setup();
+    const issue = ctx.issueCreate('在宅勤務規定の見直し', '', []);
+
+    const updated = ctx.apiIssueUpdate(issue.number, {
+      assignee: 'someone@example.com',
+      labels: '規定改訂,要法務確認',
+      title: '在宅勤務規定の見直し (第7条)',
+    });
+
+    expect(updated.assignee).toBe('someone@example.com');
+    expect(updated.labels).toBe('規定改訂,要法務確認');
+    expect(updated.title).toBe('在宅勤務規定の見直し (第7条)');
+  });
+
+  it('完了にするとカードもDoneに動く', () => {
+    const { ctx } = setup();
+    const issue = ctx.apiIssueCreate('やること', '', []);
+    expect(ctx.projectBoard()['Backlog'].length).toBe(1);
+
+    ctx.apiIssueClose(issue.number);
+
+    expect(ctx.issueGet(issue.number).state).toBe('closed');
+    expect(ctx.projectBoard()['Done'].length).toBe(1);
+    expect(ctx.projectBoard()['Backlog'].length).toBe(0);
+  });
+
+  it('担当者の候補にこれまで関わった人が並ぶ', () => {
+    const { ctx, fake, fileId } = setup();
+    fake._setUser('me@example.com');
+
+    fake._docs.set(fileId, '<p>変更</p>\n');
+    ctx.commitFile(fileId, 'main', '記録', null);
+
+    const issue = ctx.issueCreate('やること', '', []);
+    ctx.issueUpdate(issue.number, { assignee: 'other@example.com' });
+
+    const people = ctx.apiKnownPeople();
+    expect(people).toContain('me@example.com');
+    expect(people).toContain('other@example.com');
   });
 });
