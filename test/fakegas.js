@@ -65,6 +65,14 @@ export function createFakeGas() {
       setTrashed: (v) => { fo._trashed = v !== false; return fo; },
       createFolder: (n) => makeFolder(n, id),
       createFile: (a, b, c) => makeFile(a, b, id, c),
+      getFiles: () => {
+        const hits = [];
+        for (const f of files.values()) {
+          if (f._parent === id && !f._trashed) hits.push(f);
+        }
+        let i = 0;
+        return { hasNext: () => i < hits.length, next: () => hits[i++] };
+      },
       getFilesByName: (n) => {
         const hits = [];
         for (const f of files.values()) {
