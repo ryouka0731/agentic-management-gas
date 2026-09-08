@@ -789,7 +789,7 @@ function debugCleanupLastVerify() {
   if (!raw) return '片付ける検証物はありません';
 
   var run = JSON.parse(raw);
-  debugCleanupVerify_(run.tag, run.mainFileId, run.workFileId, run.prNumber);
+  debugCleanupVerify_(run.tag, run.mainFileId, run.workFileId, run.prNumber, run.issueNumber);
   PropertiesService.getScriptProperties().deleteProperty(LAST_VERIFY_RUN_KEY());
   return '検証物を片付けました: ' + raw;
 }
@@ -830,8 +830,9 @@ function debugEditParagraph_(fileId, prefix, newText) {
  * @param {string|null} mainFileId
  * @param {string|null} workFileId
  * @param {number|null} prNumber
+ * @param {number|null} [issueNumber]
  */
-function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber) {
+function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber, issueNumber) {
   // branchDelete は files 行を prefix で辿って作業コピーをゴミ箱に入れる。
   // workFileId が解決できなかった場合こそ呼ぶ必要があるため、
   // workFileId の有無で条件分岐してはいけない
@@ -853,6 +854,11 @@ function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber) {
     dbDelete('reviews', 'prNumber', prNumber);
   }
 
+  if (issueNumber) {
+    dbDelete('issues', 'number', issueNumber);
+    dbDelete('project_items', 'issueNumber', issueNumber);
+  }
+
   if (mainFileId) {
     dbDelete('files', 'fileId', mainFileId);
     dbDelete('commits', 'fileId', mainFileId);
@@ -865,14 +871,36 @@ function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber) {
 }
 
 /**
+ * 検証の間だけ自己承認を許し、終わったら元の設定に戻す。
+ *
+ * 検証ハーネスが「事前に debugEnableSelfApprove() を実行しておくこと」を
+ * 人に強いていたが、忘れると承認の手前で必ず落ちて検証物が残る。
+ * ハーネス自身が面倒を見る。
+ *
+ * @param {function} fn 検証本体
+ * @returns {*} fn の戻り値
+ */
+function withSelfApprove_(fn) {
+  var props = PropertiesService.getScriptProperties();
+  var previous = props.getProperty('ALLOW_SELF_APPROVE');
+  props.setProperty('ALLOW_SELF_APPROVE', 'true');
+
+  try {
+    return fn();
+  } finally {
+    if (previous === null) props.deleteProperty('ALLOW_SELF_APPROVE');
+    else props.setProperty('ALLOW_SELF_APPROVE', previous);
+  }
+}
+
+/**
  * Phase 2 の受け入れ検証をサーバ側で通しで実行する (計画書 Task 9 の Step 2/4)。
  *
  * 使い捨ての Doc を1つ作り、コンフリクトの発生 → 解決 → マージ →
  * main への書き戻し → 楽観的並行制御までを一度に確認する。
  * 既存の管理対象ファイルには一切触れない。
  *
- * 事前に debugEnableSelfApprove() を実行しておくこと
- * (PR作成者と承認者が同一人物になるため)。
+ * 自己承認は検証の間だけ自動で許可し、終わったら元の設定に戻す。
  *
  * @returns {string} 判定サマリ
  */
@@ -949,7 +977,9 @@ function debugVerifyPhase2() {
     );
 
     // --- 承認する (自己承認の許可が要る) ---
-    prReview(prNumber, 'approve', '自動検証による承認');
+    withSelfApprove_(function () {
+      prReview(prNumber, 'approve', '自動検証による承認');
+    });
     check('承認が記録された', prApprovalCount(prNumber) >= 1);
 
     // --- ブランチ側を採用してマージする ---
@@ -1032,7 +1062,7 @@ function debugVerifyPhase2() {
  * PR作成 → 承認 → マージ までを実行して、Issueのクローズとカードの
  * 自動移動を判定する。既存の管理対象ファイルには触れない。
  *
- * 事前に debugEnableSelfApprove() を実行しておくこと。
+ * 自己承認は検証の間だけ自動で許可し、終わったら元の設定に戻す。
  *
  * @returns {string} 判定サマリ
  */
@@ -1108,7 +1138,9 @@ function debugVerifyPhase3b() {
       columnOf(apiProjectBoard(), issueNumber));
 
     // --- マージすると Issue が閉じ、Done に動く ---
-    prReview(prNumber, 'approve', '自動検証による承認');
+    withSelfApprove_(function () {
+      prReview(prNumber, 'approve', '自動検証による承認');
+    });
     prMerge(prNumber, []);
 
     check('マージでIssueがクローズされる', issueGet(issueNumber).state === 'closed');
@@ -1132,6 +1164,7 @@ function debugVerifyPhase3b() {
       mainFileId: mainFileId,
       workFileId: branchName ? branchWorkingFileId(branchName, mainFileId) : null,
       prNumber: prNumber,
+      issueNumber: issueNumber,
     })
   );
 
@@ -1140,12 +1173,9 @@ function debugVerifyPhase3b() {
       branchName,
       mainFileId,
       branchName ? branchWorkingFileId(branchName, mainFileId) : null,
-      prNumber
+      prNumber,
+      issueNumber
     );
-    if (issueNumber) {
-      dbDelete('issues', 'number', issueNumber);
-      dbDelete('project_items', 'issueNumber', issueNumber);
-    }
     PropertiesService.getScriptProperties().deleteProperty(LAST_VERIFY_RUN_KEY());
     log.push('検証物を片付けました (Doc・ブランチ・PR・Issue・カード)');
   } else {
