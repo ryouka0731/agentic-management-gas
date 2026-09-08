@@ -25,6 +25,7 @@
   var panelBoard = document.getElementById('panel-board');
   var panelHelp = document.getElementById('panel-help');
   var whoamiEl = document.getElementById('whoami');
+  var boardCreateBtn = document.getElementById('board-create-btn');
   var issueListEl = document.getElementById('issue-list');
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
@@ -100,6 +101,66 @@
   }
 
   // ===== 表示ヘルパー =====
+
+  /**
+   * SVGアイコンを作る。
+   *
+   * 絵文字は環境によって字形が変わり、色や太さを揃えられないため使わない。
+   *
+   * @param {string} name
+   * @returns {SVGElement}
+   */
+  function makeIcon(name) {
+    var paths = {
+      'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+      plus: ['M12 5v14', 'M5 12h14'],
+      inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
+    };
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+
+    (paths[name] || []).forEach(function (d) {
+      var path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  /**
+   * 空の状態を作る。「何も無い」ではなく次の一手を示す。
+   *
+   * @param {string} title
+   * @param {string} hint
+   * @param {{label:string, onClick:function}} [action]
+   * @returns {HTMLElement}
+   */
+  function makeBlankState(title, hint, action) {
+    var wrap = document.createElement('div');
+    wrap.className = 'blank-state';
+    wrap.appendChild(makeIcon('inbox'));
+
+    var strong = document.createElement('strong');
+    strong.textContent = title;
+    wrap.appendChild(strong);
+
+    var p = document.createElement('div');
+    p.textContent = hint;
+    wrap.appendChild(p);
+
+    if (action) {
+      var btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = action.label;
+      btn.addEventListener('click', action.onClick);
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
 
   /**
    * 連続する <li data-list="..." data-depth="N"> を対応する ul/ol でラップする。
@@ -964,7 +1025,11 @@
       .withSuccessHandler(function (issues) {
         issueListEl.textContent = '';
         if (!issues.length) {
-          issueListEl.textContent = 'Issueはありません';
+          issueListEl.appendChild(makeBlankState(
+            'Issueがありません',
+            '直したい文書を選んでからIssueを作ると、その文書に紐づきます。',
+            { label: 'Issueを作成', onClick: createIssue }
+          ));
           return;
         }
 
@@ -1023,7 +1088,10 @@
     var body = window.prompt('説明 (任意)') || '';
 
     google.script.run
-      .withSuccessHandler(function () { loadIssues(); })
+      .withSuccessHandler(function () {
+        loadIssues();
+        if (!panelBoard.hidden) loadBoard();
+      })
       .withFailureHandler(function (err) { window.alert(err.message); })
       .apiIssueCreate(title, body, current.fileId ? [current.fileId] : []);
   }
@@ -1036,6 +1104,21 @@
     google.script.run
       .withSuccessHandler(function (board) {
         boardEl.textContent = '';
+
+        var total = 0;
+        ['Backlog', 'In Progress', 'In Review', 'Done'].forEach(function (c) {
+          total += board[c].length;
+        });
+
+        if (total === 0) {
+          boardEl.appendChild(makeBlankState(
+            'カードがありません',
+            'カードはIssueです。Issueを作るとBacklogに並び、ブランチ作成やPRに応じて自動で右に動きます。',
+            { label: 'Issueを作成', onClick: createIssue }
+          ));
+          return;
+        }
+
         ['Backlog', 'In Progress', 'In Review', 'Done'].forEach(function (column) {
           var col = document.createElement('div');
           col.className = 'board-column';
@@ -1117,8 +1200,9 @@
     a.href = fileUrlOf(type, fileId);
     a.target = '_blank';
     a.rel = 'noopener';
-    a.textContent = '↗';
+    a.appendChild(makeIcon('external-link'));
     a.title = '元ファイルを開く';
+    a.setAttribute('aria-label', '元ファイルを開く');
     return a;
   }
 
@@ -1218,6 +1302,7 @@
   commitBtn.addEventListener('click', doCommit);
   branchCreateBtn.addEventListener('click', createBranch);
   issueCreateBtn.addEventListener('click', createIssue);
+  boardCreateBtn.addEventListener('click', createIssue);
   branchSelect.addEventListener('change', function () {
     currentBranch = branchSelect.value;
     renderTree();

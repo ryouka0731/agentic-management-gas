@@ -1,11 +1,79 @@
 <style>
+/*
+ * デザイントークン。
+ *
+ * 値を直接書かず、必ずここのトークンを参照する。light / dark を
+ * 対で定義するため、片方だけ壊れることがない。
+ *
+ * ダーク単色ではなく両対応にしているのは、このアプリが就業規則のような
+ * 業務文書を読むものだから。文書本文は白地で読む前提の利用者が多い。
+ */
 :root {
-  --ink: #1a1a1a;
-  --ink-2: #666;
-  --line: #e0e0e0;
+  color-scheme: light dark;
+
+  /* 面 */
   --bg: #ffffff;
-  --bg-2: #f7f7f7;
-  --accent: #1a73e8;
+  --bg-2: #f6f8fa;
+  --bg-3: #eaeef2;
+  --line: #d0d7de;
+  --line-strong: #afb8c1;
+
+  /* 文字 */
+  --ink: #1f2328;
+  --ink-2: #59636e;
+
+  /* 意味を持つ色 */
+  --accent: #0969da;
+  --accent-bg: #ddf4ff;
+  --success: #1a7f37;
+  --success-bg: #dafbe1;
+  --danger: #cf222e;
+  --danger-bg: #ffebe9;
+  --warn: #9a6700;
+  --warn-bg: #fff8c5;
+  --merged: #8250df;
+  --merged-bg: #fbefff;
+
+  /* 余白 (4pt スケール) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* その他 */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
+  --motion: 160ms;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --bg-3: #21262d;
+    --line: #30363d;
+    --line-strong: #484f58;
+
+    --ink: #e6edf3;
+    --ink-2: #9198a1;
+
+    --accent: #4493f8;
+    --accent-bg: #121d2f;
+    --success: #3fb950;
+    --success-bg: #0f2417;
+    --danger: #f85149;
+    --danger-bg: #2a1416;
+    --warn: #d29922;
+    --warn-bg: #2b2413;
+    --merged: #ab7df8;
+    --merged-bg: #1d1626;
+
+    --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -341,8 +409,8 @@ body {
   border-left: 1px solid var(--line);
 }
 
-.diff-cell.del { background: #fee2e2; }
-.diff-cell.ins { background: #dcfce7; }
+.diff-cell.del { background: var(--danger-bg); }
+.diff-cell.ins { background: var(--success-bg); }
 .diff-cell.empty { background: var(--bg-2); }
 
 .pr-tabs { display: flex; gap: 4px; margin: 10px 0; }
@@ -452,21 +520,21 @@ body {
 .board-column.drop-target { border-color: var(--accent); }
 
 .conflict-block {
-  border: 1px solid #fca5a5;
+  border: 1px solid var(--danger);
   border-radius: 4px;
   margin: 12px 0;
   overflow: hidden;
 }
 
 .conflict-head {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--danger-bg);
+  color: var(--danger);
   padding: 6px 10px;
   font-size: 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
 }
 
-.conflict-side { padding: 6px 10px; border-top: 1px solid #fecaca; }
+.conflict-side { padding: 6px 10px; border-top: 1px solid var(--line); }
 
 .conflict-label {
   font-size: 11px;
@@ -476,7 +544,7 @@ body {
 
 .conflict-choice {
   padding: 8px 10px;
-  border-top: 1px solid #fecaca;
+  border-top: 1px solid var(--line);
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
   font-size: 12px;
 }
@@ -488,3 +556,111 @@ body {
   margin-bottom: 6px;
 }
 </style>
+
+
+/* =====================================================================
+ * デザインシステム — 相互作用・モーション・レスポンシブ
+ * ここから下は全体に効く規則。個別コンポーネントの上書きではない。
+ * ===================================================================== */
+
+/*
+ * フォーカスは必ず見せる。キーボードだけで操作する人が現在地を
+ * 見失わないため。マウス操作時には出さない (:focus-visible)。
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+button, select, textarea, a { font-family: inherit; }
+
+button, select, a[href] { cursor: pointer; }
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* 状態の変化は 160ms で滑らかに。色と背景だけを動かす */
+.btn, .tab, .pr-tab, .file-item, .row-item, .board-card, .file-link {
+  transition: background-color var(--motion) ease-out,
+              border-color var(--motion) ease-out,
+              color var(--motion) ease-out;
+}
+
+/* 動きを減らす設定を尊重する */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+.btn:hover:not(:disabled) { background: var(--bg-3); }
+.tab:hover { color: var(--ink); }
+.file-item:hover, .row-item:hover, .board-card:hover { background: var(--bg-3); }
+.file-link:hover { background: var(--bg-3); }
+
+/* 現在地を色だけで示さない。太さと下線も併せて変える */
+.tab[aria-current="true"] { font-weight: 600; }
+
+/*
+ * 空の状態。「何も無い」ではなく「次に何をすればよいか」を出す。
+ */
+.blank-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.blank-state strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.blank-state .btn { margin-top: var(--sp-2); }
+
+/* アイコン。絵文字ではなく SVG を使う */
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+}
+
+/*
+ * 狭い画面では左ペインを畳む。GAS の Web App は iframe に埋め込まれる
+ * ことがあり、幅が読めない。
+ */
+@media (max-width: 767px) {
+  .layout { flex-direction: column; height: auto; min-height: 100dvh; }
+
+  .sidebar {
+    width: 100%;
+    flex: none;
+    max-height: 40vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .main { min-height: 60vh; }
+
+  .toolbar { flex-wrap: wrap; gap: var(--sp-2); }
+
+  .board { grid-template-columns: 1fr; }
+
+  .diff-cell { font-size: 11px; }
+}
