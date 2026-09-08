@@ -44,13 +44,17 @@ function projectBoard() {
     var issue = dbFindOne('issues', 'number', items[j].issueNumber);
     if (!issue) continue;
 
+    // 画面に渡すため、日時は文字列にして素の形にする
+    var due = issue.dueDate ? new Date(issue.dueDate) : null;
+
     board[column].push({
       issueNumber: Number(items[j].issueNumber),
       order: Number(items[j].order),
-      title: issue.title,
-      state: issue.state,
-      assignee: issue.assignee,
-      labels: issue.labels,
+      title: String(issue.title == null ? '' : issue.title),
+      state: String(issue.state == null ? '' : issue.state),
+      assignee: String(issue.assignee == null ? '' : issue.assignee),
+      labels: String(issue.labels == null ? '' : issue.labels),
+      dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
     });
   }
 

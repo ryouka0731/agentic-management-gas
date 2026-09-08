@@ -403,3 +403,74 @@ describe('全体の状態', () => {
     expect(o.openIssues).toBe(0);
   });
 });
+
+describe('画面に渡せる形か', () => {
+  /**
+   * google.script.run は限られた型しか運べない。DBの行をそのまま返すと
+   * 日時が Date のまま混ざり、変換に失敗して画面には null が届く。
+   * 実際に apiIssueList でそれを踏んだ。
+   *
+   * @param {*} value
+   * @param {string} path
+   * @returns {string[]} 見つかった問題
+   */
+  function unserializable(value, path) {
+    if (value === null || value === undefined) return [];
+    if (Object.prototype.toString.call(value) === '[object Date]') {
+      return [path + ' が Date のまま'];
+    }
+    if (Array.isArray(value)) {
+      return value.reduce(function (acc, v, i) {
+        return acc.concat(unserializable(v, path + '[' + i + ']'));
+      }, []);
+    }
+    if (typeof value === 'object') {
+      return Object.keys(value).reduce(function (acc, k) {
+        return acc.concat(unserializable(value[k], path + '.' + k));
+      }, []);
+    }
+    if (typeof value === 'function') return [path + ' が関数'];
+    return [];
+  }
+
+  function prepared() {
+    const env = setup();
+    const issue = env.ctx.apiIssueCreate('やること', '補足', [env.fileId]);
+    env.ctx.apiIssueUpdate(issue.number, {
+      assignee: 'a@example.com', dueDate: '2026-09-30',
+    });
+    env.ctx.branchCreate('改訂', env.fileId);
+    return env;
+  }
+
+  const CASES = [
+    ['apiIssueList', (ctx) => ctx.apiIssueList('')],
+    ['apiIssuesForFile', (ctx, env) => ctx.apiIssuesForFile(env.fileId)],
+    ['apiProjectBoard', (ctx) => ctx.apiProjectBoard()],
+    ['apiBranchList', (ctx) => ctx.apiBranchList()],
+    ['apiPrList', (ctx) => ctx.apiPrList()],
+    ['apiListFiles', (ctx) => ctx.apiListFiles()],
+    ['apiOverview', (ctx) => ctx.apiOverview()],
+    ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
+    ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
+    ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],
+    ['apiWhoAmI', (ctx) => ctx.apiWhoAmI()],
+  ];
+
+  CASES.forEach(([name, call]) => {
+    it(name + ' は Date を含まない', () => {
+      const env = prepared();
+      expect(unserializable(call(env.ctx, env), name)).toEqual([]);
+    });
+  });
+
+  it('やることは中身も正しく運べる', () => {
+    const env = prepared();
+    const issues = env.ctx.apiIssueList('');
+
+    expect(issues.length).toBe(1);
+    expect(issues[0].assignee).toBe('a@example.com');
+    expect(typeof issues[0].createdAt).toBe('string');
+    expect(issues[0].dueDate).toContain('2026-09-30');
+  });
+});

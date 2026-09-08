@@ -834,8 +834,8 @@
 
   function loadFiles(then) {
     google.script.run
-      .withSuccessHandler(function (files) {
-        allFiles = files;
+      .withSuccessHandler(function (list) {
+        allFiles = list || [];
         if (then) then();
       })
       .withFailureHandler(function (err) {
@@ -913,7 +913,8 @@
    */
   function loadOverview() {
     google.script.run
-      .withSuccessHandler(function (o) {
+      .withSuccessHandler(function (result) {
+        var o = result || { openIssues: 0, branches: 0, openPrs: 0, docs: 0 };
         document.getElementById('flow-issues').textContent = o.openIssues;
         document.getElementById('flow-branches').textContent = o.branches;
         document.getElementById('flow-prs').textContent = o.openPrs;
@@ -1149,7 +1150,8 @@
     linkedIssuesEl.hidden = true;
 
     google.script.run
-      .withSuccessHandler(function (issues) {
+      .withSuccessHandler(function (list) {
+        var issues = list || [];
         if (!issues.length) return;
         issues.forEach(function (issue) {
           var chip = document.createElement('span');
@@ -1229,7 +1231,8 @@
     diffView.textContent = '';
 
     google.script.run
-      .withSuccessHandler(function (graph) {
+      .withSuccessHandler(function (result) {
+        var graph = result || { rows: [], laneCount: 1 };
         historyList.textContent = '';
 
         if (!graph.rows.length) {
@@ -1293,7 +1296,7 @@
             google.script.run
               .withSuccessHandler(function (ops) {
                 diffView.textContent = '';
-                renderDiffInto(ops, diffView, false);
+                renderDiffInto(ops || [], diffView, false);
               })
               .withFailureHandler(function (err) {
                 diffView.textContent = 'エラー: ' + err.message;
@@ -1390,7 +1393,8 @@
     showSkeleton(branchListEl, 'list', 3);
 
     google.script.run
-      .withSuccessHandler(function (branches) {
+      .withSuccessHandler(function (list) {
+        var branches = list || [];
         branchListEl.textContent = '';
 
         var drafts = branches.filter(function (b) { return b.name !== 'main'; });
@@ -1630,7 +1634,8 @@
     prDetail.textContent = '';
 
     google.script.run
-      .withSuccessHandler(function (prs) {
+      .withSuccessHandler(function (list) {
+        var prs = list || [];
         prListEl.textContent = '';
 
         if (!prs.length) {
@@ -1767,7 +1772,8 @@
     container.appendChild(first);
 
     google.script.run
-      .withSuccessHandler(function (reviews) {
+      .withSuccessHandler(function (list) {
+        var reviews = list || [];
         var labels = {
           approve: '承認', request_changes: '直してほしい', comment: 'コメント',
         };
@@ -1829,7 +1835,8 @@
     showSkeleton(container, 'list', 3);
 
     google.script.run
-      .withSuccessHandler(function (commits) {
+      .withSuccessHandler(function (list) {
+        var commits = list || [];
         container.textContent = '';
         if (!commits.length) {
           container.textContent = '記録はありません';
@@ -1998,7 +2005,8 @@
     showSkeleton(issueListEl, 'list', 4);
 
     google.script.run
-      .withSuccessHandler(function (issues) {
+      .withSuccessHandler(function (list) {
+        var issues = list || [];
         issueListEl.textContent = '';
         setPanelCount(panelIssues, issues.length + '件');
 
@@ -2166,7 +2174,7 @@
 
     google.script.run
       .withSuccessHandler(function (people) {
-        people.forEach(function (email) {
+        (people || []).forEach(function (email) {
           var opt = document.createElement('option');
           opt.value = email;
           list.appendChild(opt);
@@ -2242,8 +2250,8 @@
    */
   function openIssueByNumber(number, host) {
     google.script.run
-      .withSuccessHandler(function (issues) {
-        var found = issues.filter(function (i) {
+      .withSuccessHandler(function (list) {
+        var found = (list || []).filter(function (i) {
           return Number(i.number) === Number(number);
         })[0];
 
@@ -2326,7 +2334,8 @@
     showSkeleton(ganttEl, 'list', 5);
 
     google.script.run
-      .withSuccessHandler(function (issues) {
+      .withSuccessHandler(function (list) {
+        var issues = list || [];
         ganttEl.textContent = '';
 
         var g = ganttLayout(issues, new Date());
@@ -2432,7 +2441,9 @@
     showSkeleton(boardEl, 'board');
 
     google.script.run
-      .withSuccessHandler(function (board) {
+      .withSuccessHandler(function (result) {
+        var board = result || {};
+        COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
         boardEl.textContent = '';
 
         var total = 0;

@@ -597,10 +597,25 @@ function apiCommitGraph(fileId) {
   }
 
   var rows = commitGraph(chains);
+
+  // 画面に渡すため日時を文字列にする。Date のまま混ぜない
+  var plain = [];
+  for (var p = 0; p < rows.length; p++) {
+    var r = rows[p];
+    plain.push({
+      sha: String(r.sha), parentSha: String(r.parentSha || ''),
+      branch: String(r.branch), message: String(r.message == null ? '' : r.message),
+      author: String(r.author == null ? '' : r.author),
+      timestamp: r.timestamp ? new Date(r.timestamp).toISOString() : '',
+      lane: r.lane, activeLanes: r.activeLanes,
+      fork: r.fork, forkLane: r.forkLane, merge: r.merge,
+    });
+  }
+
   var names = [];
   for (var k = 0; k < chains.length; k++) names.push(chains[k].name);
 
-  return { rows: rows, laneCount: graphLaneCount(rows), branches: names };
+  return { rows: plain, laneCount: graphLaneCount(rows), branches: names };
 }
 
 /**
@@ -847,13 +862,48 @@ function apiPrCommits(number) {
 // ===== Phase 3b: Issue と Projects の API =====
 
 /**
+ * issues の行を、画面に渡せる素の形にする。
+ *
+ * google.script.run は限られた型しか運べない。DBの行をそのまま返すと
+ * 日時が Date のまま混ざり、変換に失敗して画面には null が届く。
+ * 動いている apiPrList / apiBranchList と同じく、明示的に文字列へ直す。
+ *
+ * @param {object} row issues 行
+ * @returns {object}
+ */
+function issueToPlain_(row) {
+  function iso(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+
+  return {
+    number: Number(row.number),
+    title: String(row.title == null ? '' : row.title),
+    body: String(row.body == null ? '' : row.body),
+    state: String(row.state == null ? '' : row.state),
+    assignee: String(row.assignee == null ? '' : row.assignee),
+    labels: String(row.labels == null ? '' : row.labels),
+    linkedFileIds: String(row.linkedFileIds == null ? '' : row.linkedFileIds),
+    linkedPr: row.linkedPr === '' || row.linkedPr == null ? '' : Number(row.linkedPr),
+    createdAt: iso(row.createdAt),
+    closedAt: iso(row.closedAt),
+    dueDate: iso(row.dueDate),
+  };
+}
+
+/**
  * Issue一覧を返す (Web App API)。
  *
  * @param {string} state 'open' | 'closed' | '' (空なら全件)
  * @returns {object[]}
  */
 function apiIssueList(state) {
-  return issueList(state || null);
+  var rows = issueList(state || null);
+  var out = [];
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  return out;
 }
 
 /**
@@ -867,7 +917,7 @@ function apiIssueList(state) {
 function apiIssueCreate(title, body, linkedFileIds) {
   var issue = issueCreate(title, body, linkedFileIds || []);
   projectPlace(issue.number, 'Backlog');
-  return issue;
+  return issueToPlain_(issue);
 }
 
 /**
@@ -878,7 +928,7 @@ function apiIssueCreate(title, body, linkedFileIds) {
  * @returns {object}
  */
 function apiIssueUpdate(number, patch) {
-  return issueUpdate(number, patch || {});
+  return issueToPlain_(issueUpdate(number, patch || {}));
 }
 
 /**
@@ -890,7 +940,7 @@ function apiIssueUpdate(number, patch) {
 function apiIssueClose(number) {
   var row = issueClose(number, null);
   projectMoveIfExists_(number, 'Done');
-  return row;
+  return issueToPlain_(row);
 }
 
 /**
@@ -946,7 +996,10 @@ function apiIssueCreateBranch(number, fileId) {
  * @returns {object[]}
  */
 function apiIssuesForFile(fileId) {
-  return issuesForFile(fileId);
+  var rows = issuesForFile(fileId);
+  var out = [];
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  return out;
 }
 
 /**
