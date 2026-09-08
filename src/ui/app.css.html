@@ -1592,4 +1592,78 @@ button.gantt-name:hover { color: var(--accent); }
 }
 
 .panel-count { margin-left: auto; }
+
+/* =====================================================================
+ * 入力は右のパネルで受ける
+ *
+ * 一覧の上に差し込むと、書いている間に一覧が押し下げられ、何に対する
+ * 入力なのかが見えなくなる。右に出せば対象を見ながら書ける。
+ * ===================================================================== */
+
+.side-panel {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.side-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.side-close:hover { background: var(--bg-3); color: var(--ink); }
+
+.side-body { flex: 1; overflow-y: auto; padding: var(--sp-4); }
+
+/* 右パネルの中では、差し込み用の枠飾りを外す */
+.side-body .inline-form {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.side-body .inline-form-actions { flex-wrap: wrap; }
+
+@media (max-width: 767px) {
+  /* 狭いと横に並べられない。手前に重ねる */
+  .side-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(90vw, 360px);
+    z-index: 150;
+    box-shadow: var(--elev-2);
+  }
+}
 </style>

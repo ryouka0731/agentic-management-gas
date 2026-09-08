@@ -404,3 +404,34 @@ describe('やることの操作', () => {
     expect(js).toContain('function ganttLayout(');
   });
 });
+
+describe('入力の置き場所', () => {
+  const html = read('src/ui/wiki.html');
+  const js = read('src/ui/app.js.html');
+
+  it('入力は右のパネルで受ける', () => {
+    // 一覧の上に差し込むと、書いている間に一覧が押し下げられ、
+    // 何に対する入力なのかが見えなくなる
+    expect(html).toContain('id="side-panel"');
+    expect(html).toContain('id="side-body"');
+    expect(js).toContain('sideBody.appendChild(form)');
+  });
+
+  it('何の入力かを見出しに出す', () => {
+    expect(js).toContain('sideTitle.textContent = title;');
+    ['変更を記録する', 'やることを作る', '確認を依頼する'].forEach((t) => {
+      expect(js).toContain(t);
+    });
+  });
+
+  it('閉じ道が3つある (閉じるボタン・やめる・Escape)', () => {
+    expect(html).toContain('id="side-close"');
+    expect(js).toContain("cancel.textContent = 'やめる'");
+    expect(js).toContain("if (e.key === 'Escape' && !sidePanel.hidden) closeSide();");
+  });
+
+  it('画面を切り替えたら入力は閉じる', () => {
+    const fn = js.slice(js.indexOf('function switchTab('), js.indexOf('function updateCrumbs'));
+    expect(fn).toContain('closeSide();');
+  });
+});
