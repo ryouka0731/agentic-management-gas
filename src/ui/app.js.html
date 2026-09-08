@@ -26,6 +26,7 @@
   var panelHelp = document.getElementById('panel-help');
   var whoamiEl = document.getElementById('whoami');
   var boardCreateBtn = document.getElementById('board-create-btn');
+  var themeBtn = document.getElementById('theme-btn');
   var issueListEl = document.getElementById('issue-list');
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
@@ -100,6 +101,52 @@
     return out;
   }
 
+  // ===== テーマ =====
+
+  /**
+   * 表示テーマ。'system' はブラウザの設定に従う。
+   *
+   * localStorage は GAS の Web App が埋め込まれる文脈によっては
+   * 例外を投げるため、必ず try/catch で包む。
+   */
+  var THEME_ORDER = ['system', 'light', 'dark'];
+  var themeMode = 'system';
+
+  function readTheme() {
+    try {
+      var saved = window.localStorage.getItem('theme');
+      if (THEME_ORDER.indexOf(saved) >= 0) return saved;
+    } catch (e) { /* 保存できない環境では既定に従う */ }
+    return 'system';
+  }
+
+  function writeTheme(mode) {
+    try {
+      window.localStorage.setItem('theme', mode);
+    } catch (e) { /* 保存できなくても表示は切り替える */ }
+  }
+
+  function applyTheme(mode) {
+    themeMode = mode;
+
+    if (mode === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', mode);
+
+    var label = { system: 'システム設定に従う', light: 'ライト', dark: 'ダーク' }[mode];
+    var icon = { system: 'monitor', light: 'sun', dark: 'moon' }[mode];
+
+    themeBtn.textContent = '';
+    themeBtn.appendChild(makeIcon(icon));
+    themeBtn.title = '表示テーマ: ' + label + ' (押すと切り替え)';
+    themeBtn.setAttribute('aria-label', themeBtn.title);
+  }
+
+  function cycleTheme() {
+    var next = THEME_ORDER[(THEME_ORDER.indexOf(themeMode) + 1) % THEME_ORDER.length];
+    applyTheme(next);
+    writeTheme(next);
+  }
+
   // ===== 表示ヘルパー =====
 
   /**
@@ -115,6 +162,20 @@
       'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
       plus: ['M12 5v14', 'M5 12h14'],
       inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
+      'file-text': ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
+      pencil: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
+      'git-commit': ['M12 3v6', 'M12 15v6'],
+      'git-branch': ['M6 3v12', 'M18 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0z', 'M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M15 9a9 9 0 0 1-9 9'],
+      'git-pull-request': ['M18 6v9', 'M6 9v12', 'M13 6h3a2 2 0 0 1 2 2v1'],
+      'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
+      columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
+      'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
+      save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
+      archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
+      check: ['M20 6L9 17l-5-5'],
+      sun: ['M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 1v2', 'M12 21v2', 'M4.2 4.2l1.4 1.4', 'M18.4 18.4l1.4 1.4', 'M1 12h2', 'M21 12h2', 'M4.2 19.8l1.4-1.4', 'M18.4 5.6l1.4-1.4'],
+      moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+      monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
     };
 
     var ns = 'http://www.w3.org/2000/svg';
@@ -1136,7 +1197,33 @@
               google.script.run
                 .withSuccessHandler(function (b) {
                   window.alert('ブランチを作りました: ' + b.name);
-                  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
+                  // タブとボタンにアイコンを付ける。文字だけだと走査しづらい
+  var TAB_ICONS = {
+    content: 'file-text',
+    edit: 'pencil',
+    history: 'git-commit',
+    branches: 'git-branch',
+    pulls: 'git-pull-request',
+    issues: 'circle-dot',
+    board: 'columns',
+    help: 'help-circle',
+  };
+
+  for (var ti = 0; ti < tabButtons.length; ti++) {
+    var icon = TAB_ICONS[tabButtons[ti].dataset.tab];
+    if (icon) tabButtons[ti].insertBefore(makeIcon(icon), tabButtons[ti].firstChild);
+  }
+
+  [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
+   [issueCreateBtn, 'plus'], [boardCreateBtn, 'plus'], [editSaveBtn, 'save']]
+    .forEach(function (pair) {
+      if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
+    });
+
+  applyTheme(readTheme());
+  themeBtn.addEventListener('click', cycleTheme);
+
+  // ファイル未選択でもタブ列は出す。隠していると初回の利用者が
   // ヘルプに辿り着けない
   tabsEl.hidden = false;
   loadFiles();

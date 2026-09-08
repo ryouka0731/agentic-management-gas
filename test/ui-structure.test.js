@@ -61,3 +61,107 @@ describe('UI 部分HTMLの構造', () => {
     expect(html).toContain("include('ui/app.js')");
   });
 });
+
+/**
+ * CSS のトークン定義ブロックを取り出す。
+ *
+ * @param {string} css
+ * @param {string} selector
+ * @returns {Object<string,string>}
+ */
+function tokensOf(css, selector) {
+  const start = css.indexOf(selector);
+  if (start < 0) throw new Error('セレクタが見つかりません: ' + selector);
+
+  const open = css.indexOf('{', start);
+  const close = css.indexOf('}', open);
+  const body = css.slice(open + 1, close);
+
+  const out = {};
+  const re = /(--[a-z0-9-]+):\s*([^;]+);/g;
+  let m;
+  while ((m = re.exec(body)) !== null) out[m[1]] = m[2].trim();
+  return out;
+}
+
+/** @param {string} hex @returns {number} 相対輝度 (WCAG 2.1) */
+function luminance(hex) {
+  const v = hex.replace('#', '');
+  const rgb = [0, 2, 4].map((i) => parseInt(v.substring(i, i + 2), 16) / 255);
+  const lin = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** @returns {number} コントラスト比 */
+function contrast(a, b) {
+  const l1 = luminance(a);
+  const l2 = luminance(b);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+describe('テーマのトークン', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('ダークの2つのブロックが同じ内容を持つ', () => {
+    // 片方だけ直すと「システムはダークなのに手動ダークが古い」等が起きる
+    const bySystem = tokensOf(css, ':root:not([data-theme="light"])');
+    const byAttr = tokensOf(css, ':root[data-theme="dark"]');
+    expect(byAttr).toEqual(bySystem);
+  });
+
+  it('ライトとダークが同じトークンを定義している', () => {
+    const light = tokensOf(css, ':root {');
+    const dark = tokensOf(css, ':root[data-theme="dark"]');
+
+    // ダークは面と色だけを上書きする。余白や角丸は共通
+    const missing = Object.keys(dark).filter((k) => !(k in light));
+    expect(missing).toEqual([]);
+  });
+
+  const THEMES = [
+    ['ライト', ':root {'],
+    ['ダーク', ':root[data-theme="dark"]'],
+  ];
+
+  THEMES.forEach(([name, selector]) => {
+    const t = () => {
+      const light = tokensOf(css, ':root {');
+      return Object.assign({}, light, tokensOf(css, selector));
+    };
+
+    it(name + ': 本文と補助テキストが 4.5:1 以上ある', () => {
+      const c = t();
+      const pairs = [
+        ['--ink', '--bg'], ['--ink', '--bg-2'], ['--ink', '--bg-3'],
+        ['--ink-2', '--bg'], ['--ink-2', '--bg-2'],
+      ];
+      pairs.forEach(([fg, bg]) => {
+        expect({ pair: fg + ' on ' + bg, ratio: +contrast(c[fg], c[bg]).toFixed(2) })
+          .toEqual({ pair: fg + ' on ' + bg, ratio: expect.any(Number) });
+        expect(contrast(c[fg], c[bg])).toBeGreaterThanOrEqual(4.5);
+      });
+    });
+
+    it(name + ': 意味を持つ色が地の上で 4.5:1 以上ある', () => {
+      const c = t();
+      ['--accent', '--success', '--danger', '--warn', '--merged'].forEach((fg) => {
+        expect(contrast(c[fg], c['--bg'])).toBeGreaterThanOrEqual(4.5);
+      });
+    });
+
+    it(name + ': 差分とコンフリクトの塗りの上でも本文が読める', () => {
+      const c = t();
+      [['--ink', '--success-bg'], ['--ink', '--danger-bg'],
+       ['--danger', '--danger-bg']].forEach(([fg, bg]) => {
+        expect(contrast(c[fg], c[bg])).toBeGreaterThanOrEqual(4.5);
+      });
+    });
+
+    it(name + ': グラフのレーンが地に対して 3:1 以上ある', () => {
+      const c = t();
+      ['--ink-2', '--accent', '--success', '--warn'].forEach((stroke) => {
+        expect(contrast(c[stroke], c['--bg'])).toBeGreaterThanOrEqual(3);
+      });
+    });
+  });
+});
