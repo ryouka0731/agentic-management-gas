@@ -192,3 +192,34 @@ describe('PRの会話とコミット', () => {
     expect(commits[0].sha.length).toBe(64);
   });
 });
+
+describe('身元の実測', () => {
+  it('実行者と権限保持者を返す', () => {
+    const { ctx } = setup();
+    const who = ctx.apiWhoAmI();
+
+    expect(who.activeUser).toBe('tester@example.com');
+    expect(who.effectiveUser).toBe('tester@example.com');
+    expect(who.sameUser).toBe(true);
+  });
+
+  it('実行者が取れない場合を区別できる', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('');
+
+    const who = ctx.apiWhoAmI();
+    expect(who.activeUser).toBe('');
+    expect(who.sameUser).toBe(false);
+  });
+
+  it('executeAs: ME で別人が使っている状態を区別できる', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('member@example.com');
+    fake._setEffectiveUser('owner@example.com');
+
+    const who = ctx.apiWhoAmI();
+    expect(who.activeUser).toBe('member@example.com');
+    expect(who.effectiveUser).toBe('owner@example.com');
+    expect(who.sameUser).toBe(false);
+  });
+});
