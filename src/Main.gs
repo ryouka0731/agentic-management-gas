@@ -1544,3 +1544,51 @@ function debugCleanupVerifyIssues() {
   if (!removed.length) return '片付ける検証用Issueはありません';
   return '検証用Issueを削除しました: ' + removed.join(', ');
 }
+
+/**
+ * やることの保存状態を実測する。
+ *
+ * 「作ったのに一覧に出ない」が、保存されていないのか、読み出せて
+ * いないのか、画面に描けていないのかを切り分けるために使う。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugDumpIssues() {
+  var log = [];
+
+  try {
+    var sheet = dbSheet_('issues');
+    var cols = DB_SCHEMA().issues;
+
+    log.push('スキーマの列数: ' + cols.length + ' [' + cols.join(', ') + ']');
+    log.push('シートの最終行: ' + sheet.getLastRow() +
+      ' / 列数: ' + sheet.getMaxColumns());
+
+    var header = sheet.getRange(1, 1, 1, cols.length).getValues()[0];
+    log.push('見出し行: [' + header.join(', ') + ']');
+
+    var raw = dbReadAll('issues');
+    log.push('dbReadAll の件数: ' + raw.length);
+    for (var i = 0; i < raw.length; i++) {
+      log.push('  #' + raw[i].number + ' state=' + raw[i].state +
+        ' title=' + raw[i].title +
+        ' assignee=' + raw[i].assignee + ' due=' + raw[i].dueDate);
+    }
+
+    var listed = issueList(null);
+    log.push('issueList(null) の件数: ' + listed.length);
+
+    var api = apiIssueList('');
+    log.push('apiIssueList("") の件数: ' + api.length);
+    log.push('画面に渡る形: ' + JSON.stringify(api).substring(0, 400));
+
+    var items = dbReadAll('project_items');
+    log.push('カードの件数: ' + items.length);
+  } catch (e) {
+    log.push('EXCEPTION ' + e.message);
+    log.push(String(e.stack || ''));
+  }
+
+  Logger.log(log.join('\n'));
+  return log.length + '行をログに出しました';
+}
