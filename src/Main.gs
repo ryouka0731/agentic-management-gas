@@ -553,6 +553,56 @@ function apiWhoAmI() {
   };
 }
 
+/**
+ * 文書のコミットをグラフとして返す (Web App API)。
+ *
+ * ブランチの作業コピーを選んでいても、その文書全体 (main + 全ブランチ) の
+ * グラフを返す。ブランチごとの履歴が別々に見えると、どこから分岐して
+ * どこで合流したのかが読めないため。
+ *
+ * @param {string} fileId
+ * @returns {{rows: object[], laneCount: number, branches: string[]}}
+ */
+function apiCommitGraph(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('管理対象に登録されていません');
+
+  var mainPath = String(row.path).replace(/^branches\/[^\/]+\//, '');
+  var mainRow = dbFindOne('files', 'path', mainPath);
+  if (!mainRow) throw new Error('mainのファイルが見つかりません: ' + mainPath);
+
+  var chains = [{
+    name: 'main',
+    baseSha: '',
+    commits: commitHistory(mainRow.fileId, 'main'),
+  }];
+
+  var branches = dbReadAll('branches');
+  for (var i = 0; i < branches.length; i++) {
+    var name = String(branches[i].name);
+    if (name === 'main') continue;
+    if (String(branches[i].state) === 'deleted') continue;
+
+    var workFileId = branchWorkingFileId(name, mainRow.fileId);
+    if (!workFileId) continue;
+
+    var commits = commitHistory(workFileId, name);
+    if (!commits.length) continue;
+
+    chains.push({
+      name: name,
+      baseSha: branches[i].baseSha,
+      commits: commits,
+    });
+  }
+
+  var rows = commitGraph(chains);
+  var names = [];
+  for (var k = 0; k < chains.length; k++) names.push(chains[k].name);
+
+  return { rows: rows, laneCount: graphLaneCount(rows), branches: names };
+}
+
 // ===== Phase 4b: 編集と main のブランチ保護 =====
 
 /**

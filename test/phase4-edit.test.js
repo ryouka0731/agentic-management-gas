@@ -14,6 +14,7 @@ const SOURCES = [
   'src/core/ObjectStore.gs',
   'src/core/Normalize.js',
   'src/core/Markdown.js',
+  'src/core/Graph.js',
   'src/core/Diff.js',
   'src/core/Merge.js',
   'src/core/Commit.gs',
@@ -241,5 +242,46 @@ describe('Slides の扱い', () => {
     const slideId = fake._createSlides('提案書', [{ shapes: ['表紙'] }]);
     const row = ctx.repoRegisterFile(slideId, '提案書.slide');
     expect(row.type).toBe('slide');
+  });
+});
+
+describe('コミットグラフ', () => {
+  it('mainとブランチをまとめて返す', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+    fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条</p>\n');
+    ctx.commitFile(workFileId, '改訂', 'ブランチ側の変更', null);
+
+    const graph = ctx.apiCommitGraph(fileId);
+
+    expect(graph.branches).toEqual(['main', '改訂']);
+    expect(graph.laneCount).toBe(2);
+    expect(graph.rows.length).toBe(3);
+    expect(graph.rows.some((r) => r.fork)).toBe(true);
+  });
+
+  it('ブランチの作業コピーを渡しても文書全体のグラフが返る', () => {
+    const { ctx, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+
+    const fromMain = ctx.apiCommitGraph(fileId);
+    const fromBranch = ctx.apiCommitGraph(workFileId);
+
+    expect(fromBranch.rows.length).toBe(fromMain.rows.length);
+    expect(fromBranch.branches).toEqual(fromMain.branches);
+  });
+
+  it('削除済みブランチはグラフに出ない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+    fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条</p>\n');
+    ctx.commitFile(workFileId, '改訂', 'ブランチ側の変更', null);
+
+    ctx.branchDelete('改訂');
+
+    expect(ctx.apiCommitGraph(fileId).branches).toEqual(['main']);
   });
 });

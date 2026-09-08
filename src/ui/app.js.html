@@ -351,9 +351,72 @@
 
   // ===== 履歴 =====
 
+  /**
+   * コミットのレーンを描く。
+   *
+   * git log --graph と同じで、ブランチごとに縦の列を持ち、分岐点まで
+   * 線を通す。線が無いと、どのコミットがどの枝のものか読めない。
+   *
+   * @param {object} row apiCommitGraph の行
+   * @param {number} laneCount
+   * @returns {SVGElement}
+   */
+  function makeGraphCell(row, laneCount) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var step = 14;
+    var height = 44;
+    var width = Math.max(1, laneCount) * step + 6;
+
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'graph-cell');
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    svg.setAttribute('aria-hidden', 'true');
+
+    function x(lane) { return lane * step + step / 2 + 2; }
+
+    // 通過しているレーンの縦線
+    row.activeLanes.forEach(function (lane) {
+      var line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', String(x(lane)));
+      line.setAttribute('x2', String(x(lane)));
+      line.setAttribute('y1', '0');
+      line.setAttribute('y2', String(height));
+      line.setAttribute('class', 'graph-line lane-' + (lane % 4));
+      svg.appendChild(line);
+    });
+
+    // 分岐: 自分のレーンから main のレーンへ下向きに曲げる
+    if (row.fork && row.forkLane >= 0) {
+      var path = document.createElementNS(ns, 'path');
+      var from = x(row.lane);
+      var to = x(row.forkLane);
+      path.setAttribute('d',
+        'M' + from + ' ' + (height / 2) +
+        ' C' + from + ' ' + height + ' ' + to + ' ' + (height / 2) + ' ' + to + ' ' + height);
+      path.setAttribute('class', 'graph-line lane-' + (row.lane % 4));
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+    }
+
+    var dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', String(x(row.lane)));
+    dot.setAttribute('cy', String(height / 2));
+    dot.setAttribute('r', row.merge ? '5' : '4');
+    dot.setAttribute('class',
+      'graph-dot lane-' + (row.lane % 4) + (row.merge ? ' merge' : ''));
+    svg.appendChild(dot);
+
+    return svg;
+  }
+
   function loadHistory() {
     if (!current.fileId) {
-      historyList.textContent = '左からファイルを選択してください';
+      historyList.textContent = '';
+      historyList.appendChild(makeBlankState(
+        'ファイルが選ばれていません',
+        '左の一覧から文書を選ぶと、その文書のコミットグラフが出ます。'
+      ));
       diffView.textContent = '';
       return;
     }
@@ -361,31 +424,44 @@
     diffView.textContent = '';
 
     google.script.run
-      .withSuccessHandler(function (commits) {
+      .withSuccessHandler(function (graph) {
         historyList.textContent = '';
-        if (commits.length === 0) {
-          var p = document.createElement('p');
-          p.style.cssText = 'padding:12px 16px;color:#666;font-size:13px;';
-          p.textContent = 'コミットがありません';
-          historyList.appendChild(p);
+
+        if (!graph.rows.length) {
+          historyList.appendChild(makeBlankState(
+            'コミットがありません',
+            '文書を編集してから「本文」タブでコミットすると、ここに履歴が並びます。'
+          ));
           return;
         }
-        commits.forEach(function (c) {
+
+        graph.rows.forEach(function (c) {
           var btn = document.createElement('button');
-          btn.className = 'commit-item';
+          btn.className = 'commit-item graph-row';
+          btn.appendChild(makeGraphCell(c, graph.laneCount));
+
+          var body = document.createElement('div');
+          body.className = 'graph-body';
 
           var msg = document.createElement('div');
           msg.className = 'commit-message';
           msg.textContent = c.message;
+          body.appendChild(msg);
 
           var meta = document.createElement('div');
           meta.className = 'commit-meta';
           meta.textContent =
-            c.sha.substring(0, 7) + ' · ' + c.author + ' · ' +
+            String(c.sha).substring(0, 7) + ' · ' + c.author + ' · ' +
             new Date(c.timestamp).toLocaleString('ja-JP');
+          body.appendChild(meta);
 
-          btn.appendChild(msg);
-          btn.appendChild(meta);
+          btn.appendChild(body);
+
+          var chip = document.createElement('span');
+          chip.className = 'chip lane-chip lane-' + (c.lane % 4);
+          chip.textContent = c.branch;
+          btn.appendChild(chip);
+
           btn.addEventListener('click', function () {
             var items = historyList.querySelectorAll('.commit-item');
             for (var i = 0; i < items.length; i++) {
@@ -402,14 +478,16 @@
               })
               .apiCommitDiff(c.parentSha || '', c.sha);
           });
+
           historyList.appendChild(btn);
         });
+
         historyList.firstChild.click();
       })
       .withFailureHandler(function (err) {
         historyList.textContent = 'エラー: ' + err.message;
       })
-      .apiCommitHistory(current.fileId);
+      .apiCommitGraph(current.fileId);
   }
 
   // ===== コミット =====

@@ -664,3 +664,34 @@ button:disabled {
 
   .diff-cell { font-size: 11px; }
 }
+
+
+/* =====================================================================
+ * コミットグラフ
+ * ===================================================================== */
+
+.graph-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+
+.graph-cell { flex: 0 0 auto; }
+
+.graph-body { flex: 1; min-width: 0; padding: var(--sp-1) 0; }
+
+.graph-line { stroke-width: 2; }
+.graph-dot { stroke-width: 2; fill: var(--bg); }
+.graph-dot.merge { fill: var(--merged); stroke: var(--merged); }
+
+/* レーンの色。色だけに意味を持たせず、ブランチ名のチップも併記する */
+.lane-0 { stroke: var(--ink-2); }
+.lane-1 { stroke: var(--accent); }
+.lane-2 { stroke: var(--success); }
+.lane-3 { stroke: var(--warn); }
+
+.lane-chip { margin-left: auto; align-self: center; }
+.lane-chip.lane-0 { color: var(--ink-2); border-color: var(--line); }
+.lane-chip.lane-1 { color: var(--accent); border-color: var(--accent); }
+.lane-chip.lane-2 { color: var(--success); border-color: var(--success); }
+.lane-chip.lane-3 { color: var(--warn); border-color: var(--warn); }
