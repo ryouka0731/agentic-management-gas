@@ -529,3 +529,25 @@ describe('線に頼らない表現', () => {
     expect(lines).toBeLessThanOrEqual(28);
   });
 });
+
+describe('骨組みの形', () => {
+  const js = read('src/ui/app.js.html');
+  const fn = js.slice(js.indexOf('function showSkeleton('),
+    js.indexOf('// ===== 本文の描画'));
+
+  it('実物と同じ器の中に置く', () => {
+    // 別の形で描くと、中身が入ったときに位置も形も変わる
+    ['row-item', 'row-open', 'graph-row', 'graph-col-desc', 'graph-col-sha',
+     'doc-card', 'doc-open', 'board-column', 'board-card',
+     'gantt-row', 'gantt-name', 'gantt-track'].forEach((cls) => {
+      expect(fn).toContain(cls);
+    });
+  });
+
+  it('画面ごとに合う形を選んでいる', () => {
+    expect(js).toContain("showSkeleton(ganttEl, 'gantt'");
+    expect(js).toContain("showSkeleton(historyList, 'graph'");
+    expect(js).toContain("showSkeleton(docListEl, 'doc'");
+    expect(js).toContain("showSkeleton(boardEl, 'board')");
+  });
+});

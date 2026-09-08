@@ -618,16 +618,43 @@
     container.textContent = '';
     var n = count || 4;
 
+    /**
+     * 骨組みの棒を作る。
+     *
+     * @param {string} width CSSの幅
+     * @param {number} [height]
+     * @returns {HTMLElement}
+     */
+    function bar(width, height) {
+      var el = document.createElement('div');
+      el.className = 'skeleton';
+      el.style.width = width;
+      el.style.height = (height || 12) + 'px';
+      return el;
+    }
+
+    function lines(a, b) {
+      var wrap = document.createElement('div');
+      wrap.className = 'row-main sk-lines';
+      wrap.appendChild(bar(a));
+      if (b) wrap.appendChild(bar(b, 10));
+      return wrap;
+    }
+
     if (kind === 'board') {
       var board = document.createElement('div');
-      board.className = 'sk-board';
+      board.className = 'board';
 
       for (var c = 0; c < 4; c++) {
         var col = document.createElement('div');
-        col.className = 'sk-col';
+        col.className = 'board-column';
+        col.appendChild(bar('40%', 12));
+
         for (var k = 0; k < 2; k++) {
           var card = document.createElement('div');
-          card.className = 'skeleton sk-card';
+          card.className = 'board-card';
+          card.appendChild(bar('80%'));
+          card.appendChild(bar('45%', 10));
           col.appendChild(card);
         }
         board.appendChild(col);
@@ -636,44 +663,119 @@
       return;
     }
 
+    if (kind === 'gantt') {
+      var chart = document.createElement('div');
+      chart.className = 'gantt';
+
+      for (var r = 0; r < n; r++) {
+        var row = document.createElement('div');
+        row.className = 'gantt-row';
+
+        var name = document.createElement('div');
+        name.className = 'gantt-name';
+        name.appendChild(bar((60 + (r % 3) * 12) + '%'));
+        row.appendChild(name);
+
+        var track = document.createElement('div');
+        track.className = 'gantt-track';
+
+        var barEl = document.createElement('div');
+        barEl.className = 'skeleton';
+        barEl.style.height = '24px';
+        barEl.style.borderRadius = '999px';
+        barEl.style.gridColumn = (1 + r * 2) + ' / span ' + (3 + (r % 4));
+        track.appendChild(barEl);
+
+        row.appendChild(track);
+        chart.appendChild(row);
+      }
+      container.appendChild(chart);
+      return;
+    }
+
+    if (kind === 'graph') {
+      for (var gi = 0; gi < n; gi++) {
+        var grow = document.createElement('div');
+        grow.className = 'graph-row';
+
+        var cell = document.createElement('div');
+        cell.className = 'graph-cell';
+        var dot = document.createElement('div');
+        dot.className = 'skeleton';
+        dot.style.cssText = 'width:10px;height:10px;border-radius:50%;margin:17px auto;';
+        cell.appendChild(dot);
+        grow.appendChild(cell);
+
+        var desc = document.createElement('div');
+        desc.className = 'graph-col-desc';
+        desc.appendChild(bar((50 + (gi % 3) * 15) + '%'));
+        grow.appendChild(desc);
+
+        var date = document.createElement('div');
+        date.className = 'graph-col-date';
+        date.appendChild(bar('80%', 10));
+        grow.appendChild(date);
+
+        var author = document.createElement('div');
+        author.className = 'graph-col-author';
+        author.appendChild(bar('70%', 10));
+        grow.appendChild(author);
+
+        var sha = document.createElement('div');
+        sha.className = 'graph-col-sha';
+        sha.appendChild(bar('90%', 10));
+        grow.appendChild(sha);
+
+        container.appendChild(grow);
+      }
+      return;
+    }
+
+    if (kind === 'doc') {
+      for (var d = 0; d < n; d++) {
+        var card = document.createElement('div');
+        card.className = 'doc-card';
+
+        var open = document.createElement('div');
+        open.className = 'doc-open';
+
+        var icon = document.createElement('div');
+        icon.className = 'skeleton';
+        icon.style.cssText = 'width:16px;height:16px;flex:0 0 16px;';
+        open.appendChild(icon);
+        open.appendChild(bar((30 + d * 10) + '%', 14));
+
+        card.appendChild(open);
+        container.appendChild(card);
+      }
+      return;
+    }
+
     if (kind === 'block') {
       var block = document.createElement('div');
-      block.className = 'skeleton sk-block';
+      block.className = 'skeleton';
+      block.style.cssText = 'height:120px;margin:' +
+        'var(--sp-4);border-radius:var(--radius);';
       container.appendChild(block);
       return;
     }
 
+    // 一覧。row-item と同じ骨組みで作るので、実物と位置がずれない
     for (var i = 0; i < n; i++) {
-      var row = document.createElement('div');
-      row.className = 'sk-row';
+      var item = document.createElement('div');
+      item.className = 'row-item';
 
-      if (kind === 'graph' || kind === 'doc') {
-        var dot = document.createElement('div');
-        dot.className = 'skeleton sk-dot';
-        row.appendChild(dot);
-      }
+      var openEl = document.createElement('div');
+      openEl.className = 'row-open';
 
-      var lines = document.createElement('div');
-      lines.className = 'sk-lines';
+      var ic = document.createElement('div');
+      ic.className = 'skeleton';
+      ic.style.cssText = 'width:16px;height:16px;flex:0 0 16px;';
+      openEl.appendChild(ic);
+      openEl.appendChild(lines((45 + (i % 3) * 15) + '%', '25%'));
 
-      var main = document.createElement('div');
-      main.className = 'skeleton sk-line' + (i % 2 ? ' mid' : '');
-      lines.appendChild(main);
-
-      if (kind !== 'doc') {
-        var sub = document.createElement('div');
-        sub.className = 'skeleton sk-line short';
-        lines.appendChild(sub);
-      }
-      row.appendChild(lines);
-
-      if (kind === 'graph' || kind === 'list') {
-        var chip = document.createElement('div');
-        chip.className = 'skeleton sk-chip';
-        row.appendChild(chip);
-      }
-
-      container.appendChild(row);
+      item.appendChild(openEl);
+      container.appendChild(item);
     }
   }
 
@@ -2695,7 +2797,7 @@
   }
 
   function loadGantt() {
-    showSkeleton(ganttEl, 'list', 5);
+    showSkeleton(ganttEl, 'gantt', 5);
 
     google.script.run
       .withSuccessHandler(function (list) {
