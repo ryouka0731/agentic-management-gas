@@ -311,7 +311,7 @@
 
     var submit = document.createElement('button');
     submit.type = 'submit';
-    submit.className = 'btn';
+    submit.className = 'btn btn-primary';
     submit.textContent = submitLabel;
     actions.appendChild(submit);
 
@@ -375,7 +375,7 @@
     strip.appendChild(span);
 
     var ok = document.createElement('button');
-    ok.className = 'btn';
+    ok.className = 'btn btn-primary';
     ok.textContent = label;
     ok.addEventListener('click', function () {
       strip.remove();
@@ -461,7 +461,7 @@
 
     if (action) {
       var btn = document.createElement('button');
-      btn.className = 'btn';
+      btn.className = 'btn btn-primary';
       btn.textContent = action.label;
       btn.addEventListener('click', action.onClick);
       wrap.appendChild(btn);
@@ -750,6 +750,26 @@
     return svg;
   }
 
+  /**
+   * 関係の流れに実数を入れる。
+   *
+   * 何がいくつあるかが見えないと、次に何をすればよいかが分からない。
+   *
+   */
+  function loadOverview() {
+    google.script.run
+      .withSuccessHandler(function (o) {
+        document.getElementById('crumb-repo').textContent = o.repo;
+        document.getElementById('flow-issues').textContent = o.openIssues;
+        document.getElementById('flow-branches').textContent = o.branches;
+        document.getElementById('flow-commits').textContent = o.commits;
+        document.getElementById('flow-prs').textContent = o.openPrs;
+        document.getElementById('flow-docs').textContent = o.docs;
+      })
+      .withFailureHandler(function () { /* 数が出なくても操作はできる */ })
+      .apiOverview();
+  }
+
   function loadHistory() {
     if (!current.fileId) {
       historyList.textContent = '';
@@ -896,6 +916,7 @@
             commitBtn.disabled = false;
             showSnack('コミットしました', { kind: 'ok' });
             refreshStatus();
+            loadOverview();
             if (!panelHistory.hidden) loadHistory();
           })
           .withFailureHandler(function (err) {
@@ -970,6 +991,7 @@
           .withSuccessHandler(function () {
             showSnack('ブランチ ' + v.name + ' を作りました', { kind: 'ok' });
             loadBranches();
+            loadOverview();
             loadFiles();
           })
           .withFailureHandler(function (err) {
@@ -1143,7 +1165,7 @@
     form.appendChild(input);
 
     var send = document.createElement('button');
-    send.className = 'btn';
+    send.className = 'btn btn-primary';
     send.textContent = '投稿';
     send.addEventListener('click', function () {
       if (!input.value) return;
@@ -1261,7 +1283,7 @@
           });
 
           var mergeBtn = document.createElement('button');
-          mergeBtn.className = 'btn';
+          mergeBtn.className = 'btn btn-primary';
           mergeBtn.textContent = 'マージする';
           if (preview.problems && preview.problems.length > 0) {
             mergeBtn.disabled = true;
@@ -1283,6 +1305,7 @@
                   .withSuccessHandler(function () {
                     showSnack('PR #' + pr.number + ' をマージしました', { kind: 'ok' });
                     loadPulls();
+                    loadOverview();
                     refreshStatus();
                   })
                   .withFailureHandler(function (err) {
@@ -1687,6 +1710,7 @@
           .withSuccessHandler(function () {
             showSnack('Issueを作りました', { kind: 'ok' });
             loadIssues();
+            loadOverview();
             if (!panelBoard.hidden) loadBoard();
           })
           .withFailureHandler(function (err) {
@@ -1990,5 +2014,6 @@
   tabsEl.hidden = false;
   loadFiles();
   switchTab('history');
+  loadOverview();
 })();
 </script>

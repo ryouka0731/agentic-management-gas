@@ -359,3 +359,47 @@ describe('一括コミット', () => {
     expect(() => ctx.apiCommitMany([], 'x')).toThrow(/対象が選ばれていません/);
   });
 });
+
+describe('全体の状態', () => {
+  it('文書・ブランチ・Issue・PRの数を返す', () => {
+    const { ctx, fake, fileId } = setup();
+
+    expect(ctx.apiOverview().docs).toBe(1);
+    expect(ctx.apiOverview().branches).toBe(0);
+
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+    fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条</p>\n');
+    ctx.commitFile(workFileId, '改訂', '第3条を追加', null);
+
+    ctx.issueCreate('やること', '', [fileId]);
+    ctx.prCreate('第3条を追加', '', '改訂', fileId);
+
+    const o = ctx.apiOverview();
+    expect(o.docs).toBe(1);
+    expect(o.branches).toBe(1);
+    expect(o.openIssues).toBe(1);
+    expect(o.openPrs).toBe(1);
+    expect(o.commits).toBeGreaterThan(0);
+  });
+
+  it('マージ済みのPRとクローズ済みIssueは数えない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+    fake._docs.set(workFileId, '<p>第1条</p>\n<p>第3条</p>\n');
+    ctx.commitFile(workFileId, '改訂', '第3条を追加', null);
+
+    const issue = ctx.issueCreate('やること', '', [fileId]);
+    const pr = ctx.prCreate('第3条', 'closes #' + issue.number, '改訂', fileId);
+
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    ctx.prMerge(pr.number, []);
+
+    const o = ctx.apiOverview();
+    expect(o.openPrs).toBe(0);
+    expect(o.openIssues).toBe(0);
+  });
+});

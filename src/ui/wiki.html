@@ -10,11 +10,11 @@
     <nav class="sidebar">
       <div class="nav-section">
         <h2>リポジトリ</h2>
-        <button class="nav-item" data-tab="branches">ブランチ</button>
-        <button class="nav-item" data-tab="pulls">プルリクエスト</button>
-        <button class="nav-item" data-tab="issues">Issue</button>
-        <button class="nav-item" data-tab="board">ボード</button>
-        <button class="nav-item" data-tab="help">ヘルプ</button>
+        <button class="nav-item" data-tab="branches"><span class="nav-label">ブランチ</span><span class="nav-desc">文書の下書き</span></button>
+        <button class="nav-item" data-tab="pulls"><span class="nav-label">プルリクエスト</span><span class="nav-desc">反映の依頼</span></button>
+        <button class="nav-item" data-tab="issues"><span class="nav-label">Issue</span><span class="nav-desc">やること</span></button>
+        <button class="nav-item" data-tab="board"><span class="nav-label">ボード</span><span class="nav-desc">進み具合</span></button>
+        <button class="nav-item" data-tab="help"><span class="nav-label">ヘルプ</span><span class="nav-desc">使い方</span></button>
       </div>
 
       <div class="nav-section">
@@ -27,15 +27,19 @@
 
     <div class="main">
       <div class="toolbar">
-        <label class="branch-switch">
-          <span class="row-meta">ブランチ</span>
-          <select id="branch-select" aria-label="表示するブランチ"></select>
-        </label>
-        <h1 id="doc-title">—</h1>
+        <nav class="crumbs" aria-label="現在の位置">
+          <span class="crumb-repo" id="crumb-repo">リポジトリ</span>
+          <span class="crumb-sep" aria-hidden="true">/</span>
+          <label class="branch-switch">
+            <select id="branch-select" aria-label="表示するブランチ"></select>
+          </label>
+          <span class="crumb-sep" aria-hidden="true">/</span>
+          <h1 id="doc-title">文書を選んでください</h1>
+        </nav>
         <span id="branch-chip" class="chip" hidden></span>
         <span id="dirty-badge" class="badge" hidden>未コミットの変更</span>
         <span class="spacer"></span>
-        <button id="commit-btn" class="btn" hidden>コミット</button>
+        <button id="commit-btn" class="btn btn-primary" hidden>コミット</button>
         <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>Google ドキュメントで開く</a>
         <button id="theme-btn" class="theme-btn" type="button"></button>
@@ -56,7 +60,7 @@
           </div>
           <span class="row-meta" id="mode-hint"></span>
           <span class="spacer"></span>
-          <button id="edit-save-btn" class="btn" hidden>保存</button>
+          <button id="edit-save-btn" class="btn btn-primary" hidden>保存</button>
         </div>
 
         <iframe id="viewer" class="viewer" sandbox></iframe>
@@ -64,6 +68,54 @@
       </div>
 
       <div class="panel panel-col" id="panel-history" hidden>
+        <div class="flow" id="flow">
+          <p class="flow-lead">
+            文書を直接なおさず、<strong>下書き（ブランチ）</strong>で変更して、
+            <strong>確認（プルリクエスト）</strong>を経て確定版（main）に反映します。
+          </p>
+          <ol class="flow-steps">
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="issues">
+                <span class="flow-name">Issue</span>
+                <span class="flow-count" id="flow-issues">—</span>
+              </button>
+              <span class="flow-desc">やること</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="branches">
+                <span class="flow-name">ブランチ</span>
+                <span class="flow-count" id="flow-branches">—</span>
+              </button>
+              <span class="flow-desc">文書の下書き</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="history">
+                <span class="flow-name">コミット</span>
+                <span class="flow-count" id="flow-commits">—</span>
+              </button>
+              <span class="flow-desc">変更の記録</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="pulls">
+                <span class="flow-name">プルリクエスト</span>
+                <span class="flow-count" id="flow-prs">—</span>
+              </button>
+              <span class="flow-desc">反映の依頼と確認</span>
+            </li>
+            <li class="flow-arrow" aria-hidden="true">→</li>
+            <li class="flow-step">
+              <button class="flow-btn" data-tab="content">
+                <span class="flow-name">main</span>
+                <span class="flow-count" id="flow-docs">—</span>
+              </button>
+              <span class="flow-desc">確定版の文書</span>
+            </li>
+          </ol>
+        </div>
+
         <div class="graph-head">
           <span class="graph-col-graph">グラフ</span>
           <span class="graph-col-desc">説明</span>
@@ -79,7 +131,7 @@
 
       <div class="panel panel-col" id="panel-branches" hidden>
         <div class="panel-actions">
-          <button id="branch-create-btn" class="btn">ブランチを作成</button>
+          <button id="branch-create-btn" class="btn btn-primary">ブランチを作成</button>
           <button id="bulk-commit-btn" class="btn">まとめてコミット</button>
           <span class="row-meta">mainのファイルを選んでから作成してください</span>
         </div>
@@ -93,7 +145,7 @@
 
       <div class="panel panel-col" id="panel-issues" hidden>
         <div class="panel-actions">
-          <button id="issue-create-btn" class="btn">Issueを作成</button>
+          <button id="issue-create-btn" class="btn btn-primary">Issueを作成</button>
           <span class="row-meta">選択中の文書に紐づけて作成します</span>
         </div>
         <div class="list-area" id="issue-list"></div>
@@ -101,7 +153,7 @@
 
       <div class="panel panel-col" id="panel-board" hidden>
         <div class="panel-actions">
-          <button id="board-create-btn" class="btn">Issueを作成</button>
+          <button id="board-create-btn" class="btn btn-primary">Issueを作成</button>
           <span class="row-meta">カードはIssueです。作るとBacklogに並びます</span>
         </div>
         <div class="board" id="board"></div>

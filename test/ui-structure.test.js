@@ -277,3 +277,82 @@ describe('色の指定', () => {
     expect(viewer.match(/#[0-9a-fA-F]{3,8}\b/g)).toBeNull();
   });
 });
+
+describe('シグニファイア', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('ボタンは影で押せることを示し、押すと沈む', () => {
+    // 枠線は境界の記号であって、押せることの記号ではない
+    const btn = css.slice(css.indexOf('.btn {'), css.indexOf('.btn-primary'));
+
+    expect(btn).toContain('box-shadow');
+    expect(css).toContain('.btn:active:not(:disabled)');
+    expect(css).toContain('.btn:hover:not(:disabled)');
+  });
+
+  it('押せないボタンは浮かせない', () => {
+    const disabled = css.slice(css.indexOf('.btn:disabled'),
+      css.indexOf('}', css.indexOf('.btn:disabled')));
+    expect(disabled).toContain('transform: none');
+  });
+
+  it('主操作は塗りで区別する', () => {
+    expect(css).toContain('.btn-primary');
+
+    const html = read('src/ui/wiki.html');
+    // 画面ごとに主操作は1つ。ツールバーで塗るのはコミットだけ
+    const toolbar = html.slice(html.indexOf('<div class="toolbar">'),
+      html.indexOf('<div class="tabs"'));
+    expect((toolbar.match(/btn-primary/g) || []).length).toBe(1);
+  });
+
+  it('現在地のタブは下線で示す', () => {
+    expect(css).toContain('.tab[aria-current="true"] { border-bottom-color: var(--accent)');
+  });
+});
+
+describe('関係の分かりやすさ', () => {
+  const html = read('src/ui/wiki.html');
+
+  it('現在の位置を包含関係で示す', () => {
+    // リポジトリ / ブランチ / 文書 の順に並べ、今どこにいるかを常に出す
+    const crumbs = html.slice(html.indexOf('<nav class="crumbs"'),
+      html.indexOf('</nav>', html.indexOf('<nav class="crumbs"')));
+
+    expect(crumbs.indexOf('crumb-repo'))
+      .toBeLessThan(crumbs.indexOf('branch-select'));
+    expect(crumbs.indexOf('branch-select'))
+      .toBeLessThan(crumbs.indexOf('doc-title'));
+  });
+
+  it('対象どうしの流れをホームに出す', () => {
+    const flow = html.slice(html.indexOf('<div class="flow"'),
+      html.indexOf('<div class="graph-head">'));
+
+    // Issue → ブランチ → コミット → PR → main の順に並んでいる
+    const order = ['issues', 'branches', 'history', 'pulls', 'content'];
+    let last = -1;
+    order.forEach((tab) => {
+      const at = flow.indexOf('data-tab="' + tab + '"');
+      expect(at).toBeGreaterThan(last);
+      last = at;
+    });
+  });
+
+  it('専門用語に平易な言い換えを添える', () => {
+    // 覚えていることを前提にしない (認識より想起を避ける)
+    expect(html).toContain('やること');
+    expect(html).toContain('文書の下書き');
+    expect(html).toContain('反映の依頼');
+    expect(html).toContain('確定版');
+  });
+
+  it('ナビの各項目に一行の説明がある', () => {
+    const sidebar = html.slice(html.indexOf('<nav class="sidebar">'),
+      html.indexOf('</nav>'));
+
+    const items = sidebar.match(/class="nav-item"/g) || [];
+    const descs = sidebar.match(/class="nav-desc"/g) || [];
+    expect(descs.length).toBe(items.length);
+  });
+});

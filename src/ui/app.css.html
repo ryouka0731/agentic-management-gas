@@ -51,6 +51,10 @@
   --radius: 6px;
   --radius-sm: 4px;
   --shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
+  /* 押せることを示す影。段が上がるほど手前に見える (Material の elevation) */
+  --elev-1: 0 1px 0 rgba(31, 35, 40, 0.06), 0 1px 3px rgba(31, 35, 40, 0.12);
+  --elev-2: 0 2px 4px rgba(31, 35, 40, 0.14), 0 4px 10px rgba(31, 35, 40, 0.10);
+  --hairline: inset 0 0 0 1px rgba(31, 35, 40, 0.10);
   --motion: 160ms;
   --sidebar-w: 260px;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
@@ -89,6 +93,10 @@
     --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
+    /* 暗い地では影がほぼ見えない。縁の明るい線で段を表す */
+    --elev-1: 0 1px 3px rgba(1, 4, 9, 0.5);
+    --elev-2: 0 3px 8px rgba(1, 4, 9, 0.7);
+    --hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
   }
 }
 
@@ -117,6 +125,10 @@
     --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
+    /* 暗い地では影がほぼ見えない。縁の明るい線で段を表す */
+    --elev-1: 0 1px 3px rgba(1, 4, 9, 0.5);
+    --elev-2: 0 3px 8px rgba(1, 4, 9, 0.7);
+    --hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -173,8 +185,14 @@ body {
   font-family: inherit;
 }
 
-.file-item:hover { background: rgba(0, 0, 0, 0.04); }
-.file-item[aria-current="true"] { background: rgba(26, 115, 232, 0.1); color: var(--accent); }
+.file-item:hover { background: var(--bg-3); }
+/* 選択中は色だけでなく左の罫でも示す */
+.file-item[aria-current="true"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+}
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -224,19 +242,64 @@ body {
   border: 1px solid var(--line);
 }
 
+/*
+ * ボタン。
+ *
+ * 枠線は「境界」の記号であって「押せる」の記号ではない。面を一段
+ * 持ち上げて影を落とし、触れると浮き、押すと沈む。目で見て手が
+ * 動かせることが分かる状態にする (シグニファイア)。
+ */
 .btn {
   font-family: inherit;
   font-size: 13px;
-  padding: 5px 12px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--bg);
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--hairline), var(--elev-1);
+  transition: box-shadow var(--motion) ease-out,
+              transform var(--motion) ease-out,
+              background-color var(--motion) ease-out;
 }
 
-.btn:hover:not(:disabled) { background: var(--bg-2); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:hover:not(:disabled) {
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-2);
+  transform: translateY(-1px);
+}
+
+/* 押した瞬間に沈む。操作が届いたことが指で分かる */
+.btn:active:not(:disabled) {
+  box-shadow: var(--hairline);
+  transform: translateY(1px);
+}
+
+/*
+ * その画面で主となる操作は1つだけ塗る。すべてを目立たせると
+ * どれが本筋か分からなくなる。
+ */
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--elev-1);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  box-shadow: var(--elev-2);
+}
+
+/* 押せないものは浮かせない。影が無いこと自体が signifier になる */
+.btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: var(--hairline);
+  transform: none;
+}
 
 .tabs {
   display: flex;
@@ -250,11 +313,15 @@ body {
   font-size: 13px;
   padding: 8px 14px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
 }
+
+/* 触れると下線が薄く出る。押せる場所であることが分かる */
+.tab:hover:not([aria-current="true"]) { border-bottom-color: var(--line-strong); }
+.tab[aria-current="true"] { border-bottom-color: var(--accent); color: var(--ink); }
 
 .tab[aria-current="true"] {
   color: var(--accent);
@@ -1127,4 +1194,132 @@ button:disabled {
   .graph-split { flex-direction: column; }
   .graph-split .history-list { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* =====================================================================
+ * 現在の位置と、対象どうしの関係
+ *
+ * 初めて使う人に「今どこにいるか」と「何がどう繋がっているか」を
+ * 画面に出す。覚えていることを前提にしない。
+ * ===================================================================== */
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.crumb-repo {
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.crumb-sep { color: var(--ink-2); opacity: 0.6; }
+
+.crumbs h1 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 関係の流れ */
+.flow {
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.flow-lead {
+  margin: 0 0 var(--sp-3);
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.8;
+}
+
+.flow-lead strong { color: var(--ink); }
+
+.flow-steps {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 92px;
+}
+
+.flow-arrow {
+  align-self: center;
+  color: var(--ink-2);
+  font-size: 16px;
+  padding-bottom: 18px;
+}
+
+.flow-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--hairline), var(--elev-1);
+  cursor: pointer;
+  transition: box-shadow var(--motion) ease-out, transform var(--motion) ease-out;
+}
+
+.flow-btn:hover { box-shadow: var(--hairline), var(--elev-2); transform: translateY(-1px); }
+.flow-btn:active { box-shadow: var(--hairline); transform: translateY(1px); }
+
+.flow-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+.flow-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.flow-desc { font-size: 11px; color: var(--ink-2); }
+
+@media (max-width: 767px) {
+  /* 狭いと横に流せない。矢印を落として縦に積む */
+  .flow-arrow { display: none; }
+  .flow-step { min-width: 0; flex: 1 1 45%; }
+}
+
+/* ナビの説明 */
+.nav-item { flex-wrap: wrap; }
+.nav-label { font-size: 13px; }
+
+.nav-desc {
+  width: 100%;
+  padding-left: 24px;
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.nav-item[aria-current="true"] .nav-desc { color: var(--ink-2); }
 </style>

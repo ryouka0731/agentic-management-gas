@@ -665,6 +665,53 @@ function apiCommitMany(fileIds, message) {
   return { committed: committed, failed: failed };
 }
 
+/**
+ * リポジトリ全体の状態を1つにまとめて返す (Web App API)。
+ *
+ * 初めて使う人に「何がいくつあり、どう繋がっているか」を一目で示すため。
+ * 個別のAPIを何度も呼ばせない。
+ *
+ * @returns {{repo:string, docs:number, branches:number, openIssues:number,
+ *            openPrs:number, commits:number}}
+ */
+function apiOverview() {
+  var files = filesVisibleInWiki();
+  var docs = 0;
+
+  for (var i = 0; i < files.length; i++) {
+    if (branchOfPath_(files[i].path) === 'main') docs++;
+  }
+
+  var branches = dbReadAll('branches');
+  var openBranches = 0;
+  for (var b = 0; b < branches.length; b++) {
+    if (String(branches[b].name) === 'main') continue;
+    if (String(branches[b].state) === 'open') openBranches++;
+  }
+
+  var pulls = dbReadAll('pulls');
+  var openPrs = 0;
+  for (var p = 0; p < pulls.length; p++) {
+    var st = String(pulls[p].state);
+    if (st === 'open' || st === 'approved') openPrs++;
+  }
+
+  var issues = dbReadAll('issues');
+  var openIssues = 0;
+  for (var q = 0; q < issues.length; q++) {
+    if (String(issues[q].state) === 'open') openIssues++;
+  }
+
+  return {
+    repo: 'agentic-management',
+    docs: docs,
+    branches: openBranches,
+    openIssues: openIssues,
+    openPrs: openPrs,
+    commits: dbReadAll('commits').length,
+  };
+}
+
 // ===== Phase 4b: 編集と main のブランチ保護 =====
 
 /**
