@@ -2130,14 +2130,116 @@
     };
   }
 
+  /**
+   * 誰が書いたかを顔と名前で示す見出しを作る。
+   *
+   * 名前だけの行が縦に積まれると、どれが誰の発言か追いにくい。
+   *
+   * @param {string} who
+   * @param {string} what
+   * @returns {HTMLElement}
+   */
+  function makeCommentHead(who, what) {
+    var head = document.createElement('div');
+    head.className = 'comment-head';
+    head.appendChild(makeAvatar(who));
+
+    var name = document.createElement('span');
+    name.className = 'comment-who';
+    name.textContent = who;
+    head.appendChild(name);
+
+    var note = document.createElement('span');
+    note.textContent = what;
+    head.appendChild(note);
+    return head;
+  }
+
+  /**
+   * 確認してもらう人の行。
+   *
+   * 誰に頼んだのかが残らないと、依頼が宙に浮いたまま誰も見ない。
+   *
+   * @param {object} pr
+   * @returns {HTMLElement}
+   */
+  function makeReviewerRow(pr) {
+    var row = document.createElement('div');
+    row.className = 'reviewer-row';
+
+    var label = document.createElement('span');
+    label.className = 'row-meta';
+    label.textContent = '確認してもらう人';
+    row.appendChild(label);
+
+    var people = (pr.reviewers || []);
+    if (!people.length) {
+      var none = document.createElement('span');
+      none.className = 'row-meta';
+      none.textContent = 'まだ誰にも頼んでいません';
+      row.appendChild(none);
+    } else {
+      people.forEach(function (who) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(who));
+        chip.appendChild(document.createTextNode(who));
+        row.appendChild(chip);
+      });
+    }
+
+    if (pr.state === 'merged' || pr.state === 'closed') return row;
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = '確認してもらう人を決める';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () { askReviewers(pr, edit); });
+    row.appendChild(edit);
+    return row;
+  }
+
+  /**
+   * 確認してもらう人を入力させる。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} sourceEl
+   */
+  function askReviewers(pr, sourceEl) {
+    var form = openInlineForm(
+      '確認してもらう人',
+      [{
+        name: 'people',
+        label: 'メールアドレス (カンマ区切り)',
+        placeholder: 'a@example.com, b@example.com',
+      }],
+      '決める',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function (list) {
+            pr.reviewers = list || [];
+            showSnack((pr.reviewers.length || 0) + '人に頼みました', { kind: 'ok' });
+            showPrDetail(pr);
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiPrSetReviewers(pr.number, String(v.people || '').split(','));
+      },
+      sourceEl
+    );
+
+    var input = form.querySelector('input');
+    input.value = (pr.reviewers || []).join(', ');
+    input.setAttribute('list', 'people-list');
+    attachPeopleList(form);
+  }
+
   function renderConversation(pr, container) {
     var first = document.createElement('div');
     first.className = 'comment';
-
-    var head = document.createElement('div');
-    head.className = 'comment-head';
-    head.textContent = pr.author + ' が依頼';
-    first.appendChild(head);
+    first.appendChild(makeCommentHead(pr.author, 'が依頼'));
 
     var body = document.createElement('div');
     body.className = 'comment-body';
@@ -2156,9 +2258,10 @@
           var el = document.createElement('div');
           el.className = 'comment';
 
-          var h = document.createElement('div');
-          h.className = 'comment-head';
-          h.textContent = r.reviewer + ' · ' + (labels[r.state] || r.state);
+          var h = makeCommentHead(r.reviewer,
+            (labels[r.state] || r.state) + (r.editedAt ? ' · 直しました' : ''));
+
+          if (r.canEdit) h.appendChild(makeCommentTools(pr, r, el));
           el.appendChild(h);
 
           if (r.body) {
@@ -2176,6 +2279,72 @@
         container.textContent = 'エラー: ' + err.message;
       })
       .apiPrReviews(pr.number);
+  }
+
+  /**
+   * 自分のコメントを直す / 消す。
+   *
+   * 他人の発言は動かせない。動かせると、やりとりの記録が信じられなくなる。
+   *
+   * @param {object} pr
+   * @param {object} review
+   * @param {HTMLElement} host コメントの器
+   * @returns {HTMLElement}
+   */
+  function makeCommentTools(pr, review, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = 'このコメントを直す';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        'コメントを直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('コメントを直しました', { kind: 'ok' });
+              showPrDetail(pr);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiReviewEdit(review.id, v.body);
+        },
+        host
+      );
+      form.querySelector('textarea, input').value = review.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = 'このコメントを消す';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(prDetail,
+        'このコメントを消します。元には戻せません。',
+        '消す',
+        function () {
+          google.script.run
+            .withSuccessHandler(function (msg) {
+              showSnack(msg, { kind: 'ok' });
+              showPrDetail(pr);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiReviewDelete(review.id);
+        });
+    });
+    tools.appendChild(del);
+    return tools;
   }
 
   function makeCommentForm(pr) {
@@ -2259,6 +2428,8 @@
           ' · 承認 ' + preview.approvals + '件 · ' +
           (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
         prDetail.appendChild(meta);
+
+        prDetail.appendChild(makeReviewerRow(pr));
 
         var getChoices = function () { return []; };
 

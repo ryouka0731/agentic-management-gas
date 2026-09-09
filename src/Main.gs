@@ -396,6 +396,8 @@ function apiPrList() {
       state: rows[i].state,
       author: rows[i].author,
       createdAt: rows[i].createdAt ? new Date(rows[i].createdAt).toISOString() : '',
+      body: String(rows[i].body == null ? '' : rows[i].body),
+      reviewers: prReviewers(rows[i]),
     });
   }
   out.sort(function (a, b) { return b.number - a.number; });
@@ -447,6 +449,40 @@ function apiPrPreview(number) {
 function apiPrReview(number, state, body) {
   var row = prReview(number, state, body);
   return { prNumber: row.prNumber, state: row.state };
+}
+
+/**
+ * コメントを書き直す (Web App API)。
+ *
+ * @param {number} id
+ * @param {string} body
+ * @returns {object}
+ */
+function apiReviewEdit(id, body) {
+  var row = reviewEdit(id, body);
+  return { id: Number(row.id), body: String(row.body) };
+}
+
+/**
+ * コメントを消す (Web App API)。
+ *
+ * @param {number} id
+ * @returns {string}
+ */
+function apiReviewDelete(id) {
+  reviewDelete(id);
+  return 'コメントを消しました';
+}
+
+/**
+ * 確認してもらう人を決める (Web App API)。
+ *
+ * @param {number} number
+ * @param {string[]} emails
+ * @returns {string[]} 決まった宛先
+ */
+function apiPrSetReviewers(number, emails) {
+  return prReviewers(prSetReviewers(number, emails || []));
 }
 
 /**
@@ -819,16 +855,22 @@ function apiStashMainDrift(fileId) {
  */
 function apiPrReviews(number) {
   var rows = dbReadAll('reviews');
+  var me = Session.getActiveUser().getEmail();
   var out = [];
 
   for (var i = 0; i < rows.length; i++) {
     if (Number(rows[i].prNumber) !== Number(number)) continue;
     // 日時は文字列にする。Date のまま返すと運べず、画面には null が届く
     out.push({
+      id: rows[i].id === '' || rows[i].id == null ? '' : Number(rows[i].id),
       reviewer: String(rows[i].reviewer == null ? '' : rows[i].reviewer),
       state: String(rows[i].state == null ? '' : rows[i].state),
       body: String(rows[i].body == null ? '' : rows[i].body),
       at: rows[i].at ? new Date(rows[i].at).toISOString() : '',
+      editedAt: rows[i].editedAt ? new Date(rows[i].editedAt).toISOString() : '',
+      // 直せるかどうかは画面では決められない。書いた本人かをここで見る
+      canEdit: String(rows[i].reviewer) === String(me) &&
+        String(rows[i].state) === 'comment',
     });
   }
   return out;

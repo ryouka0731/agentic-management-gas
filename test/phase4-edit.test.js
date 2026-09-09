@@ -539,3 +539,45 @@ describe('改訂版を作って確認を依頼する', () => {
     expect(() => ctx.apiPrPreview(pr.number)).not.toThrow();
   });
 });
+
+describe('やりとりを画面に渡す形', () => {
+  function withPr() {
+    const env = setup();
+    const { ctx, fileId } = env;
+    ctx.branchCreate('改訂', fileId);
+
+    const work = ctx.branchWorkingFileId('改訂', fileId);
+    env.fake._docs.set(work, '<p>第1条</p>\n<p>第2条</p>\n');
+    ctx.commitFile(work, '改訂', '第2条を足した', null);
+
+    env.pr = ctx.apiPrCreate('第2条の追加', '補足', '改訂', fileId);
+    return env;
+  }
+
+  it('直せるかどうかは画面ではなくここで決める', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrReview(pr.number, 'comment', 'じぶんの');
+
+    const [row] = ctx.apiPrReviews(pr.number);
+    expect(row.canEdit).toBe(true);
+    expect(typeof row.id).toBe('number');
+  });
+
+  it('他人のコメントは直せない印になる', () => {
+    const { ctx, pr } = withPr();
+    const a = ctx.apiPrReview(pr.number, 'comment', 'ひとの');
+    ctx.dbUpdate('reviews', 'id', ctx.dbReadAll('reviews')[0].id,
+      { reviewer: 'other@example.com' });
+
+    expect(ctx.apiPrReviews(pr.number)[0].canEdit).toBe(false);
+    expect(a).toBeTruthy();
+  });
+
+  it('確認してもらう人が一覧に入る', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrSetReviewers(pr.number, ['a@example.com']);
+
+    const row = ctx.apiPrList().filter((p) => p.number === pr.number)[0];
+    expect(row.reviewers).toEqual(['a@example.com']);
+  });
+});

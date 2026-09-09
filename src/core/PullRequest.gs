@@ -259,6 +259,9 @@ function prReview(number, state, body) {
     state: state,
     body: body || '',
     at: new Date(),
+    // 後から直したり消したりするには、1件を名指しできる必要がある
+    id: reviewNextId_(),
+    editedAt: '',
   };
   dbAppend('reviews', row);
 
@@ -404,4 +407,152 @@ function prMerge(number, choices) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 次のやりとりの番号を返す。
+ *
+ * @returns {number}
+ */
+function reviewNextId_() {
+  var rows = dbReadAll('reviews');
+  var max = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var n = Number(rows[i].id);
+    if (n > max) max = n;
+  }
+  return max + 1;
+}
+
+/**
+ * やりとりを1件返す。無ければエラー。
+ *
+ * @param {number} id
+ * @returns {object} reviews 行
+ */
+function reviewGet(id) {
+  if (id === '' || id === null || id === undefined) {
+    throw new Error('やりとりを指定してください');
+  }
+  var row = dbFindOne('reviews', 'id', id);
+  if (!row) throw new Error('やりとりが見つかりません: ' + id);
+  return row;
+}
+
+/**
+ * 書いた本人かどうかを確かめる。
+ *
+ * 他人の発言を書き換えられると、やりとりの記録が信じられなくなる。
+ *
+ * @param {object} row reviews 行
+ */
+function reviewAssertOwn_(row) {
+  var me = Session.getActiveUser().getEmail();
+  if (String(row.reviewer) !== String(me)) {
+    throw new Error('自分が書いたものだけ直せます');
+  }
+}
+
+/**
+ * 承認や差し戻しではなく、ただのコメントかを確かめる。
+ *
+ * 承認は判断であって発言ではない。消せてしまうと、承認が無かったことに
+ * なったまま反映できてしまう。
+ *
+ * @param {object} row reviews 行
+ */
+function reviewAssertComment_(row) {
+  if (String(row.state) !== 'comment') {
+    throw new Error('承認や差し戻しの記録は直せません');
+  }
+}
+
+/**
+ * コメントを書き直す。
+ *
+ * @param {number} id
+ * @param {string} body
+ * @returns {object} 直した後の行
+ */
+function reviewEdit(id, body) {
+  var row = reviewGet(id);
+  reviewAssertOwn_(row);
+  reviewAssertComment_(row);
+
+  if (!String(body || '').replace(/^\s+|\s+$/g, '')) {
+    throw new Error('中身を入力してください');
+  }
+
+  dbUpdate('reviews', 'id', id, { body: body, editedAt: new Date() });
+  return reviewGet(id);
+}
+
+/**
+ * コメントを消す。
+ *
+ * @param {number} id
+ */
+function reviewDelete(id) {
+  var row = reviewGet(id);
+  reviewAssertOwn_(row);
+  reviewAssertComment_(row);
+
+  dbDelete('reviews', 'id', id);
+}
+
+/**
+ * 確認してもらう人を決める。
+ *
+ * 誰に頼んだのかが残らないと、依頼が宙に浮いたまま誰も見ない。
+ *
+ * @param {number} number PR番号
+ * @param {string[]} emails
+ * @returns {object} 更新後の pulls 行
+ */
+function prSetReviewers(number, emails) {
+  var pr = prGet(number);
+  if (String(pr.state) === 'merged') throw new Error('このPRは既に反映済みです');
+
+  var seen = {};
+  var list = [];
+
+  for (var i = 0; i < (emails || []).length; i++) {
+    var one = String(emails[i] || '').replace(/^\s+|\s+$/g, '');
+    if (!one) continue;
+    if (!/^[^\s,@]+@[^\s,@]+$/.test(one)) {
+      throw new Error('メールアドレスの形になっていません: ' + one);
+    }
+    if (seen[one]) continue;
+    seen[one] = true;
+    list.push(one);
+  }
+
+  var before = prReviewers(pr);
+  dbUpdate('pulls', 'number', number, { reviewers: list.join(',') });
+
+  // 新しく頼んだ人にだけ知らせる。既に頼んである人に再送しない
+  for (var j = 0; j < list.length; j++) {
+    if (before.indexOf(list[j]) >= 0) continue;
+    notifyPrReviewRequested(prGet(number), list[j]);
+  }
+  return prGet(number);
+}
+
+/**
+ * 確認してもらう人の一覧を返す。
+ *
+ * @param {object} pr pulls 行
+ * @returns {string[]}
+ */
+function prReviewers(pr) {
+  var raw = String((pr && pr.reviewers) || '');
+  var out = [];
+
+  var parts = raw.split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var one = parts[i].replace(/^\s+|\s+$/g, '');
+    if (one) out.push(one);
+  }
+  return out;
 }

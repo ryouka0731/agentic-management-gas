@@ -88,7 +88,7 @@ const API_NAMES = [
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
-  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen',
+  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers',
 ];
 
 /** よく使う既定の応答 */
@@ -126,10 +126,23 @@ export const DEFAULTS = {
     { name: '見直し', headSha: 'b', baseSha: 'a', state: 'open', createdBy: 'me@example.com', createdAt: '' },
   ],
   apiPrList: [
-    { number: 1, title: '第2条の改訂', sourceBranch: '見直し', targetBranch: 'main', state: 'open', author: 'other@example.com', createdAt: '' },
+    {
+      number: 1, title: '第2条の改訂', sourceBranch: '見直し', targetBranch: 'main',
+      state: 'open', author: 'other@example.com', createdAt: '',
+      body: '第2条を直しました', reviewers: ['me@example.com'],
+    },
+  ],
+  apiPrReviews: [
+    {
+      id: 1, reviewer: 'me@example.com', state: 'comment', body: 'ここを直して',
+      at: '2026-09-05T00:00:00.000Z', editedAt: '', canEdit: true,
+    },
+    {
+      id: 2, reviewer: 'other@example.com', state: 'comment', body: '直しました',
+      at: '2026-09-06T00:00:00.000Z', editedAt: '', canEdit: false,
+    },
   ],
   apiPrPreview: { clean: true, problems: [], conflicts: [], approvals: 0, ops: [] },
-  apiPrReviews: [],
   apiPrCommits: [],
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com'],

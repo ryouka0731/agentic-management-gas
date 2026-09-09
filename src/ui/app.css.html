@@ -2504,4 +2504,58 @@ button.gantt-name:hover { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .has-hint::after { transition: none; }
 }
+
+/*
+ * やりとり。
+ *
+ * 誰の発言かを顔と名前で示す。名前だけの行が縦に積まれると、
+ * どれが誰のものか追えなくなる
+ */
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.comment-who { color: var(--ink); font-weight: 600; }
+
+.comment-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--motion) ease-out;
+}
+
+/* 触れるまで隠す。並んでいるだけで押したくなる道具は要らない */
+.comment:hover .comment-tools,
+.comment:focus-within .comment-tools { opacity: 1; }
+
+.comment-tools .btn-danger { width: 26px; min-height: 26px; }
+.comment-tools .btn-danger .icon { width: 14px; height: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .comment-tools { opacity: 1; transition: none; }
+}
+
+/* 確認してもらう人 */
+.reviewer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+
+.reviewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) 2px 2px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font-size: 12px;
+}
 </style>

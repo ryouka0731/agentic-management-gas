@@ -1050,3 +1050,125 @@ describe('ボードのカードから捨てる', () => {
       .toBe(false);
   });
 });
+
+describe('確認依頼のやりとり', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openPulls(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  }
+
+  function comments() {
+    return [...document.querySelectorAll('#pr-detail .comment')];
+  }
+
+  it('誰の発言かを顔と名前で示す', () => {
+    openPulls();
+    const head = comments()[0].querySelector('.comment-head');
+
+    expect(head.querySelector('.avatar').textContent).toBe('O');
+    expect(head.querySelector('.comment-who').textContent).toBe('other@example.com');
+  });
+
+  it('自分のコメントには直すと消すが付く', () => {
+    openPulls();
+    // 先頭は依頼そのもの。1件目のやりとりが自分のもの
+    const mine = comments()[1];
+
+    expect(mine.querySelector('.comment-tools')).toBeTruthy();
+    expect(mine.querySelector('.comment-tools .btn-danger')).toBeTruthy();
+  });
+
+  it('他人のコメントには付かない', () => {
+    openPulls();
+    expect(comments()[2].querySelector('.comment-tools')).toBe(null);
+  });
+
+  it('直すと今の中身が入った状態で開く', () => {
+    const app = openPulls();
+    comments()[1].querySelector('.comment-tools .icon-btn').click();
+
+    const field = document.querySelector('#side-body textarea, #side-body input');
+    expect(field.value).toBe('ここを直して');
+
+    field.value = 'やっぱりこう';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiReviewEdit').pop();
+    expect(call.args).toEqual([1, 'やっぱりこう']);
+  });
+
+  it('消すのは確かめてから', () => {
+    const app = openPulls();
+    comments()[1].querySelector('.comment-tools .btn-danger').click();
+
+    expect(app.calls.some((c) => c.name === 'apiReviewDelete')).toBe(false);
+
+    document.querySelector('#pr-detail .confirm-strip .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiReviewDelete').pop().args[0]).toBe(1);
+  });
+
+  it('直したものにはその印が出る', () => {
+    openPulls({
+      apiPrReviews: [{
+        id: 1, reviewer: 'me@example.com', state: 'comment', body: 'なおした',
+        at: '2026-09-05T00:00:00.000Z', editedAt: '2026-09-06T00:00:00.000Z',
+        canEdit: true,
+      }],
+    });
+
+    expect(comments()[1].textContent).toContain('直しました');
+  });
+});
+
+describe('確認してもらう人', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openPulls(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  }
+
+  it('頼んだ人が顔つきで並ぶ', () => {
+    openPulls();
+    const chip = document.querySelector('#pr-detail .reviewer-chip');
+
+    expect(chip.textContent).toContain('me@example.com');
+    expect(chip.querySelector('.avatar')).toBeTruthy();
+  });
+
+  it('誰にも頼んでいなければそう出る', () => {
+    openPulls({
+      apiPrList: [{ ...DEFAULTS.apiPrList[0], reviewers: [] }],
+    });
+
+    expect(document.querySelector('#pr-detail .reviewer-row').textContent)
+      .toContain('まだ誰にも頼んでいません');
+  });
+
+  it('カンマ区切りで決められる', () => {
+    const app = openPulls();
+    document.querySelector('#pr-detail .reviewer-row .icon-btn').click();
+
+    const input = document.querySelector('#side-body input');
+    expect(input.value).toBe('me@example.com');
+
+    input.value = 'a@example.com, b@example.com';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiPrSetReviewers').pop();
+    expect(call.args[0]).toBe(1);
+    expect(call.args[1]).toEqual(['a@example.com', ' b@example.com']);
+  });
+
+  it('反映済みなら決め直せない', () => {
+    openPulls({
+      apiPrList: [{ ...DEFAULTS.apiPrList[0], state: 'merged' }],
+    });
+
+    expect(document.querySelector('#pr-detail .reviewer-row .icon-btn')).toBe(null);
+  });
+});

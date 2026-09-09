@@ -337,3 +337,115 @@ describe('Phase 2 統合: 履歴の並び', () => {
     expect(messages).toEqual(['3回目', '2回目', '初期状態']);
   });
 });
+
+describe('やりとりの直しと確認してもらう人', () => {
+  function withPr() {
+    const env = setup();
+    const { ctx, mainFileId } = env;
+    ctx.branchCreate('改訂', mainFileId);
+
+    const work = ctx.branchWorkingFileId('改訂', mainFileId);
+    env.fake._docs.set(work, '<p>第1条</p>\n<p>第2条</p>\n');
+    ctx.commitFile(work, '改訂', '第2条を足した', null);
+
+    env.pr = ctx.prCreate('第2条の追加', '補足', '改訂', mainFileId);
+    return env;
+  }
+
+  it('コメントには番号が振られる', () => {
+    const { ctx, pr } = withPr();
+    const a = ctx.prReview(pr.number, 'comment', 'ひとつめ');
+    const b = ctx.prReview(pr.number, 'comment', 'ふたつめ');
+
+    expect(a.id).toBe(1);
+    expect(b.id).toBe(2);
+  });
+
+  it('自分のコメントは書き直せる', () => {
+    const { ctx, pr } = withPr();
+    const a = ctx.prReview(pr.number, 'comment', 'まえ');
+
+    const after = ctx.reviewEdit(a.id, 'あと');
+
+    expect(after.body).toBe('あと');
+    expect(after.editedAt).not.toBe('');
+  });
+
+  it('空にはできない', () => {
+    const { ctx, pr } = withPr();
+    const a = ctx.prReview(pr.number, 'comment', 'なにか');
+
+    expect(() => ctx.reviewEdit(a.id, '   ')).toThrow(/中身を入力/);
+  });
+
+  it('自分のコメントは消せる', () => {
+    const { ctx, pr } = withPr();
+    const a = ctx.prReview(pr.number, 'comment', '消す');
+
+    ctx.reviewDelete(a.id);
+
+    expect(ctx.dbReadAll('reviews')).toEqual([]);
+  });
+
+  it('他人のコメントは直せない', () => {
+    const { ctx, pr, fake } = withPr();
+    const a = ctx.prReview(pr.number, 'comment', '他人の');
+    ctx.dbUpdate('reviews', 'id', a.id, { reviewer: 'other@example.com' });
+
+    expect(() => ctx.reviewEdit(a.id, '書き換え')).toThrow(/自分が書いたもの/);
+    expect(() => ctx.reviewDelete(a.id)).toThrow(/自分が書いたもの/);
+    expect(fake).toBeTruthy();
+  });
+
+  it('承認の記録は直せない', () => {
+    const { ctx, pr } = withPr();
+    ctx.PropertiesService.getScriptProperties()
+      .setProperty('ALLOW_SELF_APPROVE', 'true');
+    const a = ctx.prReview(pr.number, 'approve', 'よい');
+
+    // 消せてしまうと、承認が無かったことになったまま反映できる
+    expect(() => ctx.reviewEdit(a.id, '取り消し')).toThrow(/承認や差し戻し/);
+    expect(() => ctx.reviewDelete(a.id)).toThrow(/承認や差し戻し/);
+  });
+
+  it('無い番号は断る', () => {
+    const { ctx } = withPr();
+    expect(() => ctx.reviewEdit(999, 'なにか')).toThrow(/見つかりません/);
+    expect(() => ctx.reviewEdit('', 'なにか')).toThrow(/指定してください/);
+  });
+
+  it('確認してもらう人を決められる', () => {
+    const { ctx, pr } = withPr();
+
+    ctx.prSetReviewers(pr.number, ['a@example.com', 'b@example.com']);
+
+    expect(ctx.prReviewers(ctx.prGet(pr.number)))
+      .toEqual(['a@example.com', 'b@example.com']);
+  });
+
+  it('同じ人を二重に入れない', () => {
+    const { ctx, pr } = withPr();
+
+    ctx.prSetReviewers(pr.number, ['a@example.com', ' a@example.com ', '']);
+
+    expect(ctx.prReviewers(ctx.prGet(pr.number))).toEqual(['a@example.com']);
+  });
+
+  it('メールの形になっていないものは断る', () => {
+    const { ctx, pr } = withPr();
+
+    expect(() => ctx.prSetReviewers(pr.number, ['だれか'])).toThrow(/メールアドレス/);
+  });
+
+  it('新しく頼んだ人にだけ知らせる', () => {
+    const { ctx, pr, fake } = withPr();
+    ctx.prSetReviewers(pr.number, ['a@example.com']);
+
+    const before = fake._sentMails().length;
+    ctx.prSetReviewers(pr.number, ['a@example.com', 'b@example.com']);
+
+    const sent = fake._sentMails().slice(before);
+    expect(sent.map((m) => m.to)).toEqual(['b@example.com']);
+  });
+
+});
