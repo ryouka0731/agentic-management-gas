@@ -53,6 +53,28 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 - 実体を取得できない画像 (`sha === 'unavailable'`) は書き戻すと永久に失われるため、
   マージ自体を拒否する
 
+## メタDBの列を触るとき
+
+`DB_SCHEMA()` が唯一の列順の定義である。
+
+- **列は必ず末尾に足す。** 途中に挿入すると、既に書かれている行を新しい順序で
+  読むことになり、値が1つずつずれる（`dueDate` を途中に入れて実際に踏んだ）
+- **列を足したら、既に書かれている行の空欄をどう扱うか決める。** `reviews` に
+  `id` を足したとき、それ以前の行は空のままで名指しできず、直そうとすると
+  「やりとりを指定してください」で止まった。読むたびに埋める
+  (`reviewBackfillIds_`) 形にした
+- `test/schema.test.js` が全テーブルの列と順序を固定している
+
+## 反映先は main とは限らない
+
+確認依頼は改訂版どうしでも出せる。`pulls.targetBranch` が反映先を指し、
+`prTargetBranchFileId` がその版の作業コピーを返す。
+
+**3つを見比べる起点 (`prMergeBase_`) は、両方の分かれ目のうち古いほうを使う。**
+新しいほうを使うと、相手にまだ無い変更まで「相手が消した」と読め、黙って
+消える。`test/phase2-integration.test.js` の「分かれ目が違う版どうしを見比べる」
+がこれを固定している（起点の選び方を逆にすると、実際に条文が1つ消える）。
+
 ## main の保護は API 層で行う
 
 `assertNotProtected_` は `apiCommit` / `apiSaveMarkdown` から呼ぶ。
@@ -82,6 +104,33 @@ npm run coverage
 `test/e2e-journey.test.js` は**何も仕込まずに**人がたどる順序で通す。
 仕込みで隠れる状態を見つけるためのものなので、`setup()` を使わないこと。
 
+`test/component.test.js` は jsdom に画面を組んで**実際に押す**。ソースを
+文字列で検査するだけでは、描画も応答も確かめられない。
+
+**直したら、直す前に戻して落ちることを必ず確かめる。** 落ちないテストは
+何も守っていない。この方法で「空の状態のボタンで落ちる」「起点の選び方を
+逆にすると条文が消える」「一覧の幅が 320px 固定」を実際に捕まえている。
+
+`test/dom.js` の `DEFAULTS` に**同じキーを二度書かない**。後のものが勝つため、
+足したはずの応答が空のまま届き、原因の分からない空表示になる（実際に踏んだ）。
+
+## 画面に渡せる形か
+
+`google.script.run` は限られた型しか運べない。**DBの行をそのまま返すと、Date が
+混ざった時点で画面には `null` が届く**。`apiIssueList` と `apiPrReviews` で
+2度踏んだ（後者は「コメントを書いても反映されない」に化けた）。
+
+- 日時は `toISOString()` で文字列にしてから返す
+- `test/phase4-edit.test.js` の「画面に渡せる形か」が全 API を走査している。
+  **API を足したらそこに足す**
+- 画面側の成功ハンドラは `list || []` で受ける
+
+## 誰が持ち主かは Session からは分からない
+
+この Web アプリは `executeAs: USER_ACCESSING` で動くため、
+**`Session.getEffectiveUser()` は常に開いている本人になる**。持ち主として扱うと
+誰もが持ち主になる。`inquiryOwner_()` はリポジトリのフォルダの持ち主を見る。
+
 ## 落とし穴
 
 - **`commitHistory` は親チェーン順**。timestamp だけで並べると同一ミリ秒で
@@ -95,9 +144,23 @@ npm run coverage
   `--accent`)。未定義変数 + フォールバックの形は使わない。
   `[hidden] { display: none !important; }` は定義済み（`display` を持つクラスに
   `hidden` を付けても隠れる）
-- **`fileUrlOf` と `diffPairs` はサーバ側と UI 側の両方にある**。`google.script.run`
-  の往復を減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**
+- **サーバ側と UI 側の両方にある関数がある**。`google.script.run` の往復を
+  減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**:
+  `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
+  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort`
 - **イテレータを回しながら Drive のファイルを移動しない**。先に対象を集める
+- **`button` は地の色も枠も継がない。** 既定の `color: buttontext` は OS の設定で
+  決まるため、暗い OS で明るいテーマを選ぶと白い面に白い文字が乗って消える
+  (確認依頼の題名だけが見えなかった)。既定の `border` も面と影で段を表す設計を
+  壊す。基礎で `button { color: inherit; border: 0 }` を当てている
+- **`display: flex` の行に `width: 100%` を足さない。** 左右に margin があると
+  その分はみ出す（実際に右端が見切れた）
+- **幅を掴んで変えるペインには `min-width: 0` を書く。** flex の既定
+  (`min-width: auto`) は中身より小さくならず、「広げられるのに縮まない」になる
+- **掴む操作は `pointerup` だけに頼らない。** 枠の外で離すと届かず、掴んだまま
+  張り付く。`pointercancel` と `window` 側でも外す
+- **一覧の器 (`.history-list`) は確認依頼と共用している。** あちらの 320px 固定を
+  被ると、見出しだけが広がって列がずれる
 
 ## デプロイ
 
@@ -128,7 +191,10 @@ npx clasp create-deployment -i <デプロイID> -d "説明"
 
 - **GAS 標準サービスのみ。GCP プロジェクトは使えない**ため `clasp run` は使用不可。
   ローカルからの操作は `.git/queue/` のコマンドキュー経由（README 参照）
-- Advanced Google Services / 外部 API / 公開エンドポイントは使わない
+- 外部 API / 公開エンドポイントは使わない
+- **拡張サービスは Google ToDo 連携 (`src/core/GoogleTasks.gs`) だけの例外。**
+  エディタの「サービス +」から Tasks を足していない環境でも他が壊れないよう、
+  `tasksAvailable()` が false のときは画面に入口すら出さない
 - 色・フォント・サイズは版管理の対象外（意図的な割り切り）
 - Slides はマージ非対応。PR 作成の時点で拒否する
 

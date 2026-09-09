@@ -612,3 +612,72 @@ describe('改訂版どうしの確認依頼', () => {
     expect(ctx.prPreviewMerge(pr.number).targetBranch).toBe('土台');
   });
 });
+
+describe('分かれ目が違う版どうしを見比べる', () => {
+  /**
+   * 正式版が進む途中で、2つの版がそれぞれ別のところから分かれる。
+   *
+   *   main:  A ──────── B
+   *          │          │
+   *   土台:  └─(ここ)   │
+   *   積み増し:         └─(ここ) ── 第5条
+   */
+  function forkedApart() {
+    const env = setup();
+    const { ctx, fake, mainFileId } = env;
+
+    ctx.branchCreate('土台', mainFileId);
+
+    fake._docs.set(mainFileId, html([P1, P2, P3, '<p>第4条</p>']));
+    ctx.commitFile(mainFileId, 'main', '第4条を足した', null);
+
+    ctx.branchCreate('積み増し', mainFileId);
+    env.base = ctx.branchWorkingFileId('土台', mainFileId);
+    env.top = ctx.branchWorkingFileId('積み増し', mainFileId);
+
+    fake._docs.set(env.top, html([P1, P2, P3, '<p>第4条</p>', '<p>第5条</p>']));
+    ctx.commitFile(env.top, '積み増し', '第5条を足した', null);
+
+    return env;
+  }
+
+  it('分かれ目が違うことを前提にする', () => {
+    const { ctx } = forkedApart();
+
+    expect(ctx.dbFindOne('branches', 'name', '土台').baseSha)
+      .not.toBe(ctx.dbFindOne('branches', 'name', '積み増し').baseSha);
+  });
+
+  it('古いほうの分かれ目を起点にする', () => {
+    const { ctx } = forkedApart();
+    const older = ctx.dbFindOne('branches', 'name', '土台');
+    const newer = ctx.dbFindOne('branches', 'name', '積み増し');
+
+    expect(ctx.prMergeBase_(newer, '土台')).toBe(String(older.baseSha));
+  });
+
+  it('相手にまだ無い変更を「消した」と読まない', () => {
+    const { ctx, fake, mainFileId, base } = forkedApart();
+
+    const pr = ctx.prCreate('第5条', '', '積み増し', mainFileId, '土台');
+    const preview = ctx.prPreviewMerge(pr.number);
+
+    // 新しいほうを起点にすると、土台に無い第4条が「消された」と読める
+    expect(preview.clean).toBe(true);
+
+    ctx.PropertiesService.getScriptProperties()
+      .setProperty('ALLOW_SELF_APPROVE', 'true');
+    ctx.prReview(pr.number, 'approve', '');
+    ctx.prMerge(pr.number, []);
+
+    expect(fake._docs.get(base)).toContain('第4条');
+    expect(fake._docs.get(base)).toContain('第5条');
+  });
+
+  it('正式版へ出すときは自分の分かれ目のまま', () => {
+    const { ctx } = forkedApart();
+    const newer = ctx.dbFindOne('branches', 'name', '積み増し');
+
+    expect(ctx.prMergeBase_(newer, 'main')).toBe(String(newer.baseSha));
+  });
+});
