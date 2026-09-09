@@ -1368,26 +1368,27 @@ describe('不具合を伝える', () => {
     expect(document.getElementById('snackbar').textContent).toContain('受付 #7');
   });
 
-  it('送ったものと返事が並ぶ', () => {
+  it('送ったものが並ぶ', () => {
     openReport({
       apiInquiryList: [{
-        number: 3, kind: 'bug', kindLabel: 'うまく動かない', body: '棒が伸びない',
-        by: 'me@example.com', state: 'done', context: '', answer: '直しました',
-        at: '2026-09-09T00:00:00.000Z', answeredAt: '2026-09-10T00:00:00.000Z',
+        number: 3, kind: 'bug', kindLabel: 'うまく動かない',
+        title: '棒が伸びない', body: '棒が伸びない',
+        by: 'me@example.com', state: 'open', context: '', answer: '',
+        at: '2026-09-09T00:00:00.000Z', answeredAt: '', replyCount: 2,
       }],
     });
 
     const row = document.querySelector('#report-list .row-item');
     expect(row.textContent).toContain('#3 棒が伸びない');
-    expect(row.querySelector('.report-answer').textContent).toBe('直しました');
-    expect(row.querySelector('.state').textContent).toBe('返事あり');
+    expect(row.textContent).toContain('返信 2件');
+    expect(row.querySelector('.state').textContent).toBe('未解決');
   });
 
-  it('受付中の件数を左に出す', () => {
+  it('未解決の件数を左に出す', () => {
     openReport({
       apiInquiryList: [
-        { number: 1, kind: 'bug', kindLabel: 'うまく動かない', body: 'a', state: 'open', at: '', answer: '' },
-        { number: 2, kind: 'bug', kindLabel: 'うまく動かない', body: 'b', state: 'done', at: '', answer: '' },
+        { number: 1, kind: 'bug', kindLabel: 'うまく動かない', title: 'a', body: 'a', state: 'open', at: '', by: 'x@example.com' },
+        { number: 2, kind: 'bug', kindLabel: 'うまく動かない', title: 'b', body: 'b', state: 'done', at: '', by: 'x@example.com' },
       ],
     });
 
@@ -1426,5 +1427,121 @@ describe('何も無いときの次の一手', () => {
     const btn = document.querySelector('#issue-list .blank-state .btn');
     expect(() => btn.click()).not.toThrow();
     expect(document.getElementById('side-title').textContent).toBe('やることを作る');
+  });
+});
+
+describe('報告で議論する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const LIST = [
+    {
+      number: 3, kind: 'bug', kindLabel: 'うまく動かない', title: '棒が伸びない',
+      body: '棒が伸びない\n右端を掴んだ', by: 'other@example.com', state: 'open',
+      context: '画面: issues / 環境: test', answer: '', at: '2026-09-09T00:00:00.000Z',
+      answeredAt: '', mine: false, canClose: false, replyCount: 1,
+    },
+  ];
+
+  const THREAD = {
+    inquiry: LIST[0],
+    replies: [{
+      id: 1, inquiryNumber: 3, body: 'こちらでも起きます', by: 'me@example.com',
+      at: '2026-09-09T01:00:00.000Z', editedAt: '', canEdit: true,
+    }],
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign(
+      { apiInquiryList: LIST, apiInquiryThread: THREAD }, over || {}));
+    document.querySelector('[data-tab="report"]').click();
+    return app;
+  }
+
+  it('他人の報告も読める', () => {
+    openBoard();
+    expect(document.querySelector('#report-list .row-item').textContent)
+      .toContain('other@example.com');
+  });
+
+  it('開くと本文とやりとりが出る', () => {
+    openBoard();
+    const detail = document.getElementById('report-detail');
+
+    expect(detail.textContent).toContain('棒が伸びない');
+    expect(detail.textContent).toContain('こちらでも起きます');
+  });
+
+  it('そのときの状況は畳んでおく', () => {
+    openBoard();
+    const box = document.querySelector('#report-detail .report-context');
+
+    // 直すには要るが、読む人には邪魔になる
+    expect(box.open).toBe(false);
+    expect(box.textContent).toContain('画面: issues');
+  });
+
+  it('返信できる', () => {
+    const app = openBoard();
+
+    const box = document.querySelector('#report-detail .comment-form textarea');
+    box.value = 'これで直りました';
+    document.querySelector('#report-detail .comment-form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiInquiryReply').pop();
+    expect(call.args).toEqual([3, 'これで直りました']);
+  });
+
+  it('自分の返信だけ直せる', () => {
+    openBoard();
+    const mine = [...document.querySelectorAll('#report-detail .comment')].pop();
+
+    expect(mine.querySelector('.comment-tools')).toBeTruthy();
+  });
+
+  it('閉じられない人には解決ボタンを出さない', () => {
+    openBoard();
+    expect(document.querySelector('#report-detail .pr-actions')).toBe(null);
+  });
+
+  it('出した本人は解決にできる', () => {
+    const app = openBoard({
+      apiInquiryThread: {
+        inquiry: Object.assign({}, LIST[0], { canClose: true, mine: true }),
+        replies: [],
+      },
+    });
+
+    document.querySelector('#report-detail .pr-actions .btn').click();
+    expect(app.calls.some((c) => c.name === 'apiInquiryClose')).toBe(true);
+  });
+
+  it('解決したものは既定で隠れる', () => {
+    openBoard({
+      apiInquiryList: [Object.assign({}, LIST[0], { state: 'done' })],
+    });
+
+    expect(document.getElementById('report-list').textContent)
+      .toContain('絞り込みに合う報告がありません');
+  });
+
+  it('未解決だけを外すと出る', () => {
+    openBoard({
+      apiInquiryList: [Object.assign({}, LIST[0], { state: 'done' })],
+    });
+
+    document.getElementById('report-open-btn').click();
+
+    expect(document.querySelector('#report-list .row-item').textContent)
+      .toContain('#3');
+  });
+
+  it('言葉で絞り込める', () => {
+    openBoard();
+    const input = document.getElementById('report-filter');
+
+    input.value = 'あるはずのない言葉';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    expect(document.querySelectorAll('#report-list .row-item')).toHaveLength(0);
   });
 });

@@ -88,7 +88,8 @@ const API_NAMES = [
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
-  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds',
+  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
+  'apiInquiryReplyEdit', 'apiInquiryReplyDelete', 'apiInquiryClose', 'apiInquiryReopen',
 ];
 
 /** よく使う既定の応答 */

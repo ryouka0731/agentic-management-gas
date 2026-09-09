@@ -1021,17 +1021,51 @@ function inquiryToPlain_(row) {
     return isNaN(d.getTime()) ? '' : d.toISOString();
   }
 
+  var me = Session.getActiveUser().getEmail();
+  var owner = Session.getEffectiveUser().getEmail();
+
   return {
     number: Number(row.number),
     kind: String(row.kind == null ? '' : row.kind),
     kindLabel: INQUIRY_KINDS()[row.kind] || String(row.kind || ''),
+    title: String(row.title || inquiryTitleOf_(row.body)),
     body: String(row.body == null ? '' : row.body),
     by: String(row.by == null ? '' : row.by),
     state: String(row.state == null ? '' : row.state),
     context: String(row.context == null ? '' : row.context),
     answer: String(row.answer == null ? '' : row.answer),
+    closedBy: String(row.closedBy == null ? '' : row.closedBy),
     at: iso(row.at),
     answeredAt: iso(row.answeredAt),
+    mine: String(row.by) === String(me),
+    // 閉じられるかは画面では決められない。ここで決めて渡す
+    canClose: String(row.by) === String(me) || String(owner) === String(me),
+    replyCount: inquiryReplies(row.number).length,
+  };
+}
+
+/**
+ * inquiry_replies の行を、画面に渡せる素の形にする。
+ *
+ * @param {object} row
+ * @param {string} me
+ * @returns {object}
+ */
+function inquiryReplyToPlain_(row, me) {
+  function iso(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+
+  return {
+    id: Number(row.id),
+    inquiryNumber: Number(row.inquiryNumber),
+    body: String(row.body == null ? '' : row.body),
+    by: String(row.by == null ? '' : row.by),
+    at: iso(row.at),
+    editedAt: iso(row.editedAt),
+    canEdit: String(row.by) === String(me) && Number(row.id) > 0,
   };
 }
 
@@ -1048,19 +1082,92 @@ function apiInquiryCreate(kind, body, context) {
 }
 
 /**
- * 自分が送った報告を返す (Web App API)。
+ * 報告を返す (Web App API)。
  *
- * 他人の報告は返さない。画面には自分のぶんだけ出す。全部を見るのは
- * メタDBのスプレッドシートを開ける人だけでよい。
+ * 使う人どうしで話せるように、全員が全部を読める。同じところで
+ * つまずいた人が先に答えを知っていることがあり、自分のぶんしか
+ * 見えないと誰も助け合えない。
  *
  * @returns {object[]}
  */
 function apiInquiryList() {
-  var rows = inquiryList(Session.getActiveUser().getEmail());
+  var rows = inquiryList(null);
   var out = [];
 
   for (var i = 0; i < rows.length; i++) out.push(inquiryToPlain_(rows[i]));
   return out;
+}
+
+/**
+ * 報告とそのやりとりを返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {{inquiry: object, replies: object[]}}
+ */
+function apiInquiryThread(number) {
+  var me = Session.getActiveUser().getEmail();
+  var replies = inquiryReplies(number);
+  var out = [];
+
+  for (var i = 0; i < replies.length; i++) {
+    out.push(inquiryReplyToPlain_(replies[i], me));
+  }
+  return { inquiry: inquiryToPlain_(inquiryGet(number)), replies: out };
+}
+
+/**
+ * 報告に返信する (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} body
+ * @returns {object}
+ */
+function apiInquiryReply(number, body) {
+  var me = Session.getActiveUser().getEmail();
+  return inquiryReplyToPlain_(inquiryReply(number, body), me);
+}
+
+/**
+ * 返信を書き直す (Web App API)。
+ *
+ * @param {number} id
+ * @param {string} body
+ * @returns {object}
+ */
+function apiInquiryReplyEdit(id, body) {
+  var me = Session.getActiveUser().getEmail();
+  return inquiryReplyToPlain_(inquiryReplyEdit(id, body), me);
+}
+
+/**
+ * 返信を消す (Web App API)。
+ *
+ * @param {number} id
+ * @returns {string}
+ */
+function apiInquiryReplyDelete(id) {
+  inquiryReplyDelete(id);
+  return '返信を消しました';
+}
+
+/**
+ * 話を閉じる (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiInquiryClose(number) {
+  return inquiryToPlain_(inquiryClose(number));
+}
+
+/**
+ * 閉じた話を開け直す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiInquiryReopen(number) {
+  return inquiryToPlain_(inquiryReopen(number));
 }
 
 /**

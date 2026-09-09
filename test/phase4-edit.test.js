@@ -445,6 +445,7 @@ describe('画面に渡せる形か', () => {
     env.ctx.apiIssueArchive(issue.number);
     env.ctx.apiIssueRestore(issue.number);
     env.ctx.apiInquiryCreate('bug', '棒が伸びない', '画面: 工程表');
+    env.ctx.apiInquiryReply(1, 'こちらでも起きます');
 
     env.ctx.branchCreate('改訂', env.fileId);
 
@@ -475,6 +476,7 @@ describe('画面に渡せる形か', () => {
     ['apiIssueArchivedList', (ctx) => ctx.apiIssueArchivedList()],
     ['apiInquiryList', (ctx) => ctx.apiInquiryList()],
     ['apiInquiryKinds', (ctx) => ctx.apiInquiryKinds()],
+    ['apiInquiryThread', (ctx) => ctx.apiInquiryThread(1)],
     ['apiPrReviews', (ctx, env) => ctx.apiPrReviews(env.pr.number)],
     ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
     ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],

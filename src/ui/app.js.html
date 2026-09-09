@@ -62,6 +62,11 @@
   var panelHelp = document.getElementById('panel-help');
   var panelReport = document.getElementById('panel-report');
   var reportListEl = document.getElementById('report-list');
+  var reportDetail = document.getElementById('report-detail');
+  var reportFilterEl = document.getElementById('report-filter');
+  var reportOpenBtn = document.getElementById('report-open-btn');
+  var reportOpenOnly = true;
+  var reportShown = null;
 
   var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
@@ -4145,7 +4150,8 @@
       '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
-      'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、こちらで再現しやすくなります。',
+      'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、再現しやすくなります。',
+      '報告はみんなが読めて、誰でも返信できます。同じことで困った人が先に答えを知っていることがあります。直ったら「解決した」を押してください (押せるのは出した本人と、このアプリの持ち主です)。',
       'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
     ]],
   ];
@@ -4259,9 +4265,10 @@
   }
 
   /**
-   * 自分が送った報告を並べる。
+   * 報告を並べる。
    *
-   * 他人の報告は出さない。全部を見るのはメタDBを開ける人だけでよい。
+   * 全員が全部を読める。同じところでつまずいた人が先に答えを知って
+   * いることがあり、自分のぶんしか見えないと誰も助け合えない。
    */
   function loadReports() {
     showSkeleton(reportListEl, 'list', 3);
@@ -4274,7 +4281,19 @@
           return r.state === 'open';
         }).length);
 
+        var shown = rows.filter(matchesReport);
+
+        if (rows.length && !shown.length) {
+          reportDetail.textContent = '';
+          reportListEl.appendChild(makeBlankState(
+            '絞り込みに合う報告がありません',
+            '絞り込みを消すか、「未解決だけ」を外してみてください。'
+          ));
+          return;
+        }
+
         if (!rows.length) {
+          reportDetail.textContent = '';
           reportListEl.appendChild(makeBlankState(
             'まだ何も伝えていません',
             'うまく動かないこと、こうしてほしいことを送ってください。' +
@@ -4284,50 +4303,292 @@
           return;
         }
 
-        rows.forEach(function (r) {
-          var row = document.createElement('div');
-          row.className = 'row-item';
+        shown.forEach(function (r) {
+          var btn = document.createElement('button');
+          btn.className = 'row-item';
+          btn.dataset.number = r.number;
 
           var main = document.createElement('div');
           main.className = 'row-main';
 
           var title = document.createElement('div');
           title.className = 'row-title';
-          title.textContent = '#' + r.number + ' ' + r.body;
+          title.textContent = '#' + r.number + ' ' + r.title;
           main.appendChild(title);
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = r.kindLabel + ' · ' +
-            String(r.at).substring(0, 10) + ' · ' +
-            (r.state === 'done' ? '返事あり' : '受付中');
+          meta.textContent = r.kindLabel + ' · ' + r.by + ' · ' +
+            String(r.at).substring(0, 10) +
+            (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
           main.appendChild(meta);
 
           var open = document.createElement('div');
           open.className = 'row-open';
           open.appendChild(makeIcon(r.state === 'done' ? 'check' : 'inbox'));
           open.appendChild(main);
-          row.appendChild(open);
-
-          if (r.answer) {
-            var answer = document.createElement('div');
-            answer.className = 'comment-body report-answer';
-            answer.textContent = r.answer;
-            main.appendChild(answer);
-          }
+          btn.appendChild(open);
 
           var state = document.createElement('span');
           state.className = 'state' + (r.state === 'done' ? ' state-merged' : '');
-          state.textContent = r.state === 'done' ? '返事あり' : '受付中';
-          row.appendChild(state);
+          state.textContent = r.state === 'done' ? '解決' : '未解決';
+          btn.appendChild(state);
 
-          reportListEl.appendChild(row);
+          btn.addEventListener('click', function () { openReport(r.number); });
+          reportListEl.appendChild(btn);
         });
+
+        // 開いていた話を開き直す。返信するたび先頭に戻ると読み進められない
+        var keep = reportShown &&
+          shown.filter(function (r) { return r.number === reportShown; })[0];
+        openReport(keep ? keep.number : (shown[0] && shown[0].number));
       })
       .withFailureHandler(function (err) {
         reportListEl.textContent = 'エラー: ' + err.message;
       })
       .apiInquiryList();
+  }
+
+  /**
+   * 絞り込みに残すかを決める。
+   *
+   * @param {object} r
+   * @returns {boolean}
+   */
+  function matchesReport(r) {
+    if (reportOpenOnly && r.state === 'done') return false;
+
+    var q = String(reportFilterEl.value || '').toLowerCase()
+      .replace(/^\s+|\s+$/g, '');
+    if (!q) return true;
+
+    return ['#' + r.number, r.title, r.body, r.kindLabel, r.by]
+      .join(' ').toLowerCase().indexOf(q) >= 0;
+  }
+
+  /**
+   * 話を開く。
+   *
+   * @param {number} number
+   */
+  function openReport(number) {
+    reportShown = number || null;
+
+    var items = reportListEl.querySelectorAll('.row-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].setAttribute('aria-current',
+        String(Number(items[i].dataset.number) === Number(number)));
+    }
+
+    if (!number) {
+      reportDetail.textContent = '';
+      return;
+    }
+    showSkeleton(reportDetail, 'block');
+
+    google.script.run
+      .withSuccessHandler(function (thread) {
+        if (!thread) return;
+        renderReportThread(thread.inquiry, thread.replies || []);
+      })
+      .withFailureHandler(function (err) {
+        reportDetail.textContent = 'エラー: ' + err.message;
+      })
+      .apiInquiryThread(number);
+  }
+
+  /**
+   * 話の中身を描く。
+   *
+   * @param {object} q
+   * @param {object[]} replies
+   */
+  function renderReportThread(q, replies) {
+    reportDetail.textContent = '';
+
+    var head = document.createElement('div');
+    head.className = 'pr-title';
+    head.textContent = '#' + q.number + ' ' + q.title;
+    reportDetail.appendChild(head);
+
+    var meta = document.createElement('div');
+    meta.className = 'row-meta';
+    meta.textContent = q.kindLabel + ' · ' + q.by + ' · ' +
+      String(q.at).substring(0, 10) +
+      (q.state === 'done' ? ' · 解決' + (q.closedBy ? ' (' + q.closedBy + ')' : '') : '');
+    reportDetail.appendChild(meta);
+
+    if (q.canClose) {
+      var actions = document.createElement('div');
+      actions.className = 'pr-actions';
+
+      var toggle = document.createElement('button');
+      toggle.className = 'btn' + (q.state === 'done' ? '' : ' btn-primary');
+      toggle.appendChild(makeIcon(q.state === 'done' ? 'back' : 'check'));
+      toggle.appendChild(document.createTextNode(
+        q.state === 'done' ? 'まだ解決していない' : '解決した'));
+
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        var run = google.script.run
+          .withSuccessHandler(function () { loadReports(); })
+          .withFailureHandler(function (err) {
+            toggle.disabled = false;
+            showSnack(err.message, { kind: 'ng' });
+          });
+
+        if (q.state === 'done') run.apiInquiryReopen(q.number);
+        else run.apiInquiryClose(q.number);
+      });
+
+      actions.appendChild(toggle);
+      reportDetail.appendChild(actions);
+    }
+
+    var first = document.createElement('div');
+    first.className = 'comment';
+    first.appendChild(makeCommentHead(q.by, 'が報告'));
+
+    var body = document.createElement('div');
+    body.className = 'comment-body';
+    body.textContent = q.body;
+    first.appendChild(body);
+
+    if (q.context) {
+      var ctx = document.createElement('details');
+      ctx.className = 'report-context';
+
+      var sum = document.createElement('summary');
+      sum.textContent = 'そのときの状況';
+      ctx.appendChild(sum);
+
+      var pre = document.createElement('div');
+      pre.className = 'comment-body';
+      pre.textContent = q.context;
+      ctx.appendChild(pre);
+      first.appendChild(ctx);
+    }
+    reportDetail.appendChild(first);
+
+    replies.forEach(function (r) {
+      var el = document.createElement('div');
+      el.className = 'comment';
+
+      var h = makeCommentHead(r.by, String(r.at).substring(0, 10) +
+        (r.editedAt ? ' · 直しました' : ''));
+      if (r.canEdit) h.appendChild(makeReplyTools(r, el));
+      el.appendChild(h);
+
+      var b = document.createElement('div');
+      b.className = 'comment-body';
+      b.textContent = r.body;
+      el.appendChild(b);
+
+      reportDetail.appendChild(el);
+    });
+
+    reportDetail.appendChild(makeReplyForm(q));
+  }
+
+  /**
+   * 自分の返信を直す / 消す。
+   *
+   * @param {object} reply
+   * @param {HTMLElement} host
+   * @returns {HTMLElement}
+   */
+  function makeReplyTools(reply, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = 'この返信を直す';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        '返信を直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('返信を直しました', { kind: 'ok' });
+              closeSide();
+              openReport(reply.inquiryNumber);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiInquiryReplyEdit(reply.id, v.body);
+        },
+        host
+      );
+      form.querySelector('textarea').value = reply.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = 'この返信を消す';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(reportDetail,
+        'この返信を消します。元には戻せません。',
+        '消す',
+        function () {
+          google.script.run
+            .withSuccessHandler(function (msg) {
+              showSnack(msg, { kind: 'ok' });
+              openReport(reply.inquiryNumber);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiInquiryReplyDelete(reply.id);
+        });
+    });
+    tools.appendChild(del);
+    return tools;
+  }
+
+  /**
+   * 返信を書く欄。
+   *
+   * @param {object} q
+   * @returns {HTMLElement}
+   */
+  function makeReplyForm(q) {
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder = '同じことが起きた、こうしたら直った、など';
+    form.appendChild(input);
+
+    var send = document.createElement('button');
+    send.className = 'btn btn-primary';
+    send.textContent = '返信する';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function () {
+          showSnack('返信しました', { kind: 'ok' });
+          openReport(q.number);
+        })
+        .withFailureHandler(function (err) {
+          send.disabled = false;
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiInquiryReply(q.number, input.value);
+    });
+
+    form.appendChild(send);
+    return form;
   }
 
   // ===== 初期化 =====
@@ -4433,6 +4694,23 @@
 
   document.getElementById('report-btn')
     .addEventListener('click', function () { createReport(this); });
+
+  reportFilterEl.addEventListener('input', loadReports);
+  reportOpenBtn.addEventListener('click', function () {
+    reportOpenOnly = !reportOpenOnly;
+    reportOpenBtn.setAttribute('aria-pressed', String(reportOpenOnly));
+    reportOpenBtn.classList.toggle('on', reportOpenOnly);
+    loadReports();
+  });
+  reportOpenBtn.classList.add('on');
+
+  makeResizable(document.getElementById('report-resizer'),
+    '--report-pane-w', 'reportPaneWidth',
+    function (e) {
+      var box = document.querySelector('#panel-report .graph-split')
+        .getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 260, max: 1200 });
 
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;

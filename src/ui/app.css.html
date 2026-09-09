@@ -70,6 +70,8 @@
   --graph-pane-w: 46%;
   /* 確認依頼の一覧と中身の分け目 */
   --pr-pane-w: 38%;
+  /* 報告の一覧と話の分け目 */
+  --report-pane-w: 38%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   /* 選択肢や巻き取りにもテーマを伝える。OS 側の明暗に引きずられない */
   color-scheme: light;
@@ -1318,12 +1320,14 @@ button:disabled {
  * こちらは見出しと同じ幅でなければ列がずれるため、幅の指定を打ち消す。
  */
 #pr-pane { flex-basis: var(--pr-pane-w); }
+#report-pane { flex-basis: var(--report-pane-w); }
 
 /*
  * 確認依頼は行がカードなので、他の一覧 (.list-area) と同じく器を
  * 一段沈めて余白を取る。履歴は表なので沈めない
  */
-#pr-list {
+#pr-list,
+#report-list {
   padding: var(--sp-3) 0 var(--sp-6);
   background: var(--bg-2);
 }
@@ -2564,13 +2568,29 @@ button.gantt-name:hover { color: var(--accent); }
   font-size: 12px;
 }
 
-/* 送った報告への返事。本文の下に一段沈めて置く */
-.report-answer {
+/*
+ * 報告のときの状況。
+ *
+ * 直すには要るが、読む人には邪魔になる。畳んでおいて、要るときだけ開く
+ */
+.report-context {
   margin-top: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   background: var(--bg-2);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.report-context summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.report-context .comment-body {
+  margin-top: var(--sp-2);
+  font-size: 11px;
+  color: var(--ink-2);
+  word-break: break-all;
 }
 
 </style>

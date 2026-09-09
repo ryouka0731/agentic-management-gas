@@ -89,3 +89,26 @@ function notifyInquiryAnswered(row) {
     row.body + '\n\n--- 返事 ---\n' + row.answer
   );
 }
+
+/**
+ * 返信があったことを、その話に加わっている人に知らせる。
+ *
+ * 書いた本人には送らない。自分の発言で自分に通知が来ると、
+ * 通知そのものが読まれなくなる。
+ *
+ * @param {object} inquiry inquiries 行
+ * @param {object} reply inquiry_replies 行
+ * @param {string[]} talkers
+ */
+function notifyInquiryReply(inquiry, reply, talkers) {
+  for (var i = 0; i < (talkers || []).length; i++) {
+    if (String(talkers[i]) === String(reply.by)) continue;
+
+    notify(
+      talkers[i],
+      '[agentic-management] 報告 #' + inquiry.number + ' に返信がありました',
+      (inquiry.title || inquiry.body) + '\n\n' +
+      reply.by + ':\n' + reply.body
+    );
+  }
+}

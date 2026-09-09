@@ -910,8 +910,8 @@ describe('部品の既定を持ち込まない', () => {
     expect(css).toContain('button { border: 0; }');
   });
 
-  it('確認依頼の一覧も他の一覧と同じく器を沈める', () => {
-    const at = css.indexOf('#pr-list {');
+  it('確認依頼と報告の一覧も他の一覧と同じく器を沈める', () => {
+    const at = css.indexOf('#pr-list,');
     const rule = css.slice(at, css.indexOf('}', at));
 
     expect(rule).toContain('background: var(--bg-2)');

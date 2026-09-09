@@ -44,7 +44,7 @@
         <button class="nav-item" data-tab="report">
           <span class="nav-label">不具合を伝える</span>
           <span class="nav-count" id="count-reports" hidden></span>
-          <span class="nav-desc">うまく動かないときに</span>
+          <span class="nav-desc">みんなで話せる報告板</span>
         </button>
       </div>
     </nav>
@@ -257,11 +257,31 @@
       <div class="panel panel-col" id="panel-report" hidden>
         <div class="panel-actions">
           <button id="report-btn" class="btn btn-primary">うまく動かないことを伝える</button>
+          <label class="filter-box">
+            <input id="report-filter" type="search" placeholder="内容・種類・書いた人で絞る"
+                   aria-label="報告を絞り込む">
+          </label>
+          <button class="btn toggle-btn" id="report-open-btn" type="button"
+                  aria-pressed="true">未解決だけ</button>
+          <span class="spacer"></span>
           <span class="row-meta">
-            見ている画面と使っている環境も一緒に送ります
+            みんなで読んで話せます。見ている画面と環境も一緒に届きます
           </span>
         </div>
-        <div class="list-area" id="report-list"></div>
+
+        <div class="graph-split">
+          <div class="graph-pane" id="report-pane">
+            <div class="history-list" id="report-list"></div>
+          </div>
+
+          <div class="resizer" id="report-resizer" role="separator"
+               aria-orientation="vertical" tabindex="0"
+               aria-label="一覧と話の幅を変える (二度押しで元に戻す)"></div>
+
+          <div class="diff-pane">
+            <div class="diff-view" id="report-detail"></div>
+          </div>
+        </div>
       </div>
     </div>
 
