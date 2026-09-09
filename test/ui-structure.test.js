@@ -848,3 +848,53 @@ describe('押す前の補足', () => {
     expect(block).toContain('clip-path: inset(50%)');
   });
 });
+
+describe('確認依頼の見た目', () => {
+  const css = read('src/ui/app.css.html');
+
+  /** @returns {string} セレクタの宣言ブロック */
+  function rule(selector) {
+    const at = css.indexOf(selector + ' {');
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  }
+
+  it('等幅は差分そのものにだけ効かせる', () => {
+    // 器ごと等幅にすると、題名も依頼した人もコメントも等幅になる
+    expect(rule('.diff-view')).not.toContain('font-family');
+    expect(rule('.diff-line')).toContain('font-family: var(--mono)');
+    expect(rule('.diff-cell')).toContain('font-family: var(--mono)');
+  });
+
+  it('等幅の指定はトークンから引く', () => {
+    const hardcoded = css.match(/font-family:\s*(?!var\(--mono\))[^;]*monospace/g) || [];
+    expect(hardcoded).toEqual([]);
+  });
+
+  it('やりとりの切り替えは他の切り替えと同じ形', () => {
+    // 同じ役目のものが別の見た目だと、押せるものだと分からない
+    expect(rule('.pr-tab[aria-current="true"]'))
+      .toContain('background: var(--accent)');
+    expect(rule('.seg[aria-pressed="true"]'))
+      .toContain('background: var(--accent)');
+  });
+
+  it('コメントは書く場所を広く取る', () => {
+    const form = rule('.comment-form');
+
+    expect(form).toContain('flex-direction: column');
+    expect(rule('.comment-form textarea')).toContain('width: 100%');
+  });
+
+  it('ペインの境界は掴む前から見えている', () => {
+    // 触れて初めて現れる境界は、そこが掴めることを伝えられない
+    expect(rule('.resizer::before')).toContain('background: var(--line)');
+    expect(css).toContain('.resizer:hover::before');
+    expect(css).toContain('.resizer:focus-visible::before');
+  });
+
+  it('掴める場所は線より広い', () => {
+    const width = /\.resizer \{[^}]*flex: 0 0 (\d+)px/.exec(css);
+    expect(Number(width[1])).toBeGreaterThanOrEqual(8);
+  });
+});

@@ -71,6 +71,8 @@
   /* 確認依頼の一覧と中身の分け目 */
   --pr-pane-w: 38%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  /* 選択肢や巻き取りにもテーマを伝える。OS 側の明暗に引きずられない */
+  color-scheme: light;
 }
 
 /*
@@ -112,6 +114,7 @@
     --elev-1: 0 1px 3px rgba(1, 4, 9, 0.5);
     --elev-2: 0 3px 8px rgba(1, 4, 9, 0.7);
     --hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+    color-scheme: dark;
   }
 }
 
@@ -146,6 +149,7 @@
     --elev-1: 0 1px 3px rgba(1, 4, 9, 0.5);
     --elev-2: 0 3px 8px rgba(1, 4, 9, 0.7);
     --hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+    color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -400,20 +404,27 @@ body {
 .commit-message { font-size: 13px; color: var(--ink); margin-bottom: 3px; }
 .commit-meta { font-size: 11px; color: var(--ink-2); }
 
+/*
+ * 差分の器。
+ *
+ * 等幅は差分の行そのものにだけ効かせる。器ごと等幅にすると、題名も
+ * 依頼した人もコメントも等幅になり、ただ古びて見える
+ */
 .diff-view {
   flex: 1;
   overflow: auto;
-  padding: 16px 20px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
+  padding: var(--sp-4) var(--sp-5);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .diff-line {
   white-space: pre-wrap;
   word-break: break-all;
-  padding: 1px 8px;
-  border-radius: 2px;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .diff-equal  { color: var(--ink-2); }
@@ -424,7 +435,7 @@ body {
 
 
 
-.row-title { font-size: 13px; }
+.row-title { font-size: 13px; color: var(--ink); }
 .row-meta { font-size: 11px; color: var(--ink-2); }
 
 .state {
@@ -497,7 +508,7 @@ body {
 .guide li { margin: 6px 0; }
 
 .guide code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 12px;
   background: var(--bg-2);
   border-radius: 3px;
@@ -547,7 +558,7 @@ body {
   display: table-cell;
   width: 50%;
   padding: 1px 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -561,19 +572,35 @@ body {
 .diff-cell.ins { background: var(--success-bg); }
 .diff-cell.empty { background: var(--bg-2); }
 
-.pr-tabs { display: flex; gap: 4px; margin: 10px 0; }
+/* 他の切り替え (.segmented) と同じ形にする。同じ役目は同じ見た目で */
+.pr-tabs {
+  display: inline-flex;
+  margin: var(--sp-4) 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
 
 .pr-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
   border: 0;
-  background: var(--bg-2);
+  background: var(--bg);
   color: var(--ink-2);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 }
 
-.pr-tab[aria-current="true"] { color: var(--ink); background: var(--bg-2); }
+.pr-tab + .pr-tab { border-left: 1px solid var(--line); }
+.pr-tab:hover { background: var(--bg-3); color: var(--ink); }
+
+.pr-tab[aria-current="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
 
 .comment {
   border: 0;
@@ -587,18 +614,38 @@ body {
 .comment-head { font-size: 11px; color: var(--ink-2); margin-bottom: 4px; }
 .comment-body { font-size: 13px; color: var(--ink); white-space: pre-wrap; }
 
-.comment-form { display: flex; gap: 6px; margin-top: 10px; }
+/*
+ * コメント欄。
+ *
+ * 横に並べると入力欄が痩せ、ボタンだけが背高になる。書く場所を広く取り、
+ * 送る操作は下の右端に置く
+ */
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
 
 .comment-form textarea {
-  flex: 1;
-  min-height: 60px;
+  width: 100%;
+  min-height: 84px;
   border: 0;
+  border-radius: var(--radius);
   box-shadow: var(--hairline);
-  border-radius: 4px;
-  padding: 6px 8px;
+  padding: var(--sp-3);
   font-size: 13px;
+  line-height: 1.7;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--surface-raised);
+  resize: vertical;
+  transition: box-shadow var(--motion) ease-out;
+}
+
+.comment-form textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .editor {
@@ -606,7 +653,7 @@ body {
   width: 100%;
   border: 0;
   padding: 16px 20px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 13px;
   line-height: 1.7;
   color: var(--ink);
@@ -742,7 +789,15 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/*
+ * 部品は地の色を継ぐ。
+ *
+ * ボタンの既定の色 (buttontext) は OS の設定で決まるため、暗い OS で
+ * 明るいテーマを選ぶと、白い面に白い文字が乗って消える。実際に
+ * 確認依頼の題名だけが見えなくなった (色を書いていないのがそこだけだった)。
+ */
 button, select, textarea, a { font-family: inherit; }
+button, select, textarea { color: inherit; }
 
 button, select, a[href] { cursor: pointer; }
 
@@ -1020,14 +1075,38 @@ button:disabled {
  * 画面の使い方は人によって違う。ファイル名が長い人は左を広げ、
  * 差分を読みたい人は右を広げる。固定幅にすると必ずどちらかが困る。
  */
+/*
+ * 掴む前から境界だと分かるように、細い線を常に出しておく。
+ * 触れると線が育って色が付く。掴める場所は線より広く取る
+ */
 .resizer {
-  flex: 0 0 5px;
+  position: relative;
+  flex: 0 0 11px;
   cursor: col-resize;
   background: transparent;
-  transition: background-color var(--motion) ease-out;
 }
 
-.resizer:hover, .resizer:focus-visible, .resizer.dragging { background: var(--accent); }
+.resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: var(--line);
+  transition: background-color var(--motion) ease-out,
+              width var(--motion) ease-out, left var(--motion) ease-out;
+}
+
+.resizer:hover::before,
+.resizer:focus-visible::before,
+.resizer.dragging::before {
+  left: 4px;
+  width: 3px;
+  background: var(--accent);
+}
+
+.resizer:focus-visible { outline: none; }
 
 @media (max-width: 767px) {
   /* 縦積みになるため境界は掴めない */
