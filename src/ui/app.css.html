@@ -2411,12 +2411,96 @@ button.gantt-name:hover { color: var(--accent); }
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* 自分の担当だけに絞る切り替え */
+/*
+ * 絞り込みの入り切り。
+ *
+ * ただのボタンだと、押したのか絞り込んでいるのかが区別できない。
+ * つまみの位置で、いまどちらなのかを形で示す
+ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.switch-track {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background-color var(--motion) ease-out;
+}
+
+.switch-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: var(--elev-1);
+  transition: transform var(--motion) ease-out;
+}
+
+.switch.on .switch-track { background: var(--accent); }
+.switch.on .switch-knob { transform: translateX(12px); }
+
 .toggle-btn.on {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-knob { transition: none; }
+}
+
+/*
+ * 呼び出し。
+ *
+ * 自分が呼ばれたところは強く出す。長いやりとりの中で自分宛だけを
+ * 拾えないと、呼ぶ意味がない
+ */
+.mention {
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mention.me {
   background: var(--accent);
   color: var(--on-accent);
-  box-shadow: var(--elev-1);
 }
+
+/* 「@」を打ったときの候補 */
+.mention-picker {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-2);
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mention-option:hover { background: var(--bg-3); }
 
 /*
  * 動きのないやることは、放っておくほど傷んで見えるようにする。

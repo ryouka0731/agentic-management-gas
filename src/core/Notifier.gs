@@ -116,3 +116,23 @@ function notifyInquiryReply(inquiry, reply, talkers) {
     );
   }
 }
+
+/**
+ * 名前を呼ばれたことを知らせる。
+ *
+ * 話に加わっていない人には気づかれない。呼ばれた本人にだけ届ける。
+ *
+ * @param {object} inquiry inquiries 行
+ * @param {object} post 呼んだ発言 (inquiries か inquiry_replies の行)
+ * @param {string[]} people
+ */
+function notifyInquiryMention(inquiry, post, people) {
+  for (var i = 0; i < (people || []).length; i++) {
+    notify(
+      people[i],
+      '[agentic-management] 報告 #' + inquiry.number + ' であなたが呼ばれました',
+      (inquiry.title || inquiry.body) + '\n\n' +
+      post.by + ':\n' + post.body
+    );
+  }
+}

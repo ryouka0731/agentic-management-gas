@@ -92,6 +92,7 @@ function inquiryCreate(kind, body, context, shots) {
   dbAppend('inquiries', row);
 
   notifyInquiry(row);
+  notifyInquiryMention(row, row, inquiryMentioned_(text, [row.by]));
   return row;
 }
 
@@ -207,7 +208,9 @@ function inquiryReply(number, body, shots) {
   };
   dbAppend('inquiry_replies', row);
 
-  notifyInquiryReply(inquiryGet(number), row, inquiryTalkers(number));
+  var here = inquiryTalkers(number);
+  notifyInquiryReply(inquiryGet(number), row, here);
+  notifyInquiryMention(inquiryGet(number), row, inquiryMentioned_(text, here));
   return row;
 }
 
@@ -450,5 +453,64 @@ function inquiryShotsOf(row) {
     var one = parts[i].replace(/^\s+|\s+$/g, '');
     if (one) out.push(one);
   }
+  return out;
+}
+
+/**
+ * 文中で呼ばれた人のうち、まだ知らせていない人を返す。
+ *
+ * 既に話に加わっている人には返信の知らせが届く。同じことで二度
+ * 呼ばれると、通知そのものが読まれなくなる。
+ *
+ * @param {string} text
+ * @param {string[]} already 既に知らせる相手
+ * @returns {string[]}
+ */
+function inquiryMentioned_(text, already) {
+  var called = mentionResolve(text, inquiryRoster_());
+  var me = Session.getActiveUser().getEmail();
+  var out = [];
+
+  for (var i = 0; i < called.length; i++) {
+    if (String(called[i]) === String(me)) continue;
+    if ((already || []).indexOf(called[i]) >= 0) continue;
+    out.push(called[i]);
+  }
+  return out;
+}
+
+/**
+ * 名前を呼べる人の名簿。
+ *
+ * 誰でも呼べると、関わりのない人に知らせが飛ぶ。この道具に
+ * 名前が出ている人だけにする。
+ *
+ * @returns {string[]}
+ */
+function inquiryRoster_() {
+  var seen = {};
+  var out = [];
+
+  function add(who) {
+    var one = String(who || '');
+    if (!one || seen[one]) return;
+    seen[one] = true;
+    out.push(one);
+  }
+
+  var tables = [
+    ['commits', 'author'],
+    ['reviews', 'reviewer'],
+    ['issues', 'assignee'],
+    ['inquiries', 'by'],
+    ['inquiry_replies', 'by'],
+  ];
+
+  for (var t = 0; t < tables.length; t++) {
+    var rows = dbReadAll(tables[t][0]);
+    for (var i = 0; i < rows.length; i++) add(rows[i][tables[t][1]]);
+  }
+
+  add(inquiryOwner_());
   return out;
 }

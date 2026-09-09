@@ -1310,6 +1310,13 @@ function apiKnownPeople() {
   var issues = dbReadAll('issues');
   for (var q = 0; q < issues.length; q++) add(issues[q].assignee);
 
+  // 報告の場で名前を呼べるように、報告と返信を書いた人も名簿に入れる
+  var reports = dbReadAll('inquiries');
+  for (var n = 0; n < reports.length; n++) add(reports[n].by);
+
+  var replies = dbReadAll('inquiry_replies');
+  for (var m = 0; m < replies.length; m++) add(replies[m].by);
+
   out.sort();
   return out;
 }

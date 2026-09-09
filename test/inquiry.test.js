@@ -7,6 +7,7 @@ const SOURCES = [
   'src/core/HashGas.gs',
   'src/core/Db.gs',
   'src/core/Repo.gs',
+  'src/core/Mention.js',
   'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
 ];
@@ -350,5 +351,88 @@ describe('画像を添える', () => {
   it('添えなくても送れる', () => {
     const { ctx } = setup();
     expect(ctx.inquiryShotsOf(ctx.inquiryCreate('bug', '本文'))).toEqual([]);
+  });
+});
+
+describe('名前を呼ぶ', () => {
+  /** 名簿に載る人を1人増やす */
+  function addPerson(ctx, email) {
+    ctx.dbAppend('issues', {
+      number: 1, title: 'x', body: '', state: 'open', assignee: email,
+      labels: '', linkedFileIds: '', linkedPr: '', createdAt: new Date(),
+      closedAt: '', dueDate: '', startDate: '', parent: '', estimate: '',
+      plannedHours: '', actualHours: '', archivedAt: '', updatedAt: new Date(),
+    });
+  }
+
+  it('呼ばれた人に知らせる', () => {
+    const { ctx, fake } = setup();
+    addPerson(ctx, 'aoki@example.com');
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    const before = fake._sentMails().length;
+    ctx.inquiryReply(row.number, '@aoki これ見て');
+
+    expect(fake._sentMails().slice(before).map((m) => m.to))
+      .toContain('aoki@example.com');
+  });
+
+  it('名簿に無い人は呼べない', () => {
+    const { ctx, fake } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    const before = fake._sentMails().length;
+    ctx.inquiryReply(row.number, '@dareka みてください');
+
+    // 関わりのない人に知らせが飛ばないようにする
+    expect(fake._sentMails().length).toBe(before);
+  });
+
+  it('自分を呼んでも自分には送らない', () => {
+    const { ctx, fake } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    const before = fake._sentMails().length;
+    ctx.inquiryReply(row.number, '@tester おぼえがき');
+
+    expect(fake._sentMails().length).toBe(before);
+  });
+
+  it('既に話に加わっている人には二重に送らない', () => {
+    const { ctx, fake } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+    ctx.dbUpdate('inquiries', 'number', row.number, { by: 'aoki@example.com' });
+    addPerson(ctx, 'aoki@example.com');
+
+    const before = fake._sentMails().length;
+    ctx.inquiryReply(row.number, '@aoki どうでしょう');
+
+    // 返信の知らせが既に届く。同じことで二度呼ぶと通知が読まれなくなる
+    expect(fake._sentMails().slice(before)
+      .filter((m) => m.to === 'aoki@example.com')).toHaveLength(1);
+  });
+
+  it('起票のときにも呼べる', () => {
+    const { ctx, fake } = setup();
+    addPerson(ctx, 'aoki@example.com');
+
+    const before = fake._sentMails().length;
+    ctx.inquiryCreate('bug', '@aoki 見てほしい');
+
+    expect(fake._sentMails().slice(before).map((m) => m.to))
+      .toContain('aoki@example.com');
+  });
+
+  it('呼び出しの知らせには発言がそのまま入る', () => {
+    const { ctx, fake } = setup();
+    addPerson(ctx, 'aoki@example.com');
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    ctx.inquiryReply(row.number, '@aoki ここが変です');
+
+    const mail = fake._sentMails()
+      .filter((m) => m.to === 'aoki@example.com').pop();
+    expect(mail.subject).toContain('呼ばれました');
+    expect(mail.body).toContain('ここが変です');
   });
 });

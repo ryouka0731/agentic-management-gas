@@ -67,6 +67,7 @@
   var reportOpenBtn = document.getElementById('report-open-btn');
   var reportOpenOnly = true;
   var reportShown = null;
+  var roster = [];
 
   var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
@@ -210,6 +211,34 @@
    * @returns {SVGElement}
    */
   var hintSeq = 0;
+
+  /**
+   * 絞り込みの入り切りを、見て分かる形にする。
+   *
+   * ただのボタンだと、押したのか絞り込んでいるのかが区別できない。
+   * つまみのある切り替えにして、いまどちらなのかを形で示す。
+   *
+   * @param {HTMLElement} btn
+   * @param {boolean} on
+   */
+  function setToggle(btn, on) {
+    btn.setAttribute('role', 'switch');
+    btn.setAttribute('aria-checked', String(on));
+    btn.classList.toggle('on', on);
+
+    if (!btn.querySelector('.switch-track')) {
+      var track = document.createElement('span');
+      track.className = 'switch-track';
+      track.setAttribute('aria-hidden', 'true');
+
+      var knob = document.createElement('span');
+      knob.className = 'switch-knob';
+      track.appendChild(knob);
+
+      btn.insertBefore(track, btn.firstChild);
+      btn.classList.add('switch');
+    }
+  }
 
   /**
    * 押す前に、何が起きるかを補足する。
@@ -4151,6 +4180,7 @@
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
       'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、再現しやすくなります。',
+      '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
       '報告はみんなが読めて、誰でも返信できます。同じことで困った人が先に答えを知っていることがあります。直ったら「解決した」を押してください (押せるのは出した本人と、このアプリの持ち主です)。',
       'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
     ]],
@@ -4284,6 +4314,10 @@
     form.insertBefore(makeShotPicker(shots, form),
       form.querySelector('.inline-form-actions'));
 
+    // 本文の欄では人を呼べるようにする
+    var areas = form.querySelectorAll('textarea');
+    for (var i = 0; i < areas.length; i++) attachMentionPicker(areas[i]);
+
     var note = document.createElement('p');
     note.className = 'row-meta';
     note.textContent = '送ると、見ている画面と使っている環境も一緒に記録されます。';
@@ -4410,6 +4444,127 @@
     });
 
     return wrap;
+  }
+
+  /**
+   * 呼び名を名簿の誰かに結び付ける。src/core/Mention.js と同じもの。
+   *
+   * @param {string} token
+   * @returns {string}
+   */
+  function mentionMatch(token) {
+    var want = String(token || '').toLowerCase();
+    if (!want) return '';
+
+    for (var i = 0; i < roster.length; i++) {
+      var one = String(roster[i] || '');
+      var low = one.toLowerCase();
+
+      if (low === want) return one;
+      if (want.indexOf('@') < 0 && low.split('@')[0] === want) return one;
+    }
+    return '';
+  }
+
+  /**
+   * 呼び出しに色を付けた本文を作る。
+   *
+   * 画面は textContent だけで組み立てる決まりなので、切り分けてから
+   * 節ごとに要素にする。
+   *
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function makeBodyWithMentions(text) {
+    var box = document.createElement('div');
+    box.className = 'comment-body';
+
+    var src = String(text || '');
+    var re = /@([A-Za-z0-9._%+-]+(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?)/g;
+    var at = 0;
+    var m;
+
+    while ((m = re.exec(src)) !== null) {
+      var who = mentionMatch(m[1]);
+      if (!who) continue;
+
+      if (m.index > at) {
+        box.appendChild(document.createTextNode(src.substring(at, m.index)));
+      }
+
+      var tag = document.createElement('span');
+      tag.className = 'mention' + (who === currentUser ? ' me' : '');
+      tag.textContent = m[0];
+      tag.title = who;
+      box.appendChild(tag);
+
+      at = m.index + m[0].length;
+    }
+
+    if (at < src.length) box.appendChild(document.createTextNode(src.substring(at)));
+    return box;
+  }
+
+  /**
+   * 「@」を打ったら名簿から選べるようにする。
+   *
+   * 名簿に無い呼び出しは誰にも届かない。打ち間違いに気づけるよう、
+   * 候補を出して選ばせる。
+   *
+   * @param {HTMLTextAreaElement} input
+   */
+  function attachMentionPicker(input) {
+    var box = document.createElement('div');
+    box.className = 'mention-picker';
+    box.hidden = true;
+    input.parentNode.insertBefore(box, input.nextSibling);
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
+
+    function pick(who, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+
+      input.value = before + '@' + who + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '@' + who + ' ').length;
+      close();
+    }
+
+    input.addEventListener('input', function () {
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /@([A-Za-z0-9._%+-]*)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var hits = roster.filter(function (one) {
+        return !want || String(one).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 6);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (who) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+        btn.appendChild(makeAvatar(who));
+        btn.appendChild(document.createTextNode(who));
+        btn.addEventListener('click', function () {
+          pick(who, m.index);
+        });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
+    input.addEventListener('blur', function () {
+      // 候補を押すより先に閉じてしまわないよう、一拍おく
+      window.setTimeout(close, 150);
+    });
   }
 
   /**
@@ -4633,10 +4788,7 @@
     first.className = 'comment';
     first.appendChild(makeCommentHead(q.by, 'が報告'));
 
-    var body = document.createElement('div');
-    body.className = 'comment-body';
-    body.textContent = q.body;
-    first.appendChild(body);
+    first.appendChild(makeBodyWithMentions(q.body));
 
     var firstShots = makeShotStrip(q.shots);
     if (firstShots) first.appendChild(firstShots);
@@ -4666,10 +4818,7 @@
       if (r.canEdit) h.appendChild(makeReplyTools(r, el));
       el.appendChild(h);
 
-      var b = document.createElement('div');
-      b.className = 'comment-body';
-      b.textContent = r.body;
-      el.appendChild(b);
+      el.appendChild(makeBodyWithMentions(r.body));
 
       var replyShots = makeShotStrip(r.shots);
       if (replyShots) el.appendChild(replyShots);
@@ -4756,8 +4905,10 @@
     form.className = 'comment-form';
 
     var input = document.createElement('textarea');
-    input.placeholder = '同じことが起きた、こうしたら直った、など';
+    input.placeholder =
+      '同じことが起きた、こうしたら直った、など (@ で人を呼べます)';
     form.appendChild(input);
+    attachMentionPicker(input);
 
     form.appendChild(makeShotPicker(shots, form));
 
@@ -4889,13 +5040,12 @@
     .addEventListener('click', function () { createReport(this); });
 
   reportFilterEl.addEventListener('input', loadReports);
+  setToggle(reportOpenBtn, reportOpenOnly);
   reportOpenBtn.addEventListener('click', function () {
     reportOpenOnly = !reportOpenOnly;
-    reportOpenBtn.setAttribute('aria-pressed', String(reportOpenOnly));
-    reportOpenBtn.classList.toggle('on', reportOpenOnly);
+    setToggle(reportOpenBtn, reportOpenOnly);
     loadReports();
   });
-  reportOpenBtn.classList.add('on');
 
   makeResizable(document.getElementById('report-resizer'),
     '--report-pane-w', 'reportPaneWidth',
@@ -4905,10 +5055,10 @@
       return e.clientX - box.left;
     }, { min: 260, max: 1200 });
 
+  setToggle(mineBtn, mineOnly);
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;
-    mineBtn.setAttribute('aria-pressed', String(mineOnly));
-    mineBtn.classList.toggle('on', mineOnly);
+    setToggle(mineBtn, mineOnly);
     reloadIssueView();
   });
 
@@ -4928,6 +5078,11 @@
     .withSuccessHandler(function (who) { currentUser = (who || {}).activeUser || ''; })
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
+
+  google.script.run
+    .withSuccessHandler(function (list) { roster = list || []; })
+    .withFailureHandler(function () { /* 呼べないだけで書き込みはできる */ })
+    .apiKnownPeople();
 
   google.script.run
     .withSuccessHandler(function (days) { archiveKeepDays = Number(days) || 30; })

@@ -507,7 +507,7 @@ describe('やることの絞り込み', () => {
 
     expect(titles()).toHaveLength(1);
     expect(titles()[0]).toContain('#2');
-    expect(document.getElementById('mine-btn').getAttribute('aria-pressed')).toBe('true');
+    expect(document.getElementById('mine-btn').getAttribute('aria-checked')).toBe('true');
   });
 
   it('もう一度押すと全部に戻る', () => {
@@ -517,7 +517,7 @@ describe('やることの絞り込み', () => {
     btn.click();
     btn.click();
 
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-checked')).toBe('false');
     expect(titles().length).toBeGreaterThan(1);
   });
 });
@@ -1671,5 +1671,149 @@ describe('添えられた写真', () => {
 
     expect(document.querySelector('#report-detail .shot-item').textContent)
       .toBe('写真 1枚目を開く');
+  });
+});
+
+describe('絞り込みの入り切り', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('つまみのある切り替えとして出す', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    const btn = document.getElementById('mine-btn');
+
+    // ただのボタンだと、押したのか絞り込んでいるのかが区別できない
+    expect(btn.getAttribute('role')).toBe('switch');
+    expect(btn.querySelector('.switch-track .switch-knob')).toBeTruthy();
+  });
+
+  it('いまどちらなのかを持つ', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    const btn = document.getElementById('mine-btn');
+
+    expect(btn.getAttribute('aria-checked')).toBe('false');
+    expect(btn.classList.contains('on')).toBe(false);
+
+    btn.click();
+    expect(btn.getAttribute('aria-checked')).toBe('true');
+    expect(btn.classList.contains('on')).toBe(true);
+  });
+
+  it('報告の絞り込みは入りで始まる', () => {
+    mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+    const btn = document.getElementById('report-open-btn');
+
+    expect(btn.getAttribute('role')).toBe('switch');
+    expect(btn.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('つまみを二重に作らない', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    const btn = document.getElementById('mine-btn');
+
+    btn.click();
+    btn.click();
+
+    expect(btn.querySelectorAll('.switch-track')).toHaveLength(1);
+  });
+});
+
+describe('名前を呼ぶ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const THREAD = {
+    inquiry: {
+      number: 3, kind: 'bug', kindLabel: 'うまく動かない', title: 'x',
+      body: '@me@example.com これ見て', by: 'other@example.com', state: 'open',
+      context: '', answer: '', at: '', answeredAt: '', mine: false,
+      canClose: false, replyCount: 0, shots: [],
+    },
+    replies: [{
+      id: 1, inquiryNumber: 3, body: '@dareka おねがい', by: 'other@example.com',
+      at: '', editedAt: '', canEdit: false, shots: [],
+    }],
+  };
+
+  function openBoard() {
+    const app = mount({
+      apiInquiryList: [THREAD.inquiry],
+      apiInquiryThread: THREAD,
+      apiKnownPeople: ['me@example.com', 'other@example.com'],
+    });
+    document.querySelector('[data-tab="report"]').click();
+    return app;
+  }
+
+  it('呼び出しに色が付く', () => {
+    openBoard();
+    const tag = document.querySelector('#report-detail .mention');
+
+    expect(tag.textContent).toBe('@me@example.com');
+    expect(tag.title).toBe('me@example.com');
+  });
+
+  it('自分が呼ばれたところは強く出す', () => {
+    openBoard();
+
+    // 長いやりとりの中で自分宛だけを拾えないと、呼ぶ意味がない
+    expect(document.querySelector('#report-detail .mention').classList
+      .contains('me')).toBe(true);
+  });
+
+  it('名簿に無い呼び出しは普通の字のまま', () => {
+    openBoard();
+    const tags = [...document.querySelectorAll('#report-detail .mention')];
+
+    expect(tags.map((t) => t.textContent)).toEqual(['@me@example.com']);
+    expect(document.getElementById('report-detail').textContent)
+      .toContain('@dareka おねがい');
+  });
+
+  it('本文の字はそのまま残る', () => {
+    openBoard();
+    const body = document.querySelector('#report-detail .comment-body');
+
+    expect(body.textContent).toBe('@me@example.com これ見て');
+  });
+
+  it('@ を打つと候補が出る', () => {
+    openBoard();
+    const input = document.querySelector('#report-detail .comment-form textarea');
+
+    input.value = '@ot';
+    input.selectionStart = 3;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    const picker = document.querySelector('#report-detail .mention-picker');
+    expect(picker.hidden).toBe(false);
+    expect([...picker.querySelectorAll('.mention-option')]
+      .map((b) => b.textContent)).toEqual(['Oother@example.com']);
+  });
+
+  it('選ぶと本文に入る', () => {
+    openBoard();
+    const input = document.querySelector('#report-detail .comment-form textarea');
+
+    input.value = '@ot';
+    input.selectionStart = 3;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    document.querySelector('#report-detail .mention-option').click();
+
+    expect(input.value).toBe('@other@example.com ');
+  });
+
+  it('候補が無ければ出さない', () => {
+    openBoard();
+    const input = document.querySelector('#report-detail .comment-form textarea');
+
+    input.value = '@zzz';
+    input.selectionStart = 4;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    expect(document.querySelector('#report-detail .mention-picker').hidden)
+      .toBe(true);
   });
 });
