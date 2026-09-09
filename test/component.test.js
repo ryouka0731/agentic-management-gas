@@ -1924,3 +1924,187 @@ describe('知らせ', () => {
     delete window.Notification;
   });
 });
+
+describe('やることのタグ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openCreate(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    return app;
+  }
+
+  it('用意されたタグから選べる', () => {
+    openCreate();
+    const pool = [...document.querySelectorAll('#side-body .tag-pool .label-pill')];
+
+    expect(pool.map((p) => p.textContent)).toEqual(['文書改訂', '会議']);
+  });
+
+  it('押すと付き、もう一度押すと外れる', () => {
+    openCreate();
+
+    document.querySelector('#side-body .tag-pool .label-pill').click();
+    expect([...document.querySelectorAll('#side-body .tag-chosen .label-pill')]
+      .map((p) => p.textContent)).toEqual(['文書改訂']);
+
+    document.querySelector('#side-body .tag-chosen .label-pill').click();
+    expect(document.querySelectorAll('#side-body .tag-chosen .label-pill'))
+      .toHaveLength(0);
+  });
+
+  it('付けたタグを一緒に送る', () => {
+    const app = openCreate();
+
+    document.querySelector('#side-body .tag-pool .label-pill').click();
+    document.querySelector('#side-body input').value = '棚卸し';
+    document.querySelector('#side-body form input').value = '棚卸し';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiIssueCreate').pop();
+    expect(call.args[3]).toBe('文書改訂');
+  });
+
+  it('その場で作れる', () => {
+    const app = openCreate({
+      apiTagCreate: { name: '棚卸し', color: 'ink', builtin: false },
+    });
+
+    const add = document.querySelector('#side-body .tag-add input');
+    add.value = '棚卸し';
+    document.querySelector('#side-body .tag-add .btn').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiTagCreate').pop().args[0])
+      .toBe('棚卸し');
+    expect([...document.querySelectorAll('#side-body .tag-chosen .label-pill')]
+      .map((p) => p.textContent)).toContain('棚卸し');
+  });
+
+  it('色はテーマの色だけを使う', () => {
+    mount({
+      apiIssueList: [{ ...DEFAULTS.apiIssueList[0], labels: '文書改訂', parent: '' }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+
+    expect(document.querySelector('#issue-list .label-pill').className)
+      .toContain('tag-accent');
+  });
+
+  it('一覧に無いタグでも読める色にする', () => {
+    mount({
+      apiIssueList: [{ ...DEFAULTS.apiIssueList[0], labels: '知らないタグ', parent: '' }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+
+    expect(document.querySelector('#issue-list .label-pill').className)
+      .toContain('tag-ink');
+  });
+});
+
+describe('文書に紐づかないやること', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('文書を開いていなければ紐づけを尋ねない', () => {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+
+    expect(document.querySelector('#side-body .check-row')).toBe(null);
+
+    document.querySelector('#side-body form input').value = '棚卸しをする';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate').pop().args[2])
+      .toEqual([]);
+  });
+
+  it('文書を開いていたら紐づけるかを選べる', () => {
+    const app = mount();
+    document.querySelector('[data-tab="docs"]').click();
+    document.querySelector('#doc-list .doc-open').click();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+
+    const box = document.querySelector('#side-body .check-row input');
+    expect(box.checked).toBe(true);
+
+    // 外せば、文書と関係のないやることとして作られる
+    box.checked = false;
+    document.querySelector('#side-body form input').value = '棚卸しをする';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate').pop().args[2])
+      .toEqual([]);
+  });
+});
+
+describe('Google ToDo との同期', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  it('使えない環境では入口を出さない', () => {
+    openIssues();
+
+    // 押した先で断られるだけのボタンを出さない
+    expect(document.getElementById('tasks-btn').hidden).toBe(true);
+  });
+
+  it('使える環境では入口が出る', () => {
+    openIssues({
+      apiTasksState: {
+        available: true, listId: '', lists: [{ id: 'L1', title: 'マイタスク' }],
+      },
+    });
+
+    expect(document.getElementById('tasks-btn').hidden).toBe(false);
+  });
+
+  it('入れ先が決まっていなければ先に選ばせる', () => {
+    const app = openIssues({
+      apiTasksState: {
+        available: true, listId: '', lists: [{ id: 'L1', title: 'マイタスク' }],
+      },
+    });
+
+    document.getElementById('tasks-btn').click();
+
+    expect(app.calls.some((c) => c.name === 'apiTasksSync')).toBe(false);
+    expect(document.getElementById('side-title').textContent)
+      .toBe('Google ToDo と同期する');
+    expect([...document.querySelectorAll('#side-body select option')]
+      .map((o) => o.textContent)).toEqual(['マイタスク']);
+  });
+
+  it('入れ先が決まっていれば同期する', () => {
+    const app = openIssues({
+      apiTasksState: {
+        available: true, listId: 'L1', lists: [{ id: 'L1', title: 'マイタスク' }],
+      },
+      apiTasksSync: { pushed: 3, closed: 1, listId: 'L1' },
+    });
+
+    document.getElementById('tasks-btn').click();
+
+    expect(app.calls.some((c) => c.name === 'apiTasksSync')).toBe(true);
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('3件を ToDo に送りました');
+  });
+
+  it('何を送るのかを先に伝える', () => {
+    openIssues({
+      apiTasksState: {
+        available: true, listId: '', lists: [{ id: 'L1', title: 'マイタスク' }],
+      },
+    });
+    document.getElementById('tasks-btn').click();
+
+    expect(document.getElementById('side-body').textContent)
+      .toContain('自分が担当で、まだ終わっていない');
+  });
+});

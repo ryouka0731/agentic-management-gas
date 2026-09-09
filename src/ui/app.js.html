@@ -68,6 +68,7 @@
   var reportOpenOnly = true;
   var reportShown = null;
   var roster = [];
+  var tags = [];
   var noticePanel = document.getElementById('notice-panel');
   var noticeBody = document.getElementById('notice-body');
   var bellBtn = document.getElementById('bell-btn');
@@ -2668,6 +2669,146 @@
    * @param {string} labels カンマ区切り
    * @returns {HTMLElement|null}
    */
+  /**
+   * タグの色を返す。一覧に無いものは既定の色。
+   *
+   * @param {string} name
+   * @returns {string}
+   */
+  function tagColorOf(name) {
+    for (var i = 0; i < tags.length; i++) {
+      if (String(tags[i].name) === String(name)) return tags[i].color || 'ink';
+    }
+    return 'ink';
+  }
+
+  /**
+   * タグを選ぶ欄を作る。
+   *
+   * 自由に書かせると「会議」「打合せ」「打ち合わせ」が並んで数えられない。
+   * 用意されたものから選べるようにしつつ、その場でも足せるようにする。
+   *
+   * @param {string} initial カンマ区切り
+   * @returns {{el: HTMLElement, value: function(): string}}
+   */
+  function makeTagPicker(initial) {
+    var chosen = String(initial || '').split(',')
+      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return !!x; });
+
+    var wrap = document.createElement('div');
+    wrap.className = 'tag-picker';
+
+    var label = document.createElement('div');
+    label.className = 'row-meta';
+    label.textContent = 'タグ (どんな仕事か)';
+    wrap.appendChild(label);
+
+    var mine = document.createElement('div');
+    mine.className = 'tag-chosen';
+    wrap.appendChild(mine);
+
+    var pool = document.createElement('div');
+    pool.className = 'tag-pool';
+    wrap.appendChild(pool);
+
+    var add = document.createElement('div');
+    add.className = 'tag-add';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = '新しいタグを作る';
+    input.setAttribute('aria-label', '新しいタグを作る');
+    add.appendChild(input);
+
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn';
+    addBtn.appendChild(makeIcon('plus'));
+    addBtn.title = 'このタグを作って付ける';
+    addBtn.setAttribute('aria-label', addBtn.title);
+    add.appendChild(addBtn);
+
+    wrap.appendChild(add);
+
+    function has(name) { return chosen.indexOf(name) >= 0; }
+
+    function draw() {
+      mine.textContent = '';
+      pool.textContent = '';
+
+      if (!chosen.length) {
+        var none = document.createElement('span');
+        none.className = 'row-meta';
+        none.textContent = 'まだ付いていません';
+        mine.appendChild(none);
+      }
+
+      chosen.forEach(function (name, i) {
+        var pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'label-pill tag-' + tagColorOf(name) + ' on';
+        pill.textContent = name;
+        pill.title = '外す';
+        pill.setAttribute('aria-label', name + ' を外す');
+        pill.addEventListener('click', function () {
+          chosen.splice(i, 1);
+          draw();
+        });
+        mine.appendChild(pill);
+      });
+
+      tags.forEach(function (tag) {
+        if (has(tag.name)) return;
+
+        var pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'label-pill tag-' + (tag.color || 'ink');
+        pill.textContent = tag.name;
+        pill.title = '付ける';
+        pill.setAttribute('aria-label', tag.name + ' を付ける');
+        pill.addEventListener('click', function () {
+          chosen.push(tag.name);
+          draw();
+        });
+        pool.appendChild(pill);
+      });
+    }
+
+    function create() {
+      var name = String(input.value || '').replace(/^\s+|\s+$/g, '');
+      if (!name) return;
+
+      if (has(name)) {
+        input.value = '';
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (tag) {
+          if (tag) tags.push(tag);
+          chosen.push(name);
+          input.value = '';
+          draw();
+        })
+        .withFailureHandler(function (err) {
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiTagCreate(name, 'ink');
+    }
+
+    addBtn.addEventListener('click', create);
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      // 入力の途中で送信されないようにする
+      e.preventDefault();
+      create();
+    });
+
+    draw();
+    return { el: wrap, value: function () { return chosen.join(','); } };
+  }
+
   function makeLabels(labels) {
     var list = String(labels || '').split(',')
       .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
@@ -2680,7 +2821,7 @@
 
     list.forEach(function (name) {
       var pill = document.createElement('span');
-      pill.className = 'label-pill';
+      pill.className = 'label-pill tag-' + tagColorOf(name);
       pill.textContent = name;
       wrap.appendChild(pill);
     });
@@ -3193,6 +3334,7 @@
    * @param {HTMLElement} [sourceEl] 一覧の行やカードなど、対象の要素
    */
   function openIssueDetail(issue, sourceEl) {
+    var picker = null;
     var form = openInlineForm(
       'やること #' + issue.number,
       [
@@ -3205,7 +3347,6 @@
         { name: 'plannedHours', label: '予定工数 (時間)' },
         { name: 'actualHours', label: '実績工数 (時間)' },
         { name: 'parent', label: '親のやること (番号。空なら親なし)' },
-        { name: 'labels', label: 'ラベル (カンマ区切り)' },
       ],
       '保存する',
       function (v) {
@@ -3219,7 +3360,8 @@
           })
           .apiIssueUpdate(issue.number, {
             title: v.title, body: v.body, assignee: v.assignee,
-            startDate: v.startDate, dueDate: v.dueDate, labels: v.labels,
+            startDate: v.startDate, dueDate: v.dueDate,
+            labels: picker ? picker.value() : (issue.labels || ''),
             estimate: v.estimate, plannedHours: v.plannedHours,
             actualHours: v.actualHours, parent: v.parent,
           });
@@ -3237,7 +3379,6 @@
     inputs[6].value = issue.plannedHours === '' ? '' : issue.plannedHours;
     inputs[7].value = issue.actualHours === '' ? '' : issue.actualHours;
     inputs[8].value = issue.parent === '' ? '' : issue.parent;
-    inputs[9].value = issue.labels || '';
 
     inputs[3].type = 'date';
     inputs[4].type = 'date';
@@ -3247,6 +3388,9 @@
     inputs[8].type = 'number';
     inputs[2].setAttribute('list', 'people-list');
     attachPeopleList(form);
+
+    var picker = makeTagPicker(issue.labels || '');
+    form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
 
     var extra = document.createElement('div');
     extra.className = 'inline-form-actions';
@@ -3527,8 +3671,11 @@
     loadOverview();
   }
 
-  function createIssue() {
-    openInlineForm(
+  function createIssue(sourceEl) {
+    var picker = null;
+    var linkBox = null;
+
+    var form = openInlineForm(
       'やることを作る',
       [
         { name: 'title', label: 'やること', required: true },
@@ -3536,6 +3683,9 @@
       ],
       '作る',
       function (v) {
+        var linked = (linkBox && linkBox.checked && current.docFileId)
+          ? [current.docFileId] : [];
+
         google.script.run
           .withSuccessHandler(function () {
             showSnack('やることを作りました', { kind: 'ok' });
@@ -3546,9 +3696,28 @@
           .withFailureHandler(function (err) {
             showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiIssueCreate(v.title, v.body, current.docFileId ? [current.docFileId] : []);
-      }
+          .apiIssueCreate(v.title, v.body, linked, picker ? picker.value() : '');
+      },
+      sourceEl
     );
+
+    picker = makeTagPicker('');
+    form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
+
+    // 文書に紐づかないやることもある。開いている文書があるときだけ尋ねる
+    if (current.docFileId) {
+      var link = document.createElement('label');
+      link.className = 'check-row';
+
+      linkBox = document.createElement('input');
+      linkBox.type = 'checkbox';
+      linkBox.checked = true;
+      link.appendChild(linkBox);
+
+      link.appendChild(document.createTextNode(
+        'いま開いている「' + current.docPath + '」の作業にする'));
+      form.insertBefore(link, form.querySelector('.inline-form-actions'));
+    }
   }
 
   /**
@@ -4166,7 +4335,8 @@
       '改訂版 — 直している途中の版。正式版には影響しない',
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — 改訂版を正式版に反映してよいか尋ねるもの',
-      'やること — 誰かがやるべき作業。文書に紐づく',
+      'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい',
+      'タグ — どんな種類の仕事かの印。用意されたものから選べるほか、その場でも作れる',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
     ]],
@@ -4184,6 +4354,7 @@
       '「反映できません」と出るのは、元に戻せない要素（実体を取れない画像など）がある場合です。元のファイルで貼り直してください。',
       '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
+      'Google ToDo との同期は追加の設定が要るため、使えるときだけ「やること」に入口が出ます。自分が担当で、まだ終わっていないぶんだけを送ります。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
       'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、再現しやすくなります。',
       '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
@@ -4970,6 +5141,101 @@
     return form;
   }
 
+  // ===== Google ToDo との同期 (オプション) =====
+
+  var tasksState = { available: false, listId: '', lists: [] };
+
+  /**
+   * 使える環境かを見て、使えるときだけ入口を出す。
+   *
+   * 拡張サービスを足していない環境で押せるボタンを出しても、押した先で
+   * 断られるだけになる。
+   */
+  function loadTasksState() {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        tasksState = res || { available: false, listId: '', lists: [] };
+        var btn = document.getElementById('tasks-btn');
+
+        btn.hidden = !tasksState.available;
+        btn.title = tasksState.listId
+          ? '自分の担当を Google ToDo と同期します'
+          : '入れ先の ToDo リストを選びます';
+      })
+      .withFailureHandler(function () { /* 使えないだけ */ })
+      .apiTasksState();
+  }
+
+  /**
+   * 同期の入口。入れ先が決まっていなければ先に選んでもらう。
+   *
+   * @param {HTMLElement} sourceEl
+   */
+  function openTasks(sourceEl) {
+    if (!tasksState.listId) return chooseTasksList(sourceEl);
+
+    var btn = document.getElementById('tasks-btn');
+    btn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        var msg = (res.pushed || 0) + '件を ToDo に送りました';
+        if (res.closed) msg += ' / ' + res.closed + '件を完了にしました';
+
+        showSnack(msg, { kind: 'ok' });
+        refreshIssueViews();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        showSnack(err.message, { kind: 'ng' });
+      })
+      .apiTasksSync();
+  }
+
+  /**
+   * 入れ先の ToDo リストを選ばせる。
+   *
+   * @param {HTMLElement} sourceEl
+   */
+  function chooseTasksList(sourceEl) {
+    var choices = (tasksState.lists || []).map(function (one) {
+      return [one.id, one.title];
+    });
+
+    if (!choices.length) {
+      showSnack('ToDo リストが見つかりません', { kind: 'ng' });
+      return;
+    }
+
+    var form = openInlineForm(
+      'Google ToDo と同期する',
+      [{ name: 'listId', label: '入れ先のリスト', choices: choices }],
+      '決める',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function (id) {
+            tasksState.listId = id;
+            showSnack('入れ先を決めました。もう一度押すと同期します',
+              { kind: 'ok' });
+            loadTasksState();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiTasksChooseList(v.listId);
+      },
+      sourceEl
+    );
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent =
+      '自分が担当で、まだ終わっていないやることだけを送ります。' +
+      'ToDo 側で完了にすると、こちらも完了になります。';
+    form.insertBefore(note, form.querySelector('.inline-form-actions'));
+  }
+
   // ===== 知らせ =====
 
   /**
@@ -5243,6 +5509,11 @@
     }, { min: 260, max: 1200 });
 
   setToggle(mineBtn, mineOnly);
+  document.getElementById('tasks-btn').addEventListener('click', function () {
+    openTasks(this);
+  });
+  loadTasksState();
+
   bellBtn.appendChild(makeIcon('bell'));
   bellBtn.insertBefore(bellBtn.lastChild, bellCount);
 
@@ -5304,6 +5575,11 @@
     .withSuccessHandler(function (who) { currentUser = (who || {}).activeUser || ''; })
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
+
+  google.script.run
+    .withSuccessHandler(function (list) { tags = list || []; })
+    .withFailureHandler(function () { /* 選べないだけで手で書ける */ })
+    .apiTagList();
 
   google.script.run
     .withSuccessHandler(function (list) { roster = list || []; })

@@ -28,6 +28,7 @@ const SOURCES = [
   // 同じグローバルに読むため、テストでも同じ集合を読ませる
   'src/core/Archive.js',
   'src/core/Staleness.js',
+  'src/core/Tag.gs',
   'src/core/Issue.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',

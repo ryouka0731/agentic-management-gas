@@ -18,10 +18,12 @@ function issueNextNumber_() {
  *
  * @param {string} title
  * @param {string} body
- * @param {string[]} linkedFileIds 紐づく文書のfileId
+ * @param {string[]} linkedFileIds 紐づく文書のfileId。文書に紐づかない
+ *   やることもあるため、空でよい
+ * @param {string} [labels] タグ (カンマ区切り)
  * @returns {object} 作成された issues 行
  */
-function issueCreate(title, body, linkedFileIds) {
+function issueCreate(title, body, linkedFileIds, labels) {
   if (!/^[\s\S]{1,200}$/.test(String(title || ''))) {
     throw new Error('タイトルを入力してください');
   }
@@ -39,7 +41,7 @@ function issueCreate(title, body, linkedFileIds) {
     body: body || '',
     state: 'open',
     assignee: '',
-    labels: '',
+    labels: tagsOf(labels).join(','),
     linkedFileIds: ids.join(','),
     linkedPr: '',
     dueDate: '',
@@ -53,6 +55,7 @@ function issueCreate(title, body, linkedFileIds) {
     archivedAt: '',
     updatedAt: new Date(),
   };
+  tagAdopt(row.labels);
   dbAppend('issues', row);
   return row;
 }
@@ -124,6 +127,11 @@ function issueUpdate(number, patch) {
   issueGet(number);
   if (Object.prototype.hasOwnProperty.call(patch, 'state')) {
     throw new Error('stateはissueCloseで変更してください');
+  }
+
+  // その場で書いたタグが次から選べないと、同じものを何度も書くことになる
+  if (Object.prototype.hasOwnProperty.call(patch, 'labels')) {
+    tagAdopt(patch.labels);
   }
 
   var allowed = {};

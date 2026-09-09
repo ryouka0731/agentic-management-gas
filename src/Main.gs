@@ -979,8 +979,8 @@ function apiIssueList(state) {
  * @param {string[]} linkedFileIds
  * @returns {object}
  */
-function apiIssueCreate(title, body, linkedFileIds) {
-  var issue = issueCreate(title, body, linkedFileIds || []);
+function apiIssueCreate(title, body, linkedFileIds, labels) {
+  var issue = issueCreate(title, body, linkedFileIds || [], labels || '');
   projectPlace(issue.number, 'Backlog');
   return issueToPlain_(issue);
 }
@@ -1250,6 +1250,93 @@ function apiInquiryKinds() {
     out.push({ value: key, label: kinds[key] });
   }
   return out;
+}
+
+/**
+ * Google ToDo との同期が使えるかを返す (Web App API)。
+ *
+ * @returns {{available: boolean, listId: string, lists: object[]}}
+ */
+function apiTasksState() {
+  if (!tasksAvailable()) return { available: false, listId: '', lists: [] };
+
+  var lists = [];
+  try {
+    lists = tasksLists();
+  } catch (e) {
+    return { available: false, listId: '', lists: [] };
+  }
+  return { available: true, listId: tasksChosenList(), lists: lists };
+}
+
+/**
+ * 同期先の ToDo リストを選ぶ (Web App API)。
+ *
+ * @param {string} listId
+ * @returns {string}
+ */
+function apiTasksChooseList(listId) {
+  return tasksChooseList(listId);
+}
+
+/**
+ * 自分の担当ぶんを ToDo と同期する (Web App API)。
+ *
+ * @returns {object}
+ */
+function apiTasksSync() {
+  return tasksSyncMine();
+}
+
+/**
+ * タグの一覧を返す (Web App API)。
+ *
+ * @returns {Array<{name:string, color:string, builtin:boolean}>}
+ */
+function apiTagList() {
+  var rows = tagList();
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      name: String(rows[i].name),
+      color: String(rows[i].color || 'ink'),
+      builtin: rows[i].builtin === true || String(rows[i].builtin) === 'true',
+    });
+  }
+  return out;
+}
+
+/**
+ * タグを作る (Web App API)。
+ *
+ * @param {string} name
+ * @param {string} color
+ * @returns {object}
+ */
+function apiTagCreate(name, color) {
+  var row = tagCreate(name, color);
+  return { name: String(row.name), color: String(row.color), builtin: false };
+}
+
+/**
+ * タグを消す (Web App API)。
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function apiTagDelete(name) {
+  tagDelete(name);
+  return 'タグ「' + name + '」を消しました';
+}
+
+/**
+ * 使える色の一覧を返す (Web App API)。
+ *
+ * @returns {string[]}
+ */
+function apiTagColors() {
+  return TAG_COLORS();
 }
 
 /**

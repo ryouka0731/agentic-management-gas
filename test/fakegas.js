@@ -193,12 +193,20 @@ export function createFakeGas() {
   // --- その他のサービス ---
   const props = new Map();
 
+  // 利用者ごとの設定は別の入れ物にする。実機でも別々に持たれる
+  const userProps = new Map();
+
+  function propStore(map) {
+    return {
+      getProperty: (k) => (map.has(k) ? map.get(k) : null),
+      setProperty: (k, v) => { map.set(k, String(v)); },
+      deleteProperty: (k) => { map.delete(k); },
+    };
+  }
+
   const PropertiesService = {
-    getScriptProperties: () => ({
-      getProperty: (k) => (props.has(k) ? props.get(k) : null),
-      setProperty: (k, v) => { props.set(k, String(v)); },
-      deleteProperty: (k) => { props.delete(k); },
-    }),
+    getScriptProperties: () => propStore(props),
+    getUserProperties: () => propStore(userProps),
   };
 
   let activeUser = 'tester@example.com';
@@ -230,8 +238,44 @@ export function createFakeGas() {
     }),
   };
 
+  /**
+   * Google ToDo の拡張サービスを模す。
+   *
+   * 既定では返さない。この機能は拡張サービスを足していない環境でも
+   * 他に影響しないことを確かめる必要があるため。
+   */
+  function makeTasks() {
+    const lists = [{ id: 'L1', title: 'マイタスク' }];
+    const items = new Map();
+    let seq = 0;
+
+    return {
+      _items: items,
+      Tasklists: { list: () => ({ items: lists }) },
+      Tasks: {
+        insert: (body, listId) => {
+          const id = 'task' + (++seq);
+          const row = Object.assign({ id, listId }, body);
+          items.set(id, row);
+          return row;
+        },
+        patch: (body, listId, taskId) => {
+          const row = Object.assign(items.get(taskId) || {}, body);
+          items.set(taskId, row);
+          return row;
+        },
+        get: (listId, taskId) => {
+          const row = items.get(taskId);
+          if (!row) throw new Error('not found');
+          return row;
+        },
+      },
+    };
+  }
+
   return {
     console,
+    _makeTasks: makeTasks,
     DriveApp,
     SpreadsheetApp,
     PropertiesService,

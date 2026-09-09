@@ -90,6 +90,8 @@ const API_NAMES = [
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
   'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
   'apiInquiryReplyEdit', 'apiInquiryReplyDelete', 'apiInquiryClose', 'apiInquiryReopen', 'apiNotifications', 'apiNotificationsRead',
+  'apiTagList', 'apiTagCreate', 'apiTagDelete', 'apiTagColors',
+  'apiTasksState', 'apiTasksChooseList', 'apiTasksSync',
 ];
 
 /** よく使う既定の応答 */
@@ -104,6 +106,11 @@ export const DEFAULTS = {
   apiIssueArchivedList: [],
   apiInquiryList: [],
   apiNotifications: { items: [], unread: 0 },
+  apiTasksState: { available: false, listId: '', lists: [] },
+  apiTagList: [
+    { name: '文書改訂', color: 'accent', builtin: true },
+    { name: '会議', color: 'success', builtin: true },
+  ],
   apiIssueList: [
     {
       number: 2, title: '通勤手当の見直し', body: '', state: 'open',

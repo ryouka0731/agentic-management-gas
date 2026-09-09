@@ -2808,4 +2808,69 @@ a.shot-item:hover { box-shadow: var(--hairline), var(--elev-2); }
 }
 
 .mention-name { color: var(--ink); font-weight: 600; }
+
+/*
+ * タグ。
+ *
+ * 自由に書かせると表記が割れて数えられない。用意されたものから選び、
+ * 足りなければその場で作る
+ */
+.tag-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+
+.tag-chosen,
+.tag-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+/* まだ付いていないものは薄く置く。付いているものとの差を出す */
+.tag-pool .label-pill { opacity: 0.55; }
+.tag-pool .label-pill:hover { opacity: 1; }
+
+button.label-pill {
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.label-pill.on { box-shadow: inset 0 0 0 1px currentColor; }
+
+.tag-accent { background: var(--accent-bg); color: var(--accent); }
+.tag-success { background: var(--success-bg); color: var(--success); }
+.tag-warn { background: var(--warn-bg); color: var(--warn); }
+.tag-danger { background: var(--danger-bg); color: var(--danger); }
+.tag-merged { background: var(--merged-bg); color: var(--merged); }
+.tag-ink { background: var(--bg-3); color: var(--ink-2); }
+
+.tag-add {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.tag-add input {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--hairline);
+  font-size: 13px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
 </style>
