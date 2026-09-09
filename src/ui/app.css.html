@@ -1198,7 +1198,46 @@ button:disabled {
   border-right: 0;
   padding: 0;
 }
-.graph-split .diff-view { flex: 1; min-width: 0; overflow: auto; }
+/*
+ * 差分の器。中の帯で「画面いっぱいに広げる」を切り替える。
+ *
+ * 長い条文は横も縦も足りない。広げているあいだは履歴の一覧の上に
+ * かぶせるのではなく、画面そのものを差分だけにする。
+ */
+.diff-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diff-pane .diff-view { flex: 1; min-height: 0; overflow: auto; }
+
+.diff-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-4);
+  background: var(--bg-2);
+}
+
+.diff-bar .row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-pane.full {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* 通知 (100) と入力パネル (150) より下。広げても知らせは見える */
+  z-index: 90;
+  background: var(--bg);
+}
 
 .graph-row {
   display: flex;

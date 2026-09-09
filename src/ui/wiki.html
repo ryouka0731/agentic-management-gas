@@ -158,7 +158,15 @@
                aria-orientation="vertical" tabindex="0"
                aria-label="履歴と差分の幅を変える"></div>
 
-          <div class="diff-view" id="diff-view"></div>
+          <div class="diff-pane" id="diff-pane">
+            <div class="diff-bar">
+              <span class="row-meta" id="diff-caption"></span>
+              <span class="spacer"></span>
+              <button class="icon-btn" id="diff-expand" type="button"
+                      aria-pressed="false"></button>
+            </div>
+            <div class="diff-view" id="diff-view"></div>
+          </div>
         </div>
       </div>
 

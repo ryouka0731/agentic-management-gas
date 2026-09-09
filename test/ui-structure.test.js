@@ -428,7 +428,9 @@ describe('入力の置き場所', () => {
   it('閉じ道が3つある (閉じるボタン・やめる・Escape)', () => {
     expect(html).toContain('id="side-close"');
     expect(js).toContain("cancel.textContent = 'やめる'");
-    expect(js).toContain("if (e.key === 'Escape' && !sidePanel.hidden) closeSide();");
+    // 実際に閉じるかは test/component.test.js の「Escape で閉じられる」で見る
+    expect(js).toContain("if (e.key !== 'Escape') return;");
+    expect(js).toContain('if (!sidePanel.hidden) closeSide();');
   });
 
   it('画面を切り替えたら入力は閉じる', () => {

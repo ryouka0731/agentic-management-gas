@@ -773,3 +773,64 @@ describe('改訂中の版', () => {
     expect(app.calls.some((c) => c.name === 'apiGetFileHtml')).toBe(false);
   });
 });
+
+describe('差分を画面いっぱいに広げる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHistory() {
+    const app = mount();
+    document.querySelector('[data-tab="docs"]').click();
+    document.querySelector('#doc-list .doc-open').click();
+    document.querySelector('.tab[data-tab="history"]').click();
+    return app;
+  }
+
+  it('はじめは元の大きさで、広げる名前を持つ', () => {
+    openHistory();
+    const btn = document.getElementById('diff-expand');
+
+    expect(document.getElementById('diff-pane').classList.contains('full')).toBe(false);
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-label')).toContain('広げる');
+    expect(btn.textContent).toBe('');
+  });
+
+  it('押すと広がり、もう一度押すと戻る', () => {
+    openHistory();
+    const btn = document.getElementById('diff-expand');
+    const pane = document.getElementById('diff-pane');
+
+    btn.click();
+    expect(pane.classList.contains('full')).toBe(true);
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(btn.getAttribute('aria-label')).toContain('戻す');
+
+    btn.click();
+    expect(pane.classList.contains('full')).toBe(false);
+  });
+
+  it('Escape で戻せる', () => {
+    openHistory();
+    document.getElementById('diff-expand').click();
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(document.getElementById('diff-pane').classList.contains('full')).toBe(false);
+  });
+
+  it('別の画面に移ると自動で戻る', () => {
+    openHistory();
+    document.getElementById('diff-expand').click();
+
+    document.querySelector('.tab[data-tab="content"]').click();
+
+    expect(document.getElementById('diff-pane').classList.contains('full')).toBe(false);
+  });
+
+  it('どの記録の差分かが帯に出る', () => {
+    openHistory();
+
+    expect(document.getElementById('diff-caption').textContent)
+      .toContain('第2条を直した');
+  });
+});

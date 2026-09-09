@@ -95,6 +95,9 @@
   var issueCountEl = document.getElementById('issue-count');
   var dropRootEl = document.getElementById('drop-root');
   var trashListEl = document.getElementById('trash-list');
+  var diffPane = document.getElementById('diff-pane');
+  var diffCaption = document.getElementById('diff-caption');
+  var diffExpandBtn = document.getElementById('diff-expand');
   var mineBtn = document.getElementById('mine-btn');
   var viewBtns = {
     list: document.getElementById('view-list'),
@@ -225,6 +228,8 @@
       monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
       calendar: ['M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z', 'M16 2v4', 'M8 2v4', 'M3 10h18'],
       user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
+      expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
+      shrink: ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'],
     };
 
     var ns = 'http://www.w3.org/2000/svg';
@@ -1050,6 +1055,9 @@
         String(el.dataset.tab === (isTab ? name : navName)));
     }
 
+    // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
+    if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
+
     panelDocs.hidden = name !== 'docs';
     panelContent.hidden = name !== 'content';
     panelHistory.hidden = name !== 'history';
@@ -1505,6 +1513,23 @@
     return svg;
   }
 
+  /**
+   * 差分を画面いっぱいに広げる / 元に戻す。
+   *
+   * 長い条文は横も縦も足りない。読むあいだだけ履歴の一覧を退かせる。
+   *
+   * @param {boolean} on
+   */
+  function setDiffFull(on) {
+    diffPane.classList.toggle('full', on);
+    diffExpandBtn.setAttribute('aria-pressed', String(on));
+
+    diffExpandBtn.textContent = '';
+    diffExpandBtn.appendChild(makeIcon(on ? 'shrink' : 'expand'));
+    diffExpandBtn.title = on ? '元の大きさに戻す (Esc)' : '画面いっぱいに広げる';
+    diffExpandBtn.setAttribute('aria-label', diffExpandBtn.title);
+  }
+
   function loadHistory() {
     if (!current.fileId) return;
 
@@ -1578,6 +1603,9 @@
             for (var i = 0; i < items.length; i++) {
               items[i].setAttribute('aria-current', String(items[i] === btn));
             }
+            diffCaption.textContent = c.message + ' · ' +
+              String(c.sha).substring(0, 7);
+
             showSkeleton(diffView, 'block');
             google.script.run
               .withSuccessHandler(function (ops) {
@@ -3892,9 +3920,16 @@
     reloadIssueView();
   });
 
-  // どこにいても Escape で入力を閉じられる
+  diffExpandBtn.addEventListener('click', function () {
+    setDiffFull(!diffPane.classList.contains('full'));
+  });
+  setDiffFull(false);
+
+  // どこにいても Escape で入力を閉じられる。広げた差分もここで畳む
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !sidePanel.hidden) closeSide();
+    if (e.key !== 'Escape') return;
+    if (!sidePanel.hidden) closeSide();
+    else if (diffPane.classList.contains('full')) setDiffFull(false);
   });
 
   google.script.run
