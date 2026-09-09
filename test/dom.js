@@ -136,5 +136,20 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
-  apiCommitGraph: { rows: [], laneCount: 1, branches: ['main'] },
+  apiCommitGraph: {
+    rows: [
+      {
+        sha: 'aaaaaaa1111', branch: 'main', message: '第2条を直した', lane: 0,
+        author: 'me@example.com', timestamp: '2026-09-09T07:53:00.000Z',
+        parentSha: 'bbbbbbb2222', diffFrom: 'bbbbbbb2222', merge: false, activeLanes: [0], fork: false, forkLane: -1,
+      },
+      {
+        sha: 'bbbbbbb2222', branch: 'main', message: '最初の記録', lane: 0,
+        author: 'me@example.com', timestamp: '2026-09-04T01:39:00.000Z',
+        parentSha: '', diffFrom: '', merge: false, activeLanes: [0], fork: false, forkLane: -1,
+      },
+    ],
+    laneCount: 1,
+    branches: ['main'],
+  },
 };

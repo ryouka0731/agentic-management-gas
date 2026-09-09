@@ -1186,7 +1186,18 @@ button:disabled {
   overflow: hidden;
 }
 
-.graph-pane .history-list { flex: 1; overflow-y: auto; background: var(--bg); padding: 0; }
+/*
+ * 履歴の一覧は、確認依頼の一覧と器を共用している。あちらは 320px 固定だが、
+ * こちらは見出しと同じ幅でなければ列がずれるため、幅の指定を打ち消す。
+ */
+.graph-pane .history-list {
+  flex: 1;
+  width: auto;
+  overflow-y: auto;
+  background: var(--bg);
+  border-right: 0;
+  padding: 0;
+}
 .graph-split .diff-view { flex: 1; min-width: 0; overflow: auto; }
 
 .graph-row {

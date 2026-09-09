@@ -676,3 +676,100 @@ describe('動きのないやることの見た目', () => {
     expect(card.textContent).toContain('60日動きなし');
   });
 });
+
+describe('改訂の履歴の列', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHistory() {
+    const app = mount();
+    document.querySelector('[data-tab="docs"]').click();
+    document.querySelector('#doc-list .doc-open').click();
+    document.querySelector('.tab[data-tab="history"]').click();
+    return app;
+  }
+
+  it('見出しと行の列がひとつずつ対応する', () => {
+    openHistory();
+
+    const head = [...document.querySelectorAll('.graph-head > *')]
+      .map((el) => el.className);
+    const row = [...document.querySelectorAll('#history-list .graph-row')[0].children]
+      .map((el) => el.getAttribute('class'));
+
+    // 先頭は系統。見出しは span、行は SVG なので別のクラス名になる
+    expect(head[0]).toBe('graph-col-graph');
+    expect(row[0]).toBe('graph-cell');
+    expect(head.slice(1)).toEqual(row.slice(1).map((c) => c.split(' ')[0]));
+  });
+
+  it('系統の列幅は見出しと行で同じ変数から引く', () => {
+    openHistory();
+    const css = document.querySelector('style').textContent;
+
+    expect(css).toContain('.graph-col-graph { flex: 0 0 var(--graph-w); }');
+    expect(css).toContain('.graph-cell { flex: 0 0 var(--graph-w); }');
+  });
+
+  it('履歴の一覧は幅を固定しない', () => {
+    openHistory();
+    const list = document.getElementById('history-list');
+
+    // 320px 固定のままだと、見出しだけが広がって列がずれる
+    expect(window.getComputedStyle(list).width).not.toBe('320px');
+  });
+
+  it('境界を掴むと幅が変わる', () => {
+    openHistory();
+    const handle = document.getElementById('diff-resizer');
+
+    handle.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    const move = new window.Event('pointermove', { bubbles: true });
+    move.clientX = 700;
+    handle.dispatchEvent(move);
+
+    expect(document.documentElement.style.getPropertyValue('--graph-pane-w'))
+      .toMatch(/px$/);
+  });
+});
+
+describe('改訂中の版', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openDrafts() {
+    const app = mount();
+    document.querySelector('[data-tab="branches"]').click();
+    return app;
+  }
+
+  it('版を押すとその版の本文が開く', () => {
+    const app = openDrafts();
+
+    document.querySelector('#branch-list .row-open').click();
+
+    // 見直しの版の写しは W1
+    const call = app.calls.filter((c) => c.name === 'apiGetFileHtml').pop();
+    expect(call.args[0]).toBe('W1');
+    expect(document.getElementById('doc-title').textContent).toBe('就業規則.doc');
+  });
+
+  it('どの文書の版かが一覧で分かる', () => {
+    openDrafts();
+    const row = document.querySelector('#branch-list .row-item');
+
+    expect(row.textContent).toContain('就業規則.doc');
+  });
+
+  it('文書のない版は押せない', () => {
+    const app = mount({
+      apiBranchList: [
+        { name: 'main', headSha: 'a', baseSha: '', state: 'open', createdBy: 'me@example.com', createdAt: '' },
+        { name: '空の版', headSha: 'b', baseSha: 'a', state: 'open', createdBy: 'me@example.com', createdAt: '' },
+      ],
+    });
+    document.querySelector('[data-tab="branches"]').click();
+
+    const open = document.querySelector('#branch-list .row-open');
+    expect(open.disabled).toBe(true);
+    expect(app.calls.some((c) => c.name === 'apiGetFileHtml')).toBe(false);
+  });
+});

@@ -1704,12 +1704,32 @@
           title.textContent = b.name;
           main.appendChild(title);
 
+          var files = allFiles.filter(function (f) {
+            return splitPath(f.path).branch === b.name;
+          });
+
           var meta = document.createElement('div');
           meta.className = 'row-meta';
           meta.textContent = b.createdBy +
-            (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中');
+            (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中') +
+            (files.length ? ' · ' + splitPath(files[0].path).path : '');
           main.appendChild(meta);
-          row.appendChild(main);
+
+          // 版そのものを押して中身に入れるようにする。
+          // 一覧に並んでいて押せないものは、押せると思って押される
+          var open = document.createElement('button');
+          open.className = 'row-open';
+          open.appendChild(makeIcon('git-branch'));
+          open.appendChild(main);
+          open.disabled = !files.length;
+          open.title = files.length
+            ? '「' + b.name + '」の本文を開く'
+            : 'この版に文書がありません';
+          open.addEventListener('click', function () {
+            if (!files.length) return;
+            openDoc(files[0].fileId, splitPath(files[0].path).path);
+          });
+          row.appendChild(open);
 
           if (b.state !== 'merged') {
             var prBtn = document.createElement('button');
