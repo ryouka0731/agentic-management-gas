@@ -37,6 +37,7 @@
 
   var sidebarEl = document.querySelector('.sidebar');
   var resizer = document.getElementById('resizer');
+  var diffResizer = document.getElementById('diff-resizer');
   var themeBtn = document.getElementById('theme-btn');
 
   var crumbBack = document.getElementById('crumb-back');
@@ -292,62 +293,68 @@
 
   // ===== ペインの幅 =====
 
-  var SIDEBAR_MIN = 180;
-  var SIDEBAR_MAX = 560;
-
-  function setSidebarWidth(px) {
-    var w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(px)));
-    document.documentElement.style.setProperty('--sidebar-w', w + 'px');
-    return w;
-  }
-
-  function saveSidebarWidth(px) {
-    try {
-      window.localStorage.setItem('sidebarWidth', String(px));
-    } catch (e) { /* 保存できなくても操作はできる */ }
-  }
-
-  function restoreSidebarWidth() {
-    try {
-      var saved = Number(window.localStorage.getItem('sidebarWidth'));
-      if (saved) setSidebarWidth(saved);
-    } catch (e) { /* 既定幅のままでよい */ }
-  }
-
   /**
    * 境界を掴んで左ペインの幅を変えられるようにする。
    *
    * 掴む操作だけを用意すると、キーボードだけの利用者が幅を変えられない。
    */
-  function initResizer() {
+  /**
+   * 境界を掴んで幅を変えられるようにする。
+   *
+   * 掴む操作だけを用意すると、キーボードだけの利用者が幅を変えられない。
+   *
+   * @param {HTMLElement} handle 境界の要素
+   * @param {string} cssVar 幅を入れるCSS変数
+   * @param {string} key 覚えておくときの名前
+   * @param {function(PointerEvent): number} measure 掴んだ位置から幅を出す
+   * @param {{min:number, max:number}} limit
+   */
+  function makeResizable(handle, cssVar, key, measure, limit) {
     var dragging = false;
 
-    resizer.addEventListener('pointerdown', function (e) {
+    function set(px) {
+      var w = Math.min(limit.max, Math.max(limit.min, Math.round(px)));
+      document.documentElement.style.setProperty(cssVar, w + 'px');
+      return w;
+    }
+
+    function save(px) {
+      try {
+        window.localStorage.setItem(key, String(px));
+      } catch (e) { /* 覚えられなくても操作はできる */ }
+    }
+
+    try {
+      var saved = Number(window.localStorage.getItem(key));
+      if (saved) set(saved);
+    } catch (e) { /* 既定のままでよい */ }
+
+    handle.addEventListener('pointerdown', function (e) {
       dragging = true;
-      resizer.classList.add('dragging');
-      resizer.setPointerCapture(e.pointerId);
+      handle.classList.add('dragging');
+      if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
 
-    resizer.addEventListener('pointermove', function (e) {
-      if (dragging) setSidebarWidth(e.clientX);
+    handle.addEventListener('pointermove', function (e) {
+      if (dragging) set(measure(e));
     });
 
-    resizer.addEventListener('pointerup', function (e) {
+    handle.addEventListener('pointerup', function (e) {
       if (!dragging) return;
       dragging = false;
-      resizer.classList.remove('dragging');
-      resizer.releasePointerCapture(e.pointerId);
-      saveSidebarWidth(setSidebarWidth(e.clientX));
+      handle.classList.remove('dragging');
+      if (handle.releasePointerCapture) handle.releasePointerCapture(e.pointerId);
+      save(set(measure(e)));
     });
 
-    resizer.addEventListener('keydown', function (e) {
+    handle.addEventListener('keydown', function (e) {
       var now = parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10
-      ) || 260;
+        getComputedStyle(document.documentElement).getPropertyValue(cssVar), 10
+      ) || limit.min;
 
-      if (e.key === 'ArrowLeft') saveSidebarWidth(setSidebarWidth(now - 16));
-      else if (e.key === 'ArrowRight') saveSidebarWidth(setSidebarWidth(now + 16));
+      if (e.key === 'ArrowLeft') save(set(now - 16));
+      else if (e.key === 'ArrowRight') save(set(now + 16));
       else return;
 
       e.preventDefault();
@@ -900,14 +907,27 @@
       return;
     }
 
+    // 片側にしか中身が無いなら1列で見せる。空の列に横幅の半分を
+    // 使うより、本文を広く見せたほうが読める
+    var hasLeft = shown.some(function (p) { return p.left !== null; });
+    var hasRight = shown.some(function (p) { return p.right !== null; });
+    var single = !hasLeft || !hasRight;
+
     var table = document.createElement('div');
-    table.className = 'diff-split';
+    table.className = 'diff-split' + (single ? ' single' : '');
 
     shown.forEach(function (pair) {
       var row = document.createElement('div');
       row.className = 'diff-row';
-      row.appendChild(diffCell(pair.left, pair.type === 'equal' ? '' : 'del'));
-      row.appendChild(diffCell(pair.right, pair.type === 'equal' ? '' : 'ins'));
+
+      if (single) {
+        var only = hasLeft ? pair.left : pair.right;
+        var kind = pair.type === 'equal' ? '' : (hasLeft ? 'del' : 'ins');
+        row.appendChild(diffCell(only, kind));
+      } else {
+        row.appendChild(diffCell(pair.left, pair.type === 'equal' ? '' : 'del'));
+        row.appendChild(diffCell(pair.right, pair.type === 'equal' ? '' : 'ins'));
+      }
       table.appendChild(row);
     });
     container.appendChild(table);
@@ -1500,9 +1520,8 @@
 
         // 系統の列幅を見出しと行で揃える。ずれると読み手が列を追えない
         var laneWidth = Math.max(1, graph.laneCount) * 14 + 6;
-        historyList.style.setProperty('--graph-w', laneWidth + 'px');
-        document.querySelector('.graph-head').style.setProperty(
-          '--graph-w', laneWidth + 'px');
+        document.getElementById('graph-pane')
+          .style.setProperty('--graph-w', laneWidth + 'px');
 
         var headOf = {};
         graph.rows.forEach(function (c) {
@@ -3515,8 +3534,14 @@
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
 
-  restoreSidebarWidth();
-  initResizer();
+  makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
+    function (e) { return e.clientX; }, { min: 180, max: 560 });
+
+  makeResizable(diffResizer, '--graph-pane-w', 'graphPaneWidth',
+    function (e) {
+      var box = document.querySelector('.graph-split').getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 280, max: 1200 });
   applyTheme(readTheme());
 
   try {

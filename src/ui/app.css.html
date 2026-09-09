@@ -66,6 +66,8 @@
   --week-offset: 0;
   /* 工程表の名前列の幅。目盛りの下敷きの左端と揃える */
   --gantt-name-w: 220px;
+  /* 履歴と差分の分け目。掴んで動かせる */
+  --graph-pane-w: 46%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -1170,9 +1172,22 @@ button:disabled {
   color: var(--ink-2);
 }
 
-.graph-split { display: flex; flex: 1; min-height: 0; }
-.graph-split .history-list { flex: 3; overflow-y: auto; box-shadow: inset -1px 0 0 var(--line); }
-.graph-split .diff-view { flex: 4; overflow: auto; }
+.graph-split { display: flex; flex: 1; min-height: 0; width: 100%; }
+
+/*
+ * 見出しと行は同じ器に入れる。見出しだけを外に出すと、差分の幅まで
+ * 含めて列が置かれ、行の列とずれる。
+ */
+.graph-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--graph-pane-w);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.graph-pane .history-list { flex: 1; overflow-y: auto; background: var(--bg); padding: 0; }
+.graph-split .diff-view { flex: 1; min-width: 0; overflow: auto; }
 
 .graph-row {
   display: flex;
@@ -2139,4 +2154,13 @@ button.gantt-name:hover { color: var(--accent); }
 .btn-danger .icon { opacity: 1; }
 .btn-ok { color: var(--success); }
 .btn-ok:hover:not(:disabled) { background: var(--success-bg); }
+
+/*
+ * 片側にしか中身が無い差分は1列で見せる。
+ *
+ * 消えた行が無いのに左を空けておくと、横幅の半分を捨てることになる。
+ */
+.diff-split.single .diff-row { display: block; }
+.diff-split.single .diff-cell { display: flex; width: 100%; }
+.diff-split.single .diff-cell + .diff-cell { box-shadow: none; }
 </style>

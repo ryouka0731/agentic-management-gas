@@ -285,3 +285,91 @@ describe('確認依頼', () => {
     expect(approve.disabled).toBe(true);
   });
 });
+
+describe('改訂の履歴', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const GRAPH = {
+    rows: [{
+      sha: 'bbb81520000000000000000000000000000000000000000000000000000000aa',
+      parentSha: '', diffFrom: '', branch: 'main', message: '最初の記録',
+      author: 'me@example.com', timestamp: '2026-09-09T07:53:00.000Z',
+      lane: 0, activeLanes: [0], fork: false, forkLane: -1, merge: false,
+    }],
+    laneCount: 1, branches: ['main'],
+  };
+
+  function openHistory(over) {
+    const app = mountApp(Object.assign({}, DEFAULTS, { apiCommitGraph: GRAPH }, over || {}));
+    document.querySelector('.doc-open').click();
+    document.querySelector('[data-tab="history"]').click();
+    return app;
+  }
+
+  it('列見出しと行が同じ器に入る', () => {
+    // 見出しだけを外に出すと、差分の幅まで含めて列が置かれ、行とずれる
+    openHistory();
+
+    const pane = document.getElementById('graph-pane');
+    expect(pane.contains(document.querySelector('.graph-head'))).toBe(true);
+    expect(pane.contains(document.getElementById('history-list'))).toBe(true);
+  });
+
+  it('消えた行が無い差分は1列で見せる', () => {
+    openHistory({
+      apiCommitDiff: [
+        { type: 'insert', line: '<h1>就業規則</h1>' },
+        { type: 'insert', line: '<p>第1条</p>' },
+      ],
+    });
+
+    const table = document.querySelector('#diff-view .diff-split');
+    expect(table.classList.contains('single')).toBe(true);
+    expect(table.querySelectorAll('.diff-row')[0].children.length).toBe(1);
+  });
+
+  it('両側に中身がある差分は2列で見せる', () => {
+    openHistory({
+      apiCommitDiff: [
+        { type: 'delete', line: '<p>古い</p>' },
+        { type: 'insert', line: '<p>新しい</p>' },
+      ],
+    });
+
+    const table = document.querySelector('#diff-view .diff-split');
+    expect(table.classList.contains('single')).toBe(false);
+    expect(table.querySelectorAll('.diff-row')[0].children.length).toBe(2);
+  });
+
+  it('差分はタグではなく種別と本文で見せる', () => {
+    openHistory({
+      apiCommitDiff: [{ type: 'insert', line: '<h2>第1章 総則</h2>' }],
+    });
+
+    const cell = document.querySelector('#diff-view .diff-cell');
+    expect(cell.querySelector('.diff-kind').textContent).toBe('見出し2');
+    expect(cell.querySelector('.diff-text').textContent).toBe('第1章 総則');
+  });
+
+  it('履歴と差分の分け目を掴んで動かせる', () => {
+    openHistory();
+
+    const handle = document.getElementById('diff-resizer');
+    expect(handle.getAttribute('role')).toBe('separator');
+
+    handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    const width = document.documentElement.style.getPropertyValue('--graph-pane-w');
+
+    expect(width).not.toBe('');
+    expect(window.localStorage.getItem('graphPaneWidth')).toBe(parseInt(width, 10) + '');
+  });
+
+  it('左のペインの幅も掴んで動かせる', () => {
+    mount();
+
+    const handle = document.getElementById('resizer');
+    handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+
+    expect(window.localStorage.getItem('sidebarWidth')).not.toBeNull();
+  });
+});

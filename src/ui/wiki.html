@@ -141,16 +141,23 @@
         <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
       </div>
 
-      <div class="panel panel-col" id="panel-history" hidden>
-        <div class="graph-head">
-          <span class="graph-col-graph">系統</span>
-          <span class="graph-col-desc">変更の内容</span>
-          <span class="graph-col-date">日時</span>
-          <span class="graph-col-author">記録した人</span>
-          <span class="graph-col-sha">記録番号</span>
-        </div>
+      <div class="panel" id="panel-history" hidden>
         <div class="graph-split">
-          <div class="history-list" id="history-list"></div>
+          <div class="graph-pane" id="graph-pane">
+            <div class="graph-head">
+              <span class="graph-col-graph">系統</span>
+              <span class="graph-col-desc">変更の内容</span>
+              <span class="graph-col-date">日時</span>
+              <span class="graph-col-author">記録した人</span>
+              <span class="graph-col-sha">記録番号</span>
+            </div>
+            <div class="history-list" id="history-list"></div>
+          </div>
+
+          <div class="resizer" id="diff-resizer" role="separator"
+               aria-orientation="vertical" tabindex="0"
+               aria-label="履歴と差分の幅を変える"></div>
+
           <div class="diff-view" id="diff-view"></div>
         </div>
       </div>
