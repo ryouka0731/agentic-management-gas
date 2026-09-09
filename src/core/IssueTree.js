@@ -115,3 +115,35 @@ function rollupEffort(node) {
   }
   return sum;
 }
+
+/**
+ * その親子関係が輪になるかを調べる。
+ *
+ * 自分自身や、自分の子孫を親にすると輪ができる。輪ができると木として
+ * たどれなくなるため、作る前に断る。
+ *
+ * @param {object[]} issues issues 行
+ * @param {number} child 子にする番号
+ * @param {number} parent 親にする番号
+ * @returns {boolean} 輪になるなら true
+ */
+function issueWouldCycle(issues, child, parent) {
+  if (String(child) === String(parent)) return true;
+
+  var byNumber = {};
+  for (var i = 0; i < (issues || []).length; i++) {
+    byNumber[String(issues[i].number)] = issues[i];
+  }
+
+  var seen = {};
+  var cur = byNumber[String(parent)];
+
+  while (cur) {
+    if (String(cur.number) === String(child)) return true;
+    if (seen[String(cur.number)]) return true;
+
+    seen[String(cur.number)] = true;
+    cur = byNumber[String(cur.parent)];
+  }
+  return false;
+}

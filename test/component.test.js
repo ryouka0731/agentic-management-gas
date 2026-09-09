@@ -373,3 +373,85 @@ describe('改訂の履歴', () => {
     expect(window.localStorage.getItem('sidebarWidth')).not.toBeNull();
   });
 });
+
+describe('掴んで親子を付け替える', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** jsdom には dataTransfer が無いので、同じ形のものを持たせる */
+  function dragEvent(type, number) {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.dataTransfer = {
+      data: String(number),
+      setData(_, v) { this.data = v; },
+      getData() { return this.data; },
+    };
+    return ev;
+  }
+
+  function rows() {
+    return [...document.querySelectorAll('#issue-list .row-item')];
+  }
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  it('行を掴める', () => {
+    openIssues();
+    expect(rows()[0].draggable).toBe(true);
+    expect(rows()[0].dataset.number).toBe('2');
+  });
+
+  it('掴むと解除の置き場所が出る', () => {
+    openIssues();
+    const zone = document.getElementById('drop-root');
+
+    expect(zone.hidden).toBe(true);
+    rows()[0].dispatchEvent(dragEvent('dragstart', 2));
+    expect(zone.hidden).toBe(false);
+
+    rows()[0].dispatchEvent(dragEvent('dragend', 2));
+    expect(zone.hidden).toBe(true);
+  });
+
+  it('別のやることの上に落とすと子になる', () => {
+    const app = openIssues();
+
+    // #1 を掴んで #2 の上に落とす
+    const child = rows().find((r) => r.dataset.number === '1');
+    const parent = rows().find((r) => r.dataset.number === '2');
+
+    child.dispatchEvent(dragEvent('dragstart', 1));
+    parent.dispatchEvent(dragEvent('drop', 1));
+
+    const call = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop();
+    expect(call.args[0]).toBe(1);
+    expect(call.args[1].parent).toBe(2);
+  });
+
+  it('解除の置き場所に落とすと親が外れる', () => {
+    const app = openIssues();
+
+    document.getElementById('drop-root').dispatchEvent(dragEvent('drop', 1));
+
+    const call = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop();
+    expect(call.args[0]).toBe(1);
+    expect(call.args[1].parent).toBe('');
+  });
+
+  it('自分の子を親にはできない', () => {
+    const app = openIssues();
+
+    // #1 は #2 の子。#2 を #1 の上に落とそうとする
+    const parent = rows().find((r) => r.dataset.number === '2');
+    const child = rows().find((r) => r.dataset.number === '1');
+
+    parent.dispatchEvent(dragEvent('dragstart', 2));
+    child.dispatchEvent(dragEvent('drop', 2));
+
+    expect(app.calls.some((c) => c.name === 'apiIssueUpdate')).toBe(false);
+    expect(document.getElementById('snackbar').textContent).toContain('親にはできません');
+  });
+});

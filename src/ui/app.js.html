@@ -93,6 +93,7 @@
   var issueGroupSel = document.getElementById('issue-group');
   var issueFilterEl = document.getElementById('issue-filter');
   var issueCountEl = document.getElementById('issue-count');
+  var dropRootEl = document.getElementById('drop-root');
   var viewBtns = {
     list: document.getElementById('view-list'),
     board: document.getElementById('view-board'),
@@ -2414,6 +2415,106 @@
    * @param {object[]} issues
    * @returns {object[]} 上から順に並べた節。depth を持つ
    */
+  /**
+   * その親子関係が輪になるかを調べる。
+   *
+   * src/core/IssueTree.js の issueWouldCycle と同じもの。自分自身や
+   * 自分の子孫を親にすると木としてたどれなくなるため、作る前に断る。
+   *
+   * @param {number} child
+   * @param {number} parent
+   * @returns {boolean}
+   */
+  function wouldCycle(child, parent) {
+    if (String(child) === String(parent)) return true;
+
+    var byNumber = {};
+    lastIssues.forEach(function (i) { byNumber[String(i.number)] = i; });
+
+    var seen = {};
+    var cur = byNumber[String(parent)];
+
+    while (cur) {
+      if (String(cur.number) === String(child)) return true;
+      if (seen[String(cur.number)]) return true;
+      seen[String(cur.number)] = true;
+      cur = byNumber[String(cur.parent)];
+    }
+    return false;
+  }
+
+  /**
+   * 親子を付け替える。
+   *
+   * @param {number} child
+   * @param {number|string} parent 空なら親を外す
+   */
+  function setIssueParent(child, parent) {
+    google.script.run
+      .withSuccessHandler(function () {
+        showSnack(parent
+          ? '#' + child + ' を #' + parent + ' の下に移しました'
+          : '#' + child + ' の親子を解除しました', { kind: 'ok' });
+        reloadIssueView();
+      })
+      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
+      .apiIssueUpdate(child, { parent: parent === '' ? '' : Number(parent) });
+  }
+
+  /**
+   * 掴んで運べるようにする。
+   *
+   * 落とす先が自分の子孫だと輪になるため、その場合は受け付けない。
+   * 掴む操作しか無いと使えない人が出るので、右のパネルの「親のやること」
+   * でも同じことができるようにしてある。
+   *
+   * @param {HTMLElement} row
+   * @param {object} issue
+   */
+  function makeIssueDraggable(row, issue) {
+    row.draggable = true;
+
+    row.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', String(issue.number));
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+      dropRootEl.hidden = false;
+    });
+
+    row.addEventListener('dragend', function () {
+      row.classList.remove('dragging');
+      dropRootEl.hidden = true;
+      dropRootEl.classList.remove('over');
+    });
+
+    row.addEventListener('dragover', function (e) {
+      var moving = Number(e.dataTransfer.getData('text/plain')) ||
+        Number(document.querySelector('.row-item.dragging') &&
+          document.querySelector('.row-item.dragging').dataset.number);
+
+      if (!moving || wouldCycle(moving, issue.number)) return;
+
+      e.preventDefault();
+      row.classList.add('drop-into');
+    });
+
+    row.addEventListener('dragleave', function () {
+      row.classList.remove('drop-into');
+    });
+
+    row.addEventListener('drop', function (e) {
+      e.preventDefault();
+      row.classList.remove('drop-into');
+
+      var moving = Number(e.dataTransfer.getData('text/plain'));
+      if (!moving || wouldCycle(moving, issue.number)) {
+        showSnack('自分の下にあるやることを親にはできません', { kind: 'ng' });
+        return;
+      }
+      setIssueParent(moving, issue.number);
+    });
+  }
+
   function issueTreeRows(issues) {
     var byNumber = {};
     var nodes = (issues || []).map(function (row) {
@@ -2520,6 +2621,9 @@
         function renderIssueRow(issue) {
           var row = document.createElement('div');
           row.className = 'row-item';
+          row.dataset.number = issue.number;
+          makeIssueDraggable(row, issue);
+
           if (issue.depth) {
             row.classList.add('nested');
             row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
@@ -3520,6 +3624,21 @@
   } catch (e) { /* 既定は開いたまま */ }
   issueGroupSel.addEventListener('change', reloadIssueView);
   issueFilterEl.addEventListener('input', reloadIssueView);
+
+  dropRootEl.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    dropRootEl.classList.add('over');
+  });
+  dropRootEl.addEventListener('dragleave', function () {
+    dropRootEl.classList.remove('over');
+  });
+  dropRootEl.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropRootEl.classList.remove('over');
+
+    var moving = Number(e.dataTransfer.getData('text/plain'));
+    if (moving) setIssueParent(moving, '');
+  });
   Object.keys(viewBtns).forEach(function (k) {
     viewBtns[k].addEventListener('click', function () { setIssueView(k); });
   });

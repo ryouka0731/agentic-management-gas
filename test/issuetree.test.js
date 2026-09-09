@@ -75,3 +75,32 @@ describe('rollupEffort', () => {
     expect(gas.rollupEffort(roots[0]).planned).toBe(0);
   });
 });
+
+describe('issueWouldCycle', () => {
+  const rows = [issue(1), issue(2, 1), issue(3, 2)];
+
+  it('自分を親にすると輪になる', () => {
+    expect(gas.issueWouldCycle(rows, 1, 1)).toBe(true);
+  });
+
+  it('自分の子を親にすると輪になる', () => {
+    expect(gas.issueWouldCycle(rows, 1, 2)).toBe(true);
+  });
+
+  it('自分の孫を親にしても輪になる', () => {
+    expect(gas.issueWouldCycle(rows, 1, 3)).toBe(true);
+  });
+
+  it('関係のない相手なら輪にならない', () => {
+    expect(gas.issueWouldCycle(rows.concat([issue(9)]), 9, 3)).toBe(false);
+  });
+
+  it('親を持たない相手なら輪にならない', () => {
+    expect(gas.issueWouldCycle(rows, 3, 1)).toBe(false);
+  });
+
+  it('すでに輪になっている行を渡しても止まらない', () => {
+    const looped = [issue(1, 2), issue(2, 1)];
+    expect(gas.issueWouldCycle(looped, 5, 1)).toBe(true);
+  });
+});
