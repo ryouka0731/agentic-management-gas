@@ -665,11 +665,20 @@ describe('やることの中身と操作', () => {
   });
 
   it('工程表に日の補助線を敷く', () => {
-    const start = css.indexOf('\n.gantt-track {');
-    const track = css.slice(start, css.indexOf('\n}', start));
+    const start = css.indexOf('.gantt-grid {');
+    const grid = css.slice(start, css.indexOf('\n}', start));
 
     // 土日の塗り・週の区切り・日の目安の3つ
-    expect((track.match(/repeating-linear-gradient/g) || []).length).toBe(3);
+    expect((grid.match(/repeating-linear-gradient/g) || []).length).toBe(3);
+
+    // 行ごとに描くと行間で途切れる。1枚の下敷きに描く
+    const track = css.slice(css.indexOf('\n.gantt-track {'),
+      css.indexOf('\n}', css.indexOf('\n.gantt-track {')));
+    expect(track).not.toContain('repeating-linear-gradient');
+
+    const js = read('src/ui/app.js.html');
+    expect(js).toContain("grid.className = 'gantt-grid'");
+    expect(js).toContain("rows.className = 'gantt-rows'");
   });
 
   it('左のメニューはすべて見出しの下にある', () => {

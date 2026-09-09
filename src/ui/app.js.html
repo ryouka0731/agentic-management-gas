@@ -3142,6 +3142,24 @@
         head.appendChild(scale);
         chart.appendChild(head);
 
+        /*
+         * 目盛りと今日の線は、行ごとではなく1枚の下敷きに描く。
+         * 行ごとに描くと行間で途切れ、日付を縦にたどれない。
+         */
+        var rows = document.createElement('div');
+        rows.className = 'gantt-rows';
+
+        var grid = document.createElement('div');
+        grid.className = 'gantt-grid';
+        rows.appendChild(grid);
+
+        if (g.todayOffset >= 0 && g.todayOffset < g.days) {
+          var todayLine = document.createElement('div');
+          todayLine.className = 'gantt-today';
+          todayLine.style.left = 'calc(var(--gantt-col) * ' + g.todayOffset + ')';
+          grid.appendChild(todayLine);
+        }
+
         // 行を束ねて見出しを付ける
         var byNumber = {};
         g.rows.forEach(function (r) { byNumber[r.number] = r; });
@@ -3152,7 +3170,7 @@
             .filter(function (r) { return !!r; });
 
           if (!shown.length) return;
-          chart.appendChild(makeGroupHead(group.label, shown.length, group.key));
+          rows.appendChild(makeGroupHead(group.label, shown.length, group.key));
           if (collapsed[group.key]) return;
 
           shown.forEach(function (r) {
@@ -3184,18 +3202,12 @@
             track.appendChild(bar);
             makeBarDraggable(bar, r, g, COL);
 
-            if (g.todayOffset >= 0 && g.todayOffset < g.days) {
-              var line = document.createElement('div');
-              line.className = 'gantt-today';
-              line.style.gridColumn = (g.todayOffset + 1) + ' / span 1';
-              track.appendChild(line);
-            }
-
             row.appendChild(track);
-            chart.appendChild(row);
+            rows.appendChild(row);
           });
         });
 
+        chart.appendChild(rows);
         ganttEl.appendChild(chart);
       })
       .withFailureHandler(function (err) {

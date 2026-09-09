@@ -61,6 +61,8 @@
   --graph-w: 60px;
   /* 目盛りの週の区切り位置。画面側が書き換える */
   --week-offset: 0;
+  /* 工程表の名前列の幅。目盛りの下敷きの左端と揃える */
+  --gantt-name-w: 220px;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -1517,7 +1519,7 @@ button:disabled {
   position: sticky;
   left: 0;
   z-index: 2;
-  flex: 0 0 220px;
+  flex: 0 0 var(--gantt-name-w);
   min-width: 0;
   display: flex;
   align-items: center;
@@ -1570,28 +1572,43 @@ button.gantt-name:hover { color: var(--accent); }
   position: relative;
   min-height: 28px;
   align-items: center;
+}
 
-  /*
-   * 目盛りは3層。日の線は薄く、週の線は濃く、土日は塗る。
-   * 濃さに差をつけないと線の数が情報量を上回るが、日の線が無いと
-   * 期日までの日数を目で数えられない。
-   * --week-offset は先頭の日から月曜までのずれ (画面側が入れる)
-   */
+/*
+ * 目盛りは行ごとではなく1枚の下敷きに描く。
+ * 行ごとに描くと行間で途切れ、日付を縦にたどれない。
+ *
+ * 3層にする。日の線は薄く、週の線は濃く、土日は塗る。濃さに差を
+ * つけないと線の数が情報量を上回るが、日の線が無いと期日までの
+ * 日数を目で数えられない。
+ * --week-offset は先頭の日から月曜までのずれ (画面側が入れる)
+ */
+.gantt-rows { position: relative; }
+
+.gantt-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gantt-name-w) + var(--sp-4));
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+
   background-image:
-    /* 土日の薄い塗り */
     repeating-linear-gradient(to right,
       transparent 0 calc(var(--gantt-col) * 5),
       var(--bg-2) calc(var(--gantt-col) * 5) calc(var(--gantt-col) * 7)),
-    /* 週の区切り (濃いめ) */
     repeating-linear-gradient(to right,
       var(--line-strong) 0 1px,
       transparent 1px calc(var(--gantt-col) * 7)),
-    /* 日の目安 (薄く)。期日までの日数を目で数えられるようにする */
     repeating-linear-gradient(to right,
       var(--line) 0 1px,
       transparent 1px var(--gantt-col));
   background-position: calc(var(--gantt-col) * var(--week-offset) * -1) 0;
 }
+
+/* 行は下敷きの上に置く */
+.gantt-row, .gantt .group-head { position: relative; z-index: 1; }
 
 .gantt-bar {
   grid-row: 1;
@@ -1622,13 +1639,15 @@ button.gantt-name:hover { color: var(--accent); }
   box-shadow: var(--hairline);
 }
 
+/* 今日の線も1本で全体を貫く */
 .gantt-today {
-  grid-row: 1;
-  justify-self: center;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   width: 2px;
-  height: 100%;
+  margin-left: calc(var(--gantt-col) / 2 - 1px);
   background: var(--accent);
-  opacity: 0.5;
+  opacity: 0.55;
   pointer-events: none;
 }
 
@@ -1817,7 +1836,7 @@ button.gantt-name:hover { color: var(--accent); }
 .gantt .group-head {
   position: sticky;
   left: 0;
-  width: 220px;
+  width: var(--gantt-name-w);
   padding: var(--sp-5) var(--sp-2) var(--sp-1);
   background: var(--bg);
 }
