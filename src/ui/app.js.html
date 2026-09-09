@@ -1490,17 +1490,21 @@
       svg.appendChild(line);
     });
 
-    if (row.fork && row.forkLane >= 0) {
+    // 合流してくる枝を、上の縁からこの行の点まで寄せる。
+    // 線の色は寄ってくる枝のもの。真上の縦線と続いて見える
+    (row.forkFrom || []).forEach(function (lane) {
+      var from = x(lane);
+      var to = x(row.lane);
+      var mid = height / 2;
+
       var path = document.createElementNS(ns, 'path');
-      var from = x(row.lane);
-      var to = x(row.forkLane);
       path.setAttribute('d',
-        'M' + from + ' ' + (height / 2) +
-        ' C' + from + ' ' + height + ' ' + to + ' ' + (height / 2) + ' ' + to + ' ' + height);
-      path.setAttribute('class', 'graph-line lane-' + (row.lane % 4));
+        'M' + from + ' 0' +
+        ' C' + from + ' ' + (mid * 0.8) + ' ' + from + ' ' + mid + ' ' + to + ' ' + mid);
+      path.setAttribute('class', 'graph-line lane-' + (lane % 4));
       path.setAttribute('fill', 'none');
       svg.appendChild(path);
-    }
+    });
 
     var dot = document.createElementNS(ns, 'circle');
     dot.setAttribute('cx', String(x(row.lane)));

@@ -40,28 +40,63 @@ describe('commitGraph', () => {
     expect(lane.b2).toBe(1);
   });
 
-  it('分岐した最初のコミットに fork の印が付く', () => {
+  it('合流の印は分岐元のコミットに付く', () => {
     const rows = gas.commitGraph([
       { name: 'main', baseSha: '', commits: [c('m1', '', 1)] },
       { name: '改訂', baseSha: 'm1', commits: [c('b2', 'b1', 5), c('b1', '', 3)] },
     ]);
 
-    const b1 = rows.filter(function (r) { return r.sha === 'b1'; })[0];
-    expect(b1.fork).toBe(true);
-    expect(b1.forkLane).toBe(0);
+    const at = {};
+    rows.forEach(function (r) { at[r.sha] = r; });
+
+    // 枝の最も古いコミットに描くと、行き先のレーンがその行にまだ
+    // 無いため線が宙に浮く。寄せ先の点がある行に描く
+    expect(at.m1.fork).toBe(true);
+    expect(at.m1.forkFrom).toEqual([1]);
+    expect(at.b1.fork).toBe(false);
+    expect(at.b1.forkFrom).toEqual([]);
   });
 
-  it('分岐点から枝の先頭までレーンが通っている', () => {
+  it('同じコミットから枝が2本出ても両方が合流する', () => {
+    const rows = gas.commitGraph([
+      { name: 'main', baseSha: '', commits: [c('m1', '', 1)] },
+      { name: '改訂A', baseSha: 'm1', commits: [c('a1', '', 3)] },
+      { name: '改訂B', baseSha: 'm1', commits: [c('b1', '', 4)] },
+    ]);
+
+    const m1 = rows.filter(function (r) { return r.sha === 'm1'; })[0];
+    expect(m1.forkFrom.slice().sort()).toEqual([1, 2]);
+  });
+
+  it('枝のレーンは分岐元の行の手前で止まる', () => {
     const rows = gas.commitGraph([
       { name: 'main', baseSha: '', commits: [c('m2', 'm1', 6), c('m1', '', 1)] },
       { name: '改訂', baseSha: 'm1', commits: [c('b1', '', 3)] },
     ]);
 
-    // 並びは m2(6) / b1(3) / m1(1)。m2 の行でも枝のレーンは走っている
+    // 並びは m2(6) / b1(3) / m1(1)
     expect(rows.map((r) => r.sha)).toEqual(['m2', 'b1', 'm1']);
-    expect(rows[0].activeLanes).toContain(0);
+    // 枝は自分の最も新しい記録より上には伸びない
+    expect(rows[0].activeLanes).toEqual([0]);
     expect(rows[1].activeLanes).toContain(1);
-    expect(rows[2].activeLanes).toContain(1);
+
+    // 分岐元の行では縦線ではなく曲線で寄せる。両方描くと二重になる
+    expect(rows[2].activeLanes).not.toContain(1);
+    expect(rows[2].forkFrom).toEqual([1]);
+  });
+
+  it('合流の行き先のレーンは必ずその行で走っている', () => {
+    const rows = gas.commitGraph([
+      { name: 'main', baseSha: '', commits: [c('m2', 'm1', 6), c('m1', '', 1)] },
+      { name: '改訂', baseSha: 'm1', commits: [c('b2', 'b1', 5), c('b1', '', 3)] },
+    ]);
+
+    rows.forEach(function (r) {
+      if (!r.fork) return;
+      // 寄せ先の点がある行なので、その行のレーンが走っていなければ
+      // 線がどこにも繋がらない
+      expect(r.activeLanes).toContain(r.lane);
+    });
   });
 
   it('マージコミットを見分ける', () => {

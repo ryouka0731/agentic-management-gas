@@ -785,3 +785,35 @@ describe('履歴の列の畳み方', () => {
     expect(fn).toContain('c.sha');
   });
 });
+
+describe('上の帯の折り返し', () => {
+  const css = read('src/ui/app.css.html');
+
+  /** @returns {string} セレクタの宣言ブロック */
+  function block(selector) {
+    const at = css.indexOf(selector + ' {');
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  }
+
+  it('札と戻り先は折り返さず縮まない', () => {
+    // 狭めると「正式版」が縦に割れ、「記録していない変更」が2行になった
+    ['.chip', '.badge', '.crumb-back', '.crumb-sep'].forEach((sel) => {
+      expect(block(sel)).toContain('flex: 0 0 auto');
+    });
+    ['.chip', '.badge', '.crumb-back'].forEach((sel) => {
+      expect(block(sel)).toContain('white-space: nowrap');
+    });
+  });
+
+  it('縮めてよいのは文書名だけ', () => {
+    const h1 = block('.crumbs h1');
+
+    expect(h1).toContain('text-overflow: ellipsis');
+    expect(h1).toContain('white-space: nowrap');
+  });
+
+  it('入りきらない操作は次の行に落とす', () => {
+    expect(block('.toolbar')).toContain('flex-wrap: wrap');
+  });
+});

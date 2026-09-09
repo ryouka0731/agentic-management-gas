@@ -11,7 +11,8 @@
  * @param {Array<{name:string, baseSha:string, commits:object[]}>} chains
  *   commits は新しい順。main を先頭に置くこと
  * @returns {Array<object>} 新しい順の行。各行は
- *   {sha, parentSha, branch, lane, activeLanes, fork, forkLane, merge, ...}
+ *   {sha, parentSha, branch, lane, activeLanes, fork, forkFrom, merge, ...}
+ *   forkFrom は「この行のコミットに合流してくる枝のレーン」
  */
 function commitGraph(chains) {
   var rows = [];
@@ -34,7 +35,7 @@ function commitGraph(chains) {
         diffFrom: String(commit.parentSha || ''),
         activeLanes: [],
         fork: false,
-        forkLane: -1,
+        forkFrom: [],
         merge: /^マージ: PR #/.test(String(commit.message || '')),
       });
     }
@@ -63,22 +64,24 @@ function commitGraph(chains) {
       if (idx > last) last = idx;
     }
 
-    // 分岐点があれば、そこまで線を伸ばす
     var baseIdx = indexOf[String(c.baseSha || '')];
-    if (baseIdx !== undefined && baseIdx > last) last = baseIdx;
 
-    for (var n = first; n <= last; n++) rows[n].activeLanes.push(lane);
-
-    // チェーンの最も古いコミットが分岐の起点になる
     if (c.baseSha && baseIdx !== undefined) {
-      var rootIdx = indexOf[String(c.commits[c.commits.length - 1].sha)];
-      rows[rootIdx].fork = true;
-      rows[rootIdx].forkLane = laneOf['main'] === undefined ? 0 : laneOf['main'];
+      // 合流は分岐元のコミットの行で描く。枝の最も古いコミットの行に
+      // 描くと、行き先のレーンがまだ走っておらず線が宙に浮く (実際に踏んだ)。
+      // 枝のレーンは分岐元の行の手前まで走らせ、その行で本流に寄せる
+      if (baseIdx > last) last = baseIdx - 1;
+
+      rows[baseIdx].fork = true;
+      rows[baseIdx].forkFrom.push(lane);
 
       // 分岐の最初の記録は親を持たない。そのまま差分を取ると全文が
       // 「追加」になってしまうため、分岐元と比べる
+      var rootIdx = indexOf[String(c.commits[c.commits.length - 1].sha)];
       rows[rootIdx].diffFrom = String(c.baseSha);
     }
+
+    for (var n = first; n <= last; n++) rows[n].activeLanes.push(lane);
   }
   return rows;
 }
