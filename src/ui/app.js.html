@@ -2468,6 +2468,10 @@
         lastIssues = issues;
         issueListEl.textContent = '';
 
+        // 件数は先に出す。0件のときだけ前の値が残っていた
+        var shown = issues.filter(matchesFilter);
+        issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+
         if (!issues.length) {
           issueListEl.appendChild(makeBlankState(
             'やることがありません',
@@ -2476,9 +2480,6 @@
           ));
           return;
         }
-
-        var shown = issues.filter(matchesFilter);
-        issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
 
         if (!shown.length) {
           issueListEl.appendChild(makeBlankState(
