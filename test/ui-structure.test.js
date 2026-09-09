@@ -898,3 +898,22 @@ describe('確認依頼の見た目', () => {
     expect(Number(width[1])).toBeGreaterThanOrEqual(8);
   });
 });
+
+describe('部品の既定を持ち込まない', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('ボタンは地の色と枠を持ち込まない', () => {
+    // 既定の色は OS 依存で、白い面に白い文字が乗って消えた。
+    // 既定の枠は面と影で段を表す設計の中で濃い縁だけが浮く
+    expect(css).toContain('button, select, textarea { color: inherit; }');
+    expect(css).toContain('button { border: 0; }');
+  });
+
+  it('確認依頼の一覧も他の一覧と同じく器を沈める', () => {
+    const at = css.indexOf('#pr-list {');
+    const rule = css.slice(at, css.indexOf('}', at));
+
+    expect(rule).toContain('background: var(--bg-2)');
+    expect(rule).toContain('padding: var(--sp-3) 0 var(--sp-6)');
+  });
+});

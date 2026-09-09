@@ -823,11 +823,12 @@ function apiPrReviews(number) {
 
   for (var i = 0; i < rows.length; i++) {
     if (Number(rows[i].prNumber) !== Number(number)) continue;
+    // 日時は文字列にする。Date のまま返すと運べず、画面には null が届く
     out.push({
-      reviewer: rows[i].reviewer,
-      state: rows[i].state,
-      body: rows[i].body,
-      at: rows[i].at,
+      reviewer: String(rows[i].reviewer == null ? '' : rows[i].reviewer),
+      state: String(rows[i].state == null ? '' : rows[i].state),
+      body: String(rows[i].body == null ? '' : rows[i].body),
+      at: rows[i].at ? new Date(rows[i].at).toISOString() : '',
     });
   }
   return out;
@@ -851,10 +852,11 @@ function apiPrCommits(number) {
   var out = [];
   for (var i = 0; i < commits.length; i++) {
     out.push({
-      sha: commits[i].sha,
-      message: commits[i].message,
-      author: commits[i].author,
-      timestamp: commits[i].timestamp,
+      sha: String(commits[i].sha),
+      message: String(commits[i].message == null ? '' : commits[i].message),
+      author: String(commits[i].author == null ? '' : commits[i].author),
+      timestamp: commits[i].timestamp
+        ? new Date(commits[i].timestamp).toISOString() : '',
     });
   }
   return out;

@@ -799,6 +799,14 @@ body {
 button, select, textarea, a { font-family: inherit; }
 button, select, textarea { color: inherit; }
 
+/*
+ * ボタンの既定の枠 (outset buttonborder) を落とす。
+ *
+ * 面と影で段を表しているので、既定の枠が残ると濃い縁だけが浮いて見える。
+ * 枠が要るものは各クラスで自分で指定している
+ */
+button { border: 0; }
+
 button, select, a[href] { cursor: pointer; }
 
 button:disabled {
@@ -1306,6 +1314,15 @@ button:disabled {
  */
 #pr-pane { flex-basis: var(--pr-pane-w); }
 
+/*
+ * 確認依頼は行がカードなので、他の一覧 (.list-area) と同じく器を
+ * 一段沈めて余白を取る。履歴は表なので沈めない
+ */
+#pr-list {
+  padding: var(--sp-3) 0 var(--sp-6);
+  background: var(--bg-2);
+}
+
 .graph-pane .history-list {
   flex: 1;
   width: auto;
@@ -1603,6 +1620,7 @@ button:disabled {
   display: flex;
   align-items: center;
   text-align: left;
+  width: 100%;
   gap: var(--sp-2);
   margin: 0 var(--sp-4) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);

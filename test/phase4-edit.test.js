@@ -441,7 +441,18 @@ describe('画面に渡せる形か', () => {
     env.ctx.apiIssueUpdate(issue.number, {
       assignee: 'a@example.com', dueDate: '2026-09-30',
     });
+    env.ctx.apiIssueArchive(issue.number);
+    env.ctx.apiIssueRestore(issue.number);
+
     env.ctx.branchCreate('改訂', env.fileId);
+
+    // 確認依頼まで作る。やりとりが空だと Date の混入を見逃す
+    const work = env.ctx.branchWorkingFileId('改訂', env.fileId);
+    env.fake._docs.set(work, '<p>第1条</p>\n<p>第2条</p>\n');
+    env.ctx.commitFile(work, '改訂', '第2条を足した', null);
+
+    env.pr = env.ctx.apiPrCreate('第2条の追加', '補足', '改訂', env.fileId);
+    env.ctx.apiPrReview(env.pr.number, 'comment', 'ここを直してください');
     return env;
   }
 
@@ -457,6 +468,12 @@ describe('画面に渡せる形か', () => {
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
     ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],
     ['apiWhoAmI', (ctx) => ctx.apiWhoAmI()],
+    ['apiCommitHistory', (ctx, env) => ctx.apiCommitHistory(env.fileId)],
+    ['apiDirtyFiles', (ctx) => ctx.apiDirtyFiles('改訂')],
+    ['apiIssueArchivedList', (ctx) => ctx.apiIssueArchivedList()],
+    ['apiPrReviews', (ctx, env) => ctx.apiPrReviews(env.pr.number)],
+    ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
+    ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],
   ];
 
   CASES.forEach(([name, call]) => {
