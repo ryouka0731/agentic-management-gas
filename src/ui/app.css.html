@@ -2822,39 +2822,17 @@ a.shot-item:hover { box-shadow: var(--hairline), var(--elev-2); }
   margin: var(--sp-3) 0;
 }
 
-.tag-chosen,
-.tag-pool {
+.tag-picker { position: relative; }
+
+.tag-label {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--sp-1);
+  font-size: 12px;
+  color: var(--ink-2);
 }
 
-/* まだ付いていないものは薄く置く。付いているものとの差を出す */
-.tag-pool .label-pill { opacity: 0.55; }
-.tag-pool .label-pill:hover { opacity: 1; }
-
-button.label-pill {
-  border: 0;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.label-pill.on { box-shadow: inset 0 0 0 1px currentColor; }
-
-.tag-accent { background: var(--accent-bg); color: var(--accent); }
-.tag-success { background: var(--success-bg); color: var(--success); }
-.tag-warn { background: var(--warn-bg); color: var(--warn); }
-.tag-danger { background: var(--danger-bg); color: var(--danger); }
-.tag-merged { background: var(--merged-bg); color: var(--merged); }
-.tag-ink { background: var(--bg-3); color: var(--ink-2); }
-
-.tag-add {
-  display: flex;
-  gap: var(--sp-2);
-}
-
-.tag-add input {
-  flex: 1;
+.tag-input {
   min-height: 32px;
   padding: 0 var(--sp-3);
   border: 0;
@@ -2865,6 +2843,40 @@ button.label-pill {
   font-size: 13px;
 }
 
+.tag-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* 候補は入力のすぐ下に重ねる。下の欄を押し下げると書く場所が動く */
+.tag-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 160;
+}
+
+.tag-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+button.label-pill {
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tag-accent { background: var(--accent-bg); color: var(--accent); }
+.tag-success { background: var(--success-bg); color: var(--success); }
+.tag-warn { background: var(--warn-bg); color: var(--warn); }
+.tag-danger { background: var(--danger-bg); color: var(--danger); }
+.tag-merged { background: var(--merged-bg); color: var(--merged); }
+.tag-ink { background: var(--bg-3); color: var(--ink-2); }
+
+
 .check-row {
   display: flex;
   align-items: center;
@@ -2872,5 +2884,34 @@ button.label-pill {
   margin: var(--sp-2) 0;
   font-size: 13px;
   color: var(--ink-2);
+}
+
+/* 工程表の行と棒に担当者の顔を出す */
+.gantt-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.gantt-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+}
+
+.gantt-bar .avatar { width: 18px; height: 18px; font-size: 10px; }
+
+.gantt-days {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
 }
 </style>

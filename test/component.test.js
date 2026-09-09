@@ -95,7 +95,7 @@ describe('やること', () => {
       .find((r) => r.textContent.indexOf('#2') >= 0);
 
     // 親8h + 子4h
-    expect(parent.querySelector('.effort').textContent).toContain('予定 12h');
+    expect(parent.querySelector('.effort').textContent).toContain('予定 12人日');
   });
 
   it('絞り込むと件数と行が減る', () => {
@@ -1935,50 +1935,90 @@ describe('やることのタグ', () => {
     return app;
   }
 
-  it('用意されたタグから選べる', () => {
-    openCreate();
-    const pool = [...document.querySelectorAll('#side-body .tag-pool .label-pill')];
+  function tagInput() {
+    return document.querySelector('#side-body .tag-input');
+  }
 
-    expect(pool.map((p) => p.textContent)).toEqual(['文書改訂', '会議']);
+  function type(value) {
+    const input = tagInput();
+    input.value = value;
+    input.selectionStart = value.length;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    return input;
+  }
+
+  it('「#」を打つと候補が出る', () => {
+    openCreate();
+    type('#');
+
+    const box = document.querySelector('#side-body .tag-suggest');
+    expect(box.hidden).toBe(false);
+    expect([...box.querySelectorAll('.label-pill')].map((p) => p.textContent))
+      .toEqual(['文書改訂', '会議']);
   });
 
-  it('押すと付き、もう一度押すと外れる', () => {
+  it('打った字で絞り込む', () => {
     openCreate();
+    type('#会');
 
-    document.querySelector('#side-body .tag-pool .label-pill').click();
+    expect([...document.querySelectorAll('#side-body .tag-suggest .label-pill')]
+      .map((p) => p.textContent)).toEqual(['会議']);
+  });
+
+  it('候補を押すと差し込まれる', () => {
+    openCreate();
+    type('#会');
+    document.querySelector('#side-body .tag-suggest .mention-option').click();
+
+    expect(tagInput().value).toBe('#会議 ');
+  });
+
+  it('書いたぶんがその場で形になる', () => {
+    openCreate();
+    type('#会議 #調査 ');
+
     expect([...document.querySelectorAll('#side-body .tag-chosen .label-pill')]
-      .map((p) => p.textContent)).toEqual(['文書改訂']);
-
-    document.querySelector('#side-body .tag-chosen .label-pill').click();
-    expect(document.querySelectorAll('#side-body .tag-chosen .label-pill'))
-      .toHaveLength(0);
+      .map((p) => p.textContent)).toEqual(['会議', '調査']);
   });
 
-  it('付けたタグを一緒に送る', () => {
+  it('空白で区切って送る', () => {
     const app = openCreate();
+    type('#会議 #棚卸し ');
 
-    document.querySelector('#side-body .tag-pool .label-pill').click();
-    document.querySelector('#side-body input').value = '棚卸し';
-    document.querySelector('#side-body form input').value = '棚卸し';
+    document.querySelector('#side-body form input').value = '棚卸しをする';
     document.querySelector('#side-body form .btn-primary').click();
 
-    const call = app.calls.filter((c) => c.name === 'apiIssueCreate').pop();
-    expect(call.args[3]).toBe('文書改訂');
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate').pop().args[3])
+      .toBe('会議,棚卸し');
   });
 
-  it('その場で作れる', () => {
-    const app = openCreate({
-      apiTagCreate: { name: '棚卸し', color: 'ink', builtin: false },
+  it('候補に無いタグもそのまま書ける', () => {
+    const app = openCreate();
+    type('#はじめてのタグ ');
+
+    document.querySelector('#side-body form input').value = 'x';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate').pop().args[3])
+      .toBe('はじめてのタグ');
+  });
+
+  it('もう書いたタグは候補に出さない', () => {
+    openCreate();
+    type('#会議 #');
+
+    expect([...document.querySelectorAll('#side-body .tag-suggest .label-pill')]
+      .map((p) => p.textContent)).toEqual(['文書改訂']);
+  });
+
+  it('直すときは今のタグが入った状態で開く', () => {
+    mount({
+      apiIssueList: [{ ...DEFAULTS.apiIssueList[0], labels: '文書改訂,会議', parent: '' }],
     });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
 
-    const add = document.querySelector('#side-body .tag-add input');
-    add.value = '棚卸し';
-    document.querySelector('#side-body .tag-add .btn').click();
-
-    expect(app.calls.filter((c) => c.name === 'apiTagCreate').pop().args[0])
-      .toBe('棚卸し');
-    expect([...document.querySelectorAll('#side-body .tag-chosen .label-pill')]
-      .map((p) => p.textContent)).toContain('棚卸し');
+    expect(tagInput().value).toBe('#文書改訂 #会議 ');
   });
 
   it('色はテーマの色だけを使う', () => {
@@ -2106,5 +2146,81 @@ describe('Google ToDo との同期', () => {
 
     expect(document.getElementById('side-body').textContent)
       .toContain('自分が担当で、まだ終わっていない');
+  });
+});
+
+describe('工程表の担当者と工数', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openGantt(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-gantt').click();
+    return app;
+  }
+
+  it('行にも棒にも担当者の顔を出す', () => {
+    openGantt();
+    const row = document.querySelector('.gantt-row');
+
+    expect(row.querySelector('.gantt-name .avatar').textContent).toBe('M');
+    expect(row.querySelector('.gantt-bar .avatar')).toBeTruthy();
+  });
+
+  it('棒に人日を出す', () => {
+    openGantt();
+
+    expect(document.querySelector('.gantt-bar .gantt-days').textContent)
+      .toMatch(/人日$/);
+  });
+
+  it('工数は人日で尋ねて、半日きざみで書ける', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+    expect(inputs[6].step).toBe('0.5');
+    expect(inputs[7].step).toBe('0.5');
+    expect([...document.querySelectorAll('#side-body label')]
+      .map((l) => l.firstChild.textContent).join(' ')).toContain('人日');
+  });
+
+  it('予定工数を変えると期限も動く', () => {
+    const app = mount({
+      apiIssueList: [{
+        ...DEFAULTS.apiIssueList[0], parent: '',
+        startDate: '2026-09-01T00:00:00.000Z',
+        dueDate: '2026-09-30T00:00:00.000Z', plannedHours: 8,
+      }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+    inputs[6].value = '3';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    // 9/1 から3人日なので 9/3 まで
+    const patch = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1];
+    expect(patch.dueDate).toBe('2026-09-03');
+  });
+
+  it('予定工数を触っていなければ期限は動かさない', () => {
+    const app = mount({
+      apiIssueList: [{
+        ...DEFAULTS.apiIssueList[0], parent: '',
+        startDate: '2026-09-01T00:00:00.000Z',
+        dueDate: '2026-09-30T00:00:00.000Z', plannedHours: 8,
+      }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+
+    document.querySelector('#side-body form input').value = '題だけ直す';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const patch = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1];
+    expect(patch.dueDate).toBe('2026-09-30');
   });
 });

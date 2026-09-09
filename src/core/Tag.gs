@@ -19,7 +19,7 @@
 function TAG_TEMPLATES() {
   return [
     { name: '文書改訂', color: 'accent' },
-    { name: '問い合わせ対応', color: 'warn' },
+    { name: '問合せ対応', color: 'warn' },
     { name: '定例業務', color: 'ink' },
     { name: '調査', color: 'merged' },
     { name: '会議', color: 'success' },
@@ -42,13 +42,14 @@ function TAG_COLORS() {
 /**
  * タグの名前として使えるかを見る。
  *
- * カンマは区切りに使っているため入れられない。
+ * 空白は区切りに、カンマとシャープは書き方に使っているため入れられない。
  *
  * @param {string} name
  * @returns {boolean}
  */
 function tagNameValid_(name) {
-  return /^[^,\n\r\t]{1,30}$/.test(String(name || '').replace(/^\s+|\s+$/g, ''));
+  // 空白は区切りに、カンマとシャープは書き方に使っているため入れられない
+  return /^[^,\s#]{1,30}$/.test(String(name || '').replace(/^\s+|\s+$/g, ''));
 }
 
 /**
@@ -143,6 +144,30 @@ function tagDelete(name) {
   if (row.builtin) throw new Error('用意されているタグは消せません: ' + name);
 
   dbDelete('tags', 'name', name);
+}
+
+/**
+ * 「#タグ」の形で書かれた文からタグを取り出す。
+ *
+ * 区切りは空白。カンマで区切らせると、書いている途中で今いくつ書いたのか
+ * が読み取れない。「#」なら1つ書くたびに形が見える。
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function tagParse(text) {
+  var re = /#([^\s#,]+)/g;
+  var src = String(text || '');
+  var seen = {};
+  var out = [];
+  var m;
+
+  while ((m = re.exec(src)) !== null) {
+    if (seen[m[1]]) continue;
+    seen[m[1]] = true;
+    out.push(m[1]);
+  }
+  return out;
 }
 
 /**

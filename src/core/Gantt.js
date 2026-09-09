@@ -153,3 +153,43 @@ function ganttDateAt(from, offset) {
     (m.length < 2 ? '0' + m : m) + '-' +
     (day.length < 2 ? '0' + day : day);
 }
+
+/**
+ * 予定工数 (人日) を棒の日数に直す。
+ *
+ * 目盛りは1日きざみなので、半日は表せない。いちばん近い日数に丸め、
+ * 0日にはしない (棒が消えると掴めなくなる)。
+ *
+ * @param {number|string} planned 人日
+ * @returns {number} 1以上の日数
+ */
+function ganttDaysForEffort(planned) {
+  var n = Number(planned);
+  if (!n || isNaN(n) || n <= 0) return 1;
+
+  return Math.max(1, Math.round(n));
+}
+
+/**
+ * 棒の日数を予定工数 (人日) に直す。
+ *
+ * @param {number} days
+ * @returns {number}
+ */
+function ganttEffortForDays(days) {
+  return Math.max(1, Math.round(Number(days) || 1));
+}
+
+/**
+ * 予定工数と棒の長さが食い違っているかを見る。
+ *
+ * 半日きざみで入れた値を、掴んでいないのに書き換えてしまわないため、
+ * 丸めたうえで比べる。
+ *
+ * @param {number|string} planned
+ * @param {number} days
+ * @returns {boolean}
+ */
+function ganttEffortDiffers(planned, days) {
+  return ganttDaysForEffort(planned) !== Math.max(1, Number(days) || 1);
+}

@@ -2683,130 +2683,162 @@
   }
 
   /**
-   * タグを選ぶ欄を作る。
+   * 「#タグ」の形で書かれた文からタグを取り出す。
+   * src/core/Tag.gs の tagParse と同じもの。
    *
-   * 自由に書かせると「会議」「打合せ」「打ち合わせ」が並んで数えられない。
-   * 用意されたものから選べるようにしつつ、その場でも足せるようにする。
+   * @param {string} text
+   * @returns {string[]}
+   */
+  function tagParse(text) {
+    var re = /#([^\s#,]+)/g;
+    var src = String(text || '');
+    var seen = {};
+    var out = [];
+    var m;
+
+    while ((m = re.exec(src)) !== null) {
+      if (seen[m[1]]) continue;
+      seen[m[1]] = true;
+      out.push(m[1]);
+    }
+    return out;
+  }
+
+  /**
+   * タグを書く欄を作る。
+   *
+   * 「#」に続けて書き、空白で区切る。カンマ区切りだと、書いている途中で
+   * 今いくつ書いたのかが読み取れない。「#」なら1つ書くたびに形が見える。
+   *
+   * 「#」を打つと、これまでに使ったタグから候補を出す。自由に書かせると
+   * 「会議」「打合せ」「打ち合わせ」が並んで数えられなくなる。
    *
    * @param {string} initial カンマ区切り
    * @returns {{el: HTMLElement, value: function(): string}}
    */
   function makeTagPicker(initial) {
-    var chosen = String(initial || '').split(',')
-      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
-      .filter(function (x) { return !!x; });
-
     var wrap = document.createElement('div');
     wrap.className = 'tag-picker';
 
-    var label = document.createElement('div');
-    label.className = 'row-meta';
-    label.textContent = 'タグ (どんな仕事か)';
-    wrap.appendChild(label);
-
-    var mine = document.createElement('div');
-    mine.className = 'tag-chosen';
-    wrap.appendChild(mine);
-
-    var pool = document.createElement('div');
-    pool.className = 'tag-pool';
-    wrap.appendChild(pool);
-
-    var add = document.createElement('div');
-    add.className = 'tag-add';
+    var label = document.createElement('label');
+    label.className = 'tag-label';
+    label.textContent = 'タグ (「#」で書きます。例: #会議 #調査)';
 
     var input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = '新しいタグを作る';
-    input.setAttribute('aria-label', '新しいタグを作る');
-    add.appendChild(input);
+    input.className = 'tag-input';
+    input.placeholder = '#';
+    input.value = String(initial || '').split(',')
+      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return !!x; })
+      .map(function (x) { return '#' + x; })
+      .join(' ');
+    if (input.value) input.value += ' ';
 
-    var addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'btn';
-    addBtn.appendChild(makeIcon('plus'));
-    addBtn.title = 'このタグを作って付ける';
-    addBtn.setAttribute('aria-label', addBtn.title);
-    add.appendChild(addBtn);
+    label.appendChild(input);
+    wrap.appendChild(label);
 
-    wrap.appendChild(add);
+    var box = document.createElement('div');
+    box.className = 'mention-picker tag-suggest';
+    box.hidden = true;
+    wrap.appendChild(box);
 
-    function has(name) { return chosen.indexOf(name) >= 0; }
+    var preview = document.createElement('div');
+    preview.className = 'tag-chosen';
+    wrap.appendChild(preview);
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
 
     function draw() {
-      mine.textContent = '';
-      pool.textContent = '';
+      preview.textContent = '';
+      var names = tagParse(input.value);
 
-      if (!chosen.length) {
+      if (!names.length) {
         var none = document.createElement('span');
         none.className = 'row-meta';
         none.textContent = 'まだ付いていません';
-        mine.appendChild(none);
-      }
-
-      chosen.forEach(function (name, i) {
-        var pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'label-pill tag-' + tagColorOf(name) + ' on';
-        pill.textContent = name;
-        pill.title = '外す';
-        pill.setAttribute('aria-label', name + ' を外す');
-        pill.addEventListener('click', function () {
-          chosen.splice(i, 1);
-          draw();
-        });
-        mine.appendChild(pill);
-      });
-
-      tags.forEach(function (tag) {
-        if (has(tag.name)) return;
-
-        var pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'label-pill tag-' + (tag.color || 'ink');
-        pill.textContent = tag.name;
-        pill.title = '付ける';
-        pill.setAttribute('aria-label', tag.name + ' を付ける');
-        pill.addEventListener('click', function () {
-          chosen.push(tag.name);
-          draw();
-        });
-        pool.appendChild(pill);
-      });
-    }
-
-    function create() {
-      var name = String(input.value || '').replace(/^\s+|\s+$/g, '');
-      if (!name) return;
-
-      if (has(name)) {
-        input.value = '';
+        preview.appendChild(none);
         return;
       }
 
-      google.script.run
-        .withSuccessHandler(function (tag) {
-          if (tag) tags.push(tag);
-          chosen.push(name);
-          input.value = '';
-          draw();
-        })
-        .withFailureHandler(function (err) {
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiTagCreate(name, 'ink');
+      names.forEach(function (name) {
+        var pill = document.createElement('span');
+        pill.className = 'label-pill tag-' + tagColorOf(name);
+        pill.textContent = name;
+        preview.appendChild(pill);
+      });
     }
 
-    addBtn.addEventListener('click', create);
+    function pick(name, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+
+      input.value = before + '#' + name + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '#' + name + ' ').length;
+      close();
+      draw();
+    }
+
+    input.addEventListener('input', function () {
+      draw();
+
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /#([^\s#,]*)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var used = tagParse(input.value);
+      var hits = tags.filter(function (tag) {
+        if (used.indexOf(tag.name) >= 0 && tag.name.toLowerCase() !== want) {
+          return false;
+        }
+        return !want || String(tag.name).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 8);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (tag) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+
+        var pill = document.createElement('span');
+        pill.className = 'label-pill tag-' + (tag.color || 'ink');
+        pill.textContent = tag.name;
+        btn.appendChild(pill);
+
+        if (tag.builtin) {
+          var note = document.createElement('span');
+          note.className = 'row-meta';
+          note.textContent = 'よく使うもの';
+          btn.appendChild(note);
+        }
+
+        btn.addEventListener('click', function () { pick(tag.name, m.index); });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
     input.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter') return;
-      // 入力の途中で送信されないようにする
-      e.preventDefault();
-      create();
+      if (e.key === 'Escape' && !box.hidden) {
+        e.stopPropagation();
+        close();
+      }
+    });
+
+    input.addEventListener('blur', function () {
+      // 候補を押すより先に閉じてしまわないよう、一拍おく
+      window.setTimeout(close, 150);
     });
 
     draw();
-    return { el: wrap, value: function () { return chosen.join(','); } };
+    return { el: wrap, value: function () { return tagParse(input.value).join(','); } };
   }
 
   function makeLabels(labels) {
@@ -3228,8 +3260,8 @@
 
             var text = [];
             if (effort.estimate) text.push('見積 ' + effort.estimate);
-            if (effort.planned) text.push('予定 ' + effort.planned + 'h');
-            if (effort.actual) text.push('実績 ' + effort.actual + 'h');
+            if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+            if (effort.actual) text.push('実績 ' + effort.actual + '人日');
 
             hours.appendChild(document.createTextNode(text.join(' / ')));
             if (issue.children.length) hours.title = '子の分を含めた合計';
@@ -3333,6 +3365,29 @@
    * @param {object} issue issues 行
    * @param {HTMLElement} [sourceEl] 一覧の行やカードなど、対象の要素
    */
+  /**
+   * 予定工数から期限を出す。
+   *
+   * 始まりの日から数えて、予定した人日ぶんの最後の日を返す。
+   *
+   * @param {string} startish 始まりの日 (無ければ作った日)
+   * @param {number|string} planned 人日
+   * @returns {string} YYYY-MM-DD。出せなければ空文字
+   */
+  function dueFromEffort(startish, planned) {
+    var start = new Date(startish);
+    if (!startish || isNaN(start.getTime())) return '';
+
+    var days = ganttDaysForEffort(planned);
+    var end = new Date(start.getFullYear(), start.getMonth(),
+      start.getDate() + days - 1);
+
+    var m = String(end.getMonth() + 1);
+    var d = String(end.getDate());
+    return end.getFullYear() + '-' +
+      (m.length < 2 ? '0' + m : m) + '-' + (d.length < 2 ? '0' + d : d);
+  }
+
   function openIssueDetail(issue, sourceEl) {
     var picker = null;
     var form = openInlineForm(
@@ -3344,12 +3399,28 @@
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
         { name: 'estimate', label: '見積もり (規模。数値)' },
-        { name: 'plannedHours', label: '予定工数 (時間)' },
-        { name: 'actualHours', label: '実績工数 (時間)' },
+        { name: 'plannedHours', label: '予定工数 (人日。0.5 きざみで書けます)' },
+        { name: 'actualHours', label: '実績工数 (人日)' },
         { name: 'parent', label: '親のやること (番号。空なら親なし)' },
       ],
       '保存する',
       function (v) {
+        var patch = {
+          title: v.title, body: v.body, assignee: v.assignee,
+          startDate: v.startDate, dueDate: v.dueDate,
+          labels: picker ? picker.value() : (issue.labels || ''),
+          estimate: v.estimate, plannedHours: v.plannedHours,
+          actualHours: v.actualHours, parent: v.parent,
+        };
+
+        // 予定工数を書き換えたなら、棒の長さもそれに合わせる。
+        // 片方だけ動くと、工程表と工数のどちらが本当か分からなくなる
+        if (String(v.plannedHours) !== String(issue.plannedHours)) {
+          var moved = dueFromEffort(v.startDate || issue.startDate ||
+            issue.createdAt, v.plannedHours);
+          if (moved) patch.dueDate = moved;
+        }
+
         google.script.run
           .withSuccessHandler(function () {
             showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
@@ -3358,13 +3429,7 @@
           .withFailureHandler(function (err) {
             showSnack(err.message, { kind: 'ng' });
           })
-          .apiIssueUpdate(issue.number, {
-            title: v.title, body: v.body, assignee: v.assignee,
-            startDate: v.startDate, dueDate: v.dueDate,
-            labels: picker ? picker.value() : (issue.labels || ''),
-            estimate: v.estimate, plannedHours: v.plannedHours,
-            actualHours: v.actualHours, parent: v.parent,
-          });
+          .apiIssueUpdate(issue.number, patch);
       },
       sourceEl
     );
@@ -3386,6 +3451,12 @@
     inputs[6].type = 'number';
     inputs[7].type = 'number';
     inputs[8].type = 'number';
+
+    // 人日は半日きざみで入れられるようにする
+    inputs[6].step = '0.5';
+    inputs[7].step = '0.5';
+    inputs[6].min = '0';
+    inputs[7].min = '0';
     inputs[2].setAttribute('list', 'people-list');
     attachPeopleList(form);
 
@@ -3761,6 +3832,30 @@
   /** 目盛りの末尾に足す余白の日数。src/core/Gantt.js と同じ値 */
   var GANTT_TAIL_DAYS = 14;
 
+  /**
+   * 予定工数 (人日) を棒の日数に直す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number|string} planned
+   * @returns {number}
+   */
+  function ganttDaysForEffort(planned) {
+    var n = Number(planned);
+    if (!n || isNaN(n) || n <= 0) return 1;
+
+    return Math.max(1, Math.round(n));
+  }
+
+  /**
+   * 予定工数と棒の長さが食い違っているかを見る。
+   *
+   * @param {number|string} planned
+   * @param {number} days
+   * @returns {boolean}
+   */
+  function ganttEffortDiffers(planned, days) {
+    return ganttDaysForEffort(planned) !== Math.max(1, Number(days) || 1);
+  }
+
   function ganttLayout(issues, today) {
     var DAY = 24 * 60 * 60 * 1000;
 
@@ -3790,6 +3885,7 @@
       rows.push({
         number: Number(issue.number), title: issue.title, state: issue.state,
         assignee: issue.assignee, hasDue: due !== null,
+        planned: issue.plannedHours, parent: issue.parent,
         overdue: due !== null && String(issue.state) === 'open' && due < now,
         _start: start, _end: end,
       });
@@ -4002,10 +4098,15 @@
       var patch = { dueDate: ganttDateAt(g.from, row.offset + row.span - 1) };
       if (was !== 'end') patch.startDate = ganttDateAt(g.from, row.offset);
 
+      // 棒の長さは予定工数そのもの。片方だけ変わると数え直しができない。
+      // 半日きざみで入れた値は、丸めて同じなら書き換えない
+      if (ganttEffortDiffers(row.planned, row.span)) patch.plannedHours = row.span;
+
       google.script.run
         .withSuccessHandler(function () {
           showSnack('#' + row.number + ' の期間を ' +
-            ganttDateAt(g.from, row.offset) + ' 〜 ' + patch.dueDate + ' にしました',
+            ganttDateAt(g.from, row.offset) + ' 〜 ' + patch.dueDate + ' にしました' +
+            (patch.plannedHours ? ' (予定 ' + patch.plannedHours + '人日)' : ''),
             { kind: 'ok' });
           loadGantt();
         })
@@ -4133,7 +4234,12 @@
 
             var name = document.createElement('button');
             name.className = 'gantt-name';
-            name.textContent = '#' + r.number + ' ' + r.title;
+            name.appendChild(makeAvatar(r.assignee));
+
+            var who = document.createElement('span');
+            who.className = 'gantt-title';
+            who.textContent = '#' + r.number + ' ' + r.title;
+            name.appendChild(who);
             name.title = (r.assignee || '担当なし');
             name.addEventListener('click', function () {
               openIssueByNumber(r.number, row);
@@ -4149,7 +4255,12 @@
               (r.overdue ? ' overdue' : '') +
               (r.hasDue ? '' : ' nodue');
             bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
-            bar.textContent = r.assignee ? String(r.assignee).replace(/@.*$/, '') : '';
+            bar.appendChild(makeAvatar(r.assignee));
+
+            var days = document.createElement('span');
+            days.className = 'gantt-days';
+            days.textContent = r.span + '人日';
+            bar.appendChild(days);
             bar.title = '#' + r.number + ' ' + r.title +
               (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
               ' — 押すと中身を開きます。端を掴むと期限、真ん中を掴むと全体を動かせます';

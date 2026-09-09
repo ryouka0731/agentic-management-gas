@@ -64,10 +64,12 @@ describe('自分で作るタグ', () => {
     expect(ctx.tagCreate('  棚卸し  ').name).toBe('棚卸し');
   });
 
-  it('カンマは入れられない', () => {
+  it('カンマや空白やシャープは入れられない', () => {
     const { ctx } = setup();
-    // カンマは区切りに使っている
+    // 空白は区切りに、カンマとシャープは書き方に使っている
     expect(() => ctx.tagCreate('あ,い')).toThrow(/正しくありません/);
+    expect(() => ctx.tagCreate('あ い')).toThrow(/正しくありません/);
+    expect(() => ctx.tagCreate('あ#い')).toThrow(/正しくありません/);
   });
 
   it('空は作れない', () => {
@@ -115,5 +117,33 @@ describe('その場で書いたタグ', () => {
   it('同じものが2つあっても1つにする', () => {
     const { ctx } = setup();
     expect(ctx.tagsOf('会議, 会議 ,調査')).toEqual(['会議', '調査']);
+  });
+});
+
+describe('「#タグ」の書き方', () => {
+  it('空白で区切って読み取る', () => {
+    const { ctx } = setup();
+    expect(ctx.tagParse('#会議 #調査')).toEqual(['会議', '調査']);
+  });
+
+  it('文に混ざっていても拾う', () => {
+    const { ctx } = setup();
+    expect(ctx.tagParse('#定例業務 まとめ')).toEqual(['定例業務']);
+  });
+
+  it('同じものは1つにする', () => {
+    const { ctx } = setup();
+    expect(ctx.tagParse('#会議 #会議')).toEqual(['会議']);
+  });
+
+  it('シャープだけなら何も取らない', () => {
+    const { ctx } = setup();
+    expect(ctx.tagParse('# #')).toEqual([]);
+    expect(ctx.tagParse('')).toEqual([]);
+  });
+
+  it('続けて書いても分けて読む', () => {
+    const { ctx } = setup();
+    expect(ctx.tagParse('#会議#調査')).toEqual(['会議', '調査']);
   });
 });

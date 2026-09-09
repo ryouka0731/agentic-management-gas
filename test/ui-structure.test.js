@@ -626,8 +626,8 @@ describe('やることの中身と操作', () => {
   const html = read('src/ui/wiki.html');
 
   it('見積もりと工数を入力できる', () => {
-    ["label: '見積もり (規模。数値)'", "label: '予定工数 (時間)'",
-     "label: '実績工数 (時間)'"].forEach((f) => expect(js).toContain(f));
+    ["label: '見積もり (規模。数値)'", "label: '予定工数 (人日。0.5 きざみで書けます)'",
+     "label: '実績工数 (人日)'"].forEach((f) => expect(js).toContain(f));
   });
 
   it('親子にできて、子の工数を親に足し上げる', () => {

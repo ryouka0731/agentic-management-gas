@@ -135,3 +135,36 @@ describe('目盛りの末尾の余白', () => {
     expect(gas.ganttLayout([], '2026-09-01').days).toBe(1);
   });
 });
+
+describe('予定工数と棒の長さ', () => {
+  it('人日を日数に直す', () => {
+    expect(gas.ganttDaysForEffort(3)).toBe(3);
+    expect(gas.ganttDaysForEffort('5')).toBe(5);
+  });
+
+  it('半日は近いほうに丸める', () => {
+    // 目盛りは1日きざみなので半日は表せない
+    expect(gas.ganttDaysForEffort(2.4)).toBe(2);
+    expect(gas.ganttDaysForEffort(2.6)).toBe(3);
+  });
+
+  it('0日にはしない', () => {
+    // 棒が消えると掴めなくなる
+    expect(gas.ganttDaysForEffort(0)).toBe(1);
+    expect(gas.ganttDaysForEffort(0.2)).toBe(1);
+    expect(gas.ganttDaysForEffort('')).toBe(1);
+    expect(gas.ganttDaysForEffort(-3)).toBe(1);
+  });
+
+  it('日数を人日に直す', () => {
+    expect(gas.ganttEffortForDays(4)).toBe(4);
+    expect(gas.ganttEffortForDays(0)).toBe(1);
+  });
+
+  it('丸めて同じなら食い違いとしない', () => {
+    // 半日きざみで入れた値を、掴んでいないのに書き換えない
+    expect(gas.ganttEffortDiffers(2.4, 2)).toBe(false);
+    expect(gas.ganttEffortDiffers(2.6, 3)).toBe(false);
+    expect(gas.ganttEffortDiffers(2, 5)).toBe(true);
+  });
+});
