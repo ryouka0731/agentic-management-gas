@@ -17,6 +17,7 @@ function DB_SCHEMA() {
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
+    notifications: ['id', 'to', 'kind', 'title', 'body', 'link', 'at', 'readAt'],
     inquiries: ['number', 'kind', 'body', 'by', 'at', 'state', 'context',
       'answer', 'answeredAt', 'title', 'closedBy', 'shots'],
     inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],

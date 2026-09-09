@@ -265,6 +265,14 @@ function prReview(number, state, body) {
   };
   dbAppend('reviews', row);
 
+  // 確認依頼のやりとりでも名前を呼べるようにする。報告の場だけ呼べても、
+  // 話しているのが別の場所ならすれ違う
+  var called = mentionResolve(row.body, prRoster_(pr));
+  for (var c = 0; c < called.length; c++) {
+    if (String(called[c]) === String(reviewer)) continue;
+    notifyPrMention(pr, row, called[c]);
+  }
+
   if (state === 'approve') {
     dbUpdate('pulls', 'number', number, { state: 'approved' });
   } else if (state === 'request_changes') {
@@ -591,6 +599,39 @@ function prReviewers(pr) {
   for (var i = 0; i < parts.length; i++) {
     var one = parts[i].replace(/^\s+|\s+$/g, '');
     if (one) out.push(one);
+  }
+  return out;
+}
+
+/**
+ * 確認依頼で名前を呼べる人の名簿。
+ *
+ * 誰でも呼べると、関わりのない人に知らせが飛ぶ。この道具に名前が
+ * 出ている人だけにする。
+ *
+ * @param {object} pr pulls 行
+ * @returns {string[]}
+ */
+function prRoster_(pr) {
+  var seen = {};
+  var out = [];
+
+  function add(who) {
+    var one = String(who || '');
+    if (!one || seen[one]) return;
+    seen[one] = true;
+    out.push(one);
+  }
+
+  add(pr && pr.author);
+
+  var reviewers = prReviewers(pr);
+  for (var r = 0; r < reviewers.length; r++) add(reviewers[r]);
+
+  var tables = [['commits', 'author'], ['reviews', 'reviewer'], ['issues', 'assignee']];
+  for (var t = 0; t < tables.length; t++) {
+    var rows = dbReadAll(tables[t][0]);
+    for (var i = 0; i < rows.length; i++) add(rows[i][tables[t][1]]);
   }
   return out;
 }

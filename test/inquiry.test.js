@@ -436,3 +436,97 @@ describe('名前を呼ぶ', () => {
     expect(mail.body).toContain('ここが変です');
   });
 });
+
+describe('画面の中の知らせ', () => {
+  function addPerson(ctx, email) {
+    ctx.dbAppend('issues', {
+      number: 1, title: 'x', body: '', state: 'open', assignee: email,
+      labels: '', linkedFileIds: '', linkedPr: '', createdAt: new Date(),
+      closedAt: '', dueDate: '', startDate: '', parent: '', estimate: '',
+      plannedHours: '', actualHours: '', archivedAt: '', updatedAt: new Date(),
+    });
+  }
+
+  it('呼ばれたら知らせが残る', () => {
+    const { ctx } = setup();
+    addPerson(ctx, 'aoki@example.com');
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    ctx.inquiryReply(row.number, '@aoki みて');
+
+    const list = ctx.noticeList('aoki@example.com');
+    expect(list).toHaveLength(1);
+    expect(list[0].kind).toBe('mention');
+    expect(list[0].link).toBe('report:' + row.number);
+  });
+
+  it('返信でも知らせが残る', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+    ctx.dbUpdate('inquiries', 'number', row.number, { by: 'aoki@example.com' });
+
+    ctx.inquiryReply(row.number, 'こうしたら直りました');
+
+    expect(ctx.noticeList('aoki@example.com')[0].kind).toBe('reply');
+  });
+
+  it('宛先が無ければ残さない', () => {
+    const { ctx } = setup();
+    expect(ctx.noticeAdd('', 'mention', 'x', 'y', '')).toBe(null);
+  });
+
+  it('自分あてだけが返る', () => {
+    const { ctx } = setup();
+    ctx.noticeAdd('aoki@example.com', 'mention', 'あおき宛', '', '');
+    ctx.noticeAdd('ito@example.com', 'mention', 'いとう宛', '', '');
+
+    expect(ctx.noticeList('aoki@example.com').map((n) => n.title))
+      .toEqual(['あおき宛']);
+  });
+
+  it('新しい順に返る', () => {
+    const { ctx } = setup();
+    ctx.noticeAdd('tester@example.com', 'mention', 'ひとつめ', '', '');
+    ctx.noticeAdd('tester@example.com', 'mention', 'ふたつめ', '', '');
+
+    expect(ctx.noticeList('tester@example.com').map((n) => n.title))
+      .toEqual(['ふたつめ', 'ひとつめ']);
+  });
+
+  it('読んだことにできる', () => {
+    const { ctx } = setup();
+    ctx.noticeAdd('tester@example.com', 'mention', 'x', '', '');
+
+    expect(ctx.noticeMarkRead([])).toBe(1);
+    expect(ctx.noticeList('tester@example.com')[0].readAt).not.toBe('');
+  });
+
+  it('他人あては読んだことにできない', () => {
+    const { ctx } = setup();
+    ctx.noticeAdd('aoki@example.com', 'mention', 'x', '', '');
+
+    // 読んだかどうかは本人にしか決められない
+    expect(ctx.noticeMarkRead([])).toBe(0);
+    expect(ctx.noticeList('aoki@example.com')[0].readAt).toBe('');
+  });
+
+  it('番号を選んで読んだことにできる', () => {
+    const { ctx } = setup();
+    const a = ctx.noticeAdd('tester@example.com', 'mention', 'a', '', '');
+    ctx.noticeAdd('tester@example.com', 'mention', 'b', '', '');
+
+    expect(ctx.noticeMarkRead([a.id])).toBe(1);
+
+    const left = ctx.noticeList('tester@example.com')
+      .filter((n) => !n.readAt);
+    expect(left.map((n) => n.title)).toEqual(['b']);
+  });
+
+  it('二度読んでも数は増えない', () => {
+    const { ctx } = setup();
+    ctx.noticeAdd('tester@example.com', 'mention', 'x', '', '');
+    ctx.noticeMarkRead([]);
+
+    expect(ctx.noticeMarkRead([])).toBe(0);
+  });
+});

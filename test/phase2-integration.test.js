@@ -451,3 +451,58 @@ describe('やりとりの直しと確認してもらう人', () => {
   });
 
 });
+
+describe('確認依頼で名前を呼ぶ', () => {
+  function withPr() {
+    const env = setup();
+    const { ctx, mainFileId } = env;
+    ctx.branchCreate('改訂', mainFileId);
+
+    const work = ctx.branchWorkingFileId('改訂', mainFileId);
+    env.fake._docs.set(work, '<p>第1条</p>\n<p>第2条</p>\n');
+    ctx.commitFile(work, '改訂', '第2条を足した', null);
+
+    env.pr = ctx.prCreate('第2条の追加', '補足', '改訂', mainFileId);
+    return env;
+  }
+
+  it('依頼を出した人を呼べる', () => {
+    const { ctx, pr, fake } = withPr();
+    ctx.dbUpdate('pulls', 'number', pr.number, { author: 'aoki@example.com' });
+
+    const before = fake._sentMails().length;
+    ctx.prReview(pr.number, 'comment', '@aoki ここどうでしょう');
+
+    expect(fake._sentMails().slice(before).map((m) => m.to))
+      .toContain('aoki@example.com');
+  });
+
+  it('画面の中にも知らせが残る', () => {
+    const { ctx, pr } = withPr();
+    ctx.dbUpdate('pulls', 'number', pr.number, { author: 'aoki@example.com' });
+
+    ctx.prReview(pr.number, 'comment', '@aoki みてください');
+
+    const list = ctx.noticeList('aoki@example.com');
+    expect(list[0].kind).toBe('mention');
+    expect(list[0].link).toBe('pull:' + pr.number);
+  });
+
+  it('名簿に無い人は呼べない', () => {
+    const { ctx, pr, fake } = withPr();
+
+    const before = fake._sentMails().length;
+    ctx.prReview(pr.number, 'comment', '@dareka おねがい');
+
+    expect(fake._sentMails().length).toBe(before);
+  });
+
+  it('自分を呼んでも自分には送らない', () => {
+    const { ctx, pr, fake } = withPr();
+
+    const before = fake._sentMails().length;
+    ctx.prReview(pr.number, 'comment', '@tester めも');
+
+    expect(fake._sentMails().length).toBe(before);
+  });
+});

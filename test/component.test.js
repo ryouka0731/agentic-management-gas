@@ -1789,8 +1789,9 @@ describe('名前を呼ぶ', () => {
 
     const picker = document.querySelector('#report-detail .mention-picker');
     expect(picker.hidden).toBe(false);
-    expect([...picker.querySelectorAll('.mention-option')]
-      .map((b) => b.textContent)).toEqual(['Oother@example.com']);
+    // 名前を主に、アドレスを従に出す
+    expect([...picker.querySelectorAll('.mention-option .mention-name')]
+      .map((b) => b.textContent)).toEqual(['other']);
   });
 
   it('選ぶと本文に入る', () => {
@@ -1802,7 +1803,8 @@ describe('名前を呼ぶ', () => {
     input.dispatchEvent(new window.Event('input', { bubbles: true }));
     document.querySelector('#report-detail .mention-option').click();
 
-    expect(input.value).toBe('@other@example.com ');
+    // ふだんは名前だけで足りる
+    expect(input.value).toBe('@other ');
   });
 
   it('候補が無ければ出さない', () => {
@@ -1815,5 +1817,110 @@ describe('名前を呼ぶ', () => {
 
     expect(document.querySelector('#report-detail .mention-picker').hidden)
       .toBe(true);
+  });
+});
+
+describe('知らせ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const NOTICES = {
+    items: [
+      {
+        id: 2, kind: 'mention', title: 'other@example.com があなたを呼びました',
+        body: '@me これ見て', link: 'report:3', at: '2026-09-10T00:00:00.000Z',
+        read: false,
+      },
+      {
+        id: 1, kind: 'reply', title: 'other@example.com が #3 に返信しました',
+        body: '直りました', link: 'report:3', at: '2026-09-09T00:00:00.000Z',
+        read: true,
+      },
+    ],
+    unread: 1,
+  };
+
+  it('未読の件数をベルに出す', () => {
+    mount({ apiNotifications: NOTICES });
+
+    expect(document.getElementById('bell-count').textContent).toBe('1');
+    expect(document.getElementById('bell-count').hidden).toBe(false);
+  });
+
+  it('無いときは数を出さない', () => {
+    mount();
+    expect(document.getElementById('bell-count').hidden).toBe(true);
+  });
+
+  it('押すと一覧が開く', () => {
+    mount({ apiNotifications: NOTICES });
+    document.getElementById('bell-btn').click();
+
+    expect(document.getElementById('notice-panel').hidden).toBe(false);
+    expect(document.querySelectorAll('.notice-item')).toHaveLength(2);
+  });
+
+  it('まだ読んでいないものに印を付ける', () => {
+    mount({ apiNotifications: NOTICES });
+    document.getElementById('bell-btn').click();
+
+    const items = [...document.querySelectorAll('.notice-item')];
+    expect(items[0].classList.contains('unread')).toBe(true);
+    expect(items[1].classList.contains('unread')).toBe(false);
+  });
+
+  it('押すと読んだことにして、その場所を開く', () => {
+    const app = mount({
+      apiNotifications: NOTICES,
+      apiInquiryList: [],
+    });
+    document.getElementById('bell-btn').click();
+    document.querySelector('.notice-item').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiNotificationsRead').pop().args[0])
+      .toEqual([2]);
+    expect(document.getElementById('panel-report').hidden).toBe(false);
+    expect(document.getElementById('notice-panel').hidden).toBe(true);
+  });
+
+  it('全部まとめて読んだことにできる', () => {
+    const app = mount({ apiNotifications: NOTICES });
+    document.getElementById('bell-btn').click();
+    document.getElementById('notice-read-all').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiNotificationsRead').pop().args[0])
+      .toEqual([]);
+  });
+
+  it('何も無いときは何が出るのかを伝える', () => {
+    mount();
+    document.getElementById('bell-btn').click();
+
+    expect(document.getElementById('notice-body').textContent)
+      .toContain('名前を呼ばれたとき');
+  });
+
+  it('デスクトップ通知が使えない環境ではその旨を出す', () => {
+    const saved = window.Notification;
+    delete window.Notification;
+
+    mount();
+    document.getElementById('bell-btn').click();
+
+    expect(document.getElementById('notice-desktop').hidden).toBe(true);
+    expect(document.getElementById('notice-desktop-note').textContent)
+      .toContain('出せません');
+
+    if (saved) window.Notification = saved;
+  });
+
+  it('許可を求められる環境では頼むボタンを出す', () => {
+    window.Notification = { permission: 'default', requestPermission: () => {} };
+
+    mount();
+    document.getElementById('bell-btn').click();
+
+    expect(document.getElementById('notice-desktop').hidden).toBe(false);
+
+    delete window.Notification;
   });
 });

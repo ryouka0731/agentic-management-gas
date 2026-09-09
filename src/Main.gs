@@ -1198,6 +1198,45 @@ function apiInquiryReopen(number) {
 }
 
 /**
+ * 自分あての知らせを返す (Web App API)。
+ *
+ * @param {number} [limit]
+ * @returns {{items: object[], unread: number}}
+ */
+function apiNotifications(limit) {
+  var me = Session.getActiveUser().getEmail();
+  var rows = noticeList(me, limit || 30);
+  var items = [];
+  var unread = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var read = rows[i].readAt ? new Date(rows[i].readAt) : null;
+    if (!read) unread++;
+
+    items.push({
+      id: Number(rows[i].id),
+      kind: String(rows[i].kind || ''),
+      title: String(rows[i].title || ''),
+      body: String(rows[i].body || ''),
+      link: String(rows[i].link || ''),
+      at: rows[i].at ? new Date(rows[i].at).toISOString() : '',
+      read: !!read,
+    });
+  }
+  return { items: items, unread: unread };
+}
+
+/**
+ * 知らせを読んだことにする (Web App API)。
+ *
+ * @param {number[]} [ids] 省略すると自分あてを全部
+ * @returns {number}
+ */
+function apiNotificationsRead(ids) {
+  return noticeMarkRead(ids || []);
+}
+
+/**
  * 報告の種類の一覧を返す (Web App API)。
  *
  * @returns {Array<{value:string, label:string}>}

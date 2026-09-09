@@ -70,6 +70,10 @@
         <button id="commit-btn" class="btn btn-primary" hidden>変更を記録</button>
         <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>元のファイルを開く</a>
+        <button id="bell-btn" class="theme-btn bell" type="button"
+                aria-expanded="false">
+          <span class="bell-count" id="bell-count" hidden></span>
+        </button>
         <button id="theme-btn" class="theme-btn" type="button"></button>
       </div>
 
@@ -283,6 +287,22 @@
         </div>
       </div>
     </div>
+
+    <aside class="notice-panel" id="notice-panel" hidden aria-label="知らせ">
+      <div class="side-head">
+        <h2>知らせ</h2>
+        <button class="btn" id="notice-read-all" type="button">全部読んだ</button>
+        <button class="side-close" id="notice-close" type="button"
+                aria-label="閉じる">×</button>
+      </div>
+      <div class="notice-body" id="notice-body"></div>
+      <div class="notice-foot">
+        <button class="btn" id="notice-desktop" type="button" hidden>
+          デスクトップ通知を受け取る
+        </button>
+        <span class="row-meta" id="notice-desktop-note"></span>
+      </div>
+    </aside>
 
     <aside class="side-panel" id="side-panel" hidden aria-labelledby="side-title">
       <div class="side-head">

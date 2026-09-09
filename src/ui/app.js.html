@@ -68,6 +68,11 @@
   var reportOpenOnly = true;
   var reportShown = null;
   var roster = [];
+  var noticePanel = document.getElementById('notice-panel');
+  var noticeBody = document.getElementById('notice-body');
+  var bellBtn = document.getElementById('bell-btn');
+  var bellCount = document.getElementById('bell-count');
+  var seenNoticeId = 0;
 
   var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
@@ -292,6 +297,7 @@
       monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
       calendar: ['M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z', 'M16 2v4', 'M8 2v4', 'M3 10h18'],
       user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
+      bell: ['M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
       expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
       shrink: ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'],
     };
@@ -4447,6 +4453,24 @@
   }
 
   /**
+   * 画面に出す呼び名を決める。
+   *
+   * ふだんは名前だけで足りる。同じ名前が2人いるときだけ、どちらか
+   * 分かるようにアドレスごと出す。
+   *
+   * @param {string} email
+   * @returns {string}
+   */
+  function mentionLabel(email) {
+    var name = String(email || '').split('@')[0];
+    var same = roster.filter(function (one) {
+      return String(one).split('@')[0].toLowerCase() === name.toLowerCase();
+    });
+
+    return same.length > 1 ? String(email) : name;
+  }
+
+  /**
    * 呼び名を名簿の誰かに結び付ける。src/core/Mention.js と同じもの。
    *
    * @param {string} token
@@ -4527,10 +4551,11 @@
     function pick(who, from) {
       var before = input.value.substring(0, from);
       var after = input.value.substring(input.selectionStart);
+      var name = mentionLabel(who);
 
-      input.value = before + '@' + who + ' ' + after;
+      input.value = before + '@' + name + ' ' + after;
       input.focus();
-      input.selectionStart = input.selectionEnd = (before + '@' + who + ' ').length;
+      input.selectionStart = input.selectionEnd = (before + '@' + name + ' ').length;
       close();
     }
 
@@ -4552,7 +4577,17 @@
         btn.type = 'button';
         btn.className = 'mention-option';
         btn.appendChild(makeAvatar(who));
-        btn.appendChild(document.createTextNode(who));
+
+        var name = document.createElement('span');
+        name.className = 'mention-name';
+        name.textContent = String(who).split('@')[0];
+        btn.appendChild(name);
+
+        var addr = document.createElement('span');
+        addr.className = 'row-meta';
+        addr.textContent = who;
+        btn.appendChild(addr);
+
         btn.addEventListener('click', function () {
           pick(who, m.index);
         });
@@ -4935,6 +4970,158 @@
     return form;
   }
 
+  // ===== 知らせ =====
+
+  /**
+   * デスクトップ通知が使えるかを見る。
+   *
+   * この画面は枠の中で動くため、ブラウザや設定によっては許可そのものを
+   * 求められない。使えないときは画面の中の知らせだけで済ませる。
+   *
+   * @returns {string} 'granted' | 'denied' | 'default' | 'unavailable'
+   */
+  function desktopState() {
+    try {
+      if (!window.Notification) return 'unavailable';
+      return window.Notification.permission;
+    } catch (e) {
+      return 'unavailable';
+    }
+  }
+
+  function renderDesktopButton() {
+    var btn = document.getElementById('notice-desktop');
+    var note = document.getElementById('notice-desktop-note');
+    var state = desktopState();
+
+    btn.hidden = state !== 'default';
+    note.textContent = {
+      granted: 'デスクトップ通知は入になっています',
+      denied: 'デスクトップ通知はブラウザ側で断られています。ここの一覧で見てください',
+      unavailable: 'この環境ではデスクトップ通知を出せません。ここの一覧で見てください',
+      'default': '',
+    }[state] || '';
+  }
+
+  /**
+   * デスクトップに出す。出せなければ何もしない。
+   *
+   * @param {object} notice
+   */
+  function popDesktop(notice) {
+    if (desktopState() !== 'granted') return;
+
+    try {
+      var n = new window.Notification(notice.title, { body: notice.body });
+      n.onclick = function () {
+        window.focus();
+        openNoticeLink(notice);
+      };
+    } catch (e) { /* 出せなくても画面の中には残っている */ }
+  }
+
+  /**
+   * 知らせの指す場所を開く。
+   *
+   * @param {object} notice
+   */
+  function openNoticeLink(notice) {
+    var parts = String(notice.link || '').split(':');
+    if (parts[0] === 'report') {
+      switchTab('report');
+      openReport(Number(parts[1]));
+    } else if (parts[0] === 'pull') {
+      switchTab('pulls');
+    }
+    noticePanel.hidden = true;
+    bellBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * 知らせを取ってくる。
+   *
+   * @param {boolean} [quiet] 初回は前からあるぶんで驚かせない
+   */
+  function loadNotices(quiet) {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        var data = res || { items: [], unread: 0 };
+        renderNotices(data.items);
+
+        bellCount.textContent = data.unread;
+        bellCount.hidden = !data.unread;
+        bellBtn.title = data.unread
+          ? '知らせが' + data.unread + '件あります' : '知らせ';
+        bellBtn.setAttribute('aria-label', bellBtn.title);
+
+        // 前に見た番号より新しく、まだ読んでいないものだけを前に出す
+        var fresh = data.items.filter(function (n) {
+          return !n.read && n.id > seenNoticeId;
+        });
+
+        data.items.forEach(function (n) {
+          if (n.id > seenNoticeId) seenNoticeId = n.id;
+        });
+
+        if (quiet || !fresh.length) return;
+
+        showSnack(fresh[0].title, { kind: 'ok' });
+        fresh.forEach(popDesktop);
+      })
+      .withFailureHandler(function () { /* 知らせが出ないだけ */ })
+      .apiNotifications(30);
+  }
+
+  /**
+   * @param {object[]} items
+   */
+  function renderNotices(items) {
+    noticeBody.textContent = '';
+
+    if (!items.length) {
+      noticeBody.appendChild(makeBlankState(
+        '知らせはありません',
+        '名前を呼ばれたときや、返信があったときにここに出ます。'
+      ));
+      return;
+    }
+
+    var labels = { mention: '呼ばれました', reply: '返信', review: '確認の依頼' };
+
+    items.forEach(function (n) {
+      var row = document.createElement('button');
+      row.className = 'notice-item' + (n.read ? '' : ' unread');
+
+      var head = document.createElement('div');
+      head.className = 'row-meta';
+      head.textContent = (labels[n.kind] || n.kind) + ' · ' +
+        String(n.at).substring(0, 10);
+      row.appendChild(head);
+
+      var title = document.createElement('div');
+      title.className = 'row-title';
+      title.textContent = n.title;
+      row.appendChild(title);
+
+      if (n.body) {
+        var body = document.createElement('div');
+        body.className = 'row-meta notice-quote';
+        body.textContent = n.body;
+        row.appendChild(body);
+      }
+
+      row.addEventListener('click', function () {
+        google.script.run
+          .withSuccessHandler(function () { loadNotices(true); })
+          .withFailureHandler(function () {})
+          .apiNotificationsRead([n.id]);
+        openNoticeLink(n);
+      });
+
+      noticeBody.appendChild(row);
+    });
+  }
+
   // ===== 初期化 =====
 
   var navTargets = document.querySelectorAll('[data-tab]');
@@ -5056,6 +5243,45 @@
     }, { min: 260, max: 1200 });
 
   setToggle(mineBtn, mineOnly);
+  bellBtn.appendChild(makeIcon('bell'));
+  bellBtn.insertBefore(bellBtn.lastChild, bellCount);
+
+  bellBtn.addEventListener('click', function () {
+    var open = noticePanel.hidden;
+    noticePanel.hidden = !open;
+    bellBtn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      renderDesktopButton();
+      loadNotices(true);
+    }
+  });
+
+  document.getElementById('notice-close').addEventListener('click', function () {
+    noticePanel.hidden = true;
+    bellBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  document.getElementById('notice-read-all').addEventListener('click', function () {
+    google.script.run
+      .withSuccessHandler(function () { loadNotices(true); })
+      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
+      .apiNotificationsRead([]);
+  });
+
+  document.getElementById('notice-desktop').addEventListener('click', function () {
+    // 許可を求められるのは人が押した直後だけ
+    try {
+      window.Notification.requestPermission().then(function () {
+        renderDesktopButton();
+      });
+    } catch (e) {
+      renderDesktopButton();
+    }
+  });
+
+  loadNotices(true);
+  window.setInterval(function () { loadNotices(false); }, 60000);
+
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;
     setToggle(mineBtn, mineOnly);

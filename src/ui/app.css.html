@@ -2732,4 +2732,80 @@ button.gantt-name:hover { color: var(--accent); }
 .shot-item .btn-danger .icon { width: 14px; height: 14px; }
 
 a.shot-item:hover { box-shadow: var(--hairline), var(--elev-2); }
+
+/*
+ * 知らせ。
+ *
+ * メールは他の便りに埋もれる。開いている画面にも同じことを出す
+ */
+.bell { position: relative; }
+
+.bell-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger-solid);
+  color: var(--on-danger);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.notice-panel {
+  position: fixed;
+  top: 56px;
+  right: var(--sp-4);
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 360px);
+  max-height: 70vh;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-2);
+  overflow: hidden;
+}
+
+.notice-body {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-2);
+}
+
+.notice-item {
+  display: block;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notice-item:hover { background: var(--bg-3); }
+
+/* まだ読んでいないものは左に印を付ける。色だけだと気づけない人がいる */
+.notice-item.unread { box-shadow: inset 3px 0 0 var(--accent); }
+.notice-item.unread .row-title { font-weight: 600; }
+
+.notice-quote {
+  margin-top: var(--sp-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-raised);
+}
+
+.mention-name { color: var(--ink); font-weight: 600; }
 </style>

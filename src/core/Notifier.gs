@@ -22,6 +22,95 @@ function notify(to, subject, body) {
 }
 
 /**
+ * 次の知らせの番号を返す。
+ *
+ * @returns {number}
+ */
+function noticeNextId_() {
+  var rows = dbReadAll('notifications');
+  var max = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var n = Number(rows[i].id);
+    if (n > max) max = n;
+  }
+  return max + 1;
+}
+
+/**
+ * 画面の中に知らせを残す。
+ *
+ * メールは他の便りに埋もれるし、社外の端末では読めないことがある。
+ * 開いている画面にも同じことを出せるよう、残しておく。
+ *
+ * @param {string} to 宛先 (メールアドレス)
+ * @param {string} kind 種類 ('mention' | 'reply' | 'review')
+ * @param {string} title 一行の見出し
+ * @param {string} body 中身
+ * @param {string} link 開く先 (例: 'report:12')
+ * @returns {object|null} 残した行。宛先が無ければ null
+ */
+function noticeAdd(to, kind, title, body, link) {
+  if (!to) return null;
+
+  var row = {
+    id: noticeNextId_(),
+    to: String(to),
+    kind: String(kind || ''),
+    title: String(title || '').substring(0, 200),
+    body: String(body || '').substring(0, 500),
+    link: String(link || ''),
+    at: new Date(),
+    readAt: '',
+  };
+  dbAppend('notifications', row);
+  return row;
+}
+
+/**
+ * 自分あての知らせを新しい順に返す。
+ *
+ * @param {string} to
+ * @param {number} [limit]
+ * @returns {object[]}
+ */
+function noticeList(to, limit) {
+  var rows = dbReadAll('notifications');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].to) !== String(to)) continue;
+    out.push(rows[i]);
+  }
+  out.sort(function (a, b) { return Number(b.id) - Number(a.id); });
+  return out.slice(0, limit || 50);
+}
+
+/**
+ * 知らせを読んだことにする。
+ *
+ * 他人あてのものは触らない。読んだかどうかは本人にしか決められない。
+ *
+ * @param {number[]} ids 空なら自分あてを全部
+ * @returns {number} 読んだことにした件数
+ */
+function noticeMarkRead(ids) {
+  var me = Session.getActiveUser().getEmail();
+  var rows = noticeList(me, 1000);
+  var want = ids || [];
+  var done = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].readAt) continue;
+    if (want.length && want.indexOf(Number(rows[i].id)) < 0) continue;
+
+    dbUpdate('notifications', 'id', rows[i].id, { readAt: new Date() });
+    done++;
+  }
+  return done;
+}
+
+/**
  * PR作成を通知する。
  *
  * @param {object} pr pulls 行
@@ -54,6 +143,9 @@ function notifyPrMerged(pr) {
  * @param {string} to
  */
 function notifyPrReviewRequested(pr, to) {
+  noticeAdd(to, 'review',
+    'PR #' + pr.number + ' の確認を頼まれました', pr.title, 'pull:' + pr.number);
+
   notify(
     to,
     '[agentic-management] PR #' + pr.number + ' の確認を頼まれました',
@@ -114,6 +206,9 @@ function notifyInquiryReply(inquiry, reply, talkers) {
       (inquiry.title || inquiry.body) + '\n\n' +
       reply.by + ':\n' + reply.body
     );
+    noticeAdd(talkers[i], 'reply',
+      reply.by + ' が #' + inquiry.number + ' に返信しました',
+      reply.body, 'report:' + inquiry.number);
   }
 }
 
@@ -134,5 +229,27 @@ function notifyInquiryMention(inquiry, post, people) {
       (inquiry.title || inquiry.body) + '\n\n' +
       post.by + ':\n' + post.body
     );
+    noticeAdd(people[i], 'mention',
+      post.by + ' があなたを呼びました',
+      post.body, 'report:' + inquiry.number);
   }
+}
+
+/**
+ * 確認依頼で名前を呼ばれたことを知らせる。
+ *
+ * @param {object} pr pulls 行
+ * @param {object} review reviews 行
+ * @param {string} to
+ */
+function notifyPrMention(pr, review, to) {
+  noticeAdd(to, 'mention',
+    review.reviewer + ' があなたを呼びました',
+    review.body, 'pull:' + pr.number);
+
+  notify(
+    to,
+    '[agentic-management] PR #' + pr.number + ' であなたが呼ばれました',
+    pr.title + '\n\n' + review.reviewer + ':\n' + review.body
+  );
 }
