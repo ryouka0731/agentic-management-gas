@@ -649,8 +649,9 @@ describe('やることの中身と操作', () => {
     expect(js).toContain("done.className = 'icon-btn ok'");
     expect(js).toContain("edit.appendChild(makeIcon('pencil'))");
 
-    const danger = css.slice(css.indexOf('.btn-danger {'),
-      css.indexOf('}', css.indexOf('.btn-danger {')));
+    // 行頭で探す。入れ子の指定 (.card-foot .btn-danger) を掴まないため
+    const at = css.indexOf('\n.btn-danger {');
+    const danger = css.slice(at, css.indexOf('}', at));
     expect(danger).toContain('background: var(--danger-solid)');
     expect(danger).toContain('color: var(--on-danger)');
 

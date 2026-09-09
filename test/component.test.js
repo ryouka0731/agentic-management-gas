@@ -1010,3 +1010,43 @@ describe('完了を差し戻す', () => {
     expect(app.calls.some((c) => c.name === 'apiIssueReopen')).toBe(true);
   });
 });
+
+describe('ボードのカードから捨てる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openBoard(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+    return app;
+  }
+
+  it('カードにも捨てるボタンがある', () => {
+    openBoard();
+    const del = document.querySelector('.board-card .btn-danger');
+
+    expect(del).toBeTruthy();
+    expect(del.textContent).toBe('');
+    expect(del.getAttribute('aria-label')).toContain('捨てる');
+  });
+
+  it('確かめてから捨てる', () => {
+    const app = openBoard();
+    document.querySelector('.board-card .btn-danger').click();
+
+    expect(app.calls.some((c) => c.name === 'apiIssueArchive')).toBe(false);
+
+    document.querySelector('#panel-issues .confirm-strip .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueArchive').pop().args[0]).toBe(2);
+  });
+
+  it('捨てるボタンを押してもカードは開かない', () => {
+    const app = openBoard();
+    document.querySelector('.board-card .btn-danger').click();
+
+    // 開いてしまうと、確かめの帯が入力パネルに隠れる
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+    expect(app.calls.some((c) => c.name === 'apiIssueList' && c.args.length === 0))
+      .toBe(false);
+  });
+});

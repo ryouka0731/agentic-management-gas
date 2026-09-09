@@ -3814,6 +3814,12 @@
             if (cardStale) when.appendChild(cardStale);
             foot.appendChild(when);
             foot.appendChild(makeAvatar(card.assignee));
+
+            // 一覧と同じく、カードからも捨てられるようにする。
+            // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
+            foot.appendChild(makeArchiveButton(
+              { number: card.issueNumber, title: card.title }, panelIssues));
+
             el.appendChild(foot);
 
             col.appendChild(el);
