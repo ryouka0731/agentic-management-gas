@@ -723,3 +723,65 @@ describe('改訂版を作る導線', () => {
     expect(js).toContain('は使えません');
   });
 });
+
+describe('履歴の列の畳み方', () => {
+  const css = read('src/ui/app.css.html');
+  const js = read('src/ui/app.js.html');
+  const html = read('src/ui/wiki.html');
+
+  it('列を減らす基準は画面幅ではなく器の幅', () => {
+    // 履歴と差分の分け目は掴んで動かせる。画面幅で決めると、
+    // 狭めたのに列が残り、広げたのに列が出ない
+    expect(css).toContain('container-type: inline-size');
+    expect(css).toContain('container-name: graph');
+  });
+
+  /** @returns {Array<{width:number, hidden:string[]}>} 広い順 */
+  function foldSteps() {
+    const re = /@container graph \(max-width: (\d+)px\) \{([\s\S]*?)\n\}/g;
+    const out = [];
+    let m;
+    while ((m = re.exec(css)) !== null) {
+      out.push({
+        width: Number(m[1]),
+        hidden: (m[2].match(/\.(graph-col-[a-z]+)\s*\{\s*display: none/g) || [])
+          .map((s) => s.replace(/^\./, '').replace(/\s*\{[\s\S]*$/, '')),
+      });
+    }
+    return out.sort((a, b) => b.width - a.width);
+  }
+
+  it('脇の列から順に畳む', () => {
+    expect(foldSteps().map((s) => s.hidden)).toEqual([
+      ['graph-col-sha'],
+      ['graph-col-author'],
+      ['graph-col-date'],
+    ]);
+  });
+
+  it('変更の内容と系統は最後まで残す', () => {
+    const gone = foldSteps().reduce((acc, s) => acc.concat(s.hidden), []);
+
+    expect(gone).not.toContain('graph-col-desc');
+    expect(gone).not.toContain('graph-col-graph');
+  });
+
+  it('畳む列は見出しと行の両方で同じクラスを使っている', () => {
+    foldSteps().forEach((step) => {
+      step.hidden.forEach((cls) => {
+        // 見出しは wiki.html、行は app.js.html が組み立てる
+        expect(html).toContain('class="' + cls + '"');
+        expect(js).toContain("className = '" + cls + "'");
+      });
+    });
+  });
+
+  it('畳んだ値は差分の帯で読める', () => {
+    const fn = js.slice(js.indexOf('diffCaption.textContent'));
+
+    expect(fn).toContain('c.message');
+    expect(fn).toContain('date.textContent');
+    expect(fn).toContain('c.author');
+    expect(fn).toContain('c.sha');
+  });
+});

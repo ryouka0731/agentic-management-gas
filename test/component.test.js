@@ -829,8 +829,11 @@ describe('差分を画面いっぱいに広げる', () => {
 
   it('どの記録の差分かが帯に出る', () => {
     openHistory();
+    const caption = document.getElementById('diff-caption').textContent;
 
-    expect(document.getElementById('diff-caption').textContent)
-      .toContain('第2条を直した');
+    // 狭めて列を畳んでも、ここに素性が残る
+    expect(caption).toContain('第2条を直した');
+    expect(caption).toContain('me');
+    expect(caption).toContain('aaaaaaa');
   });
 });

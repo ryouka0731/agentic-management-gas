@@ -1603,8 +1603,13 @@
             for (var i = 0; i < items.length; i++) {
               items[i].setAttribute('aria-current', String(items[i] === btn));
             }
-            diffCaption.textContent = c.message + ' · ' +
-              String(c.sha).substring(0, 7);
+            // 狭めて列を畳んでいても、選んだ記録の素性はここで読める
+            diffCaption.textContent = [
+              c.message,
+              date.textContent,
+              String(c.author).replace(/@.*$/, ''),
+              String(c.sha).substring(0, 7),
+            ].join(' · ');
 
             showSkeleton(diffView, 'block');
             google.script.run

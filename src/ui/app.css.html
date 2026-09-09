@@ -1184,6 +1184,28 @@ button:disabled {
   flex: 0 0 var(--graph-pane-w);
   min-width: 0;
   overflow: hidden;
+  /* 幅は掴んで動かすため、画面幅ではなくこの器の幅で列を減らす */
+  container-type: inline-size;
+  container-name: graph;
+}
+
+/*
+ * 狭めたら、変更の内容を削るのではなく脇の列から順に畳む。
+ *
+ * 何が変わったかが読めなくなるのでは、狭める意味がない。
+ * 見出しと行は同じクラスを使っているので、両方まとめて消える。
+ * 消えた値は記録を押せば差分の帯と本文で読める。
+ */
+@container graph (max-width: 660px) {
+  .graph-col-sha { display: none; }
+}
+
+@container graph (max-width: 580px) {
+  .graph-col-author { display: none; }
+}
+
+@container graph (max-width: 470px) {
+  .graph-col-date { display: none; }
 }
 
 /*
