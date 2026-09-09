@@ -202,6 +202,34 @@
    * @param {string} name
    * @returns {SVGElement}
    */
+  var hintSeq = 0;
+
+  /**
+   * 押す前に、何が起きるかを補足する。
+   *
+   * ボタンの名前だけでは足りないものがある。触れたときと、キーボードで
+   * 進んで焦点が当たったときの両方で出す。読み上げにも届くよう、
+   * 見えない控えを置いて aria-describedby で結ぶ。
+   *
+   * @param {HTMLElement} el
+   * @param {string} text
+   * @returns {HTMLElement} el
+   */
+  function attachHint(el, text) {
+    el.classList.add('has-hint');
+    el.setAttribute('data-hint', text);
+
+    var id = 'hint-' + (++hintSeq);
+    var note = document.createElement('span');
+    note.id = id;
+    note.className = 'sr-only';
+    note.textContent = text;
+
+    el.setAttribute('aria-describedby', id);
+    if (el.parentNode) el.parentNode.insertBefore(note, el.nextSibling);
+    return el;
+  }
+
   function makeIcon(name) {
     var paths = {
       'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
@@ -3882,6 +3910,19 @@
     showSnack('先に文書を選んでください。文書を開くと改訂版を作れます');
     switchTab('docs');
   });
+  attachHint(bulkCommitBtn,
+    '改訂中の版をすべて見て、まだ記録していない変更を探します。' +
+    '見つかったものを選んで、ひとつの説明でまとめて記録します');
+  attachHint(document.getElementById('branch-create-btn'),
+    '正式版をコピーして、直す用の版を作ります。正式版には影響しません');
+  // 上の帯の右寄りにあるものは、補足を左に開かせる。画面の外に出ると読めない
+  attachHint(commitBtn,
+    'いまの中身をその時点として残します。あとから見比べて戻せます')
+    .classList.add('hint-left');
+  attachHint(stashBtn,
+    '正式版を直接なおしてしまったとき、その変更を別の版に移して逃がします')
+    .classList.add('hint-left');
+
   bulkCommitBtn.addEventListener('click', bulkCommit);
   issueCreateBtn.addEventListener('click', createIssue);
   themeBtn.addEventListener('click', cycleTheme);

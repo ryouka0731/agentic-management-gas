@@ -1345,12 +1345,19 @@ button:disabled {
  * 画面に出す。覚えていることを前提にしない。
  * ===================================================================== */
 
+/*
+ * 現在の位置。
+ *
+ * flex: 1 だと基準が 0 になり、右の余白と場所を等分してしまう。
+ * まだ空きがあるのに文書名が「…」に削られ、札が折り返っていた。
+ * 必要なぶんだけ取り、足りないときだけ縮む
+ */
 .crumbs {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .crumb-repo {
@@ -2328,4 +2335,57 @@ button.gantt-name:hover { color: var(--accent); }
 /* 捨てたものの置き場 */
 .row-item.archived .row-open { cursor: default; }
 .row-item.archived .row-title { color: var(--ink-2); }
+
+/*
+ * 押す前の補足。
+ *
+ * 触れたときと、キーボードで焦点が当たったときの両方で出す。触れないと
+ * 出ない補足は、キーボードだけで操作する人には無いのと同じになる。
+ * 読み上げには .sr-only の控えが届くため、ここは目で見る人のためのもの。
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.has-hint { position: relative; }
+
+.has-hint::after {
+  content: attr(data-hint);
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  z-index: 130;
+  width: max-content;
+  max-width: 280px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--elev-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion) ease-out;
+}
+
+.has-hint:hover::after,
+.has-hint:focus-visible::after { opacity: 1; }
+
+/* 右端のものは左に開く。画面の外に出ると読めない */
+.has-hint.hint-left::after { left: auto; right: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .has-hint::after { transition: none; }
+}
 </style>

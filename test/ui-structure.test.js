@@ -816,4 +816,35 @@ describe('上の帯の折り返し', () => {
   it('入りきらない操作は次の行に落とす', () => {
     expect(block('.toolbar')).toContain('flex-wrap: wrap');
   });
+
+  it('現在の位置は余白と場所を等分しない', () => {
+    // flex: 1 だと基準が 0 になり、空きがあるのに文書名が削られる
+    const crumbs = block('.crumbs');
+
+    expect(crumbs).toContain('flex: 0 1 auto');
+    expect(crumbs).not.toContain('flex: 1;');
+  });
+});
+
+describe('押す前の補足', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('触れたときとキーボードの焦点の両方で出る', () => {
+    // 触れないと出ない補足は、キーボードだけの人には無いのと同じ
+    expect(css).toContain('.has-hint:hover::after');
+    expect(css).toContain('.has-hint:focus-visible::after');
+  });
+
+  it('補足は操作を邪魔しない', () => {
+    const block = css.slice(css.indexOf('.has-hint::after'));
+    expect(block.slice(0, block.indexOf('}'))).toContain('pointer-events: none');
+  });
+
+  it('読み上げ用の控えは見えないが消えていない', () => {
+    const block = css.slice(css.indexOf('.sr-only {'), css.indexOf('}', css.indexOf('.sr-only {')));
+
+    // display:none にすると読み上げからも消える
+    expect(block).not.toContain('display: none');
+    expect(block).toContain('clip-path: inset(50%)');
+  });
 });

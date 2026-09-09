@@ -837,3 +837,53 @@ describe('差分を画面いっぱいに広げる', () => {
     expect(caption).toContain('aaaaaaa');
   });
 });
+
+describe('押す前の補足', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('まとめて記録が何をまとめるのかを補足する', () => {
+    mount();
+    const btn = document.getElementById('bulk-commit-btn');
+
+    expect(btn.dataset.hint).toContain('まだ記録していない変更');
+    expect(btn.dataset.hint).toContain('まとめて記録');
+  });
+
+  it('補足は読み上げにも届く', () => {
+    mount();
+    const btn = document.getElementById('bulk-commit-btn');
+    const note = document.getElementById(btn.getAttribute('aria-describedby'));
+
+    expect(note).toBeTruthy();
+    expect(note.className).toBe('sr-only');
+    expect(note.textContent).toBe(btn.dataset.hint);
+  });
+
+  it('補足を持つボタンは名前も持ったまま', () => {
+    mount();
+    const btn = document.getElementById('bulk-commit-btn');
+
+    // 補足はあくまで補足。ボタンの名前を置き換えない
+    expect(btn.textContent).toBe('まとめて記録');
+  });
+
+  it('言葉の分かりにくいボタンに揃って付く', () => {
+    mount();
+
+    ['bulk-commit-btn', 'branch-create-btn', 'commit-btn', 'stash-btn']
+      .forEach((id) => {
+        const el = document.getElementById(id);
+        expect(el.classList.contains('has-hint')).toBe(true);
+        expect(el.dataset.hint.length).toBeGreaterThan(10);
+      });
+  });
+
+  it('補足の宛先はひとつずつ別になっている', () => {
+    mount();
+
+    const ids = [...document.querySelectorAll('[aria-describedby]')]
+      .map((el) => el.getAttribute('aria-describedby'));
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
