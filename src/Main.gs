@@ -413,9 +413,9 @@ function apiPrList() {
  * @param {string} mainFileId
  * @returns {object}
  */
-function apiPrCreate(title, body, sourceBranch, mainFileId) {
-  var row = prCreate(title, body, sourceBranch, mainFileId);
-  return { number: row.number, title: row.title };
+function apiPrCreate(title, body, sourceBranch, mainFileId, targetBranch) {
+  var row = prCreate(title, body, sourceBranch, mainFileId, targetBranch);
+  return { number: row.number, title: row.title, targetBranch: row.targetBranch };
 }
 
 /**

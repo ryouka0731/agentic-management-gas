@@ -33,7 +33,7 @@ function prTargetFileId_(body) {
  * @param {string} mainFileId 対象ファイルのmain上のfileId
  * @returns {object} 作成された pulls 行
  */
-function prCreate(title, body, sourceBranch, mainFileId) {
+function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
   if (!/^[\s\S]{1,200}$/.test(String(title || ''))) {
     throw new Error('タイトルを入力してください');
   }
@@ -43,6 +43,20 @@ function prCreate(title, body, sourceBranch, mainFileId) {
   if (String(branch.state) !== 'open') {
     throw new Error('このブランチは既に閉じられています: ' + sourceBranch);
   }
+
+  // 反映先。既定は正式版だが、改訂版どうしでも出せる。長い改訂を
+  // 分けて進めるとき、途中の版に先に取り込めないと待ち行列ができる
+  var into = String(targetBranch || 'main');
+  if (into === String(sourceBranch)) {
+    throw new Error('同じ版には反映できません: ' + into);
+  }
+
+  var intoRow = dbFindOne('branches', 'name', into);
+  if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
+  if (String(intoRow.state) !== 'open') {
+    throw new Error('反映先の版は既に閉じられています: ' + into);
+  }
+
   var targetRow = dbFindOne('files', 'fileId', mainFileId);
   if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
 
@@ -55,12 +69,15 @@ function prCreate(title, body, sourceBranch, mainFileId) {
     );
   }
 
+  // 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる
   var existing = dbReadAll('pulls');
   for (var i = 0; i < existing.length; i++) {
     if (String(existing[i].sourceBranch) !== String(sourceBranch)) continue;
+    if (String(existing[i].targetBranch || 'main') !== into) continue;
+
     var st = String(existing[i].state);
     if (st === 'open' || st === 'approved') {
-      throw new Error('このブランチには未クローズのPRがあります: #' + existing[i].number);
+      throw new Error('この組み合わせには未クローズのPRがあります: #' + existing[i].number);
     }
   }
 
@@ -71,7 +88,7 @@ function prCreate(title, body, sourceBranch, mainFileId) {
     // 対象を辿れるようにするための最小限の措置
     body: (body || '') + '\n\n[target-file:' + mainFileId + ']',
     sourceBranch: sourceBranch,
-    targetBranch: 'main',
+    targetBranch: into,
     state: 'open',
     author: Session.getActiveUser().getEmail(),
     createdAt: new Date(),
@@ -153,10 +170,13 @@ function prPreviewMerge(number) {
   var mainFileId = prTargetFileId_(pr.body);
   if (!mainFileId) throw new Error('PRの対象ファイルを特定できません');
 
-  var baseHtml = commitHtml(branch.baseSha) || '';
+  var into = prTargetBranch(pr);
+  var intoFileId = prTargetBranchFileId(pr, mainFileId);
 
-  var mainHead = headCommit(mainFileId, 'main');
-  var oursHtml = mainHead ? (objectGet(mainHead.blobSha) || '') : '';
+  var baseHtml = commitHtml(prMergeBase_(branch, into)) || '';
+
+  var intoHead = headCommit(intoFileId, into);
+  var oursHtml = intoHead ? (objectGet(intoHead.blobSha) || '') : '';
 
   var workFileId = branchWorkingFileId(pr.sourceBranch, mainFileId);
   if (!workFileId) throw new Error('ブランチの作業コピーが見つかりません');
@@ -182,6 +202,8 @@ function prPreviewMerge(number) {
     conflicts: result.conflicts,
     problems: problems,
     mainFileId: mainFileId,
+    intoFileId: intoFileId,
+    targetBranch: into,
     oursHtml: oursHtml,
   };
 }
@@ -347,15 +369,19 @@ function prMerge(number, choices) {
     // 拒むのと同じ理由による
     var targetFileId = prTargetFileId_(pr.body);
     if (!targetFileId) throw new Error('PRの対象ファイルを特定できません');
-    if (fileStatus(targetFileId, 'main').dirty) {
+
+    var into = prTargetBranch(pr);
+    var intoFileId = prTargetBranchFileId(pr, targetFileId);
+
+    if (fileStatus(intoFileId, into).dirty) {
       throw new Error(
-        'mainに未コミットの変更があります。' +
-        '先にmainをコミットしてからマージしてください'
+        '「' + (into === 'main' ? '正式版' : into) + '」に記録していない変更があります。' +
+        '先にそちらを記録してから反映してください'
       );
     }
 
     var preview = prPreviewMerge(number);
-    var mainFileId = preview.mainFileId;
+    var mainFileId = preview.intoFileId;
 
     var lines = preview.clean
       ? preview.lines
@@ -367,7 +393,7 @@ function prMerge(number, choices) {
     var mergedHtml = linesToHtml_(lines);
 
     // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
-    var mergeRow = dbFindOne('files', 'fileId', mainFileId);
+    var mergeRow = dbFindOne('files', 'fileId', targetFileId);
     var mergeType = mergeRow ? String(mergeRow.type) : 'doc';
     var mergedBlocks = parseBlocks(mergedHtml);
     var problems = (mergeType === 'sheet')
@@ -380,9 +406,9 @@ function prMerge(number, choices) {
     // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
     // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
     // 通常は上の検査で弾かれるためここは通らない
-    var status = fileStatus(mainFileId, 'main');
+    var status = fileStatus(mainFileId, into);
     if (status.dirty) {
-      commitFile(mainFileId, 'main', 'PR #' + number + ' マージ前の自動退避', null);
+      commitFile(mainFileId, into, 'PR #' + number + ' マージ前の自動退避', null);
     }
 
     writeHtmlToFile(mainFileId, mergedHtml, mergeType);
@@ -390,7 +416,7 @@ function prMerge(number, choices) {
 
     var mergeCommit = commitFile(
       mainFileId,
-      'main',
+      into,
       'マージ: PR #' + number + ' ' + pr.title,
       null
     );
@@ -634,4 +660,76 @@ function prRoster_(pr) {
     for (var i = 0; i < rows.length; i++) add(rows[i][tables[t][1]]);
   }
   return out;
+}
+
+/**
+ * 反映先の版の名前を返す。
+ *
+ * 反映先の列を足す前に作られた依頼は空なので、正式版と見なす。
+ *
+ * @param {object} pr pulls 行
+ * @returns {string}
+ */
+function prTargetBranch(pr) {
+  return String((pr && pr.targetBranch) || 'main');
+}
+
+/**
+ * 反映先のファイルを返す。
+ *
+ * 正式版なら元のファイル、改訂版ならその版の作業コピー。
+ *
+ * @param {object} pr pulls 行
+ * @param {string} mainFileId
+ * @returns {string} fileId
+ */
+function prTargetBranchFileId(pr, mainFileId) {
+  var into = prTargetBranch(pr);
+  if (into === 'main') return mainFileId;
+
+  var fileId = branchWorkingFileId(into, mainFileId);
+  if (!fileId) throw new Error('反映先の版に作業コピーがありません: ' + into);
+
+  return fileId;
+}
+
+/**
+ * 3つを見比べるときの起点を返す。
+ *
+ * 版はそれぞれ正式版のどこかから分かれている。改訂版どうしを見比べる
+ * ときは、両方の分かれ目のうち古いほうが共通の起点になる。新しいほうを
+ * 使うと、片方にしか無い変更まで「相手が消した」と読めてしまう。
+ *
+ * @param {object} branch 出どころの branches 行
+ * @param {string} into 反映先の版の名前
+ * @returns {string} コミットの sha
+ */
+function prMergeBase_(branch, into) {
+  if (String(into) === 'main') return String(branch.baseSha || '');
+
+  var intoRow = dbFindOne('branches', 'name', into);
+  var mine = String(branch.baseSha || '');
+  var yours = String((intoRow && intoRow.baseSha) || '');
+
+  if (!mine || !yours || mine === yours) return mine || yours;
+
+  // 正式版の並びで後ろに出てくるほう (古いほう) が共通の起点
+  var files = dbReadAll('files');
+
+  for (var i = 0; i < files.length; i++) {
+    if (/^branches\//.test(String(files[i].path))) continue;
+
+    var chain = commitHistory(files[i].fileId, 'main');
+    var mineAt = -1;
+    var yoursAt = -1;
+
+    for (var c = 0; c < chain.length; c++) {
+      if (String(chain[c].sha) === mine) mineAt = c;
+      if (String(chain[c].sha) === yours) yoursAt = c;
+    }
+    if (mineAt < 0 || yoursAt < 0) continue;
+
+    return mineAt > yoursAt ? mine : yours;
+  }
+  return mine;
 }

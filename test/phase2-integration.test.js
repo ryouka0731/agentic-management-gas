@@ -210,7 +210,7 @@ describe('Phase 2 統合: 書き戻しの安全機構', () => {
 
     // 未コミットの編集は3-way mergeに参加できないため、
     // 書き戻しで黙って失わせずに手前で止める
-    expect(() => ctx.prMerge(pr.number, [])).toThrow(/mainに未コミットの変更があります/);
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/「正式版」に記録していない変更があります/);
     expect(fake._docs.get(mainFileId)).toBe(draft);
     expect(ctx.prGet(pr.number).state).not.toBe('merged');
 
@@ -505,5 +505,110 @@ describe('確認依頼で名前を呼ぶ', () => {
     ctx.prReview(pr.number, 'comment', '@tester めも');
 
     expect(fake._sentMails().length).toBe(before);
+  });
+});
+
+describe('改訂版どうしの確認依頼', () => {
+  /**
+   * 正式版から2つの版を作り、それぞれ別の場所を直す。
+   */
+  function twoBranches() {
+    const env = setup();
+    const { ctx, fake, mainFileId } = env;
+
+    ctx.branchCreate('土台', mainFileId);
+    ctx.branchCreate('積み増し', mainFileId);
+
+    env.base = ctx.branchWorkingFileId('土台', mainFileId);
+    env.top = ctx.branchWorkingFileId('積み増し', mainFileId);
+
+    fake._docs.set(env.top, html([P1, P2, P3, '<p>第4条</p>']));
+    ctx.commitFile(env.top, '積み増し', '第4条を足した', null);
+
+    return env;
+  }
+
+  it('反映先に別の版を選べる', () => {
+    const { ctx, mainFileId } = twoBranches();
+
+    const pr = ctx.prCreate('第4条', '', '積み増し', mainFileId, '土台');
+
+    expect(pr.targetBranch).toBe('土台');
+  });
+
+  it('既定は正式版のまま', () => {
+    const { ctx, mainFileId } = twoBranches();
+
+    expect(ctx.prCreate('第4条', '', '積み増し', mainFileId).targetBranch)
+      .toBe('main');
+  });
+
+  it('同じ版には出せない', () => {
+    const { ctx, mainFileId } = twoBranches();
+
+    expect(() => ctx.prCreate('x', '', '積み増し', mainFileId, '積み増し'))
+      .toThrow(/同じ版には反映できません/);
+  });
+
+  it('無い版には出せない', () => {
+    const { ctx, mainFileId } = twoBranches();
+
+    expect(() => ctx.prCreate('x', '', '積み増し', mainFileId, 'ない版'))
+      .toThrow(/反映先の版が見つかりません/);
+  });
+
+  it('反映先が違えば二重に出せる', () => {
+    const { ctx, mainFileId } = twoBranches();
+    ctx.prCreate('正式版へ', '', '積み増し', mainFileId, 'main');
+
+    expect(() => ctx.prCreate('土台へ', '', '積み増し', mainFileId, '土台'))
+      .not.toThrow();
+  });
+
+  it('同じ組み合わせは二重に出せない', () => {
+    const { ctx, mainFileId } = twoBranches();
+    ctx.prCreate('ひとつめ', '', '積み増し', mainFileId, '土台');
+
+    expect(() => ctx.prCreate('ふたつめ', '', '積み増し', mainFileId, '土台'))
+      .toThrow(/未クローズのPR/);
+  });
+
+  it('反映先の版に書き戻す。正式版は変わらない', () => {
+    const { ctx, fake, mainFileId, base } = twoBranches();
+    const beforeMain = fake._docs.get(mainFileId);
+
+    const pr = ctx.prCreate('第4条', '', '積み増し', mainFileId, '土台');
+    ctx.PropertiesService.getScriptProperties()
+      .setProperty('ALLOW_SELF_APPROVE', 'true');
+    ctx.prReview(pr.number, 'approve', '');
+    ctx.prMerge(pr.number, []);
+
+    expect(fake._docs.get(base)).toContain('第4条');
+    expect(fake._docs.get(mainFileId)).toBe(beforeMain);
+  });
+
+  it('反映先に記録していない変更があれば断る', () => {
+    const { ctx, fake, mainFileId, base } = twoBranches();
+    const pr = ctx.prCreate('第4条', '', '積み増し', mainFileId, '土台');
+
+    ctx.PropertiesService.getScriptProperties()
+      .setProperty('ALLOW_SELF_APPROVE', 'true');
+    ctx.prReview(pr.number, 'approve', '');
+
+    fake._docs.set(base, html([P1, '<p>横から直した</p>']));
+
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/記録していない変更があります/);
+  });
+
+  it('見比べる起点は古いほうの分かれ目になる', () => {
+    const { ctx, mainFileId } = twoBranches();
+    const older = ctx.dbFindOne('branches', 'name', '土台');
+    const newer = ctx.dbFindOne('branches', 'name', '積み増し');
+
+    // どちらも同じところから分かれているので起点も同じ
+    expect(older.baseSha).toBe(newer.baseSha);
+
+    const pr = ctx.prCreate('第4条', '', '積み増し', mainFileId, '土台');
+    expect(ctx.prPreviewMerge(pr.number).targetBranch).toBe('土台');
   });
 });

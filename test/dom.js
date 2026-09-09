@@ -99,6 +99,7 @@ export const DEFAULTS = {
   apiListFiles: [
     { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
     { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
+    { fileId: 'W2', path: 'branches/土台/就業規則.doc', type: 'doc' },
   ],
   apiOverview: { repo: 'agentic-management', docs: 1, branches: 1, openIssues: 2, openPrs: 1, commits: 5 },
   apiWhoAmI: { activeUser: 'me@example.com', effectiveUser: 'me@example.com', sameUser: true },
@@ -134,6 +135,7 @@ export const DEFAULTS = {
   apiBranchList: [
     { name: 'main', headSha: 'a', baseSha: '', state: 'open', createdBy: 'me@example.com', createdAt: '' },
     { name: '見直し', headSha: 'b', baseSha: 'a', state: 'open', createdBy: 'me@example.com', createdAt: '' },
+    { name: '土台', headSha: 'c', baseSha: 'a', state: 'open', createdBy: 'me@example.com', createdAt: '' },
   ],
   apiPrList: [
     {

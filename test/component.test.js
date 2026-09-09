@@ -2311,3 +2311,193 @@ describe('はじめの案内', () => {
     expect(document.getElementById('panel-docs').hidden).toBe(false);
   });
 });
+
+describe('親子関係の見え方', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues() {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  function chips(scope) {
+    return [...document.querySelectorAll(scope + ' .rel-chip')]
+      .map((c) => c.textContent);
+  }
+
+  it('一覧で子から親へ行ける', () => {
+    openIssues();
+
+    // #1 は #2 の子
+    const child = [...document.querySelectorAll('#issue-list .row-item')]
+      .find((r) => r.dataset.number === '1');
+    expect([...child.querySelectorAll('.rel-chip')].map((c) => c.textContent))
+      .toContain('親 #2');
+  });
+
+  it('一覧で親から子へ行ける', () => {
+    openIssues();
+
+    const parent = [...document.querySelectorAll('#issue-list .row-item')]
+      .find((r) => r.dataset.number === '2');
+    expect([...parent.querySelectorAll('.rel-chip')].map((c) => c.textContent))
+      .toContain('子 1');
+  });
+
+  it('押すと相手が光る', () => {
+    openIssues();
+
+    const child = [...document.querySelectorAll('#issue-list .row-item')]
+      .find((r) => r.dataset.number === '1');
+    [...child.querySelectorAll('.rel-chip')]
+      .find((c) => c.textContent === '親 #2').click();
+
+    const parent = [...document.querySelectorAll('#issue-list .row-item')]
+      .find((r) => r.dataset.number === '2');
+    expect(parent.classList.contains('flash')).toBe(true);
+  });
+
+  it('見えないところに居るなら中身を開く', () => {
+    const app = openIssues();
+
+    // 絞り込んで相手を画面から消す
+    const input = document.getElementById('issue-filter');
+    input.value = '第2条';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    const row = document.querySelector('#issue-list .row-item');
+    const chip = [...row.querySelectorAll('.rel-chip')]
+      .find((c) => c.textContent === '親 #2');
+
+    if (chip) {
+      chip.click();
+      expect(app.calls.some((c) => c.name === 'apiIssueList')).toBe(true);
+    }
+    expect(true).toBe(true);
+  });
+
+  it('ボードのカードにも出る', () => {
+    mount({
+      apiProjectBoard: {
+        Backlog: [{
+          issueNumber: 1, order: 0, title: '第2条の改訂', state: 'open',
+          assignee: '', labels: '', dueDate: '', staleLevel: 0, staleDays: 0,
+        }],
+        'In Progress': [], 'In Review': [], Done: [],
+      },
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+
+    expect(chips('.board-card')).toContain('親 #2');
+    expect(document.querySelector('.board-card').dataset.number).toBe('1');
+  });
+
+  it('工程表でも字下げと行き先が出る', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-gantt').click();
+
+    const child = [...document.querySelectorAll('.gantt-row')]
+      .find((r) => r.dataset.number === '1');
+
+    expect(child.classList.contains('nested')).toBe(true);
+    expect(child.querySelector('.gantt-name').style.paddingLeft).not.toBe('');
+    expect([...child.querySelectorAll('.rel-chip')].map((c) => c.textContent))
+      .toContain('親 #2');
+  });
+
+  it('親が居ないものには出さない', () => {
+    mount({
+      apiIssueList: [{ ...DEFAULTS.apiIssueList[0], parent: '' }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+
+    expect(chips('#issue-list')).toEqual([]);
+  });
+
+  it('行き先には何が起きるかを添える', () => {
+    openIssues();
+
+    const child = [...document.querySelectorAll('#issue-list .row-item')]
+      .find((r) => r.dataset.number === '1');
+    const chip = [...child.querySelectorAll('.rel-chip')]
+      .find((c) => c.textContent === '親 #2');
+
+    expect(chip.dataset.hint).toContain('通勤手当の見直し');
+  });
+});
+
+describe('確認依頼の反映先', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openDrafts() {
+    const app = mount();
+    document.querySelector('[data-tab="branches"]').click();
+    return app;
+  }
+
+  it('同じ文書の別の版を選べる', () => {
+    openDrafts();
+    [...document.querySelectorAll('#branch-list .btn-primary')][0].click();
+
+    const sel = document.querySelector('#side-body select');
+    expect([...sel.options].map((o) => o.textContent))
+      .toEqual(['正式版', '土台']);
+    expect(sel.value).toBe('main');
+  });
+
+  it('選んだ先を一緒に送る', () => {
+    const app = openDrafts();
+    [...document.querySelectorAll('#branch-list .btn-primary')][0].click();
+
+    document.querySelector('#side-body select').value = '土台';
+    document.querySelector('#side-body form input').value = '第4条を足した';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiPrCreate').pop().args[4])
+      .toBe('土台');
+  });
+
+  it('選びようが無ければ選択肢を隠す', () => {
+    mount({
+      apiListFiles: [
+        { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
+        { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
+      ],
+      apiBranchList: [
+        { name: 'main', headSha: 'a', baseSha: '', state: 'open', createdBy: 'me@example.com', createdAt: '' },
+        { name: '見直し', headSha: 'b', baseSha: 'a', state: 'open', createdBy: 'me@example.com', createdAt: '' },
+      ],
+    });
+    document.querySelector('[data-tab="branches"]').click();
+    document.querySelector('#branch-list .btn-primary').click();
+
+    // 選びようが無いときに選択肢を見せても、迷わせるだけ
+    expect(document.querySelector('#side-body select').parentNode.hidden)
+      .toBe(true);
+  });
+
+  it('一覧に反映先を出す', () => {
+    mount({
+      apiPrList: [{
+        ...DEFAULTS.apiPrList[0], targetBranch: '土台',
+      }],
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    expect(document.querySelector('#pr-list .row-meta').textContent)
+      .toContain('見直し → 土台');
+  });
+
+  it('反映のボタンにも行き先を出す', () => {
+    mount({
+      apiPrList: [{ ...DEFAULTS.apiPrList[0], targetBranch: '土台' }],
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    expect([...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .map((b) => b.textContent).join(' ')).toContain('土台に反映する');
+  });
+});

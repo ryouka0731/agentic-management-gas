@@ -2930,4 +2930,53 @@ button.label-pill {
   gap: var(--sp-3);
   flex-wrap: wrap;
 }
+
+/*
+ * 親子への行き先。
+ *
+ * 入れ子で並べていても、束ね方や絞り込みで離れると繋がりが見えなくなる。
+ * どちらからでも一押しで行けるようにする
+ */
+.rel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.rel-chip:hover { background: var(--accent-bg); color: var(--accent); }
+.rel-chip .icon { width: 12px; height: 12px; }
+
+.card-rel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.card-rel .rel-chip { margin-left: 0; }
+
+/* 飛んだ先を一瞬だけ光らせる。どこに着いたのかが分からないと迷う */
+.flash {
+  animation: flash-ring 1.2s ease-out;
+}
+
+@keyframes flash-ring {
+  0% { box-shadow: 0 0 0 3px var(--accent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+
+/* 工程表でも親の下にあることを示す */
+.gantt-row.nested .gantt-name { color: var(--ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .flash { animation: none; box-shadow: 0 0 0 3px var(--accent); }
+}
 </style>

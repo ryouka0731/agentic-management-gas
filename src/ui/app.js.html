@@ -2074,11 +2074,24 @@
       return;
     }
 
-    openInlineForm(
+    // 反映先。既定は正式版だが、同じ文書の別の改訂版にも出せる。
+    // 長い改訂を分けて進めるとき、途中の版に先に取り込めないと待ち行列ができる
+    var targets = [['main', OFFICIAL]];
+    allFiles.forEach(function (f) {
+      var parts = splitPath(f.path);
+      if (parts.branch === 'main') return;
+      if (parts.branch === branchName) return;
+      if (parts.path !== docPath) return;
+
+      targets.push([parts.branch, parts.branch]);
+    });
+
+    var form = openInlineForm(
       '確認を依頼する: ' + branchName,
       [
         { name: 'title', label: '何を変えたか', required: true },
         { name: 'body', label: '補足 (任意)', multiline: true },
+        { name: 'into', label: 'どこに反映するか', choices: targets },
       ],
       '確認を依頼する',
       function (v) {
@@ -2091,9 +2104,14 @@
           .withFailureHandler(function (err) {
             showSnack('依頼できませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiPrCreate(v.title, v.body, branchName, doc.fileId);
+          .apiPrCreate(v.title, v.body, branchName, doc.fileId, v.into);
       }
     );
+
+    if (targets.length < 2) {
+      // 選びようが無いときに選択肢を見せても、迷わせるだけ
+      form.querySelector('select').parentNode.hidden = true;
+    }
   }
 
   function bulkCommit() {
@@ -2245,7 +2263,8 @@
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = pr.sourceBranch + ' → ' + OFFICIAL + ' · ' + pr.author;
+          meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
+            ' · ' + pr.author;
           main.appendChild(meta);
           btn.appendChild(main);
 
@@ -2635,7 +2654,7 @@
         var meta = document.createElement('div');
         meta.className = 'row-meta';
         meta.textContent =
-          pr.sourceBranch + ' → ' + OFFICIAL + ' · ' + pr.author +
+          pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' + pr.author +
           ' · 承認 ' + preview.approvals + '件 · ' +
           (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
         prDetail.appendChild(meta);
@@ -2681,7 +2700,7 @@
 
           var mergeBtn = document.createElement('button');
           mergeBtn.className = 'btn btn-primary';
-          mergeBtn.textContent = OFFICIAL + 'に反映する';
+          mergeBtn.textContent = branchLabel(pr.targetBranch) + 'に反映する';
 
           if (preview.problems && preview.problems.length) {
             mergeBtn.disabled = true;
@@ -3229,6 +3248,129 @@
     });
   }
 
+  /**
+   * そのやることの親を返す。
+   *
+   * @param {number} number
+   * @returns {object|null}
+   */
+  function parentOf(number) {
+    var me = byIssueNumber(number);
+    if (!me || me.parent === '' || me.parent === null) return null;
+
+    return byIssueNumber(me.parent);
+  }
+
+  /**
+   * そのやることの子を返す。
+   *
+   * @param {number} number
+   * @returns {object[]}
+   */
+  function childrenOf(number) {
+    return lastIssues.filter(function (i) {
+      return String(i.parent) === String(number);
+    });
+  }
+
+  /**
+   * 番号からやることを引く。
+   *
+   * @param {number} number
+   * @returns {object|null}
+   */
+  function byIssueNumber(number) {
+    for (var i = 0; i < lastIssues.length; i++) {
+      if (String(lastIssues[i].number) === String(number)) return lastIssues[i];
+    }
+    return null;
+  }
+
+  /**
+   * 親をたどった深さを返す。
+   *
+   * @param {number} number
+   * @returns {number}
+   */
+  function depthOf(number) {
+    var seen = {};
+    var depth = 0;
+    var cur = parentOf(number);
+
+    while (cur && !seen[cur.number]) {
+      seen[cur.number] = true;
+      depth++;
+      cur = parentOf(cur.number);
+    }
+    return depth;
+  }
+
+  /**
+   * そのやることを、いま見ている画面の中で探して目立たせる。
+   *
+   * 見えないところに居るなら、代わりに中身を開く。押したのに何も
+   * 起きないのがいちばん困る。
+   *
+   * @param {number} number
+   */
+  function focusIssue(number) {
+    var el = document.querySelector(
+      '#panel-issues [data-number="' + number + '"]');
+
+    if (!el) {
+      openIssueByNumber(number);
+      return;
+    }
+
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+
+    el.classList.remove('flash');
+    // 同じところをもう一度押しても光るよう、いったん外してから付ける
+    void el.offsetWidth;
+    el.classList.add('flash');
+    window.setTimeout(function () { el.classList.remove('flash'); }, 1200);
+  }
+
+  /**
+   * 親と子への行き先を作る。
+   *
+   * 入れ子で並べていても、束ね方や絞り込みで離れると繋がりが見えなくなる。
+   * どちらからでも一押しで行けるようにする。
+   *
+   * @param {number} number
+   * @returns {DocumentFragment}
+   */
+  function makeRelationChips(number) {
+    var frag = document.createDocumentFragment();
+    var parent = parentOf(number);
+    var kids = childrenOf(number);
+
+    function chip(text, target, title) {
+      var btn = document.createElement('button');
+      btn.className = 'rel-chip';
+      btn.appendChild(makeIcon('corner-down-right'));
+      btn.appendChild(document.createTextNode(text));
+      btn.setAttribute('aria-label', title);
+      attachHint(btn, title);
+
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        focusIssue(target);
+      });
+      frag.appendChild(btn);
+    }
+
+    if (parent) {
+      chip('親 #' + parent.number, parent.number,
+        '親の「' + parent.title + '」に移ります');
+    }
+    if (kids.length) {
+      chip('子 ' + kids.length, kids[0].number,
+        kids.length + '件ぶら下がっています。最初の「' + kids[0].title + '」に移ります');
+    }
+    return frag;
+  }
+
   function issueTreeRows(issues) {
     var byNumber = {};
     var nodes = (issues || []).map(function (row) {
@@ -3371,6 +3513,8 @@
             if (issue.children.length) hours.title = '子の分を含めた合計';
             meta.appendChild(hours);
           }
+
+          meta.appendChild(makeRelationChips(issue.number));
 
           var stale = makeStaleBadge(issue);
           if (stale) meta.appendChild(stale);
@@ -4340,15 +4484,27 @@
           shown.forEach(function (r) {
             var row = document.createElement('div');
             row.className = 'gantt-row';
+            row.dataset.number = r.number;
 
             var name = document.createElement('button');
             name.className = 'gantt-name';
+
+            // 親の下にあることを、字下げでも示す
+            var depth = depthOf(r.number);
+            if (depth) {
+              row.classList.add('nested');
+              name.style.paddingLeft = (depth * 14 + 8) + 'px';
+            }
+
             name.appendChild(makeAvatar(r.assignee));
 
             var who = document.createElement('span');
             who.className = 'gantt-title';
             who.textContent = '#' + r.number + ' ' + r.title;
             name.appendChild(who);
+
+            var rel = makeRelationChips(r.number);
+            if (rel.childNodes.length) name.appendChild(rel);
             name.title = (r.assignee || '担当なし');
             name.addEventListener('click', function () {
               openIssueByNumber(r.number, row);
@@ -4493,6 +4649,16 @@
             title.textContent = card.title;
             el.appendChild(title);
 
+            el.dataset.number = card.issueNumber;
+
+            var rel = makeRelationChips(card.issueNumber);
+            if (rel.childNodes.length) {
+              var relBox = document.createElement('div');
+              relBox.className = 'card-rel';
+              relBox.appendChild(rel);
+              el.appendChild(relBox);
+            }
+
             var labelEls = makeLabels(card.labels);
             if (labelEls) el.appendChild(labelEls);
             applyRot(el, card);
@@ -4555,7 +4721,7 @@
       '正式版 — いま効力を持つ版。全員が見るもの',
       '改訂版 — 直している途中の版。正式版には影響しない',
       '変更の記録 — ある時点の中身を丸ごと残したもの',
-      '確認依頼 — 改訂版を正式版に反映してよいか尋ねるもの',
+      '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい',
       'タグ — どんな種類の仕事かの印。用意されたものから選べるほか、その場でも作れる',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
@@ -4568,6 +4734,7 @@
       '4.「変更を記録」でその時点を残す',
       '5.「改訂中の版」から確認を依頼する',
       '6. 承認されたら「正式版に反映する」',
+      '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
     ]],
     ['つまずきやすい点', [
       '正式版は直接なおせません。誰がいつ変えたか残らなくなるためです。改訂版を作ってください。',

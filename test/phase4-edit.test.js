@@ -150,7 +150,7 @@ describe('mainの直接編集の退避', () => {
     fake._setUser('tester@example.com');
 
     expect(() => ctx.prMerge(pr.number, ['theirs']))
-      .toThrow(/mainに未コミットの変更があります/);
+      .toThrow(/「正式版」に記録していない変更があります/);
 
     ctx.apiStashMainDrift(fileId);
     expect(() => ctx.prMerge(pr.number, ['theirs'])).not.toThrow();
