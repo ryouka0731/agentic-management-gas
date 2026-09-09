@@ -918,3 +918,17 @@ describe('部品の既定を持ち込まない', () => {
     expect(rule).toContain('padding: var(--sp-3) 0 var(--sp-6)');
   });
 });
+
+describe('一覧の行の幅', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('幅いっぱいの指定と左右の余白を同時に持たない', () => {
+    const at = css.indexOf('\n.row-item {');
+    const rule = css.slice(at, css.indexOf('}', at));
+
+    // width: 100% に margin を足すと、その分だけ器からはみ出す
+    const hasSideMargin = /margin:[^;]*var\(--sp-4\)/.test(rule);
+    expect(hasSideMargin).toBe(true);
+    expect(rule).not.toContain('width: 100%');
+  });
+});

@@ -1616,11 +1616,14 @@ button:disabled {
  * 行は <button> のこともある。ボタンの既定は中央寄せなので、
  * 明示しないと確認依頼の一覧だけ文字が真ん中に寄る (実際に踏んだ)
  */
+/*
+ * 幅は指定しない。display: flex で器いっぱいに伸びるので、width: 100%
+ * を足すと左右の margin のぶんだけはみ出す (実際に右端が見切れた)
+ */
 .row-item {
   display: flex;
   align-items: center;
   text-align: left;
-  width: 100%;
   gap: var(--sp-2);
   margin: 0 var(--sp-4) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
