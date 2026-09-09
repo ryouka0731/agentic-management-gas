@@ -410,11 +410,49 @@ function prMerge(number, choices) {
 }
 
 /**
+ * 番号を持たないやりとりに番号を振る。
+ *
+ * 番号の列を足す前に書かれた行は空のままで、名指しできない。直そうと
+ * すると「やりとりを指定してください」で止まる。読むたびに埋めておく。
+ *
+ * @returns {number} 埋めた件数
+ */
+function reviewBackfillIds_() {
+  var cols = DB_SCHEMA().reviews;
+  var sheet = dbSheet_('reviews');
+  var last = sheet.getLastRow();
+  if (last < 2) return 0;
+
+  var idCol = cols.indexOf('id') + 1;
+  var values = sheet.getRange(2, idCol, last - 1, 1).getValues();
+
+  var max = 0;
+  for (var i = 0; i < values.length; i++) {
+    var n = Number(values[i][0]);
+    if (!isNaN(n) && n > max) max = n;
+  }
+
+  var filled = 0;
+  for (var r = 0; r < values.length; r++) {
+    if (values[r][0] !== '' && values[r][0] !== null && values[r][0] !== undefined) {
+      continue;
+    }
+    values[r][0] = ++max;
+    filled++;
+  }
+
+  if (filled) sheet.getRange(2, idCol, last - 1, 1).setValues(values);
+  return filled;
+}
+
+/**
  * 次のやりとりの番号を返す。
  *
  * @returns {number}
  */
 function reviewNextId_() {
+  reviewBackfillIds_();
+
   var rows = dbReadAll('reviews');
   var max = 0;
 

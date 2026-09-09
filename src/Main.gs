@@ -854,6 +854,9 @@ function apiStashMainDrift(fileId) {
  * @returns {object[]}
  */
 function apiPrReviews(number) {
+  // 番号の列を足す前に書かれた行を先に埋める。空のままだと直せない
+  reviewBackfillIds_();
+
   var rows = dbReadAll('reviews');
   var me = Session.getActiveUser().getEmail();
   var out = [];
@@ -870,7 +873,8 @@ function apiPrReviews(number) {
       editedAt: rows[i].editedAt ? new Date(rows[i].editedAt).toISOString() : '',
       // 直せるかどうかは画面では決められない。書いた本人かをここで見る
       canEdit: String(rows[i].reviewer) === String(me) &&
-        String(rows[i].state) === 'comment',
+        String(rows[i].state) === 'comment' &&
+        Number(rows[i].id) > 0,
     });
   }
   return out;

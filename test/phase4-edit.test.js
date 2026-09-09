@@ -581,3 +581,75 @@ describe('やりとりを画面に渡す形', () => {
     expect(row.reviewers).toEqual(['a@example.com']);
   });
 });
+
+describe('番号を持たない古いやりとり', () => {
+  function withPr() {
+    const env = setup();
+    const { ctx, fileId } = env;
+    ctx.branchCreate('改訂', fileId);
+
+    const work = ctx.branchWorkingFileId('改訂', fileId);
+    env.fake._docs.set(work, '<p>第1条</p>\n<p>第2条</p>\n');
+    ctx.commitFile(work, '改訂', '第2条を足した', null);
+
+    env.pr = ctx.apiPrCreate('第2条の追加', '補足', '改訂', fileId);
+    return env;
+  }
+
+  /** 番号の列を足す前に書かれた行を作る */
+  function blankOutIds(ctx) {
+    const cols = ctx.DB_SCHEMA().reviews;
+    const sheet = ctx.dbSheet_('reviews');
+    const last = sheet.getLastRow();
+    const idCol = cols.indexOf('id') + 1;
+
+    const values = sheet.getRange(2, idCol, last - 1, 1).getValues();
+    values.forEach((r) => { r[0] = ''; });
+    sheet.getRange(2, idCol, last - 1, 1).setValues(values);
+  }
+
+  it('読むときに番号を埋める', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrReview(pr.number, 'comment', 'ふるいもの');
+    blankOutIds(ctx);
+
+    const [row] = ctx.apiPrReviews(pr.number);
+
+    expect(row.id).toBeGreaterThan(0);
+    expect(row.canEdit).toBe(true);
+  });
+
+  it('埋めた番号で直せる', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrReview(pr.number, 'comment', 'まえ');
+    blankOutIds(ctx);
+
+    const [row] = ctx.apiPrReviews(pr.number);
+    ctx.apiReviewEdit(row.id, 'あと');
+
+    expect(ctx.apiPrReviews(pr.number)[0].body).toBe('あと');
+  });
+
+  it('埋めた番号は重ならない', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrReview(pr.number, 'comment', 'ひとつめ');
+    ctx.apiPrReview(pr.number, 'comment', 'ふたつめ');
+    blankOutIds(ctx);
+    ctx.apiPrReviews(pr.number);
+
+    ctx.apiPrReview(pr.number, 'comment', 'みっつめ');
+
+    const ids = ctx.apiPrReviews(pr.number).map((r) => r.id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('番号が無いあいだは直せる印を出さない', () => {
+    const { ctx, pr } = withPr();
+    ctx.apiPrReview(pr.number, 'comment', 'ばんごうなし');
+    blankOutIds(ctx);
+
+    // 押せるのに必ず失敗するボタンを出さない
+    const rows = ctx.dbReadAll('reviews');
+    expect(rows[0].id).toBe('');
+  });
+});
