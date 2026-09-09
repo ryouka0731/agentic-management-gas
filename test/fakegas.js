@@ -60,15 +60,26 @@ export function createFakeGas() {
       _name: name,
       _parent: parentId,
       _trashed: false,
+      _owner: 'tester@example.com',
       getId: () => id,
       getName: () => fo._name,
       setTrashed: (v) => { fo._trashed = v !== false; return fo; },
       createFolder: (n) => makeFolder(n, id),
-      createFile: (a, b, c) => makeFile(a, b, id, c),
+      createFile: (a, b, c) => (a && typeof a === 'object' && a.getBytes)
+        ? makeFile(a.getName(), a.getBytes(), id, a.getContentType())
+        : makeFile(a, b, id, c),
       getFiles: () => {
         const hits = [];
         for (const f of files.values()) {
           if (f._parent === id && !f._trashed) hits.push(f);
+        }
+        let i = 0;
+        return { hasNext: () => i < hits.length, next: () => hits[i++] };
+      },
+      getFoldersByName: (n) => {
+        const hits = [];
+        for (const fo2 of folders.values()) {
+          if (fo2._parent === id && fo2._name === n && !fo2._trashed) hits.push(fo2);
         }
         let i = 0;
         return { hasNext: () => i < hits.length, next: () => hits[i++] };
@@ -83,6 +94,8 @@ export function createFakeGas() {
       },
       addFile: (f) => { f._parent = id; },
       removeFile: () => {},
+      getOwner: () => ({ getEmail: () => fo._owner }),
+      _setOwner: (email) => { fo._owner = email; return fo; },
     };
     folders.set(id, fo);
     return fo;
@@ -207,6 +220,14 @@ export function createFakeGas() {
       return Array.from(buf).map((b) => (b > 127 ? b - 256 : b));
     },
     formatDate: (d, _tz, _fmt) => String(d.getTime()),
+    base64Decode: (text) => Array.from(Buffer.from(String(text), 'base64'))
+      .map((b) => (b > 127 ? b - 256 : b)),
+    newBlob: (bytes, mime, name) => ({
+      _bytes: bytes,
+      getBytes: () => bytes,
+      getContentType: () => mime,
+      getName: () => name,
+    }),
   };
 
   return {

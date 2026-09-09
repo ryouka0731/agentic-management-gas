@@ -64,13 +64,17 @@ function notifyPrReviewRequested(pr, to) {
 /**
  * 報告が届いたことを、このアプリを持っている人に知らせる。
  *
- * 貯めるだけでは誰も気づかない。実行者ではなく所有者に送る。
+ * 貯めるだけでは誰も気づかない。開いている本人ではなく、入れ物の
+ * 持ち主に送る。書いた本人が持ち主なら送らない。
  *
  * @param {object} row inquiries 行
  */
 function notifyInquiry(row) {
+  var owner = inquiryOwner_();
+  if (!owner || String(owner) === String(row.by)) return;
+
   notify(
-    Session.getEffectiveUser().getEmail(),
+    owner,
     '[agentic-management] 報告 #' + row.number + ' が届きました',
     INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
     row.body + '\n\n' + (row.context || '')

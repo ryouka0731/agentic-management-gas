@@ -1348,12 +1348,15 @@ describe('不具合を伝える', () => {
     const app = openReport();
     document.getElementById('report-btn').click();
 
-    document.querySelector('#side-body textarea').value = '棒が伸びない';
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+    inputs[0].value = '棒が伸びない';
+    inputs[1].value = '掴んだ';
+    inputs[2].value = '伸びない';
     document.querySelector('#side-body form .btn-primary').click();
 
     const call = app.calls.filter((c) => c.name === 'apiInquiryCreate').pop();
     expect(call.args[0]).toBe('bug');
-    expect(call.args[1]).toBe('棒が伸びない');
+    expect(call.args[1]).toContain('棒が伸びない');
     expect(call.args[2]).toContain('画面: report');
     expect(call.args[2]).toContain('環境: ');
   });
@@ -1362,7 +1365,10 @@ describe('不具合を伝える', () => {
     openReport({ apiInquiryCreate: { number: 7, kind: 'bug', body: 'x' } });
     document.getElementById('report-btn').click();
 
-    document.querySelector('#side-body textarea').value = 'なにか';
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+    inputs[0].value = 'ひとこと';
+    inputs[1].value = 'したこと';
+    inputs[2].value = 'なったこと';
     document.querySelector('#side-body form .btn-primary').click();
 
     expect(document.getElementById('snackbar').textContent).toContain('受付 #7');
@@ -1488,7 +1494,7 @@ describe('報告で議論する', () => {
     document.querySelector('#report-detail .comment-form .btn-primary').click();
 
     const call = app.calls.filter((c) => c.name === 'apiInquiryReply').pop();
-    expect(call.args).toEqual([3, 'これで直りました']);
+    expect(call.args).toEqual([3, 'これで直りました', []]);
   });
 
   it('自分の返信だけ直せる', () => {
@@ -1543,5 +1549,127 @@ describe('報告で議論する', () => {
     input.dispatchEvent(new window.Event('input', { bubbles: true }));
 
     expect(document.querySelectorAll('#report-list .row-item')).toHaveLength(0);
+  });
+});
+
+describe('報告の書き方を尋ねる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openForm() {
+    const app = mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+    document.getElementById('report-btn').click();
+    return app;
+  }
+
+  function fields() {
+    return [...document.querySelectorAll('#side-body label')]
+      .map((l) => l.firstChild.textContent);
+  }
+
+  it('順番に尋ねる', () => {
+    openForm();
+
+    // 白紙に「詳しく書いて」と頼んでも、何を書けば直せるのかは伝わらない
+    expect(fields()).toEqual([
+      '種類', 'ひとことで言うと', '何をしましたか',
+      'どうなりましたか', 'どうなってほしかったですか',
+    ]);
+  });
+
+  it('答えを1つの本文に組み立てる', () => {
+    const app = openForm();
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+
+    inputs[0].value = '棒が伸びない';
+    inputs[1].value = '右端を掴んで引いた';
+    inputs[2].value = '伸びなかった';
+    inputs[3].value = '延びてほしかった';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const body = app.calls.filter((c) => c.name === 'apiInquiryCreate').pop().args[1];
+    expect(body).toContain('棒が伸びない');
+    expect(body).toContain('【何をしたか】');
+    expect(body).toContain('【どうなったか】');
+    expect(body).toContain('【どうなってほしかったか】');
+  });
+
+  it('望みが空なら見出しごと省く', () => {
+    const app = openForm();
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+
+    inputs[0].value = 'ひとこと';
+    inputs[1].value = 'したこと';
+    inputs[2].value = 'なったこと';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const body = app.calls.filter((c) => c.name === 'apiInquiryCreate').pop().args[1];
+    expect(body).not.toContain('【どうなってほしかったか】');
+  });
+
+  it('写真を選ぶ欄がある', () => {
+    openForm();
+    const pick = document.querySelector('#side-body .shot-input');
+
+    expect(pick.type).toBe('file');
+    expect(pick.multiple).toBe(true);
+    expect(pick.accept).toContain('image/png');
+  });
+
+  it('写真は添えなくても送れる', () => {
+    const app = openForm();
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+
+    inputs[0].value = 'a';
+    inputs[1].value = 'b';
+    inputs[2].value = 'c';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiInquiryCreate').pop().args[3])
+      .toEqual([]);
+  });
+});
+
+describe('添えられた写真', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const WITH_SHOT = {
+    inquiry: {
+      number: 3, kind: 'bug', kindLabel: 'うまく動かない', title: 'x', body: 'x',
+      by: 'me@example.com', state: 'open', context: '', answer: '', at: '',
+      answeredAt: '', mine: true, canClose: true, replyCount: 0,
+      shots: [{
+        id: 'S1',
+        url: 'https://drive.google.com/file/d/S1/view',
+        thumb: 'https://drive.google.com/thumbnail?id=S1&sz=w800',
+      }],
+    },
+    replies: [],
+  };
+
+  it('話の中に写真が並ぶ', () => {
+    mount({
+      apiInquiryList: [WITH_SHOT.inquiry],
+      apiInquiryThread: WITH_SHOT,
+    });
+    document.querySelector('[data-tab="report"]').click();
+
+    const link = document.querySelector('#report-detail .shot-item');
+    expect(link.href).toContain('/file/d/S1/');
+    expect(link.querySelector('img').src).toContain('thumbnail?id=S1');
+  });
+
+  it('見られないときは文字の手がかりを出す', () => {
+    mount({
+      apiInquiryList: [WITH_SHOT.inquiry],
+      apiInquiryThread: WITH_SHOT,
+    });
+    document.querySelector('[data-tab="report"]').click();
+
+    const img = document.querySelector('#report-detail .shot-item img');
+    img.dispatchEvent(new window.Event('error'));
+
+    expect(document.querySelector('#report-detail .shot-item').textContent)
+      .toBe('写真 1枚目を開く');
   });
 });

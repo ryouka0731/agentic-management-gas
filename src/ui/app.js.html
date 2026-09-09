@@ -4226,19 +4226,43 @@
   /**
    * 報告を書いてもらう。
    *
+   * 白紙の1枚に「詳しく書いてください」と頼んでも、何を書けば直せるのか
+   * は伝わらない。順番に尋ねて、こちらで1つの本文に組み立てる。
+   *
    * @param {HTMLElement} [sourceEl]
    */
   function createReport(sourceEl) {
+    var shots = [];
+
     var form = openInlineForm(
       'うまく動かないことを伝える',
       [
         { name: 'kind', label: '種類', choices: REPORT_KINDS },
         {
-          name: 'body',
-          label: '何をしたら、どうなりましたか',
+          name: 'summary',
+          label: 'ひとことで言うと',
+          required: true,
+          placeholder: '例: 工程表の棒が伸ばせない',
+        },
+        {
+          name: 'steps',
+          label: '何をしましたか',
           required: true,
           multiline: true,
-          placeholder: '例: 工程表の棒の右端を掴んで右に引いたが、伸びなかった',
+          placeholder: '例:\n1. やること → 工程表 を開く\n2. 棒の右端を掴む\n3. 右に引く',
+        },
+        {
+          name: 'actual',
+          label: 'どうなりましたか',
+          required: true,
+          multiline: true,
+          placeholder: '例: 棒が伸びず、幅が変わらなかった',
+        },
+        {
+          name: 'expected',
+          label: 'どうなってほしかったですか',
+          multiline: true,
+          placeholder: '例: 期限が右に延びてほしかった',
         },
       ],
       '送る',
@@ -4246,22 +4270,182 @@
         google.script.run
           .withSuccessHandler(function (row) {
             showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
+            closeSide();
             loadReports();
           })
           .withFailureHandler(function (err) {
             showSnack(err.message, { kind: 'ng' });
           })
-          .apiInquiryCreate(v.kind, v.body, reportContext());
+          .apiInquiryCreate(v.kind, reportBody(v), reportContext(), shots);
       },
       sourceEl
     );
+
+    form.insertBefore(makeShotPicker(shots, form),
+      form.querySelector('.inline-form-actions'));
 
     var note = document.createElement('p');
     note.className = 'row-meta';
     note.textContent = '送ると、見ている画面と使っている環境も一緒に記録されます。';
     form.insertBefore(note, form.querySelector('.inline-form-actions'));
 
-    form.querySelector('textarea').focus();
+    form.querySelector('input').focus();
+  }
+
+  /**
+   * 尋ねた答えを1つの本文に組み立てる。
+   *
+   * 見出しを揃えておくと、後から読む人が同じ順番で追える。
+   *
+   * @param {Object<string,string>} v
+   * @returns {string}
+   */
+  function reportBody(v) {
+    var parts = [v.summary];
+
+    parts.push('', '【何をしたか】', v.steps);
+    parts.push('', '【どうなったか】', v.actual);
+    if (String(v.expected || '').replace(/^\s+|\s+$/g, '')) {
+      parts.push('', '【どうなってほしかったか】', v.expected);
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * 画像を添える欄を作る。
+   *
+   * 選ぶだけでなく貼り付けでも入れられるようにする。画面の写真は
+   * 撮った直後がいちばん貼りやすい。
+   *
+   * @param {string[]} shots 入れ物。ここに data URL を貯める
+   * @param {HTMLElement} form 貼り付けを拾う相手
+   * @returns {HTMLElement}
+   */
+  function makeShotPicker(shots, form) {
+    var MAX = 4;
+    var wrap = document.createElement('div');
+    wrap.className = 'shot-picker';
+
+    var label = document.createElement('div');
+    label.className = 'row-meta';
+    label.textContent = '画面の写真 (任意・' + MAX + '枚まで)';
+    wrap.appendChild(label);
+
+    var list = document.createElement('div');
+    list.className = 'shot-list';
+    wrap.appendChild(list);
+
+    var pick = document.createElement('input');
+    pick.type = 'file';
+    pick.accept = 'image/png,image/jpeg,image/gif,image/webp';
+    pick.multiple = true;
+    pick.className = 'shot-input';
+    pick.setAttribute('aria-label', '画面の写真を選ぶ');
+    wrap.appendChild(pick);
+
+    var hint = document.createElement('div');
+    hint.className = 'row-meta';
+    hint.textContent = 'ここに貼り付け (Ctrl+V) でも入れられます';
+    wrap.appendChild(hint);
+
+    function draw() {
+      list.textContent = '';
+
+      shots.forEach(function (data, i) {
+        var item = document.createElement('div');
+        item.className = 'shot-item';
+
+        var img = document.createElement('img');
+        img.src = data;
+        img.alt = '添えた写真 ' + (i + 1) + '枚目';
+        item.appendChild(img);
+
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-danger';
+        del.appendChild(makeIcon('trash'));
+        del.title = 'この写真を外す';
+        del.setAttribute('aria-label', del.title);
+        del.addEventListener('click', function () {
+          shots.splice(i, 1);
+          draw();
+        });
+        item.appendChild(del);
+
+        list.appendChild(item);
+      });
+    }
+
+    function add(file) {
+      if (!file || String(file.type).indexOf('image/') !== 0) return;
+      if (shots.length >= MAX) {
+        showSnack('写真は' + MAX + '枚までです', { kind: 'ng' });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showSnack('写真は1枚5MBまでです', { kind: 'ng' });
+        return;
+      }
+
+      var reader = new FileReader();
+      reader.onload = function () {
+        shots.push(String(reader.result));
+        draw();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    pick.addEventListener('change', function () {
+      for (var i = 0; i < pick.files.length; i++) add(pick.files[i]);
+      pick.value = '';
+    });
+
+    form.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var i = 0; i < items.length; i++) {
+        if (String(items[i].type).indexOf('image/') !== 0) continue;
+        add(items[i].getAsFile());
+        e.preventDefault();
+      }
+    });
+
+    return wrap;
+  }
+
+  /**
+   * 添えられた写真を並べる。
+   *
+   * @param {Array<{url:string, thumb:string}>} shots
+   * @returns {HTMLElement|null}
+   */
+  function makeShotStrip(shots) {
+    if (!shots || !shots.length) return null;
+
+    var strip = document.createElement('div');
+    strip.className = 'shot-list';
+
+    shots.forEach(function (shot, i) {
+      var a = document.createElement('a');
+      a.className = 'shot-item';
+      a.href = shot.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.title = '大きく見る';
+
+      var img = document.createElement('img');
+      img.src = shot.thumb;
+      img.alt = '添えられた写真 ' + (i + 1) + '枚目';
+      img.loading = 'lazy';
+      // 見られないときは代わりに文字の手がかりを出す
+      img.addEventListener('error', function () {
+        img.remove();
+        a.textContent = '写真 ' + (i + 1) + '枚目を開く';
+      });
+      a.appendChild(img);
+
+      strip.appendChild(a);
+    });
+    return strip;
   }
 
   /**
@@ -4454,6 +4638,9 @@
     body.textContent = q.body;
     first.appendChild(body);
 
+    var firstShots = makeShotStrip(q.shots);
+    if (firstShots) first.appendChild(firstShots);
+
     if (q.context) {
       var ctx = document.createElement('details');
       ctx.className = 'report-context';
@@ -4483,6 +4670,9 @@
       b.className = 'comment-body';
       b.textContent = r.body;
       el.appendChild(b);
+
+      var replyShots = makeShotStrip(r.shots);
+      if (replyShots) el.appendChild(replyShots);
 
       reportDetail.appendChild(el);
     });
@@ -4561,12 +4751,15 @@
    * @returns {HTMLElement}
    */
   function makeReplyForm(q) {
+    var shots = [];
     var form = document.createElement('div');
     form.className = 'comment-form';
 
     var input = document.createElement('textarea');
     input.placeholder = '同じことが起きた、こうしたら直った、など';
     form.appendChild(input);
+
+    form.appendChild(makeShotPicker(shots, form));
 
     var send = document.createElement('button');
     send.className = 'btn btn-primary';
@@ -4584,7 +4777,7 @@
           send.disabled = false;
           showSnack(err.message, { kind: 'ng' });
         })
-        .apiInquiryReply(q.number, input.value);
+        .apiInquiryReply(q.number, input.value, shots);
     });
 
     form.appendChild(send);

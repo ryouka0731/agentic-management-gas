@@ -1022,7 +1022,7 @@ function inquiryToPlain_(row) {
   }
 
   var me = Session.getActiveUser().getEmail();
-  var owner = Session.getEffectiveUser().getEmail();
+  var owner = inquiryOwner_();
 
   return {
     number: Number(row.number),
@@ -1037,9 +1037,11 @@ function inquiryToPlain_(row) {
     closedBy: String(row.closedBy == null ? '' : row.closedBy),
     at: iso(row.at),
     answeredAt: iso(row.answeredAt),
+    shots: inquiryShotLinks_(row),
     mine: String(row.by) === String(me),
     // 閉じられるかは画面では決められない。ここで決めて渡す
-    canClose: String(row.by) === String(me) || String(owner) === String(me),
+    canClose: String(row.by) === String(me) ||
+      (!!owner && String(owner) === String(me)),
     replyCount: inquiryReplies(row.number).length,
   };
 }
@@ -1065,8 +1067,31 @@ function inquiryReplyToPlain_(row, me) {
     by: String(row.by == null ? '' : row.by),
     at: iso(row.at),
     editedAt: iso(row.editedAt),
+    shots: inquiryShotLinks_(row),
     canEdit: String(row.by) === String(me) && Number(row.id) > 0,
   };
+}
+
+/**
+ * 添えられた画像の見せ方を作る。
+ *
+ * 実体は Drive にある。画面には見るための URL だけを渡す。
+ *
+ * @param {object} row
+ * @returns {Array<{id:string, url:string, thumb:string}>}
+ */
+function inquiryShotLinks_(row) {
+  var ids = inquiryShotsOf(row);
+  var out = [];
+
+  for (var i = 0; i < ids.length; i++) {
+    out.push({
+      id: ids[i],
+      url: 'https://drive.google.com/file/d/' + ids[i] + '/view',
+      thumb: 'https://drive.google.com/thumbnail?id=' + ids[i] + '&sz=w800',
+    });
+  }
+  return out;
 }
 
 /**
@@ -1075,10 +1100,11 @@ function inquiryReplyToPlain_(row, me) {
  * @param {string} kind
  * @param {string} body
  * @param {string} context
+ * @param {string[]} shots
  * @returns {object}
  */
-function apiInquiryCreate(kind, body, context) {
-  return inquiryToPlain_(inquiryCreate(kind, body, context));
+function apiInquiryCreate(kind, body, context, shots) {
+  return inquiryToPlain_(inquiryCreate(kind, body, context, shots));
 }
 
 /**
@@ -1120,11 +1146,12 @@ function apiInquiryThread(number) {
  *
  * @param {number} number
  * @param {string} body
+ * @param {string[]} shots
  * @returns {object}
  */
-function apiInquiryReply(number, body) {
+function apiInquiryReply(number, body, shots) {
   var me = Session.getActiveUser().getEmail();
-  return inquiryReplyToPlain_(inquiryReply(number, body), me);
+  return inquiryReplyToPlain_(inquiryReply(number, body, shots), me);
 }
 
 /**

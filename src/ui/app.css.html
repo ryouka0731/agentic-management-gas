@@ -2593,4 +2593,59 @@ button.gantt-name:hover { color: var(--accent); }
   word-break: break-all;
 }
 
+
+/*
+ * 画面の写真。
+ *
+ * 撮った直後がいちばん貼りやすいので、選ぶ操作と貼り付けの両方を受ける
+ */
+.shot-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+
+.shot-input {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.shot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.shot-item {
+  position: relative;
+  display: inline-flex;
+  max-width: 200px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-2);
+  box-shadow: var(--hairline), var(--elev-1);
+  color: var(--ink-2);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.shot-item img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* 外すボタンは写真の上に重ねる。並べると写真が細くなる */
+.shot-item .btn-danger {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  min-height: 26px;
+}
+
+.shot-item .btn-danger .icon { width: 14px; height: 14px; }
+
+a.shot-item:hover { box-shadow: var(--hairline), var(--elev-2); }
 </style>

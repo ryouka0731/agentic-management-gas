@@ -57,17 +57,29 @@ describe('報告を受け付ける', () => {
   it('送り主は画面から受け取らない', () => {
     const { ctx } = setup();
     // 名乗りを詐称できてしまうため、引数では渡せない形にしてある
-    expect(ctx.inquiryCreate.length).toBe(3);
+    expect(ctx.inquiryCreate.length).toBe(4);
     expect(ctx.inquiryCreate('bug', '本文').by).toBe('tester@example.com');
   });
 
   it('届いたことを持ち主に知らせる', () => {
     const { ctx, fake } = setup();
+    ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)._setOwner('owner@example.com');
+
     ctx.inquiryCreate('bug', '動かない');
 
     const mail = fake._sentMails().pop();
+    expect(mail.to).toBe('owner@example.com');
     expect(mail.subject).toContain('報告 #1');
     expect(mail.body).toContain('うまく動かない');
+  });
+
+  it('持ち主が自分で出したときは自分に送らない', () => {
+    const { ctx, fake } = setup();
+    const before = fake._sentMails().length;
+
+    ctx.inquiryCreate('bug', '動かない');
+
+    expect(fake._sentMails().length).toBe(before);
   });
 });
 
@@ -242,7 +254,7 @@ describe('話を閉じる', () => {
     ctx.dbUpdate('inquiries', 'number', row.number, { by: 'other@example.com' });
 
     // まだ困っている人の話を横から畳ませない
-    ctx.Session.getEffectiveUser = () => ({ getEmail: () => 'owner@example.com' });
+    ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)._setOwner('owner@example.com');
     expect(() => ctx.inquiryClose(row.number)).toThrow(/持ち主だけ/);
   });
 
@@ -269,5 +281,74 @@ describe('見出し', () => {
 
     expect(row.title.length).toBe(61);
     expect(row.title.slice(-1)).toBe('…');
+  });
+});
+
+describe('画像を添える', () => {
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('置き場に入れて id を残す', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文', '', [PNG]);
+
+    expect(ctx.inquiryShotsOf(row)).toHaveLength(1);
+  });
+
+  it('置き場は無ければ作る', () => {
+    const { ctx } = setup();
+    ctx.inquiryCreate('bug', '本文', '', [PNG]);
+
+    // 初期化のときの設定には入っていない。名前で探して作る
+    expect(() => ctx.inquiryShotsFolder_()).not.toThrow();
+    expect(ctx.inquiryShotsFolder_().getName()).toBe('shots');
+  });
+
+  it('二度目も同じ置き場を使う', () => {
+    const { ctx } = setup();
+    ctx.inquiryCreate('bug', 'ひとつめ', '', [PNG]);
+    ctx.inquiryCreate('bug', 'ふたつめ', '', [PNG]);
+
+    expect(ctx.inquiryShotsFolder_().getId())
+      .toBe(ctx.inquiryShotsFolder_().getId());
+  });
+
+  it('返信にも添えられる', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+    const reply = ctx.inquiryReply(row.number, 'これです', [PNG]);
+
+    expect(ctx.inquiryShotsOf(reply)).toHaveLength(1);
+  });
+
+  it('画像でないものは断る', () => {
+    const { ctx } = setup();
+    expect(() => ctx.inquiryCreate('bug', '本文', '', ['data:text/html;base64,PHA+']))
+      .toThrow(/受け取れない形式/);
+  });
+
+  it('data URL の形でないものは断る', () => {
+    const { ctx } = setup();
+    expect(() => ctx.inquiryCreate('bug', '本文', '', ['https://example.invalid/a.png']))
+      .toThrow(/画像として読めません/);
+  });
+
+  it('枚数の上限を超えたら断る', () => {
+    const { ctx } = setup();
+    const many = [PNG, PNG, PNG, PNG, PNG];
+
+    expect(() => ctx.inquiryCreate('bug', '本文', '', many)).toThrow(/4枚まで/);
+  });
+
+  it('大きすぎる画像は復号する前に断る', () => {
+    const { ctx } = setup();
+    const huge = 'data:image/png;base64,' + 'A'.repeat(8 * 1024 * 1024);
+
+    expect(() => ctx.inquiryCreate('bug', '本文', '', [huge])).toThrow(/5MB/);
+  });
+
+  it('添えなくても送れる', () => {
+    const { ctx } = setup();
+    expect(ctx.inquiryShotsOf(ctx.inquiryCreate('bug', '本文'))).toEqual([]);
   });
 });

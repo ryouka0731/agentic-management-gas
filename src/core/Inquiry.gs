@@ -11,6 +11,26 @@
  *
  * @returns {Object<string,string>} 値 → 画面に出す名前
  */
+/**
+ * 受け取れる画像の形と、1枚あたりの上限。
+ *
+ * 何でも受け取ると、動画や実行ファイルを置き場にできてしまう。
+ *
+ * @returns {{mimes: Object<string,string>, maxBytes: number, maxCount: number}}
+ */
+function INQUIRY_SHOT_LIMITS() {
+  return {
+    mimes: {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+    },
+    maxBytes: 5 * 1024 * 1024,
+    maxCount: 4,
+  };
+}
+
 function INQUIRY_KINDS() {
   return {
     bug: 'うまく動かない',
@@ -43,9 +63,10 @@ function inquiryNextNumber_() {
  * @param {string} kind INQUIRY_KINDS のいずれか
  * @param {string} body 本文
  * @param {string} [context] どの画面から送られたか
+ * @param {string[]} [shots] 画像 (data URL)
  * @returns {object} inquiries 行
  */
-function inquiryCreate(kind, body, context) {
+function inquiryCreate(kind, body, context, shots) {
   var kinds = INQUIRY_KINDS();
   var key = String(kind || 'bug');
   if (!kinds[key]) throw new Error('種類が正しくありません: ' + kind);
@@ -66,6 +87,7 @@ function inquiryCreate(kind, body, context) {
     answer: '',
     answeredAt: '',
     closedBy: '',
+    shots: inquirySaveShots_(shots, 'report'),
   };
   dbAppend('inquiries', row);
 
@@ -164,9 +186,10 @@ function inquiryReplyNextId_() {
  *
  * @param {number} number 受付番号
  * @param {string} body
+ * @param {string[]} [shots] 画像 (data URL)
  * @returns {object} inquiry_replies 行
  */
-function inquiryReply(number, body) {
+function inquiryReply(number, body, shots) {
   inquiryGet(number);
 
   var text = String(body || '').replace(/^\s+|\s+$/g, '');
@@ -180,6 +203,7 @@ function inquiryReply(number, body) {
     by: Session.getActiveUser().getEmail(),
     at: new Date(),
     editedAt: '',
+    shots: inquirySaveShots_(shots, 'reply-' + number),
   };
   dbAppend('inquiry_replies', row);
 
@@ -286,6 +310,24 @@ function inquiryReplyDelete(id) {
 }
 
 /**
+ * このアプリの持ち主を返す。
+ *
+ * この Web アプリは開いた人の権限で動く (executeAs: USER_ACCESSING) ため、
+ * Session.getEffectiveUser() は常に開いている本人になる。それを持ち主と
+ * 見なすと誰もが持ち主になってしまうので、入れ物の持ち主を見る。
+ *
+ * @returns {string} 分からなければ空文字
+ */
+function inquiryOwner_() {
+  try {
+    return String(DriveApp.getFolderById(repoConfig().rootId)
+      .getOwner().getEmail() || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
  * 話を閉じられる人かを確かめる。
  *
  * 出した本人と、このアプリを持っている人だけが閉じられる。誰でも
@@ -295,9 +337,9 @@ function inquiryReplyDelete(id) {
  */
 function inquiryAssertCanClose_(row) {
   var me = Session.getActiveUser().getEmail();
-  var owner = Session.getEffectiveUser().getEmail();
+  var owner = inquiryOwner_();
 
-  if (String(row.by) !== String(me) && String(owner) !== String(me)) {
+  if (String(row.by) !== String(me) && (!owner || String(owner) !== String(me))) {
     throw new Error('出した本人か、このアプリの持ち主だけが閉じられます');
   }
 }
@@ -338,4 +380,75 @@ function inquiryReopen(number) {
     closedBy: '',
   });
   return inquiryGet(number);
+}
+
+/**
+ * 画像の置き場を返す。無ければ作る。
+ *
+ * 設定は初期化のときに書かれていて、後から足した入れ物は入っていない。
+ * 名前で探して、無ければその場で作る。
+ *
+ * @returns {Folder}
+ */
+function inquiryShotsFolder_() {
+  var git = DriveApp.getFolderById(repoConfig().gitId);
+  var found = git.getFoldersByName('shots');
+
+  return found.hasNext() ? found.next() : git.createFolder('shots');
+}
+
+/**
+ * 画面から届いた画像を Drive に置く。
+ *
+ * @param {string[]} dataUrls "data:image/png;base64,..." の並び
+ * @param {string} tag ファイル名に付ける印
+ * @returns {string} 置いたファイルの id をカンマで繋いだもの
+ */
+function inquirySaveShots_(dataUrls, tag) {
+  var list = dataUrls || [];
+  if (!list.length) return '';
+
+  var limits = INQUIRY_SHOT_LIMITS();
+  if (list.length > limits.maxCount) {
+    throw new Error('画像は' + limits.maxCount + '枚までにしてください');
+  }
+
+  var folder = inquiryShotsFolder_();
+  var ids = [];
+
+  for (var i = 0; i < list.length; i++) {
+    var m = /^data:([a-z\/+-]+);base64,([\s\S]+)$/.exec(String(list[i] || ''));
+    if (!m) throw new Error('画像として読めませんでした');
+
+    var ext = limits.mimes[m[1]];
+    if (!ext) throw new Error('受け取れない形式です: ' + m[1]);
+
+    // base64 は元の4/3の長さになる。復号する前に大きさを断る
+    if (m[2].length * 3 / 4 > limits.maxBytes) {
+      throw new Error('画像は1枚5MBまでにしてください');
+    }
+
+    var blob = Utilities.newBlob(
+      Utilities.base64Decode(m[2]), m[1], tag + '-' + (i + 1) + '.' + ext);
+    ids.push(folder.createFile(blob).getId());
+  }
+  return ids.join(',');
+}
+
+/**
+ * 画像の id を配列にして返す。
+ *
+ * @param {object} row
+ * @returns {string[]}
+ */
+function inquiryShotsOf(row) {
+  var raw = String((row && row.shots) || '');
+  var out = [];
+
+  var parts = raw.split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var one = parts[i].replace(/^\s+|\s+$/g, '');
+    if (one) out.push(one);
+  }
+  return out;
 }
