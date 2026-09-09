@@ -28,8 +28,12 @@ export function loadGas(...relativePaths) {
 export function loadGasWith(globals, ...relativePaths) {
   const context = vm.createContext(globals);
   for (const rel of relativePaths) {
-    const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    vm.runInContext(src, context, { filename: rel });
+    const file = path.join(ROOT, rel);
+    const src = fs.readFileSync(file, 'utf8');
+
+    // filename は絶対パスで渡す。相対だとカバレッジ計測が元ファイルと
+    // 結び付けられず、実行された行が数えられない
+    vm.runInContext(src, context, { filename: file });
   }
   return context;
 }

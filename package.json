@@ -7,9 +7,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "push": "clasp push",
-    "deploy": "clasp create-deployment"
+    "deploy": "clasp create-deployment",
+    "coverage": "vitest run --coverage --coverage.include='src/**' --coverage.extension='.js' --coverage.extension='.gs' --coverage.reporter=text"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.7",
     "vitest": "^3.0.0"
   }
 }
