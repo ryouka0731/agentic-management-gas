@@ -88,7 +88,7 @@ const API_NAMES = [
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
-  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers',
+  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds',
 ];
 
 /** よく使う既定の応答 */
@@ -101,6 +101,7 @@ export const DEFAULTS = {
   apiWhoAmI: { activeUser: 'me@example.com', effectiveUser: 'me@example.com', sameUser: true },
   apiArchiveKeepDays: 30,
   apiIssueArchivedList: [],
+  apiInquiryList: [],
   apiIssueList: [
     {
       number: 2, title: '通勤手当の見直し', body: '', state: 'open',

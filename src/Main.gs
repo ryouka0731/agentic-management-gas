@@ -1009,6 +1009,77 @@ function apiIssueClose(number) {
 }
 
 /**
+ * inquiries の行を、画面に渡せる素の形にする。
+ *
+ * @param {object} row
+ * @returns {object}
+ */
+function inquiryToPlain_(row) {
+  function iso(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+
+  return {
+    number: Number(row.number),
+    kind: String(row.kind == null ? '' : row.kind),
+    kindLabel: INQUIRY_KINDS()[row.kind] || String(row.kind || ''),
+    body: String(row.body == null ? '' : row.body),
+    by: String(row.by == null ? '' : row.by),
+    state: String(row.state == null ? '' : row.state),
+    context: String(row.context == null ? '' : row.context),
+    answer: String(row.answer == null ? '' : row.answer),
+    at: iso(row.at),
+    answeredAt: iso(row.answeredAt),
+  };
+}
+
+/**
+ * 報告を送る (Web App API)。
+ *
+ * @param {string} kind
+ * @param {string} body
+ * @param {string} context
+ * @returns {object}
+ */
+function apiInquiryCreate(kind, body, context) {
+  return inquiryToPlain_(inquiryCreate(kind, body, context));
+}
+
+/**
+ * 自分が送った報告を返す (Web App API)。
+ *
+ * 他人の報告は返さない。画面には自分のぶんだけ出す。全部を見るのは
+ * メタDBのスプレッドシートを開ける人だけでよい。
+ *
+ * @returns {object[]}
+ */
+function apiInquiryList() {
+  var rows = inquiryList(Session.getActiveUser().getEmail());
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) out.push(inquiryToPlain_(rows[i]));
+  return out;
+}
+
+/**
+ * 報告の種類の一覧を返す (Web App API)。
+ *
+ * @returns {Array<{value:string, label:string}>}
+ */
+function apiInquiryKinds() {
+  var kinds = INQUIRY_KINDS();
+  var out = [];
+
+  for (var key in kinds) {
+    if (!Object.prototype.hasOwnProperty.call(kinds, key)) continue;
+    out.push({ value: key, label: kinds[key] });
+  }
+  return out;
+}
+
+/**
  * 完了を取り消す (Web App API)。
  *
  * @param {number} number

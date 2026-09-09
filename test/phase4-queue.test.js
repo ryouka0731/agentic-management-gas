@@ -27,6 +27,7 @@ const SOURCES = [
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',
+  'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
   'src/core/CommandQueue.gs',
   'src/Main.gs',

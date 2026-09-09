@@ -17,6 +17,8 @@ function DB_SCHEMA() {
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
+    inquiries: ['number', 'kind', 'body', 'by', 'at', 'state', 'context',
+      'answer', 'answeredAt'],
     issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt'],
     project_items: ['issueNumber', 'column', 'order'],
   };

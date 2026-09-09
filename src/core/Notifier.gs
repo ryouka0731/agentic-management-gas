@@ -60,3 +60,32 @@ function notifyPrReviewRequested(pr, to) {
     pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。'
   );
 }
+
+/**
+ * 報告が届いたことを、このアプリを持っている人に知らせる。
+ *
+ * 貯めるだけでは誰も気づかない。実行者ではなく所有者に送る。
+ *
+ * @param {object} row inquiries 行
+ */
+function notifyInquiry(row) {
+  notify(
+    Session.getEffectiveUser().getEmail(),
+    '[agentic-management] 報告 #' + row.number + ' が届きました',
+    INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
+    row.body + '\n\n' + (row.context || '')
+  );
+}
+
+/**
+ * 報告に答えたことを、送った本人に知らせる。
+ *
+ * @param {object} row inquiries 行
+ */
+function notifyInquiryAnswered(row) {
+  notify(
+    row.by,
+    '[agentic-management] 報告 #' + row.number + ' に返事がありました',
+    row.body + '\n\n--- 返事 ---\n' + row.answer
+  );
+}

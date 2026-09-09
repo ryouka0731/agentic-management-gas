@@ -25,6 +25,7 @@ const SOURCES = [
   'src/core/Staleness.js',
   'src/core/Issue.gs',
   'src/core/Project.gs',
+  'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
   'src/Main.gs',
 ];
@@ -443,6 +444,7 @@ describe('画面に渡せる形か', () => {
     });
     env.ctx.apiIssueArchive(issue.number);
     env.ctx.apiIssueRestore(issue.number);
+    env.ctx.apiInquiryCreate('bug', '棒が伸びない', '画面: 工程表');
 
     env.ctx.branchCreate('改訂', env.fileId);
 
@@ -471,6 +473,8 @@ describe('画面に渡せる形か', () => {
     ['apiCommitHistory', (ctx, env) => ctx.apiCommitHistory(env.fileId)],
     ['apiDirtyFiles', (ctx) => ctx.apiDirtyFiles('改訂')],
     ['apiIssueArchivedList', (ctx) => ctx.apiIssueArchivedList()],
+    ['apiInquiryList', (ctx) => ctx.apiInquiryList()],
+    ['apiInquiryKinds', (ctx) => ctx.apiInquiryKinds()],
     ['apiPrReviews', (ctx, env) => ctx.apiPrReviews(env.pr.number)],
     ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
     ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],

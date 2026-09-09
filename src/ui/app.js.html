@@ -60,6 +60,8 @@
   var panelPulls = document.getElementById('panel-pulls');
   var panelIssues = document.getElementById('panel-issues');
   var panelHelp = document.getElementById('panel-help');
+  var panelReport = document.getElementById('panel-report');
+  var reportListEl = document.getElementById('report-list');
 
   var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
@@ -285,6 +287,7 @@
     board: 'columns',
     gantt: 'calendar',
     help: 'help-circle',
+    report: 'inbox',
   };
 
   // ===== テーマ =====
@@ -501,7 +504,8 @@
    * 画面内に入力フォームを開く。prompt の置き換え。
    *
    * @param {HTMLElement} host
-   * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean}>} fields
+   * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean,
+ *   choices?: Array<Array<string>>}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
    * @param {HTMLElement} [sourceEl] この入力が対象としている要素
@@ -541,7 +545,8 @@
    * 入力なのかが見えなくなる。右に出せば対象を見ながら書ける。
    *
    * @param {string} title 何の入力かを示す見出し
-   * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean}>} fields
+   * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean,
+ *   choices?: Array<Array<string>>}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
    * @returns {HTMLElement} 差し込んだフォーム
@@ -560,8 +565,22 @@
       var label = document.createElement('label');
       label.textContent = f.label;
 
-      var input = document.createElement(f.multiline ? 'textarea' : 'input');
-      if (!f.multiline) input.type = 'text';
+      // 決まったものから選ばせたい欄は選択肢にする。自由に書かせると
+      // 表記が割れて数えられなくなる
+      var input;
+      if (f.choices) {
+        input = document.createElement('select');
+        f.choices.forEach(function (pair) {
+          var opt = document.createElement('option');
+          opt.value = pair[0];
+          opt.textContent = pair[1];
+          input.appendChild(opt);
+        });
+      } else {
+        input = document.createElement(f.multiline ? 'textarea' : 'input');
+        if (!f.multiline) input.type = 'text';
+      }
+
       if (f.required) input.required = true;
       label.appendChild(input);
 
@@ -1136,6 +1155,7 @@
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelHelp.hidden = name !== 'help';
+    panelReport.hidden = name !== 'report';
 
     tabsEl.hidden = !current.fileId || !DOC_TABS[name];
     updateCrumbs();
@@ -1148,6 +1168,7 @@
     else if (name === 'pulls') loadPulls();
     else if (name === 'issues') reloadIssueView();
     else if (name === 'help') loadHelp();
+    else if (name === 'report') loadReports();
   }
 
   /**
@@ -4119,6 +4140,7 @@
       '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
+      'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、こちらで再現しやすくなります。',
       'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
     ]],
   ];
@@ -4160,6 +4182,147 @@
       })
       .withFailureHandler(function () { who.textContent = ''; })
       .apiWhoAmI();
+  }
+
+  // ===== 不具合を伝える =====
+
+  var REPORT_KINDS = [
+    ['bug', 'うまく動かない'],
+    ['request', 'こうしてほしい'],
+    ['question', '使い方が分からない'],
+  ];
+
+  /**
+   * どこで起きたかを集める。
+   *
+   * 「動かない」だけでは直せない。人に思い出させるより、そのとき
+   * 画面が持っている手がかりを添える。
+   *
+   * @returns {string}
+   */
+  function reportContext() {
+    var parts = ['画面: ' + currentTab];
+
+    if (current.docPath) parts.push('文書: ' + current.docPath);
+    if (current.branch) parts.push('版: ' + current.branch);
+    if (currentTab === 'issues') parts.push('見え方: ' + issueView);
+
+    parts.push('画面幅: ' + window.innerWidth + 'x' + window.innerHeight);
+    parts.push('環境: ' + window.navigator.userAgent);
+    return parts.join(' / ');
+  }
+
+  /**
+   * 報告を書いてもらう。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function createReport(sourceEl) {
+    var form = openInlineForm(
+      'うまく動かないことを伝える',
+      [
+        { name: 'kind', label: '種類', choices: REPORT_KINDS },
+        {
+          name: 'body',
+          label: '何をしたら、どうなりましたか',
+          required: true,
+          multiline: true,
+          placeholder: '例: 工程表の棒の右端を掴んで右に引いたが、伸びなかった',
+        },
+      ],
+      '送る',
+      function (v) {
+        google.script.run
+          .withSuccessHandler(function (row) {
+            showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
+            loadReports();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiInquiryCreate(v.kind, v.body, reportContext());
+      },
+      sourceEl
+    );
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '送ると、見ている画面と使っている環境も一緒に記録されます。';
+    form.insertBefore(note, form.querySelector('.inline-form-actions'));
+
+    form.querySelector('textarea').focus();
+  }
+
+  /**
+   * 自分が送った報告を並べる。
+   *
+   * 他人の報告は出さない。全部を見るのはメタDBを開ける人だけでよい。
+   */
+  function loadReports() {
+    showSkeleton(reportListEl, 'list', 3);
+
+    google.script.run
+      .withSuccessHandler(function (list) {
+        var rows = list || [];
+        reportListEl.textContent = '';
+        setCount('count-reports', rows.filter(function (r) {
+          return r.state === 'open';
+        }).length);
+
+        if (!rows.length) {
+          reportListEl.appendChild(makeBlankState(
+            'まだ何も伝えていません',
+            'うまく動かないこと、こうしてほしいことを送ってください。' +
+            '見ている画面と環境も一緒に届きます。',
+            { label: 'うまく動かないことを伝える', onClick: createReport }
+          ));
+          return;
+        }
+
+        rows.forEach(function (r) {
+          var row = document.createElement('div');
+          row.className = 'row-item';
+
+          var main = document.createElement('div');
+          main.className = 'row-main';
+
+          var title = document.createElement('div');
+          title.className = 'row-title';
+          title.textContent = '#' + r.number + ' ' + r.body;
+          main.appendChild(title);
+
+          var meta = document.createElement('div');
+          meta.className = 'row-meta';
+          meta.textContent = r.kindLabel + ' · ' +
+            String(r.at).substring(0, 10) + ' · ' +
+            (r.state === 'done' ? '返事あり' : '受付中');
+          main.appendChild(meta);
+
+          var open = document.createElement('div');
+          open.className = 'row-open';
+          open.appendChild(makeIcon(r.state === 'done' ? 'check' : 'inbox'));
+          open.appendChild(main);
+          row.appendChild(open);
+
+          if (r.answer) {
+            var answer = document.createElement('div');
+            answer.className = 'comment-body report-answer';
+            answer.textContent = r.answer;
+            main.appendChild(answer);
+          }
+
+          var state = document.createElement('span');
+          state.className = 'state' + (r.state === 'done' ? ' state-merged' : '');
+          state.textContent = r.state === 'done' ? '返事あり' : '受付中';
+          row.appendChild(state);
+
+          reportListEl.appendChild(row);
+        });
+      })
+      .withFailureHandler(function (err) {
+        reportListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiInquiryList();
   }
 
   // ===== 初期化 =====
@@ -4262,6 +4425,9 @@
   Object.keys(viewBtns).forEach(function (k) {
     viewBtns[k].addEventListener('click', function () { setIssueView(k); });
   });
+
+  document.getElementById('report-btn')
+    .addEventListener('click', function () { createReport(this); });
 
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;

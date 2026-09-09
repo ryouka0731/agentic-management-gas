@@ -41,6 +41,11 @@
           <span class="nav-label">使い方</span>
           <span class="nav-desc">はじめての方へ</span>
         </button>
+        <button class="nav-item" data-tab="report">
+          <span class="nav-label">不具合を伝える</span>
+          <span class="nav-count" id="count-reports" hidden></span>
+          <span class="nav-desc">うまく動かないときに</span>
+        </button>
       </div>
     </nav>
 
@@ -247,6 +252,16 @@
 
       <div class="panel" id="panel-help" hidden>
         <div class="guide" id="guide"></div>
+      </div>
+
+      <div class="panel panel-col" id="panel-report" hidden>
+        <div class="panel-actions">
+          <button id="report-btn" class="btn btn-primary">うまく動かないことを伝える</button>
+          <span class="row-meta">
+            見ている画面と使っている環境も一緒に送ります
+          </span>
+        </div>
+        <div class="list-area" id="report-list"></div>
       </div>
     </div>
 

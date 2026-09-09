@@ -30,6 +30,7 @@ const SOURCES = [
   'src/core/Staleness.js',
   'src/core/Issue.gs',
   'src/core/Project.gs',
+  'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
 ];
 

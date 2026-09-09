@@ -1313,3 +1313,84 @@ describe('ペインの幅', () => {
     expect(width()).toBe('');
   });
 });
+
+describe('不具合を伝える', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openReport(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="report"]').click();
+    return app;
+  }
+
+  it('左のメニューから開ける', () => {
+    openReport();
+    expect(document.getElementById('panel-report').hidden).toBe(false);
+  });
+
+  it('まだ何も無いときは次の一手を示す', () => {
+    openReport();
+    expect(document.getElementById('report-list').textContent)
+      .toContain('まだ何も伝えていません');
+  });
+
+  it('種類は選択肢から選ぶ', () => {
+    openReport();
+    document.getElementById('report-btn').click();
+
+    const sel = document.querySelector('#side-body select');
+    expect([...sel.options].map((o) => o.value))
+      .toEqual(['bug', 'request', 'question']);
+    expect(sel.value).toBe('bug');
+  });
+
+  it('見ている画面と環境を一緒に送る', () => {
+    const app = openReport();
+    document.getElementById('report-btn').click();
+
+    document.querySelector('#side-body textarea').value = '棒が伸びない';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiInquiryCreate').pop();
+    expect(call.args[0]).toBe('bug');
+    expect(call.args[1]).toBe('棒が伸びない');
+    expect(call.args[2]).toContain('画面: report');
+    expect(call.args[2]).toContain('環境: ');
+  });
+
+  it('送ると受付番号が返る', () => {
+    openReport({ apiInquiryCreate: { number: 7, kind: 'bug', body: 'x' } });
+    document.getElementById('report-btn').click();
+
+    document.querySelector('#side-body textarea').value = 'なにか';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(document.getElementById('snackbar').textContent).toContain('受付 #7');
+  });
+
+  it('送ったものと返事が並ぶ', () => {
+    openReport({
+      apiInquiryList: [{
+        number: 3, kind: 'bug', kindLabel: 'うまく動かない', body: '棒が伸びない',
+        by: 'me@example.com', state: 'done', context: '', answer: '直しました',
+        at: '2026-09-09T00:00:00.000Z', answeredAt: '2026-09-10T00:00:00.000Z',
+      }],
+    });
+
+    const row = document.querySelector('#report-list .row-item');
+    expect(row.textContent).toContain('#3 棒が伸びない');
+    expect(row.querySelector('.report-answer').textContent).toBe('直しました');
+    expect(row.querySelector('.state').textContent).toBe('返事あり');
+  });
+
+  it('受付中の件数を左に出す', () => {
+    openReport({
+      apiInquiryList: [
+        { number: 1, kind: 'bug', kindLabel: 'うまく動かない', body: 'a', state: 'open', at: '', answer: '' },
+        { number: 2, kind: 'bug', kindLabel: 'うまく動かない', body: 'b', state: 'done', at: '', answer: '' },
+      ],
+    });
+
+    expect(document.getElementById('count-reports').textContent).toBe('1');
+  });
+});
