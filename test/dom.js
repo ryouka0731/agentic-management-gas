@@ -88,7 +88,7 @@ const API_NAMES = [
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
-  'apiIssueArchivedList', 'apiArchiveKeepDays',
+  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen',
 ];
 
 /** よく使う既定の応答 */

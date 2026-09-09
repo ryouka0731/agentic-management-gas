@@ -161,6 +161,35 @@ function issueClose(number, prNumber) {
 }
 
 /**
+ * 完了を取り消して、やることに戻す。
+ *
+ * 早合点で完了にしてしまうことがある。取り消せないと、同じ内容の
+ * やることをもう1つ作ることになり、履歴が二重になる。
+ *
+ * カードは「作業中」に戻す。一度は手を付けたものなので、
+ * これからの箱に戻すと経緯が消える。
+ *
+ * @param {number} number
+ * @returns {object} 戻した後の行
+ */
+function issueReopen(number) {
+  var row = issueGet(number);
+  if (row.archivedAt) throw new Error('先に置き場から元に戻してください: #' + number);
+  if (String(row.state) === 'open') return row;
+
+  dbUpdate('issues', 'number', number, {
+    state: 'open',
+    closedAt: '',
+    updatedAt: new Date(),
+  });
+
+  if (dbFindOne('project_items', 'issueNumber', number)) {
+    projectMove(number, 'In Progress', 0);
+  }
+  return issueGet(number);
+}
+
+/**
  * やることを捨てて、置き場に移す。
  *
  * すぐには消さない。取り違えても ARCHIVE_KEEP_DAYS 日のうちなら戻せる。

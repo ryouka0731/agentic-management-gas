@@ -529,3 +529,65 @@ describe('やることを捨てる', () => {
     expect(typeof row.archivedAt).toBe('string');
   });
 });
+
+describe('完了を差し戻す', () => {
+  it('完了にしたものをやることに戻せる', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('戻す', '', []);
+    ctx.issueClose(a.number, null);
+
+    const back = ctx.issueReopen(a.number);
+
+    expect(back.state).toBe('open');
+    expect(back.closedAt).toBe('');
+  });
+
+  it('カードは作業中に戻る', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('板から戻す', '', []);
+    ctx.projectPlace(a.number, 'Backlog');
+    ctx.projectMove(a.number, 'Done', 0);
+    ctx.issueClose(a.number, null);
+
+    ctx.issueReopen(a.number);
+
+    expect(ctx.dbFindOne('project_items', 'issueNumber', a.number).column)
+      .toBe('In Progress');
+  });
+
+  it('板に無いものを戻しても落ちない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('板に無い', '', []);
+    ctx.issueClose(a.number, null);
+
+    expect(() => ctx.issueReopen(a.number)).not.toThrow();
+  });
+
+  it('もともと開いているものは変わらない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('開いたまま', '', []);
+
+    expect(ctx.issueReopen(a.number).state).toBe('open');
+  });
+
+  it('捨てたものは先に戻してからでないと開けない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('捨てた', '', []);
+    ctx.issueClose(a.number, null);
+    ctx.issueArchive(a.number);
+
+    expect(() => ctx.issueReopen(a.number)).toThrow(/置き場から/);
+  });
+
+  it('差し戻すと動きのなさも数え直される', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('数え直し', '', []);
+    ctx.dbUpdate('issues', 'number', a.number, {
+      updatedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+    });
+    ctx.issueClose(a.number, null);
+    ctx.issueReopen(a.number);
+
+    expect(ctx.stalenessOf(ctx.issueGet(a.number), new Date()).level).toBe(0);
+  });
+});

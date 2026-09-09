@@ -2860,6 +2860,16 @@
                 .apiIssueClose(issue.number);
             });
             row.appendChild(done);
+          } else {
+            var back = document.createElement('button');
+            back.className = 'icon-btn';
+            back.appendChild(makeIcon('back'));
+            back.title = '完了を取り消す';
+            back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
+            back.addEventListener('click', function () {
+              reopenIssue(issue.number);
+            });
+            row.appendChild(back);
           }
 
           row.appendChild(makeArchiveButton(issue, panelIssues));
@@ -2989,6 +2999,17 @@
           .apiIssueClose(issue.number);
       });
       extra.appendChild(done);
+    } else {
+      var back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'btn';
+      back.appendChild(makeIcon('back'));
+      back.appendChild(document.createTextNode('完了を取り消す'));
+      back.addEventListener('click', function () {
+        form.remove();
+        reopenIssue(issue.number);
+      });
+      extra.appendChild(back);
     }
 
     form.insertBefore(extra, form.querySelector('.inline-form-actions'));
@@ -3038,6 +3059,24 @@
       actions.appendChild(el);
     }
     el.textContent = text;
+  }
+
+  /**
+   * 完了を取り消して、やることに戻す。
+   *
+   * 早合点で完了にしてしまうことがある。取り消せないと、同じ内容の
+   * やることをもう1つ作ることになる。
+   *
+   * @param {number} number
+   */
+  function reopenIssue(number) {
+    google.script.run
+      .withSuccessHandler(function () {
+        showSnack('#' + number + ' をやることに戻しました', { kind: 'ok' });
+        refreshIssueViews();
+      })
+      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
+      .apiIssueReopen(number);
   }
 
   /**
@@ -3802,6 +3841,7 @@
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — 改訂版を正式版に反映してよいか尋ねるもの',
       'やること — 誰かがやるべき作業。文書に紐づく',
+      '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
     ]],
     ['基本の流れ', [

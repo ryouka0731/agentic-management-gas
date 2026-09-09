@@ -963,6 +963,16 @@ function apiIssueClose(number) {
 }
 
 /**
+ * 完了を取り消す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiIssueReopen(number) {
+  return issueToPlain_(issueReopen(number));
+}
+
+/**
  * やることを捨てる (Web App API)。
  *
  * すぐには消さず置き場に移す。取り違えても期限までなら戻せる。

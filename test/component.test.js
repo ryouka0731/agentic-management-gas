@@ -951,3 +951,62 @@ describe('確認依頼の中身の切り替え', () => {
     expect(tabs).toEqual(['やりとり', '変更の記録', '差分']);
   });
 });
+
+describe('完了を差し戻す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  const CLOSED = {
+    apiIssueList: [{
+      ...DEFAULTS.apiIssueList[0], number: 9, title: '終わったこと',
+      state: 'closed', parent: '',
+    }],
+  };
+
+  it('完了したものには戻すボタンが出る', () => {
+    openIssues(CLOSED);
+    const row = document.querySelector('#issue-list .row-item');
+
+    expect(row.querySelector('.icon-btn.ok')).toBe(null);
+    expect(row.getAttribute('aria-label')).toBe(null);
+    expect([...row.querySelectorAll('.icon-btn')]
+      .some((b) => (b.getAttribute('aria-label') || '').includes('完了を取り消す')))
+      .toBe(true);
+  });
+
+  it('押すと開き直す', () => {
+    const app = openIssues(CLOSED);
+
+    [...document.querySelectorAll('#issue-list .icon-btn')]
+      .find((b) => (b.getAttribute('aria-label') || '').includes('完了を取り消す'))
+      .click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueReopen').pop().args[0]).toBe(9);
+    expect(document.getElementById('snackbar').textContent).toContain('やることに戻しました');
+  });
+
+  it('まだ終わっていないものには出ない', () => {
+    openIssues();
+    const row = document.querySelector('#issue-list .row-item');
+
+    expect([...row.querySelectorAll('.icon-btn')]
+      .some((b) => (b.getAttribute('aria-label') || '').includes('完了を取り消す')))
+      .toBe(false);
+    expect(row.querySelector('.icon-btn.ok')).toBeTruthy();
+  });
+
+  it('右のパネルからも戻せる', () => {
+    const app = openIssues(CLOSED);
+    document.querySelector('#issue-list .row-open').click();
+
+    [...document.querySelectorAll('#side-body .btn')]
+      .find((b) => b.textContent.includes('完了を取り消す')).click();
+
+    expect(app.calls.some((c) => c.name === 'apiIssueReopen')).toBe(true);
+  });
+});
