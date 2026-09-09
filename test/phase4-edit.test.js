@@ -474,3 +474,49 @@ describe('画面に渡せる形か', () => {
     expect(issues[0].dueDate).toContain('2026-09-30');
   });
 });
+
+describe('改訂版を作って確認を依頼する', () => {
+  it('記録が1件も無い文書からでも改訂版を作れる', () => {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.liveHtml = (fileId) => fake._docs.get(fileId) || '';
+    ctx.renderDoc = ctx.liveHtml;
+    ctx.writeHtmlToDoc = (fileId, h) => { fake._docs.set(fileId, h); };
+    ctx.liveCacheInvalidate = () => {};
+
+    const config = ctx.repoInit('agentic-management');
+    const fileId = fake._createDoc('新しい規程', '<p>第1条</p>\n', config.mainId);
+    ctx.repoRegisterFile(fileId, '新しい規程.doc');
+
+    // 登録しただけで、まだ一度も記録していない状態。
+    // mainは保護されていて自分では記録できないため、ここで詰まってはいけない
+    expect(ctx.headCommit(fileId, 'main')).toBeNull();
+    expect(() => ctx.apiBranchCreate('見直し', fileId)).not.toThrow();
+    expect(ctx.headCommit(fileId, 'main')).not.toBeNull();
+  });
+
+  it('名前に空白や記号があっても作れる', () => {
+    const { ctx, fileId } = setup();
+    expect(() => ctx.apiBranchCreate('第7条の見直し (法務確認あり)', fileId)).not.toThrow();
+  });
+
+  it('区切り文字は名前に使えない', () => {
+    const { ctx, fileId } = setup();
+    expect(() => ctx.apiBranchCreate('a/b', fileId)).toThrow(/使えない文字/);
+  });
+
+  it('作った改訂版でそのまま確認を依頼できる', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.apiBranchCreate('見直し', fileId);
+
+    const workFileId = ctx.branchWorkingFileId('見直し', fileId);
+    expect(workFileId).toBeTruthy();
+
+    fake._docs.set(workFileId, '<p>第1条 改訂</p>\n');
+    ctx.commitFile(workFileId, '見直し', '直した', null);
+
+    const pr = ctx.apiPrCreate('第1条を直した', '', '見直し', fileId);
+    expect(pr.number).toBe(1);
+    expect(() => ctx.apiPrPreview(pr.number)).not.toThrow();
+  });
+});

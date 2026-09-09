@@ -704,3 +704,20 @@ describe('やることの中身と操作', () => {
     expect(sections).toBe((sidebar.match(/nav-section/g) || []).length);
   });
 });
+
+describe('改訂版を作る導線', () => {
+  const js = read('src/ui/app.js.html');
+
+  it('改訂中の版タブからも作れる', () => {
+    // 文書を選んでいるのに「文書を開いてから」と言われるのは行き止まり
+    const fn = js.slice(js.indexOf("branchCreateBtn.addEventListener"),
+      js.indexOf('bulkCommitBtn.addEventListener'));
+
+    expect(fn).toContain('if (current.docFileId)');
+    expect(fn).toContain('createDraft()');
+  });
+
+  it('名前に使えない文字を先に伝える', () => {
+    expect(js).toContain('は使えません');
+  });
+});

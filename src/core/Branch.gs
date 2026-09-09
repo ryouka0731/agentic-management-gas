@@ -8,7 +8,9 @@
  * @returns {boolean}
  */
 function branchNameValid_(name) {
-  return /^[A-Za-z0-9ぁ-んァ-ヶ一-龠々ー_\-]{1,80}$/.test(String(name || ''));
+  // 区切り文字と制御文字だけを断る。空白や括弧まで断ると、人が普通に
+  // 付けたい名前 (「第7条の見直し (法務確認あり)」など) が通らない
+  return /^[^\/\\\n\r\t]{1,80}$/.test(String(name || ''));
 }
 
 /**
@@ -57,7 +59,9 @@ function branchWorkingFileId(name, mainFileId) {
  */
 function branchCreate(name, fileId) {
   if (!branchNameValid_(name)) {
-    throw new Error('ブランチ名に使えない文字が含まれています: ' + name);
+    throw new Error(
+      '名前に使えない文字が含まれています (/ と \\ は使えません): ' + name
+    );
   }
   if (dbFindOne('branches', 'name', name)) {
     throw new Error('同名のブランチが既に存在します: ' + name);
@@ -70,10 +74,16 @@ function branchCreate(name, fileId) {
   }
 
   var head = headCommit(fileId, 'main');
+
   if (!head) {
-    throw new Error(
-      'mainにコミットがありません。ブランチを作る前に一度コミットしてください'
-    );
+    /*
+     * 一度も記録していない文書から分岐しようとしている。
+     *
+     * main は保護されていて人の手では記録できないため、ここで断ると
+     * 行き止まりになる (登録したばかりの文書は必ずこの状態になる)。
+     * 分岐の基準として、いまの内容を最初の記録として残す。
+     */
+    head = commitFile(fileId, 'main', '最初の記録', null);
   }
 
   var branchesFolder = DriveApp.getFolderById(repoConfig().branchesId);

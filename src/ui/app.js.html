@@ -1628,7 +1628,7 @@
 
     openInlineForm(
       'この文書の改訂版を作る',
-      [{ name: 'name', label: '改訂版の名前 (例: 在宅勤務規定の見直し)', required: true }],
+      [{ name: 'name', label: '改訂版の名前 (例: 第7条の見直し)。/ と \\ は使えません', required: true }],
       '作る',
       function (v) {
         google.script.run
@@ -3471,7 +3471,12 @@
   modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
   draftCreateBtn.addEventListener('click', createDraft);
   branchCreateBtn.addEventListener('click', function () {
-    showSnack('文書を開いてから「この文書の改訂版」で作ってください');
+    if (current.docFileId) {
+      switchTab('drafts');
+      createDraft();
+      return;
+    }
+    showSnack('先に文書を選んでください。文書を開くと改訂版を作れます');
     switchTab('docs');
   });
   bulkCommitBtn.addEventListener('click', bulkCommit);
