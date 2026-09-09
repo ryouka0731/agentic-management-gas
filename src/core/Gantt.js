@@ -26,6 +26,15 @@ function ganttStartOfDay(value) {
 }
 
 /**
+ * 目盛りの末尾に足す余白の日数。
+ *
+ * @returns {number}
+ */
+function GANTT_TAIL_DAYS() {
+  return 14;
+}
+
+/**
  * やることを工程表の棒に並べる。
  *
  * 期限が無いものは棒を持たない。始まりは作成日、終わりは期限とし、
@@ -69,11 +78,17 @@ function ganttLayout(issues, today) {
     });
   }
 
-  if (!rows.length) return { from: now, to: now, days: 1, rows: [] };
+  if (!rows.length) {
+    return { from: now, to: now, days: 1, todayOffset: 0, rows: [] };
+  }
 
   // 今日が範囲の外にあっても線を引けるように含める
   if (now < from) from = now;
   if (now > to) to = now;
+
+  // 末尾に余白の日を足す。目盛りが最後の期限で終わっていると、棒を
+  // 掴んで伸ばそうとしても伸ばす先の列が無く、縮められるだけになる
+  to += GANTT_TAIL_DAYS() * GANTT_DAY_MS();
 
   var days = Math.round((to - from) / GANTT_DAY_MS()) + 1;
 

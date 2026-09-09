@@ -15,7 +15,9 @@ describe('ganttLayout', () => {
     const g = gas.ganttLayout(
       [issue(1, '2026-09-01', '2026-09-05')], '2026-09-01');
 
-    expect(g.days).toBe(5);
+    // 棒は5日分。目盛りはその後ろに余白の日が続く
+    expect(g.rows[0].span).toBe(5);
+    expect(g.days).toBe(5 + gas.GANTT_TAIL_DAYS());
     expect(g.rows[0].offset).toBe(0);
     expect(g.rows[0].span).toBe(5);
     expect(g.rows[0].hasDue).toBe(true);
@@ -39,7 +41,7 @@ describe('ganttLayout', () => {
       issue(2, '2026-09-05', '2026-09-10'),
     ], '2026-09-01');
 
-    expect(g.days).toBe(10);
+    expect(g.days).toBe(10 + gas.GANTT_TAIL_DAYS());
     expect(g.rows[1].offset).toBe(4);
     expect(g.rows[1].span).toBe(6);
   });
@@ -58,7 +60,7 @@ describe('ganttLayout', () => {
     const g = gas.ganttLayout([issue(1, '2026-09-01', '2026-09-03')], '2026-09-10');
 
     expect(g.todayOffset).toBe(9);
-    expect(g.days).toBe(10);
+    expect(g.days).toBe(10 + gas.GANTT_TAIL_DAYS());
   });
 
   it('期限が作成日より前でも棒が消えない', () => {
@@ -116,5 +118,20 @@ describe('開始日', () => {
 
     expect(g.rows[0].offset).toBe(0);
     expect(g.rows[0].hasStart).toBe(false);
+  });
+});
+
+describe('目盛りの末尾の余白', () => {
+  it('最後の期限より後ろにも列がある', () => {
+    const g = gas.ganttLayout(
+      [issue(1, '2026-09-01', '2026-09-05')], '2026-09-01');
+    const bar = g.rows[0];
+
+    // ここが無いと、棒を掴んで伸ばす先の列が無く、縮められるだけになる
+    expect(g.days - (bar.offset + bar.span)).toBe(gas.GANTT_TAIL_DAYS());
+  });
+
+  it('やることが無いときは余白も要らない', () => {
+    expect(gas.ganttLayout([], '2026-09-01').days).toBe(1);
   });
 });

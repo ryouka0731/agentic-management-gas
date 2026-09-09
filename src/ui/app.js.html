@@ -351,6 +351,13 @@
   function makeResizable(handle, cssVar, key, measure, limit) {
     var dragging = false;
 
+    function forget() {
+      document.documentElement.style.removeProperty(cssVar);
+      try {
+        window.localStorage.removeItem(key);
+      } catch (e) { /* 消せなくても既定には戻る */ }
+    }
+
     function set(px) {
       var w = Math.min(limit.max, Math.max(limit.min, Math.round(px)));
       document.documentElement.style.setProperty(cssVar, w + 'px');
@@ -368,10 +375,38 @@
       if (saved) set(saved);
     } catch (e) { /* 既定のままでよい */ }
 
+    /**
+     * 掴むのをやめる。
+     *
+     * 離した合図は1つに頼れない。枠の外で離すと pointerup が届かず、
+     * 掴んだまま張り付いて、その後は触れるだけで幅が動いてしまう。
+     * 取り消し (pointercancel) と捕捉の喪失でも必ず外す
+     *
+     * @param {PointerEvent} e
+     */
+    function stop(e) {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch (err) { /* 既に外れていることがある */ }
+
+      if (typeof e.clientX === 'number') save(set(measure(e)));
+    }
+
     handle.addEventListener('pointerdown', function (e) {
+      // 右クリックや副ボタンでは掴まない
+      if (e.button > 0 || e.isPrimary === false) return;
+
       dragging = true;
       handle.classList.add('dragging');
-      if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId);
+
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (err) { /* 捕捉できなくても window 側で拾う */ }
+
       e.preventDefault();
     });
 
@@ -379,12 +414,20 @@
       if (dragging) set(measure(e));
     });
 
-    handle.addEventListener('pointerup', function (e) {
-      if (!dragging) return;
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    handle.addEventListener('lostpointercapture', function () {
       dragging = false;
       handle.classList.remove('dragging');
-      if (handle.releasePointerCapture) handle.releasePointerCapture(e.pointerId);
-      save(set(measure(e)));
+    });
+
+    // 枠の外で離されたときの受け皿
+    window.addEventListener('pointerup', stop);
+
+    // 二度押しで元の幅に戻す。行き過ぎたときに戻す手立てが要る
+    handle.addEventListener('dblclick', function () {
+      forget();
+      showSnack('幅を元に戻しました');
     });
 
     handle.addEventListener('keydown', function (e) {
@@ -394,6 +437,7 @@
 
       if (e.key === 'ArrowLeft') save(set(now - 16));
       else if (e.key === 'ArrowRight') save(set(now + 16));
+      else if (e.key === 'Home') forget();
       else return;
 
       e.preventDefault();
@@ -700,9 +744,8 @@
     }
 
     if (kind === 'board') {
-      var board = document.createElement('div');
-      board.className = 'board';
-
+      // 器そのものが板なので、中にもう1枚板を作らない。作ると4列の中の
+      // 1列に4列を押し込むことになり、右が見切れる (実際に踏んだ)
       for (var c = 0; c < 4; c++) {
         var col = document.createElement('div');
         col.className = 'board-column';
@@ -715,9 +758,8 @@
           card.appendChild(bar('45%', 10));
           col.appendChild(card);
         }
-        board.appendChild(col);
+        container.appendChild(col);
       }
-      container.appendChild(board);
       return;
     }
 
@@ -3183,6 +3225,34 @@
       extra.appendChild(back);
     }
 
+    // 一覧・ボード・工程表のどこから開いても捨てられるようにする。
+    // 確かめの帯は入力パネルの中に出す (裏に隠れると押せない)
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = '#' + issue.number + ' を捨てる';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+              closeSide();
+              refreshIssueViews();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiIssueArchive(issue.number);
+        });
+    });
+    extra.appendChild(del);
+
     form.insertBefore(extra, form.querySelector('.inline-form-actions'));
   }
 
@@ -3453,6 +3523,9 @@
    * @param {Date} today
    * @returns {object}
    */
+  /** 目盛りの末尾に足す余白の日数。src/core/Gantt.js と同じ値 */
+  var GANTT_TAIL_DAYS = 14;
+
   function ganttLayout(issues, today) {
     var DAY = 24 * 60 * 60 * 1000;
 
@@ -3469,7 +3542,9 @@
     var to = null;
 
     (issues || []).forEach(function (issue) {
-      var start = startOfDay(issue.createdAt);
+      // 開始日を入れていればそれを使う。無ければ作った日を仮の起点にする
+      var planned = startOfDay(issue.startDate);
+      var start = planned !== null ? planned : startOfDay(issue.createdAt);
       var due = startOfDay(issue.dueDate);
       if (start === null) return;
 
@@ -3489,6 +3564,10 @@
 
     if (now < from) from = now;
     if (now > to) to = now;
+
+    // 末尾に余白の日を足す。目盛りが最後の期限で終わっていると、棒を
+    // 掴んで伸ばそうとしても伸ばす先の列が無く、縮められるだけになる
+    to += GANTT_TAIL_DAYS * DAY;
 
     rows.forEach(function (r) {
       r.offset = Math.round((r._start - from) / DAY);
@@ -3621,7 +3700,7 @@
    * @param {object} g ganttLayout の結果
    * @param {number} colWidth 1日の幅
    */
-  function makeBarDraggable(bar, row, g, colWidth) {
+  function makeBarDraggable(bar, row, g, colWidth, hostEl) {
     var mode = null;
     var startX = 0;
     var origin = { offset: row.offset, span: row.span };
@@ -3679,7 +3758,11 @@
       bar.classList.remove('dragging');
       bar.releasePointerCapture(e.pointerId);
 
-      if (row.offset === origin.offset && row.span === origin.span) return;
+      // 動かさずに離したなら、押したのだと解して中身を開く
+      if (row.offset === origin.offset && row.span === origin.span) {
+        if (was === 'move') openIssueByNumber(row.number, hostEl);
+        return;
+      }
 
       var patch = { dueDate: ganttDateAt(g.from, row.offset + row.span - 1) };
       if (was !== 'end') patch.startDate = ganttDateAt(g.from, row.offset);
@@ -3834,9 +3917,9 @@
             bar.textContent = r.assignee ? String(r.assignee).replace(/@.*$/, '') : '';
             bar.title = '#' + r.number + ' ' + r.title +
               (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
-              ' — 端を掴むと期限、真ん中を掴むと全体を動かせます';
+              ' — 押すと中身を開きます。端を掴むと期限、真ん中を掴むと全体を動かせます';
             track.appendChild(bar);
-            makeBarDraggable(bar, r, g, COL);
+            makeBarDraggable(bar, r, g, COL, row);
 
             row.appendChild(track);
             rows.appendChild(row);

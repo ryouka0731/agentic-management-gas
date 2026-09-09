@@ -179,6 +179,11 @@ body {
 .sidebar {
   width: var(--sidebar-w);
   flex: 0 0 var(--sidebar-w);
+  /*
+   * flex の既定 (min-width: auto) は中身より小さくならない。指定しないと
+   * 幅を狭める操作だけが効かず「広げられるのに縮まない」状態になる
+   */
+  min-width: 0;
   border-right: 1px solid var(--line);
   background: var(--bg-2);
   overflow-y: auto;

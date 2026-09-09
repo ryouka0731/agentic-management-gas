@@ -1172,3 +1172,144 @@ describe('確認してもらう人', () => {
     expect(document.querySelector('#pr-detail .reviewer-row .icon-btn')).toBe(null);
   });
 });
+
+describe('読み込み中の骨組み', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('板の中にもう1枚板を作らない', () => {
+    let snapshot = '';
+
+    // 応答を返す直前が、骨組みが出ている瞬間
+    mount({
+      apiProjectBoard: () => {
+        snapshot = document.getElementById('board').innerHTML;
+        return DEFAULTS.apiProjectBoard;
+      },
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+
+    // 器そのものが4列の板。中に板を作ると1列に4列を押し込むことになる
+    expect(snapshot).not.toContain('class="board"');
+    expect(snapshot.split('board-column').length - 1).toBe(4);
+  });
+
+  it('骨組みは実物と同じ器で作る', () => {
+    let snapshot = '';
+
+    mount({
+      apiProjectBoard: () => {
+        snapshot = document.getElementById('board').innerHTML;
+        return DEFAULTS.apiProjectBoard;
+      },
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+
+    // 形が違うと、出た瞬間に位置が飛ぶ
+    expect(snapshot).toContain('board-card');
+  });
+});
+
+describe('ペインの幅', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.style.removeProperty('--sidebar-w');
+  });
+
+  /** jsdom には PointerEvent が無いので、同じ形のものを送る */
+  function pointer(type, x) {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.clientX = x;
+    ev.pointerId = 1;
+    return ev;
+  }
+
+  function handle() {
+    return document.getElementById('resizer');
+  }
+
+  function width() {
+    return document.documentElement.style.getPropertyValue('--sidebar-w');
+  }
+
+  it('広げられる', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointermove', 400));
+
+    expect(width()).toBe('400px');
+  });
+
+  it('縮められる', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointermove', 200));
+
+    expect(width()).toBe('200px');
+  });
+
+  it('限度を超えない', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+
+    handle().dispatchEvent(pointer('pointermove', 10));
+    expect(width()).toBe('180px');
+
+    handle().dispatchEvent(pointer('pointermove', 9999));
+    expect(width()).toBe('560px');
+  });
+
+  it('離したら追いかけるのをやめる', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointerup', 300));
+
+    handle().dispatchEvent(pointer('pointermove', 500));
+    expect(width()).toBe('300px');
+  });
+
+  it('枠の外で離しても張り付かない', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+
+    // 枠の外で離すと境界には pointerup が届かない
+    window.dispatchEvent(pointer('pointerup', 320));
+
+    handle().dispatchEvent(pointer('pointermove', 500));
+    expect(width()).toBe('320px');
+  });
+
+  it('取り消されても張り付かない', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointercancel', 300));
+
+    handle().dispatchEvent(pointer('pointermove', 500));
+    expect(width()).toBe('300px');
+  });
+
+  it('二度押しで元の幅に戻る', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointerup', 420));
+    expect(width()).toBe('420px');
+
+    handle().dispatchEvent(new window.Event('dblclick', { bubbles: true }));
+
+    expect(width()).toBe('');
+    expect(window.localStorage.getItem('sidebarWidth')).toBe(null);
+  });
+
+  it('キーボードでも変えられる', () => {
+    mount();
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointerup', 300));
+
+    handle().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    expect(width()).toBe('284px');
+
+    handle().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home' }));
+    expect(width()).toBe('');
+  });
+});

@@ -932,3 +932,15 @@ describe('一覧の行の幅', () => {
     expect(rule).not.toContain('width: 100%');
   });
 });
+
+describe('ペインの幅の縮み方', () => {
+  const css = read('src/ui/app.css.html');
+
+  it('幅を変えられるペインは中身より小さくなれる', () => {
+    // flex の既定 (min-width: auto) のままだと、広げられるのに縮まない
+    ['.sidebar', '.graph-pane'].forEach((sel) => {
+      const at = css.indexOf('\n' + sel + ' {');
+      expect(css.slice(at, css.indexOf('}', at))).toContain('min-width: 0');
+    });
+  });
+});
