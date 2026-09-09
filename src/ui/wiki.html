@@ -187,8 +187,19 @@
       </div>
 
       <div class="panel" id="panel-pulls" hidden>
-        <div class="history-list" id="pr-list"></div>
-        <div class="diff-view" id="pr-detail"></div>
+        <div class="graph-split">
+          <div class="graph-pane" id="pr-pane">
+            <div class="history-list" id="pr-list"></div>
+          </div>
+
+          <div class="resizer" id="pr-resizer" role="separator"
+               aria-orientation="vertical" tabindex="0"
+               aria-label="一覧と中身の幅を変える"></div>
+
+          <div class="diff-pane">
+            <div class="diff-view" id="pr-detail"></div>
+          </div>
+        </div>
       </div>
 
       <div class="panel panel-col" id="panel-issues" hidden>

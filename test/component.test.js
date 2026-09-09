@@ -887,3 +887,53 @@ describe('押す前の補足', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('確認依頼の一覧', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openPulls() {
+    const app = mount();
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  }
+
+  it('題名と行き先が行に出る', () => {
+    openPulls();
+    const row = document.querySelector('#pr-list .row-item');
+
+    expect(row.querySelector('.row-title').textContent).toBe('#1 第2条の改訂');
+    expect(row.querySelector('.row-meta').textContent).toContain('→ 正式版');
+    expect(row.querySelector('.state').textContent).toBe('確認待ち');
+  });
+
+  it('行はボタンでも左寄せ', () => {
+    openPulls();
+    const row = document.querySelector('#pr-list .row-item');
+
+    // ボタンの既定は中央寄せ。明示しないとここだけ真ん中に寄る
+    expect(row.tagName).toBe('BUTTON');
+    expect(window.getComputedStyle(row).textAlign).toBe('left');
+  });
+
+  it('一覧の幅は掴んで変えられる', () => {
+    openPulls();
+    const handle = document.getElementById('pr-resizer');
+
+    handle.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    const move = new window.Event('pointermove', { bubbles: true });
+    move.clientX = 600;
+    handle.dispatchEvent(move);
+
+    expect(document.documentElement.style.getPropertyValue('--pr-pane-w'))
+      .toMatch(/px$/);
+  });
+
+  it('履歴の幅とは別に覚える', () => {
+    openPulls();
+    const css = document.querySelector('style').textContent;
+
+    // 同じ変数を使うと、片方を動かしたらもう片方も動く
+    expect(css).toContain('--pr-pane-w');
+    expect(css).toContain('#pr-pane { flex-basis: var(--pr-pane-w); }');
+  });
+});

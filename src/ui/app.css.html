@@ -68,6 +68,8 @@
   --gantt-name-w: 220px;
   /* 履歴と差分の分け目。掴んで動かせる */
   --graph-pane-w: 46%;
+  /* 確認依頼の一覧と中身の分け目 */
+  --pr-pane-w: 38%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -1223,6 +1225,8 @@ button:disabled {
  * 履歴の一覧は、確認依頼の一覧と器を共用している。あちらは 320px 固定だが、
  * こちらは見出しと同じ幅でなければ列がずれるため、幅の指定を打ち消す。
  */
+#pr-pane { flex-basis: var(--pr-pane-w); }
+
 .graph-pane .history-list {
   flex: 1;
   width: auto;
@@ -1512,9 +1516,14 @@ button:disabled {
  * 自前の面を持たせ、器のほうを一段沈める。地の上に直接置くと、
  * 触れたときに面の色を変えるしかなくなり、載っている面と同化する。
  */
+/*
+ * 行は <button> のこともある。ボタンの既定は中央寄せなので、
+ * 明示しないと確認依頼の一覧だけ文字が真ん中に寄る (実際に踏んだ)
+ */
 .row-item {
   display: flex;
   align-items: center;
+  text-align: left;
   gap: var(--sp-2);
   margin: 0 var(--sp-4) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
@@ -1523,6 +1532,9 @@ button:disabled {
   box-shadow: var(--hairline), var(--elev-1);
   transition: box-shadow var(--motion) ease-out, transform var(--motion) ease-out;
 }
+
+/* ボタンの既定 (text-align: center) より強く指す */
+button.row-item, button.commit-item { text-align: left; }
 
 .row-item:hover {
   box-shadow: var(--hairline), var(--elev-2);

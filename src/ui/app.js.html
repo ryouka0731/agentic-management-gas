@@ -3995,6 +3995,12 @@
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });
 
+  makeResizable(document.getElementById('pr-resizer'), '--pr-pane-w', 'prPaneWidth',
+    function (e) {
+      var box = document.querySelector('#panel-pulls .graph-split').getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 280, max: 1200 });
+
   makeResizable(diffResizer, '--graph-pane-w', 'graphPaneWidth',
     function (e) {
       var box = document.querySelector('.graph-split').getBoundingClientRect();
