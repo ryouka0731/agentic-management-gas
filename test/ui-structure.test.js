@@ -616,3 +616,65 @@ describe('面と面の見分け', () => {
     expect(area).toContain('var(--bg-2)');
   });
 });
+
+describe('やることの中身と操作', () => {
+  const js = read('src/ui/app.js.html');
+  const css = read('src/ui/app.css.html');
+  const html = read('src/ui/wiki.html');
+
+  it('見積もりと工数を入力できる', () => {
+    ["label: '見積もり (規模。数値)'", "label: '予定工数 (時間)'",
+     "label: '実績工数 (時間)'"].forEach((f) => expect(js).toContain(f));
+  });
+
+  it('親子にできて、子の工数を親に足し上げる', () => {
+    expect(js).toContain("label: '親のやること (番号。空なら親なし)'");
+    expect(js).toContain('function issueTreeRows(');
+    expect(js).toContain('function rollupEffort(');
+  });
+
+  it('操作は形と色で意味を示す', () => {
+    // 削除は赤いゴミ箱、完了は緑のチェック、編集はペン
+    expect(js).toContain("makeIcon('trash')");
+    expect(js).toContain("del.className = 'btn btn-danger'");
+    expect(js).toContain("done.className = 'icon-btn ok'");
+    expect(js).toContain("edit.appendChild(makeIcon('pencil'))");
+
+    expect(css).toContain('.btn-danger { color: var(--danger); }');
+    expect(css).toContain('.icon-btn.ok:hover { color: var(--success); }');
+  });
+
+  it('確認依頼のアイコンを分かりやすいものにする', () => {
+    expect(js).toContain("pulls: 'clipboard-check'");
+  });
+
+  it('文書はカードで並べる', () => {
+    expect(js).toContain("card.className = 'doc-card'");
+    const rule = css.slice(css.indexOf('.doc-card {'), css.indexOf('}', css.indexOf('.doc-card {')));
+    expect(rule).toContain('box-shadow');
+  });
+
+  it('進め方は案内として別に置く', () => {
+    // 文書の一覧と混ざると、どれが対象でどれが説明か読めない
+    expect(html).toContain('class="guideline"');
+    expect(html).toContain('進め方');
+
+    const docList = html.indexOf('id="doc-list"');
+    const guide = html.indexOf('class="guideline"');
+    expect(docList).toBeLessThan(guide);
+  });
+
+  it('工程表に日の補助線を敷く', () => {
+    const start = css.indexOf('\n.gantt-track {');
+    const track = css.slice(start, css.indexOf('\n}', start));
+
+    // 土日の塗り・週の区切り・日の目安の3つ
+    expect((track.match(/repeating-linear-gradient/g) || []).length).toBe(3);
+  });
+
+  it('左のメニューはすべて見出しの下にある', () => {
+    const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
+    const sections = (sidebar.match(/<h2>/g) || []).length;
+    expect(sections).toBe((sidebar.match(/nav-section/g) || []).length);
+  });
+});

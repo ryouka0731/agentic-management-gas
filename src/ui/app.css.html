@@ -1363,31 +1363,6 @@ button:disabled {
  * 文書の一覧 (ホーム)
  * ===================================================================== */
 
-.doc-card {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-4);
-}
-
-.doc-open {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex: 1;
-  min-width: 0;
-  min-height: 48px;
-  padding: var(--sp-2) var(--sp-3);
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  transition: background-color var(--motion) ease-out;
-}
-
-.doc-open:hover { background: var(--bg-3); }
-
 .doc-name {
   flex: 1;
   min-width: 0;
@@ -1570,6 +1545,13 @@ button.gantt-name:hover { color: var(--accent); }
 
 .gantt-scale { align-items: end; }
 
+/* 目盛りと棒の列がずれて見えないよう、日の区切りを同じ位置に敷く */
+.gantt-head:last-of-type .gantt-scale {
+  background-image: repeating-linear-gradient(to right,
+    var(--line) 0 1px, transparent 1px var(--gantt-col));
+  background-position: calc(var(--gantt-col) * var(--week-offset) * -1) 0;
+}
+
 .gantt-day {
   font-size: 10px;
   color: var(--ink-2);
@@ -1590,17 +1572,24 @@ button.gantt-name:hover { color: var(--accent); }
   align-items: center;
 
   /*
-   * 目盛りは週ごとの薄い線と、土日の薄い塗りだけにする。
-   * 日ごとに線を引くと線の数が情報量を上回る。
+   * 目盛りは3層。日の線は薄く、週の線は濃く、土日は塗る。
+   * 濃さに差をつけないと線の数が情報量を上回るが、日の線が無いと
+   * 期日までの日数を目で数えられない。
    * --week-offset は先頭の日から月曜までのずれ (画面側が入れる)
    */
   background-image:
+    /* 土日の薄い塗り */
     repeating-linear-gradient(to right,
       transparent 0 calc(var(--gantt-col) * 5),
       var(--bg-2) calc(var(--gantt-col) * 5) calc(var(--gantt-col) * 7)),
+    /* 週の区切り (濃いめ) */
+    repeating-linear-gradient(to right,
+      var(--line-strong) 0 1px,
+      transparent 1px calc(var(--gantt-col) * 7)),
+    /* 日の目安 (薄く)。期日までの日数を目で数えられるようにする */
     repeating-linear-gradient(to right,
       var(--line) 0 1px,
-      transparent 1px calc(var(--gantt-col) * 7));
+      transparent 1px var(--gantt-col));
   background-position: calc(var(--gantt-col) * var(--week-offset) * -1) 0;
 }
 
@@ -1969,4 +1958,136 @@ button.gantt-name:hover { color: var(--accent); }
 
 .card-foot .row-meta { flex: 1; }
 .board-card .labels { margin: 0; }
+
+/* =====================================================================
+ * 文書のカード
+ * ===================================================================== */
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-4) var(--sp-3);
+  padding: var(--sp-2);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+  transition: box-shadow var(--motion) ease-out, transform var(--motion) ease-out;
+}
+
+.doc-card:hover {
+  box-shadow: var(--hairline), var(--elev-2);
+  transform: translateY(-2px);
+}
+
+.doc-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.doc-head { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; }
+.doc-meta { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.chip-accent { background: var(--accent-bg); color: var(--accent); }
+
+/* =====================================================================
+ * 進め方の案内
+ *
+ * 文書の一覧と混ざらないよう、案内であることを明示して下に置く。
+ * ===================================================================== */
+
+.guideline {
+  margin: 0 var(--sp-4) var(--sp-4);
+  border-radius: 10px;
+  background: var(--accent-bg);
+  overflow: hidden;
+}
+
+.guideline-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+}
+
+.guideline-tag {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.guideline-lead { flex: 1; min-width: 0; }
+.guideline-mark { flex: 0 0 auto; color: var(--ink-2); font-size: 11px; }
+.guideline-body { padding: 0 var(--sp-4) var(--sp-4); }
+
+/* =====================================================================
+ * 入れ子・工数・操作のしるし
+ * ===================================================================== */
+
+/* 子は左に寄せ、親との関係を字下げで示す */
+.row-item.nested { position: relative; }
+
+.row-item.nested::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--sp-2);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.effort .icon { width: 12px; height: 12px; flex: 0 0 12px; }
+
+/* 操作は形と色で意味を示す。削除は赤、完了は緑 */
+.icon-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  transition: background-color var(--motion) ease-out, color var(--motion) ease-out;
+}
+
+.icon-btn:hover { background: var(--bg-3); color: var(--ink); }
+.icon-btn.ok:hover { color: var(--success); }
+.icon-btn.danger:hover { color: var(--danger); }
+
+.btn-danger { color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
+.btn-ok { color: var(--success); }
+.btn-ok:hover:not(:disabled) { background: var(--success-bg); }
 </style>

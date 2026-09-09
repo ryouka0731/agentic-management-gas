@@ -36,6 +36,7 @@
       </div>
 
       <div class="nav-section">
+        <h2>困ったとき</h2>
         <button class="nav-item" data-tab="help">
           <span class="nav-label">使い方</span>
           <span class="nav-desc">はじめての方へ</span>
@@ -74,47 +75,53 @@
       </div>
 
       <div class="panel panel-col" id="panel-docs">
-        <div class="flow" id="flow">
-          <p class="flow-lead">
-            文書を直接なおさず、<strong>改訂版</strong>で変更し、
-            <strong>確認依頼</strong>を経て<strong>正式版</strong>に反映します。
-          </p>
-          <ol class="flow-steps">
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="issues">
-                <span class="flow-name">やること</span>
-                <span class="flow-count" id="flow-issues">—</span>
-              </button>
-              <span class="flow-desc">何をするか決める</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="branches">
-                <span class="flow-name">改訂版</span>
-                <span class="flow-count" id="flow-branches">—</span>
-              </button>
-              <span class="flow-desc">文書を直す</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="pulls">
-                <span class="flow-name">確認依頼</span>
-                <span class="flow-count" id="flow-prs">—</span>
-              </button>
-              <span class="flow-desc">見てもらう</span>
-            </li>
-            <li class="flow-arrow" aria-hidden="true">→</li>
-            <li class="flow-step">
-              <button class="flow-btn" data-tab="docs">
-                <span class="flow-name">正式版</span>
-                <span class="flow-count" id="flow-docs">—</span>
-              </button>
-              <span class="flow-desc">反映される</span>
-            </li>
-          </ol>
-        </div>
-
         <div class="list-area" id="doc-list"></div>
+
+        <aside class="guideline" id="guideline">
+          <button class="guideline-head" id="guideline-toggle" aria-expanded="true">
+            <span class="guideline-tag">進め方</span>
+            <span class="guideline-lead">
+              文書を直接なおさず、改訂版で変更し、確認依頼を経て正式版に反映します
+            </span>
+            <span class="guideline-mark" aria-hidden="true">▾</span>
+          </button>
+
+          <div class="guideline-body" id="guideline-body">
+            <ol class="flow-steps">
+              <li class="flow-step">
+                <button class="flow-btn" data-tab="issues">
+                  <span class="flow-name">やること</span>
+                  <span class="flow-count" id="flow-issues">—</span>
+                </button>
+                <span class="flow-desc">何をするか決める</span>
+              </li>
+              <li class="flow-arrow" aria-hidden="true">→</li>
+              <li class="flow-step">
+                <button class="flow-btn" data-tab="branches">
+                  <span class="flow-name">改訂版</span>
+                  <span class="flow-count" id="flow-branches">—</span>
+                </button>
+                <span class="flow-desc">文書を直す</span>
+              </li>
+              <li class="flow-arrow" aria-hidden="true">→</li>
+              <li class="flow-step">
+                <button class="flow-btn" data-tab="pulls">
+                  <span class="flow-name">確認依頼</span>
+                  <span class="flow-count" id="flow-prs">—</span>
+                </button>
+                <span class="flow-desc">見てもらう</span>
+              </li>
+              <li class="flow-arrow" aria-hidden="true">→</li>
+              <li class="flow-step">
+                <button class="flow-btn" data-tab="docs">
+                  <span class="flow-name">正式版</span>
+                  <span class="flow-count" id="flow-docs">—</span>
+                </button>
+                <span class="flow-desc">反映される</span>
+              </li>
+            </ol>
+          </div>
+        </aside>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>

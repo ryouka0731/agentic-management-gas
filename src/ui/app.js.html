@@ -82,6 +82,8 @@
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
   var guideEl = document.getElementById('guide');
+  var guidelineToggle = document.getElementById('guideline-toggle');
+  var guidelineBody = document.getElementById('guideline-body');
   var sidePanel = document.getElementById('side-panel');
   var sideTitle = document.getElementById('side-title');
   var sideBody = document.getElementById('side-body');
@@ -200,6 +202,10 @@
       'git-commit': ['M12 3v6', 'M12 15v6'],
       'git-branch': ['M6 3v12', 'M18 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0z', 'M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M15 9a9 9 0 0 1-9 9'],
       'git-pull-request': ['M18 6v9', 'M6 9v12', 'M13 6h3a2 2 0 0 1 2 2v1'],
+      'clipboard-check': ['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M9 2h6v4H9z', 'M9 14l2 2 4-4'],
+      trash: ['M3 6h18', 'M8 6V4h8v2', 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6', 'M10 11v6', 'M14 11v6'],
+      'corner-down-right': ['M15 10l5 5-5 5', 'M4 4v7a4 4 0 0 0 4 4h12'],
+      clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7v5l3 2'],
       'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
       columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
       'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
@@ -234,7 +240,7 @@
     history: 'git-commit',
     drafts: 'git-branch',
     branches: 'git-branch',
-    pulls: 'git-pull-request',
+    pulls: 'clipboard-check',
     issues: 'circle-dot',
     board: 'columns',
     gantt: 'calendar',
@@ -1105,30 +1111,43 @@
                splitPath(o.path).path === f.path;
       });
 
-      var row = document.createElement('div');
-      row.className = 'doc-card';
+      var card = document.createElement('div');
+      card.className = 'doc-card';
 
       var open = document.createElement('button');
       open.className = 'doc-open';
-      open.appendChild(makeIcon('file-text'));
+
+      var head = document.createElement('div');
+      head.className = 'doc-head';
+      head.appendChild(makeIcon('file-text'));
 
       var name = document.createElement('span');
       name.className = 'doc-name';
       name.textContent = f.path;
-      open.appendChild(name);
+      head.appendChild(name);
+      open.appendChild(head);
+
+      var meta = document.createElement('div');
+      meta.className = 'doc-meta';
+
+      var type = document.createElement('span');
+      type.className = 'chip';
+      type.textContent = { doc: '文書', sheet: '表', slide: 'スライド' }[f.type] || f.type;
+      meta.appendChild(type);
 
       if (drafts.length) {
         var chip = document.createElement('span');
-        chip.className = 'chip';
+        chip.className = 'chip chip-accent';
         chip.textContent = '改訂中 ' + drafts.length + '件';
-        open.appendChild(chip);
+        meta.appendChild(chip);
       }
+      open.appendChild(meta);
 
       open.addEventListener('click', function () { openDoc(f.fileId, f.path); });
-      row.appendChild(open);
-      row.appendChild(makeFileLink(f.type, f.fileId));
+      card.appendChild(open);
+      card.appendChild(makeFileLink(f.type, f.fileId));
 
-      docListEl.appendChild(row);
+      docListEl.appendChild(card);
     });
   }
 
@@ -1676,8 +1695,9 @@
           }
 
           var del = document.createElement('button');
-          del.className = 'btn';
-          del.textContent = '捨てる';
+          del.className = 'btn btn-danger';
+          del.appendChild(makeIcon('trash'));
+          del.appendChild(document.createTextNode('捨てる'));
           del.addEventListener('click', function () {
             openConfirmStrip(panelBranches,
               '改訂版「' + b.name + '」を捨てます。中の変更は元に戻せません。',
@@ -2367,6 +2387,76 @@
     return head;
   }
 
+  /**
+   * やることを親子の木に組み直す。src/core/IssueTree.js と同じもの。
+   *
+   * @param {object[]} issues
+   * @returns {object[]} 上から順に並べた節。depth を持つ
+   */
+  function issueTreeRows(issues) {
+    var byNumber = {};
+    var nodes = (issues || []).map(function (row) {
+      var node = {};
+      for (var k in row) {
+        if (Object.prototype.hasOwnProperty.call(row, k)) node[k] = row[k];
+      }
+      node.children = [];
+      node.depth = 0;
+      byNumber[String(node.number)] = node;
+      return node;
+    });
+
+    function makesCycle(node, parent) {
+      var seen = {};
+      var cur = parent;
+      while (cur) {
+        if (cur === node || seen[String(cur.number)]) return true;
+        seen[String(cur.number)] = true;
+        cur = byNumber[String(cur.parent)];
+      }
+      return false;
+    }
+
+    var roots = [];
+    nodes.forEach(function (node) {
+      var parent = byNumber[String(node.parent)];
+      if (!parent || parent === node || makesCycle(node, parent)) roots.push(node);
+      else parent.children.push(node);
+    });
+
+    var out = [];
+    (function walk(list, depth) {
+      list.forEach(function (n) {
+        n.depth = depth;
+        out.push(n);
+        walk(n.children, depth + 1);
+      });
+    })(roots, 0);
+
+    return out;
+  }
+
+  /**
+   * 子を含めた工数を足し上げる。
+   *
+   * @param {object} node
+   * @returns {{estimate:number, planned:number, actual:number}}
+   */
+  function rollupEffort(node) {
+    var sum = {
+      estimate: Number(node.estimate) || 0,
+      planned: Number(node.plannedHours) || 0,
+      actual: Number(node.actualHours) || 0,
+    };
+    node.children.forEach(function (c) {
+      var child = rollupEffort(c);
+      sum.estimate += child.estimate;
+      sum.planned += child.planned;
+      sum.actual += child.actual;
+    });
+    return sum;
+  }
+
   function loadIssues() {
     showSkeleton(issueListEl, 'list', 4);
 
@@ -2400,12 +2490,18 @@
           issueListEl.appendChild(
             makeGroupHead(group.label, group.issues.length, group.key));
           if (collapsed[group.key]) return;
-          group.issues.forEach(renderIssueRow);
+
+          // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
+          issueTreeRows(group.issues).forEach(renderIssueRow);
         });
 
         function renderIssueRow(issue) {
           var row = document.createElement('div');
           row.className = 'row-item';
+          if (issue.depth) {
+            row.classList.add('nested');
+            row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
+          }
 
           var main = document.createElement('div');
           main.className = 'row-main';
@@ -2420,6 +2516,22 @@
           meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
             (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
 
+          var effort = rollupEffort(issue);
+          if (effort.planned || effort.actual || effort.estimate) {
+            var hours = document.createElement('span');
+            hours.className = 'effort';
+            hours.appendChild(makeIcon('clock'));
+
+            var text = [];
+            if (effort.estimate) text.push('見積 ' + effort.estimate);
+            if (effort.planned) text.push('予定 ' + effort.planned + 'h');
+            if (effort.actual) text.push('実績 ' + effort.actual + 'h');
+
+            hours.appendChild(document.createTextNode(text.join(' / ')));
+            if (issue.children.length) hours.title = '子の分を含めた合計';
+            meta.appendChild(hours);
+          }
+
           var labelEls = makeLabels(issue.labels);
           if (labelEls) meta.appendChild(labelEls);
           main.appendChild(meta);
@@ -2433,6 +2545,34 @@
           });
           row.appendChild(open);
           row.appendChild(makeAvatar(issue.assignee));
+
+          var edit = document.createElement('button');
+          edit.className = 'icon-btn';
+          edit.appendChild(makeIcon('pencil'));
+          edit.title = '直す';
+          edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
+          edit.addEventListener('click', function () { openIssueDetail(issue, row); });
+          row.appendChild(edit);
+
+          if (issue.state === 'open') {
+            var done = document.createElement('button');
+            done.className = 'icon-btn ok';
+            done.appendChild(makeIcon('check'));
+            done.title = '完了にする';
+            done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
+            done.addEventListener('click', function () {
+              google.script.run
+                .withSuccessHandler(function () {
+                  showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+                  refreshIssueViews();
+                })
+                .withFailureHandler(function (err) {
+                  showSnack(err.message, { kind: 'ng' });
+                })
+                .apiIssueClose(issue.number);
+            });
+            row.appendChild(done);
+          }
 
           if (issue.state === 'open' && current.docFileId) {
             var branchBtn = document.createElement('button');
@@ -2482,6 +2622,10 @@
         { name: 'assignee', label: '担当者 (メールアドレス)' },
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
+        { name: 'estimate', label: '見積もり (規模。数値)' },
+        { name: 'plannedHours', label: '予定工数 (時間)' },
+        { name: 'actualHours', label: '実績工数 (時間)' },
+        { name: 'parent', label: '親のやること (番号。空なら親なし)' },
         { name: 'labels', label: 'ラベル (カンマ区切り)' },
       ],
       '保存する',
@@ -2497,6 +2641,8 @@
           .apiIssueUpdate(issue.number, {
             title: v.title, body: v.body, assignee: v.assignee,
             startDate: v.startDate, dueDate: v.dueDate, labels: v.labels,
+            estimate: v.estimate, plannedHours: v.plannedHours,
+            actualHours: v.actualHours, parent: v.parent,
           });
       },
       sourceEl
@@ -2508,10 +2654,18 @@
     inputs[2].value = issue.assignee || '';
     inputs[3].value = issue.startDate ? String(issue.startDate).substring(0, 10) : '';
     inputs[4].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
-    inputs[5].value = issue.labels || '';
+    inputs[5].value = issue.estimate === '' ? '' : issue.estimate;
+    inputs[6].value = issue.plannedHours === '' ? '' : issue.plannedHours;
+    inputs[7].value = issue.actualHours === '' ? '' : issue.actualHours;
+    inputs[8].value = issue.parent === '' ? '' : issue.parent;
+    inputs[9].value = issue.labels || '';
 
     inputs[3].type = 'date';
     inputs[4].type = 'date';
+    inputs[5].type = 'number';
+    inputs[6].type = 'number';
+    inputs[7].type = 'number';
+    inputs[8].type = 'number';
     inputs[2].setAttribute('list', 'people-list');
     attachPeopleList(form);
 
@@ -3310,6 +3464,21 @@
   issueCreateBtn.addEventListener('click', createIssue);
   themeBtn.addEventListener('click', cycleTheme);
   sideClose.addEventListener('click', closeSide);
+
+  guidelineToggle.addEventListener('click', function () {
+    var open = guidelineBody.hidden;
+    guidelineBody.hidden = !open;
+    guidelineToggle.setAttribute('aria-expanded', String(open));
+    guidelineToggle.querySelector('.guideline-mark').textContent = open ? '▾' : '▸';
+
+    try {
+      window.localStorage.setItem('guideline', open ? 'open' : 'closed');
+    } catch (e) { /* 覚えられなくても開閉はできる */ }
+  });
+
+  try {
+    if (window.localStorage.getItem('guideline') === 'closed') guidelineToggle.click();
+  } catch (e) { /* 既定は開いたまま */ }
   issueGroupSel.addEventListener('change', reloadIssueView);
   issueFilterEl.addEventListener('input', reloadIssueView);
   Object.keys(viewBtns).forEach(function (k) {

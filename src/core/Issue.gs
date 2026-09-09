@@ -44,6 +44,10 @@ function issueCreate(title, body, linkedFileIds) {
     linkedPr: '',
     dueDate: '',
     startDate: '',
+    parent: '',
+    estimate: '',
+    plannedHours: '',
+    actualHours: '',
     createdAt: new Date(),
     closedAt: '',
   };
@@ -120,7 +124,8 @@ function issueUpdate(number, patch) {
   }
 
   var allowed = {};
-  var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate'];
+  var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
+    'parent', 'estimate', 'plannedHours', 'actualHours'];
   for (var i = 0; i < keys.length; i++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[i])) {
       allowed[keys[i]] = patch[keys[i]];

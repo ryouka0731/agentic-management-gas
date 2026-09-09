@@ -878,6 +878,12 @@ function issueToPlain_(row) {
     return isNaN(d.getTime()) ? '' : d.toISOString();
   }
 
+  function num(v) {
+    if (v === '' || v === null || v === undefined) return '';
+    var n = Number(v);
+    return isNaN(n) ? '' : n;
+  }
+
   return {
     number: Number(row.number),
     title: String(row.title == null ? '' : row.title),
@@ -891,6 +897,10 @@ function issueToPlain_(row) {
     closedAt: iso(row.closedAt),
     dueDate: iso(row.dueDate),
     startDate: iso(row.startDate),
+    parent: row.parent === '' || row.parent == null ? '' : Number(row.parent),
+    estimate: num(row.estimate),
+    plannedHours: num(row.plannedHours),
+    actualHours: num(row.actualHours),
   };
 }
 
