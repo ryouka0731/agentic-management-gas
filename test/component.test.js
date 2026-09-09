@@ -1394,3 +1394,37 @@ describe('不具合を伝える', () => {
     expect(document.getElementById('count-reports').textContent).toBe('1');
   });
 });
+
+describe('何も無いときの次の一手', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('押しても落ちず、入力が開く', () => {
+    mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+
+    const btn = document.querySelector('#report-list .blank-state .btn');
+    expect(() => btn.click()).not.toThrow();
+
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+  });
+
+  it('押したボタンが対象として印される', () => {
+    mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+
+    const btn = document.querySelector('#report-list .blank-state .btn');
+    btn.click();
+
+    // Event をそのまま渡すと、対象として受け取った側で落ちる
+    expect(btn.classList.contains('editing')).toBe(true);
+  });
+
+  it('やることの空の状態からも作れる', () => {
+    mount({ apiIssueList: [] });
+    document.querySelector('[data-tab="issues"]').click();
+
+    const btn = document.querySelector('#issue-list .blank-state .btn');
+    expect(() => btn.click()).not.toThrow();
+    expect(document.getElementById('side-title').textContent).toBe('やることを作る');
+  });
+});

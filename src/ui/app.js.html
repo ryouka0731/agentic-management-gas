@@ -524,7 +524,10 @@
    */
   function setSideSource(el) {
     if (sideSource) sideSource.classList.remove('editing');
-    sideSource = el || null;
+
+    // 要素でないものが渡ることがある。印を付けられないだけで、
+    // 入力そのものは開けたほうがよい
+    sideSource = (el && el.classList) ? el : null;
     if (sideSource) sideSource.classList.add('editing');
   }
 
@@ -698,7 +701,9 @@
       var btn = document.createElement('button');
       btn.className = 'btn btn-primary';
       btn.textContent = action.label;
-      btn.addEventListener('click', action.onClick);
+      // 押した本人を渡す。そのまま繋ぐと第1引数が Event になり、
+      // 対象の要素として受け取った側で classList を触って落ちる
+      btn.addEventListener('click', function () { action.onClick(btn); });
       wrap.appendChild(btn);
     }
     return wrap;
