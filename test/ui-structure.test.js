@@ -639,7 +639,10 @@ describe('やることの中身と操作', () => {
     expect(js).toContain("makeIcon('trash')");
     expect(js).toContain("del.className = 'btn btn-danger'");
 
-    // アイコンだけの操作には名前が要る
+    // アイコンだけの操作には名前が要る。
+    // title の代入が消えると aria-label が空になり、名前を持たない
+    // ボタンになってしまうため、両方を見る
+    expect(js).toContain("del.title = '改訂版「'");
     expect(js).toContain("del.setAttribute('aria-label', del.title)");
     expect(js).toContain("done.className = 'icon-btn ok'");
     expect(js).toContain("edit.appendChild(makeIcon('pencil'))");
@@ -648,6 +651,13 @@ describe('やることの中身と操作', () => {
       css.indexOf('}', css.indexOf('.btn-danger {')));
     expect(danger).toContain('background: var(--danger-solid)');
     expect(danger).toContain('color: var(--on-danger)');
+
+    // 塗りの上に縁の線を重ねると、触れた瞬間に縁だけが消えて見える
+    expect(danger).toContain('box-shadow: var(--elev-1)');
+    expect(danger).not.toContain('var(--hairline)');
+
+    // 並びの中で潰れない
+    expect(danger).toContain('flex: 0 0 auto');
     expect(css).toContain('.icon-btn.ok:hover { color: var(--success); }');
   });
 

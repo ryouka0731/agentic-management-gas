@@ -2123,8 +2123,12 @@ button.gantt-name:hover { color: var(--accent); }
   background: var(--danger-solid);
   color: var(--on-danger);
   width: 32px;
+  /* 並びの中で潰れないよう縮ませない。中身はアイコン1つしかない */
+  flex: 0 0 auto;
   padding: 0;
   justify-content: center;
+  /* 塗りの上に縁の線を重ねると、触れた瞬間に縁だけが消えて見える */
+  box-shadow: var(--elev-1);
 }
 
 .btn-danger:hover:not(:disabled) {
