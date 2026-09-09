@@ -1697,7 +1697,9 @@
           var del = document.createElement('button');
           del.className = 'btn btn-danger';
           del.appendChild(makeIcon('trash'));
-          del.appendChild(document.createTextNode('捨てる'));
+          // アイコンだけなので、読み上げと吹き出しに名前を持たせる
+          del.title = '改訂版「' + b.name + '」を捨てる';
+          del.setAttribute('aria-label', del.title);
           del.addEventListener('click', function () {
             openConfirmStrip(panelBranches,
               '改訂版「' + b.name + '」を捨てます。中の変更は元に戻せません。',

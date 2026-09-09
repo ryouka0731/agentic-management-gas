@@ -36,6 +36,9 @@
 
   /* accent の上に載る文字。地の明るさが逆転するため対で持つ */
   --on-accent: #ffffff;
+  /* 塗りつぶしの危険色と、その上に載る文字 */
+  --danger-solid: #cf222e;
+  --on-danger: #ffffff;
   /* 浮いて見せる面。ライトでは白、ダークでは地より明るくする */
   --surface-raised: #ffffff;
 
@@ -96,6 +99,8 @@
     --merged-bg: #1d1626;
 
     --on-accent: #0d1117;
+    --danger-solid: #c93c37;
+    --on-danger: #ffffff;
     --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
@@ -128,6 +133,8 @@
     --merged-bg: #1d1626;
 
     --on-accent: #0d1117;
+    --danger-solid: #c93c37;
+    --on-danger: #ffffff;
     --surface-raised: #21262d;
 
     --shadow: 0 1px 3px rgba(1, 4, 9, 0.6);
@@ -2105,8 +2112,27 @@ button.gantt-name:hover { color: var(--accent); }
 .icon-btn.ok:hover { color: var(--success); }
 .icon-btn.danger:hover { color: var(--danger); }
 
-.btn-danger { color: var(--danger); }
-.btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
+/*
+ * 元に戻せない操作は赤で塗る。
+ *
+ * 文字色だけだと、他の操作と同じ重さに見える。塗りは「押すと消える」
+ * ことを形で伝える。アイコンだけにするため、必ず読み上げ用の名前を
+ * 付けること (画面側で aria-label を入れている)。
+ */
+.btn-danger {
+  background: var(--danger-solid);
+  color: var(--on-danger);
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-solid);
+  box-shadow: var(--elev-2);
+}
+
+.btn-danger .icon { opacity: 1; }
 .btn-ok { color: var(--success); }
 .btn-ok:hover:not(:disabled) { background: var(--success-bg); }
 </style>

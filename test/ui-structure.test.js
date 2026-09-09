@@ -162,6 +162,7 @@ describe('テーマのトークン', () => {
       // セグメント選択中など、accent を塗った上に文字を置く箇所がある。
       // 地の明るさがテーマで逆転するため、載せる文字色も対で持つ
       expect(contrast(c['--on-accent'], c['--accent'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c['--on-danger'], c['--danger-solid'])).toBeGreaterThanOrEqual(4.5);
     });
 
     it(name + ': 浮いた面の上の文字が読める', () => {
@@ -637,10 +638,16 @@ describe('やることの中身と操作', () => {
     // 削除は赤いゴミ箱、完了は緑のチェック、編集はペン
     expect(js).toContain("makeIcon('trash')");
     expect(js).toContain("del.className = 'btn btn-danger'");
+
+    // アイコンだけの操作には名前が要る
+    expect(js).toContain("del.setAttribute('aria-label', del.title)");
     expect(js).toContain("done.className = 'icon-btn ok'");
     expect(js).toContain("edit.appendChild(makeIcon('pencil'))");
 
-    expect(css).toContain('.btn-danger { color: var(--danger); }');
+    const danger = css.slice(css.indexOf('.btn-danger {'),
+      css.indexOf('}', css.indexOf('.btn-danger {')));
+    expect(danger).toContain('background: var(--danger-solid)');
+    expect(danger).toContain('color: var(--on-danger)');
     expect(css).toContain('.icon-btn.ok:hover { color: var(--success); }');
   });
 
