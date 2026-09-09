@@ -20,6 +20,8 @@ const SOURCES = [
   'src/core/Branch.gs',
   'src/render/HtmlWriter.gs',
   'src/core/PullRequest.gs',
+  'src/core/Archive.js',
+  'src/core/Staleness.js',
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',
@@ -407,5 +409,123 @@ describe('やることの更新と担当', () => {
     const people = ctx.apiKnownPeople();
     expect(people).toContain('me@example.com');
     expect(people).toContain('other@example.com');
+  });
+});
+
+describe('やることを捨てる', () => {
+  it('捨てると一覧から消え、置き場に入る', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('捨てる方', '', []);
+    ctx.issueCreate('残る方', '', []);
+
+    ctx.issueArchive(a.number);
+
+    expect(ctx.issueList(null).map((i) => i.title)).toEqual(['残る方']);
+    expect(ctx.issueListArchived().map((i) => i.title)).toEqual(['捨てる方']);
+  });
+
+  it('捨てても行は残っていて元に戻せる', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('もどす', '', []);
+
+    ctx.issueArchive(a.number);
+    ctx.issueRestore(a.number);
+
+    expect(ctx.issueList(null).map((i) => i.number)).toContain(a.number);
+    expect(ctx.issueListArchived()).toEqual([]);
+  });
+
+  it('二度捨てても壊れない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('二度', '', []);
+
+    ctx.issueArchive(a.number);
+    const at = ctx.issueGet(a.number).archivedAt;
+    ctx.issueArchive(a.number);
+
+    expect(ctx.issueGet(a.number).archivedAt).toEqual(at);
+  });
+
+  it('親を捨てると子は捨てた親の親につながる', () => {
+    const { ctx } = setup();
+    const gp = ctx.issueCreate('祖', '', []);
+    const p = ctx.issueCreate('親', '', []);
+    const c = ctx.issueCreate('子', '', []);
+    ctx.issueUpdate(p.number, { parent: gp.number });
+    ctx.issueUpdate(c.number, { parent: p.number });
+
+    ctx.issueArchive(p.number);
+
+    expect(Number(ctx.issueGet(c.number).parent)).toBe(gp.number);
+  });
+
+  it('親がいない親を捨てると子は根になる', () => {
+    const { ctx } = setup();
+    const p = ctx.issueCreate('親', '', []);
+    const c = ctx.issueCreate('子', '', []);
+    ctx.issueUpdate(c.number, { parent: p.number });
+
+    ctx.issueArchive(p.number);
+
+    expect(ctx.issueGet(c.number).parent).toBe('');
+  });
+
+  it('親が既に片付いていたら戻したものは根になる', () => {
+    const { ctx } = setup();
+    const p = ctx.issueCreate('親', '', []);
+    const c = ctx.issueCreate('子', '', []);
+    ctx.issueUpdate(c.number, { parent: p.number });
+
+    ctx.issueArchive(c.number);
+    ctx.issuePurge(p.number);
+    ctx.issueRestore(c.number);
+
+    expect(ctx.issueGet(c.number).parent).toBe('');
+  });
+
+  it('捨てたものは進捗ボードに出ない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('板から消える', '', []);
+    ctx.projectPlace(a.number, 'Backlog');
+
+    ctx.issueArchive(a.number);
+
+    const board = ctx.projectBoard();
+    const all = Object.keys(board).reduce((acc, k) => acc.concat(board[k]), []);
+    expect(all.map((c) => c.number)).not.toContain(a.number);
+  });
+
+  it('期限を過ぎたものだけ片付ける', () => {
+    const { ctx } = setup();
+    const old = ctx.issueCreate('古い', '', []);
+    const fresh = ctx.issueCreate('新しい', '', []);
+    ctx.issueArchive(old.number);
+    ctx.issueArchive(fresh.number);
+
+    const day = 24 * 60 * 60 * 1000;
+    ctx.dbUpdate('issues', 'number', old.number, {
+      archivedAt: new Date(Date.now() - 40 * day),
+    });
+
+    expect(ctx.issueHousekeep(new Date())).toEqual([old.number]);
+    expect(ctx.issueListArchived().map((i) => i.number)).toEqual([fresh.number]);
+    expect(() => ctx.issueGet(old.number)).toThrow();
+  });
+
+  it('捨てていないものは完全に消せない', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('まだ生きてる', '', []);
+
+    expect(() => ctx.apiIssuePurge(a.number)).toThrow(/先に捨てて/);
+  });
+
+  it('画面に渡す形に残り日数が入る', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('残り日数', '', []);
+    ctx.issueArchive(a.number);
+
+    const [row] = ctx.apiIssueArchivedList();
+    expect(row.daysLeft).toBe(ctx.apiArchiveKeepDays());
+    expect(typeof row.archivedAt).toBe('string');
   });
 });

@@ -2193,4 +2193,54 @@ button.gantt-name:hover { color: var(--accent); }
   color: var(--accent);
   box-shadow: inset 0 0 0 2px var(--accent);
 }
+
+/* 自分の担当だけに絞る切り替え */
+.toggle-btn.on {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: var(--elev-1);
+}
+
+/*
+ * 動きのないやることは、放っておくほど傷んで見えるようにする。
+ *
+ * 色だけで伝えると気づけない人が出るため、日数の札 (.stale-badge) を
+ * 必ず添える。段階が上がるほど彩度と輪郭が失われ、面から浮かなくなる。
+ */
+.stale-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--sp-2);
+  padding: 1px var(--sp-2);
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 11px;
+}
+
+.rot-1 { filter: saturate(0.75); }
+.rot-2 { filter: saturate(0.45) contrast(0.94); opacity: 0.9; }
+.rot-3 { filter: saturate(0.15) contrast(0.88); opacity: 0.78; }
+
+.rot-2 .row-title, .rot-2 .card-title { text-decoration-color: var(--warn); }
+.rot-3 .row-title, .rot-3 .card-title { font-style: italic; }
+
+/* 傷み具合が濃いものほど、下に沈んで見えるようにする */
+.rot-2.board-card { box-shadow: var(--elev-1); }
+.rot-3.board-card { box-shadow: none; }
+
+.rot-3 .stale-badge {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* 読み上げと同じく、動きを抑える設定なら演出も抑える */
+@media (prefers-reduced-motion: reduce) {
+  .rot-1, .rot-2, .rot-3 { filter: none; opacity: 1; }
+}
+
+/* 捨てたものの置き場 */
+.row-item.archived .row-open { cursor: default; }
+.row-item.archived .row-title { color: var(--ink-2); }
 </style>

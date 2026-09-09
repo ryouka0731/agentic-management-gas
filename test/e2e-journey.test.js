@@ -19,7 +19,9 @@ const SOURCES = [
   'src/core/Diff.js', 'src/core/Merge.js', 'src/core/Graph.js', 'src/core/Gantt.js',
   'src/core/Grouping.js', 'src/core/IssueTree.js', 'src/core/Commit.gs',
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/render/SheetRenderer.gs',
-  'src/render/SheetWriter.gs', 'src/core/PullRequest.gs', 'src/core/Issue.gs',
+  'src/render/SheetWriter.gs', 'src/core/PullRequest.gs', 'src/core/Archive.js',
+  'src/core/Staleness.js',
+  'src/core/Issue.gs',
   'src/core/IssueBranch.gs', 'src/core/Project.gs', 'src/core/Notifier.gs',
   'src/Main.gs',
 ];

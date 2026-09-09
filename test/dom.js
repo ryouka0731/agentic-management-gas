@@ -87,7 +87,8 @@ const API_NAMES = [
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
-  'apiKnownPeople',
+  'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
+  'apiIssueArchivedList', 'apiArchiveKeepDays',
 ];
 
 /** よく使う既定の応答 */
@@ -98,6 +99,8 @@ export const DEFAULTS = {
   ],
   apiOverview: { repo: 'agentic-management', docs: 1, branches: 1, openIssues: 2, openPrs: 1, commits: 5 },
   apiWhoAmI: { activeUser: 'me@example.com', effectiveUser: 'me@example.com', sameUser: true },
+  apiArchiveKeepDays: 30,
+  apiIssueArchivedList: [],
   apiIssueList: [
     {
       number: 2, title: '通勤手当の見直し', body: '', state: 'open',

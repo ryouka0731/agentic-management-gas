@@ -50,6 +50,8 @@ function issueCreate(title, body, linkedFileIds) {
     actualHours: '',
     createdAt: new Date(),
     closedAt: '',
+    archivedAt: '',
+    updatedAt: new Date(),
   };
   dbAppend('issues', row);
   return row;
@@ -77,6 +79,7 @@ function issueList(state) {
   var rows = dbReadAll('issues');
   var out = [];
   for (var i = 0; i < rows.length; i++) {
+    if (rows[i].archivedAt) continue;
     if (state && String(rows[i].state) !== String(state)) continue;
     out.push(rows[i]);
   }
@@ -126,6 +129,7 @@ function issueUpdate(number, patch) {
   var allowed = {};
   var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
     'parent', 'estimate', 'plannedHours', 'actualHours'];
+  allowed.updatedAt = new Date();
   for (var i = 0; i < keys.length; i++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[i])) {
       allowed[keys[i]] = patch[keys[i]];
@@ -150,7 +154,98 @@ function issueClose(number, prNumber) {
   dbUpdate('issues', 'number', number, {
     state: 'closed',
     closedAt: new Date(),
+    updatedAt: new Date(),
     linkedPr: prNumber === null || prNumber === undefined ? '' : prNumber,
   });
   return issueGet(number);
+}
+
+/**
+ * やることを捨てて、置き場に移す。
+ *
+ * すぐには消さない。取り違えても ARCHIVE_KEEP_DAYS 日のうちなら戻せる。
+ *
+ * 子を持つものを捨てると子が宙に浮くため、子は捨てたものの親につなぎ直す。
+ * 親がいなければ子は根になる。
+ *
+ * @param {number} number
+ * @returns {object} 捨てた後の行
+ */
+function issueArchive(number) {
+  var row = issueGet(number);
+  if (row.archivedAt) return row;
+
+  var all = dbReadAll('issues');
+  for (var i = 0; i < all.length; i++) {
+    if (String(all[i].parent) !== String(number)) continue;
+    dbUpdate('issues', 'number', all[i].number, { parent: row.parent || '' });
+  }
+
+  dbUpdate('issues', 'number', number, { archivedAt: new Date(), updatedAt: new Date() });
+  return issueGet(number);
+}
+
+/**
+ * 捨てたやることを元に戻す。
+ *
+ * 元の親が既に片付いていることがあるため、たどれない親は外して根に戻す。
+ *
+ * @param {number} number
+ * @returns {object} 戻した後の行
+ */
+function issueRestore(number) {
+  var row = issueGet(number);
+  if (!row.archivedAt) return row;
+
+  var patch = { archivedAt: '', updatedAt: new Date() };
+  if (row.parent) {
+    var parent = dbFindOne('issues', 'number', row.parent);
+    if (!parent || parent.archivedAt) patch.parent = '';
+  }
+
+  dbUpdate('issues', 'number', number, patch);
+  return issueGet(number);
+}
+
+/**
+ * やることを完全に消す。置き場からも消える。
+ *
+ * @param {number} number
+ */
+function issuePurge(number) {
+  issueGet(number);
+  dbDelete('issues', 'number', number);
+  dbDelete('project_items', 'issueNumber', number);
+}
+
+/**
+ * 置き場のやること一覧を返す。新しく捨てた順。
+ *
+ * @returns {object[]}
+ */
+function issueListArchived() {
+  var rows = dbReadAll('issues');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].archivedAt) out.push(rows[i]);
+  }
+  out.sort(function (a, b) {
+    return new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime();
+  });
+  return out;
+}
+
+/**
+ * 期限を過ぎた分を片付ける。
+ *
+ * @param {Date} [now]
+ * @returns {number[]} 片付けた番号
+ */
+function issueHousekeep(now) {
+  var when = now || new Date();
+  var gone = archiveExpired(issueListArchived(), when);
+
+  for (var i = 0; i < gone.length; i++) issuePurge(gone[i]);
+  return gone;
 }

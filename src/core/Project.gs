@@ -42,7 +42,7 @@ function projectBoard() {
     if (!board[column]) continue;
 
     var issue = dbFindOne('issues', 'number', items[j].issueNumber);
-    if (!issue) continue;
+    if (!issue || issue.archivedAt) continue;
 
     // 画面に渡すため、日時は文字列にして素の形にする
     var due = issue.dueDate ? new Date(issue.dueDate) : null;
@@ -55,6 +55,8 @@ function projectBoard() {
       assignee: String(issue.assignee == null ? '' : issue.assignee),
       labels: String(issue.labels == null ? '' : issue.labels),
       dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
+      staleDays: stalenessOf(issue, new Date()).days,
+      staleLevel: stalenessOf(issue, new Date()).level,
     });
   }
 

@@ -22,6 +22,8 @@ const SOURCES = [
   'src/render/SheetRenderer.gs',
   'src/render/SheetWriter.gs',
   'src/core/PullRequest.gs',
+  'src/core/Archive.js',
+  'src/core/Staleness.js',
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',

@@ -94,10 +94,13 @@
   var issueFilterEl = document.getElementById('issue-filter');
   var issueCountEl = document.getElementById('issue-count');
   var dropRootEl = document.getElementById('drop-root');
+  var trashListEl = document.getElementById('trash-list');
+  var mineBtn = document.getElementById('mine-btn');
   var viewBtns = {
     list: document.getElementById('view-list'),
     board: document.getElementById('view-board'),
     gantt: document.getElementById('view-gantt'),
+    trash: document.getElementById('view-trash'),
   };
 
   // ===== 状態 =====
@@ -117,6 +120,8 @@
   var issueView = 'list';
   var collapsed = {};
   var lastIssues = [];
+  var mineOnly = false;
+  var archiveKeepDays = 30;
 
   /** 業務での呼び方。画面には Git の用語を出さない */
   var OFFICIAL = '正式版';
@@ -2344,6 +2349,12 @@
     issueListEl.hidden = view !== 'list';
     boardEl.hidden = view !== 'board';
     ganttEl.hidden = view !== 'gantt';
+    trashListEl.hidden = view !== 'trash';
+
+    // 捨てたものは絞り込みや束ね方の対象外
+    issueFilterEl.parentNode.hidden = view === 'trash';
+    issueGroupSel.parentNode.hidden = view === 'trash';
+    mineBtn.hidden = view === 'trash';
 
     try {
       window.localStorage.setItem('issueView', view);
@@ -2353,7 +2364,8 @@
   }
 
   function reloadIssueView() {
-    if (issueView === 'board') loadBoard();
+    if (issueView === 'trash') loadTrash();
+    else if (issueView === 'board') loadBoard();
     else if (issueView === 'gantt') loadGantt();
     else loadIssues();
   }
@@ -2367,12 +2379,73 @@
    * @returns {boolean}
    */
   function matchesFilter(issue) {
+    if (mineOnly && String(issue.assignee || '') !== currentUser) return false;
+
     var q = String(issueFilterEl.value || '').toLowerCase().replace(/^\s+|\s+$/g, '');
     if (!q) return true;
 
     var hay = ['#' + issue.number, issue.title, issue.assignee, issue.labels]
+      .concat(docNamesOf(issue))
       .join(' ').toLowerCase();
     return hay.indexOf(q) >= 0;
+  }
+
+  /**
+   * やることに紐づく文書の名前を返す。
+   *
+   * 人は文書の名前で探すので、番号ではなく名前を絞り込みの対象にする。
+   *
+   * @param {object} issue
+   * @returns {string[]}
+   */
+  function docNamesOf(issue) {
+    var ids = String(issue.linkedFileIds || '').split(',');
+    var out = [];
+
+    for (var i = 0; i < ids.length; i++) {
+      if (!ids[i]) continue;
+      for (var j = 0; j < allFiles.length; j++) {
+        if (allFiles[j].fileId !== ids[i]) continue;
+        var parts = splitPath(allFiles[j].path);
+        if (parts.branch === 'main') out.push(parts.path);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 動きのないやることを傷ませる。
+   *
+   * 色だけだと気づけない人がいるので、日数の吹き出しも付ける。
+   *
+   * @param {HTMLElement} el
+   * @param {object} issue staleLevel / staleDays を持つもの
+   */
+  function applyRot(el, issue) {
+    var level = Number(issue.staleLevel || 0);
+    if (!level) return;
+
+    el.classList.add('rot-' + level);
+    el.dataset.stale = issue.staleDays;
+
+    var note = ['しばらく動きがありません', 'かなり放置されています', '完全に忘れられています'];
+    el.title = issue.staleDays + '日間そのまま — ' + note[level - 1];
+  }
+
+  /**
+   * 動きのなさを示す札。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement|null}
+   */
+  function makeStaleBadge(issue) {
+    if (!Number(issue.staleLevel || 0)) return null;
+
+    var badge = document.createElement('span');
+    badge.className = 'stale-badge';
+    badge.appendChild(makeIcon('clock'));
+    badge.appendChild(document.createTextNode(issue.staleDays + '日動きなし'));
+    return badge;
   }
 
   /**
@@ -2658,9 +2731,13 @@
             meta.appendChild(hours);
           }
 
+          var stale = makeStaleBadge(issue);
+          if (stale) meta.appendChild(stale);
+
           var labelEls = makeLabels(issue.labels);
           if (labelEls) meta.appendChild(labelEls);
           main.appendChild(meta);
+          applyRot(row, issue);
 
           var open = document.createElement('button');
           open.className = 'row-open';
@@ -2699,6 +2776,8 @@
             });
             row.appendChild(done);
           }
+
+          row.appendChild(makeArchiveButton(issue, panelIssues));
 
           if (issue.state === 'open' && current.docFileId) {
             var branchBtn = document.createElement('button');
@@ -2874,6 +2953,142 @@
       actions.appendChild(el);
     }
     el.textContent = text;
+  }
+
+  /**
+   * 捨てるボタン。押すとその場で確かめてから置き場に移す。
+   *
+   * すぐには消えないので、取り違えても戻せることを言葉で伝える。
+   *
+   * @param {object} issue
+   * @param {HTMLElement} host 確認の帯を出す場所
+   * @returns {HTMLElement}
+   */
+  function makeArchiveButton(issue, host) {
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    // アイコンだけなので、読み上げと吹き出しに名前を持たせる
+    del.title = '#' + issue.number + ' を捨てる';
+    del.setAttribute('aria-label', del.title);
+
+    del.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openConfirmStrip(host,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+              refreshIssueViews();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiIssueArchive(issue.number);
+        });
+    });
+    return del;
+  }
+
+  /**
+   * 捨てたものの置き場。
+   *
+   * 期限まで何日残っているかを出す。何もしなければ自然に片付く。
+   */
+  function loadTrash() {
+    showSkeleton(trashListEl, 'list', 3);
+
+    google.script.run
+      .withSuccessHandler(function (list) {
+        var rows = list || [];
+        trashListEl.textContent = '';
+        issueCountEl.textContent = rows.length + '件';
+
+        if (!rows.length) {
+          trashListEl.appendChild(makeBlankState(
+            '捨てたものはありません',
+            '捨てたやることはここに' + archiveKeepDays +
+            '日置かれ、その間はいつでも戻せます。'
+          ));
+          return;
+        }
+
+        rows.forEach(function (issue) {
+          var row = document.createElement('div');
+          row.className = 'row-item archived';
+
+          var main = document.createElement('div');
+          main.className = 'row-main';
+
+          var title = document.createElement('div');
+          title.className = 'row-title';
+          title.textContent = '#' + issue.number + ' ' + issue.title;
+          main.appendChild(title);
+
+          var meta = document.createElement('div');
+          meta.className = 'row-meta';
+          meta.textContent = '捨てた日 ' + String(issue.archivedAt).substring(0, 10) +
+            ' · あと' + issue.daysLeft + '日で消えます';
+          main.appendChild(meta);
+
+          var open = document.createElement('div');
+          open.className = 'row-open';
+          open.appendChild(makeIcon('archive'));
+          open.appendChild(main);
+          row.appendChild(open);
+
+          var back = document.createElement('button');
+          back.className = 'btn';
+          back.appendChild(makeIcon('back'));
+          back.appendChild(document.createTextNode('元に戻す'));
+          back.addEventListener('click', function () {
+            google.script.run
+              .withSuccessHandler(function () {
+                showSnack('#' + issue.number + ' を戻しました', { kind: 'ok' });
+                loadTrash();
+                loadOverview();
+              })
+              .withFailureHandler(function (err) {
+                showSnack(err.message, { kind: 'ng' });
+              })
+              .apiIssueRestore(issue.number);
+          });
+          row.appendChild(back);
+
+          var purge = document.createElement('button');
+          purge.className = 'btn btn-danger';
+          purge.appendChild(makeIcon('trash'));
+          purge.title = '#' + issue.number + ' を完全に消す';
+          purge.setAttribute('aria-label', purge.title);
+          purge.addEventListener('click', function () {
+            openConfirmStrip(panelIssues,
+              '#' + issue.number + '「' + issue.title + '」を完全に消します。' +
+              'もう戻せません。',
+              '完全に消す',
+              function () {
+                google.script.run
+                  .withSuccessHandler(function (msg) {
+                    showSnack(msg, { kind: 'ok' });
+                    loadTrash();
+                  })
+                  .withFailureHandler(function (err) {
+                    showSnack(err.message, { kind: 'ng' });
+                  })
+                  .apiIssuePurge(issue.number);
+              });
+          });
+          row.appendChild(purge);
+
+          trashListEl.appendChild(row);
+        });
+      })
+      .withFailureHandler(function (err) {
+        trashListEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiIssueArchivedList();
   }
 
   function refreshIssueViews() {
@@ -3446,6 +3661,7 @@
 
             var labelEls = makeLabels(card.labels);
             if (labelEls) el.appendChild(labelEls);
+            applyRot(el, card);
 
             el.addEventListener('dragstart', function (e) {
               e.dataTransfer.setData('text/plain', String(card.issueNumber));
@@ -3469,6 +3685,9 @@
             when.className = 'row-meta';
             when.textContent = card.dueDate
               ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
+
+            var cardStale = makeStaleBadge(card);
+            if (cardStale) when.appendChild(cardStale);
             foot.appendChild(when);
             foot.appendChild(makeAvatar(card.assignee));
             el.appendChild(foot);
@@ -3498,6 +3717,7 @@
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — 改訂版を正式版に反映してよいか尋ねるもの',
       'やること — 誰かがやるべき作業。文書に紐づく',
+      '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
     ]],
     ['基本の流れ', [
       '1. 文書を開く',
@@ -3513,6 +3733,8 @@
       '「反映できません」と出るのは、元に戻せない要素（実体を取れない画像など）がある場合です。元のファイルで貼り直してください。',
       '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
+      'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
+      'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
     ]],
   ];
 
@@ -3643,15 +3865,27 @@
     viewBtns[k].addEventListener('click', function () { setIssueView(k); });
   });
 
+  mineBtn.addEventListener('click', function () {
+    mineOnly = !mineOnly;
+    mineBtn.setAttribute('aria-pressed', String(mineOnly));
+    mineBtn.classList.toggle('on', mineOnly);
+    reloadIssueView();
+  });
+
   // どこにいても Escape で入力を閉じられる
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !sidePanel.hidden) closeSide();
   });
 
   google.script.run
-    .withSuccessHandler(function (who) { currentUser = who.activeUser; })
+    .withSuccessHandler(function (who) { currentUser = (who || {}).activeUser || ''; })
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
+
+  google.script.run
+    .withSuccessHandler(function (days) { archiveKeepDays = Number(days) || 30; })
+    .withFailureHandler(function () { /* 既定の30日で表示する */ })
+    .apiArchiveKeepDays();
 
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });

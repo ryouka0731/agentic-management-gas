@@ -719,6 +719,7 @@ function apiOverview() {
 
   return {
     repo: 'agentic-management',
+    me: String(Session.getActiveUser().getEmail() || ''),
     docs: docs,
     branches: openBranches,
     openIssues: openIssues,
@@ -901,6 +902,11 @@ function issueToPlain_(row) {
     estimate: num(row.estimate),
     plannedHours: num(row.plannedHours),
     actualHours: num(row.actualHours),
+    archivedAt: iso(row.archivedAt),
+    daysLeft: row.archivedAt ? archiveDaysLeft(row.archivedAt, new Date()) : '',
+    updatedAt: iso(row.updatedAt),
+    staleDays: stalenessOf(row, new Date()).days,
+    staleLevel: stalenessOf(row, new Date()).level,
   };
 }
 
@@ -952,6 +958,64 @@ function apiIssueClose(number) {
   var row = issueClose(number, null);
   projectMoveIfExists_(number, 'Done');
   return issueToPlain_(row);
+}
+
+/**
+ * やることを捨てる (Web App API)。
+ *
+ * すぐには消さず置き場に移す。取り違えても期限までなら戻せる。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiIssueArchive(number) {
+  return issueToPlain_(issueArchive(number));
+}
+
+/**
+ * 捨てたやることを元に戻す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiIssueRestore(number) {
+  return issueToPlain_(issueRestore(number));
+}
+
+/**
+ * 捨てたやることを完全に消す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {string}
+ */
+function apiIssuePurge(number) {
+  var row = issueGet(number);
+  if (!row.archivedAt) throw new Error('先に捨ててから消してください: #' + number);
+
+  issuePurge(number);
+  return '#' + number + ' を完全に消しました';
+}
+
+/**
+ * 置き場のやること一覧を返す (Web App API)。
+ *
+ * @returns {object[]}
+ */
+function apiIssueArchivedList() {
+  var rows = issueListArchived();
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  return out;
+}
+
+/**
+ * 置き場を留め置く日数を返す (Web App API)。
+ *
+ * @returns {number}
+ */
+function apiArchiveKeepDays() {
+  return ARCHIVE_KEEP_DAYS();
 }
 
 /**
@@ -1668,4 +1732,22 @@ function debugDumpIssues() {
 
   Logger.log(log.join('\n'));
   return log.length + '行をログに出しました';
+}
+
+/**
+ * 1日1回だけ置き場を片付ける。
+ *
+ * 命令キューの分刻みトリガーに相乗りする。トリガーを増やすと
+ * 導入時にもう一度 setup を回してもらう必要が出るため、
+ * 既に動いているものに載せて、日付でせき止める。
+ *
+ * @returns {number[]} 片付けた番号
+ */
+function housekeepArchiveDaily_() {
+  var props = PropertiesService.getScriptProperties();
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') === today) return [];
+
+  props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
+  return issueHousekeep(new Date());
 }

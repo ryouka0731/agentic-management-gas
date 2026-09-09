@@ -163,6 +163,10 @@ function processCommandQueue() {
     for (var i = 0; i < targets.length; i++) {
       runCommandFile_(targets[i], queue, done);
     }
+
+    // 置き場の片付けもここに相乗りさせる (1日1回で自分でせき止める)
+    if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
+
     return targets.length + '件処理しました';
   } finally {
     lock.releaseLock();

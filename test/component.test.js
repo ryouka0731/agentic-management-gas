@@ -455,3 +455,224 @@ describe('掴んで親子を付け替える', () => {
     expect(document.getElementById('snackbar').textContent).toContain('親にはできません');
   });
 });
+
+describe('やることの絞り込み', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  function titles() {
+    return [...document.querySelectorAll('#issue-list .row-title')]
+      .map((el) => el.textContent);
+  }
+
+  it('文書名で絞り込める', () => {
+    openIssues();
+    const input = document.getElementById('issue-filter');
+
+    // どちらの題名にも「就業規則」は無い。紐づく文書 DOC1 の名前で当たる
+    input.value = '就業規則';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(titles()).toHaveLength(2);
+
+    input.value = '賃金規程';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(titles()).toHaveLength(0);
+  });
+
+  it('改訂版の写しの名前では二重に数えない', () => {
+    openIssues();
+
+    const input = document.getElementById('issue-filter');
+    input.value = '見直し';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    // 「通勤手当の見直し」の題名だけが当たる
+    expect(titles()).toHaveLength(1);
+  });
+
+  it('自分の担当ボタンで自分の分だけになる', () => {
+    openIssues({
+      apiIssueList: [
+        { ...DEFAULTS.apiIssueList[0], assignee: 'me@example.com' },
+        { ...DEFAULTS.apiIssueList[1], assignee: 'other@example.com' },
+      ],
+    });
+
+    document.getElementById('mine-btn').click();
+
+    expect(titles()).toHaveLength(1);
+    expect(titles()[0]).toContain('#2');
+    expect(document.getElementById('mine-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('もう一度押すと全部に戻る', () => {
+    openIssues();
+
+    const btn = document.getElementById('mine-btn');
+    btn.click();
+    btn.click();
+
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(titles().length).toBeGreaterThan(1);
+  });
+});
+
+describe('やることを捨てる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  it('捨てるボタンは赤塗りのアイコンだけで、名前を持つ', () => {
+    openIssues();
+    const row = document.querySelector('#issue-list .row-item');
+    const del = row.querySelector('.btn-danger');
+
+    expect(del.textContent).toBe('');
+    expect(del.querySelector('svg')).toBeTruthy();
+    expect(del.getAttribute('aria-label')).toContain('捨てる');
+  });
+
+  it('確かめてからでないと捨てない', () => {
+    const app = openIssues();
+    document.querySelector('#issue-list .row-item .btn-danger').click();
+
+    expect(app.calls.some((c) => c.name === 'apiIssueArchive')).toBe(false);
+
+    const strip = document.querySelector('#panel-issues .confirm-strip');
+    expect(strip.textContent).toContain('戻せます');
+
+    strip.querySelector('.btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueArchive').pop().args[0]).toBe(2);
+  });
+
+  it('捨てたものは置き場に並び、残り日数が出る', () => {
+    openIssues({
+      apiIssueArchivedList: [{
+        number: 7, title: '要らなくなった', state: 'open',
+        archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22,
+      }],
+    });
+    document.getElementById('view-trash').click();
+
+    const row = document.querySelector('#trash-list .row-item');
+    expect(row.textContent).toContain('#7');
+    expect(row.textContent).toContain('あと22日');
+  });
+
+  it('置き場から元に戻せる', () => {
+    const app = openIssues({
+      apiIssueArchivedList: [{
+        number: 7, title: '戻す', state: 'open',
+        archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22,
+      }],
+    });
+    document.getElementById('view-trash').click();
+
+    [...document.querySelectorAll('#trash-list .btn')]
+      .find((b) => b.textContent.includes('元に戻す')).click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueRestore').pop().args[0]).toBe(7);
+  });
+
+  it('完全に消すのは確かめてから', () => {
+    const app = openIssues({
+      apiIssueArchivedList: [{
+        number: 7, title: '消す', state: 'open',
+        archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22,
+      }],
+    });
+    document.getElementById('view-trash').click();
+    document.querySelector('#trash-list .btn-danger').click();
+
+    expect(app.calls.some((c) => c.name === 'apiIssuePurge')).toBe(false);
+
+    const strip = document.querySelector('#panel-issues .confirm-strip');
+    expect(strip.textContent).toContain('もう戻せません');
+    strip.querySelector('.btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssuePurge').pop().args[0]).toBe(7);
+  });
+
+  it('置き場では絞り込みと束ね方を隠す', () => {
+    openIssues();
+    document.getElementById('view-trash').click();
+
+    expect(document.getElementById('issue-filter').parentNode.hidden).toBe(true);
+    expect(document.getElementById('mine-btn').hidden).toBe(true);
+  });
+
+  it('置き場が空なら何が起きるかを説明する', () => {
+    openIssues();
+    document.getElementById('view-trash').click();
+
+    expect(document.getElementById('trash-list').textContent).toContain('30日');
+  });
+});
+
+describe('動きのないやることの見た目', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  function withStale(level, days) {
+    return {
+      apiIssueList: [{
+        ...DEFAULTS.apiIssueList[0], parent: '',
+        staleLevel: level, staleDays: days,
+      }],
+    };
+  }
+
+  it('動きがあるうちは何も付かない', () => {
+    openIssues(withStale(0, 2));
+    const row = document.querySelector('#issue-list .row-item');
+
+    expect(row.className).not.toContain('rot-');
+    expect(row.querySelector('.stale-badge')).toBe(null);
+  });
+
+  it('放っておくほど段階が上がる', () => {
+    openIssues(withStale(3, 40));
+    const row = document.querySelector('#issue-list .row-item');
+
+    expect(row.classList.contains('rot-3')).toBe(true);
+  });
+
+  it('色だけに頼らず日数も出す', () => {
+    openIssues(withStale(2, 20));
+    const badge = document.querySelector('#issue-list .stale-badge');
+
+    expect(badge.textContent).toContain('20日動きなし');
+    expect(document.querySelector('#issue-list .row-item').title).toContain('20日間');
+  });
+
+  it('ボードのカードも傷む', () => {
+    openIssues({
+      apiProjectBoard: {
+        Backlog: [{
+          issueNumber: 5, order: 0, title: '忘れられた', state: 'open',
+          assignee: '', labels: '', dueDate: '', staleLevel: 3, staleDays: 60,
+        }],
+        'In Progress': [], 'In Review': [], Done: [],
+      },
+    });
+    document.getElementById('view-board').click();
+
+    const card = document.querySelector('.board-card');
+    expect(card.classList.contains('rot-3')).toBe(true);
+    expect(card.textContent).toContain('60日動きなし');
+  });
+});
