@@ -697,9 +697,10 @@ describe('改訂の履歴の列', () => {
       .map((el) => el.getAttribute('class'));
 
     // 先頭は系統。見出しは span、行は SVG なので別のクラス名になる
-    expect(head[0]).toBe('graph-col-graph');
+    expect(head[0].split(' ')[0]).toBe('graph-col-graph');
     expect(row[0]).toBe('graph-cell');
-    expect(head.slice(1)).toEqual(row.slice(1).map((c) => c.split(' ')[0]));
+    expect(head.slice(1).map((c) => c.split(' ')[0]))
+      .toEqual(row.slice(1).map((c) => c.split(' ')[0]));
   });
 
   it('系統の列幅は見出しと行で同じ変数から引く', () => {
@@ -2222,5 +2223,91 @@ describe('工程表の担当者と工数', () => {
 
     const patch = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1];
     expect(patch.dueDate).toBe('2026-09-30');
+  });
+});
+
+describe('触れたときの補足', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('分かりにくい言葉には補足が付く', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+
+    // 使い方の頁を読みに行かないと分からない道具は、読みに行かれない
+    const seg = document.getElementById('view-gantt');
+    expect(seg.dataset.hint).toContain('棒');
+    expect(seg.classList.contains('has-hint')).toBe(true);
+  });
+
+  it('補足は読み上げにも届く', () => {
+    mount();
+    const seg = document.getElementById('view-board');
+    const note = document.getElementById(seg.getAttribute('aria-describedby'));
+
+    expect(note.textContent).toBe(seg.dataset.hint);
+  });
+
+  it('控えは1か所にまとめて置く', () => {
+    mount();
+
+    // 隣に差し込むと、並びで組んでいるところの形が変わる
+    const notes = document.getElementById('hint-notes');
+    expect(notes.className).toBe('sr-only');
+    expect(notes.children.length).toBeGreaterThan(5);
+  });
+
+  it('ブラウザ既定の吹き出しと二重にしない', () => {
+    mount();
+    const seg = document.getElementById('view-list');
+
+    expect(seg.getAttribute('title')).toBe(null);
+    expect(seg.getAttribute('aria-describedby')).toBeTruthy();
+  });
+
+  it('操作のアイコンにも付く', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+
+    const del = document.querySelector('#issue-list .btn-danger');
+    expect(del.dataset.hint).toContain('戻せます');
+    expect(del.getAttribute('aria-label')).toContain('捨てる');
+  });
+});
+
+describe('はじめの案内', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('先に何が得られるかを言う', () => {
+    mount();
+
+    expect(document.querySelector('.guideline-lead').textContent)
+      .toContain('誰がいつ何を変えたか');
+  });
+
+  it('しまえる', () => {
+    mount();
+    document.getElementById('guideline-hide').click();
+
+    expect(document.getElementById('guideline').hidden).toBe(true);
+  });
+
+  it('しまったことを覚えている', () => {
+    mount();
+    document.getElementById('guideline-hide').click();
+
+    mount();
+    expect(document.getElementById('guideline').hidden).toBe(true);
+  });
+
+  it('使い方から出し直せる', () => {
+    mount();
+    document.getElementById('guideline-hide').click();
+
+    document.querySelector('[data-tab="help"]').click();
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('もう一度出す')).click();
+
+    expect(document.getElementById('guideline').hidden).toBe(false);
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
   });
 });

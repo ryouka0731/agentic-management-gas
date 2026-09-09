@@ -677,11 +677,22 @@ describe('やることの中身と操作', () => {
   it('進め方は案内として別に置く', () => {
     // 文書の一覧と混ざると、どれが対象でどれが説明か読めない
     expect(html).toContain('class="guideline"');
-    expect(html).toContain('進め方');
+    expect(html).toContain('はじめに');
 
     const docList = html.indexOf('id="doc-list"');
     const guide = html.indexOf('class="guideline"');
     expect(docList).toBeLessThan(guide);
+  });
+
+  it('案内はしまえて、出し直せる', () => {
+    // 一度しまうと二度と出せない案内は、しまうのをためらわせる
+    expect(html).toContain('id="guideline-hide"');
+    expect(js).toContain('はじめの案内をもう一度出す');
+  });
+
+  it('先に何が得られるかを言う', () => {
+    // 手順から始めると、何のためにやるのかが最後まで分からない
+    expect(html).toContain('誰がいつ何を変えたか');
   });
 
   it('工程表に日の補助線を敷く', () => {

@@ -97,6 +97,7 @@
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
   var guideEl = document.getElementById('guide');
+  var guidelineEl = document.getElementById('guideline');
   var guidelineToggle = document.getElementById('guideline-toggle');
   var guidelineBody = document.getElementById('guideline-body');
   var sidePanel = document.getElementById('side-panel');
@@ -219,6 +220,79 @@
   var hintSeq = 0;
 
   /**
+   * 分かりにくい言葉の補足。
+   *
+   * 使い方の頁を読みに行かないと分からない道具は、読みに行かれない。
+   * 触れたその場で、その言葉が何を指すのかを出す。
+   *
+   * 長い説明は読まれないので、1〜2行に収める。
+   */
+  var HINTS = {
+    // 画面の切り替え
+    'tab:content': '文書のいまの中身です。「直す」に切り替えると書き換えられます',
+    'tab:history': 'この文書がこれまでどう変わってきたかの並びです。押すとその時の差分が出ます',
+    'tab:drafts': 'この文書を直している途中の版の一覧です',
+    'nav:docs': '管理している文書の一覧です。ここから中身・履歴・改訂版に入ります',
+    'nav:issues': '誰が何をやるかの一覧です。文書に紐づけてもよいし、紐づけなくてもかまいません',
+    'nav:branches': '直している途中の版の一覧です。正式版には影響しません',
+    'nav:pulls': '「この改訂版を正式版に反映してよいか」を尋ねているものの一覧です',
+    'nav:help': 'この道具の言葉と進め方をまとめています',
+    'nav:report': 'うまく動かないことを伝える場所です。みんなで読んで話せます',
+
+    // 版まわり
+    'chip:official': 'いま効力を持つ版です。全員が見るもので、直接は書き換えられません',
+    'badge:dirty': '元のファイルで書き換えたのに、まだ記録していない変更があります',
+    'select:branch': '同じ文書の別の版に切り替えます',
+    'link:file': 'Google ドキュメントなどの元のファイルを新しいタブで開きます',
+
+    // やること
+    'seg:list': '親子の入れ子で並べます',
+    'seg:board': '進み具合の列で並べます。掴んで動かすと進み具合が変わります',
+    'seg:gantt': '時系列の棒で並べます。棒を掴むと期間を変えられます',
+    'seg:trash': '捨てたやることの置き場です。期限までなら戻せます',
+    'group:issue': '同じまとまりごとに束ねて並べます',
+    'filter:mine': '自分が担当のものだけに絞ります',
+    'filter:open': 'まだ解決していない報告だけに絞ります',
+    'field:estimate': '作業の大きさの目安です。時間ではなく相対的な数で入れます',
+    'field:planned': 'かかる見込みの人日です。工程表の棒の長さと繋がっています',
+    'field:actual': '実際にかかった人日です。見込みとの差が次の見積もりの手がかりになります',
+    'field:parent': 'このやることを、別のやることの下にぶら下げます',
+    'field:tags': 'どんな種類の仕事かの印です。「#」を打つと候補が出ます',
+
+    // 履歴の列
+    'col:graph': 'どの版から分かれ、どこで合流したかの線です',
+    'col:desc': 'その時に何を変えたかの説明です',
+    'col:sha': 'その記録に付く番号です。同じ番号は二度と現れません',
+
+    // 進捗ボードの列
+    'board:Backlog': 'まだ手を付けていないもの',
+    'board:In Progress': '改訂版を作って作業しているもの',
+    'board:In Review': '確認を依頼して返事を待っているもの',
+    'board:Done': '正式版に反映されたもの',
+
+    // 操作
+    'act:edit': '中身を直します',
+    'act:done': '終わったことにします',
+    'act:reopen': '完了を取り消して、やることに戻します',
+    'act:archive': '捨てます。しばらくは「捨てたもの」から戻せます',
+    'act:approve': 'この改訂版を正式版に反映してよい、と返事をします',
+    'act:merge': '改訂版の中身を正式版に書き戻します。承認が要ります',
+    'act:bell': '名前を呼ばれたときや、返信があったときにここに出ます',
+    'act:theme': '画面の明るさを、端末に合わせる・明るい・暗い で切り替えます',
+  };
+
+  /**
+   * 補足を付ける。言葉は HINTS から引く。
+   *
+   * @param {HTMLElement} el
+   * @param {string} key
+   * @returns {HTMLElement} el
+   */
+  function hint(el, key) {
+    return attachHint(el, HINTS[key] || '');
+  }
+
+  /**
    * 絞り込みの入り切りを、見て分かる形にする。
    *
    * ただのボタンだと、押したのか絞り込んでいるのかが区別できない。
@@ -258,8 +332,17 @@
    * @returns {HTMLElement} el
    */
   function attachHint(el, text) {
+    if (!el || !text) return el;
+
     el.classList.add('has-hint');
     el.setAttribute('data-hint', text);
+
+    // 名前が無いものには、いま持っている吹き出しを名前にしてから外す。
+    // ブラウザ既定の吹き出しと二重に出ると、遅れて出るほうが邪魔になる
+    if (!el.getAttribute('aria-label') && el.title) {
+      el.setAttribute('aria-label', el.title);
+    }
+    el.removeAttribute('title');
 
     var id = 'hint-' + (++hintSeq);
     var note = document.createElement('span');
@@ -268,8 +351,27 @@
     note.textContent = text;
 
     el.setAttribute('aria-describedby', id);
-    if (el.parentNode) el.parentNode.insertBefore(note, el.nextSibling);
+
+    // 控えは1か所にまとめて置く。隣に差し込むと、並びで組んでいる
+    // ところ (列見出しなど) の形が変わってしまう
+    hintNotes().appendChild(note);
     return el;
+  }
+
+  /**
+   * 読み上げ用の控えの置き場。無ければ作る。
+   *
+   * @returns {HTMLElement}
+   */
+  function hintNotes() {
+    var box = document.getElementById('hint-notes');
+    if (box) return box;
+
+    box = document.createElement('div');
+    box.id = 'hint-notes';
+    box.className = 'sr-only';
+    document.body.appendChild(box);
+    return box;
   }
 
   function makeIcon(name) {
@@ -2558,6 +2660,7 @@
           var approveBtn = document.createElement('button');
           approveBtn.className = 'btn';
           approveBtn.textContent = '承認する';
+          hint(approveBtn, 'act:approve');
 
           // 押せるのに失敗する状態を作らない
           if (currentUser && String(pr.author) === currentUser) {
@@ -2723,6 +2826,7 @@
     var label = document.createElement('label');
     label.className = 'tag-label';
     label.textContent = 'タグ (「#」で書きます。例: #会議 #調査)';
+    hint(label, 'field:tags');
 
     var input = document.createElement('input');
     input.type = 'text';
@@ -3289,8 +3393,8 @@
           var edit = document.createElement('button');
           edit.className = 'icon-btn';
           edit.appendChild(makeIcon('pencil'));
-          edit.title = '直す';
           edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
+          hint(edit, 'act:edit');
           edit.addEventListener('click', function () { openIssueDetail(issue, row); });
           row.appendChild(edit);
 
@@ -3298,8 +3402,8 @@
             var done = document.createElement('button');
             done.className = 'icon-btn ok';
             done.appendChild(makeIcon('check'));
-            done.title = '完了にする';
             done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
+            hint(done, 'act:done');
             done.addEventListener('click', function () {
               google.script.run
                 .withSuccessHandler(function () {
@@ -3316,8 +3420,8 @@
             var back = document.createElement('button');
             back.className = 'icon-btn';
             back.appendChild(makeIcon('back'));
-            back.title = '完了を取り消す';
             back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
+            hint(back, 'act:reopen');
             back.addEventListener('click', function () {
               reopenIssue(issue.number);
             });
@@ -3453,6 +3557,11 @@
     inputs[8].type = 'number';
 
     // 人日は半日きざみで入れられるようにする
+    hint(inputs[5].parentNode, 'field:estimate');
+    hint(inputs[6].parentNode, 'field:planned');
+    hint(inputs[7].parentNode, 'field:actual');
+    hint(inputs[8].parentNode, 'field:parent');
+
     inputs[6].step = '0.5';
     inputs[7].step = '0.5';
     inputs[6].min = '0';
@@ -3615,8 +3724,8 @@
     del.className = 'btn btn-danger';
     del.appendChild(makeIcon('trash'));
     // アイコンだけなので、読み上げと吹き出しに名前を持たせる
-    del.title = '#' + issue.number + ' を捨てる';
-    del.setAttribute('aria-label', del.title);
+    del.setAttribute('aria-label', '#' + issue.number + ' を捨てる');
+    hint(del, 'act:archive');
 
     del.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -4344,6 +4453,7 @@
 
           var head = document.createElement('h3');
           head.textContent = pair[1] + ' (' + board[column].length + ')';
+          hint(head, 'board:' + column);
           col.appendChild(head);
 
           col.addEventListener('dragover', function (e) {
@@ -4493,6 +4603,16 @@
 
     var foot = document.createElement('div');
     foot.className = 'guide-foot';
+
+    var again = document.createElement('button');
+    again.className = 'btn';
+    again.textContent = 'はじめの案内をもう一度出す';
+    again.addEventListener('click', function () {
+      setGuideline(true);
+      switchTab('docs');
+      showSnack('文書の画面に案内を出しました', { kind: 'ok' });
+    });
+    foot.appendChild(again);
 
     var who = document.createElement('span');
     who.className = 'row-meta';
@@ -5547,6 +5667,48 @@
     showSnack('先に文書を選んでください。文書を開くと改訂版を作れます');
     switchTab('docs');
   });
+  /**
+   * 画面にずっと居る要素に補足を付ける。
+   *
+   * 作られては消える要素は、作るところで付ける。
+   */
+  function applyHints() {
+    var byTab = {
+      content: 'tab:content', history: 'tab:history', drafts: 'tab:drafts',
+    };
+    var byNav = {
+      docs: 'nav:docs', issues: 'nav:issues', branches: 'nav:branches',
+      pulls: 'nav:pulls', help: 'nav:help', report: 'nav:report',
+    };
+
+    var targets = document.querySelectorAll('[data-tab]');
+    for (var i = 0; i < targets.length; i++) {
+      var el = targets[i];
+      var key = el.classList.contains('tab')
+        ? byTab[el.dataset.tab] : byNav[el.dataset.tab];
+      if (key) hint(el, key);
+    }
+
+    hint(branchChip, 'chip:official');
+    hint(dirtyBadge, 'badge:dirty');
+    hint(document.getElementById('branch-switch'), 'select:branch');
+    hint(openLink, 'link:file');
+    hint(themeBtn, 'act:theme');
+    hint(bellBtn, 'act:bell');
+
+    hint(viewBtns.list, 'seg:list');
+    hint(viewBtns.board, 'seg:board');
+    hint(viewBtns.gantt, 'seg:gantt');
+    hint(viewBtns.trash, 'seg:trash');
+    hint(issueGroupSel.parentNode, 'group:issue');
+    hint(mineBtn, 'filter:mine');
+    hint(reportOpenBtn, 'filter:open');
+
+    hint(document.querySelector('.graph-col-graph'), 'col:graph');
+    hint(document.querySelector('.graph-col-desc'), 'col:desc');
+    hint(document.querySelector('.graph-col-sha'), 'col:sha');
+  }
+
   attachHint(bulkCommitBtn,
     '改訂中の版をすべて見て、まだ記録していない変更を探します。' +
     '見つかったものを選んで、ひとつの説明でまとめて記録します');
@@ -5576,8 +5738,30 @@
     } catch (e) { /* 覚えられなくても開閉はできる */ }
   });
 
+  /**
+   * はじめの案内を出す / しまう。
+   *
+   * 一度しまうと二度と出せない案内は、しまうのをためらわせる。
+   * 使い方の頁からいつでも出し直せるようにしておく。
+   *
+   * @param {boolean} on
+   */
+  function setGuideline(on) {
+    guidelineEl.hidden = !on;
+
+    try {
+      window.localStorage.setItem('guidelineHidden', on ? '' : '1');
+    } catch (e) { /* 覚えられなくても表示は切り替わる */ }
+  }
+
+  document.getElementById('guideline-hide').addEventListener('click', function () {
+    setGuideline(false);
+    showSnack('案内をしまいました。「使い方」からいつでも出せます');
+  });
+
   try {
     if (window.localStorage.getItem('guideline') === 'closed') guidelineToggle.click();
+    if (window.localStorage.getItem('guidelineHidden') === '1') setGuideline(false);
   } catch (e) { /* 既定は開いたまま */ }
   issueGroupSel.addEventListener('change', reloadIssueView);
   issueFilterEl.addEventListener('input', reloadIssueView);
@@ -5724,6 +5908,7 @@
   } catch (e) { /* 既定の一覧でよい */ }
   setIssueView(issueView);
 
+  applyHints();
   loadFiles(function () { switchTab('docs'); });
 })();
 </script>
