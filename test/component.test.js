@@ -937,3 +937,17 @@ describe('確認依頼の一覧', () => {
     expect(css).toContain('#pr-pane { flex-basis: var(--pr-pane-w); }');
   });
 });
+
+describe('確認依頼の中身の切り替え', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('3つの見方に分かれている', () => {
+    mount();
+    document.querySelector('[data-tab="pulls"]').click();
+
+    const tabs = [...document.querySelectorAll('#pr-detail .pr-tab')]
+      .map((el) => el.textContent);
+
+    expect(tabs).toEqual(['やりとり', '変更の記録', '差分']);
+  });
+});

@@ -941,7 +941,7 @@
     if (!shown.length) {
       var p = document.createElement('p');
       p.className = 'diff-empty';
-      p.textContent = '違いはありません';
+      p.textContent = '差分はありません';
       container.appendChild(p);
       return;
     }
@@ -2346,7 +2346,7 @@
           files: function () { renderDiffInto(preview.ops, prBody, true); },
         };
 
-        [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '違い']]
+        [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分']]
           .forEach(function (t) {
             var b = document.createElement('button');
             b.className = 'pr-tab';
