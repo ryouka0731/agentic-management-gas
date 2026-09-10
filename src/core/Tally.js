@@ -18,7 +18,39 @@ function TALLY_UNITS() {
     { value: 'week', label: '週ごと' },
     { value: 'month', label: '月ごと' },
     { value: 'quarter', label: '四半期ごと' },
+    { value: 'half', label: '半期ごと' },
+    { value: 'year', label: '年度ごと' },
   ];
+}
+
+/**
+ * 年度の始まる月 (1始まり)。
+ *
+ * 四半期と半期と年度は、暦ではなく年度で切る。4月から翌年3月までが
+ * ひとつの年度になる。
+ *
+ * @returns {number}
+ */
+function TALLY_FISCAL_START() {
+  return 4;
+}
+
+/**
+ * その日が年度の何か月目かと、どの年度かを返す。
+ *
+ * @param {Date} date
+ * @returns {{year:number, index:number}} index は 0 (4月) 〜 11 (翌3月)
+ */
+function tallyFiscal(date) {
+  var start = TALLY_FISCAL_START() - 1;
+  var index = date.getMonth() - start;
+  var year = date.getFullYear();
+
+  if (index < 0) {
+    index += 12;
+    year -= 1;
+  }
+  return { year: year, index: index };
 }
 
 /**
@@ -93,8 +125,28 @@ function tallyPeriodOf(date, unit) {
   }
 
   if (unit === 'quarter') {
-    var q = Math.floor(date.getMonth() / 3) + 1;
-    return { key: y + '-Q' + q, label: y + '年 第' + q + '四半期' };
+    var fq = tallyFiscal(date);
+    var q = Math.floor(fq.index / 3) + 1;
+
+    return {
+      key: fq.year + '-Q' + q,
+      label: fq.year + '年度 第' + q + '四半期',
+    };
+  }
+
+  if (unit === 'half') {
+    var fh = tallyFiscal(date);
+    var half = fh.index < 6 ? 1 : 2;
+
+    return {
+      key: fh.year + '-H' + half,
+      label: fh.year + '年度 ' + (half === 1 ? '上期' : '下期'),
+    };
+  }
+
+  if (unit === 'year') {
+    var fy = tallyFiscal(date);
+    return { key: String(fy.year), label: fy.year + '年度' };
   }
 
   // 週は月曜始まり。日曜始まりだと週末が2つの週に割れて読みにくい
@@ -243,6 +295,8 @@ function tallyEffort(issues, opts) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     TALLY_UNITS: TALLY_UNITS,
+    TALLY_FISCAL_START: TALLY_FISCAL_START,
+    tallyFiscal: tallyFiscal,
     TALLY_BASES: TALLY_BASES,
     tallyDay: tallyDay,
     tallyDateOf: tallyDateOf,

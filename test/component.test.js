@@ -2585,6 +2585,14 @@ describe('工数の集計', () => {
       .toBe('quarter');
   });
 
+  it('半期と年度でも切れる', () => {
+    openTally();
+
+    expect([...document.querySelectorAll('#tally-unit option')]
+      .map((o) => o.value))
+      .toEqual(['week', 'month', 'quarter', 'half', 'year']);
+  });
+
   it('数え方を変えられる', () => {
     const app = openTally();
 

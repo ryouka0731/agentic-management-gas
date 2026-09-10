@@ -22,11 +22,40 @@ describe('区切り', () => {
       .toEqual({ key: '2026-09', label: '2026年9月' });
   });
 
-  it('四半期で切る', () => {
-    expect(tallyPeriodOf(new Date(2026, 8, 15), 'quarter'))
-      .toEqual({ key: '2026-Q3', label: '2026年 第3四半期' });
-    expect(tallyPeriodOf(new Date(2026, 0, 1), 'quarter').key).toBe('2026-Q1');
-    expect(tallyPeriodOf(new Date(2026, 11, 31), 'quarter').key).toBe('2026-Q4');
+  it('四半期は年度で切る', () => {
+    // 4月始まりなので 4-6月 が第1四半期
+    expect(tallyPeriodOf(new Date(2026, 3, 1), 'quarter'))
+      .toEqual({ key: '2026-Q1', label: '2026年度 第1四半期' });
+    expect(tallyPeriodOf(new Date(2026, 8, 15), 'quarter').key).toBe('2026-Q2');
+    expect(tallyPeriodOf(new Date(2026, 11, 31), 'quarter').key).toBe('2026-Q3');
+    // 1〜3月は前の年度の第4四半期
+    expect(tallyPeriodOf(new Date(2027, 0, 1), 'quarter').key).toBe('2026-Q4');
+  });
+
+  it('半期で切る', () => {
+    expect(tallyPeriodOf(new Date(2026, 3, 1), 'half'))
+      .toEqual({ key: '2026-H1', label: '2026年度 上期' });
+    expect(tallyPeriodOf(new Date(2026, 8, 30), 'half').key).toBe('2026-H1');
+    expect(tallyPeriodOf(new Date(2026, 9, 1), 'half'))
+      .toEqual({ key: '2026-H2', label: '2026年度 下期' });
+    // 年をまたいでも同じ年度の下期
+    expect(tallyPeriodOf(new Date(2027, 2, 31), 'half').key).toBe('2026-H2');
+  });
+
+  it('年度で切る', () => {
+    expect(tallyPeriodOf(new Date(2026, 3, 1), 'year'))
+      .toEqual({ key: '2026', label: '2026年度' });
+    expect(tallyPeriodOf(new Date(2027, 2, 31), 'year').key).toBe('2026');
+    expect(tallyPeriodOf(new Date(2027, 3, 1), 'year').key).toBe('2027');
+  });
+
+  it('半期も年度も並べ替えずに時の順になる', () => {
+    const keys = [
+      tallyPeriodOf(new Date(2027, 4, 1), 'half').key,
+      tallyPeriodOf(new Date(2026, 10, 1), 'half').key,
+      tallyPeriodOf(new Date(2026, 4, 1), 'half').key,
+    ];
+    expect(keys.slice().sort()).toEqual(['2026-H1', '2026-H2', '2027-H1']);
   });
 
   it('週は月曜から始める', () => {
@@ -185,5 +214,69 @@ describe('足し上げ', () => {
 
     expect(tallyEffort(rows, { unit: 'week' }).periods).toHaveLength(2);
     expect(tallyEffort(rows, { unit: 'quarter' }).periods).toHaveLength(1);
+  });
+});
+
+describe('年度の区切り', () => {
+  const { tallyFiscal, TALLY_FISCAL_START } = gas;
+
+  it('4月から始まる', () => {
+    expect(TALLY_FISCAL_START()).toBe(4);
+    expect(tallyFiscal(new Date(2026, 3, 1))).toEqual({ year: 2026, index: 0 });
+  });
+
+  it('3月は前の年度の最後の月', () => {
+    expect(tallyFiscal(new Date(2027, 2, 31))).toEqual({ year: 2026, index: 11 });
+  });
+
+  it('1月と2月も前の年度', () => {
+    expect(tallyFiscal(new Date(2027, 0, 1)).year).toBe(2026);
+    expect(tallyFiscal(new Date(2027, 1, 1)).year).toBe(2026);
+  });
+
+  it('12月は同じ年度', () => {
+    expect(tallyFiscal(new Date(2026, 11, 31)).year).toBe(2026);
+  });
+});
+
+describe('半期で足し上げる', () => {
+  function issue(over) {
+    return Object.assign({
+      number: 1, title: 'x', state: 'open', assignee: 'a@example.com',
+      plannedHours: 0, actualHours: 0, dueDate: '', closedAt: '',
+      startDate: '', archivedAt: '',
+    }, over);
+  }
+
+  it('上期と下期に分かれる', () => {
+    const res = tallyEffort([
+      issue({ dueDate: '2026-05-01', plannedHours: 3 }),
+      issue({ dueDate: '2026-09-30', plannedHours: 2 }),
+      issue({ dueDate: '2026-10-01', plannedHours: 5 }),
+      issue({ dueDate: '2027-03-31', plannedHours: 1 }),
+    ], { unit: 'half' });
+
+    expect(res.periods.map((p) => p.key)).toEqual(['2026-H1', '2026-H2']);
+    expect(res.periods[0].sum.planned).toBe(5);
+    expect(res.periods[1].sum.planned).toBe(6);
+  });
+
+  it('年度をまたぐと別の区切りになる', () => {
+    const res = tallyEffort([
+      issue({ dueDate: '2027-03-31', plannedHours: 1 }),
+      issue({ dueDate: '2027-04-01', plannedHours: 2 }),
+    ], { unit: 'half' });
+
+    expect(res.periods.map((p) => p.key)).toEqual(['2026-H2', '2027-H1']);
+  });
+
+  it('累計は年度をまたいでも積む', () => {
+    const res = tallyEffort([
+      issue({ dueDate: '2026-05-01', plannedHours: 3 }),
+      issue({ dueDate: '2026-11-01', plannedHours: 2 }),
+      issue({ dueDate: '2027-05-01', plannedHours: 1 }),
+    ], { unit: 'half' });
+
+    expect(res.periods.map((p) => p.cumulative.planned)).toEqual([3, 5, 6]);
   });
 });
