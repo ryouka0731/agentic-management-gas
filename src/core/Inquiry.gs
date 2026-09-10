@@ -34,8 +34,23 @@ function INQUIRY_SHOT_LIMITS() {
 function INQUIRY_KINDS() {
   return {
     bug: 'うまく動かない',
-    request: 'こうしてほしい',
+    request: 'こうしてほしい (機能の要望)',
     question: '使い方が分からない',
+    other: 'その他',
+  };
+}
+
+/**
+ * 種類ごとに、開発者のやることに付けるタグ。
+ *
+ * @returns {Object<string,string>}
+ */
+function INQUIRY_TAGS() {
+  return {
+    bug: '不具合',
+    request: '要望',
+    question: '問合せ対応',
+    other: '問合せ対応',
   };
 }
 
@@ -88,8 +103,15 @@ function inquiryCreate(kind, body, context, shots) {
     answeredAt: '',
     closedBy: '',
     shots: inquirySaveShots_(shots, 'report'),
+    issueNumber: '',
   };
   dbAppend('inquiries', row);
+
+  var made = inquiryToIssue_(row);
+  if (made) {
+    dbUpdate('inquiries', 'number', row.number, { issueNumber: made });
+    row.issueNumber = made;
+  }
 
   notifyInquiry(row);
   notifyInquiryMention(row, row, inquiryMentioned_(text, [row.by]));
@@ -363,6 +385,8 @@ function inquiryClose(number) {
     answeredAt: new Date(),
     closedBy: Session.getActiveUser().getEmail(),
   });
+
+  inquirySyncIssue_(row, true);
   return inquiryGet(number);
 }
 
@@ -382,6 +406,8 @@ function inquiryReopen(number) {
     answeredAt: '',
     closedBy: '',
   });
+
+  inquirySyncIssue_(row, false);
   return inquiryGet(number);
 }
 
@@ -513,4 +539,61 @@ function inquiryRoster_() {
 
   add(inquiryOwner_());
   return out;
+}
+
+/**
+ * 届いた報告を、このアプリを持っている人のやることに積む。
+ *
+ * 貯めるだけでは順番が決まらない。他の仕事と同じ列に並べて初めて、
+ * いつ手を付けるかを決められる。
+ *
+ * 持ち主は環境によって変わるため、入れ物の持ち主を見る。分からない
+ * ときは担当なしで積む。担当が付かないより、積まれないほうが困る。
+ *
+ * @param {object} row inquiries 行
+ * @returns {number|string} 作ったやることの番号。作れなければ空文字
+ */
+function inquiryToIssue_(row) {
+  try {
+    var issue = issueCreate(
+      '[報告 #' + row.number + '] ' + row.title,
+      row.body + '\n\n' +
+        '---\n' +
+        '「不具合・要望」の受付 #' + row.number + ' から作られました。\n' +
+        '出した人: ' + row.by + '\n' +
+        (row.context ? 'そのときの状況: ' + row.context + '\n' : ''),
+      [],
+      INQUIRY_TAGS()[row.kind] || '問合せ対応'
+    );
+
+    var owner = inquiryOwner_();
+    if (owner) issueUpdate(issue.number, { assignee: owner });
+
+    projectPlace(issue.number, 'Backlog');
+    return issue.number;
+  } catch (e) {
+    // やることを作れなくても、報告そのものは受け付ける。ここで投げると
+    // 送ったのに何も残らないことになる
+    Logger.log('報告からやることを作れませんでした: ' + e.message);
+    return '';
+  }
+}
+
+/**
+ * 報告に紐づくやることを、報告と同じ状態にする。
+ *
+ * 報告が解決したのに、やることが開いたまま残ると数が合わなくなる。
+ *
+ * @param {object} row inquiries 行
+ * @param {boolean} done
+ */
+function inquirySyncIssue_(row, done) {
+  if (!row.issueNumber) return;
+
+  try {
+    if (done) issueClose(row.issueNumber, null);
+    else issueReopen(row.issueNumber);
+  } catch (e) {
+    Logger.log('やることの状態を合わせられませんでした: ' + e.message);
+  }
 }

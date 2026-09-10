@@ -842,14 +842,20 @@ describe('押す前の補足', () => {
   const css = read('src/ui/app.css.html');
 
   it('触れたときとキーボードの焦点の両方で出る', () => {
+    const js = read('src/ui/app.js.html');
+
     // 触れないと出ない補足は、キーボードだけの人には無いのと同じ
-    expect(css).toContain('.has-hint:hover::after');
-    expect(css).toContain('.has-hint:focus-visible::after');
+    expect(js).toContain("el.addEventListener('pointerenter'");
+    expect(js).toContain("el.addEventListener('focus'");
   });
 
-  it('補足は操作を邪魔しない', () => {
-    const block = css.slice(css.indexOf('.has-hint::after'));
-    expect(block.slice(0, block.indexOf('}'))).toContain('pointer-events: none');
+  it('補足は器に切り取られない場所に置く', () => {
+    // 器の中に描くと、幅の狭いペインや巻き取る器に切り取られる
+    const at = css.indexOf('.hint-bubble {');
+    const block = css.slice(at, css.indexOf('}', at));
+
+    expect(block).toContain('position: fixed');
+    expect(block).toContain('pointer-events: none');
   });
 
   it('読み上げ用の控えは見えないが消えていない', () => {

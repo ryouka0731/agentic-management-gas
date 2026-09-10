@@ -22,7 +22,7 @@ const EXPECTED = {
   tags: ['name', 'color', 'builtin', 'createdBy', 'createdAt'],
   notifications: ['id', 'to', 'kind', 'title', 'body', 'link', 'at', 'readAt'],
   inquiries: ['number', 'kind', 'body', 'by', 'at', 'state', 'context',
-    'answer', 'answeredAt', 'title', 'closedBy', 'shots'],
+    'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
   inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
   issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours',
     'archivedAt', 'updatedAt'],

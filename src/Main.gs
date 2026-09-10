@@ -1038,6 +1038,8 @@ function inquiryToPlain_(row) {
     at: iso(row.at),
     answeredAt: iso(row.answeredAt),
     shots: inquiryShotLinks_(row),
+    issueNumber: row.issueNumber === '' || row.issueNumber == null
+      ? '' : Number(row.issueNumber),
     mine: String(row.by) === String(me),
     // 閉じられるかは画面では決められない。ここで決めて渡す
     canClose: String(row.by) === String(me) ||

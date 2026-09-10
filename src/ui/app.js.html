@@ -241,7 +241,7 @@
     'nav:branches': '直している途中の版の一覧です。正式版には影響しません',
     'nav:pulls': '「この改訂版を正式版に反映してよいか」を尋ねているものの一覧です',
     'nav:help': 'この道具の言葉と進め方をまとめています',
-    'nav:report': 'うまく動かないことを伝える場所です。みんなで読んで話せます',
+    'nav:report': '不具合・要望・使い方の質問を伝える場所です。みんなで読んで話せて、開発者のやることにも積まれます',
 
     // 版まわり
     'chip:official': 'いま効力を持つ版です。全員が見るもので、直接は書き換えられません',
@@ -363,27 +363,85 @@
     // ところ (列見出しなど) の形が変わってしまう
     hintNotes().appendChild(note);
 
-    // 右端に近いものは左に開かせる。触れてから測るのは、幅を変えたり
-    // 窓を細くしたりで、置ける場所が変わるため
-    el.addEventListener('pointerenter', function () { placeHint(el); });
-    el.addEventListener('focus', function () { placeHint(el); });
+    el.addEventListener('pointerenter', function () { showHint(el); });
+    el.addEventListener('focus', function () { showHint(el); });
+    el.addEventListener('pointerleave', hideHint);
+    el.addEventListener('blur', hideHint);
     return el;
   }
 
   /**
-   * 補足を出す向きを決める。
+   * 補足の吹き出し。1つだけ作って使い回す。
    *
-   * はみ出す側には開かせない。窓の大きさもペインの幅も変わるので、
-   * あらかじめ決めておかず、触れた時に測る。
+   * @returns {HTMLElement}
+   */
+  function hintBubble() {
+    var el = document.getElementById('hint-bubble');
+    if (el) return el;
+
+    el = document.createElement('div');
+    el.id = 'hint-bubble';
+    el.className = 'hint-bubble';
+    el.hidden = true;
+    // 触れられると、その下の要素に触れられなくなる
+    el.setAttribute('aria-hidden', 'true');
+
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /**
+   * 補足を出す。
+   *
+   * 器の中に描くと、幅の狭いペインや巻き取る器 (overflow) に切り取られ、
+   * 下に埋もれる。器の外に1つだけ置き、窓を基準に位置を決める。
    *
    * @param {HTMLElement} el
    */
-  function placeHint(el) {
-    var rect = el.getBoundingClientRect();
+  function showHint(el) {
+    var text = el.getAttribute('data-hint');
+    if (!text) return;
 
-    // 補足の最大幅 (280px) と、3行ぶんのおおよその高さに余裕を足した値
-    el.classList.toggle('hint-left', window.innerWidth - rect.left < 300);
-    el.classList.toggle('hint-up', window.innerHeight - rect.bottom < 110);
+    var box = hintBubble();
+    box.textContent = text;
+    box.hidden = false;
+
+    // いったん左上に置いてから測る。前の位置のままだと大きさが変わらない
+    box.style.left = '0';
+    box.style.top = '0';
+
+    var rect = el.getBoundingClientRect();
+    var size = box.getBoundingClientRect();
+    var gap = 8;
+    var edge = 8;
+
+    var left = rect.left;
+    if (left + size.width > window.innerWidth - edge) {
+      left = window.innerWidth - edge - size.width;
+    }
+
+    var top = rect.bottom + gap;
+    if (top + size.height > window.innerHeight - edge) {
+      top = rect.top - gap - size.height;
+    }
+
+    // 窓の外には置かない。押した要素が端に半分隠れていることがある
+    left = Math.max(edge, left);
+    top = Math.max(edge, top);
+
+    box.style.left = Math.round(left) + 'px';
+    box.style.top = Math.round(top) + 'px';
+  }
+
+  /**
+   * 補足をしまう。
+   */
+  function hideHint() {
+    var box = document.getElementById('hint-bubble');
+    if (!box) return;
+
+    box.hidden = true;
+    box.textContent = '';
   }
 
   /**
@@ -5197,7 +5255,8 @@
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'Google ToDo との同期は追加の設定が要るため、使えるときだけ「やること」に入口が出ます。自分が担当で、まだ終わっていないぶんだけを送ります。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
-      'うまく動かないときは、左の「不具合を伝える」から送ってください。見ている画面と使っている環境も一緒に届くので、再現しやすくなります。',
+      'うまく動かないとき、こうしてほしいことがあるとき、使い方が分からないときは、左の「要望・不具合」から送ってください。見ている画面と使っている環境も一緒に届きます。',
+      '送られたものは、開発者のやることに自動で積まれます。種類に応じて「不具合」「要望」のタグが付き、進捗ボードの「これから」に並びます。',
       '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
       '報告はみんなが読めて、誰でも返信できます。同じことで困った人が先に答えを知っていることがあります。直ったら「解決した」を押してください (押せるのは出した本人と、このアプリの持ち主です)。',
       'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
@@ -5257,9 +5316,43 @@
 
   var REPORT_KINDS = [
     ['bug', 'うまく動かない'],
-    ['request', 'こうしてほしい'],
+    ['request', 'こうしてほしい (機能の要望)'],
     ['question', '使い方が分からない'],
+    ['other', 'その他'],
   ];
+
+  /**
+   * 種類ごとの尋ね方。
+   *
+   * 不具合と要望では、聞くべきことが違う。「何をしましたか」は要望には
+   * 答えようがなく、白紙のまま送られる。
+   */
+  var REPORT_ASKS = {
+    bug: {
+      summary: ['ひとことで言うと', '例: 工程表の棒が伸ばせない'],
+      steps: ['何をしましたか', '例:\n1. やること → 工程表 を開く\n2. 棒の右端を掴む\n3. 右に引く'],
+      actual: ['どうなりましたか', '例: 棒が伸びず、幅が変わらなかった'],
+      expected: ['どうなってほしかったですか', '例: 期限が右に延びてほしかった'],
+    },
+    request: {
+      summary: ['ひとことで言うと', '例: 期限が近いやることを先に出したい'],
+      steps: ['いま何に困っていますか', '例: 一覧が番号順なので、急ぎのものを探すのに毎回スクロールしている'],
+      actual: ['どうなるとよいですか', '例: 期限の近い順に並べ替えられるとよい'],
+      expected: ['他に思いつくやり方があれば', '例: 期限が3日以内のものだけを出す絞り込みでもよい'],
+    },
+    question: {
+      summary: ['ひとことで言うと', '例: 改訂版の消し方が分からない'],
+      steps: ['何をしようとしていますか', '例: 使わなくなった改訂版を片付けたい'],
+      actual: ['どこまで試しましたか', '例: 「改訂中の版」を見たが、それらしい操作が見つからない'],
+      expected: ['補足があれば', ''],
+    },
+    other: {
+      summary: ['ひとことで言うと', ''],
+      steps: ['くわしく', ''],
+      actual: ['いま分かっていること', ''],
+      expected: ['補足があれば', ''],
+    },
+  };
 
   /**
    * どこで起きたかを集める。
@@ -5293,7 +5386,7 @@
     var shots = [];
 
     var form = openInlineForm(
-      'うまく動かないことを伝える',
+      '開発者に伝える',
       [
         { name: 'kind', label: '種類', choices: REPORT_KINDS },
         {
@@ -5346,9 +5439,31 @@
     var areas = form.querySelectorAll('textarea');
     for (var i = 0; i < areas.length; i++) attachMentionPicker(areas[i]);
 
+    // 種類によって聞くべきことが違う。選び直したら尋ね方も変える
+    var kindSel = form.querySelector('select');
+    var labels = form.querySelectorAll('label');
+    var order = ['summary', 'steps', 'actual', 'expected'];
+
+    function askAs(kind) {
+      var asks = REPORT_ASKS[kind] || REPORT_ASKS.bug;
+
+      order.forEach(function (name, at) {
+        var label = labels[at + 1];
+        if (!label) return;
+
+        var field = label.querySelector('input, textarea');
+        label.firstChild.textContent = asks[name][0];
+        if (field) field.placeholder = asks[name][1];
+      });
+    }
+
+    kindSel.addEventListener('change', function () { askAs(kindSel.value); });
+    askAs(kindSel.value);
+
     var note = document.createElement('p');
     note.className = 'row-meta';
-    note.textContent = '送ると、見ている画面と使っている環境も一緒に記録されます。';
+    note.textContent = '送ると、見ている画面と使っている環境も一緒に記録され、' +
+      '開発者のやることに積まれます。';
     form.insertBefore(note, form.querySelector('.inline-form-actions'));
 
     form.querySelector('input').focus();
@@ -5692,9 +5807,9 @@
           reportDetail.textContent = '';
           reportListEl.appendChild(makeBlankState(
             'まだ何も伝えていません',
-            'うまく動かないこと、こうしてほしいことを送ってください。' +
-            '見ている画面と環境も一緒に届きます。',
-            { label: 'うまく動かないことを伝える', onClick: createReport }
+            'うまく動かないこと、こうしてほしいこと、分からないことを送って' +
+            'ください。見ている画面と環境も一緒に届き、開発者のやることに積まれます。',
+            { label: '開発者に伝える', onClick: createReport }
           ));
           return;
         }
@@ -5813,6 +5928,21 @@
       String(q.at).substring(0, 10) +
       (q.state === 'done' ? ' · 解決' + (q.closedBy ? ' (' + q.closedBy + ')' : '') : '');
     reportDetail.appendChild(meta);
+
+    if (q.issueNumber) {
+      var link = document.createElement('button');
+      link.className = 'rel-chip';
+      link.appendChild(makeIcon('corner-down-right'));
+      link.appendChild(document.createTextNode('やること #' + q.issueNumber));
+      attachHint(link, 'この報告から作られた、開発者のやることに移ります');
+
+      link.addEventListener('click', function () {
+        switchTab('issues');
+        setIssueView('list');
+        focusIssue(q.issueNumber);
+      });
+      reportDetail.appendChild(link);
+    }
 
     if (q.canClose) {
       var actions = document.createElement('div');
@@ -6529,6 +6659,10 @@
     if (savedView && viewBtns[savedView]) issueView = savedView;
   } catch (e) { /* 既定の一覧でよい */ }
   setIssueView(issueView);
+
+  // 巻き取られると、測った位置とずれる。出したままにしない
+  document.addEventListener('scroll', hideHint, true);
+  window.addEventListener('resize', hideHint);
 
   applyHints();
   loadFiles(function () { switchTab('docs'); });

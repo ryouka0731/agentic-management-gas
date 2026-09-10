@@ -2565,48 +2565,28 @@ button.gantt-name:hover { color: var(--accent); }
   white-space: nowrap;
 }
 
-.has-hint { position: relative; }
-
-.has-hint::after {
-  content: attr(data-hint);
-  position: absolute;
-  top: calc(100% + var(--sp-2));
-  left: 0;
-  z-index: 130;
-  width: max-content;
-  max-width: 280px;
+/*
+ * 器の中に描くと、幅の狭いペインや巻き取る器 (overflow) に切り取られて
+ * 下に埋もれる。器の外に1つだけ置き、窓を基準に位置を決める
+ */
+.hint-bubble {
+  position: fixed;
+  z-index: 300;
+  max-width: min(280px, calc(100vw - 16px));
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   background: var(--surface-raised);
   color: var(--ink);
-  box-shadow: var(--elev-2);
+  box-shadow: var(--hairline), var(--elev-2);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.6;
   text-align: left;
   white-space: normal;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion) ease-out;
 }
 
-.has-hint:hover::after,
-.has-hint:focus-visible::after { opacity: 1; }
 
-/* はみ出す側には開かせない (向きは触れた時に決める) */
-.has-hint.hint-left::after { left: auto; right: 0; }
-
-.has-hint.hint-up::after {
-  top: auto;
-  bottom: calc(100% + var(--sp-2));
-}
-
-/* 上の帯のものは下に開く場所が足りないことがある。窓の幅にも収める */
-.has-hint::after { max-width: min(280px, calc(100vw - var(--sp-4) * 2)); }
-
-@media (prefers-reduced-motion: reduce) {
-  .has-hint::after { transition: none; }
-}
 
 /*
  * やりとり。

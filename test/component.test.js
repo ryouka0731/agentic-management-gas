@@ -1315,7 +1315,7 @@ describe('ペインの幅', () => {
   });
 });
 
-describe('不具合を伝える', () => {
+describe('開発者に伝える', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
   function openReport(over) {
@@ -1341,7 +1341,7 @@ describe('不具合を伝える', () => {
 
     const sel = document.querySelector('#side-body select');
     expect([...sel.options].map((o) => o.value))
-      .toEqual(['bug', 'request', 'question']);
+      .toEqual(['bug', 'request', 'question', 'other']);
     expect(sel.value).toBe('bug');
   });
 
@@ -2502,55 +2502,6 @@ describe('確認依頼の反映先', () => {
   });
 });
 
-describe('補足の開く向き', () => {
-  beforeEach(() => { window.localStorage.clear(); });
-
-  /** 触れたときに測るので、位置を作って渡す */
-  function placeAt(el, left) {
-    el.getBoundingClientRect = () => ({ left, right: left + 32, top: 0, bottom: 32 });
-    el.dispatchEvent(new window.Event('pointerenter', { bubbles: true }));
-  }
-
-  it('右端に近いものは左に開く', () => {
-    mount();
-    const bell = document.getElementById('bell-btn');
-
-    // 画面の右端に居ると、右に開いた補足は外に出る
-    placeAt(bell, window.innerWidth - 40);
-    expect(bell.classList.contains('hint-left')).toBe(true);
-  });
-
-  it('場所があれば右に開く', () => {
-    mount();
-    const bell = document.getElementById('bell-btn');
-
-    placeAt(bell, 10);
-    expect(bell.classList.contains('hint-left')).toBe(false);
-  });
-
-  it('窓の幅が変わったら測り直す', () => {
-    mount();
-    const bell = document.getElementById('bell-btn');
-
-    placeAt(bell, window.innerWidth - 40);
-    placeAt(bell, 10);
-
-    expect(bell.classList.contains('hint-left')).toBe(false);
-  });
-
-  it('上の帯の右にある操作すべてに効く', () => {
-    mount();
-
-    ['bell-btn', 'theme-btn', 'commit-btn', 'stash-btn'].forEach((id) => {
-      const el = document.getElementById(id);
-      expect(el.classList.contains('has-hint')).toBe(true);
-
-      placeAt(el, window.innerWidth - 40);
-      expect(el.classList.contains('hint-left')).toBe(true);
-    });
-  });
-});
-
 describe('工数の集計', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
@@ -2682,27 +2633,214 @@ describe('工数の集計', () => {
   });
 });
 
-describe('補足の上下の向き', () => {
+
+describe('補足の出しかた', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  function placeAt(el, top) {
-    el.getBoundingClientRect = () => ({ left: 10, right: 42, top, bottom: top + 32 });
+  /** 位置を作ってから触れる */
+  function hover(el, rect) {
+    el.getBoundingClientRect = () => Object.assign(
+      { left: 0, right: 32, top: 0, bottom: 32, width: 32, height: 32 }, rect);
     el.dispatchEvent(new window.Event('pointerenter', { bubbles: true }));
+    return document.getElementById('hint-bubble');
   }
 
-  it('下に場所が無ければ上に開く', () => {
-    mount();
-    const btn = document.getElementById('bell-btn');
+  function sizeBubble(w, h) {
+    const box = document.getElementById('hint-bubble');
+    if (box) box.getBoundingClientRect = () => ({ width: w, height: h });
+  }
 
-    placeAt(btn, window.innerHeight - 40);
-    expect(btn.classList.contains('hint-up')).toBe(true);
+  it('器の外に1つだけ置く', () => {
+    mount();
+    const box = hover(document.getElementById('bell-btn'), {});
+
+    // 器の中に描くと、幅の狭いペインや巻き取る器に切り取られる
+    expect(box.parentNode).toBe(document.body);
+    expect(box.hidden).toBe(false);
+    expect(document.querySelectorAll('.hint-bubble')).toHaveLength(1);
   });
 
-  it('場所があれば下に開く', () => {
+  it('言葉をそのまま出す', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+    const box = hover(btn, {});
+
+    expect(box.textContent).toBe(btn.dataset.hint);
+  });
+
+  it('離すとしまう', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+    hover(btn, {});
+
+    btn.dispatchEvent(new window.Event('pointerleave', { bubbles: true }));
+    expect(document.getElementById('hint-bubble').hidden).toBe(true);
+  });
+
+  it('右にはみ出すなら左に寄せる', () => {
     mount();
     const btn = document.getElementById('bell-btn');
 
-    placeAt(btn, 10);
-    expect(btn.classList.contains('hint-up')).toBe(false);
+    hover(btn, {});
+    sizeBubble(280, 60);
+    hover(btn, { left: window.innerWidth - 40, right: window.innerWidth - 8 });
+
+    const left = parseInt(document.getElementById('hint-bubble').style.left, 10);
+    expect(left + 280).toBeLessThanOrEqual(window.innerWidth);
+  });
+
+  it('下にはみ出すなら上に出す', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+
+    hover(btn, {});
+    sizeBubble(200, 80);
+    hover(btn, {
+      top: window.innerHeight - 40, bottom: window.innerHeight - 8,
+    });
+
+    const top = parseInt(document.getElementById('hint-bubble').style.top, 10);
+    expect(top).toBeLessThan(window.innerHeight - 40);
+  });
+
+  it('窓からはみ出す位置には置かない', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+
+    hover(btn, {});
+    sizeBubble(280, 400);
+    hover(btn, { left: -50, top: -50, bottom: -18 });
+
+    const box = document.getElementById('hint-bubble');
+    expect(parseInt(box.style.left, 10)).toBeGreaterThanOrEqual(0);
+    expect(parseInt(box.style.top, 10)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('巻き取ったらしまう', () => {
+    mount();
+    hover(document.getElementById('bell-btn'), {});
+
+    document.dispatchEvent(new window.Event('scroll', { bubbles: true }));
+    expect(document.getElementById('hint-bubble').hidden).toBe(true);
+  });
+
+  it('触れられて操作の邪魔をしない', () => {
+    mount();
+    const box = hover(document.getElementById('bell-btn'), {});
+
+    expect(box.getAttribute('aria-hidden')).toBe('true');
+  });
+});
+
+describe('種類に応じた尋ね方', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openForm() {
+    const app = mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+    document.getElementById('report-btn').click();
+    return app;
+  }
+
+  function asks() {
+    return [...document.querySelectorAll('#side-body label')]
+      .map((l) => l.firstChild.textContent);
+  }
+
+  it('不具合では起きたことを聞く', () => {
+    openForm();
+
+    expect(asks()).toContain('何をしましたか');
+    expect(asks()).toContain('どうなりましたか');
+  });
+
+  it('要望では困りごとを聞く', () => {
+    openForm();
+    const sel = document.querySelector('#side-body select');
+
+    sel.value = 'request';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    // 「何をしましたか」は要望には答えようがなく、白紙のまま送られる
+    expect(asks()).toContain('いま何に困っていますか');
+    expect(asks()).toContain('どうなるとよいですか');
+    expect(asks()).not.toContain('何をしましたか');
+  });
+
+  it('質問では試したことを聞く', () => {
+    openForm();
+    const sel = document.querySelector('#side-body select');
+
+    sel.value = 'question';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    expect(asks()).toContain('どこまで試しましたか');
+  });
+
+  it('例も種類に合わせて変える', () => {
+    openForm();
+    const sel = document.querySelector('#side-body select');
+
+    sel.value = 'request';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
+    expect(inputs[0].placeholder).toContain('先に出したい');
+  });
+
+  it('やることに積まれることを先に伝える', () => {
+    openForm();
+
+    expect(document.getElementById('side-body').textContent)
+      .toContain('開発者のやることに積まれます');
+  });
+});
+
+describe('報告と、そこから作られたやること', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const WITH_ISSUE = {
+    inquiry: {
+      number: 3, kind: 'request', kindLabel: 'こうしてほしい (機能の要望)',
+      title: '並べ替えたい', body: '並べ替えたい', by: 'me@example.com',
+      state: 'open', context: '', answer: '', at: '', answeredAt: '',
+      mine: true, canClose: true, replyCount: 0, shots: [], issueNumber: 12,
+    },
+    replies: [],
+  };
+
+  it('やることへの行き先が出る', () => {
+    mount({
+      apiInquiryList: [WITH_ISSUE.inquiry],
+      apiInquiryThread: WITH_ISSUE,
+    });
+    document.querySelector('[data-tab="report"]').click();
+
+    const link = document.querySelector('#report-detail .rel-chip');
+    expect(link.textContent).toContain('やること #12');
+  });
+
+  it('押すとやることに移る', () => {
+    const app = mount({
+      apiInquiryList: [WITH_ISSUE.inquiry],
+      apiInquiryThread: WITH_ISSUE,
+    });
+    document.querySelector('[data-tab="report"]').click();
+    document.querySelector('#report-detail .rel-chip').click();
+
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(app.calls.some((c) => c.name === 'apiIssueList')).toBe(true);
+  });
+
+  it('積まれていなければ出さない', () => {
+    mount({
+      apiInquiryList: [{ ...WITH_ISSUE.inquiry, issueNumber: '' }],
+      apiInquiryThread: {
+        inquiry: { ...WITH_ISSUE.inquiry, issueNumber: '' }, replies: [],
+      },
+    });
+    document.querySelector('[data-tab="report"]').click();
+
+    expect(document.querySelector('#report-detail .rel-chip')).toBe(null);
   });
 });

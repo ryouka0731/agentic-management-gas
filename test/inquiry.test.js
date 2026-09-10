@@ -7,6 +7,11 @@ const SOURCES = [
   'src/core/HashGas.gs',
   'src/core/Db.gs',
   'src/core/Repo.gs',
+  'src/core/Tag.gs',
+  'src/core/Archive.js',
+  'src/core/Staleness.js',
+  'src/core/Issue.gs',
+  'src/core/Project.gs',
   'src/core/Mention.js',
   'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
@@ -528,5 +533,84 @@ describe('画面の中の知らせ', () => {
     ctx.noticeMarkRead([]);
 
     expect(ctx.noticeMarkRead([])).toBe(0);
+  });
+});
+
+describe('報告から開発者のやることを作る', () => {
+  it('積まれる', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '棒が伸びない', '画面: 工程表');
+
+    expect(row.issueNumber).toBe(1);
+
+    const issue = ctx.issueGet(row.issueNumber);
+    expect(issue.title).toBe('[報告 #1] 棒が伸びない');
+    expect(issue.body).toContain('受付 #1');
+    expect(issue.body).toContain('画面: 工程表');
+  });
+
+  it('持ち主が担当になる', () => {
+    const { ctx } = setup();
+    ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)._setOwner('owner@example.com');
+
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    expect(ctx.issueGet(row.issueNumber).assignee).toBe('owner@example.com');
+  });
+
+  it('種類がタグになる', () => {
+    const { ctx } = setup();
+
+    expect(ctx.issueGet(ctx.inquiryCreate('bug', 'a').issueNumber).labels)
+      .toBe('不具合');
+    expect(ctx.issueGet(ctx.inquiryCreate('request', 'b').issueNumber).labels)
+      .toBe('要望');
+  });
+
+  it('進捗ボードにも並ぶ', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    expect(ctx.dbFindOne('project_items', 'issueNumber', row.issueNumber).column)
+      .toBe('Backlog');
+  });
+
+  it('解決にするとやることも完了になる', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    ctx.inquiryClose(row.number);
+
+    expect(ctx.issueGet(row.issueNumber).state).toBe('closed');
+  });
+
+  it('開け直すとやることも戻る', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+    ctx.inquiryClose(row.number);
+
+    ctx.inquiryReopen(row.number);
+
+    expect(ctx.issueGet(row.issueNumber).state).toBe('open');
+  });
+
+  it('やることを作れなくても報告は受け付ける', () => {
+    const { ctx } = setup();
+    const original = ctx.issueCreate;
+    ctx.issueCreate = () => { throw new Error('わざと失敗'); };
+
+    const row = ctx.inquiryCreate('bug', '本文');
+
+    // ここで投げると、送ったのに何も残らないことになる
+    expect(row.number).toBe(1);
+    expect(row.issueNumber).toBe('');
+    ctx.issueCreate = original;
+  });
+
+  it('機能の要望も受け付ける', () => {
+    const { ctx } = setup();
+
+    expect(ctx.INQUIRY_KINDS().request).toContain('機能の要望');
+    expect(() => ctx.inquiryCreate('other', 'その他の相談')).not.toThrow();
   });
 });

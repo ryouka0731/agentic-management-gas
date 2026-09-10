@@ -493,7 +493,9 @@ describe('画面に渡せる形か', () => {
 
   it('やることは中身も正しく運べる', () => {
     const env = prepared();
-    const issues = env.ctx.apiIssueList('');
+    // 報告からも1件作られるので、下ごしらえで作ったほうを名指しする
+    const issues = env.ctx.apiIssueList('')
+      .filter((i) => i.title === 'やること');
 
     expect(issues.length).toBe(1);
     expect(issues[0].assignee).toBe('a@example.com');
