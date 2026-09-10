@@ -355,7 +355,27 @@
     // 控えは1か所にまとめて置く。隣に差し込むと、並びで組んでいる
     // ところ (列見出しなど) の形が変わってしまう
     hintNotes().appendChild(note);
+
+    // 右端に近いものは左に開かせる。触れてから測るのは、幅を変えたり
+    // 窓を細くしたりで、置ける場所が変わるため
+    el.addEventListener('pointerenter', function () { placeHint(el); });
+    el.addEventListener('focus', function () { placeHint(el); });
     return el;
+  }
+
+  /**
+   * 補足を出す向きを決める。
+   *
+   * 右に開くと画面の外にはみ出す位置なら、左に開かせる。
+   *
+   * @param {HTMLElement} el
+   */
+  function placeHint(el) {
+    var rect = el.getBoundingClientRect();
+    var room = window.innerWidth - rect.left;
+
+    // 補足の最大幅 (280px) に、はみ出しの余裕を足した値
+    el.classList.toggle('hint-left', room < 300);
   }
 
   /**
@@ -5881,13 +5901,10 @@
     '見つかったものを選んで、ひとつの説明でまとめて記録します');
   attachHint(document.getElementById('branch-create-btn'),
     '正式版をコピーして、直す用の版を作ります。正式版には影響しません');
-  // 上の帯の右寄りにあるものは、補足を左に開かせる。画面の外に出ると読めない
   attachHint(commitBtn,
-    'いまの中身をその時点として残します。あとから見比べて戻せます')
-    .classList.add('hint-left');
+    'いまの中身をその時点として残します。あとから見比べて戻せます');
   attachHint(stashBtn,
-    '正式版を直接なおしてしまったとき、その変更を別の版に移して逃がします')
-    .classList.add('hint-left');
+    '正式版を直接なおしてしまったとき、その変更を別の版に移して逃がします');
 
   bulkCommitBtn.addEventListener('click', bulkCommit);
   issueCreateBtn.addEventListener('click', createIssue);

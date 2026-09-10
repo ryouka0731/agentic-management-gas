@@ -2501,3 +2501,52 @@ describe('確認依頼の反映先', () => {
       .map((b) => b.textContent).join(' ')).toContain('土台に反映する');
   });
 });
+
+describe('補足の開く向き', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 触れたときに測るので、位置を作って渡す */
+  function placeAt(el, left) {
+    el.getBoundingClientRect = () => ({ left, right: left + 32, top: 0, bottom: 32 });
+    el.dispatchEvent(new window.Event('pointerenter', { bubbles: true }));
+  }
+
+  it('右端に近いものは左に開く', () => {
+    mount();
+    const bell = document.getElementById('bell-btn');
+
+    // 画面の右端に居ると、右に開いた補足は外に出る
+    placeAt(bell, window.innerWidth - 40);
+    expect(bell.classList.contains('hint-left')).toBe(true);
+  });
+
+  it('場所があれば右に開く', () => {
+    mount();
+    const bell = document.getElementById('bell-btn');
+
+    placeAt(bell, 10);
+    expect(bell.classList.contains('hint-left')).toBe(false);
+  });
+
+  it('窓の幅が変わったら測り直す', () => {
+    mount();
+    const bell = document.getElementById('bell-btn');
+
+    placeAt(bell, window.innerWidth - 40);
+    placeAt(bell, 10);
+
+    expect(bell.classList.contains('hint-left')).toBe(false);
+  });
+
+  it('上の帯の右にある操作すべてに効く', () => {
+    mount();
+
+    ['bell-btn', 'theme-btn', 'commit-btn', 'stash-btn'].forEach((id) => {
+      const el = document.getElementById(id);
+      expect(el.classList.contains('has-hint')).toBe(true);
+
+      placeAt(el, window.innerWidth - 40);
+      expect(el.classList.contains('hint-left')).toBe(true);
+    });
+  });
+});

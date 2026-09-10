@@ -2591,8 +2591,11 @@ button.gantt-name:hover { color: var(--accent); }
 .has-hint:hover::after,
 .has-hint:focus-visible::after { opacity: 1; }
 
-/* 右端のものは左に開く。画面の外に出ると読めない */
+/* 右端のものは左に開く。画面の外に出ると読めない (向きは触れた時に決める) */
 .has-hint.hint-left::after { left: auto; right: 0; }
+
+/* 上の帯のものは下に開く場所が足りないことがある。窓の幅にも収める */
+.has-hint::after { max-width: min(280px, calc(100vw - var(--sp-4) * 2)); }
 
 @media (prefers-reduced-motion: reduce) {
   .has-hint::after { transition: none; }
