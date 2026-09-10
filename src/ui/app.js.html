@@ -80,6 +80,9 @@
   var noticeBody = document.getElementById('notice-body');
   var bellBtn = document.getElementById('bell-btn');
   var bellCount = document.getElementById('bell-count');
+  var meBtn = document.getElementById('me-btn');
+  var mePanel = document.getElementById('me-panel');
+  var meBody = document.getElementById('me-body');
   var seenNoticeId = 0;
 
   var docListEl = document.getElementById('doc-list');
@@ -299,6 +302,7 @@
     'act:merge': '改訂版の中身を正式版に書き戻します。承認が要ります',
     'act:bell': '名前を呼ばれたときや、返信があったときにここに出ます',
     'act:theme': '画面の明るさを、端末に合わせる・明るい・暗い で切り替えます',
+    'act:me': '表示する名前や、手元から動かす道具の受け取りはここです',
   };
 
   /**
@@ -2426,8 +2430,19 @@
           meta.className = 'row-meta';
           meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
             ' · ' + personName(pr.author);
+
+          if (pr.reviewers && pr.reviewers.length) {
+            meta.appendChild(document.createTextNode(' · 確認 '));
+            meta.appendChild(makeAvatars(pr.reviewers));
+          }
           main.appendChild(meta);
-          btn.appendChild(main);
+
+          // 他の一覧と同じ器に入れる。入れないとこの行だけ背が低くなる
+          var open = document.createElement('span');
+          open.className = 'row-open';
+          open.appendChild(makeIcon('clipboard-check'));
+          open.appendChild(main);
+          btn.appendChild(open);
 
           var state = document.createElement('span');
           state.className = 'state state-' + pr.state;
@@ -6288,6 +6303,13 @@
   function loadHelp() {
     if (guideEl.dataset.ready) return;
 
+    // 操作は先に置く。読み物の底に置くと、困ったときにしか開かれない
+    // 場所に埋もれる
+    var top = document.createElement('div');
+    top.className = 'guide-foot guide-top';
+    makeMeActions().forEach(function (el) { top.appendChild(el); });
+    guideEl.appendChild(top);
+
     GUIDE.forEach(function (section) {
       var h = document.createElement('h2');
       h.textContent = section[0];
@@ -6304,73 +6326,6 @@
 
     var foot = document.createElement('div');
     foot.className = 'guide-foot';
-
-    var kit = document.createElement('button');
-    kit.className = 'btn btn-primary';
-    kit.appendChild(makeIcon('save'));
-    kit.appendChild(document.createTextNode('手元から動かす道具を落とす'));
-    attachHint(kit,
-      '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
-      'Claude や Codex に読ませる説明も入っています');
-
-    kit.addEventListener('click', function () {
-      kit.disabled = true;
-
-      google.script.run
-        .withSuccessHandler(function (res) {
-          kit.disabled = false;
-          if (!res) return;
-
-          // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
-          window.open(res.url, '_blank');
-          showSnack(res.name + ' を用意しました', { kind: 'ok' });
-        })
-        .withFailureHandler(function (err) {
-          kit.disabled = false;
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiAgentKit();
-    });
-    foot.appendChild(kit);
-
-    var rename = document.createElement('button');
-    rename.className = 'btn';
-    rename.textContent = '表示する名前を決める';
-    attachHint(rename,
-      'ほかの人の画面にも、この名前で出ます。決めないとアドレスの手前が使われます');
-
-    rename.addEventListener('click', function () {
-      var form = openInlineForm(
-        '表示する名前',
-        [{ name: 'name', label: '名前', required: true }],
-        '決める',
-        function (v) {
-          google.script.run
-            .withSuccessHandler(function (row) {
-              peopleNames[currentUser] = row.name;
-              showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
-              closeSide();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiPeopleSetName(currentUser, v.name);
-        },
-        rename
-      );
-      form.querySelector('input').value = personName(currentUser);
-    });
-    foot.appendChild(rename);
-
-    var again = document.createElement('button');
-    again.className = 'btn';
-    again.textContent = 'はじめの案内をもう一度出す';
-    again.addEventListener('click', function () {
-      setGuideline(true);
-      switchTab('docs');
-      showSnack('文書の画面に案内を出しました', { kind: 'ok' });
-    });
-    foot.appendChild(again);
 
     var who = document.createElement('span');
     who.className = 'row-meta';
@@ -7303,6 +7258,128 @@
     form.insertBefore(note, form.querySelector('.inline-form-actions'));
   }
 
+  // ===== 自分まわり =====
+
+  /**
+   * 自分まわりの操作を作る。
+   *
+   * 名前を決める・道具を落とす・案内を出し直すは、読み物ではなく操作で
+   * ある。使い方の頁の底に置くと、困ったときにしか開かれない場所に
+   * 埋もれる。上の帯からいつでも開ける形にする。
+   *
+   * @returns {HTMLElement[]}
+   */
+  function makeMeActions() {
+    var out = [];
+
+    var kit = document.createElement('button');
+    kit.className = 'btn btn-primary';
+    kit.appendChild(makeIcon('save'));
+    kit.appendChild(document.createTextNode('手元から動かす道具を落とす'));
+    attachHint(kit,
+      '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
+      'Claude や Codex に読ませる説明も入っています');
+
+    kit.addEventListener('click', function () {
+      kit.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          kit.disabled = false;
+          if (!res) return;
+
+          // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
+          window.open(res.url, '_blank');
+          showSnack(res.name + ' を用意しました', { kind: 'ok' });
+        })
+        .withFailureHandler(function (err) {
+          kit.disabled = false;
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiAgentKit();
+    });
+    out.push(kit);
+
+    var rename = document.createElement('button');
+    rename.className = 'btn';
+    rename.appendChild(makeIcon('user'));
+    rename.appendChild(document.createTextNode('表示する名前を決める'));
+    attachHint(rename,
+      'ほかの人の画面にも、この名前で出ます。決めないとアドレスの手前が使われます');
+
+    rename.addEventListener('click', function () {
+      closeMe();
+
+      var form = openInlineForm(
+        '表示する名前',
+        [{ name: 'name', label: '名前', required: true }],
+        '決める',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function (row) {
+              peopleNames[currentUser] = row.name;
+              showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
+              closeSide();
+              drawMe();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiPeopleSetName(currentUser, v.name);
+        },
+        rename
+      );
+      form.querySelector('input').value = personName(currentUser);
+    });
+    out.push(rename);
+
+    var again = document.createElement('button');
+    again.className = 'btn';
+    again.appendChild(makeIcon('help-circle'));
+    again.appendChild(document.createTextNode('はじめの案内をもう一度出す'));
+
+    again.addEventListener('click', function () {
+      closeMe();
+      setGuideline(true);
+      switchTab('docs');
+      showSnack('文書の画面に案内を出しました', { kind: 'ok' });
+    });
+    out.push(again);
+
+    return out;
+  }
+
+  function closeMe() {
+    mePanel.hidden = true;
+    meBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * 自分まわりの中身を描く。
+   */
+  function drawMe() {
+    meBtn.textContent = '';
+    meBtn.appendChild(makeAvatar(currentUser));
+    meBtn.setAttribute('aria-label', '自分の設定');
+
+    document.getElementById('me-who').textContent =
+      personName(currentUser) || 'あなた';
+
+    meBody.textContent = '';
+
+    var who = document.createElement('div');
+    who.className = 'row-meta';
+    who.textContent = currentUser
+      ? currentUser
+      : '利用者を特定できていません。この状態では記録に名前が残りません';
+    meBody.appendChild(who);
+
+    var actions = document.createElement('div');
+    actions.className = 'me-actions';
+    makeMeActions().forEach(function (el) { actions.appendChild(el); });
+    meBody.appendChild(actions);
+  }
+
   // ===== 使われ方の記録 =====
 
   /**
@@ -7914,6 +7991,7 @@
     hint(openLink, 'link:file');
     hint(themeBtn, 'act:theme');
     hint(bellBtn, 'act:bell');
+    hint(meBtn, 'act:me');
 
     hint(viewBtns.list, 'seg:list');
     hint(viewBtns.board, 'seg:board');
@@ -8041,6 +8119,16 @@
   });
   loadTasksState();
 
+  meBtn.addEventListener('click', function () {
+    var open = mePanel.hidden;
+
+    if (open) drawMe();
+    mePanel.hidden = !open;
+    meBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.getElementById('me-close').addEventListener('click', closeMe);
+  drawMe();
+
   bellBtn.appendChild(makeIcon('bell'));
   bellBtn.insertBefore(bellBtn.lastChild, bellCount);
 
@@ -8099,7 +8187,10 @@
   });
 
   google.script.run
-    .withSuccessHandler(function (who) { currentUser = (who || {}).activeUser || ''; })
+    .withSuccessHandler(function (who) {
+      currentUser = (who || {}).activeUser || '';
+      drawMe();
+    })
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
 

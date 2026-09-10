@@ -3925,47 +3925,141 @@ describe('使われ方のボード', () => {
   });
 });
 
-describe('手元から動かす道具', () => {
+describe('自分まわりの操作', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.open = () => {};
   });
 
-  function openHelp() {
+  function openMe() {
     const app = mount();
-    document.querySelector('[data-tab="help"]').click();
+    document.getElementById('me-btn').click();
     return app;
   }
 
-  it('使い方から落とせる', () => {
-    const app = openHelp();
+  function actions() {
+    return [...document.querySelectorAll('#me-body .btn')]
+      .map((b) => b.textContent);
+  }
 
-    [...document.querySelectorAll('#guide .btn')]
-      .find((b) => b.textContent.includes('手元から動かす道具')).click();
+  it('上の帯からいつでも開ける', () => {
+    openMe();
 
-    expect(app.calls.some((c) => c.name === 'apiAgentKit')).toBe(true);
+    // 使い方の頁の底に置くと、困ったときにしか開かれない場所に埋もれる
+    expect(document.getElementById('me-panel').hidden).toBe(false);
+    expect(actions()).toEqual([
+      '手元から動かす道具を落とす', '表示する名前を決める',
+      'はじめの案内をもう一度出す',
+    ]);
   });
 
-  it('落とす先を新しいタブで開く', () => {
+  it('自分の顔と名前を出す', () => {
+    openMe();
+
+    expect(document.getElementById('me-btn').querySelector('.avatar')
+      .textContent).toBe('山');
+    expect(document.getElementById('me-who').textContent).toBe('山田 太郎');
+    expect(document.getElementById('me-body').textContent)
+      .toContain('me@example.com');
+  });
+
+  it('道具を落とせる', () => {
     let opened = '';
     window.open = (url) => { opened = url; };
 
-    openHelp();
-    [...document.querySelectorAll('#guide .btn')]
+    const app = openMe();
+    [...document.querySelectorAll('#me-body .btn')]
       .find((b) => b.textContent.includes('手元から動かす道具')).click();
 
-    // 画面から直に流すと、大きさの上限に当たる
+    expect(app.calls.some((c) => c.name === 'apiAgentKit')).toBe(true);
     expect(opened).toContain('drive.google.com');
-    expect(document.getElementById('snackbar').textContent)
-      .toContain('agent-kit');
   });
 
-  it('何ができる道具かを使い方に書く', () => {
-    openHelp();
-    const text = document.getElementById('guide').textContent;
+  it('名前を決められる', () => {
+    const app = openMe();
+    [...document.querySelectorAll('#me-body .btn')]
+      .find((b) => b.textContent.includes('表示する名前')).click();
 
-    expect(text).toContain('Claude や Codex から操作できます');
-    expect(text).toContain('鍵もトークンも要りません');
-    expect(text).toContain('確認依頼の承認は、手元からはできません');
+    const input = document.querySelector('#side-body input');
+    expect(input.value).toBe('山田 太郎');
+
+    input.value = '山田 一郎';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiPeopleSetName').pop().args)
+      .toEqual(['me@example.com', '山田 一郎']);
+  });
+
+  it('はじめの案内を出し直せる', () => {
+    mount();
+    document.getElementById('guideline-hide').click();
+
+    document.getElementById('me-btn').click();
+    [...document.querySelectorAll('#me-body .btn')]
+      .find((b) => b.textContent.includes('もう一度出す')).click();
+
+    expect(document.getElementById('guideline').hidden).toBe(false);
+    expect(document.getElementById('me-panel').hidden).toBe(true);
+  });
+
+  it('閉じられる', () => {
+    openMe();
+    document.getElementById('me-close').click();
+
+    expect(document.getElementById('me-panel').hidden).toBe(true);
+  });
+
+  it('使い方でも読み物より先に置く', () => {
+    mount();
+    document.querySelector('[data-tab="help"]').click();
+
+    const guide = document.getElementById('guide');
+    const top = guide.querySelector('.guide-top');
+    const firstHead = guide.querySelector('h2');
+
+    expect(top).toBeTruthy();
+    expect(top.compareDocumentPosition(firstHead) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('一覧の行の高さ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('確認依頼の行も他と同じ器に入れる', () => {
+    mount();
+    document.querySelector('[data-tab="pulls"]').click();
+
+    // 入れないとこの行だけ背が低くなる
+    const row = document.querySelector('#pr-list .row-item');
+    expect(row.querySelector('.row-open')).toBeTruthy();
+    expect(row.querySelector('.row-open .icon')).toBeTruthy();
+  });
+
+  it('どの一覧でも丈を揃える', () => {
+    const css = document.querySelector('style').textContent;
+    const at = css.indexOf('\n.row-item {');
+
+    expect(css.slice(at, css.indexOf('}', at))).toContain('min-height: 56px');
+  });
+
+  it('確認してもらう人が一覧にも出る', () => {
+    mount({
+      apiPrList: [{ ...DEFAULTS.apiPrList[0], reviewers: ['me@example.com'] }],
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    const row = document.querySelector('#pr-list .row-item');
+    expect(row.textContent).toContain('確認');
+    expect(row.querySelector('.avatars')).toBeTruthy();
+  });
+
+  it('頼んでいなければ出さない', () => {
+    mount({
+      apiPrList: [{ ...DEFAULTS.apiPrList[0], reviewers: [] }],
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    expect(document.querySelector('#pr-list .row-item .avatars')).toBe(null);
   });
 });

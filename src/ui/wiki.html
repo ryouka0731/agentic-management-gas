@@ -78,6 +78,8 @@
                 aria-expanded="false">
           <span class="bell-count" id="bell-count" hidden></span>
         </button>
+        <button id="me-btn" class="theme-btn me-btn" type="button"
+                aria-expanded="false"></button>
         <button id="theme-btn" class="theme-btn" type="button"></button>
       </div>
 
@@ -331,6 +333,15 @@
         </div>
       </div>
     </div>
+
+    <aside class="notice-panel me-panel" id="me-panel" hidden aria-label="自分の設定">
+      <div class="side-head">
+        <h2 id="me-who"></h2>
+        <button class="side-close" id="me-close" type="button"
+                aria-label="閉じる">×</button>
+      </div>
+      <div class="me-body" id="me-body"></div>
+    </aside>
 
     <aside class="notice-panel" id="notice-panel" hidden aria-label="知らせ">
       <div class="side-head">

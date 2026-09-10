@@ -1634,6 +1634,8 @@ button:disabled {
   display: flex;
   align-items: center;
   text-align: left;
+  /* どの一覧でも背の高さを揃える。器の形が違っても行の丈は変えない */
+  min-height: 56px;
   gap: var(--sp-2);
   margin: 0 var(--sp-4) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
@@ -3408,4 +3410,34 @@ button.label-pill {
 @media (max-width: 767px) {
   .usage-name { flex-basis: 110px; }
 }
+
+/*
+ * 自分まわり。
+ *
+ * 名前を決める・道具を落とすは読み物ではなく操作なので、上の帯から
+ * いつでも開ける場所に置く
+ */
+.me-btn { padding: 0; }
+.me-btn .avatar { width: 24px; height: 24px; }
+
+.me-panel { width: min(92vw, 320px); }
+
+.me-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--bg-2);
+}
+
+.me-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.me-actions .btn { justify-content: flex-start; }
+
+/* 使い方の頭に置く操作 */
+.guide-top { margin-bottom: var(--sp-4); }
 </style>
