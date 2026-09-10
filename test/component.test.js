@@ -3240,3 +3240,69 @@ describe('複数の担当者の見え方', () => {
     expect(document.querySelectorAll('#issue-list .row-item')).toHaveLength(1);
   });
 });
+
+describe('工数を割って数えることの断り', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openDetail() {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+  }
+
+  function type(value) {
+    const input = document
+      .querySelectorAll('#side-body input, #side-body textarea')[2];
+    input.value = value;
+    input.selectionStart = value.length;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  }
+
+  it('2人以上にしたその場で言う', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+
+    // 集計を見てから気づくのでは遅い
+    expect(document.querySelector('.assignee-note').textContent)
+      .toContain('2人で割って数えます');
+  });
+
+  it('1人のときは言わない', () => {
+    openDetail();
+    type('@me@example.com ');
+
+    expect(document.querySelector('.assignee-note')).toBe(null);
+  });
+
+  it('担当者の欄の補足にも書く', () => {
+    openDetail();
+    const label = document
+      .querySelectorAll('#side-body input, #side-body textarea')[2].parentNode;
+
+    expect(label.dataset.hint).toContain('頭数で割って');
+  });
+
+  it('集計の表の脇にも書く', () => {
+    mount({
+      apiTallyEffort: {
+        periods: [{
+          key: '2026-09', label: '2026年9月',
+          sum: { planned: 4, actual: 6, diff: 2, count: 1 },
+          cumulative: { planned: 4, actual: 6, diff: 2, count: 1 },
+          byPerson: { 'me@example.com': { planned: 2, actual: 3, diff: 1, count: 1 } },
+        }],
+        people: [{
+          who: 'me@example.com',
+          total: { planned: 2, actual: 3, diff: 1, count: 1 },
+        }],
+        total: { planned: 4, actual: 6, diff: 2, count: 1 },
+        skipped: 0, hidden: 0,
+      },
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-tally').click();
+
+    expect(document.querySelector('#tally .tally-note').textContent)
+      .toContain('頭数で割って数えています');
+  });
+});

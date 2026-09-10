@@ -266,7 +266,8 @@
     'filter:mine': '自分が担当のものだけに絞ります',
     'filter:open': 'まだ解決していない報告だけに絞ります',
     'field:estimate': '作業の大きさの目安です。時間ではなく相対的な数で入れます',
-    'field:planned': 'かかる見込みの人日です。工程表の棒の長さと繋がっています。担当者が複数いる集計では、頭数で割って数えます',
+    'field:planned': 'かかる見込みの人日です。工程表の棒の長さと繋がっています。担当者が複数いれば、集計では頭数で割って数えます',
+    'field:assignee': '「@」を打つと候補が出ます。名前でもアドレスでも探せます。何人でも割り当てられ、そのときは工数を頭数で割って数えます',
     'field:actual': '実際にかかった人日です。見込みとの差が次の見積もりの手がかりになります',
     'field:parent': 'このやることを、別のやることの下にぶら下げます',
     'field:tags': 'どんな種類の仕事かの印です。「#」を打つと候補が出ます',
@@ -3934,6 +3935,7 @@
     inputs[8].type = 'number';
 
     // 人日は半日きざみで入れられるようにする
+    hint(inputs[2].parentNode, 'field:assignee');
     hint(inputs[5].parentNode, 'field:estimate');
     hint(inputs[6].parentNode, 'field:planned');
     hint(inputs[7].parentNode, 'field:actual');
@@ -4091,6 +4093,15 @@
         chip.appendChild(makePersonLabel(who));
         preview.appendChild(chip);
       });
+
+      // 割り当てているその場で言う。集計を見てから気づくのでは遅い
+      if (list.length > 1) {
+        var note = document.createElement('div');
+        note.className = 'row-meta assignee-note';
+        note.textContent = '工数は集計のときに ' + list.length +
+          '人で割って数えます (全体の合計は1件ぶんのままです)。';
+        preview.appendChild(note);
+      }
     }
 
     function pick(who, from) {
@@ -5240,7 +5251,8 @@
 
     var note = document.createElement('div');
     note.className = 'tally-note row-meta';
-    note.textContent = 'それぞれ「予定 / 実績」と、その差です (人日)。';
+    note.textContent = 'それぞれ「予定 / 実績」と、その差です (人日)。' +
+      '担当者が複数いる仕事は、頭数で割って数えています。';
     wrap.appendChild(note);
     return wrap;
   }
@@ -5422,6 +5434,7 @@
       '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
+      '担当者が複数いる仕事の工数は、集計のときに頭数で割って数えられます。4人日を2人で持てば、それぞれ2人日として数えられ、全体の合計は4人日のままです。',
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
