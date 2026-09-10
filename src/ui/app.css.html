@@ -2080,13 +2080,15 @@ button.gantt-name:hover { color: var(--accent); }
 
 .group-head .row-meta { margin-left: auto; }
 
-.group-switch {
+.group-switch,
+.tally-switch {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
 }
 
-.group-switch select {
+.group-switch select,
+.tally-switch select {
   min-width: 120px;
   padding: 4px 6px;
   font-size: 12px;
@@ -2591,8 +2593,13 @@ button.gantt-name:hover { color: var(--accent); }
 .has-hint:hover::after,
 .has-hint:focus-visible::after { opacity: 1; }
 
-/* 右端のものは左に開く。画面の外に出ると読めない (向きは触れた時に決める) */
+/* はみ出す側には開かせない (向きは触れた時に決める) */
 .has-hint.hint-left::after { left: auto; right: 0; }
+
+.has-hint.hint-up::after {
+  top: auto;
+  bottom: calc(100% + var(--sp-2));
+}
 
 /* 上の帯のものは下に開く場所が足りないことがある。窓の幅にも収める */
 .has-hint::after { max-width: min(280px, calc(100vw - var(--sp-4) * 2)); }
@@ -2982,4 +2989,105 @@ button.label-pill {
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; box-shadow: 0 0 0 3px var(--accent); }
 }
+
+/*
+ * 工数の集計。
+ *
+ * 1件ずつ見ているうちは傾向が分からない。まず結論 (合計) を出し、
+ * その下に区切りごとの並びを置く
+ */
+.tally-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+.tally-card {
+  flex: 1 1 120px;
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+}
+
+.tally-value {
+  margin-top: var(--sp-1);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tally-block { padding: 0 var(--sp-4) var(--sp-4); }
+
+.tally-block h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* 区切りが増えると横に伸びる。器の中だけで流す */
+.tally-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+}
+
+.tally-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tally-table th,
+.tally-table td {
+  padding: var(--sp-2) var(--sp-3);
+  text-align: right;
+}
+
+.tally-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+/* 見出しの列は左に固定する。横に流しても誰の行か分かる */
+.tally-table tbody th {
+  position: sticky;
+  left: 0;
+  background: var(--surface-raised);
+  color: var(--ink);
+  text-align: left;
+  font-weight: 400;
+}
+
+.tally-table thead th:first-child { left: 0; z-index: 1; }
+.tally-table tbody tr:hover th,
+.tally-table tbody tr:hover td { background: var(--bg-3); }
+
+.tally-who {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.tally-empty { color: var(--ink-2); }
+
+.tally-diff {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+/* 超えたぶんは目に付かせる。下回ったぶんは静かに置く */
+.tally-diff.over { background: var(--danger-bg); color: var(--danger); }
+.tally-diff.under { background: var(--success-bg); color: var(--success); }
+
+.tally-note { padding: var(--sp-2) 0 0; }
+
 </style>

@@ -110,6 +110,9 @@
   var issueCountEl = document.getElementById('issue-count');
   var dropRootEl = document.getElementById('drop-root');
   var trashListEl = document.getElementById('trash-list');
+  var tallyEl = document.getElementById('tally');
+  var tallyUnitSel = document.getElementById('tally-unit');
+  var tallyBasisSel = document.getElementById('tally-basis');
   var diffPane = document.getElementById('diff-pane');
   var diffCaption = document.getElementById('diff-caption');
   var diffExpandBtn = document.getElementById('diff-expand');
@@ -118,6 +121,7 @@
     list: document.getElementById('view-list'),
     board: document.getElementById('view-board'),
     gantt: document.getElementById('view-gantt'),
+    tally: document.getElementById('view-tally'),
     trash: document.getElementById('view-trash'),
   };
 
@@ -250,6 +254,9 @@
     'seg:board': '進み具合の列で並べます。掴んで動かすと進み具合が変わります',
     'seg:gantt': '時系列の棒で並べます。棒を掴むと期間を変えられます',
     'seg:trash': '捨てたやることの置き場です。期限までなら戻せます',
+    'seg:tally': '予定と実績の工数を、区切りごとに足し上げます。人ごとと全体で見られます',
+    'tally:unit': 'どのくらいの幅で区切って足すかです',
+    'tally:basis': 'どの日でその区切りに入れるかです。期限なら「いつまでに何人日ぶん抱えているか」、完了日なら「いつ何人日ぶん消化したか」になります',
     'group:issue': '同じまとまりごとに束ねて並べます',
     'filter:mine': '自分が担当のものだけに絞ります',
     'filter:open': 'まだ解決していない報告だけに絞ります',
@@ -366,16 +373,17 @@
   /**
    * 補足を出す向きを決める。
    *
-   * 右に開くと画面の外にはみ出す位置なら、左に開かせる。
+   * はみ出す側には開かせない。窓の大きさもペインの幅も変わるので、
+   * あらかじめ決めておかず、触れた時に測る。
    *
    * @param {HTMLElement} el
    */
   function placeHint(el) {
     var rect = el.getBoundingClientRect();
-    var room = window.innerWidth - rect.left;
 
-    // 補足の最大幅 (280px) に、はみ出しの余裕を足した値
-    el.classList.toggle('hint-left', room < 300);
+    // 補足の最大幅 (280px) と、3行ぶんのおおよその高さに余裕を足した値
+    el.classList.toggle('hint-left', window.innerWidth - rect.left < 300);
+    el.classList.toggle('hint-up', window.innerHeight - rect.bottom < 110);
   }
 
   /**
@@ -3029,12 +3037,17 @@
     issueListEl.hidden = view !== 'list';
     boardEl.hidden = view !== 'board';
     ganttEl.hidden = view !== 'gantt';
+    tallyEl.hidden = view !== 'tally';
     trashListEl.hidden = view !== 'trash';
 
-    // 捨てたものは絞り込みや束ね方の対象外
-    issueFilterEl.parentNode.hidden = view === 'trash';
-    issueGroupSel.parentNode.hidden = view === 'trash';
+    // 捨てたものと集計は、絞り込みや束ね方の対象外
+    var plain = view === 'trash' || view === 'tally';
+    issueFilterEl.parentNode.hidden = plain;
+    issueGroupSel.parentNode.hidden = plain;
     mineBtn.hidden = view === 'trash';
+
+    document.getElementById('tally-unit-box').hidden = view !== 'tally';
+    document.getElementById('tally-basis-box').hidden = view !== 'tally';
 
     try {
       window.localStorage.setItem('issueView', view);
@@ -3044,7 +3057,8 @@
   }
 
   function reloadIssueView() {
-    if (issueView === 'trash') loadTrash();
+    if (issueView === 'tally') loadTally();
+    else if (issueView === 'trash') loadTrash();
     else if (issueView === 'board') loadBoard();
     else if (issueView === 'gantt') loadGantt();
     else loadIssues();
@@ -4567,6 +4581,424 @@
   }
 
 
+  // ===== 工数の集計 =====
+
+  var TALLY_UNITS = [
+    ['week', '週ごと'], ['month', '月ごと'], ['quarter', '四半期ごと'],
+  ];
+  var TALLY_BASES = [
+    ['due', '期限で数える'], ['closed', '完了日で数える'], ['start', '開始日で数える'],
+  ];
+
+  /**
+   * 選択肢を詰める。
+   *
+   * @param {HTMLSelectElement} sel
+   * @param {Array<Array<string>>} pairs
+   */
+  function fillSelect(sel, pairs, chosen) {
+    if (sel.options.length) return;
+
+    pairs.forEach(function (pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      sel.appendChild(opt);
+    });
+    if (chosen) sel.value = chosen;
+  }
+
+  /**
+   * 数を人日として出す。
+   *
+   * @param {number} n
+   * @returns {string}
+   */
+  function daysText(n) {
+    var v = Math.round((Number(n) || 0) * 100) / 100;
+    return String(v);
+  }
+
+  /**
+   * 差の出し方。超えていれば赤、下回っていれば緑。
+   *
+   * @param {number} diff
+   * @returns {HTMLElement}
+   */
+  function makeDiffCell(diff) {
+    var el = document.createElement('span');
+    var v = Math.round((Number(diff) || 0) * 100) / 100;
+
+    el.className = 'tally-diff' + (v > 0 ? ' over' : (v < 0 ? ' under' : ''));
+    el.textContent = (v > 0 ? '+' : '') + v;
+    return el;
+  }
+
+  /**
+   * 工数を区切りごとに足し上げる。src/core/Tally.js と同じもの。
+   *
+   * @param {object[]} issues
+   * @param {object} opts
+   * @returns {object}
+   */
+  function tallyEffort(issues, opts) {
+    var unit = opts.unit || 'month';
+    var basis = opts.basis || 'due';
+
+    function day(v) {
+      if (v === null || v === undefined || v === '') return null;
+      var d = new Date(v);
+      if (isNaN(d.getTime())) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
+
+    function periodOf(date) {
+      var y = date.getFullYear();
+
+      if (unit === 'month') {
+        return {
+          key: y + '-' + pad(date.getMonth() + 1),
+          label: y + '年' + (date.getMonth() + 1) + '月',
+        };
+      }
+      if (unit === 'quarter') {
+        var q = Math.floor(date.getMonth() / 3) + 1;
+        return { key: y + '-Q' + q, label: y + '年 第' + q + '四半期' };
+      }
+
+      var shift = (date.getDay() + 6) % 7;
+      var monday = new Date(y, date.getMonth(), date.getDate() - shift);
+      return {
+        key: monday.getFullYear() + '-' + pad(monday.getMonth() + 1) +
+          '-' + pad(monday.getDate()),
+        label: (monday.getMonth() + 1) + '/' + monday.getDate() + ' の週',
+      };
+    }
+
+    function zero() { return { planned: 0, actual: 0, diff: 0, count: 0 }; }
+
+    function add(sum, issue) {
+      sum.planned += Number(issue.plannedHours) || 0;
+      sum.actual += Number(issue.actualHours) || 0;
+      sum.diff = sum.actual - sum.planned;
+      sum.count++;
+    }
+
+    function round(sum) {
+      sum.planned = Math.round(sum.planned * 100) / 100;
+      sum.actual = Math.round(sum.actual * 100) / 100;
+      sum.diff = Math.round((sum.actual - sum.planned) * 100) / 100;
+      return sum;
+    }
+
+    var byPeriod = {};
+    var order = [];
+    var byPerson = {};
+    var people = [];
+    var total = zero();
+    var skipped = 0;
+
+    (issues || []).forEach(function (issue) {
+      if (issue.archivedAt) return;
+
+      var who = String(issue.assignee || '') || '(担当なし)';
+      if (opts.who && who !== opts.who) return;
+      if (!Number(issue.plannedHours) && !Number(issue.actualHours)) return;
+
+      var date = basis === 'closed' ? day(issue.closedAt)
+        : (basis === 'start' ? day(issue.startDate) : day(issue.dueDate));
+
+      if (!date) {
+        skipped++;
+        return;
+      }
+
+      var period = periodOf(date);
+      if (!byPeriod[period.key]) {
+        byPeriod[period.key] = {
+          key: period.key, label: period.label, sum: zero(), byPerson: {},
+        };
+        order.push(period.key);
+      }
+      add(byPeriod[period.key].sum, issue);
+
+      if (!byPeriod[period.key].byPerson[who]) {
+        byPeriod[period.key].byPerson[who] = zero();
+      }
+      add(byPeriod[period.key].byPerson[who], issue);
+
+      if (!byPerson[who]) {
+        byPerson[who] = { who: who, total: zero() };
+        people.push(byPerson[who]);
+      }
+      add(byPerson[who].total, issue);
+      add(total, issue);
+    });
+
+    order.sort();
+
+    var cum = zero();
+    var periods = order.map(function (key) {
+      var row = byPeriod[key];
+      cum.planned += row.sum.planned;
+      cum.actual += row.sum.actual;
+      cum.count += row.sum.count;
+
+      return {
+        key: row.key,
+        label: row.label,
+        sum: round(row.sum),
+        byPerson: row.byPerson,
+        cumulative: round({
+          planned: cum.planned, actual: cum.actual, diff: 0, count: cum.count,
+        }),
+      };
+    });
+
+    people.sort(function (a, b) { return a.who < b.who ? -1 : 1; });
+    people.forEach(function (p) { round(p.total); });
+
+    return {
+      periods: periods, people: people, total: round(total), skipped: skipped,
+    };
+  }
+
+  /**
+   * 集計を描く。
+   *
+   * 予定と実績を1件ずつ見ているうちは傾向が分からない。区切りごとに
+   * 足し上げ、累計も並べる。
+   */
+  function loadTally() {
+    // 既定は月ごと。週は細かすぎ、四半期は粗すぎて傾向が見えにくい
+    fillSelect(tallyUnitSel, TALLY_UNITS, 'month');
+    fillSelect(tallyBasisSel, TALLY_BASES, 'due');
+
+    showSkeleton(tallyEl, 'list', 3);
+
+    google.script.run
+      .withSuccessHandler(function (list) {
+        var issues = list || [];
+        lastIssues = issues;
+
+        var res = tallyEffort(issues, {
+          unit: tallyUnitSel.value,
+          basis: tallyBasisSel.value,
+          who: mineOnly ? currentUser : '',
+        });
+
+        tallyEl.textContent = '';
+        issueCountEl.textContent = res.total.count + '件 / 予定 ' +
+          daysText(res.total.planned) + '人日 · 実績 ' +
+          daysText(res.total.actual) + '人日';
+
+        if (!res.periods.length) {
+          tallyEl.appendChild(makeBlankState(
+            '集計できるやることがありません',
+            '予定工数か実績工数を入れて、数える日 (期限・完了日・開始日) を' +
+            '埋めたものが集まります。'
+          ));
+          return;
+        }
+
+        tallyEl.appendChild(makeTallySummary(res));
+        tallyEl.appendChild(makeTallyTable(res));
+        tallyEl.appendChild(makePeopleTable(res));
+
+        if (res.skipped) {
+          var note = document.createElement('div');
+          note.className = 'tally-note tally-skipped row-meta';
+          note.textContent = res.skipped + '件は、数える日が空のため入っていません。' +
+            '「数え方」を変えると入ることがあります。';
+          tallyEl.appendChild(note);
+        }
+      })
+      .withFailureHandler(function (err) {
+        tallyEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiIssueList('');
+  }
+
+  /**
+   * 全体の合計。まず結論を出す。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makeTallySummary(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-summary';
+
+    [['予定', daysText(res.total.planned) + '人日'],
+     ['実績', daysText(res.total.actual) + '人日'],
+     ['差', null],
+     ['件数', res.total.count + '件']].forEach(function (pair) {
+      var box = document.createElement('div');
+      box.className = 'tally-card';
+
+      var label = document.createElement('div');
+      label.className = 'row-meta';
+      label.textContent = pair[0];
+      box.appendChild(label);
+
+      var value = document.createElement('div');
+      value.className = 'tally-value';
+
+      if (pair[1] === null) value.appendChild(makeDiffCell(res.total.diff));
+      else value.textContent = pair[1];
+
+      box.appendChild(value);
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  /**
+   * 区切りごとの表。累計も並べる。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makeTallyTable(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '区切りごと';
+    wrap.appendChild(head);
+
+    var scroll = document.createElement('div');
+    scroll.className = 'tally-scroll';
+
+    var table = document.createElement('table');
+    table.className = 'tally-table';
+
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    ['区切り', '予定', '実績', '差', '累計予定', '累計実績', '件数']
+      .forEach(function (name) {
+        var th = document.createElement('th');
+        th.textContent = name;
+        hr.appendChild(th);
+      });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    res.periods.forEach(function (p) {
+      var tr = document.createElement('tr');
+
+      var name = document.createElement('th');
+      name.scope = 'row';
+      name.textContent = p.label;
+      tr.appendChild(name);
+
+      [daysText(p.sum.planned), daysText(p.sum.actual), null,
+       daysText(p.cumulative.planned), daysText(p.cumulative.actual),
+       String(p.sum.count)].forEach(function (text) {
+        var td = document.createElement('td');
+        if (text === null) td.appendChild(makeDiffCell(p.sum.diff));
+        else td.textContent = text;
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    return wrap;
+  }
+
+  /**
+   * 人ごとの表。区切りを横に並べる。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makePeopleTable(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '人ごと';
+    wrap.appendChild(head);
+
+    var scroll = document.createElement('div');
+    scroll.className = 'tally-scroll';
+
+    var table = document.createElement('table');
+    table.className = 'tally-table';
+
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+
+    var corner = document.createElement('th');
+    corner.textContent = '担当者';
+    hr.appendChild(corner);
+
+    res.periods.forEach(function (p) {
+      var th = document.createElement('th');
+      th.textContent = p.label;
+      hr.appendChild(th);
+    });
+
+    var last = document.createElement('th');
+    last.textContent = '合計';
+    hr.appendChild(last);
+
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    res.people.forEach(function (person) {
+      var tr = document.createElement('tr');
+
+      var name = document.createElement('th');
+      name.scope = 'row';
+      name.className = 'tally-who';
+      name.appendChild(makeAvatar(person.who === '(担当なし)' ? '' : person.who));
+      name.appendChild(document.createTextNode(person.who));
+      tr.appendChild(name);
+
+      res.periods.forEach(function (p) {
+        var cell = p.byPerson[person.who];
+        var td = document.createElement('td');
+
+        if (!cell) {
+          td.className = 'tally-empty';
+          td.textContent = '—';
+        } else {
+          td.appendChild(document.createTextNode(
+            daysText(cell.planned) + ' / ' + daysText(cell.actual)));
+          td.appendChild(makeDiffCell(cell.actual - cell.planned));
+        }
+        tr.appendChild(td);
+      });
+
+      var totalCell = document.createElement('td');
+      totalCell.appendChild(document.createTextNode(
+        daysText(person.total.planned) + ' / ' + daysText(person.total.actual)));
+      totalCell.appendChild(makeDiffCell(person.total.diff));
+      tr.appendChild(totalCell);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+
+    var note = document.createElement('div');
+    note.className = 'tally-note row-meta';
+    note.textContent = 'それぞれ「予定 / 実績」と、その差です (人日)。';
+    wrap.appendChild(note);
+    return wrap;
+  }
+
   // ===== 進捗ボード =====
 
   var COLUMNS = [
@@ -4743,7 +5175,8 @@
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい',
-      'タグ — どんな種類の仕事かの印。用意されたものから選べるほか、その場でも作れる',
+      'タグ — どんな種類の仕事かの印。「#」で書きます',
+      '集計 — 予定と実績の工数を、週・月・四半期ごとに足し上げたもの。人ごとと全体で見られます',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
     ]],
@@ -5887,6 +6320,9 @@
     hint(viewBtns.board, 'seg:board');
     hint(viewBtns.gantt, 'seg:gantt');
     hint(viewBtns.trash, 'seg:trash');
+    hint(viewBtns.tally, 'seg:tally');
+    hint(document.getElementById('tally-unit-box'), 'tally:unit');
+    hint(document.getElementById('tally-basis-box'), 'tally:basis');
     hint(issueGroupSel.parentNode, 'group:issue');
     hint(mineBtn, 'filter:mine');
     hint(reportOpenBtn, 'filter:open');
@@ -5948,6 +6384,8 @@
     if (window.localStorage.getItem('guidelineHidden') === '1') setGuideline(false);
   } catch (e) { /* 既定は開いたまま */ }
   issueGroupSel.addEventListener('change', reloadIssueView);
+  tallyUnitSel.addEventListener('change', loadTally);
+  tallyBasisSel.addEventListener('change', loadTally);
   issueFilterEl.addEventListener('input', reloadIssueView);
 
   dropRootEl.addEventListener('dragover', function (e) {

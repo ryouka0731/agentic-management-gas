@@ -219,8 +219,19 @@
             <button class="seg" id="view-list" aria-pressed="true">一覧</button>
             <button class="seg" id="view-board" aria-pressed="false">ボード</button>
             <button class="seg" id="view-gantt" aria-pressed="false">工程表</button>
+            <button class="seg" id="view-tally" aria-pressed="false">集計</button>
             <button class="seg" id="view-trash" aria-pressed="false">捨てたもの</button>
           </div>
+
+          <label class="tally-switch" id="tally-unit-box" hidden>
+            <span class="row-meta">区切り</span>
+            <select id="tally-unit" aria-label="集計の区切り"></select>
+          </label>
+
+          <label class="tally-switch" id="tally-basis-box" hidden>
+            <span class="row-meta">数え方</span>
+            <select id="tally-basis" aria-label="どの日で数えるか"></select>
+          </label>
 
           <button class="btn toggle-btn" id="mine-btn" type="button">
             自分の担当だけ
@@ -254,6 +265,7 @@
         <div class="list-area" id="issue-list"></div>
         <div class="board" id="board" hidden></div>
         <div class="gantt-scroll" id="gantt" hidden></div>
+        <div class="list-area" id="tally" hidden></div>
         <div class="list-area" id="trash-list" hidden></div>
       </div>
 

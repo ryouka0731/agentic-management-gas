@@ -2550,3 +2550,159 @@ describe('補足の開く向き', () => {
     });
   });
 });
+
+describe('工数の集計', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ROWS = [
+    {
+      ...DEFAULTS.apiIssueList[0], number: 1, assignee: 'aoki@example.com',
+      parent: '', dueDate: '2026-09-10T00:00:00.000Z',
+      plannedHours: 3, actualHours: 5,
+    },
+    {
+      ...DEFAULTS.apiIssueList[0], number: 2, assignee: 'ito@example.com',
+      parent: '', dueDate: '2026-10-01T00:00:00.000Z',
+      plannedHours: 2, actualHours: 1,
+    },
+  ];
+
+  function openTally(over) {
+    const app = mount(Object.assign({ apiIssueList: ROWS }, over || {}));
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-tally').click();
+    return app;
+  }
+
+  function cells(row) {
+    return [...row.querySelectorAll('th, td')].map((c) => c.textContent);
+  }
+
+  it('まず全体の合計を出す', () => {
+    openTally();
+    const cards = [...document.querySelectorAll('#tally .tally-card')]
+      .map((c) => c.textContent);
+
+    expect(cards[0]).toContain('5');
+    expect(cards[1]).toContain('6');
+    expect(cards[2]).toContain('+1');
+  });
+
+  it('区切りごとに並べ、累計も出す', () => {
+    openTally();
+    const rows = [...document.querySelectorAll('#tally .tally-table')][0]
+      .querySelectorAll('tbody tr');
+
+    expect(cells(rows[0])).toEqual(['2026年9月', '3', '5', '+2', '3', '5', '1']);
+    expect(cells(rows[1])).toEqual(['2026年10月', '2', '1', '-1', '5', '6', '1']);
+  });
+
+  it('人ごとにも並べる', () => {
+    openTally();
+    const table = [...document.querySelectorAll('#tally .tally-table')][1];
+    const rows = [...table.querySelectorAll('tbody tr')];
+
+    expect(rows[0].querySelector('th').textContent).toContain('aoki@example.com');
+    expect(rows).toHaveLength(2);
+  });
+
+  it('その区切りに居ない人は空にする', () => {
+    openTally();
+    const table = [...document.querySelectorAll('#tally .tally-table')][1];
+    const aoki = table.querySelectorAll('tbody tr')[0];
+
+    // 0 と書くと「0人日やった」に読める
+    expect(aoki.querySelectorAll('td')[1].textContent).toBe('—');
+  });
+
+  it('区切りを変えられる', () => {
+    openTally();
+
+    document.getElementById('tally-unit').value = 'quarter';
+    document.getElementById('tally-unit')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    const rows = [...document.querySelectorAll('#tally .tally-table')][0]
+      .querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('th').textContent).toContain('第3四半期');
+  });
+
+  it('数え方を変えられる', () => {
+    openTally();
+
+    document.getElementById('tally-basis').value = 'closed';
+    document.getElementById('tally-basis')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    // 完了日が空なので、どの区切りにも入らない
+    expect(document.getElementById('tally').textContent)
+      .toContain('集計できるやることがありません');
+  });
+
+  it('数える日が空のものがあることを伝える', () => {
+    openTally({
+      apiIssueList: ROWS.concat([{
+        ...DEFAULTS.apiIssueList[0], number: 3, parent: '',
+        dueDate: '', plannedHours: 4, actualHours: 0,
+      }]),
+    });
+
+    // 黙って落とすと、合計が合わない理由が分からない
+    expect(document.querySelector('#tally .tally-skipped').textContent)
+      .toContain('1件は、数える日が空');
+  });
+
+  it('自分の担当だけに絞れる', () => {
+    openTally({
+      apiIssueList: ROWS.map((r) => ({ ...r, assignee: 'me@example.com' }))
+        .slice(0, 1).concat(ROWS.slice(1)),
+    });
+
+    document.getElementById('mine-btn').click();
+
+    expect(document.querySelectorAll('#tally .tally-table')[1]
+      .querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
+  it('超えた差と下回った差を見分ける', () => {
+    openTally();
+    const diffs = [...document.querySelectorAll('#tally .tally-table')][0]
+      .querySelectorAll('.tally-diff');
+
+    expect(diffs[0].classList.contains('over')).toBe(true);
+    expect(diffs[1].classList.contains('under')).toBe(true);
+  });
+
+  it('集計では絞り込みと束ね方を隠す', () => {
+    openTally();
+
+    expect(document.getElementById('issue-filter').parentNode.hidden).toBe(true);
+    expect(document.getElementById('tally-unit-box').hidden).toBe(false);
+  });
+});
+
+describe('補足の上下の向き', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function placeAt(el, top) {
+    el.getBoundingClientRect = () => ({ left: 10, right: 42, top, bottom: top + 32 });
+    el.dispatchEvent(new window.Event('pointerenter', { bubbles: true }));
+  }
+
+  it('下に場所が無ければ上に開く', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+
+    placeAt(btn, window.innerHeight - 40);
+    expect(btn.classList.contains('hint-up')).toBe(true);
+  });
+
+  it('場所があれば下に開く', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+
+    placeAt(btn, 10);
+    expect(btn.classList.contains('hint-up')).toBe(false);
+  });
+});
