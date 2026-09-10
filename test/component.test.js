@@ -2983,3 +2983,61 @@ describe('報告と、そこから作られたやること', () => {
     expect(document.querySelector('#report-detail .rel-chip')).toBe(null);
   });
 });
+
+describe('済んだ報告の見え方', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const OPEN = {
+    number: 1, kind: 'bug', kindLabel: 'うまく動かない', title: 'まだのもの',
+    body: 'x', by: 'me@example.com', state: 'open', context: '', answer: '',
+    at: '', answeredAt: '', mine: true, canClose: true, replyCount: 0,
+    shots: [], issueNumber: '',
+  };
+  const DONE = Object.assign({}, OPEN, {
+    number: 2, title: '済んだもの', state: 'done',
+  });
+
+  function openBoard(over) {
+    const app = mount(Object.assign({
+      apiInquiryList: [OPEN, DONE],
+      apiInquiryThread: { inquiry: OPEN, replies: [] },
+    }, over || {}));
+    document.querySelector('[data-tab="report"]').click();
+    document.getElementById('report-open-btn').click();
+    return app;
+  }
+
+  function rows() {
+    return [...document.querySelectorAll('#report-list .row-item')];
+  }
+
+  it('済んだものだけ一段沈める', () => {
+    openBoard();
+
+    const done = rows().find((r) => r.dataset.number === '2');
+    const open = rows().find((r) => r.dataset.number === '1');
+
+    expect(done.classList.contains('resolved')).toBe(true);
+    expect(open.classList.contains('resolved')).toBe(false);
+  });
+
+  it('沈めても読めなくはしない', () => {
+    openBoard();
+    const done = rows().find((r) => r.dataset.number === '2');
+
+    // あとから経緯を追うことがある
+    expect(done.textContent).toContain('済んだもの');
+    expect(done.querySelector('.state').textContent).toBe('解決');
+  });
+
+  it('未解決だけに絞ると出てこない', () => {
+    const app = mount({
+      apiInquiryList: [OPEN, DONE],
+      apiInquiryThread: { inquiry: OPEN, replies: [] },
+    });
+    document.querySelector('[data-tab="report"]').click();
+
+    expect(rows().map((r) => r.dataset.number)).toEqual(['1']);
+    expect(app).toBeTruthy();
+  });
+});

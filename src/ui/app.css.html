@@ -3070,4 +3070,26 @@ button.label-pill {
 
 .tally-note { padding: var(--sp-2) 0 0; }
 
+
+/*
+ * 済んだもの。
+ *
+ * 消すのではなく一段沈める。まだ手の要るものを先に拾えるようにしつつ、
+ * 読めなくはしない (あとから経緯を追うことがある)
+ */
+.row-item.resolved {
+  background: var(--bg-2);
+  box-shadow: var(--hairline);
+}
+
+.row-item.resolved .row-title { color: var(--ink-2); }
+.row-item.resolved:hover { box-shadow: var(--hairline), var(--elev-1); }
+
+/* 選んでいるあいだは沈めない。いま読んでいるものが薄いと追えない */
+.row-item.resolved[aria-current="true"] {
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+}
+
+.row-item.resolved[aria-current="true"] .row-title { color: var(--ink); }
 </style>

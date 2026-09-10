@@ -5747,7 +5747,8 @@
 
         shown.forEach(function (r) {
           var btn = document.createElement('button');
-          btn.className = 'row-item';
+          // 済んだものは一段沈める。まだ手の要るものを先に拾えるようにする
+          btn.className = 'row-item' + (r.state === 'done' ? ' resolved' : '');
           btn.dataset.number = r.number;
 
           var main = document.createElement('div');
