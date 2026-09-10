@@ -3151,4 +3151,26 @@ button.label-pill {
   flex: 1 0 100%;
   margin-top: var(--sp-1);
 }
+
+/* 札から外す小さな印。押せることを形で示す */
+.chip-off {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: var(--sp-1);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip-off:hover {
+  background: var(--danger-solid);
+  color: var(--on-danger);
+}
 </style>

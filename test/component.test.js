@@ -3306,3 +3306,94 @@ describe('工数を割って数えることの断り', () => {
       .toContain('頭数で割って数えています');
   });
 });
+
+describe('担当者を外す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openDetail() {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    return app;
+  }
+
+  function field() {
+    return document.querySelectorAll('#side-body input, #side-body textarea')[2];
+  }
+
+  function type(value) {
+    const input = field();
+    input.value = value;
+    input.selectionStart = value.length;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  }
+
+  function chips() {
+    return [...document.querySelectorAll('.assignee-chosen .reviewer-chip')];
+  }
+
+  it('札ごとに外す印が付く', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+
+    // 文字を消させると、どこからどこまでが1人ぶんか分かりにくい
+    expect(chips().map((c) => c.querySelector('.chip-off').getAttribute('aria-label')))
+      .toEqual(['山田 太郎 を外す', '鈴木 花子 を外す']);
+  });
+
+  it('押すとその人だけ消える', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+
+    chips()[0].querySelector('.chip-off').click();
+
+    expect(field().value).toBe('@other@example.com ');
+    expect(chips().map((c) => c.querySelector('.person-name').textContent))
+      .toEqual(['鈴木 花子']);
+  });
+
+  it('全部外すと担当なしになる', () => {
+    const app = openDetail();
+    type('@me@example.com ');
+
+    chips()[0].querySelector('.chip-off').click();
+    document.querySelector('#side-body form')
+      .dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1].assignee)
+      .toBe('');
+  });
+
+  it('外したあとに残った人だけを送る', () => {
+    const app = openDetail();
+    type('@me@example.com @other@example.com ');
+
+    chips()[1].querySelector('.chip-off').click();
+    document.querySelector('#side-body form')
+      .dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1].assignee)
+      .toBe('me@example.com');
+  });
+
+  it('外したあと、その人はまた候補に出る', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+    chips()[1].querySelector('.chip-off').click();
+
+    type(field().value + '@');
+
+    expect([...document.querySelectorAll('.assignee-picker .mention-name')]
+      .map((n) => n.textContent)).toContain('鈴木 花子');
+  });
+
+  it('2人から1人になったら断り書きも消える', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+    expect(document.querySelector('.assignee-note')).toBeTruthy();
+
+    chips()[1].querySelector('.chip-off').click();
+
+    expect(document.querySelector('.assignee-note')).toBe(null);
+  });
+});

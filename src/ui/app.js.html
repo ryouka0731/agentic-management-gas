@@ -4091,6 +4091,19 @@
         chip.className = 'reviewer-chip';
         chip.appendChild(makeAvatar(who));
         chip.appendChild(makePersonLabel(who));
+
+        // 外すのに文字を消させない。どこからどこまでが1人ぶんか
+        // 分かりにくく、隣まで巻き込んで消してしまう
+        var off = document.createElement('button');
+        off.type = 'button';
+        off.className = 'chip-off';
+        off.textContent = '×';
+        off.setAttribute('aria-label', personName(who) + ' を外す');
+        attachHint(off, personName(who) + ' を担当から外します');
+
+        off.addEventListener('click', function () { remove(who); });
+        chip.appendChild(off);
+
         preview.appendChild(chip);
       });
 
@@ -4102,6 +4115,22 @@
           '人で割って数えます (全体の合計は1件ぶんのままです)。';
         preview.appendChild(note);
       }
+    }
+
+    /**
+     * ひとり外す。
+     *
+     * 残った人から書き直す。書きかけの字は消えるが、この欄は担当者を
+     * 並べるためだけのものなので、他に消えて困るものは無い。
+     *
+     * @param {string} who
+     */
+    function remove(who) {
+      var left = current().filter(function (one) { return one !== who; });
+
+      input.value = left.map(function (one) { return '@' + one + ' '; }).join('');
+      draw();
+      input.focus();
     }
 
     function pick(who, from) {
