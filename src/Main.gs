@@ -1619,13 +1619,12 @@ function apiUsageRecord(rows) {
 /**
  * 使われ方をまとめて返す (Web App API)。
  *
- * 個人が写らないので、誰が見てもよい。
- *
  * @param {number} days
+ * @param {string} [who] 空なら全員ぶん
  * @returns {object}
  */
-function apiUsageSummary(days) {
-  return usageSummary(days);
+function apiUsageSummary(days, who) {
+  return usageSummary(days, null, who);
 }
 
 /**

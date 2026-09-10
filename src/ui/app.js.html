@@ -64,6 +64,7 @@
   var panelUsage = document.getElementById('panel-usage');
   var usageEl = document.getElementById('usage');
   var usageDaysSel = document.getElementById('usage-days');
+  var usageWhoSel = document.getElementById('usage-who');
   var reportListEl = document.getElementById('report-list');
   var reportDetail = document.getElementById('report-detail');
   var reportFilterEl = document.getElementById('report-filter');
@@ -249,7 +250,7 @@
     'nav:branches': '直している途中の版の一覧です。正式版には影響しません',
     'nav:pulls': '「この改訂版を正式版に反映してよいか」を尋ねているものの一覧です',
     'nav:help': 'この道具の言葉と進め方をまとめています',
-    'nav:usage': 'どこがよく使われているかの記録です。誰が押したかは記録していません',
+    'nav:usage': 'どこがよく使われているかの記録です。みんなの合計でも、人ごとでも見られます',
     'nav:report': '不具合・要望・使い方の質問を伝える場所です。みんなで読んで話せて、開発者のやることにも積まれます',
 
     // 版まわり
@@ -6244,7 +6245,7 @@
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
       'やりとり — やることの中で話し合った跡。決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論をまた一からやることになる',
       '下書き — よく使う補足の形。差し込んでから書き足す。自分で作って残せる',
-      '使われ方 — どこがよく押されているかの記録。誰が押したかは記録していないので、誰が見てもかまわない',
+      '使われ方 — どこがよく押されているかの記録。みんなの合計でも人ごとでも見られる。数えているのは「その日に何回押したか」までで、順番や時刻は残していない',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
       '担当者が複数いる仕事の工数は、集計のときに頭数で割って数えられます。4人日を2人で持てば、それぞれ2人日として数えられ、全体の合計は4人日のままです。',
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
@@ -7402,19 +7403,20 @@
 
     google.script.run
       .withSuccessHandler(function (res) {
-        var data = res || { total: 0, byTarget: [], byDay: [] };
+        var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
+        fillUsageWho(data.byUser || []);
         usageEl.textContent = '';
 
-        if (!data.total) {
+        if (!data.total && !(data.byUser || []).length) {
           usageEl.appendChild(makeBlankState(
             'まだ記録がありません',
-            'しばらく使うと、どこがよく押されているかがここに出ます。' +
-            '誰が押したかは記録していません。'
+            'しばらく使うと、どこがよく押されているかがここに出ます。'
           ));
           return;
         }
 
         usageEl.appendChild(makeUsageSummary(data));
+        usageEl.appendChild(makeUsagePeople(data.byUser || []));
         usageEl.appendChild(makeUsageRanking('よく押されている操作',
           data.byTarget.filter(function (t) { return t.kind === 'action'; })));
         usageEl.appendChild(makeUsageRanking('よく開かれている画面',
@@ -7424,7 +7426,102 @@
       .withFailureHandler(function (err) {
         usageEl.textContent = 'エラー: ' + err.message;
       })
-      .apiUsageSummary(Number(usageDaysSel.value) || 30);
+      .apiUsageSummary(Number(usageDaysSel.value) || 30, usageWhoSel.value);
+  }
+
+  /**
+   * 誰のぶんを見るかの選択肢を、記録に出てきた人から詰める。
+   *
+   * @param {object[]} people
+   */
+  function fillUsageWho(people) {
+    var want = usageWhoSel.value;
+    usageWhoSel.textContent = '';
+
+    var pairs = [['', 'みんなの合計']];
+    people.forEach(function (one) {
+      pairs.push([one.who, personName(one.who) || '(不明)']);
+    });
+
+    pairs.forEach(function (pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      usageWhoSel.appendChild(opt);
+    });
+    usageWhoSel.value = want;
+  }
+
+  /**
+   * よく使っている人を多い順に並べる。
+   *
+   * 押すとその人のぶんに絞る。誰が使っているかを見てから、その人が
+   * どこを使っているかに進める
+   *
+   * @param {object[]} people
+   * @returns {HTMLElement}
+   */
+  function makeUsagePeople(people) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = 'よく使っている人';
+    wrap.appendChild(head);
+
+    if (!people.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'まだ記録がありません';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var top = people[0].count || 1;
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    people.slice(0, 15).forEach(function (row, at) {
+      var line = document.createElement('button');
+      line.className = 'usage-row usage-person';
+      line.setAttribute('aria-label', personName(row.who) + ' のぶんだけを見る');
+      attachHint(line, 'この人が使っているところだけを見ます');
+
+      line.addEventListener('click', function () {
+        usageWhoSel.value = row.who;
+        loadUsage();
+      });
+
+      var rank = document.createElement('span');
+      rank.className = 'usage-rank';
+      rank.textContent = (at + 1);
+      line.appendChild(rank);
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.appendChild(makeAvatar(row.who));
+      name.appendChild(document.createTextNode(personName(row.who) || '(不明)'));
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = Math.max(2, Math.round(row.count / top * 100)) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = row.count;
+      line.appendChild(count);
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
   }
 
   /**
@@ -7437,6 +7534,7 @@
 
     [['数えた回数', data.total + '回'],
      ['数えた場所', data.byTarget.length + 'か所'],
+     ['対象', data.who ? personName(data.who) : 'みんな'],
      ['期間', data.from + ' 〜 ' + data.to]].forEach(function (pair) {
       var box = document.createElement('div');
       box.className = 'tally-card';
@@ -7856,6 +7954,7 @@
   tallyBasisSel.addEventListener('change', loadTally);
   tallyWhoSel.addEventListener('change', loadTally);
   usageDaysSel.addEventListener('change', loadUsage);
+  usageWhoSel.addEventListener('change', loadUsage);
 
   google.script.run
     .withSuccessHandler(function (res) {

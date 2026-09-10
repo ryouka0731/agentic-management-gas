@@ -33,8 +33,8 @@ describe('記録する', () => {
     expect(rows[0].target).toBe('issue-create-btn');
     expect(Number(rows[0].count)).toBe(3);
 
-    // 誰が押したかは残さない。個人の操作を追える形にしない
-    expect(Object.keys(rows[0])).toEqual(['day', 'kind', 'target', 'count']);
+    // 押した人はサーバ側で決める。画面から受け取ると名乗りを詐称できる
+    expect(rows[0].user).toBe('tester@example.com');
   });
 
   it('同じ日の同じ場所は足し込む', () => {
@@ -106,8 +106,10 @@ describe('記録する', () => {
 
 describe('まとめる', () => {
   /** 日を指定して1行入れる */
-  function put(ctx, day, kind, target, count) {
-    ctx.dbAppend('usage', { day, kind, target, count });
+  function put(ctx, day, kind, target, count, user) {
+    ctx.dbAppend('usage', {
+      day, kind, target, count, user: user || 'tester@example.com',
+    });
   }
 
   it('多い順に並べる', () => {
@@ -165,5 +167,67 @@ describe('まとめる', () => {
     // 指定が無ければ30日。長すぎる指定は1年で止める
     expect(ctx.usageSummary(0, new Date(2026, 8, 10)).from).toBe('2026-08-12');
     expect(ctx.usageSummary(9999, new Date(2026, 8, 10)).from).toBe('2025-09-11');
+  });
+});
+
+describe('人ごとに見る', () => {
+  function put(ctx, day, kind, target, count, user) {
+    ctx.dbAppend('usage', { day, kind, target, count, user });
+  }
+
+  it('よく使っている人を多い順に並べる', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'a', 3, 'aoki@example.com');
+    put(ctx, '2026-09-10', 'action', 'b', 9, 'ito@example.com');
+
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10));
+    expect(res.byUser.map((u) => u.who))
+      .toEqual(['ito@example.com', 'aoki@example.com']);
+    expect(res.byUser[0].count).toBe(9);
+  });
+
+  it('人を指定するとその人のぶんだけになる', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'a', 3, 'aoki@example.com');
+    put(ctx, '2026-09-10', 'action', 'b', 9, 'ito@example.com');
+
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10), 'aoki@example.com');
+    expect(res.total).toBe(3);
+    expect(res.byTarget.map((t) => t.target)).toEqual(['a']);
+  });
+
+  it('絞り込んでも人ごとの並びは全員ぶん出す', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'a', 3, 'aoki@example.com');
+    put(ctx, '2026-09-10', 'action', 'b', 9, 'ito@example.com');
+
+    // 誰が使っているかは、一人を見ているときにも知りたい
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10), 'aoki@example.com');
+    expect(res.byUser).toHaveLength(2);
+  });
+
+  it('同じ人の同じ場所は足し込む', () => {
+    const { ctx } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 2 }]);
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 3 }]);
+
+    expect(ctx.dbReadAll('usage')).toHaveLength(1);
+    expect(Number(ctx.dbReadAll('usage')[0].count)).toBe(5);
+  });
+
+  it('人が違えば別の行になる', () => {
+    const { ctx, fake } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 1 }]);
+
+    fake._setUser('hoka@example.com');
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 1 }]);
+
+    expect(ctx.dbReadAll('usage')).toHaveLength(2);
+  });
+
+  it('誰の期間かも返す', () => {
+    const { ctx } = setup();
+    expect(ctx.usageSummary(30, new Date(2026, 8, 10), 'x@example.com').who)
+      .toBe('x@example.com');
   });
 });

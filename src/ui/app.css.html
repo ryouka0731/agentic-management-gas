@@ -3331,7 +3331,26 @@ button.label-pill {
   font-size: 12px;
 }
 
+/* 人の行は押してその人に絞れる */
+.usage-person {
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.usage-person:hover .usage-name { color: var(--accent); }
+
+.usage-rank {
+  flex: 0 0 20px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .usage-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   flex: 0 0 180px;
   overflow: hidden;
   text-overflow: ellipsis;

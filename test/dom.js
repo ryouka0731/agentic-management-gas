@@ -117,7 +117,8 @@ export const DEFAULTS = {
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
   apiUsageSummary: {
-    from: '2026-08-12', to: '2026-09-10', total: 0, byTarget: [], byDay: [],
+    from: '2026-08-12', to: '2026-09-10', total: 0,
+    byTarget: [], byDay: [], byUser: [],
   },
   apiTemplateList: [
     { name: '作業の段取り', body: '## やること\n\n- [ ] \n', builtin: true, mine: false },

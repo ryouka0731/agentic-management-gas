@@ -3800,6 +3800,10 @@ describe('使われ方のボード', () => {
       { day: '2026-09-09', count: 10 },
       { day: '2026-09-10', count: 20 },
     ],
+    byUser: [
+      { who: 'other@example.com', count: 20 },
+      { who: 'me@example.com', count: 10 },
+    ],
   };
 
   function openBoard(over) {
@@ -3827,7 +3831,9 @@ describe('使われ方のボード', () => {
     const heads = [...document.querySelectorAll('#usage h3')]
       .map((h) => h.textContent);
 
-    expect(heads).toEqual(['よく押されている操作', 'よく開かれている画面', '日ごと']);
+    expect(heads).toEqual([
+      'よく使っている人', 'よく押されている操作', 'よく開かれている画面', '日ごと',
+    ]);
   });
 
   it('多いものほど棒が長い', () => {
@@ -3861,18 +3867,60 @@ describe('使われ方のボード', () => {
   it('まだ何も無ければ何が出るのかを言う', () => {
     openBoard({
       apiUsageSummary: {
-        from: '', to: '', total: 0, byTarget: [], byDay: [],
+        from: '', to: '', total: 0, byTarget: [], byDay: [], byUser: [],
       },
     });
 
     expect(document.getElementById('usage').textContent)
-      .toContain('誰が押したかは記録していません');
+      .toContain('どこがよく押されているか');
   });
 
-  it('記録していないことを画面にも書く', () => {
+  it('何を数えているかを画面にも書く', () => {
     openBoard();
 
+    // 押した順番や時刻までは残していない
     expect(document.getElementById('panel-usage').textContent)
-      .toContain('誰が押したかは記録していません');
+      .toContain('順番や時刻は残していません');
+  });
+
+  it('よく使っている人を多い順に並べる', () => {
+    openBoard();
+    const rows = [...document.querySelectorAll('#usage .usage-person')];
+
+    expect(rows.map((r) => r.querySelector('.usage-name').textContent))
+      .toEqual(['鈴鈴木 花子', '山山田 太郎']);
+    expect(rows[0].querySelector('.usage-rank').textContent).toBe('1');
+  });
+
+  it('人を押すとその人のぶんに絞る', () => {
+    const app = openBoard();
+    document.querySelector('#usage .usage-person').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiUsageSummary').pop().args[1])
+      .toBe('other@example.com');
+  });
+
+  it('対象を選び直せる', () => {
+    const app = openBoard();
+
+    expect([...document.querySelectorAll('#usage-who option')]
+      .map((o) => o.textContent))
+      .toEqual(['みんなの合計', '鈴木 花子', '山田 太郎']);
+
+    document.getElementById('usage-who').value = 'me@example.com';
+    document.getElementById('usage-who')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiUsageSummary').pop().args[1])
+      .toBe('me@example.com');
+  });
+
+  it('誰のぶんを見ているかを出す', () => {
+    openBoard({
+      apiUsageSummary: Object.assign({}, SUMMARY, { who: 'me@example.com' }),
+    });
+
+    expect([...document.querySelectorAll('#usage .tally-card')]
+      .map((c) => c.textContent).join(' ')).toContain('山田 太郎');
   });
 });

@@ -1,9 +1,11 @@
 /**
  * どこがよく使われているかの記録。
  *
- * **誰が押したかは残さない。** 日と場所と回数だけを数える。個人の操作を
- * 追える形にすると、見られている道具になり、率直に使われなくなる。
- * 知りたいのは「どこが使われていないか」であって「誰が何をしたか」ではない。
+ * 日・場所・回数に加えて、押した人も残す。人ごとに見られるようにする
+ * ためで、これは道具を配る側の判断による。
+ *
+ * 残すのは「その日に何回押したか」までで、押した順番や時刻は残さない。
+ * 何時に何をしていたかまで追える形にはしない。
  *
  * 押すたびに書くとスプレッドシートが持たないため、画面側でまとめてから
  * 送ってもらい、ここでは同じ日・同じ場所の行に足し込む。
@@ -75,9 +77,12 @@ function usageRecord(rows) {
 
     var at = {};
     for (var r = 0; r < values.length; r++) {
-      at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2]] = r;
+      at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2] +
+        '\t' + values[r][4]] = r;
     }
 
+    // 押した人は画面から受け取らない。名乗りを詐称できてしまう
+    var me = Session.getActiveUser().getEmail();
     var day = usageDay();
     var kinds = USAGE_KINDS();
     var added = [];
@@ -93,14 +98,14 @@ function usageRecord(rows) {
       if (!usageTargetValid_(target)) continue;
       if (count < 1 || count > 10000) continue;
 
-      var key = day + '\t' + kind + '\t' + target;
+      var key = day + '\t' + kind + '\t' + target + '\t' + me;
 
       if (Object.prototype.hasOwnProperty.call(at, key)) {
         values[at[key]][3] = (Number(values[at[key]][3]) || 0) + count;
         touched = true;
       } else {
         at[key] = values.length + added.length;
-        added.push([day, kind, target, count]);
+        added.push([day, kind, target, count, me]);
       }
       done++;
     }
@@ -126,26 +131,41 @@ function usageRecord(rows) {
  * @returns {{from:string, to:string, total:number, byTarget:object[],
  *   byDay:object[]}}
  */
-function usageSummary(days, today) {
+function usageSummary(days, today, who) {
   var span = Math.max(1, Math.min(365, Number(days) || 30));
   var end = today || new Date();
   var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - span + 1);
 
   var from = usageDay(start);
   var to = usageDay(end);
+  var target = String(who || '');
 
   var rows = dbReadAll('usage');
   var byTarget = {};
   var order = [];
   var byDay = {};
   var dayOrder = [];
+  var byUser = {};
+  var userOrder = [];
   var total = 0;
 
   for (var i = 0; i < rows.length; i++) {
     var day = String(rows[i].day || '');
     if (day < from || day > to) continue;
 
+    var user = String(rows[i].user || '');
     var count = Number(rows[i].count) || 0;
+
+    // 人ごとの並びは、絞り込んでいても全員ぶんを出す。誰が使って
+    // いるかは、一人を見ているときにも知りたい
+    if (!byUser[user]) {
+      byUser[user] = { who: user, count: 0 };
+      userOrder.push(user);
+    }
+    byUser[user].count += count;
+
+    if (target && user !== target) continue;
+
     var key = String(rows[i].kind) + ':' + String(rows[i].target);
 
     if (!byTarget[key]) {
@@ -167,8 +187,19 @@ function usageSummary(days, today) {
   var targets = order.map(function (k) { return byTarget[k]; });
   targets.sort(function (a, b) { return b.count - a.count; });
 
+  var users = userOrder.map(function (u) { return byUser[u]; });
+  users.sort(function (a, b) { return b.count - a.count; });
+
   dayOrder.sort();
   var daily = dayOrder.map(function (d) { return byDay[d]; });
 
-  return { from: from, to: to, total: total, byTarget: targets, byDay: daily };
+  return {
+    from: from,
+    to: to,
+    who: target,
+    total: total,
+    byTarget: targets,
+    byDay: daily,
+    byUser: users,
+  };
 }

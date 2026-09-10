@@ -19,7 +19,7 @@ function DB_SCHEMA() {
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
     task_links: ['issueNumber', 'user', 'taskId', 'listId', 'syncedAt'],
     issue_comments: ['id', 'issueNumber', 'body', 'by', 'at', 'editedAt'],
-    usage: ['day', 'kind', 'target', 'count'],
+    usage: ['day', 'kind', 'target', 'count', 'user'],
     templates: ['name', 'body', 'builtin', 'createdBy', 'createdAt'],
     members: ['email', 'manager', 'note', 'updatedAt', 'name'],
     tags: ['name', 'color', 'builtin', 'createdBy', 'createdAt'],
