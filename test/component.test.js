@@ -2505,21 +2505,31 @@ describe('確認依頼の反映先', () => {
 describe('工数の集計', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  const ROWS = [
-    {
-      ...DEFAULTS.apiIssueList[0], number: 1, assignee: 'aoki@example.com',
-      parent: '', dueDate: '2026-09-10T00:00:00.000Z',
-      plannedHours: 3, actualHours: 5,
-    },
-    {
-      ...DEFAULTS.apiIssueList[0], number: 2, assignee: 'ito@example.com',
-      parent: '', dueDate: '2026-10-01T00:00:00.000Z',
-      plannedHours: 2, actualHours: 1,
-    },
-  ];
+  const RESULT = {
+    periods: [
+      {
+        key: '2026-09', label: '2026年9月',
+        sum: { planned: 3, actual: 5, diff: 2, count: 1 },
+        cumulative: { planned: 3, actual: 5, diff: 2, count: 1 },
+        byPerson: { 'me@example.com': { planned: 3, actual: 5, diff: 2, count: 1 } },
+      },
+      {
+        key: '2026-10', label: '2026年10月',
+        sum: { planned: 2, actual: 1, diff: -1, count: 1 },
+        cumulative: { planned: 5, actual: 6, diff: 1, count: 2 },
+        byPerson: {},
+      },
+    ],
+    people: [
+      { who: 'me@example.com', total: { planned: 3, actual: 5, diff: 2, count: 1 } },
+    ],
+    total: { planned: 5, actual: 6, diff: 1, count: 2 },
+    skipped: 0,
+    hidden: 1,
+  };
 
   function openTally(over) {
-    const app = mount(Object.assign({ apiIssueList: ROWS }, over || {}));
+    const app = mount(Object.assign({ apiTallyEffort: RESULT }, over || {}));
     document.querySelector('[data-tab="issues"]').click();
     document.getElementById('view-tally').click();
     return app;
@@ -2529,7 +2539,7 @@ describe('工数の集計', () => {
     return [...row.querySelectorAll('th, td')].map((c) => c.textContent);
   }
 
-  it('まず全体の合計を出す', () => {
+  it('まずチーム全体の合計を出す', () => {
     openTally();
     const cards = [...document.querySelectorAll('#tally .tally-card')]
       .map((c) => c.textContent);
@@ -2548,72 +2558,50 @@ describe('工数の集計', () => {
     expect(cells(rows[1])).toEqual(['2026年10月', '2', '1', '-1', '5', '6', '1']);
   });
 
-  it('人ごとにも並べる', () => {
+  it('全体であることを見出しで言う', () => {
     openTally();
-    const table = [...document.querySelectorAll('#tally .tally-table')][1];
-    const rows = [...table.querySelectorAll('tbody tr')];
 
-    expect(rows[0].querySelector('th').textContent).toContain('aoki@example.com');
-    expect(rows).toHaveLength(2);
+    expect(document.querySelectorAll('#tally h3')[0].textContent)
+      .toContain('チーム全体');
   });
 
   it('その区切りに居ない人は空にする', () => {
     openTally();
     const table = [...document.querySelectorAll('#tally .tally-table')][1];
-    const aoki = table.querySelectorAll('tbody tr')[0];
+    const me = table.querySelectorAll('tbody tr')[0];
 
     // 0 と書くと「0人日やった」に読める
-    expect(aoki.querySelectorAll('td')[1].textContent).toBe('—');
+    expect(me.querySelectorAll('td')[1].textContent).toBe('—');
   });
 
   it('区切りを変えられる', () => {
-    openTally();
+    const app = openTally();
 
     document.getElementById('tally-unit').value = 'quarter';
     document.getElementById('tally-unit')
       .dispatchEvent(new window.Event('change', { bubbles: true }));
 
-    const rows = [...document.querySelectorAll('#tally .tally-table')][0]
-      .querySelectorAll('tbody tr');
-    expect(rows).toHaveLength(2);
-    expect(rows[0].querySelector('th').textContent).toContain('第3四半期');
+    expect(app.calls.filter((c) => c.name === 'apiTallyEffort').pop().args[0])
+      .toBe('quarter');
   });
 
   it('数え方を変えられる', () => {
-    openTally();
+    const app = openTally();
 
     document.getElementById('tally-basis').value = 'closed';
     document.getElementById('tally-basis')
       .dispatchEvent(new window.Event('change', { bubbles: true }));
 
-    // 完了日が空なので、どの区切りにも入らない
-    expect(document.getElementById('tally').textContent)
-      .toContain('集計できるやることがありません');
+    expect(app.calls.filter((c) => c.name === 'apiTallyEffort').pop().args[1])
+      .toBe('closed');
   });
 
   it('数える日が空のものがあることを伝える', () => {
-    openTally({
-      apiIssueList: ROWS.concat([{
-        ...DEFAULTS.apiIssueList[0], number: 3, parent: '',
-        dueDate: '', plannedHours: 4, actualHours: 0,
-      }]),
-    });
+    openTally({ apiTallyEffort: Object.assign({}, RESULT, { skipped: 1 }) });
 
     // 黙って落とすと、合計が合わない理由が分からない
     expect(document.querySelector('#tally .tally-skipped').textContent)
       .toContain('1件は、数える日が空');
-  });
-
-  it('自分の担当だけに絞れる', () => {
-    openTally({
-      apiIssueList: ROWS.map((r) => ({ ...r, assignee: 'me@example.com' }))
-        .slice(0, 1).concat(ROWS.slice(1)),
-    });
-
-    document.getElementById('mine-btn').click();
-
-    expect(document.querySelectorAll('#tally .tally-table')[1]
-      .querySelectorAll('tbody tr')).toHaveLength(1);
   });
 
   it('超えた差と下回った差を見分ける', () => {
@@ -2631,9 +2619,102 @@ describe('工数の集計', () => {
     expect(document.getElementById('issue-filter').parentNode.hidden).toBe(true);
     expect(document.getElementById('tally-unit-box').hidden).toBe(false);
   });
+
+  it('何も無ければ何を入れれば集まるかを言う', () => {
+    openTally({
+      apiTallyEffort: {
+        periods: [], people: [],
+        total: { planned: 0, actual: 0, diff: 0, count: 0 },
+        skipped: 0, hidden: 0,
+      },
+    });
+
+    expect(document.getElementById('tally').textContent)
+      .toContain('集計できるやることがありません');
+  });
 });
 
+describe('工数集計の見える範囲', () => {
+  beforeEach(() => { window.localStorage.clear(); });
 
+  const RESULT = {
+    periods: [{
+      key: '2026-09', label: '2026年9月',
+      sum: { planned: 10, actual: 10, diff: 0, count: 4 },
+      cumulative: { planned: 10, actual: 10, diff: 0, count: 4 },
+      byPerson: { 'me@example.com': { planned: 3, actual: 4, diff: 1, count: 1 } },
+    }],
+    people: [
+      { who: 'me@example.com', total: { planned: 3, actual: 4, diff: 1, count: 1 } },
+    ],
+    total: { planned: 10, actual: 10, diff: 0, count: 4 },
+    skipped: 0,
+    hidden: 3,
+  };
+
+  function openTally(over) {
+    const app = mount(Object.assign({ apiTallyEffort: RESULT }, over || {}));
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-tally').click();
+    return app;
+  }
+
+  it('人ごとの内訳は自分のぶんだけ出る', () => {
+    openTally();
+    const rows = [...document.querySelectorAll('#tally .tally-table')][1]
+      .querySelectorAll('tbody tr');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].querySelector('th').textContent).toContain('me@example.com');
+  });
+
+  it('合計と内訳が合わない理由を言う', () => {
+    openTally();
+
+    // 黙って減らすと、数が合わないことのほうが不安になる
+    expect(document.getElementById('tally').textContent)
+      .toContain('ほかの3件は全体の合計にだけ');
+  });
+
+  it('上長でなければ対象は選ばせない', () => {
+    openTally();
+
+    // 見てよい人が自分だけなら、選ばせる意味がない
+    expect(document.getElementById('tally-who-box').hidden).toBe(true);
+  });
+
+  it('上長なら対象を選べる', () => {
+    openTally({
+      apiTallyScope: {
+        me: 'me@example.com',
+        canSee: ['me@example.com', 'buka@example.com'],
+        isManager: true, canEdit: false,
+      },
+    });
+
+    expect(document.getElementById('tally-who-box').hidden).toBe(false);
+    expect([...document.querySelectorAll('#tally-who option')]
+      .map((o) => o.textContent))
+      .toEqual(['見られる人ぜんぶ', '自分 (me@example.com)', 'buka@example.com']);
+  });
+
+  it('選んだ相手をサーバに渡す', () => {
+    const app = openTally({
+      apiTallyScope: {
+        me: 'me@example.com',
+        canSee: ['me@example.com', 'buka@example.com'],
+        isManager: true, canEdit: false,
+      },
+    });
+
+    document.getElementById('tally-who').value = 'buka@example.com';
+    document.getElementById('tally-who')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiTallyEffort').pop().args[2])
+      .toBe('buka@example.com');
+  });
+});
 describe('補足の出しかた', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

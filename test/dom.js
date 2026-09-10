@@ -92,6 +92,7 @@ const API_NAMES = [
   'apiInquiryReplyEdit', 'apiInquiryReplyDelete', 'apiInquiryClose', 'apiInquiryReopen', 'apiNotifications', 'apiNotificationsRead',
   'apiTagList', 'apiTagCreate', 'apiTagDelete', 'apiTagColors',
   'apiTasksState', 'apiTasksChooseList', 'apiTasksSync',
+  'apiTallyEffort', 'apiTallyScope', 'apiMemberList', 'apiMemberSet',
 ];
 
 /** よく使う既定の応答 */
@@ -108,6 +109,8 @@ export const DEFAULTS = {
   apiInquiryList: [],
   apiNotifications: { items: [], unread: 0 },
   apiTasksState: { available: false, listId: '', lists: [] },
+  apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
+  apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiTagList: [
     { name: '文書改訂', color: 'accent', builtin: true },
     { name: '会議', color: 'success', builtin: true },

@@ -25,6 +25,7 @@ const SOURCES = [
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Tag.gs',
+  'src/core/Member.gs',
   'src/core/Issue.gs',
   'src/core/IssueBranch.gs',
   'src/core/Project.gs',
@@ -32,6 +33,7 @@ const SOURCES = [
   'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
   'src/core/CommandQueue.gs',
+  'src/core/Tally.js',
   'src/Main.gs',
 ];
 

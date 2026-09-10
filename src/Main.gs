@@ -1291,6 +1291,123 @@ function apiTasksSync() {
 }
 
 /**
+ * 工数を区切りごとに足し上げて返す (Web App API)。
+ *
+ * 足し上げはサーバ側で行い、**見てよい人のぶんしか返さない**。画面側で
+ * 絞る形にすると、全員のぶんが端末まで届いてしまい、絞っているのは
+ * 見た目だけになる。
+ *
+ * @param {string} unit 'week' | 'month' | 'quarter'
+ * @param {string} basis 'due' | 'closed' | 'start'
+ * @param {string} who 空なら見てよい人ぜんぶ
+ * @returns {object}
+ */
+function apiTallyEffort(unit, basis, who) {
+  var me = Session.getActiveUser().getEmail();
+  var allowed = memberVisibleTo(me);
+
+  // 担当が付いていないぶんは誰の数字でもない。全員に見せる
+  allowed.push('(担当なし)');
+
+  var target = String(who || '');
+  if (target && allowed.indexOf(target) < 0) {
+    throw new Error('その人の集計は見られません');
+  }
+
+  var rows = issueList(null);
+  var plain = [];
+
+  for (var i = 0; i < rows.length; i++) plain.push(issueToPlain_(rows[i]));
+
+  // 全体の合計は誰でも見てよい。人ごとの内訳だけを絞る
+  var res = tallyEffort(plain, { unit: unit, basis: basis });
+
+  res.people = res.people.filter(function (p) {
+    if (allowed.indexOf(p.who) < 0) return false;
+    return !target || p.who === target;
+  });
+
+  for (var p = 0; p < res.periods.length; p++) {
+    var kept = {};
+
+    for (var name in res.periods[p].byPerson) {
+      if (!Object.prototype.hasOwnProperty.call(res.periods[p].byPerson, name)) {
+        continue;
+      }
+      if (allowed.indexOf(name) < 0) continue;
+      if (target && name !== target) continue;
+
+      kept[name] = res.periods[p].byPerson[name];
+    }
+    res.periods[p].byPerson = kept;
+  }
+
+  res.me = me;
+  res.canSee = allowed;
+  res.hidden = res.total.count - res.people.reduce(function (n, one) {
+    return n + one.total.count;
+  }, 0);
+  return res;
+}
+
+/**
+ * 集計で見てよい人を返す (Web App API)。
+ *
+ * @returns {{me:string, canSee:string[], isManager:boolean, canEdit:boolean}}
+ */
+function apiTallyScope() {
+  var me = Session.getActiveUser().getEmail();
+  var allowed = memberVisibleTo(me);
+
+  return {
+    me: me,
+    canSee: allowed,
+    isManager: allowed.length > 1,
+    canEdit: !!repoOwnerEmail() && repoOwnerEmail() === me,
+  };
+}
+
+/**
+ * 上下関係の一覧を返す (Web App API)。
+ *
+ * @returns {Array<{email:string, manager:string}>}
+ */
+function apiMemberList() {
+  var rows = memberList();
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      email: String(rows[i].email),
+      manager: String(rows[i].manager || ''),
+    });
+  }
+  return out;
+}
+
+/**
+ * 上下関係を登録する (Web App API)。
+ *
+ * 誰でも書き換えられると、自分を上長にして他人の数字を覗ける。
+ * このアプリの持ち主だけが触れる。
+ *
+ * @param {string} email
+ * @param {string} manager
+ * @returns {object}
+ */
+function apiMemberSet(email, manager) {
+  var me = Session.getActiveUser().getEmail();
+  var owner = repoOwnerEmail();
+
+  if (!owner || owner !== me) {
+    throw new Error('上下関係を変えられるのは、このアプリの持ち主だけです');
+  }
+
+  var row = memberSet(email, manager);
+  return { email: String(row.email), manager: String(row.manager || '') };
+}
+
+/**
  * タグの一覧を返す (Web App API)。
  *
  * @returns {Array<{name:string, color:string, builtin:boolean}>}

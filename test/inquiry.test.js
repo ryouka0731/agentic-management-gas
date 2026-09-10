@@ -8,6 +8,7 @@ const SOURCES = [
   'src/core/Db.gs',
   'src/core/Repo.gs',
   'src/core/Tag.gs',
+  'src/core/Member.gs',
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Issue.gs',

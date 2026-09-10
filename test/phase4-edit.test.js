@@ -24,11 +24,13 @@ const SOURCES = [
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Tag.gs',
+  'src/core/Member.gs',
   'src/core/Issue.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',
   'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
+  'src/core/Tally.js',
   'src/Main.gs',
 ];
 
@@ -661,5 +663,98 @@ describe('番号を持たない古いやりとり', () => {
     // 押せるのに必ず失敗するボタンを出さない
     const rows = ctx.dbReadAll('reviews');
     expect(rows[0].id).toBe('');
+  });
+});
+
+describe('工数の集計で見えるもの', () => {
+  function withEffort() {
+    const env = setup();
+    const { ctx } = env;
+
+    function make(title, assignee, planned, actual) {
+      const issue = ctx.issueCreate(title, '', []);
+      ctx.issueUpdate(issue.number, {
+        assignee: assignee, plannedHours: planned, actualHours: actual,
+        dueDate: '2026-09-10',
+      });
+      return issue.number;
+    }
+
+    make('自分の', 'tester@example.com', 3, 4);
+    make('部下の', 'buka@example.com', 2, 1);
+    make('他人の', 'hoka@example.com', 5, 5);
+    make('担当なしの', '', 1, 1);
+
+    return env;
+  }
+
+  it('全体の合計は誰でも見られる', () => {
+    const { ctx } = withEffort();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    // 監視されている感は人ごとの内訳から出る。全体の数は共有してよい
+    expect(res.total.planned).toBe(11);
+    expect(res.periods[0].sum.planned).toBe(11);
+  });
+
+  it('人ごとの内訳は自分のぶんだけ', () => {
+    const { ctx } = withEffort();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    expect(res.people.map((p) => p.who).sort())
+      .toEqual(['(担当なし)', 'tester@example.com']);
+  });
+
+  it('区切りの中の内訳も絞る', () => {
+    const { ctx } = withEffort();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    expect(Object.keys(res.periods[0].byPerson).sort())
+      .toEqual(['(担当なし)', 'tester@example.com']);
+  });
+
+  it('上長は下のぶんも見られる', () => {
+    const { ctx } = withEffort();
+    ctx.memberSet('buka@example.com', 'tester@example.com');
+
+    const res = ctx.apiTallyEffort('month', 'due', '');
+    expect(res.people.map((p) => p.who)).toContain('buka@example.com');
+  });
+
+  it('見えていない件数を伝える', () => {
+    const { ctx } = withEffort();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    // 合計と内訳が合わない理由が分からないほうが不安になる
+    expect(res.hidden).toBe(2);
+  });
+
+  it('見てよい人だけ名指しできる', () => {
+    const { ctx } = withEffort();
+
+    expect(() => ctx.apiTallyEffort('month', 'due', 'hoka@example.com'))
+      .toThrow(/見られません/);
+    expect(() => ctx.apiTallyEffort('month', 'due', 'tester@example.com'))
+      .not.toThrow();
+  });
+
+  it('見てよい人を返す', () => {
+    const { ctx } = withEffort();
+    ctx.memberSet('buka@example.com', 'tester@example.com');
+
+    const scope = ctx.apiTallyScope();
+    expect(scope.me).toBe('tester@example.com');
+    expect(scope.isManager).toBe(true);
+    expect(scope.canSee).toContain('buka@example.com');
+  });
+
+  it('上下関係を変えられるのは持ち主だけ', () => {
+    const { ctx } = withEffort();
+    ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)
+      ._setOwner('owner@example.com');
+
+    // 誰でも書き換えられると、自分を上長にして他人の数字を覗ける
+    expect(() => ctx.apiMemberSet('a@example.com', 'tester@example.com'))
+      .toThrow(/持ち主だけ/);
   });
 });

@@ -113,6 +113,8 @@
   var tallyEl = document.getElementById('tally');
   var tallyUnitSel = document.getElementById('tally-unit');
   var tallyBasisSel = document.getElementById('tally-basis');
+  var tallyWhoSel = document.getElementById('tally-who');
+  var tallyScope = { me: '', canSee: [], isManager: false };
   var diffPane = document.getElementById('diff-pane');
   var diffCaption = document.getElementById('diff-caption');
   var diffExpandBtn = document.getElementById('diff-expand');
@@ -254,9 +256,11 @@
     'seg:board': '進み具合の列で並べます。掴んで動かすと進み具合が変わります',
     'seg:gantt': '時系列の棒で並べます。棒を掴むと期間を変えられます',
     'seg:trash': '捨てたやることの置き場です。期限までなら戻せます',
-    'seg:tally': '予定と実績の工数を、区切りごとに足し上げます。人ごとと全体で見られます',
+    'seg:tally': 'チーム全体の合計と、自分の内訳を区切りごとに足し上げます',
     'tally:unit': 'どのくらいの幅で区切って足すかです',
     'tally:basis': 'どの日でその区切りに入れるかです。期限なら「いつまでに何人日ぶん抱えているか」、完了日なら「いつ何人日ぶん消化したか」になります',
+    'tally:people': '出るのは自分のぶんだけです。上長として登録されている人は、その下の人のぶんも見られます',
+    'tally:who': '誰の内訳を見るかです。全体の合計は誰が見ても同じです',
     'group:issue': '同じまとまりごとに束ねて並べます',
     'filter:mine': '自分が担当のものだけに絞ります',
     'filter:open': 'まだ解決していない報告だけに絞ります',
@@ -3106,6 +3110,8 @@
 
     document.getElementById('tally-unit-box').hidden = view !== 'tally';
     document.getElementById('tally-basis-box').hidden = view !== 'tally';
+    document.getElementById('tally-who-box').hidden =
+      view !== 'tally' || !tallyScope.isManager;
 
     try {
       window.localStorage.setItem('issueView', view);
@@ -4693,137 +4699,6 @@
   }
 
   /**
-   * 工数を区切りごとに足し上げる。src/core/Tally.js と同じもの。
-   *
-   * @param {object[]} issues
-   * @param {object} opts
-   * @returns {object}
-   */
-  function tallyEffort(issues, opts) {
-    var unit = opts.unit || 'month';
-    var basis = opts.basis || 'due';
-
-    function day(v) {
-      if (v === null || v === undefined || v === '') return null;
-      var d = new Date(v);
-      if (isNaN(d.getTime())) return null;
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    }
-
-    function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
-
-    function periodOf(date) {
-      var y = date.getFullYear();
-
-      if (unit === 'month') {
-        return {
-          key: y + '-' + pad(date.getMonth() + 1),
-          label: y + '年' + (date.getMonth() + 1) + '月',
-        };
-      }
-      if (unit === 'quarter') {
-        var q = Math.floor(date.getMonth() / 3) + 1;
-        return { key: y + '-Q' + q, label: y + '年 第' + q + '四半期' };
-      }
-
-      var shift = (date.getDay() + 6) % 7;
-      var monday = new Date(y, date.getMonth(), date.getDate() - shift);
-      return {
-        key: monday.getFullYear() + '-' + pad(monday.getMonth() + 1) +
-          '-' + pad(monday.getDate()),
-        label: (monday.getMonth() + 1) + '/' + monday.getDate() + ' の週',
-      };
-    }
-
-    function zero() { return { planned: 0, actual: 0, diff: 0, count: 0 }; }
-
-    function add(sum, issue) {
-      sum.planned += Number(issue.plannedHours) || 0;
-      sum.actual += Number(issue.actualHours) || 0;
-      sum.diff = sum.actual - sum.planned;
-      sum.count++;
-    }
-
-    function round(sum) {
-      sum.planned = Math.round(sum.planned * 100) / 100;
-      sum.actual = Math.round(sum.actual * 100) / 100;
-      sum.diff = Math.round((sum.actual - sum.planned) * 100) / 100;
-      return sum;
-    }
-
-    var byPeriod = {};
-    var order = [];
-    var byPerson = {};
-    var people = [];
-    var total = zero();
-    var skipped = 0;
-
-    (issues || []).forEach(function (issue) {
-      if (issue.archivedAt) return;
-
-      var who = String(issue.assignee || '') || '(担当なし)';
-      if (opts.who && who !== opts.who) return;
-      if (!Number(issue.plannedHours) && !Number(issue.actualHours)) return;
-
-      var date = basis === 'closed' ? day(issue.closedAt)
-        : (basis === 'start' ? day(issue.startDate) : day(issue.dueDate));
-
-      if (!date) {
-        skipped++;
-        return;
-      }
-
-      var period = periodOf(date);
-      if (!byPeriod[period.key]) {
-        byPeriod[period.key] = {
-          key: period.key, label: period.label, sum: zero(), byPerson: {},
-        };
-        order.push(period.key);
-      }
-      add(byPeriod[period.key].sum, issue);
-
-      if (!byPeriod[period.key].byPerson[who]) {
-        byPeriod[period.key].byPerson[who] = zero();
-      }
-      add(byPeriod[period.key].byPerson[who], issue);
-
-      if (!byPerson[who]) {
-        byPerson[who] = { who: who, total: zero() };
-        people.push(byPerson[who]);
-      }
-      add(byPerson[who].total, issue);
-      add(total, issue);
-    });
-
-    order.sort();
-
-    var cum = zero();
-    var periods = order.map(function (key) {
-      var row = byPeriod[key];
-      cum.planned += row.sum.planned;
-      cum.actual += row.sum.actual;
-      cum.count += row.sum.count;
-
-      return {
-        key: row.key,
-        label: row.label,
-        sum: round(row.sum),
-        byPerson: row.byPerson,
-        cumulative: round({
-          planned: cum.planned, actual: cum.actual, diff: 0, count: cum.count,
-        }),
-      };
-    });
-
-    people.sort(function (a, b) { return a.who < b.who ? -1 : 1; });
-    people.forEach(function (p) { round(p.total); });
-
-    return {
-      periods: periods, people: people, total: round(total), skipped: skipped,
-    };
-  }
-
-  /**
    * 集計を描く。
    *
    * 予定と実績を1件ずつ見ているうちは傾向が分からない。区切りごとに
@@ -4833,22 +4708,15 @@
     // 既定は月ごと。週は細かすぎ、四半期は粗すぎて傾向が見えにくい
     fillSelect(tallyUnitSel, TALLY_UNITS, 'month');
     fillSelect(tallyBasisSel, TALLY_BASES, 'due');
+    fillTallyWho();
 
     showSkeleton(tallyEl, 'list', 3);
 
     google.script.run
-      .withSuccessHandler(function (list) {
-        var issues = list || [];
-        lastIssues = issues;
-
-        var res = tallyEffort(issues, {
-          unit: tallyUnitSel.value,
-          basis: tallyBasisSel.value,
-          who: mineOnly ? currentUser : '',
-        });
-
+      .withSuccessHandler(function (result) {
+        var res = result || { periods: [], people: [], total: {}, hidden: 0 };
         tallyEl.textContent = '';
-        issueCountEl.textContent = res.total.count + '件 / 予定 ' +
+        issueCountEl.textContent = 'チーム全体 ' + res.total.count + '件 / 予定 ' +
           daysText(res.total.planned) + '人日 · 実績 ' +
           daysText(res.total.actual) + '人日';
 
@@ -4865,6 +4733,16 @@
         tallyEl.appendChild(makeTallyTable(res));
         tallyEl.appendChild(makePeopleTable(res));
 
+        if (res.hidden) {
+          var scope = document.createElement('div');
+          scope.className = 'tally-note row-meta';
+          scope.textContent = '人ごとの内訳に出るのは自分' +
+            (tallyScope.isManager ? 'と配下の人' : '') +
+            'のぶんだけです。ほかの' + res.hidden +
+            '件は全体の合計にだけ入っています。';
+          tallyEl.appendChild(scope);
+        }
+
         if (res.skipped) {
           var note = document.createElement('div');
           note.className = 'tally-note tally-skipped row-meta';
@@ -4876,7 +4754,23 @@
       .withFailureHandler(function (err) {
         tallyEl.textContent = 'エラー: ' + err.message;
       })
-      .apiIssueList('');
+      .apiTallyEffort(tallyUnitSel.value, tallyBasisSel.value, tallyWhoSel.value);
+  }
+
+  /**
+   * 誰の内訳を見るかの選択肢を詰める。
+   *
+   * 見てよい人が自分だけなら、選ばせる意味がない。
+   */
+  function fillTallyWho() {
+    if (tallyWhoSel.options.length) return;
+
+    var pairs = [['', '見られる人ぜんぶ']];
+    (tallyScope.canSee || []).forEach(function (who) {
+      pairs.push([who, who === tallyScope.me ? '自分 (' + who + ')' : who]);
+    });
+
+    fillSelect(tallyWhoSel, pairs, '');
   }
 
   /**
@@ -4924,7 +4818,7 @@
     wrap.className = 'tally-block';
 
     var head = document.createElement('h3');
-    head.textContent = '区切りごと';
+    head.textContent = '区切りごと (チーム全体)';
     wrap.appendChild(head);
 
     var scroll = document.createElement('div');
@@ -4983,6 +4877,7 @@
 
     var head = document.createElement('h3');
     head.textContent = '人ごと';
+    hint(head, 'tally:people');
     wrap.appendChild(head);
 
     var scroll = document.createElement('div');
@@ -5234,7 +5129,7 @@
       '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
-      '集計 — 予定と実績の工数を、週・月・四半期ごとに足し上げたもの。人ごとと全体で見られます',
+      '集計 — 予定と実績の工数を、週・月・四半期ごとに足し上げたもの。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
     ]],
@@ -6453,6 +6348,7 @@
     hint(viewBtns.tally, 'seg:tally');
     hint(document.getElementById('tally-unit-box'), 'tally:unit');
     hint(document.getElementById('tally-basis-box'), 'tally:basis');
+    hint(document.getElementById('tally-who-box'), 'tally:who');
     hint(issueGroupSel.parentNode, 'group:issue');
     hint(mineBtn, 'filter:mine');
     hint(reportOpenBtn, 'filter:open');
@@ -6516,6 +6412,14 @@
   issueGroupSel.addEventListener('change', reloadIssueView);
   tallyUnitSel.addEventListener('change', loadTally);
   tallyBasisSel.addEventListener('change', loadTally);
+  tallyWhoSel.addEventListener('change', loadTally);
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      tallyScope = res || { me: '', canSee: [], isManager: false };
+    })
+    .withFailureHandler(function () { /* 自分のぶんだけになる */ })
+    .apiTallyScope();
   issueFilterEl.addEventListener('input', reloadIssueView);
 
   dropRootEl.addEventListener('dragover', function (e) {

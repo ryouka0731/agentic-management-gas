@@ -344,12 +344,7 @@ function inquiryReplyDelete(id) {
  * @returns {string} 分からなければ空文字
  */
 function inquiryOwner_() {
-  try {
-    return String(DriveApp.getFolderById(repoConfig().rootId)
-      .getOwner().getEmail() || '');
-  } catch (e) {
-    return '';
-  }
+  return repoOwnerEmail();
 }
 
 /**

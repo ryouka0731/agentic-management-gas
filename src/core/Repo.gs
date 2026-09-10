@@ -119,3 +119,21 @@ function repoRegisterFile(fileId, path) {
   dbAppend('files', row);
   return row;
 }
+
+/**
+ * このアプリを持っている人を返す。
+ *
+ * この Web アプリは開いた人の権限で動く (executeAs: USER_ACCESSING) ため、
+ * Session.getEffectiveUser() は常に開いている本人になる。それを持ち主と
+ * 見なすと誰もが持ち主になるので、入れ物の持ち主を見る。
+ *
+ * @returns {string} 分からなければ空文字
+ */
+function repoOwnerEmail() {
+  try {
+    return String(DriveApp.getFolderById(repoConfig().rootId)
+      .getOwner().getEmail() || '');
+  } catch (e) {
+    return '';
+  }
+}
