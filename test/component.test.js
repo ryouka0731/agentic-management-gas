@@ -2730,7 +2730,7 @@ describe('補足の出しかた', () => {
   function hover(el, rect) {
     el.getBoundingClientRect = () => Object.assign(
       { left: 0, right: 32, top: 0, bottom: 32, width: 32, height: 32 }, rect);
-    el.dispatchEvent(new window.Event('pointerenter', { bubbles: true }));
+    el.dispatchEvent(new window.Event('pointerover', { bubbles: true }));
     return document.getElementById('hint-bubble');
   }
 
@@ -2757,12 +2757,57 @@ describe('補足の出しかた', () => {
     expect(box.textContent).toBe(btn.dataset.hint);
   });
 
-  it('離すとしまう', () => {
+  it('補足を持たないところに移ったらしまう', () => {
+    mount();
+    hover(document.getElementById('bell-btn'), {});
+
+    document.getElementById('doc-list')
+      .dispatchEvent(new window.Event('pointerover', { bubbles: true }));
+
+    expect(document.getElementById('hint-bubble').hidden).toBe(true);
+  });
+
+  it('中の要素に触れても出したままにする', () => {
     mount();
     const btn = document.getElementById('bell-btn');
     hover(btn, {});
 
-    btn.dispatchEvent(new window.Event('pointerleave', { bubbles: true }));
+    // アイコンは補足を持つボタンの中にある
+    btn.querySelector('svg')
+      .dispatchEvent(new window.Event('pointerover', { bubbles: true }));
+
+    expect(document.getElementById('hint-bubble').hidden).toBe(false);
+  });
+
+  it('押したらしまう', () => {
+    mount();
+    const btn = document.getElementById('bell-btn');
+    hover(btn, {});
+
+    btn.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    expect(document.getElementById('hint-bubble').hidden).toBe(true);
+  });
+
+  it('相手が居なくなったらしまう', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+
+    const del = document.querySelector('#issue-list .btn-danger');
+    hover(del, {});
+    expect(document.getElementById('hint-bubble').hidden).toBe(false);
+
+    // 押した拍子に一覧が描き直されると「離れた」が来ない
+    del.remove();
+    document.body.dispatchEvent(new window.Event('pointermove', { bubbles: true }));
+
+    expect(document.getElementById('hint-bubble').hidden).toBe(true);
+  });
+
+  it('焦点が外れたらしまう', () => {
+    mount();
+    hover(document.getElementById('bell-btn'), {});
+
+    document.dispatchEvent(new window.Event('focusout', { bubbles: true }));
     expect(document.getElementById('hint-bubble').hidden).toBe(true);
   });
 
@@ -2772,7 +2817,7 @@ describe('補足の出しかた', () => {
 
     hover(btn, {});
     sizeBubble(280, 60);
-    hover(btn, { left: window.innerWidth - 40, right: window.innerWidth - 8 });
+    hideAndHover(btn, { left: window.innerWidth - 40, right: window.innerWidth - 8 });
 
     const left = parseInt(document.getElementById('hint-bubble').style.left, 10);
     expect(left + 280).toBeLessThanOrEqual(window.innerWidth);
@@ -2784,7 +2829,7 @@ describe('補足の出しかた', () => {
 
     hover(btn, {});
     sizeBubble(200, 80);
-    hover(btn, {
+    hideAndHover(btn, {
       top: window.innerHeight - 40, bottom: window.innerHeight - 8,
     });
 
@@ -2798,7 +2843,7 @@ describe('補足の出しかた', () => {
 
     hover(btn, {});
     sizeBubble(280, 400);
-    hover(btn, { left: -50, top: -50, bottom: -18 });
+    hideAndHover(btn, { left: -50, top: -50, bottom: -18 });
 
     const box = document.getElementById('hint-bubble');
     expect(parseInt(box.style.left, 10)).toBeGreaterThanOrEqual(0);
@@ -2819,8 +2864,13 @@ describe('補足の出しかた', () => {
 
     expect(box.getAttribute('aria-hidden')).toBe('true');
   });
-});
 
+  /** 同じ相手をもう一度測り直させる */
+  function hideAndHover(el, rect) {
+    document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    return hover(el, rect);
+  }
+});
 describe('種類に応じた尋ね方', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

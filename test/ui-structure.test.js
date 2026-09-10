@@ -845,8 +845,8 @@ describe('押す前の補足', () => {
     const js = read('src/ui/app.js.html');
 
     // 触れないと出ない補足は、キーボードだけの人には無いのと同じ
-    expect(js).toContain("el.addEventListener('pointerenter'");
-    expect(js).toContain("el.addEventListener('focus'");
+    expect(js).toContain("document.addEventListener('pointerover'");
+    expect(js).toContain("document.addEventListener('focusin'");
   });
 
   it('補足は器に切り取られない場所に置く', () => {

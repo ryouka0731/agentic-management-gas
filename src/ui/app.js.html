@@ -367,11 +367,43 @@
     // ところ (列見出しなど) の形が変わってしまう
     hintNotes().appendChild(note);
 
-    el.addEventListener('pointerenter', function () { showHint(el); });
-    el.addEventListener('focus', function () { showHint(el); });
-    el.addEventListener('pointerleave', hideHint);
-    el.addEventListener('blur', hideHint);
     return el;
+  }
+
+  /** いま補足を出している相手 */
+  var hintHost = null;
+
+  /**
+   * その位置にある、補足を持つ要素を返す。
+   *
+   * 要素ごとに出入りを見ると、押した拍子に一覧が描き直されたときに
+   * 「離れた」が来ず、吹き出しが出たまま残る。画面全体で位置を見る。
+   *
+   * @param {EventTarget} target
+   * @returns {HTMLElement|null}
+   */
+  function hintHostOf(target) {
+    var el = target;
+
+    while (el && el !== document) {
+      if (el.classList && el.classList.contains('has-hint')) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  /**
+   * 触れている相手に合わせて出し入れする。
+   *
+   * @param {EventTarget} target
+   */
+  function trackHint(target) {
+    var host = hintHostOf(target);
+
+    if (!host) return hideHint();
+    if (host === hintHost) return;
+
+    showHint(host);
   }
 
   /**
@@ -407,6 +439,7 @@
     if (!text) return;
 
     var box = hintBubble();
+    hintHost = el;
     box.textContent = text;
     box.hidden = false;
 
@@ -441,8 +474,10 @@
    * 補足をしまう。
    */
   function hideHint() {
+    hintHost = null;
+
     var box = document.getElementById('hint-bubble');
-    if (!box) return;
+    if (!box || box.hidden) return;
 
     box.hidden = true;
     box.textContent = '';
@@ -6564,6 +6599,21 @@
     if (savedView && viewBtns[savedView]) issueView = savedView;
   } catch (e) { /* 既定の一覧でよい */ }
   setIssueView(issueView);
+
+  // 出入りは画面全体で見る。要素ごとに見ると、押した拍子に一覧が
+  // 描き直されたときに「離れた」が来ず、出たまま残る
+  document.addEventListener('pointerover', function (e) { trackHint(e.target); });
+  document.addEventListener('focusin', function (e) { trackHint(e.target); });
+  document.addEventListener('focusout', hideHint);
+
+  // 押したら引っ込める。多くの場合その先で画面が描き直される
+  document.addEventListener('pointerdown', hideHint);
+
+  document.addEventListener('pointermove', function (e) {
+    // 出ているあいだだけ見る。相手が居なくなっていたらしまう
+    if (!hintHost) return;
+    if (!hintHostOf(e.target) || !document.body.contains(hintHost)) hideHint();
+  });
 
   // 巻き取られると、測った位置とずれる。出したままにしない
   document.addEventListener('scroll', hideHint, true);
