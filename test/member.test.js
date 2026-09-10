@@ -116,3 +116,50 @@ describe('見てよい人', () => {
     expect(ctx.memberVisibleTo('')).toEqual([]);
   });
 });
+
+describe('画面に出す名前', () => {
+  it('登録が無ければアドレスの手前を使う', () => {
+    const { ctx } = setup();
+
+    // メールアドレスは目で追いにくく、長い並びの中では全部同じに見える
+    expect(ctx.memberNameOf('aoki@example.com')).toBe('aoki');
+  });
+
+  it('登録された名前があればそれを使う', () => {
+    const { ctx } = setup();
+    ctx.memberSetName('aoki@example.com', '青木 太郎');
+
+    expect(ctx.memberNameOf('aoki@example.com')).toBe('青木 太郎');
+  });
+
+  it('名前を入れても上下関係は変わらない', () => {
+    const { ctx } = setup();
+    ctx.memberSet('buka@example.com', 'boss@example.com');
+    ctx.memberSetName('buka@example.com', '部下 花子');
+
+    expect(ctx.memberNameOf('buka@example.com')).toBe('部下 花子');
+    expect(ctx.memberSubordinates('boss@example.com')).toEqual(['buka@example.com']);
+  });
+
+  it('上下関係を入れても名前は消えない', () => {
+    const { ctx } = setup();
+    ctx.memberSetName('buka@example.com', '部下 花子');
+    ctx.memberSet('buka@example.com', 'boss@example.com');
+
+    expect(ctx.memberNameOf('buka@example.com')).toBe('部下 花子');
+  });
+
+  it('まとめて引ける', () => {
+    const { ctx } = setup();
+    ctx.memberSetName('aoki@example.com', '青木');
+
+    expect(ctx.memberNames(['aoki@example.com', 'ito@example.com']))
+      .toEqual({ 'aoki@example.com': '青木', 'ito@example.com': 'ito' });
+  });
+
+  it('空は返さない', () => {
+    const { ctx } = setup();
+    expect(ctx.memberNameOf('')).toBe('');
+    expect(ctx.memberNames([''])).toEqual({});
+  });
+});

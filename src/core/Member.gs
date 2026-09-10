@@ -16,10 +16,10 @@
  *
  * @param {string} email その人
  * @param {string} manager 上長。空にすると関係を外す
- * @param {string} [note] 覚え書き
+ * @param {string} [name] 画面に出す名前。省略すると今のまま
  * @returns {object} members 行
  */
-function memberSet(email, manager) {
+function memberSet(email, manager, name) {
   var who = String(email || '').replace(/^\s+|\s+$/g, '');
   var boss = String(manager || '').replace(/^\s+|\s+$/g, '');
 
@@ -39,12 +39,16 @@ function memberSet(email, manager) {
   }
 
   var patch = { manager: boss, updatedAt: new Date() };
+  if (name !== undefined && name !== null) {
+    patch.name = String(name).replace(/^\s+|\s+$/g, '');
+  }
 
   if (dbFindOne('members', 'email', who)) {
     dbUpdate('members', 'email', who, patch);
   } else {
     dbAppend('members', {
       email: who, manager: boss, note: '', updatedAt: new Date(),
+      name: patch.name || '',
     });
   }
   return dbFindOne('members', 'email', who);
@@ -140,4 +144,62 @@ function memberVisibleTo(viewer) {
  */
 function memberCanSee(viewer, target) {
   return memberVisibleTo(viewer).indexOf(String(target)) >= 0;
+}
+
+/**
+ * 画面に出す名前を決める。
+ *
+ * メールアドレスは目で追いにくく、長い並びの中では全部同じに見える。
+ * 登録された名前があればそれを、無ければアドレスの手前を使う。
+ *
+ * @param {string} email
+ * @returns {string}
+ */
+function memberNameOf(email) {
+  var who = String(email || '');
+  if (!who) return '';
+
+  var row = dbFindOne('members', 'email', who);
+  var name = row ? String(row.name || '') : '';
+
+  return name || who.split('@')[0];
+}
+
+/**
+ * 名前を覚えさせる。上下関係は変えない。
+ *
+ * @param {string} email
+ * @param {string} name
+ * @returns {object} members 行
+ */
+function memberSetName(email, name) {
+  var row = dbFindOne('members', 'email', email);
+  return memberSet(email, row ? row.manager : '', name);
+}
+
+/**
+ * 知っている人の名前をまとめて返す。
+ *
+ * 1人ずつ引くと、一覧を描くたびに何度も探すことになる。
+ *
+ * @param {string[]} emails
+ * @returns {Object<string,string>}
+ */
+function memberNames(emails) {
+  var rows = dbReadAll('members');
+  var named = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var one = String(rows[i].name || '');
+    if (one) named[String(rows[i].email)] = one;
+  }
+
+  var out = {};
+  for (var e = 0; e < (emails || []).length; e++) {
+    var who = String(emails[e] || '');
+    if (!who) continue;
+
+    out[who] = named[who] || who.split('@')[0];
+  }
+  return out;
 }

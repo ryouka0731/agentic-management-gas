@@ -68,6 +68,7 @@
   var reportOpenOnly = true;
   var reportShown = null;
   var roster = [];
+  var peopleNames = {};
   var tags = [];
   var noticePanel = document.getElementById('notice-panel');
   var noticeBody = document.getElementById('notice-body');
@@ -1958,7 +1959,7 @@
 
           var author = document.createElement('span');
           author.className = 'graph-col-author';
-          author.textContent = String(c.author).replace(/@.*$/, '');
+          author.textContent = personName(c.author);
           btn.appendChild(author);
 
           var sha = document.createElement('span');
@@ -2111,7 +2112,7 @@
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = b.createdBy +
+          meta.textContent = personName(b.createdBy) +
             (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中') +
             (files.length ? ' · ' + splitPath(files[0].path).path : '');
           main.appendChild(meta);
@@ -2389,7 +2390,7 @@
           var meta = document.createElement('div');
           meta.className = 'row-meta';
           meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
-            ' · ' + pr.author;
+            ' · ' + personName(pr.author);
           main.appendChild(meta);
           btn.appendChild(main);
 
@@ -2501,7 +2502,7 @@
 
     var name = document.createElement('span');
     name.className = 'comment-who';
-    name.textContent = who;
+    name.appendChild(makePersonLabel(who));
     head.appendChild(name);
 
     var note = document.createElement('span');
@@ -2538,7 +2539,7 @@
         var chip = document.createElement('span');
         chip.className = 'reviewer-chip';
         chip.appendChild(makeAvatar(who));
-        chip.appendChild(document.createTextNode(who));
+        chip.appendChild(makePersonLabel(who));
         row.appendChild(chip);
       });
     }
@@ -2779,7 +2780,8 @@
         var meta = document.createElement('div');
         meta.className = 'row-meta';
         meta.textContent =
-          pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' + pr.author +
+          pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' +
+          personName(pr.author) +
           ' · 承認 ' + preview.approvals + '件 · ' +
           (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
         prDetail.appendChild(meta);
@@ -3114,13 +3116,60 @@
    * @param {string} email
    * @returns {HTMLElement}
    */
+  /**
+   * 画面に出す名前を返す。
+   *
+   * メールアドレスは目で追いにくく、長い並びの中では全部同じに見える。
+   * 登録された名前があればそれを、無ければアドレスの手前を使う。
+   *
+   * @param {string} email
+   * @returns {string}
+   */
+  function personName(email) {
+    var who = String(email || '');
+    if (!who) return '';
+
+    return peopleNames[who] || who.split('@')[0];
+  }
+
+  /**
+   * 名前を主に、アドレスを従にした札を作る。
+   *
+   * @param {string} email
+   * @param {string} [extra] 名前の後ろに添える言葉
+   * @returns {DocumentFragment}
+   */
+  function makePersonLabel(email, extra) {
+    var frag = document.createDocumentFragment();
+    var who = String(email || '');
+
+    var name = document.createElement('span');
+    name.className = 'person-name';
+    name.textContent = personName(who) || '担当なし';
+    frag.appendChild(name);
+
+    if (who) {
+      var addr = document.createElement('span');
+      addr.className = 'person-mail';
+      addr.textContent = who;
+      frag.appendChild(addr);
+    }
+
+    if (extra) frag.appendChild(document.createTextNode(extra));
+    return frag;
+  }
+
   function makeAvatar(email) {
     var who = String(email || '');
+    var name = personName(who);
+
     var el = document.createElement('span');
     el.className = 'avatar' + (who ? '' : ' none');
-    el.textContent = who ? who.charAt(0).toUpperCase() : '?';
-    el.title = who || '担当なし';
-    el.setAttribute('aria-label', who || '担当なし');
+    el.textContent = name ? name.charAt(0).toUpperCase() : '?';
+
+    var label = who ? (name + ' (' + who + ')') : '担当なし';
+    el.setAttribute('aria-label', label);
+    attachHint(el, label);
     return el;
   }
 
@@ -4803,7 +4852,8 @@
 
     var pairs = [['', '見られる人ぜんぶ']];
     (tallyScope.canSee || []).forEach(function (who) {
-      pairs.push([who, who === tallyScope.me ? '自分 (' + who + ')' : who]);
+      pairs.push([who, who === tallyScope.me
+        ? '自分 (' + personName(who) + ')' : personName(who)]);
     });
 
     fillSelect(tallyWhoSel, pairs, '');
@@ -4949,8 +4999,10 @@
       var name = document.createElement('th');
       name.scope = 'row';
       name.className = 'tally-who';
-      name.appendChild(makeAvatar(person.who === '(担当なし)' ? '' : person.who));
-      name.appendChild(document.createTextNode(person.who));
+      var isNone = person.who === '(担当なし)';
+      name.appendChild(makeAvatar(isNone ? '' : person.who));
+      name.appendChild(isNone
+        ? document.createTextNode('担当なし') : makePersonLabel(person.who));
       tr.appendChild(name);
 
       res.periods.forEach(function (p) {
@@ -5214,6 +5266,35 @@
     var foot = document.createElement('div');
     foot.className = 'guide-foot';
 
+    var rename = document.createElement('button');
+    rename.className = 'btn';
+    rename.textContent = '表示する名前を決める';
+    attachHint(rename,
+      'ほかの人の画面にも、この名前で出ます。決めないとアドレスの手前が使われます');
+
+    rename.addEventListener('click', function () {
+      var form = openInlineForm(
+        '表示する名前',
+        [{ name: 'name', label: '名前', required: true }],
+        '決める',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function (row) {
+              peopleNames[currentUser] = row.name;
+              showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
+              closeSide();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiPeopleSetName(currentUser, v.name);
+        },
+        rename
+      );
+      form.querySelector('input').value = personName(currentUser);
+    });
+    foot.appendChild(rename);
+
     var again = document.createElement('button');
     again.className = 'btn';
     again.textContent = 'はじめの案内をもう一度出す';
@@ -5236,7 +5317,8 @@
       .withSuccessHandler(function (info) {
         currentUser = info.activeUser;
         who.textContent = info.activeUser
-          ? 'このアプリはあなたを ' + info.activeUser + ' として認識しています'
+          ? 'このアプリはあなたを ' + personName(info.activeUser) +
+            ' (' + info.activeUser + ') として認識しています'
           : '警告: 利用者を特定できていません。この状態では記録に名前が残りません';
       })
       .withFailureHandler(function () { who.textContent = ''; })
@@ -5761,7 +5843,7 @@
 
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = r.kindLabel + ' · ' + r.by + ' · ' +
+          meta.textContent = r.kindLabel + ' · ' + personName(r.by) + ' · ' +
             String(r.at).substring(0, 10) +
             (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
           main.appendChild(meta);
@@ -5856,9 +5938,10 @@
 
     var meta = document.createElement('div');
     meta.className = 'row-meta';
-    meta.textContent = q.kindLabel + ' · ' + q.by + ' · ' +
+    meta.textContent = q.kindLabel + ' · ' + personName(q.by) + ' · ' +
       String(q.at).substring(0, 10) +
-      (q.state === 'done' ? ' · 解決' + (q.closedBy ? ' (' + q.closedBy + ')' : '') : '');
+      (q.state === 'done'
+        ? ' · 解決' + (q.closedBy ? ' (' + personName(q.closedBy) + ')' : '') : '');
     reportDetail.appendChild(meta);
 
     if (q.issueNumber) {
@@ -6563,6 +6646,11 @@
     .withSuccessHandler(function (who) { currentUser = (who || {}).activeUser || ''; })
     .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
     .apiWhoAmI();
+
+  google.script.run
+    .withSuccessHandler(function (map) { peopleNames = map || {}; })
+    .withFailureHandler(function () { /* アドレスの手前で出る */ })
+    .apiPeopleNames();
 
   google.script.run
     .withSuccessHandler(function (list) { tags = list || []; })

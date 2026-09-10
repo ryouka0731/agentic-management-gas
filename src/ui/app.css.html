@@ -3092,4 +3092,23 @@ button.label-pill {
 }
 
 .row-item.resolved[aria-current="true"] .row-title { color: var(--ink); }
+
+/*
+ * 人の出しかた。
+ *
+ * 名前を主に、アドレスを従に。メールアドレスは目で追いにくく、長い
+ * 並びの中では全部同じに見える
+ */
+.person-name { color: inherit; }
+
+.person-mail {
+  margin-left: var(--sp-1);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* 狭いところではアドレスを畳む。名前だけで足りる */
+.row-meta .person-mail,
+.tally-table .person-mail { display: none; }
 </style>

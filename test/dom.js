@@ -93,6 +93,7 @@ const API_NAMES = [
   'apiTagList', 'apiTagCreate', 'apiTagDelete', 'apiTagColors',
   'apiTasksState', 'apiTasksChooseList', 'apiTasksSync',
   'apiTallyEffort', 'apiTallyScope', 'apiMemberList', 'apiMemberSet',
+  'apiPeopleNames', 'apiPeopleSetName',
 ];
 
 /** よく使う既定の応答 */
@@ -161,6 +162,7 @@ export const DEFAULTS = {
   apiPrCommits: [],
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com'],
+  apiPeopleNames: { 'me@example.com': '山田 太郎', 'other@example.com': '鈴木 花子' },
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },

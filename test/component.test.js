@@ -1069,8 +1069,10 @@ describe('確認依頼のやりとり', () => {
     openPulls();
     const head = comments()[0].querySelector('.comment-head');
 
-    expect(head.querySelector('.avatar').textContent).toBe('O');
-    expect(head.querySelector('.comment-who').textContent).toBe('other@example.com');
+    // アドレスは目で追いにくい。名前を主に、アドレスを従に出す
+    expect(head.querySelector('.avatar').textContent).toBe('鈴');
+    expect(head.querySelector('.person-name').textContent).toBe('鈴木 花子');
+    expect(head.querySelector('.person-mail').textContent).toBe('other@example.com');
   });
 
   it('自分のコメントには直すと消すが付く', () => {
@@ -1137,7 +1139,8 @@ describe('確認してもらう人', () => {
     openPulls();
     const chip = document.querySelector('#pr-detail .reviewer-chip');
 
-    expect(chip.textContent).toContain('me@example.com');
+    expect(chip.querySelector('.person-name').textContent).toBe('山田 太郎');
+    expect(chip.querySelector('.person-mail').textContent).toBe('me@example.com');
     expect(chip.querySelector('.avatar')).toBeTruthy();
   });
 
@@ -1467,7 +1470,7 @@ describe('報告で議論する', () => {
   it('他人の報告も読める', () => {
     openBoard();
     expect(document.querySelector('#report-list .row-item').textContent)
-      .toContain('other@example.com');
+      .toContain('鈴木 花子');
   });
 
   it('開くと本文とやりとりが出る', () => {
@@ -2164,7 +2167,7 @@ describe('工程表の担当者と工数', () => {
     openGantt();
     const row = document.querySelector('.gantt-row');
 
-    expect(row.querySelector('.gantt-name .avatar').textContent).toBe('M');
+    expect(row.querySelector('.gantt-name .avatar').textContent).toBe('山');
     expect(row.querySelector('.gantt-bar .avatar')).toBeTruthy();
   });
 
@@ -2673,7 +2676,7 @@ describe('工数集計の見える範囲', () => {
       .querySelectorAll('tbody tr');
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].querySelector('th').textContent).toContain('me@example.com');
+    expect(rows[0].querySelector('th').textContent).toContain('山田 太郎');
   });
 
   it('合計と内訳が合わない理由を言う', () => {
@@ -2703,7 +2706,7 @@ describe('工数集計の見える範囲', () => {
     expect(document.getElementById('tally-who-box').hidden).toBe(false);
     expect([...document.querySelectorAll('#tally-who option')]
       .map((o) => o.textContent))
-      .toEqual(['見られる人ぜんぶ', '自分 (me@example.com)', 'buka@example.com']);
+      .toEqual(['見られる人ぜんぶ', '自分 (山田 太郎)', 'buka']);
   });
 
   it('選んだ相手をサーバに渡す', () => {
@@ -3039,5 +3042,46 @@ describe('済んだ報告の見え方', () => {
 
     expect(rows().map((r) => r.dataset.number)).toEqual(['1']);
     expect(app).toBeTruthy();
+  });
+});
+
+describe('表示する名前', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHelp() {
+    const app = mount();
+    document.querySelector('[data-tab="help"]').click();
+    return app;
+  }
+
+  it('使い方から決められる', () => {
+    const app = openHelp();
+
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('表示する名前')).click();
+
+    const input = document.querySelector('#side-body input');
+    expect(input.value).toBe('山田 太郎');
+
+    input.value = '山田 一郎';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiPeopleSetName').pop().args)
+      .toEqual(['me@example.com', '山田 一郎']);
+  });
+
+  it('いまの名前とアドレスの両方を示す', () => {
+    openHelp();
+
+    expect(document.getElementById('whoami').textContent)
+      .toBe('このアプリはあなたを 山田 太郎 (me@example.com) として認識しています');
+  });
+
+  it('名前を知らない人はアドレスの手前で出る', () => {
+    mount({ apiPeopleNames: {} });
+    document.querySelector('[data-tab="issues"]').click();
+
+    expect(document.querySelector('#issue-list .avatar')
+      .getAttribute('aria-label')).toBe('me (me@example.com)');
   });
 });

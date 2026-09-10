@@ -1380,9 +1380,41 @@ function apiMemberList() {
     out.push({
       email: String(rows[i].email),
       manager: String(rows[i].manager || ''),
+      name: String(rows[i].name || ''),
     });
   }
   return out;
+}
+
+/**
+ * 知っている人の名前をまとめて返す (Web App API)。
+ *
+ * @returns {Object<string,string>} メールアドレス → 名前
+ */
+function apiPeopleNames() {
+  return memberNames(apiKnownPeople());
+}
+
+/**
+ * 名前を覚えさせる (Web App API)。
+ *
+ * 自分の名前は自分で決められる。他人の名前は持ち主だけが変えられる。
+ *
+ * @param {string} email
+ * @param {string} name
+ * @returns {object}
+ */
+function apiPeopleSetName(email, name) {
+  var me = Session.getActiveUser().getEmail();
+  var owner = repoOwnerEmail();
+  var who = String(email || '');
+
+  if (who !== me && (!owner || owner !== me)) {
+    throw new Error('他人の名前を変えられるのは、このアプリの持ち主だけです');
+  }
+
+  var row = memberSetName(who, name);
+  return { email: String(row.email), name: String(row.name || '') };
 }
 
 /**
@@ -1395,7 +1427,7 @@ function apiMemberList() {
  * @param {string} manager
  * @returns {object}
  */
-function apiMemberSet(email, manager) {
+function apiMemberSet(email, manager, name) {
   var me = Session.getActiveUser().getEmail();
   var owner = repoOwnerEmail();
 
@@ -1403,8 +1435,12 @@ function apiMemberSet(email, manager) {
     throw new Error('上下関係を変えられるのは、このアプリの持ち主だけです');
   }
 
-  var row = memberSet(email, manager);
-  return { email: String(row.email), manager: String(row.manager || '') };
+  var row = memberSet(email, manager, name);
+  return {
+    email: String(row.email),
+    manager: String(row.manager || ''),
+    name: String(row.name || ''),
+  };
 }
 
 /**
