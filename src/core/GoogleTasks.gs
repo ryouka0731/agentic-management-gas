@@ -155,7 +155,7 @@ function tasksSyncMine() {
 
   for (var i = 0; i < issues.length; i++) {
     var issue = issues[i];
-    if (String(issue.assignee) !== String(me)) continue;
+    if (issueAssignees(issue).indexOf(String(me)) < 0) continue;
 
     var link = tasksLinkOf(issue.number, me);
     var payload = tasksPayloadOf_(issue);

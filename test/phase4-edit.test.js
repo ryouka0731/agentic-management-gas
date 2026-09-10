@@ -758,3 +758,56 @@ describe('工数の集計で見えるもの', () => {
       .toThrow(/持ち主だけ/);
   });
 });
+
+describe('2人で持つ仕事の集計', () => {
+  function shared() {
+    const env = setup();
+    const { ctx } = env;
+
+    const issue = ctx.issueCreate('ふたりで', '', []);
+    ctx.issueUpdate(issue.number, {
+      assignee: 'tester@example.com,aite@example.com',
+      plannedHours: 4, actualHours: 6, dueDate: '2026-09-10',
+    });
+    return env;
+  }
+
+  it('全体には1件ぶんだけ足す', () => {
+    const { ctx } = shared();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    // それぞれに全部を足すと、人ごとの合計を足しても全体に戻らない
+    expect(res.total.planned).toBe(4);
+    expect(res.total.actual).toBe(6);
+  });
+
+  it('人ごとには頭数で割って足す', () => {
+    const { ctx } = shared();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+    const mine = res.people.filter((p) => p.who === 'tester@example.com')[0];
+
+    expect(mine.total.planned).toBe(2);
+    expect(mine.total.actual).toBe(3);
+  });
+
+  it('相手のぶんは見えない', () => {
+    const { ctx } = shared();
+    const res = ctx.apiTallyEffort('month', 'due', '');
+
+    expect(res.people.map((p) => p.who)).toEqual(['tester@example.com']);
+    expect(res.hidden).toBe(1);
+  });
+
+  it('担当が2人とも名簿に入る', () => {
+    const { ctx } = shared();
+
+    expect(ctx.apiKnownPeople()).toContain('aite@example.com');
+  });
+
+  it('画面に渡す形では配列にもする', () => {
+    const { ctx } = shared();
+    const [row] = ctx.apiIssueList('');
+
+    expect(row.assignees).toEqual(['tester@example.com', 'aite@example.com']);
+  });
+});

@@ -174,10 +174,11 @@ describe('入力は右のパネルで受ける', () => {
     document.querySelector('#issue-list .row-item .row-open').click();
 
     const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
-    expect(inputs[2].value).toBe('me@example.com');
+    expect(inputs[2].value).toBe('@me@example.com ');
     expect(inputs[4].value).toBe('2026-09-30');
 
-    inputs[2].value = 'other@example.com';
+    inputs[2].value = '@other@example.com ';
+    inputs[2].dispatchEvent(new window.Event('input', { bubbles: true }));
     document.querySelector('#side-body form')
       .dispatchEvent(new window.Event('submit', { cancelable: true }));
 
@@ -1795,7 +1796,7 @@ describe('名前を呼ぶ', () => {
     expect(picker.hidden).toBe(false);
     // 名前を主に、アドレスを従に出す
     expect([...picker.querySelectorAll('.mention-option .mention-name')]
-      .map((b) => b.textContent)).toEqual(['other']);
+      .map((b) => b.textContent)).toEqual(['鈴木 花子']);
   });
 
   it('選ぶと本文に入る', () => {
@@ -3083,5 +3084,159 @@ describe('表示する名前', () => {
 
     expect(document.querySelector('#issue-list .avatar')
       .getAttribute('aria-label')).toBe('me (me@example.com)');
+  });
+});
+
+describe('担当者を「@」で選ぶ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openDetail() {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    return app;
+  }
+
+  function field() {
+    return document.querySelectorAll('#side-body input, #side-body textarea')[2];
+  }
+
+  function type(value) {
+    const input = field();
+    input.value = value;
+    input.selectionStart = value.length;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    return input;
+  }
+
+  it('いまの担当が「@」の形で入っている', () => {
+    openDetail();
+    expect(field().value).toBe('@me@example.com ');
+  });
+
+  it('名前でも探せる', () => {
+    openDetail();
+    type('@鈴木');
+
+    const box = document.querySelector('.assignee-picker .mention-picker');
+    expect(box.hidden).toBe(false);
+    expect([...box.querySelectorAll('.mention-name')].map((n) => n.textContent))
+      .toEqual(['鈴木 花子']);
+  });
+
+  it('アドレスでも探せる', () => {
+    openDetail();
+    type('@other');
+
+    expect([...document.querySelectorAll('.assignee-picker .mention-name')]
+      .map((n) => n.textContent)).toEqual(['鈴木 花子']);
+  });
+
+  it('選ぶとアドレスが入る', () => {
+    openDetail();
+    type('@鈴木');
+    document.querySelector('.assignee-picker .mention-option').click();
+
+    // 手で打たせると、打ち間違いが黙って通る
+    expect(field().value).toContain('@other@example.com');
+  });
+
+  it('何人でも並べられる', () => {
+    const app = openDetail();
+    type('@me@example.com @other@example.com ');
+
+    document.querySelector('#side-body form')
+      .dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1].assignee)
+      .toBe('me@example.com,other@example.com');
+  });
+
+  it('選んだ人が顔と名前で並ぶ', () => {
+    openDetail();
+    type('@me@example.com @other@example.com ');
+
+    expect([...document.querySelectorAll('.assignee-chosen .person-name')]
+      .map((n) => n.textContent)).toEqual(['山田 太郎', '鈴木 花子']);
+  });
+
+  it('もう選んだ人は候補に出さない', () => {
+    openDetail();
+    type('@me@example.com @');
+
+    expect([...document.querySelectorAll('.assignee-picker .mention-name')]
+      .map((n) => n.textContent)).toEqual(['鈴木 花子']);
+  });
+
+  it('自分に割り当てるを押すと足される', () => {
+    openDetail();
+    type('@other@example.com ');
+
+    [...document.querySelectorAll('#side-body .btn')]
+      .find((b) => b.textContent.includes('自分に割り当てる')).click();
+
+    expect(field().value).toContain('@me@example.com');
+    expect(field().value).toContain('@other@example.com');
+  });
+
+  it('誰も居なければそう出す', () => {
+    openDetail();
+    type('');
+
+    expect(document.querySelector('.assignee-chosen').textContent)
+      .toContain('まだ誰も割り当てていません');
+  });
+});
+
+describe('複数の担当者の見え方', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const TWO = {
+    ...DEFAULTS.apiIssueList[0], parent: '',
+    assignee: 'me@example.com,other@example.com',
+    assignees: ['me@example.com', 'other@example.com'],
+  };
+
+  it('顔を並べて出す', () => {
+    mount({ apiIssueList: [TWO] });
+    document.querySelector('[data-tab="issues"]').click();
+
+    const faces = document.querySelectorAll('#issue-list .avatars .avatar');
+    expect([...faces].map((f) => f.textContent)).toEqual(['山', '鈴']);
+  });
+
+  it('多いときは残りを数で示す', () => {
+    mount({
+      apiIssueList: [{
+        ...TWO,
+        assignees: ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com', 'e@x.com'],
+      }],
+    });
+    document.querySelector('[data-tab="issues"]').click();
+
+    expect(document.querySelector('#issue-list .avatar.more').textContent)
+      .toBe('+2');
+  });
+
+  it('担当者ごとに束ねると両方の束に出る', () => {
+    mount({ apiIssueList: [TWO] });
+    document.querySelector('[data-tab="issues"]').click();
+
+    const sel = document.getElementById('issue-group');
+    sel.value = 'assignee';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    // 片方にしか出さないと、もう片方の人には自分の仕事が見えない
+    expect([...document.querySelectorAll('#issue-list .group-head')]
+      .map((h) => h.textContent.replace('▾', '')))
+      .toEqual(['山田 太郎1', '鈴木 花子1']);
+  });
+
+  it('自分の担当だけに絞っても残る', () => {
+    mount({ apiIssueList: [TWO] });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('mine-btn').click();
+
+    expect(document.querySelectorAll('#issue-list .row-item')).toHaveLength(1);
   });
 });

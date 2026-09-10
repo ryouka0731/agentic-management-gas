@@ -384,7 +384,7 @@ describe('やることの操作', () => {
   });
 
   it('担当者と期限を入力できる', () => {
-    expect(js).toContain("label: '担当者 (メールアドレス)'");
+    expect(js).toContain("label: '担当者 (「@」で選びます。何人でも)'");
     expect(js).toContain("label: '期限 (例: 2026-09-30)'");
     expect(js).toContain('自分に割り当てる');
   });

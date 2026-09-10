@@ -3111,4 +3111,38 @@ button.label-pill {
 /* 狭いところではアドレスを畳む。名前だけで足りる */
 .row-meta .person-mail,
 .tally-table .person-mail { display: none; }
+
+/* 担当者は何人でも並べられる。候補は入力のすぐ下に重ねる */
+.assignee-picker { position: relative; }
+
+.assignee-picker .mention-picker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 160;
+}
+
+.assignee-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+/* 顔を少し重ねて並べる。人数が増えても場所を食わない */
+.avatars {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.avatars .avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--bg-2); }
+.avatars .avatar:first-child { margin-left: 0; }
+
+.avatar.more {
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 10px;
+}
 </style>

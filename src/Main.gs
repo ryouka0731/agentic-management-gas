@@ -939,6 +939,7 @@ function issueToPlain_(row) {
     body: String(row.body == null ? '' : row.body),
     state: String(row.state == null ? '' : row.state),
     assignee: String(row.assignee == null ? '' : row.assignee),
+    assignees: issueAssignees(row),
     labels: String(row.labels == null ? '' : row.labels),
     linkedFileIds: String(row.linkedFileIds == null ? '' : row.linkedFileIds),
     linkedPr: row.linkedPr === '' || row.linkedPr == null ? '' : Number(row.linkedPr),
@@ -1317,7 +1318,28 @@ function apiTallyEffort(unit, basis, who) {
   var rows = issueList(null);
   var plain = [];
 
-  for (var i = 0; i < rows.length; i++) plain.push(issueToPlain_(rows[i]));
+  for (var i = 0; i < rows.length; i++) {
+    var one = issueToPlain_(rows[i]);
+    var who = one.assignees;
+
+    if (!who.length) {
+      plain.push(one);
+      continue;
+    }
+
+    // 2人で持つ仕事は、頭数で割って数える。それぞれに全部を足すと、
+    // 人ごとの合計を足しても全体の合計に戻らなくなる
+    for (var w = 0; w < who.length; w++) {
+      var part = {};
+      for (var k in one) {
+        if (Object.prototype.hasOwnProperty.call(one, k)) part[k] = one[k];
+      }
+      part.assignee = who[w];
+      part.plannedHours = (Number(one.plannedHours) || 0) / who.length;
+      part.actualHours = (Number(one.actualHours) || 0) / who.length;
+      plain.push(part);
+    }
+  }
 
   // 全体の合計は誰でも見てよい。人ごとの内訳だけを絞る
   var res = tallyEffort(plain, { unit: unit, basis: basis });
@@ -1589,7 +1611,10 @@ function apiKnownPeople() {
   for (var r = 0; r < reviews.length; r++) add(reviews[r].reviewer);
 
   var issues = dbReadAll('issues');
-  for (var q = 0; q < issues.length; q++) add(issues[q].assignee);
+  for (var q = 0; q < issues.length; q++) {
+    var who = issueAssignees(issues[q]);
+    for (var w = 0; w < who.length; w++) add(who[w]);
+  }
 
   // 報告の場で名前を呼べるように、報告と返信を書いた人も名簿に入れる
   var reports = dbReadAll('inquiries');

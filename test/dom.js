@@ -119,14 +119,15 @@ export const DEFAULTS = {
   apiIssueList: [
     {
       number: 2, title: '通勤手当の見直し', body: '', state: 'open',
-      assignee: 'me@example.com', labels: '規定改訂', linkedFileIds: 'DOC1',
+      assignee: 'me@example.com', assignees: ['me@example.com'],
+      labels: '規定改訂', linkedFileIds: 'DOC1',
       linkedPr: '', createdAt: '2026-09-01T00:00:00.000Z', closedAt: '',
       dueDate: '2026-09-30T00:00:00.000Z', startDate: '', parent: '',
       estimate: 3, plannedHours: 8, actualHours: 2,
     },
     {
       number: 1, title: '第2条の改訂', body: '', state: 'open',
-      assignee: '', labels: '', linkedFileIds: 'DOC1', linkedPr: '',
+      assignee: '', assignees: [], labels: '', linkedFileIds: 'DOC1', linkedPr: '',
       createdAt: '2026-09-02T00:00:00.000Z', closedAt: '',
       dueDate: '', startDate: '', parent: 2,
       estimate: '', plannedHours: 4, actualHours: '',
@@ -161,7 +162,7 @@ export const DEFAULTS = {
   apiPrPreview: { clean: true, problems: [], conflicts: [], approvals: 0, ops: [] },
   apiPrCommits: [],
   apiIssuesForFile: [],
-  apiKnownPeople: ['me@example.com'],
+  apiKnownPeople: ['me@example.com', 'other@example.com'],
   apiPeopleNames: { 'me@example.com': '山田 太郎', 'other@example.com': '鈴木 花子' },
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },

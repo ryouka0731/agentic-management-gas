@@ -53,6 +53,7 @@ function projectBoard() {
       title: String(issue.title == null ? '' : issue.title),
       state: String(issue.state == null ? '' : issue.state),
       assignee: String(issue.assignee == null ? '' : issue.assignee),
+      assignees: issueAssignees(issue),
       labels: String(issue.labels == null ? '' : issue.labels),
       dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
       staleDays: stalenessOf(issue, new Date()).days,

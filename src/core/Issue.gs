@@ -134,6 +134,11 @@ function issueUpdate(number, patch) {
     tagAdopt(patch.labels);
   }
 
+  // 担当者は複数入る。前後の空白と重なりを落としてから入れる
+  if (Object.prototype.hasOwnProperty.call(patch, 'assignee')) {
+    patch.assignee = issueAssigneeClean(patch.assignee);
+  }
+
   var allowed = {};
   var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
     'parent', 'estimate', 'plannedHours', 'actualHours'];
@@ -285,4 +290,53 @@ function issueHousekeep(now) {
 
   for (var i = 0; i < gone.length; i++) issuePurge(gone[i]);
   return gone;
+}
+
+/**
+ * 担当者を配列にする。
+ *
+ * ひとつの仕事を2人で持つことがある。列は増やさず、カンマ区切りで
+ * 並べる (タグと同じ形)。
+ *
+ * @param {object|string} row issues 行、または assignee の文字列
+ * @returns {string[]}
+ */
+function issueAssignees(row) {
+  var raw = (row && typeof row === 'object') ? row.assignee : row;
+  var parts = String(raw || '').split(',');
+  var seen = {};
+  var out = [];
+
+  for (var i = 0; i < parts.length; i++) {
+    var one = parts[i].replace(/^\s+|\s+$/g, '');
+    if (!one || seen[one]) continue;
+
+    seen[one] = true;
+    out.push(one);
+  }
+  return out;
+}
+
+/**
+ * 担当者の書き方を整える。
+ *
+ * 前後の空白と重なりを落とす。形になっていないものは断る。
+ *
+ * @param {string|string[]} value
+ * @returns {string} カンマ区切り
+ */
+function issueAssigneeClean(value) {
+  var list = Array.isArray(value) ? value : issueAssignees(value);
+  var out = [];
+
+  for (var i = 0; i < list.length; i++) {
+    var one = String(list[i]).replace(/^\s+|\s+$/g, '');
+    if (!one) continue;
+
+    if (!/^[^\s,@]+@[^\s,@]+$/.test(one)) {
+      throw new Error('担当者はメールアドレスで入れてください: ' + one);
+    }
+    if (out.indexOf(one) < 0) out.push(one);
+  }
+  return out.join(',');
 }

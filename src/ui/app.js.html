@@ -266,7 +266,7 @@
     'filter:mine': '自分が担当のものだけに絞ります',
     'filter:open': 'まだ解決していない報告だけに絞ります',
     'field:estimate': '作業の大きさの目安です。時間ではなく相対的な数で入れます',
-    'field:planned': 'かかる見込みの人日です。工程表の棒の長さと繋がっています',
+    'field:planned': 'かかる見込みの人日です。工程表の棒の長さと繋がっています。担当者が複数いる集計では、頭数で割って数えます',
     'field:actual': '実際にかかった人日です。見込みとの差が次の見積もりの手がかりになります',
     'field:parent': 'このやることを、別のやることの下にぶら下げます',
     'field:tags': 'どんな種類の仕事かの印です。「#」を打つと候補が出ます',
@@ -3159,6 +3159,39 @@
     return frag;
   }
 
+  /**
+   * 担当者の顔を並べる。
+   *
+   * ひとつの仕事を2人で持つことがある。重ねて置き、多いときは残りを
+   * 数で示す。
+   *
+   * @param {string[]|string} people
+   * @returns {HTMLElement}
+   */
+  function makeAvatars(people) {
+    var list = Array.isArray(people)
+      ? people
+      : String(people || '').split(',')
+        .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+        .filter(function (x) { return !!x; });
+
+    if (!list.length) return makeAvatar('');
+
+    var wrap = document.createElement('span');
+    wrap.className = 'avatars';
+
+    list.slice(0, 3).forEach(function (who) { wrap.appendChild(makeAvatar(who)); });
+
+    if (list.length > 3) {
+      var more = document.createElement('span');
+      more.className = 'avatar more';
+      more.textContent = '+' + (list.length - 3);
+      attachHint(more, list.slice(3).map(personName).join(' / '));
+      wrap.appendChild(more);
+    }
+    return wrap;
+  }
+
   function makeAvatar(email) {
     var who = String(email || '');
     var name = personName(who);
@@ -3220,8 +3253,23 @@
    * @param {object} issue
    * @returns {boolean}
    */
+  /**
+   * その人が担当かを見る。
+   *
+   * @param {object} issue
+   * @param {string} who
+   * @returns {boolean}
+   */
+  function hasAssignee(issue, who) {
+    var list = issue.assignees ||
+      String(issue.assignee || '').split(',')
+        .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); });
+
+    return list.indexOf(String(who)) >= 0;
+  }
+
   function matchesFilter(issue) {
-    if (mineOnly && String(issue.assignee || '') !== currentUser) return false;
+    if (mineOnly && !hasAssignee(issue, currentUser)) return false;
 
     var q = String(issueFilterEl.value || '').toLowerCase().replace(/^\s+|\s+$/g, '');
     if (!q) return true;
@@ -3714,7 +3762,7 @@
             openIssueDetail(issue, row);
           });
           row.appendChild(open);
-          row.appendChild(makeAvatar(issue.assignee));
+          row.appendChild(makeAvatars(issue.assignees || issue.assignee));
 
           var edit = document.createElement('button');
           edit.className = 'icon-btn';
@@ -3825,7 +3873,7 @@
       [
         { name: 'title', label: 'やること', required: true },
         { name: 'body', label: '補足', multiline: true },
-        { name: 'assignee', label: '担当者 (メールアドレス)' },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
         { name: 'estimate', label: '見積もり (規模。数値)' },
@@ -3836,7 +3884,7 @@
       '保存する',
       function (v) {
         var patch = {
-          title: v.title, body: v.body, assignee: v.assignee,
+          title: v.title, body: v.body, assignee: people.value(),
           startDate: v.startDate, dueDate: v.dueDate,
           labels: picker ? picker.value() : (issue.labels || ''),
           estimate: v.estimate, plannedHours: v.plannedHours,
@@ -3867,7 +3915,10 @@
     var inputs = form.querySelectorAll('input, textarea');
     inputs[0].value = issue.title || '';
     inputs[1].value = issue.body || '';
-    inputs[2].value = issue.assignee || '';
+    inputs[2].value = (issue.assignees || []).map(function (who) {
+      return '@' + who;
+    }).join(' ');
+    if (inputs[2].value) inputs[2].value += ' ';
     inputs[3].value = issue.startDate ? String(issue.startDate).substring(0, 10) : '';
     inputs[4].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
     inputs[5].value = issue.estimate === '' ? '' : issue.estimate;
@@ -3892,8 +3943,7 @@
     inputs[7].step = '0.5';
     inputs[6].min = '0';
     inputs[7].min = '0';
-    inputs[2].setAttribute('list', 'people-list');
-    attachPeopleList(form);
+    var people = attachAssigneePicker(inputs[2]);
 
     var picker = makeTagPicker(issue.labels || '');
     form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
@@ -3906,7 +3956,10 @@
     mine.className = 'btn';
     mine.appendChild(makeIcon('user'));
     mine.appendChild(document.createTextNode('自分に割り当てる'));
-    mine.addEventListener('click', function () { inputs[2].value = currentUser; });
+    mine.addEventListener('click', function () {
+      if (people.has(currentUser)) return;
+      people.add(currentUser);
+    });
     extra.appendChild(mine);
 
     if (String(issue.state) === 'open') {
@@ -3970,6 +4023,148 @@
     extra.appendChild(del);
 
     form.insertBefore(extra, form.querySelector('.inline-form-actions'));
+  }
+
+  /**
+   * 担当者の欄を「@」で選ぶ形にする。
+   *
+   * アドレスを手で打たせると、打ち間違いが黙って通る。名前でもアドレス
+   * でも探せる候補から選ばせ、入るのはアドレスにする。
+   *
+   * ひとつの仕事を2人で持つことがあるので、何人でも並べられるようにする。
+   *
+   * @param {HTMLInputElement} input
+   * @returns {{value: function(): string, has: function(string): boolean,
+   *   add: function(string): void}}
+   */
+  function attachAssigneePicker(input) {
+    var wrap = document.createElement('div');
+    wrap.className = 'assignee-picker';
+    input.parentNode.insertBefore(wrap, input.nextSibling);
+
+    var box = document.createElement('div');
+    box.className = 'mention-picker';
+    box.hidden = true;
+    wrap.appendChild(box);
+
+    var preview = document.createElement('div');
+    preview.className = 'assignee-chosen';
+    wrap.appendChild(preview);
+
+    function current() {
+      var re = /@([^\s@,]+@[^\s@,]+|[^\s@,]+)/g;
+      var seen = {};
+      var out = [];
+      var m;
+
+      while ((m = re.exec(input.value)) !== null) {
+        var who = mentionMatch(m[1]);
+        if (!who || seen[who]) continue;
+
+        seen[who] = true;
+        out.push(who);
+      }
+      return out;
+    }
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
+
+    function draw() {
+      preview.textContent = '';
+      var list = current();
+
+      if (!list.length) {
+        var none = document.createElement('span');
+        none.className = 'row-meta';
+        none.textContent = 'まだ誰も割り当てていません';
+        preview.appendChild(none);
+        return;
+      }
+
+      list.forEach(function (who) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(who));
+        chip.appendChild(makePersonLabel(who));
+        preview.appendChild(chip);
+      });
+    }
+
+    function pick(who, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+
+      input.value = before + '@' + who + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '@' + who + ' ').length;
+      close();
+      draw();
+    }
+
+    input.addEventListener('input', function () {
+      draw();
+
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /@([^\s@,]*(?:@[^\s@,]*)?)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var chosen = current();
+
+      // いま打っている途中のものは「もう選んだ」に数えない。数えると
+      // 打ち終わる前に候補から消える
+      var typing = mentionMatch(m[1]);
+
+      var hits = roster.filter(function (one) {
+        if (chosen.indexOf(one) >= 0 && one !== typing) return false;
+        if (!want) return true;
+
+        return String(one).toLowerCase().indexOf(want) >= 0 ||
+          personName(one).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 6);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (who) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+        btn.appendChild(makeAvatar(who));
+
+        var name = document.createElement('span');
+        name.className = 'mention-name';
+        name.textContent = personName(who);
+        btn.appendChild(name);
+
+        var addr = document.createElement('span');
+        addr.className = 'row-meta';
+        addr.textContent = who;
+        btn.appendChild(addr);
+
+        btn.addEventListener('click', function () { pick(who, m.index); });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
+    input.addEventListener('blur', function () {
+      window.setTimeout(close, 150);
+    });
+
+    draw();
+    return {
+      value: function () { return current().join(','); },
+      has: function (who) { return current().indexOf(who) >= 0; },
+      add: function (who) {
+        if (input.value && !/\s$/.test(input.value)) input.value += ' ';
+        input.value += '@' + who + ' ';
+        draw();
+      },
+    };
   }
 
   /**
@@ -4419,8 +4614,18 @@
       if (by === 'none') { put('all', 'すべて', issue); return; }
 
       if (by === 'assignee') {
-        var who = String(issue.assignee || '');
-        put(who || '(未割当)', who || '担当なし', issue);
+        // 2人で持つ仕事は、両方の束に出す。片方にしか出さないと、
+        // もう片方の人には自分の仕事が見えなくなる
+        var who = issue.assignees ||
+          String(issue.assignee || '').split(',')
+            .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+            .filter(function (x) { return !!x; });
+
+        if (!who.length) {
+          put('(未割当)', '担当なし', issue);
+          return;
+        }
+        who.forEach(function (one) { put(one, personName(one), issue); });
         return;
       }
 
@@ -4678,7 +4883,7 @@
               name.style.paddingLeft = (depth * 14 + 8) + 'px';
             }
 
-            name.appendChild(makeAvatar(r.assignee));
+            name.appendChild(makeAvatars(r.assignee));
 
             var who = document.createElement('span');
             who.className = 'gantt-title';
@@ -4702,7 +4907,7 @@
               (r.overdue ? ' overdue' : '') +
               (r.hasDue ? '' : ' nodue');
             bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
-            bar.appendChild(makeAvatar(r.assignee));
+            bar.appendChild(makeAvatars(r.assignee));
 
             var days = document.createElement('span');
             days.className = 'gantt-days';
@@ -5182,7 +5387,7 @@
             var cardStale = makeStaleBadge(card);
             if (cardStale) when.appendChild(cardStale);
             foot.appendChild(when);
-            foot.appendChild(makeAvatar(card.assignee));
+            foot.appendChild(makeAvatars(card.assignees || card.assignee));
 
             // 一覧と同じく、カードからも捨てられるようにする。
             // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
@@ -5215,7 +5420,7 @@
       '改訂版 — 直している途中の版。正式版には影響しない',
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
-      'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい',
+      'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
@@ -5716,7 +5921,11 @@
 
       var want = m[1].toLowerCase();
       var hits = roster.filter(function (one) {
-        return !want || String(one).toLowerCase().indexOf(want) >= 0;
+        if (!want) return true;
+
+        // 名前でもアドレスでも探せるようにする。どちらで覚えているかは人による
+        return String(one).toLowerCase().indexOf(want) >= 0 ||
+          personName(one).toLowerCase().indexOf(want) >= 0;
       }).slice(0, 6);
 
       if (!hits.length) return close();
@@ -5730,7 +5939,7 @@
 
         var name = document.createElement('span');
         name.className = 'mention-name';
-        name.textContent = String(who).split('@')[0];
+        name.textContent = personName(who);
         btn.appendChild(name);
 
         var addr = document.createElement('span');

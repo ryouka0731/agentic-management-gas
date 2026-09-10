@@ -596,3 +596,51 @@ describe('完了を差し戻す', () => {
     expect(ctx.stalenessOf(ctx.issueGet(a.number), new Date()).level).toBe(0);
   });
 });
+
+describe('担当者を複数割り当てる', () => {
+  it('カンマ区切りで持つ', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('ふたりで', '', []);
+
+    ctx.issueUpdate(a.number, { assignee: 'x@example.com,y@example.com' });
+
+    expect(ctx.issueAssignees(ctx.issueGet(a.number)))
+      .toEqual(['x@example.com', 'y@example.com']);
+  });
+
+  it('配列でも渡せる', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('ふたりで', '', []);
+
+    ctx.issueUpdate(a.number, { assignee: ['x@example.com', 'y@example.com'] });
+
+    expect(ctx.issueGet(a.number).assignee).toBe('x@example.com,y@example.com');
+  });
+
+  it('前後の空白と重なりを落とす', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('そろえる', '', []);
+
+    ctx.issueUpdate(a.number, { assignee: ' x@example.com , x@example.com ' });
+
+    expect(ctx.issueGet(a.number).assignee).toBe('x@example.com');
+  });
+
+  it('メールの形になっていないものは断る', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('だめなの', '', []);
+
+    expect(() => ctx.issueUpdate(a.number, { assignee: 'だれか' }))
+      .toThrow(/メールアドレスで入れて/);
+  });
+
+  it('空にできる', () => {
+    const { ctx } = setup();
+    const a = ctx.issueCreate('担当なしに戻す', '', []);
+    ctx.issueUpdate(a.number, { assignee: 'x@example.com' });
+
+    ctx.issueUpdate(a.number, { assignee: '' });
+
+    expect(ctx.issueAssignees(ctx.issueGet(a.number))).toEqual([]);
+  });
+});
