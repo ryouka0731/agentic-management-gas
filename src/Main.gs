@@ -1605,6 +1605,30 @@ function apiTemplateDelete(name) {
 }
 
 /**
+ * 使われ方を記録する (Web App API)。
+ *
+ * 誰が押したかは受け取らないし、残さない。日と場所と回数だけを数える。
+ *
+ * @param {Array<{kind:string, target:string, count:number}>} rows
+ * @returns {number}
+ */
+function apiUsageRecord(rows) {
+  return usageRecord(rows || []);
+}
+
+/**
+ * 使われ方をまとめて返す (Web App API)。
+ *
+ * 個人が写らないので、誰が見てもよい。
+ *
+ * @param {number} days
+ * @returns {object}
+ */
+function apiUsageSummary(days) {
+  return usageSummary(days);
+}
+
+/**
  * タグの一覧を返す (Web App API)。
  *
  * @returns {Array<{name:string, color:string, builtin:boolean}>}

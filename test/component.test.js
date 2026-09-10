@@ -3719,3 +3719,160 @@ describe('起票のときに入れられるもの', () => {
     expect(document.querySelector('#side-body .template-use')).toBeTruthy();
   });
 });
+
+describe('使われ方を数える', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const SUMMARY = {
+    from: '2026-08-12', to: '2026-09-10', total: 30,
+    byTarget: [
+      { kind: 'action', target: 'issue-create-btn', count: 12 },
+      { kind: 'action', target: 'row-open', count: 6 },
+      { kind: 'view', target: 'issues', count: 9 },
+    ],
+    byDay: [
+      { day: '2026-09-09', count: 10 },
+      { day: '2026-09-10', count: 20 },
+    ],
+  };
+
+  it('押した場所を数える', () => {
+    const app = mount();
+    document.getElementById('bell-btn').click();
+
+    // すぐには送らない。押すたびに送るとシートが持たない
+    expect(app.calls.some((c) => c.name === 'apiUsageRecord')).toBe(false);
+  });
+
+  it('画面を開いたら送るときに一緒に出す', () => {
+    const app = mount({ apiUsageSummary: SUMMARY });
+    document.getElementById('bell-btn').click();
+    document.querySelector('[data-tab="usage"]').click();
+
+    const rows = app.calls.filter((c) => c.name === 'apiUsageRecord').pop().args[0];
+    const keys = rows.map((r) => r.kind + ':' + r.target);
+
+    expect(keys).toContain('action:bell-btn');
+    expect(keys).toContain('view:usage');
+  });
+
+  it('名前の無いところは数えない', () => {
+    const app = mount({ apiUsageSummary: SUMMARY });
+    document.querySelector('.layout').click();
+    document.querySelector('[data-tab="usage"]').click();
+
+    const rows = app.calls.filter((c) => c.name === 'apiUsageRecord').pop().args[0];
+    expect(rows.every((r) => r.target)).toBe(true);
+  });
+
+  it('一覧の行は種類でまとめて数える', () => {
+    const app = mount({ apiUsageSummary: SUMMARY });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    document.querySelector('[data-tab="usage"]').click();
+
+    const rows = app.calls.filter((c) => c.name === 'apiUsageRecord').pop().args[0];
+    expect(rows.map((r) => r.target)).toContain('row-open');
+  });
+
+  it('同じところを2回押したら2と数える', () => {
+    const app = mount({ apiUsageSummary: SUMMARY });
+    document.getElementById('bell-btn').click();
+    document.getElementById('bell-btn').click();
+    document.querySelector('[data-tab="usage"]').click();
+
+    const rows = app.calls.filter((c) => c.name === 'apiUsageRecord').pop().args[0];
+    expect(rows.filter((r) => r.target === 'bell-btn')[0].count).toBe(2);
+  });
+});
+
+describe('使われ方のボード', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const SUMMARY = {
+    from: '2026-08-12', to: '2026-09-10', total: 30,
+    byTarget: [
+      { kind: 'action', target: 'issue-create-btn', count: 12 },
+      { kind: 'action', target: 'row-open', count: 6 },
+      { kind: 'view', target: 'issues', count: 9 },
+    ],
+    byDay: [
+      { day: '2026-09-09', count: 10 },
+      { day: '2026-09-10', count: 20 },
+    ],
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign({ apiUsageSummary: SUMMARY }, over || {}));
+    document.querySelector('[data-tab="usage"]').click();
+    return app;
+  }
+
+  it('誰でも開ける場所に置く', () => {
+    openBoard();
+    expect(document.getElementById('panel-usage').hidden).toBe(false);
+  });
+
+  it('人が読める言葉に直して並べる', () => {
+    openBoard();
+    const names = [...document.querySelectorAll('#usage .usage-name')]
+      .map((n) => n.textContent);
+
+    expect(names).toContain('やることを作る');
+    expect(names).toContain('やること・報告の行を開く');
+  });
+
+  it('操作と画面を分けて並べる', () => {
+    openBoard();
+    const heads = [...document.querySelectorAll('#usage h3')]
+      .map((h) => h.textContent);
+
+    expect(heads).toEqual(['よく押されている操作', 'よく開かれている画面', '日ごと']);
+  });
+
+  it('多いものほど棒が長い', () => {
+    openBoard();
+    const bars = [...document.querySelectorAll('#usage .usage-list')][0]
+      .querySelectorAll('.usage-bar');
+
+    expect(bars[0].style.width).toBe('100%');
+    expect(parseInt(bars[1].style.width, 10)).toBeLessThan(100);
+  });
+
+  it('日ごとの高さも比べられる', () => {
+    openBoard();
+    const days = document.querySelectorAll('#usage .usage-day-bar');
+
+    expect(days).toHaveLength(2);
+    expect(days[1].style.height).toBe('100%');
+  });
+
+  it('期間を変えられる', () => {
+    const app = openBoard();
+
+    document.getElementById('usage-days').value = '7';
+    document.getElementById('usage-days')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    expect(app.calls.filter((c) => c.name === 'apiUsageSummary').pop().args[0])
+      .toBe(7);
+  });
+
+  it('まだ何も無ければ何が出るのかを言う', () => {
+    openBoard({
+      apiUsageSummary: {
+        from: '', to: '', total: 0, byTarget: [], byDay: [],
+      },
+    });
+
+    expect(document.getElementById('usage').textContent)
+      .toContain('誰が押したかは記録していません');
+  });
+
+  it('記録していないことを画面にも書く', () => {
+    openBoard();
+
+    expect(document.getElementById('panel-usage').textContent)
+      .toContain('誰が押したかは記録していません');
+  });
+});

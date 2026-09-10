@@ -61,6 +61,9 @@
   var panelIssues = document.getElementById('panel-issues');
   var panelHelp = document.getElementById('panel-help');
   var panelReport = document.getElementById('panel-report');
+  var panelUsage = document.getElementById('panel-usage');
+  var usageEl = document.getElementById('usage');
+  var usageDaysSel = document.getElementById('usage-days');
   var reportListEl = document.getElementById('report-list');
   var reportDetail = document.getElementById('report-detail');
   var reportFilterEl = document.getElementById('report-filter');
@@ -246,6 +249,7 @@
     'nav:branches': '直している途中の版の一覧です。正式版には影響しません',
     'nav:pulls': '「この改訂版を正式版に反映してよいか」を尋ねているものの一覧です',
     'nav:help': 'この道具の言葉と進め方をまとめています',
+    'nav:usage': 'どこがよく使われているかの記録です。誰が押したかは記録していません',
     'nav:report': '不具合・要望・使い方の質問を伝える場所です。みんなで読んで話せて、開発者のやることにも積まれます',
 
     // 版まわり
@@ -560,6 +564,7 @@
     gantt: 'calendar',
     help: 'help-circle',
     report: 'inbox',
+    usage: 'columns',
   };
 
   // ===== テーマ =====
@@ -1455,10 +1460,13 @@
     panelIssues.hidden = name !== 'issues';
     panelHelp.hidden = name !== 'help';
     panelReport.hidden = name !== 'report';
+    panelUsage.hidden = name !== 'usage';
 
     tabsEl.hidden = !current.fileId || !DOC_TABS[name];
     updateCrumbs();
     closeSide();
+
+    usageCount('view', name);
 
     if (name === 'docs') loadDocs();
     else if (name === 'history') loadHistory();
@@ -1468,6 +1476,7 @@
     else if (name === 'issues') reloadIssueView();
     else if (name === 'help') loadHelp();
     else if (name === 'report') loadReports();
+    else if (name === 'usage') loadUsage();
   }
 
   /**
@@ -6235,6 +6244,7 @@
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
       'やりとり — やることの中で話し合った跡。決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論をまた一からやることになる',
       '下書き — よく使う補足の形。差し込んでから書き足す。自分で作って残せる',
+      '使われ方 — どこがよく押されているかの記録。誰が押したかは記録していないので、誰が見てもかまわない',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
       '担当者が複数いる仕事の工数は、集計のときに頭数で割って数えられます。4人日を2人で持てば、それぞれ2人日として数えられ、全体の合計は4人日のままです。',
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
@@ -7258,6 +7268,291 @@
     form.insertBefore(note, form.querySelector('.inline-form-actions'));
   }
 
+  // ===== 使われ方の記録 =====
+
+  /**
+   * 溜めておく数。押すたびに送るとスプレッドシートが持たない。
+   */
+  var usageBuffer = {};
+
+  /**
+   * 場所の名前を決める。
+   *
+   * 名前を付けていないものは数えない。無名のものまで拾うと、作りかけの
+   * 画面から知らない名前が大量に流れ込む。
+   *
+   * @param {EventTarget} target
+   * @returns {string} 数えないなら空文字
+   */
+  function usageTargetOf(target) {
+    var el = target;
+
+    while (el && el !== document) {
+      if (el.id && /^[A-Za-z0-9:_-]{1,60}$/.test(el.id)) return el.id;
+
+      if (el.dataset && el.dataset.tab) return 'tab-' + el.dataset.tab;
+      if (el.dataset && el.dataset.track) return el.dataset.track;
+
+      // 一覧の行やカードは、1つずつではなく種類でまとめて数える
+      if (el.classList) {
+        if (el.classList.contains('row-open')) return 'row-open';
+        if (el.classList.contains('board-card')) return 'board-card';
+        if (el.classList.contains('gantt-bar')) return 'gantt-bar';
+        if (el.classList.contains('doc-open')) return 'doc-open';
+        if (el.classList.contains('commit-item')) return 'commit-item';
+        if (el.classList.contains('rel-chip')) return 'rel-chip';
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  /**
+   * 1つ数える。
+   *
+   * @param {string} kind 'view' | 'action'
+   * @param {string} target
+   */
+  function usageCount(kind, target) {
+    if (!target) return;
+
+    var key = kind + '\t' + target;
+    usageBuffer[key] = (usageBuffer[key] || 0) + 1;
+  }
+
+  /**
+   * 溜めたぶんを送る。
+   */
+  function usageFlush() {
+    var rows = [];
+
+    for (var key in usageBuffer) {
+      if (!Object.prototype.hasOwnProperty.call(usageBuffer, key)) continue;
+
+      var parts = key.split('\t');
+      rows.push({ kind: parts[0], target: parts[1], count: usageBuffer[key] });
+    }
+    if (!rows.length) return;
+
+    usageBuffer = {};
+    google.script.run
+      .withSuccessHandler(function () {})
+      .withFailureHandler(function () { /* 数えられなくても操作はできる */ })
+      .apiUsageRecord(rows);
+  }
+
+  // ===== 使われ方のボード =====
+
+  var USAGE_SPANS = [['7', '直近7日'], ['30', '直近30日'], ['90', '直近90日']];
+
+  /**
+   * 場所の名前を、人が読める言葉にする。
+   *
+   * @param {string} target
+   * @returns {string}
+   */
+  function usageLabel(target) {
+    var known = {
+      'row-open': 'やること・報告の行を開く',
+      'board-card': '進捗ボードのカード',
+      'gantt-bar': '工程表の棒',
+      'doc-open': '文書を開く',
+      'commit-item': '履歴の記録',
+      'rel-chip': '親子への行き先',
+      'issue-create-btn': 'やることを作る',
+      'report-btn': '開発者に伝える',
+      'commit-btn': '変更を記録',
+      'bulk-commit-btn': 'まとめて記録',
+      'branch-create-btn': '改訂版を作る',
+      'draft-create-btn': 'この文書の改訂版を作る',
+      'bell-btn': '知らせ',
+      'theme-btn': '画面の明るさ',
+      'side-edit': '直す (鉛筆)',
+      'mine-btn': '自分の担当だけ',
+      'tasks-btn': 'Google ToDo と同期',
+    };
+
+    if (known[target]) return known[target];
+
+    var tab = /^tab-(.+)$/.exec(target);
+    if (tab) {
+      var names = {
+        docs: '文書', issues: 'やること', branches: '改訂中の版',
+        pulls: '確認依頼', help: '使い方', report: '要望・不具合',
+        usage: '使われ方', content: '本文', history: '改訂の履歴',
+        drafts: 'この文書の改訂版',
+      };
+      return names[tab[1]] || tab[1];
+    }
+    return target;
+  }
+
+  /**
+   * 使われ方を描く。
+   *
+   * どこが使われていないかを見るためのもの。個人は写らないので、
+   * 誰が見てもよい。
+   */
+  function loadUsage() {
+    fillSelect(usageDaysSel, USAGE_SPANS, '30');
+
+    // いま溜めているぶんも含めて見たい
+    usageFlush();
+    showSkeleton(usageEl, 'list', 4);
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        var data = res || { total: 0, byTarget: [], byDay: [] };
+        usageEl.textContent = '';
+
+        if (!data.total) {
+          usageEl.appendChild(makeBlankState(
+            'まだ記録がありません',
+            'しばらく使うと、どこがよく押されているかがここに出ます。' +
+            '誰が押したかは記録していません。'
+          ));
+          return;
+        }
+
+        usageEl.appendChild(makeUsageSummary(data));
+        usageEl.appendChild(makeUsageRanking('よく押されている操作',
+          data.byTarget.filter(function (t) { return t.kind === 'action'; })));
+        usageEl.appendChild(makeUsageRanking('よく開かれている画面',
+          data.byTarget.filter(function (t) { return t.kind === 'view'; })));
+        usageEl.appendChild(makeUsageDays(data.byDay));
+      })
+      .withFailureHandler(function (err) {
+        usageEl.textContent = 'エラー: ' + err.message;
+      })
+      .apiUsageSummary(Number(usageDaysSel.value) || 30);
+  }
+
+  /**
+   * @param {object} data
+   * @returns {HTMLElement}
+   */
+  function makeUsageSummary(data) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-summary';
+
+    [['数えた回数', data.total + '回'],
+     ['数えた場所', data.byTarget.length + 'か所'],
+     ['期間', data.from + ' 〜 ' + data.to]].forEach(function (pair) {
+      var box = document.createElement('div');
+      box.className = 'tally-card';
+
+      var label = document.createElement('div');
+      label.className = 'row-meta';
+      label.textContent = pair[0];
+      box.appendChild(label);
+
+      var value = document.createElement('div');
+      value.className = 'tally-value';
+      value.textContent = pair[1];
+      box.appendChild(value);
+
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  /**
+   * 多い順に棒で並べる。
+   *
+   * 数字だけを並べても、どれが飛び抜けているのかは読み取れない。
+   *
+   * @param {string} title
+   * @param {object[]} rows
+   * @returns {HTMLElement}
+   */
+  function makeUsageRanking(title, rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = title;
+    wrap.appendChild(head);
+
+    if (!rows.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'まだ記録がありません';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var top = rows[0].count || 1;
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    rows.slice(0, 15).forEach(function (row) {
+      var line = document.createElement('div');
+      line.className = 'usage-row';
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.textContent = usageLabel(row.target);
+      attachHint(name, row.target);
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = Math.max(2, Math.round(row.count / top * 100)) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = row.count;
+      line.appendChild(count);
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * 日ごとの回数を並べる。
+   *
+   * @param {object[]} rows
+   * @returns {HTMLElement}
+   */
+  function makeUsageDays(rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '日ごと';
+    wrap.appendChild(head);
+
+    var top = 1;
+    rows.forEach(function (r) { if (r.count > top) top = r.count; });
+
+    var chart = document.createElement('div');
+    chart.className = 'usage-days';
+
+    rows.forEach(function (row) {
+      var col = document.createElement('div');
+      col.className = 'usage-day';
+      attachHint(col, row.day + ' · ' + row.count + '回');
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-day-bar';
+      bar.style.height = Math.max(4, Math.round(row.count / top * 100)) + '%';
+      col.appendChild(bar);
+
+      chart.appendChild(col);
+    });
+
+    wrap.appendChild(chart);
+    return wrap;
+  }
+
   // ===== 知らせ =====
 
   /**
@@ -7470,6 +7765,7 @@
     var byNav = {
       docs: 'nav:docs', issues: 'nav:issues', branches: 'nav:branches',
       pulls: 'nav:pulls', help: 'nav:help', report: 'nav:report',
+      usage: 'nav:usage',
     };
 
     var targets = document.querySelectorAll('[data-tab]');
@@ -7559,6 +7855,7 @@
   tallyUnitSel.addEventListener('change', loadTally);
   tallyBasisSel.addEventListener('change', loadTally);
   tallyWhoSel.addEventListener('change', loadTally);
+  usageDaysSel.addEventListener('change', loadUsage);
 
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7728,6 +8025,14 @@
 
   // 押したら引っ込める。多くの場合その先で画面が描き直される
   document.addEventListener('pointerdown', hideHint);
+
+  // どこがよく使われているかを数える。誰が押したかは数えない
+  document.addEventListener('click', function (e) {
+    usageCount('action', usageTargetOf(e.target));
+  }, true);
+
+  window.setInterval(usageFlush, 60000);
+  window.addEventListener('pagehide', usageFlush);
 
   document.addEventListener('pointermove', function (e) {
     // 出ているあいだだけ見る。相手が居なくなっていたらしまう

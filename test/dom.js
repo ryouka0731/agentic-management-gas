@@ -96,6 +96,7 @@ const API_NAMES = [
   'apiPeopleNames', 'apiPeopleSetName',
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
+  'apiUsageRecord', 'apiUsageSummary',
 ];
 
 /** よく使う既定の応答 */
@@ -115,6 +116,9 @@ export const DEFAULTS = {
   apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
+  apiUsageSummary: {
+    from: '2026-08-12', to: '2026-09-10', total: 0, byTarget: [], byDay: [],
+  },
   apiTemplateList: [
     { name: '作業の段取り', body: '## やること\n\n- [ ] \n', builtin: true, mine: false },
     { name: '週報', body: '## 今週\n', builtin: false, mine: true },

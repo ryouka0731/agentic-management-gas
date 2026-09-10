@@ -41,6 +41,10 @@
           <span class="nav-label">使い方</span>
           <span class="nav-desc">はじめての方へ</span>
         </button>
+        <button class="nav-item" data-tab="usage">
+          <span class="nav-label">使われ方</span>
+          <span class="nav-desc">どこがよく使われているか</span>
+        </button>
         <button class="nav-item" data-tab="report">
           <span class="nav-label">要望・不具合</span>
           <span class="nav-count" id="count-reports" hidden></span>
@@ -276,6 +280,20 @@
 
       <div class="panel" id="panel-help" hidden>
         <div class="guide" id="guide"></div>
+      </div>
+
+      <div class="panel panel-col" id="panel-usage" hidden>
+        <div class="panel-actions">
+          <label class="tally-switch">
+            <span class="row-meta">期間</span>
+            <select id="usage-days" aria-label="集計する期間"></select>
+          </label>
+          <span class="spacer"></span>
+          <span class="row-meta">
+            誰が押したかは記録していません。日と場所と回数だけを数えています
+          </span>
+        </div>
+        <div class="list-area" id="usage"></div>
       </div>
 
       <div class="panel panel-col" id="panel-report" hidden>

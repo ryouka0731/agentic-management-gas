@@ -3308,4 +3308,85 @@ button.label-pill {
 }
 
 .template-use:hover { color: var(--accent); }
+
+/*
+ * 使われ方。
+ *
+ * 数字だけを並べても、どれが飛び抜けているのかは読み取れない。
+ * 長さで比べられるようにする
+ */
+.usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.usage-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 12px;
+}
+
+.usage-name {
+  flex: 0 0 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.usage-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.usage-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.usage-count {
+  flex: 0 0 48px;
+  text-align: right;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 80px;
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.usage-day {
+  display: flex;
+  align-items: flex-end;
+  flex: 1 1 6px;
+  height: 100%;
+  min-width: 4px;
+}
+
+.usage-day-bar {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+
+@media (max-width: 767px) {
+  .usage-name { flex-basis: 110px; }
+}
 </style>
