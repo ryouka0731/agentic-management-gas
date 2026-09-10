@@ -94,6 +94,8 @@ const API_NAMES = [
   'apiTasksState', 'apiTasksChooseList', 'apiTasksSync',
   'apiTallyEffort', 'apiTallyScope', 'apiMemberList', 'apiMemberSet',
   'apiPeopleNames', 'apiPeopleSetName',
+  'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
+  'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
 ];
 
 /** よく使う既定の応答 */
@@ -112,6 +114,11 @@ export const DEFAULTS = {
   apiTasksState: { available: false, listId: '', lists: [] },
   apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
+  apiIssueComments: [],
+  apiTemplateList: [
+    { name: '作業の段取り', body: '## やること\n\n- [ ] \n', builtin: true, mine: false },
+    { name: '週報', body: '## 今週\n', builtin: false, mine: true },
+  ],
   apiTagList: [
     { name: '文書改訂', color: 'accent', builtin: true },
     { name: '会議', color: 'success', builtin: true },

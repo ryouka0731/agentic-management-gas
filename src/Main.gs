@@ -980,9 +980,27 @@ function apiIssueList(state) {
  * @param {string[]} linkedFileIds
  * @returns {object}
  */
-function apiIssueCreate(title, body, linkedFileIds, labels) {
+function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
   var issue = issueCreate(title, body, linkedFileIds || [], labels || '');
   projectPlace(issue.number, 'Backlog');
+
+  // 作ってすぐ直せばよい、では二度手間になる。作るときに入れられる
+  // ものは、そのまま入れて1件にする
+  if (patch && typeof patch === 'object') {
+    var keys = ['assignee', 'startDate', 'dueDate', 'estimate',
+      'plannedHours', 'actualHours', 'parent'];
+    var want = {};
+    var any = false;
+
+    for (var k = 0; k < keys.length; k++) {
+      if (!Object.prototype.hasOwnProperty.call(patch, keys[k])) continue;
+      if (patch[keys[k]] === '' || patch[keys[k]] === null) continue;
+
+      want[keys[k]] = patch[keys[k]];
+      any = true;
+    }
+    if (any) issue = issueUpdate(issue.number, want);
+  }
   return issueToPlain_(issue);
 }
 
@@ -1466,6 +1484,127 @@ function apiMemberSet(email, manager, name) {
 }
 
 /**
+ * issue_comments の行を、画面に渡せる素の形にする。
+ *
+ * @param {object} row
+ * @param {string} me
+ * @returns {object}
+ */
+function issueCommentToPlain_(row, me) {
+  function iso(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+
+  return {
+    id: Number(row.id),
+    issueNumber: Number(row.issueNumber),
+    body: String(row.body == null ? '' : row.body),
+    by: String(row.by == null ? '' : row.by),
+    at: iso(row.at),
+    editedAt: iso(row.editedAt),
+    canEdit: String(row.by) === String(me) && Number(row.id) > 0,
+  };
+}
+
+/**
+ * やることのやりとりを返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object[]}
+ */
+function apiIssueComments(number) {
+  var me = Session.getActiveUser().getEmail();
+  var rows = issueComments(number);
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) out.push(issueCommentToPlain_(rows[i], me));
+  return out;
+}
+
+/**
+ * やることに書き込む (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} body
+ * @returns {object}
+ */
+function apiIssueComment(number, body) {
+  var me = Session.getActiveUser().getEmail();
+  return issueCommentToPlain_(issueCommentAdd(number, body), me);
+}
+
+/**
+ * 書き込みを直す (Web App API)。
+ *
+ * @param {number} id
+ * @param {string} body
+ * @returns {object}
+ */
+function apiIssueCommentEdit(id, body) {
+  var me = Session.getActiveUser().getEmail();
+  return issueCommentToPlain_(issueCommentEdit(id, body), me);
+}
+
+/**
+ * 書き込みを消す (Web App API)。
+ *
+ * @param {number} id
+ * @returns {string}
+ */
+function apiIssueCommentDelete(id) {
+  issueCommentDelete(id);
+  return '書き込みを消しました';
+}
+
+/**
+ * 下書きの一覧を返す (Web App API)。
+ *
+ * @returns {Array<{name:string, body:string, builtin:boolean, mine:boolean}>}
+ */
+function apiTemplateList() {
+  var me = Session.getActiveUser().getEmail();
+  var rows = templateList();
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    var builtin = rows[i].builtin === true || String(rows[i].builtin) === 'true';
+
+    out.push({
+      name: String(rows[i].name),
+      body: String(rows[i].body || ''),
+      builtin: builtin,
+      mine: !builtin && String(rows[i].createdBy) === String(me),
+    });
+  }
+  return out;
+}
+
+/**
+ * 下書きを保存する (Web App API)。
+ *
+ * @param {string} name
+ * @param {string} body
+ * @returns {object}
+ */
+function apiTemplateSave(name, body) {
+  var row = templateSave(name, body);
+  return { name: String(row.name), body: String(row.body) };
+}
+
+/**
+ * 下書きを消す (Web App API)。
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function apiTemplateDelete(name) {
+  templateDelete(name);
+  return '下書き「' + name + '」を消しました';
+}
+
+/**
  * タグの一覧を返す (Web App API)。
  *
  * @returns {Array<{name:string, color:string, builtin:boolean}>}
@@ -1615,6 +1754,13 @@ function apiKnownPeople() {
     var who = issueAssignees(issues[q]);
     for (var w = 0; w < who.length; w++) add(who[w]);
   }
+
+  // 名前や上下関係を登録した人は、まだ何もしていなくても名簿に入る
+  var known = dbReadAll('members');
+  for (var k = 0; k < known.length; k++) add(known[k].email);
+
+  var talked = dbReadAll('issue_comments');
+  for (var t = 0; t < talked.length; t++) add(talked[t].by);
 
   // 報告の場で名前を呼べるように、報告と返信を書いた人も名簿に入れる
   var reports = dbReadAll('inquiries');

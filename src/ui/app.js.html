@@ -70,6 +70,8 @@
   var roster = [];
   var peopleNames = {};
   var tags = [];
+  var templates = [];
+  var sideEditBtn = document.getElementById('side-edit');
   var noticePanel = document.getElementById('notice-panel');
   var noticeBody = document.getElementById('notice-body');
   var bellBtn = document.getElementById('bell-btn');
@@ -808,7 +810,28 @@
     sidePanel.hidden = true;
     sideBody.textContent = '';
     sideTitle.textContent = '';
+    setSideEdit(null);
     setSideSource(null);
+  }
+
+  /**
+   * 見出しの脇に「直す」を出す。
+   *
+   * 読むために開いたのに書き換えの形で出てくると、触っただけで中身が
+   * 変わりそうで怖い。読む形を先に見せ、直すのは押してから。
+   *
+   * @param {function|null} onEdit
+   */
+  function setSideEdit(onEdit) {
+    sideEditBtn.textContent = '';
+    sideEditBtn.hidden = !onEdit;
+    if (!onEdit) return;
+
+    sideEditBtn.appendChild(makeIcon('pencil'));
+    sideEditBtn.setAttribute('aria-label', '直す');
+    attachHint(sideEditBtn, '書き換えられる形にします');
+
+    sideEditBtn.onclick = onEdit;
   }
 
   /**
@@ -825,6 +848,7 @@
    * @returns {HTMLElement} 差し込んだフォーム
    */
   function openInlineForm(title, fields, submitLabel, onSubmit, sourceEl) {
+    setSideEdit(null);
     setSideSource(sourceEl);
     sideBody.textContent = '';
     sideTitle.textContent = title;
@@ -3844,6 +3868,379 @@
    * @param {object} issue issues 行
    * @param {HTMLElement} [sourceEl] 一覧の行やカードなど、対象の要素
    */
+  /*
+   * 補足の切り分け。src/core/MarkdownView.js と同じもの。
+   * google.script.run の往復を増やさないための意図的な重複。
+   */
+  function mdRuns(text) {
+    var src = String(text || '');
+    var re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)\s]+\))/g;
+    var out = [];
+    var at = 0;
+    var m;
+
+    function plain(part) {
+      if (part) out.push({ text: part });
+    }
+
+    while ((m = re.exec(src)) !== null) {
+      plain(src.substring(at, m.index));
+
+      if (m[1]) {
+        out.push({ text: m[1].substring(1, m[1].length - 1), code: true });
+      } else if (m[2]) {
+        out.push({ text: m[2].substring(2, m[2].length - 2), bold: true });
+      } else if (m[3]) {
+        out.push({ text: m[3].substring(1, m[3].length - 1), italic: true });
+      } else {
+        var link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(m[4]);
+        out.push({ text: link[1], link: link[2] });
+      }
+      at = m.index + m[0].length;
+    }
+
+    plain(src.substring(at));
+    return out.length ? out : [{ text: '' }];
+  }
+
+  /**
+   * 補足を塊に分ける。
+   *
+   * @param {string} text
+   * @returns {Array<object>} {type, level?, runs?, items?}
+   */
+  function mdBlocks(text) {
+    var lines = String(text || '').split('\n');
+    var out = [];
+    var para = [];
+    var list = null;
+
+    function flushPara() {
+      if (!para.length) return;
+
+      out.push({ type: 'p', runs: mdRuns(para.join('\n')) });
+      para = [];
+    }
+
+    function flushList() {
+      if (!list) return;
+
+      out.push(list);
+      list = null;
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.replace(/\s+$/, '');
+
+      if (!trimmed.replace(/^\s+/, '')) {
+        flushPara();
+        flushList();
+        continue;
+      }
+
+      var head = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+      if (head) {
+        flushPara();
+        flushList();
+        out.push({ type: 'h', level: head[1].length, runs: mdRuns(head[2]) });
+        continue;
+      }
+
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) {
+        flushPara();
+        flushList();
+        out.push({ type: 'hr' });
+        continue;
+      }
+
+      var quote = /^>\s?(.*)$/.exec(trimmed);
+      if (quote) {
+        flushPara();
+        flushList();
+        out.push({ type: 'quote', runs: mdRuns(quote[1]) });
+        continue;
+      }
+
+      // 手を付けたかどうかの印。順番の無い箇条書きより先に見る
+      var task = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/.exec(trimmed);
+      if (task) {
+        flushPara();
+        if (!list || list.type !== 'tasks') {
+          flushList();
+          list = { type: 'tasks', items: [] };
+        }
+        list.items.push({
+          done: task[1].toLowerCase() === 'x',
+          runs: mdRuns(task[2]),
+        });
+        continue;
+      }
+
+      var bullet = /^\s*[-*]\s+(.*)$/.exec(trimmed);
+      if (bullet) {
+        flushPara();
+        if (!list || list.type !== 'ul') {
+          flushList();
+          list = { type: 'ul', items: [] };
+        }
+        list.items.push({ runs: mdRuns(bullet[1]) });
+        continue;
+      }
+
+      var numbered = /^\s*\d+[.)]\s+(.*)$/.exec(trimmed);
+      if (numbered) {
+        flushPara();
+        if (!list || list.type !== 'ol') {
+          flushList();
+          list = { type: 'ol', items: [] };
+        }
+        list.items.push({ runs: mdRuns(numbered[1]) });
+        continue;
+      }
+
+      flushList();
+      para.push(trimmed);
+    }
+
+    flushPara();
+    flushList();
+    return out;
+  }
+
+  /**
+   * 右のパネルを読む形で開く。
+   *
+   * @param {string} title
+   * @param {HTMLElement} sourceEl
+   * @param {function} onEdit
+   * @returns {HTMLElement} 中身を入れる器
+   */
+  function openSideView(title, sourceEl, onEdit) {
+    setSideSource(sourceEl);
+    sideBody.textContent = '';
+    sideTitle.textContent = title;
+    sidePanel.hidden = false;
+    setSideEdit(onEdit);
+
+    var box = document.createElement('div');
+    box.className = 'side-view';
+    sideBody.appendChild(box);
+    return box;
+  }
+
+  /**
+   * 補足を読む形に組み立てる。
+   *
+   * src/core/MarkdownView.js と同じ切り分けをここでも行う。画面は
+   * textContent だけで組み立てる決まりなので、HTML の文字列は作らない。
+   *
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function makeMarkdown(text) {
+    var box = document.createElement('div');
+    box.className = 'md';
+
+    mdBlocks(text).forEach(function (block) {
+      if (block.type === 'hr') {
+        box.appendChild(document.createElement('hr'));
+        return;
+      }
+
+      if (block.type === 'ul' || block.type === 'ol' || block.type === 'tasks') {
+        var list = document.createElement(block.type === 'ol' ? 'ol' : 'ul');
+        if (block.type === 'tasks') list.className = 'md-tasks';
+
+        block.items.forEach(function (item) {
+          var li = document.createElement('li');
+
+          if (block.type === 'tasks') {
+            var mark = document.createElement('span');
+            mark.className = 'md-check' + (item.done ? ' done' : '');
+            mark.textContent = item.done ? '✓' : '';
+            mark.setAttribute('aria-label', item.done ? '済んだ' : 'まだ');
+            li.appendChild(mark);
+          }
+
+          fillRuns(li, item.runs);
+          list.appendChild(li);
+        });
+        box.appendChild(list);
+        return;
+      }
+
+      var el;
+      if (block.type === 'h') el = document.createElement('h' + (block.level + 2));
+      else if (block.type === 'quote') el = document.createElement('blockquote');
+      else el = document.createElement('p');
+
+      fillRuns(el, block.runs);
+      box.appendChild(el);
+    });
+
+    if (!box.childNodes.length) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = '(補足はありません)';
+      box.appendChild(none);
+    }
+    return box;
+  }
+
+  /**
+   * 飾りの付いた字を並べる。
+   *
+   * @param {HTMLElement} host
+   * @param {object[]} runs
+   */
+  function fillRuns(host, runs) {
+    (runs || []).forEach(function (run) {
+      if (run.link) {
+        var a = document.createElement('a');
+        // 開く先は http と https だけにする。他の形は字のまま出す
+        if (/^https?:\/\//.test(run.link)) {
+          a.href = run.link;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = run.text;
+          host.appendChild(a);
+          return;
+        }
+        host.appendChild(document.createTextNode(run.text));
+        return;
+      }
+
+      var tag = run.code ? 'code' : (run.bold ? 'strong' : (run.italic ? 'em' : null));
+      if (!tag) {
+        host.appendChild(document.createTextNode(run.text));
+        return;
+      }
+
+      var el = document.createElement(tag);
+      el.textContent = run.text;
+      host.appendChild(el);
+    });
+  }
+
+  /**
+   * 補足の欄に、下書きを差し込む口を付ける。
+   *
+   * 同じ形の書き出しを毎回作り直すと、書く人によって形が変わり、後から
+   * 読み比べられなくなる。
+   *
+   * @param {HTMLTextAreaElement} input
+   * @returns {HTMLElement}
+   */
+  function makeTemplateBar(input) {
+    var wrap = document.createElement('div');
+    wrap.className = 'template-bar';
+
+    var label = document.createElement('span');
+    label.className = 'row-meta';
+    label.textContent = '下書きを差し込む';
+    wrap.appendChild(label);
+
+    function draw() {
+      // 見出しだけ残して並べ直す
+      while (wrap.childNodes.length > 1) wrap.removeChild(wrap.lastChild);
+
+      templates.forEach(function (one) {
+        var chip = document.createElement('span');
+        chip.className = 'template-chip';
+
+        var use = document.createElement('button');
+        use.type = 'button';
+        use.className = 'template-use';
+        use.textContent = one.name;
+        attachHint(use, one.body.split('\n').slice(0, 4).join('\n'));
+
+        use.addEventListener('click', function () { insert(one.body); });
+        chip.appendChild(use);
+
+        if (one.mine) {
+          var off = document.createElement('button');
+          off.type = 'button';
+          off.className = 'chip-off';
+          off.textContent = '×';
+          off.setAttribute('aria-label', one.name + ' を消す');
+          attachHint(off, 'この下書きを消します');
+
+          off.addEventListener('click', function () { drop(one.name); });
+          chip.appendChild(off);
+        }
+        wrap.appendChild(chip);
+      });
+
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn';
+      save.appendChild(makeIcon('plus'));
+      save.appendChild(document.createTextNode('いまの補足を下書きにする'));
+      save.addEventListener('click', keep);
+      wrap.appendChild(save);
+    }
+
+    function insert(body) {
+      var at = input.selectionStart;
+      var before = input.value.substring(0, at);
+      var after = input.value.substring(input.selectionEnd);
+
+      // 前に字があれば1行空ける。続けて差し込むと塊が繋がって読めない
+      var joint = (before && !/\n\n$/.test(before)) ? '\n\n' : '';
+
+      input.value = before + joint + body + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + joint + body).length;
+    }
+
+    function keep() {
+      if (!String(input.value || '').replace(/^\s+|\s+$/g, '')) {
+        showSnack('先に補足を書いてください', { kind: 'ng' });
+        return;
+      }
+
+      openInlineForm(
+        '下書きにする',
+        [{ name: 'name', label: '名前 (例: 週報)', required: true }],
+        '残す',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function (row) {
+              if (row) {
+                templates = templates.filter(function (t) {
+                  return t.name !== row.name;
+                });
+                templates.push({ name: row.name, body: row.body, mine: true });
+              }
+              showSnack('下書き「' + v.name + '」を残しました', { kind: 'ok' });
+              closeSide();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiTemplateSave(v.name, input.value);
+        }
+      );
+    }
+
+    function drop(name) {
+      google.script.run
+        .withSuccessHandler(function (msg) {
+          templates = templates.filter(function (t) { return t.name !== name; });
+          showSnack(msg, { kind: 'ok' });
+          draw();
+        })
+        .withFailureHandler(function (err) {
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiTemplateDelete(name);
+    }
+
+    draw();
+    return wrap;
+  }
+
   /**
    * 予定工数から期限を出す。
    *
@@ -3867,13 +4264,13 @@
       (m.length < 2 ? '0' + m : m) + '-' + (d.length < 2 ? '0' + d : d);
   }
 
-  function openIssueDetail(issue, sourceEl) {
+  function openIssueEdit(issue, sourceEl) {
     var picker = null;
     var form = openInlineForm(
       'やること #' + issue.number,
       [
         { name: 'title', label: 'やること', required: true },
-        { name: 'body', label: '補足', multiline: true },
+        { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
         { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
@@ -3901,8 +4298,11 @@
         }
 
         google.script.run
-          .withSuccessHandler(function () {
+          .withSuccessHandler(function (after) {
             showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
+            // 直したら読む形に戻す。書き換えの形のまま残ると、
+            // どこまで反映されたのかが分からない
+            if (after) openIssueDetail(after, sideSource);
             refreshIssueViews();
           })
           .withFailureHandler(function (err) {
@@ -3946,6 +4346,8 @@
     inputs[6].min = '0';
     inputs[7].min = '0';
     var people = attachAssigneePicker(inputs[2]);
+    inputs[1].parentNode.parentNode
+      .insertBefore(makeTemplateBar(inputs[1]), inputs[1].parentNode.nextSibling);
 
     var picker = makeTagPicker(issue.labels || '');
     form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
@@ -4416,11 +4818,18 @@
     var picker = null;
     var linkBox = null;
 
+    var people = null;
+
     var form = openInlineForm(
       'やることを作る',
       [
         { name: 'title', label: 'やること', required: true },
-        { name: 'body', label: '補足 (任意)', multiline: true },
+        { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
+        { name: 'startDate', label: '開始日 (任意)' },
+        { name: 'dueDate', label: '期限 (任意)' },
+        { name: 'estimate', label: '見積もり (規模。数値)' },
+        { name: 'plannedHours', label: '予定工数 (人日)' },
       ],
       '作る',
       function (v) {
@@ -4437,10 +4846,32 @@
           .withFailureHandler(function (err) {
             showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
           })
-          .apiIssueCreate(v.title, v.body, linked, picker ? picker.value() : '');
+          .apiIssueCreate(v.title, v.body, linked, picker ? picker.value() : '', {
+            assignee: people ? people.value() : '',
+            startDate: v.startDate,
+            dueDate: v.dueDate,
+            estimate: v.estimate,
+            plannedHours: v.plannedHours,
+          });
       },
       sourceEl
     );
+
+    var made = form.querySelectorAll('input, textarea');
+    made[3].type = 'date';
+    made[4].type = 'date';
+    made[5].type = 'number';
+    made[6].type = 'number';
+    made[6].step = '0.5';
+    made[6].min = '0';
+
+    people = attachAssigneePicker(made[2]);
+    hint(made[2].parentNode, 'field:assignee');
+    hint(made[5].parentNode, 'field:estimate');
+    hint(made[6].parentNode, 'field:planned');
+
+    made[1].parentNode.parentNode
+      .insertBefore(makeTemplateBar(made[1]), made[1].parentNode.nextSibling);
 
     picker = makeTagPicker('');
     form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
@@ -4459,6 +4890,346 @@
         'いま開いている「' + current.docPath + '」の作業にする'));
       form.insertBefore(link, form.querySelector('.inline-form-actions'));
     }
+  }
+
+  /**
+   * やることを読む形で開く。
+   *
+   * 読むために開いたのに書き換えの形で出てくると、触っただけで中身が
+   * 変わりそうで怖い。読む形を先に見せ、直すのは鉛筆を押してから。
+   *
+   * @param {object} issue
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openIssueDetail(issue, sourceEl) {
+    var box = openSideView('やること #' + issue.number, sourceEl, function () {
+      openIssueEdit(issue, sideSource);
+    });
+
+    var title = document.createElement('h3');
+    title.className = 'view-title';
+    title.textContent = issue.title;
+    box.appendChild(title);
+
+    box.appendChild(makeIssueFacts(issue));
+
+    var bodyHead = document.createElement('div');
+    bodyHead.className = 'row-meta view-label';
+    bodyHead.textContent = '補足';
+    box.appendChild(bodyHead);
+    box.appendChild(makeMarkdown(issue.body));
+
+    box.appendChild(makeIssueActions(issue));
+    box.appendChild(makeIssueTalk(issue));
+  }
+
+  /**
+   * いつ・誰が・どれくらい、を並べる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueFacts(issue) {
+    var wrap = document.createElement('dl');
+    wrap.className = 'view-facts';
+
+    function row(label, build) {
+      var dt = document.createElement('dt');
+      dt.textContent = label;
+      wrap.appendChild(dt);
+
+      var dd = document.createElement('dd');
+      build(dd);
+      wrap.appendChild(dd);
+    }
+
+    row('状態', function (dd) {
+      var state = document.createElement('span');
+      state.className = 'state' +
+        (String(issue.state) === 'closed' ? ' state-merged' : '');
+      state.textContent = String(issue.state) === 'closed' ? '完了' : '対応中';
+      dd.appendChild(state);
+
+      var stale = makeStaleBadge(issue);
+      if (stale) dd.appendChild(stale);
+    });
+
+    row('担当', function (dd) {
+      var who = issue.assignees || [];
+      if (!who.length) {
+        dd.appendChild(document.createTextNode('担当なし'));
+        return;
+      }
+      who.forEach(function (one) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(one));
+        chip.appendChild(makePersonLabel(one));
+        dd.appendChild(chip);
+      });
+    });
+
+    var span = [
+      issue.startDate ? String(issue.startDate).substring(0, 10) : '',
+      issue.dueDate ? String(issue.dueDate).substring(0, 10) : '',
+    ];
+    if (span[0] || span[1]) {
+      row('期間', function (dd) {
+        dd.textContent = (span[0] || '未定') + ' 〜 ' + (span[1] || '未定');
+      });
+    }
+
+    var effort = rollupEffort(Object.assign({ children: [] }, issue));
+    if (effort.estimate || effort.planned || effort.actual) {
+      row('工数', function (dd) {
+        var text = [];
+        if (effort.estimate) text.push('見積 ' + effort.estimate);
+        if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+        if (effort.actual) text.push('実績 ' + effort.actual + '人日');
+
+        dd.textContent = text.join(' / ');
+      });
+    }
+
+    var labels = makeLabels(issue.labels);
+    if (labels) row('タグ', function (dd) { dd.appendChild(labels); });
+
+    var rel = makeRelationChips(issue.number);
+    if (rel.childNodes.length) {
+      row('親子', function (dd) { dd.appendChild(rel); });
+    }
+    return wrap;
+  }
+
+  /**
+   * 読む形のまま押せる操作。
+   *
+   * 直すために鉛筆を押さないと終われない、では回り道になる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueActions(issue) {
+    var wrap = document.createElement('div');
+    wrap.className = 'inline-form-actions';
+
+    if (String(issue.state) === 'open') {
+      var done = document.createElement('button');
+      done.className = 'btn';
+      done.appendChild(makeIcon('check'));
+      done.appendChild(document.createTextNode('完了にする'));
+      hint(done, 'act:done');
+
+      done.addEventListener('click', function () {
+        google.script.run
+          .withSuccessHandler(function () {
+            showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+            closeSide();
+            refreshIssueViews();
+          })
+          .withFailureHandler(function (err) {
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiIssueClose(issue.number);
+      });
+      wrap.appendChild(done);
+    } else {
+      var back = document.createElement('button');
+      back.className = 'btn';
+      back.appendChild(makeIcon('back'));
+      back.appendChild(document.createTextNode('完了を取り消す'));
+      hint(back, 'act:reopen');
+
+      back.addEventListener('click', function () {
+        closeSide();
+        reopenIssue(issue.number);
+      });
+      wrap.appendChild(back);
+    }
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.setAttribute('aria-label', '#' + issue.number + ' を捨てる');
+    hint(del, 'act:archive');
+
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+              closeSide();
+              refreshIssueViews();
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiIssueArchive(issue.number);
+        });
+    });
+    wrap.appendChild(del);
+    return wrap;
+  }
+
+  /**
+   * やることの中でのやりとり。
+   *
+   * 決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論を
+   * また一からやることになる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueTalk(issue) {
+    var wrap = document.createElement('div');
+    wrap.className = 'issue-talk';
+
+    var head = document.createElement('div');
+    head.className = 'row-meta view-label';
+    head.textContent = 'やりとり';
+    wrap.appendChild(head);
+
+    var list = document.createElement('div');
+    list.className = 'issue-talk-list';
+    wrap.appendChild(list);
+
+    function draw(rows) {
+      list.textContent = '';
+
+      if (!rows.length) {
+        var none = document.createElement('div');
+        none.className = 'row-meta';
+        none.textContent = 'まだ何も話していません。決めた理由をここに残せます。';
+        list.appendChild(none);
+        return;
+      }
+
+      rows.forEach(function (row) {
+        var el = document.createElement('div');
+        el.className = 'comment';
+
+        var h = makeCommentHead(row.by, String(row.at).substring(0, 10) +
+          (row.editedAt ? ' · 直しました' : ''));
+        if (row.canEdit) h.appendChild(makeTalkTools(issue, row, el));
+        el.appendChild(h);
+
+        el.appendChild(makeMarkdown(row.body));
+        list.appendChild(el);
+      });
+    }
+
+    function load() {
+      google.script.run
+        .withSuccessHandler(function (rows) { draw(rows || []); })
+        .withFailureHandler(function (err) {
+          list.textContent = 'エラー: ' + err.message;
+        })
+        .apiIssueComments(issue.number);
+    }
+
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder = '決めたこと、迷っていること (@ で人を呼べます)';
+    form.appendChild(input);
+    attachMentionPicker(input);
+
+    var send = document.createElement('button');
+    send.className = 'btn btn-primary';
+    send.textContent = '書き込む';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function () {
+          send.disabled = false;
+          input.value = '';
+          showSnack('書き込みました', { kind: 'ok' });
+          load();
+        })
+        .withFailureHandler(function (err) {
+          send.disabled = false;
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiIssueComment(issue.number, input.value);
+    });
+    form.appendChild(send);
+    wrap.appendChild(form);
+
+    load();
+    return wrap;
+  }
+
+  /**
+   * 自分の書き込みを直す / 消す。
+   *
+   * @param {object} issue
+   * @param {object} row
+   * @param {HTMLElement} host
+   * @returns {HTMLElement}
+   */
+  function makeTalkTools(issue, row, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.setAttribute('aria-label', 'この書き込みを直す');
+    attachHint(edit, 'この書き込みを直します');
+
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        '書き込みを直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          google.script.run
+            .withSuccessHandler(function () {
+              showSnack('直しました', { kind: 'ok' });
+              openIssueDetail(issue, sideSource);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiIssueCommentEdit(row.id, v.body);
+        },
+        host
+      );
+      form.querySelector('textarea').value = row.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.setAttribute('aria-label', 'この書き込みを消す');
+    attachHint(del, 'この書き込みを消します');
+
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        'この書き込みを消します。元には戻せません。',
+        '消す',
+        function () {
+          google.script.run
+            .withSuccessHandler(function (msg) {
+              showSnack(msg, { kind: 'ok' });
+              openIssueDetail(issue, sideSource);
+            })
+            .withFailureHandler(function (err) {
+              showSnack(err.message, { kind: 'ng' });
+            })
+            .apiIssueCommentDelete(row.id);
+        });
+    });
+    tools.appendChild(del);
+    return tools;
   }
 
   /**
@@ -5462,6 +6233,8 @@
       '変更の記録 — ある時点の中身を丸ごと残したもの',
       '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
       'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
+      'やりとり — やることの中で話し合った跡。決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論をまた一からやることになる',
+      '下書き — よく使う補足の形。差し込んでから書き足す。自分で作って残せる',
       'タグ — どんな種類の仕事かの印。「#」で書きます',
       '担当者が複数いる仕事の工数は、集計のときに頭数で割って数えられます。4人日を2人で持てば、それぞれ2人日として数えられ、全体の合計は4人日のままです。',
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
@@ -5478,6 +6251,8 @@
       '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
     ]],
     ['つまずきやすい点', [
+      'やることを押すと、まず読む形で開きます。書き換えるには右上の鉛筆を押してください。触っただけで中身が変わることはありません。',
+      '補足は Markdown で書けます。「## 見出し」「- 箇条書き」「- [ ] 手を付けたかの印」「**強い字**」「[名前](リンク)」が使えます。',
       '正式版は直接なおせません。誰がいつ変えたか残らなくなるためです。改訂版を作ってください。',
       '同じ場所を両方で変えると「同じ場所が両方で変わっています」と出ます。どちらを残すか選んでから反映してください。',
       '「反映できません」と出るのは、元に戻せない要素（実体を取れない画像など）がある場合です。元のファイルで貼り直してください。',
@@ -6902,6 +7677,11 @@
     .withSuccessHandler(function (map) { peopleNames = map || {}; })
     .withFailureHandler(function () { /* アドレスの手前で出る */ })
     .apiPeopleNames();
+
+  google.script.run
+    .withSuccessHandler(function (list) { templates = list || []; })
+    .withFailureHandler(function () { /* 差し込めないだけで書ける */ })
+    .apiTemplateList();
 
   google.script.run
     .withSuccessHandler(function (list) { tags = list || []; })

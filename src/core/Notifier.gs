@@ -253,3 +253,45 @@ function notifyPrMention(pr, review, to) {
     pr.title + '\n\n' + review.reviewer + ':\n' + review.body
   );
 }
+
+/**
+ * やることに書き込みがあったことを知らせる。
+ *
+ * @param {object} issue issues 行
+ * @param {object} row issue_comments 行
+ * @param {string[]} people
+ */
+function notifyIssueComment(issue, row, people) {
+  for (var i = 0; i < (people || []).length; i++) {
+    noticeAdd(people[i], 'reply',
+      row.by + ' が #' + issue.number + ' に書き込みました',
+      row.body, 'issue:' + issue.number);
+
+    notify(
+      people[i],
+      '[agentic-management] やること #' + issue.number + ' に書き込みがありました',
+      issue.title + '\n\n' + row.by + ':\n' + row.body
+    );
+  }
+}
+
+/**
+ * やることで名前を呼ばれたことを知らせる。
+ *
+ * @param {object} issue issues 行
+ * @param {object} row issue_comments 行
+ * @param {string[]} people
+ */
+function notifyIssueCommentMention(issue, row, people) {
+  for (var i = 0; i < (people || []).length; i++) {
+    noticeAdd(people[i], 'mention',
+      row.by + ' があなたを呼びました',
+      row.body, 'issue:' + issue.number);
+
+    notify(
+      people[i],
+      '[agentic-management] やること #' + issue.number + ' であなたが呼ばれました',
+      issue.title + '\n\n' + row.by + ':\n' + row.body
+    );
+  }
+}

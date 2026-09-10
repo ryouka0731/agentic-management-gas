@@ -172,6 +172,7 @@ describe('入力は右のパネルで受ける', () => {
     const app = mount();
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-item .row-open').click();
+    document.getElementById('side-edit').click();
 
     const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
     expect(inputs[2].value).toBe('@me@example.com ');
@@ -1005,6 +1006,7 @@ describe('完了を差し戻す', () => {
   it('右のパネルからも戻せる', () => {
     const app = openIssues(CLOSED);
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
 
     [...document.querySelectorAll('#side-body .btn')]
       .find((b) => b.textContent.includes('完了を取り消す')).click();
@@ -2022,6 +2024,7 @@ describe('やることのタグ', () => {
     });
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
 
     expect(tagInput().value).toBe('#文書改訂 #会議 ');
   });
@@ -2183,6 +2186,7 @@ describe('工程表の担当者と工数', () => {
     mount();
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
 
     const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
     expect(inputs[6].step).toBe('0.5');
@@ -2201,6 +2205,7 @@ describe('工程表の担当者と工数', () => {
     });
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
 
     const inputs = document.querySelectorAll('#side-body input, #side-body textarea');
     inputs[6].value = '3';
@@ -2221,6 +2226,7 @@ describe('工程表の担当者と工数', () => {
     });
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
 
     document.querySelector('#side-body form input').value = '題だけ直す';
     document.querySelector('#side-body form .btn-primary').click();
@@ -3094,6 +3100,7 @@ describe('担当者を「@」で選ぶ', () => {
     const app = mount();
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
     return app;
   }
 
@@ -3248,6 +3255,7 @@ describe('工数を割って数えることの断り', () => {
     mount();
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
   }
 
   function type(value) {
@@ -3314,6 +3322,7 @@ describe('担当者を外す', () => {
     const app = mount();
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
     return app;
   }
 
@@ -3395,5 +3404,318 @@ describe('担当者を外す', () => {
     chips()[1].querySelector('.chip-off').click();
 
     expect(document.querySelector('.assignee-note')).toBe(null);
+  });
+});
+
+describe('やることを読む形で開く', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ISSUE = {
+    ...DEFAULTS.apiIssueList[0], parent: '',
+    body: '## 手順\n\n- [ ] まず\n- [x] 済んだ\n\n**大事**なこと',
+  };
+
+  function openView(over) {
+    const app = mount(Object.assign({ apiIssueList: [ISSUE] }, over || {}));
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    return app;
+  }
+
+  it('読む形で出る', () => {
+    openView();
+
+    // 触っただけで中身が変わりそうで怖い、を避ける
+    expect(document.querySelector('#side-body .side-view')).toBeTruthy();
+    expect(document.querySelector('#side-body form')).toBe(null);
+  });
+
+  it('鉛筆を押すと書き換えられる', () => {
+    openView();
+    expect(document.getElementById('side-edit').hidden).toBe(false);
+
+    document.getElementById('side-edit').click();
+
+    expect(document.querySelector('#side-body form')).toBeTruthy();
+  });
+
+  it('いつ・誰が・どれくらいを並べる', () => {
+    openView();
+    const facts = [...document.querySelectorAll('.view-facts dt')]
+      .map((d) => d.textContent);
+
+    expect(facts).toContain('状態');
+    expect(facts).toContain('担当');
+    expect(facts).toContain('工数');
+  });
+
+  it('補足をマークダウンとして組み立てる', () => {
+    openView();
+    const md = document.querySelector('#side-body .md');
+
+    // 「##」は2段目なので h4。パネルの中では h2 より下に置く
+    expect(md.querySelector('h4').textContent).toBe('手順');
+    expect(md.querySelectorAll('.md-tasks li')).toHaveLength(2);
+    expect(md.querySelector('.md-check.done')).toBeTruthy();
+    expect(md.querySelector('strong').textContent).toBe('大事');
+  });
+
+  it('組み立ては字だけで行う', () => {
+    openView({
+      apiIssueList: [{ ...ISSUE, body: '<script>あぶない</script>' }],
+    });
+
+    const md = document.querySelector('#side-body .md');
+    expect(md.querySelector('script')).toBe(null);
+    expect(md.textContent).toContain('<script>');
+  });
+
+  it('http 以外のリンクは字のまま出す', () => {
+    openView({
+      apiIssueList: [{ ...ISSUE, body: '[あぶない](javascript:alert(1))' }],
+    });
+
+    expect(document.querySelector('#side-body .md a')).toBe(null);
+    expect(document.querySelector('#side-body .md').textContent)
+      .toContain('あぶない');
+  });
+
+  it('読む形のまま完了にできる', () => {
+    const app = openView();
+
+    [...document.querySelectorAll('#side-body .inline-form-actions .btn')]
+      .find((b) => b.textContent.includes('完了にする')).click();
+
+    expect(app.calls.some((c) => c.name === 'apiIssueClose')).toBe(true);
+  });
+
+  it('補足が空ならそう出す', () => {
+    openView({ apiIssueList: [{ ...ISSUE, body: '' }] });
+
+    expect(document.querySelector('#side-body .md').textContent)
+      .toContain('補足はありません');
+  });
+});
+
+describe('やることの中で話す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const TALK = [
+    {
+      id: 1, issueNumber: 2, body: '**急ぎ**でお願いします',
+      by: 'other@example.com', at: '2026-09-09T00:00:00.000Z',
+      editedAt: '', canEdit: false,
+    },
+    {
+      id: 2, issueNumber: 2, body: '了解です', by: 'me@example.com',
+      at: '2026-09-10T00:00:00.000Z', editedAt: '', canEdit: true,
+    },
+  ];
+
+  function openView(over) {
+    const app = mount(Object.assign({ apiIssueComments: TALK }, over || {}));
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    return app;
+  }
+
+  it('やりとりが並ぶ', () => {
+    openView();
+    const rows = [...document.querySelectorAll('.issue-talk-list .comment')];
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('.person-name').textContent).toBe('鈴木 花子');
+    expect(rows[0].querySelector('strong').textContent).toBe('急ぎ');
+  });
+
+  it('書き込める', () => {
+    const app = openView();
+
+    const box = document.querySelector('.issue-talk .comment-form textarea');
+    box.value = '着手します';
+    document.querySelector('.issue-talk .comment-form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueComment').pop().args)
+      .toEqual([2, '着手します']);
+  });
+
+  it('自分の書き込みだけ直せる', () => {
+    openView();
+    const rows = [...document.querySelectorAll('.issue-talk-list .comment')];
+
+    expect(rows[0].querySelector('.comment-tools')).toBe(null);
+    expect(rows[1].querySelector('.comment-tools')).toBeTruthy();
+  });
+
+  it('消すのは確かめてから', () => {
+    const app = openView();
+    const mine = [...document.querySelectorAll('.issue-talk-list .comment')][1];
+
+    mine.querySelector('.comment-tools .btn-danger').click();
+    expect(app.calls.some((c) => c.name === 'apiIssueCommentDelete')).toBe(false);
+
+    document.querySelector('#side-body .confirm-strip .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueCommentDelete').pop().args[0])
+      .toBe(2);
+  });
+
+  it('まだ何も無ければ何を残す場所かを言う', () => {
+    openView({ apiIssueComments: [] });
+
+    expect(document.querySelector('.issue-talk-list').textContent)
+      .toContain('決めた理由をここに残せます');
+  });
+
+  it('「@」で人を呼べる', () => {
+    openView();
+    const box = document.querySelector('.issue-talk .comment-form textarea');
+
+    box.value = '@ot';
+    box.selectionStart = 3;
+    box.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    expect(document.querySelector('.issue-talk .mention-picker').hidden)
+      .toBe(false);
+  });
+});
+
+describe('補足の下書き', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openEdit() {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    document.getElementById('side-edit').click();
+    return app;
+  }
+
+  function bodyField() {
+    return document.querySelectorAll('#side-body input, #side-body textarea')[1];
+  }
+
+  it('用意されたものと自分のものが並ぶ', () => {
+    openEdit();
+
+    expect([...document.querySelectorAll('.template-use')]
+      .map((b) => b.textContent)).toEqual(['作業の段取り', '週報']);
+  });
+
+  it('押すと差し込まれる', () => {
+    openEdit();
+    const body = bodyField();
+    body.value = '';
+    body.selectionStart = 0;
+    body.selectionEnd = 0;
+
+    document.querySelector('.template-use').click();
+
+    expect(body.value).toContain('## やること');
+  });
+
+  it('前に字があれば1行空ける', () => {
+    openEdit();
+    const body = bodyField();
+    body.value = 'まえの字';
+    body.selectionStart = body.selectionEnd = body.value.length;
+
+    document.querySelector('.template-use').click();
+
+    // 続けて差し込むと塊が繋がって読めない
+    expect(body.value).toBe('まえの字\n\n## やること\n\n- [ ] \n');
+  });
+
+  it('自分の下書きだけ消せる', () => {
+    openEdit();
+    const chips = [...document.querySelectorAll('.template-chip')];
+
+    expect(chips[0].querySelector('.chip-off')).toBe(null);
+    expect(chips[1].querySelector('.chip-off')).toBeTruthy();
+  });
+
+  it('いまの補足を下書きにできる', () => {
+    const app = openEdit();
+    bodyField().value = '## 今週やったこと\n';
+
+    [...document.querySelectorAll('.template-bar .btn')]
+      .find((b) => b.textContent.includes('下書きにする')).click();
+
+    document.querySelector('#side-body form input').value = '週次';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiTemplateSave').pop().args)
+      .toEqual(['週次', '## 今週やったこと\n']);
+  });
+
+  it('補足が空なら下書きにさせない', () => {
+    openEdit();
+    bodyField().value = '   ';
+
+    [...document.querySelectorAll('.template-bar .btn')]
+      .find((b) => b.textContent.includes('下書きにする')).click();
+
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('先に補足を書いて');
+  });
+});
+
+describe('起票のときに入れられるもの', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openCreate() {
+    const app = mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    return app;
+  }
+
+  it('担当者や工数まで尋ねる', () => {
+    openCreate();
+
+    // 作ってすぐ直せばよい、では二度手間になる
+    expect([...document.querySelectorAll('#side-body label')]
+      .map((l) => l.firstChild.textContent))
+      .toEqual([
+        'やること', '補足 (Markdown で書けます)',
+        '担当者 (「@」で選びます。何人でも)', '開始日 (任意)', '期限 (任意)',
+        '見積もり (規模。数値)', '予定工数 (人日)',
+        'タグ (「#」で書きます。例: #会議 #調査)',
+      ]);
+  });
+
+  it('入れたものを一緒に送る', () => {
+    const app = openCreate();
+    const fields = document.querySelectorAll('#side-body input, #side-body textarea');
+
+    fields[0].value = '棚卸しをする';
+    fields[2].value = '@me@example.com ';
+    fields[2].dispatchEvent(new window.Event('input', { bubbles: true }));
+    fields[4].value = '2026-10-31';
+    fields[6].value = '2.5';
+
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiIssueCreate').pop();
+    expect(call.args[4]).toEqual({
+      assignee: 'me@example.com',
+      startDate: '',
+      dueDate: '2026-10-31',
+      estimate: '',
+      plannedHours: '2.5',
+    });
+  });
+
+  it('工数は半日きざみで入れられる', () => {
+    openCreate();
+    const fields = document.querySelectorAll('#side-body input, #side-body textarea');
+
+    expect(fields[6].step).toBe('0.5');
+    expect(fields[3].type).toBe('date');
+  });
+
+  it('下書きも差し込める', () => {
+    openCreate();
+
+    expect(document.querySelector('#side-body .template-use')).toBeTruthy();
   });
 });

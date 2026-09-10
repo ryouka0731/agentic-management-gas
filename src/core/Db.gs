@@ -18,6 +18,8 @@ function DB_SCHEMA() {
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
     task_links: ['issueNumber', 'user', 'taskId', 'listId', 'syncedAt'],
+    issue_comments: ['id', 'issueNumber', 'body', 'by', 'at', 'editedAt'],
+    templates: ['name', 'body', 'builtin', 'createdBy', 'createdAt'],
     members: ['email', 'manager', 'note', 'updatedAt', 'name'],
     tags: ['name', 'color', 'builtin', 'createdBy', 'createdAt'],
     notifications: ['id', 'to', 'kind', 'title', 'body', 'link', 'at', 'readAt'],

@@ -522,14 +522,23 @@ function inquiryRoster_() {
   var tables = [
     ['commits', 'author'],
     ['reviews', 'reviewer'],
-    ['issues', 'assignee'],
     ['inquiries', 'by'],
     ['inquiry_replies', 'by'],
+    ['issue_comments', 'by'],
+    // 名前や上下関係を登録した人は、まだ何もしていなくても呼べる
+    ['members', 'email'],
   ];
 
   for (var t = 0; t < tables.length; t++) {
     var rows = dbReadAll(tables[t][0]);
     for (var i = 0; i < rows.length; i++) add(rows[i][tables[t][1]]);
+  }
+
+  // 担当者は複数入る
+  var issues = dbReadAll('issues');
+  for (var q = 0; q < issues.length; q++) {
+    var who = issueAssignees(issues[q]);
+    for (var w = 0; w < who.length; w++) add(who[w]);
   }
 
   add(inquiryOwner_());
