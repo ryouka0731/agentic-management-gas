@@ -1605,6 +1605,15 @@ function apiTemplateDelete(name) {
 }
 
 /**
+ * 手元から動かす道具の置き場を返す (Web App API)。
+ *
+ * @returns {{name:string, url:string, version:string}}
+ */
+function apiAgentKit() {
+  return agentKitFile();
+}
+
+/**
  * 使われ方を記録する (Web App API)。
  *
  * 誰が押したかは受け取らないし、残さない。日と場所と回数だけを数える。

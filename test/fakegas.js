@@ -38,6 +38,7 @@ export function createFakeGas() {
       getLastUpdated: () => new Date(),
       setTrashed: (v) => { f._trashed = v !== false; return f; },
       isTrashed: () => f._trashed,
+      setSharing: () => f,
       getBlob: () => ({
         getDataAsString: () => f._content,
         // GAS の Blob.getBytes() は符号付き byte を返す
@@ -94,6 +95,7 @@ export function createFakeGas() {
       },
       addFile: (f) => { f._parent = id; },
       removeFile: () => {},
+      getFoldersByName_unused: null,
       getOwner: () => ({ getEmail: () => fo._owner }),
       _setOwner: (email) => { fo._owner = email; return fo; },
     };
@@ -106,6 +108,8 @@ export function createFakeGas() {
   const DriveApp = {
     createFolder: (n) => makeFolder(n, rootFolder.getId()),
     getRootFolder: () => rootFolder,
+    Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+    Permission: { VIEW: 'VIEW' },
     getFolderById: (id) => {
       const fo = folders.get(id);
       if (!fo) throw new Error('フォルダが見つかりません: ' + id);
@@ -230,6 +234,12 @@ export function createFakeGas() {
     formatDate: (d, _tz, _fmt) => String(d.getTime()),
     base64Decode: (text) => Array.from(Buffer.from(String(text), 'base64'))
       .map((b) => (b > 127 ? b - 256 : b)),
+    zip: (blobs, name) => ({
+      _zip: blobs,
+      getName: () => name,
+      getBytes: () => Array.from(Buffer.from(blobs.map((b) => b.getName()).join(','))),
+      getContentType: () => 'application/zip',
+    }),
     newBlob: (bytes, mime, name) => ({
       _bytes: bytes,
       getBytes: () => bytes,
@@ -273,8 +283,21 @@ export function createFakeGas() {
     };
   }
 
+  const kitFiles = new Map();
+
+  const HtmlService = {
+    createHtmlOutputFromFile: (name) => ({
+      getContent: () => {
+        if (!kitFiles.has(name)) throw new Error('ファイルがありません: ' + name);
+        return kitFiles.get(name);
+      },
+    }),
+  };
+
   return {
     console,
+    HtmlService,
+    _setKitFile: (name, text) => { kitFiles.set(name, text); },
     _makeTasks: makeTasks,
     DriveApp,
     SpreadsheetApp,

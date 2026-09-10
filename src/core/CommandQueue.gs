@@ -39,10 +39,22 @@ function COMMAND_OPS() {
       return apiIssueCreateBranch(a.number, a.fileId);
     },
     prCreate: function (a) {
-      return apiPrCreate(a.title, a.body, a.sourceBranch, a.mainFileId);
+      return apiPrCreate(a.title, a.body, a.sourceBranch, a.mainFileId,
+        a.targetBranch || 'main');
     },
     prPreview: function (a) { return apiPrPreview(a.number); },
     prMerge: function (a) { return apiPrMerge(a.number, a.choices || []); },
+
+    // 読むだけのものは足しても危なくない。手元から様子を見るために要る
+    issueList: function (a) { return apiIssueList(a.state || ''); },
+    prList: function () { return apiPrList(); },
+    commitHistory: function (a) { return apiCommitHistory(a.fileId); },
+    commitDiff: function (a) { return apiCommitDiff(a.fromSha || '', a.toSha); },
+
+    // 書くものは issueCreate と同じ重さのものだけにする
+    issueUpdate: function (a) { return apiIssueUpdate(a.number, a.patch || {}); },
+    issueClose: function (a) { return apiIssueClose(a.number); },
+    issueComment: function (a) { return apiIssueComment(a.number, a.body); },
   };
 }
 

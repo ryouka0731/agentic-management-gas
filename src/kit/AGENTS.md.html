@@ -1,0 +1,91 @@
+# この道具の使い方 (Claude / Codex 向け)
+
+あなたは、Google Workspace の文書に版管理を与える道具 **agentic-management**
+を、手元から操作しています。画面 (Web アプリ) を開かずに、やること・改訂版・
+確認依頼を作れます。
+
+## 仕組み
+
+Apps Script API が使えない環境のため、**Drive 上のフォルダに命令のファイルを
+置く**形で操作します。向こう側の時間主導トリガーが1分以内に拾って実行し、
+結果のファイルを書き戻します。
+
+```
+手元 --(<id>.cmd.json)--> Drive の queue/ --(1分以内)--> 実行
+手元 <--(<id>.result.json)-- Drive の queue/ <-----------+
+```
+
+**遅延は最大1分あります。** `agent` は結果が返るまで待つので、返ってこない
+ときは向こう側の設定 (`setupCommandQueue()` の実行) か Drive の同期を疑って
+ください。
+
+## 最初にやること
+
+1. Google Drive for desktop で、リポジトリのフォルダを同期する
+2. `.agentkit.json` を作り、`queueDir` に `.git/queue` のローカルのパスを書く
+   (`agentkit.example.json` を写して直す)
+3. `node agent.mjs files` が通れば準備完了
+
+## 使う言葉
+
+この道具は Git の言葉を使いません。人に見せる文言もこれに合わせてください。
+
+| この道具 | Git でいうと |
+|---|---|
+| 正式版 | main |
+| 改訂版 | ブランチ |
+| 変更の記録 | コミット |
+| 確認依頼 | プルリクエスト |
+| 反映 | マージ |
+| やること | Issue |
+
+## よくある流れ
+
+### 文書を直す
+
+```sh
+node agent.mjs files                      # 文書とその id を見る
+node agent.mjs branch 見直し <mainFileId>  # 改訂版を作る
+node agent.mjs read <workFileId> > body.md # 中身を Markdown で取る
+# body.md を直す
+cat body.md | node agent.mjs write <workFileId> -
+node agent.mjs commit <workFileId> "第3条を改訂"
+node agent.mjs pr "第3条の改訂" "根拠は…" 見直し <mainFileId>
+```
+
+### やることを作って進める
+
+```sh
+node agent.mjs issue "通勤手当の見直し" "4月から改定"
+node agent.mjs issue-update 12 '{"assignee":"aoki@example.com","dueDate":"2026-10-31"}'
+node agent.mjs issue-say 12 "根拠の通達を確認しました"
+node agent.mjs issue-close 12
+```
+
+## 守ること
+
+- **正式版 (main) は直接なおせません。** 直すときは必ず改訂版を作ってください。
+  直接なおすと、誰がいつ何を変えたかが残りません
+- **確認依頼の承認はできません。** 承認は人が画面で行う操作として残して
+  あります。向こうのトリガーはアプリの持ち主の権限で走るため、ここから
+  承認すると常に自己承認になってしまいます
+- **色・フォント・文字サイズは版管理の対象外です。** 意味の変わらない
+  見た目の調整は、記録しても差分に出ません
+- **スライドは読むことと履歴の閲覧のみです。** 反映には対応していません
+- 命令のフォルダは Drive を共有している人なら誰でも書けます。ここから
+  できることは、向こう側が受け付ける操作だけに絞られています
+
+## 結果の読み方
+
+```json
+{ "ok": true, "op": "commit", "result": { "sha": "9f8e..." }, "at": "..." }
+```
+
+`ok` が `false` なら `error` に理由が入ります。よくあるものは次のとおりです。
+
+| 出るもの | 意味 |
+|---|---|
+| `正式版は直接なおせません` | 改訂版を作ってから直す |
+| `同じ場所が両方で変わっています` | `pr-preview` で見てから `pr-merge` に選択を渡す |
+| `記録していない変更があります` | 先に `commit` する |
+| `反映できません` | 元に戻せない要素 (実体を取れない画像など) がある |

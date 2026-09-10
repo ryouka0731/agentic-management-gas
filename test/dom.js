@@ -96,7 +96,7 @@ const API_NAMES = [
   'apiPeopleNames', 'apiPeopleSetName',
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
-  'apiUsageRecord', 'apiUsageSummary',
+  'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit',
 ];
 
 /** よく使う既定の応答 */
@@ -116,6 +116,11 @@ export const DEFAULTS = {
   apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
+  apiAgentKit: {
+    name: 'agentic-management-agent-kit-1.0.0.zip',
+    version: '1.0.0',
+    url: 'https://drive.google.com/uc?export=download&id=KIT1',
+  },
   apiUsageSummary: {
     from: '2026-08-12', to: '2026-09-10', total: 0,
     byTarget: [], byDay: [], byUser: [],

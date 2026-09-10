@@ -3924,3 +3924,48 @@ describe('使われ方のボード', () => {
       .map((c) => c.textContent).join(' ')).toContain('山田 太郎');
   });
 });
+
+describe('手元から動かす道具', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.open = () => {};
+  });
+
+  function openHelp() {
+    const app = mount();
+    document.querySelector('[data-tab="help"]').click();
+    return app;
+  }
+
+  it('使い方から落とせる', () => {
+    const app = openHelp();
+
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('手元から動かす道具')).click();
+
+    expect(app.calls.some((c) => c.name === 'apiAgentKit')).toBe(true);
+  });
+
+  it('落とす先を新しいタブで開く', () => {
+    let opened = '';
+    window.open = (url) => { opened = url; };
+
+    openHelp();
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('手元から動かす道具')).click();
+
+    // 画面から直に流すと、大きさの上限に当たる
+    expect(opened).toContain('drive.google.com');
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('agent-kit');
+  });
+
+  it('何ができる道具かを使い方に書く', () => {
+    openHelp();
+    const text = document.getElementById('guide').textContent;
+
+    expect(text).toContain('Claude や Codex から操作できます');
+    expect(text).toContain('鍵もトークンも要りません');
+    expect(text).toContain('確認依頼の承認は、手元からはできません');
+  });
+});

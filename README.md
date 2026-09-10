@@ -61,6 +61,32 @@ GCP プロジェクトが使えない環境では `clasp run`（Apps Script API�
 | `branchCreate` | `name`, `fileId` |
 | `issueCreate` / `issueCreateBranch` | `title`,`body`,`linkedFileIds` / `number`,`fileId` |
 | `prCreate` / `prPreview` / `prMerge` | PR の作成・下見・マージ |
+| `issueList` / `issueUpdate` / `issueClose` / `issueComment` | やることの一覧・更新・完了・書き込み |
+| `prList` / `commitHistory` / `commitDiff` | 一覧と履歴と差分 (読むだけ) |
+
+#### 手元から動かす道具 (agent kit)
+
+命令のファイルを手で書かなくてよいよう、小さな道具一式を配っている。
+画面の「使い方」から **「手元から動かす道具を落とす」** で zip が取れる。
+
+```
+agent.mjs                 命令を置いて結果を待つ CLI
+agentkit.example.json     キューの場所を書く設定の見本
+README.md                 人向けの説明
+AGENTS.md / CLAUDE.md     Claude / Codex 向けの説明
+```
+
+要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけで、
+鍵もトークンも要らない。中身は `src/kit/` にあり、GAS 側で zip にして
+`.git/kit/` に置いてから配る。
+
+```sh
+node agent.mjs files
+node agent.mjs issue "通勤手当の見直し" "4月から改定"
+node agent.mjs read <fileId> > body.md
+cat body.md | node agent.mjs write <fileId> -
+node agent.mjs commit <fileId> "第3条を改訂"
+```
 
 **ホワイトリストに無い op は実行しない。** キューは Drive の共有相手なら誰でも
 書けるため、op を任意の関数名にすると事実上の RPC になる。

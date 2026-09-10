@@ -1,0 +1,233 @@
+#!/usr/bin/env node
+/**
+ * agentic-management を、手元から動かすための道具。
+ *
+ * この道具が置かれている環境では Apps Script API が使えないため、
+ * Drive 上のフォルダに命令のファイルを置き、向こう側の時間主導
+ * トリガーが拾って実行し、結果のファイルを書き戻す形になっている。
+ *
+ *   手元 --(<id>.cmd.json)--> Drive の queue/ --(1分以内)--> 実行
+ *   手元 <--(<id>.result.json)-- Drive の queue/ <-------------+
+ *
+ * したがって、この道具に要るのは Google Drive for desktop で
+ * 同期されたローカルのパスだけである。鍵もトークンも要らない。
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import process from 'node:process';
+
+const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
+
+/** 結果を待つ上限 (ミリ秒)。向こうのトリガーは1分間隔で回る */
+const WAIT_MS = 180000;
+
+/** 結果を見に行く間隔 */
+const POLL_MS = 2000;
+
+/**
+ * 設定を読む。
+ *
+ * 探す順番は「引数 → 環境変数 → いまの場所から上へ → ホーム」。
+ * 置き場所を1つに決めると、複数のリポジトリを行き来するときに困る。
+ *
+ * @returns {{queueDir: string}}
+ */
+function loadConfig() {
+  const fromArg = argValue('--queue');
+  if (fromArg) return { queueDir: fromArg };
+
+  if (process.env.AGENTKIT_QUEUE) return { queueDir: process.env.AGENTKIT_QUEUE };
+
+  let dir = process.cwd();
+  for (;;) {
+    for (const name of CONFIG_NAMES) {
+      const at = path.join(dir, name);
+      if (fs.existsSync(at)) return JSON.parse(fs.readFileSync(at, 'utf8'));
+    }
+
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+
+  const home = path.join(os.homedir(), '.agentkit.json');
+  if (fs.existsSync(home)) return JSON.parse(fs.readFileSync(home, 'utf8'));
+
+  throw new Error(
+    '設定が見つかりません。.agentkit.json を作るか、--queue でキューの場所を渡してください'
+  );
+}
+
+/**
+ * @param {string} name
+ * @returns {string} 見つからなければ空文字
+ */
+function argValue(name) {
+  const at = process.argv.indexOf(name);
+  return at >= 0 ? String(process.argv[at + 1] || '') : '';
+}
+
+/**
+ * 命令を1つ送り、結果を待つ。
+ *
+ * @param {string} queueDir
+ * @param {string} op
+ * @param {object} args
+ * @returns {Promise<object>}
+ */
+async function send(queueDir, op, args) {
+  if (!fs.existsSync(queueDir)) {
+    throw new Error('キューのフォルダがありません: ' + queueDir);
+  }
+
+  const id = 'kit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  const cmd = path.join(queueDir, id + '.cmd.json');
+  const out = path.join(queueDir, id + '.result.json');
+
+  fs.writeFileSync(cmd, JSON.stringify({ op, args: args || {} }, null, 2));
+
+  const until = Date.now() + WAIT_MS;
+  while (Date.now() < until) {
+    if (fs.existsSync(out)) {
+      // 書き込みの途中を読むことがある。読めるまで少し待つ
+      try {
+        const text = fs.readFileSync(out, 'utf8');
+        const parsed = JSON.parse(text);
+        fs.unlinkSync(out);
+        return parsed;
+      } catch (e) {
+        // まだ書き終わっていない
+      }
+    }
+    await new Promise((done) => setTimeout(done, POLL_MS));
+  }
+
+  throw new Error(
+    '結果が返りませんでした。向こう側で setupCommandQueue() を実行しているか、' +
+    'Drive の同期が動いているかを確かめてください'
+  );
+}
+
+/**
+ * 使える操作と、その引数。
+ *
+ * ここに無い操作は向こう側でも実行されない。命令のフォルダは Drive を
+ * 共有している人なら誰でも書けるため、向こう側が受け付ける操作を
+ * 絞ってある。
+ */
+const OPS = {
+  'files': { op: 'listFiles', args: () => ({}) },
+  'status': { op: 'status', args: (a) => ({ fileId: a[0] }) },
+  'read': { op: 'readMarkdown', args: (a) => ({ fileId: a[0] }) },
+  'write': {
+    op: 'writeMarkdown',
+    args: (a) => ({ fileId: a[0], markdown: readInput(a[1]) }),
+  },
+  'commit': {
+    op: 'commit',
+    args: (a) => ({ fileId: a[0], message: a[1] }),
+  },
+  'stash': { op: 'stashMainDrift', args: (a) => ({ fileId: a[0] }) },
+  'branch': { op: 'branchCreate', args: (a) => ({ name: a[0], fileId: a[1] }) },
+  'issues': { op: 'issueList', args: (a) => ({ state: a[0] || '' }) },
+  'issue': {
+    op: 'issueCreate',
+    args: (a) => ({ title: a[0], body: a[1] || '', linkedFileIds: a[2] ? [a[2]] : [] }),
+  },
+  'issue-update': {
+    op: 'issueUpdate',
+    args: (a) => ({ number: Number(a[0]), patch: JSON.parse(a[1] || '{}') }),
+  },
+  'issue-close': { op: 'issueClose', args: (a) => ({ number: Number(a[0]) }) },
+  'issue-say': {
+    op: 'issueComment',
+    args: (a) => ({ number: Number(a[0]), body: readInput(a[1]) }),
+  },
+  'issue-branch': {
+    op: 'issueCreateBranch',
+    args: (a) => ({ number: Number(a[0]), fileId: a[1] }),
+  },
+  'prs': { op: 'prList', args: () => ({}) },
+  'pr': {
+    op: 'prCreate',
+    args: (a) => ({
+      title: a[0], body: a[1] || '', sourceBranch: a[2], mainFileId: a[3],
+      targetBranch: a[4] || 'main',
+    }),
+  },
+  'pr-preview': { op: 'prPreview', args: (a) => ({ number: Number(a[0]) }) },
+  'pr-merge': {
+    op: 'prMerge',
+    args: (a) => ({ number: Number(a[0]), choices: a[1] ? JSON.parse(a[1]) : [] }),
+  },
+  'history': { op: 'commitHistory', args: (a) => ({ fileId: a[0] }) },
+  'diff': {
+    op: 'commitDiff',
+    args: (a) => ({ fromSha: a[0] || '', toSha: a[1] }),
+  },
+};
+
+/**
+ * 引数が「-」なら標準入力から読む。長い本文を渡すため。
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function readInput(value) {
+  if (value !== '-') return String(value === undefined ? '' : value);
+  return fs.readFileSync(0, 'utf8');
+}
+
+function usage() {
+  const lines = [
+    'agentic-management を手元から動かす道具',
+    '',
+    '  agent <操作> [引数...]',
+    '',
+    '使える操作:',
+  ];
+
+  for (const name of Object.keys(OPS)) lines.push('  ' + name);
+
+  lines.push('');
+  lines.push('例:');
+  lines.push('  agent files');
+  lines.push('  agent issue "第3条を直す" "根拠は…"');
+  lines.push('  agent read <fileId> > body.md');
+  lines.push('  cat body.md | agent write <fileId> -');
+  lines.push('  agent commit <fileId> "第3条を改訂"');
+  lines.push('  agent pr "第3条の改訂" "" 見直し <mainFileId>');
+  lines.push('');
+  lines.push('キューの場所は .agentkit.json か --queue か AGENTKIT_QUEUE で渡す');
+
+  return lines.join('\n');
+}
+
+async function main() {
+  const name = process.argv[2];
+  if (!name || name === '--help' || name === '-h') {
+    process.stdout.write(usage() + '\n');
+    return;
+  }
+
+  const entry = OPS[name];
+  if (!entry) {
+    process.stderr.write('知らない操作です: ' + name + '\n\n' + usage() + '\n');
+    process.exitCode = 2;
+    return;
+  }
+
+  const rest = process.argv.slice(3).filter((one) => one !== '--queue');
+  const config = loadConfig();
+  const res = await send(config.queueDir, entry.op, entry.args(rest));
+
+  process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+  if (!res.ok) process.exitCode = 1;
+}
+
+main().catch((err) => {
+  process.stderr.write(String(err.message || err) + '\n');
+  process.exitCode = 1;
+});

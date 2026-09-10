@@ -6261,6 +6261,12 @@
       '6. 承認されたら「正式版に反映する」',
       '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
     ]],
+    ['手元から動かす', [
+      '画面を開かずに、Claude や Codex から操作できます。下の「手元から動かす道具を落とす」から一式を取ってください。',
+      '要るのは Node.js と、Google Drive for desktop で同期したフォルダだけです。鍵もトークンも要りません。',
+      '命令のファイルを Drive の queue フォルダに置くと、1分以内に実行されて結果が返ります。遅延は最大1分です。',
+      '正式版を直接なおすことと、確認依頼の承認は、手元からはできません。承認は人が画面で行う操作として残してあります。',
+    ]],
     ['つまずきやすい点', [
       'やることを押すと、まず読む形で開きます。書き換えるには右上の鉛筆を押してください。触っただけで中身が変わることはありません。',
       '補足は Markdown で書けます。「## 見出し」「- 箇条書き」「- [ ] 手を付けたかの印」「**強い字**」「[名前](リンク)」が使えます。',
@@ -6298,6 +6304,34 @@
 
     var foot = document.createElement('div');
     foot.className = 'guide-foot';
+
+    var kit = document.createElement('button');
+    kit.className = 'btn btn-primary';
+    kit.appendChild(makeIcon('save'));
+    kit.appendChild(document.createTextNode('手元から動かす道具を落とす'));
+    attachHint(kit,
+      '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
+      'Claude や Codex に読ませる説明も入っています');
+
+    kit.addEventListener('click', function () {
+      kit.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          kit.disabled = false;
+          if (!res) return;
+
+          // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
+          window.open(res.url, '_blank');
+          showSnack(res.name + ' を用意しました', { kind: 'ok' });
+        })
+        .withFailureHandler(function (err) {
+          kit.disabled = false;
+          showSnack(err.message, { kind: 'ng' });
+        })
+        .apiAgentKit();
+    });
+    foot.appendChild(kit);
 
     var rename = document.createElement('button');
     rename.className = 'btn';
