@@ -11,8 +11,8 @@
     "coverage": "vitest run --coverage --coverage.include='src/**' --coverage.extension='.js' --coverage.extension='.gs' --coverage.reporter=text"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^3.2.7",
+    "@vitest/coverage-v8": "^5.0.0",
     "jsdom": "^30.0.1",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.0"
   }
 }
