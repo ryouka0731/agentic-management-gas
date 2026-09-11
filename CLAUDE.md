@@ -90,6 +90,12 @@ main を Docs で直接編集された場合の逃げ道が `apiStashMainDrift` 
 npm run coverage
 ```
 
+テスト回りの依存を入れ直すときは、**package-lock.json を消さない**。npm 10.9 には
+vitest 4 の peer 解決で落ちる不具合があり (`Cannot read properties of null
+(reading 'edgesOut')`)、ロックが無い状態からだと `npm install` が通らない。
+`npm ci` はロックから入れるので問題ない。どうしても作り直すときは
+`npm install --legacy-peer-deps` で入れて、ロックを commit すること。
+
 `node:vm` で評価するため、`test/harness.js` は **filename に絶対パスを渡す**。
 相対パスだと実行された行が元ファイルに結び付かず、カバレッジが 0% と出る。
 
