@@ -184,12 +184,16 @@ npm run coverage
 ## デプロイ
 
 ```bash
-npx clasp push -f     # マニフェスト変更を含む push には -f が要る
-npx clasp create-deployment -i <デプロイID> -d "説明"
+npm run deploy -- "何を変えたか"
 ```
 
-**`-i` を省くと新しいデプロイが作られ URL が変わる。** デプロイIDはリポジトリに
-入っていないので、`npx clasp list-deployments` で調べる。
+これは `clasp push -f` してから、**`deployment.json` の ID に対して**差し替える。
+
+**`clasp create-deployment` を直接叩かない。** `-i` を省くと新しいデプロイが
+作られて URL が変わり、利用者のブックマークも配ったリンクも死ぬ。差し替える先は
+`deployment.json` に入れてあり、手元の記憶に頼らない。
+
+送る前に差し替えると、前の中身のまま版だけが上がる。順番は push → deploy。
 
 ## 実機検証の入口
 

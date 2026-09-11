@@ -6,8 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "push": "clasp push",
-    "deploy": "clasp create-deployment",
+    "push": "clasp push -f",
+    "deploy": "node scripts/deploy.mjs",
     "coverage": "vitest run --coverage --coverage.include='src/**' --coverage.extension='.js' --coverage.extension='.gs' --coverage.reporter=text"
   },
   "devDependencies": {
