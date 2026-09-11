@@ -39,6 +39,11 @@ export function createFakeGas() {
       setTrashed: (v) => { f._trashed = v !== false; return f; },
       isTrashed: () => f._trashed,
       setSharing: () => f,
+      getParents: () => {
+        const hits = folders.has(f._parent) ? [folders.get(f._parent)] : [];
+        let i = 0;
+        return { hasNext: () => i < hits.length, next: () => hits[i++] };
+      },
       getBlob: () => ({
         getDataAsString: () => f._content,
         // GAS の Blob.getBytes() は符号付き byte を返す
@@ -120,6 +125,21 @@ export function createFakeGas() {
       if (!f) throw new Error('ファイルが見つかりません: ' + id);
       return f;
     },
+  };
+
+  // --- スクリプト自身 ---
+  let scriptId = '';
+
+  const ScriptApp = {
+    getScriptId: () => {
+      if (!scriptId) throw new Error('スクリプトの場所が分かりません');
+      return scriptId;
+    },
+    getProjectTriggers: () => [],
+    newTrigger: () => ({
+      timeBased: () => ({ everyMinutes: () => ({ create: () => ({}) }) }),
+    }),
+    deleteTrigger: () => {},
   };
 
   // --- スプレッドシート (メタDB) ---
@@ -296,7 +316,14 @@ export function createFakeGas() {
 
   return {
     console,
+    ScriptApp,
     HtmlService,
+    /** スクリプトの置き場を決める。渡さなければ「分からない」状態 */
+    _placeScript: (folder) => {
+      const f = makeFile('スクリプト', '', folder.getId(), 'application/vnd.google-apps.script');
+      scriptId = f.getId();
+      return f;
+    },
     _setKitFile: (name, text) => { kitFiles.set(name, text); },
     _makeTasks: makeTasks,
     DriveApp,

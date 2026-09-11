@@ -27,7 +27,7 @@ function repoInit(rootFolderName) {
     throw new Error('フォルダ名が不正です: ' + rootFolderName);
   }
 
-  var root = DriveApp.createFolder(rootFolderName);
+  var root = repoParentFolder_().createFolder(rootFolderName);
   var main = root.createFolder('main');
   var branches = root.createFolder('branches');
   var git = root.createFolder('.git');
@@ -72,6 +72,28 @@ function repoInit(rootFolderName) {
 
   Logger.log('リポジトリを初期化しました: ' + JSON.stringify(config));
   return config;
+}
+
+/**
+ * リポジトリを作る場所を返す。
+ *
+ * スクリプトと同じフォルダに作る。マイドライブの直下に作ると、他の
+ * 書類に紛れるうえ、フォルダごと配って回すときに持ち出しにくい。
+ *
+ * スクリプトがどこにあるか分からないことがある (文書に紐づいた
+ * スクリプトなど)。その場合はマイドライブの直下に落とす。作れないより
+ * 場所が違うほうがまだよい。
+ *
+ * @returns {GoogleAppsScript.Drive.Folder}
+ */
+function repoParentFolder_() {
+  try {
+    var parents = DriveApp.getFileById(ScriptApp.getScriptId()).getParents();
+    if (parents.hasNext()) return parents.next();
+  } catch (e) {
+    Logger.log('スクリプトの場所が分かりませんでした: ' + e.message);
+  }
+  return DriveApp.getRootFolder();
 }
 
 /**

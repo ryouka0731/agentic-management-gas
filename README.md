@@ -284,7 +284,9 @@ clasp push --force
 ### 3. リポジトリの初期化
 
 GAS エディタ（`clasp open-script`）で **`setupRepo()`** を 1 回だけ実行する。
-Drive に `agentic-management/` フォルダとメタ DB スプレッドシートが作られる。
+**スクリプトと同じフォルダに** `agentic-management/` とメタ DB スプレッドシートが
+作られる（マイドライブの直下ではない）。スクリプトの置き場が分からない場合だけ、
+マイドライブの直下に落ちる。
 
 ### 4. デプロイ
 
