@@ -3545,4 +3545,64 @@ button.label-pill {
   font-size: 10px;
   color: var(--ink-2);
 }
+
+/*
+ * 説明の図。
+ *
+ * 字だけの説明は読まれない。地の色に合わせて描き、外からは何も
+ * 取ってこない
+ */
+.diagram {
+  margin: var(--sp-3) 0 var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.diagram figcaption { margin-top: var(--sp-2); }
+
+.diagram-box {
+  fill: var(--surface-raised);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.diagram-box.strong { fill: var(--accent-bg); stroke: var(--accent); }
+.diagram-box.ok { fill: var(--success-bg); stroke: var(--success); }
+
+.diagram-text {
+  fill: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.diagram-text.strong { fill: var(--accent); }
+.diagram-text.ok { fill: var(--success); }
+
+.diagram-arrow {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+}
+
+.diagram-head { fill: var(--ink-2); }
+.diagram-head.soft { fill: var(--line-strong); }
+
+/* 戻りの線は控えめに。主役は左から右への流れ */
+.diagram-arrow.soft {
+  stroke: var(--line-strong);
+  stroke-dasharray: 4 4;
+}
+
+.diagram-label {
+  fill: var(--ink-2);
+  font-size: 11px;
+  font-family: inherit;
+}
 </style>

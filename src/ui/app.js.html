@@ -639,6 +639,173 @@
       '文書の版を残し、確認を経て反映する道具です。通称は「番頭」です');
   }
 
+  var diagramSeq = 0;
+
+  /**
+   * 説明の図を描く。
+   *
+   * 字だけの説明は読まれない。読まずに尋ねられるくらいなら、目に入る
+   * 形で置いたほうが早い。
+   *
+   * 図を描く道具 (Mermaid など) は足さない。読み込みが1つ増えるうえ、
+   * この画面は外から何も取ってこない作りにしてある。地の色に合わせる
+   * のも、その場で描いたほうが確実。
+   *
+   * @param {object} spec {title, desc, width, height, boxes, arrows}
+   * @returns {HTMLElement}
+   */
+  function makeDiagram(spec) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var wrap = document.createElement('figure');
+    wrap.className = 'diagram';
+
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + spec.width + ' ' + spec.height);
+    svg.setAttribute('role', 'img');
+
+    var title = document.createElementNS(ns, 'title');
+    title.textContent = spec.title;
+    svg.appendChild(title);
+
+    var desc = document.createElementNS(ns, 'desc');
+    desc.textContent = spec.desc;
+    svg.appendChild(desc);
+
+    // 矢印の先。同じ頁に2つ並ぶので、名前を分ける
+    var mark = 'arrow-' + (++diagramSeq);
+    var defs = document.createElementNS(ns, 'defs');
+
+    ['', 'soft'].forEach(function (tone) {
+      var marker = document.createElementNS(ns, 'marker');
+      marker.setAttribute('id', mark + (tone ? '-' + tone : ''));
+      marker.setAttribute('viewBox', '0 0 8 8');
+      marker.setAttribute('refX', '7');
+      marker.setAttribute('refY', '4');
+      marker.setAttribute('markerWidth', '6');
+      marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('orient', 'auto-start-reverse');
+
+      var head = document.createElementNS(ns, 'path');
+      head.setAttribute('d', 'M0 0l8 4-8 4z');
+      head.setAttribute('class', 'diagram-head' + (tone ? ' ' + tone : ''));
+      marker.appendChild(head);
+
+      defs.appendChild(marker);
+    });
+    svg.appendChild(defs);
+
+    /**
+     * @param {string} name
+     * @param {object} attrs
+     * @returns {SVGElement}
+     */
+    function add(name, attrs) {
+      var el = document.createElementNS(ns, name);
+
+      for (var key in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, key)) {
+          el.setAttribute(key, attrs[key]);
+        }
+      }
+      svg.appendChild(el);
+      return el;
+    }
+
+    (spec.arrows || []).forEach(function (arrow) {
+      add('path', {
+        d: arrow.d,
+        class: 'diagram-arrow' + (arrow.soft ? ' soft' : ''),
+        'marker-end': 'url(#' + mark + (arrow.soft ? '-soft' : '') + ')',
+      });
+
+      if (!arrow.label) return;
+
+      var text = add('text', {
+        x: arrow.lx, y: arrow.ly, class: 'diagram-label',
+        'text-anchor': 'middle',
+      });
+      text.textContent = arrow.label;
+    });
+
+    (spec.boxes || []).forEach(function (box) {
+      add('rect', {
+        x: box.x, y: box.y, width: box.w, height: box.h, rx: 8,
+        class: 'diagram-box' + (box.tone ? ' ' + box.tone : ''),
+      });
+
+      var lines = box.label.split('\n');
+      lines.forEach(function (line, at) {
+        var text = add('text', {
+          x: box.x + box.w / 2,
+          y: box.y + box.h / 2 + (at - (lines.length - 1) / 2) * 15 + 5,
+          class: 'diagram-text' + (box.tone ? ' ' + box.tone : ''),
+          'text-anchor': 'middle',
+        });
+        text.textContent = line;
+      });
+    });
+
+    wrap.appendChild(svg);
+
+    if (spec.caption) {
+      var cap = document.createElement('figcaption');
+      cap.className = 'row-meta';
+      cap.textContent = spec.caption;
+      wrap.appendChild(cap);
+    }
+    return wrap;
+  }
+
+  /** 文書が変わっていく道のり */
+  var FLOW_DIAGRAM = {
+    title: '文書が変わっていく道のり',
+    desc: '正式版をコピーして改訂版を作り、直して記録し、確認依頼を出し、' +
+      '承認されると正式版に反映される。反映されたものが次の正式版になる。',
+    width: 760,
+    height: 190,
+    boxes: [
+      { x: 10, y: 20, w: 120, h: 56, label: '正式版', tone: 'strong' },
+      { x: 166, y: 20, w: 120, h: 56, label: '改訂版を\n作る' },
+      { x: 322, y: 20, w: 120, h: 56, label: '直して\n記録する' },
+      { x: 478, y: 20, w: 120, h: 56, label: '確認を\n依頼する' },
+      { x: 634, y: 20, w: 116, h: 56, label: '正式版に\n反映', tone: 'ok' },
+    ],
+    arrows: [
+      { d: 'M130 48h30', lx: 148, ly: 14, label: 'コピー' },
+      { d: 'M286 48h30', lx: 301, ly: 14, label: '' },
+      { d: 'M442 48h30', lx: 460, ly: 14, label: '' },
+      { d: 'M598 48h30', lx: 616, ly: 14, label: '承認' },
+      {
+        d: 'M692 76v34a8 8 0 0 1-8 8H78a8 8 0 0 0-8 8v14',
+        lx: 380, ly: 133, label: '反映されたものが、次の正式版になる', soft: true,
+      },
+    ],
+    caption: '正式版は直接なおしません。必ずコピー（改訂版）で直します。',
+  };
+
+  /** 手元から動かすときの往復 */
+  var QUEUE_DIAGRAM = {
+    title: '手元から動かすときの往復',
+    desc: '手元の道具が命令のファイルを Drive に置き、番頭が1分ごとに拾って' +
+      '実行し、結果のファイルを書き戻す。',
+    width: 760,
+    height: 190,
+    boxes: [
+      { x: 10, y: 20, w: 170, h: 56, label: '手元\n(Claude / Codex)' },
+      { x: 296, y: 20, w: 170, h: 56, label: 'Drive の\nqueue フォルダ' },
+      { x: 582, y: 20, w: 168, h: 56, label: '番頭が実行', tone: 'strong' },
+    ],
+    arrows: [
+      { d: 'M180 48h110', lx: 235, ly: 14, label: '命令のファイル' },
+      { d: 'M466 48h110', lx: 521, ly: 14, label: '1分以内に拾う' },
+      {
+        d: 'M666 76v34a8 8 0 0 1-8 8H103a8 8 0 0 0-8 8v14',
+        lx: 380, ly: 133, label: '結果のファイルが返る', soft: true,
+      },
+    ],
+    caption: '返るまで最大1分かかります。すぐ返らなくても壊れてはいません。',
+  };
+
   // ===== テーマ =====
 
   var THEME_ORDER = ['system', 'light', 'dark'];
@@ -6391,10 +6558,20 @@
     makeMeActions().forEach(function (el) { top.appendChild(el); });
     guideEl.appendChild(top);
 
+    // 節ごとに、その話の図を先に置く。字だけの説明は読まれない
+    var figures = {
+      'このアプリについて': FLOW_DIAGRAM,
+      '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
+    };
+
     GUIDE.forEach(function (section) {
       var h = document.createElement('h2');
       h.textContent = section[0];
       guideEl.appendChild(h);
+
+      if (figures[section[0]]) {
+        guideEl.appendChild(makeDiagram(figures[section[0]]));
+      }
 
       var ul = document.createElement('ul');
       section[1].forEach(function (line) {

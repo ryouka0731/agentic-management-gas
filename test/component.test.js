@@ -4340,3 +4340,75 @@ describe('はじめにの入口', () => {
       .toContain('Claude や Codex から操作する場合だけ');
   });
 });
+
+describe('使い方の図', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHelp() {
+    mount();
+    document.querySelector('[data-tab="help"]').click();
+    return [...document.querySelectorAll('#guide .diagram')];
+  }
+
+  it('流れと往復の2つを置く', () => {
+    const figures = openHelp();
+
+    // 字だけの説明は読まれない
+    expect(figures).toHaveLength(2);
+    expect(figures[0].querySelector('title').textContent)
+      .toBe('文書が変わっていく道のり');
+    expect(figures[1].querySelector('title').textContent)
+      .toBe('手元から動かすときの往復');
+  });
+
+  it('説明より先に置く', () => {
+    const figures = openHelp();
+    const guide = document.getElementById('guide');
+    const firstList = guide.querySelector('ul');
+
+    expect(figures[0].compareDocumentPosition(firstList) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('読み上げにも中身が届く', () => {
+    const figures = openHelp();
+    const svg = figures[0].querySelector('svg');
+
+    expect(svg.getAttribute('role')).toBe('img');
+    expect(svg.querySelector('desc').textContent).toContain('正式版');
+  });
+
+  it('外から何も取ってこない', () => {
+    openHelp();
+    const js = document.querySelector('style').textContent;
+
+    // 図を描く道具を足すと読み込みが1つ増える
+    expect(document.querySelectorAll('script[src*="mermaid"]')).toHaveLength(0);
+    expect(js).toContain('.diagram-box');
+  });
+
+  it('矢印の先が付いている', () => {
+    const figures = openHelp();
+    const arrow = figures[0].querySelector('.diagram-arrow');
+
+    expect(arrow.getAttribute('marker-end')).toMatch(/^url\(#arrow-\d+\)$/);
+    expect(figures[0].querySelector('marker path')).toBeTruthy();
+  });
+
+  it('2つの図で矢印の名前がぶつからない', () => {
+    const figures = openHelp();
+    const a = figures[0].querySelector('marker').id;
+    const b = figures[1].querySelector('marker').id;
+
+    expect(a).not.toBe(b);
+  });
+
+  it('言葉での断りも添える', () => {
+    const figures = openHelp();
+
+    expect(figures[0].querySelector('figcaption').textContent)
+      .toContain('正式版は直接なおしません');
+    expect(figures[1].querySelector('figcaption').textContent)
+      .toContain('最大1分');
+  });
+});
