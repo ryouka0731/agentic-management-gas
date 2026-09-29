@@ -155,6 +155,20 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
 混ざった時点で画面には `null` が届く**。`apiIssueList` と `apiPrReviews` で
 2度踏んだ（後者は「コメントを書いても反映されない」に化けた）。
 
+**変換は `src/core/Plain.js` の `plainText` / `plainDate` / `plainNumber` /
+`plainId` だけを通す。** api 関数の中に同じ変換を書き直さないこと。以前は
+同じ `iso` が4か所に写され、そのうち画面に直に書かれた8か所は
+`new Date(v).toISOString()` を裸で呼んでいた。台帳は人が手で書き換えられる
+表なので、日付に見えない字が1つ入るだけで `RangeError: Invalid time value`
+になり、一覧まるごとが出なくなる。`plainDate` は読めない値を例外にせず
+空文字で返す。
+
+**名前は `src/core/Brand.js` の `APP_NAME()` から引く。** 字で書かない。
+以前は `Notifier.gs` の件名10か所に写されていて、名前を改めるときに1つずつ
+置き換えることになった。件名は `notifySubject_()` で組む。配る道具
+（`kit/*`）は静の字なので関数を呼べず、`test/naming.test.js` が揃っているかを
+見ている。
+
 - 日時は `toISOString()` で文字列にしてから返す
 - `test/phase4-edit.test.js` の「画面に渡せる形か」が全 API を走査している。
   **API を足したらそこに足す**
@@ -177,6 +191,15 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
 直すと食い違う。**
 
 ## 手元から動かす道具は GAS の中に置く
+
+**`kit/AGENTS.md` は zip の中で `CLAUDE.md` にもなる**（`scripts/build-kit.mjs`
+の `FILES` が同じ元から2つ配る）。片方だけ直すことはできない造りにしてある。
+
+初めて動くときの案内は `node agent.mjs setup` にある。**設定が読めない状態で
+こそ要るものなので、`findConfig()` は投げずに `null` を返す。** `loadConfig()`
+だけが投げる。手元から触れない場所（Drive / Apps Script）のパスは当てさせず、
+取り方を伝える形にしてある。
+
 
 `kit/` にある**本物のファイル**が中身の本体で、`scripts/build-kit.mjs` が
 それを base64 にして `src/KitFiles.gs` に焼き直し、`AgentKit.gs` が zip にして
