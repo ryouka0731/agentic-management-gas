@@ -143,6 +143,54 @@ function repoRegisterFile(fileId, path) {
 }
 
 /**
+ * 文書を管理から外す。
+ *
+ * 間違って登録したものを戻す道が、画面にもコマンドキューにも無かった。
+ * 台帳を手で直すしかなく、それは「使う人に GAS を触らせない」に反する。
+ *
+ * **Drive のファイルも、これまでの記録も消さない。** 消すのは台帳の
+ * 1行だけである。外したあとに登録し直すと、同じ fileId の記録が
+ * そのまま繋がって履歴が戻る。だから「外す」は取り返しがつく。
+ *
+ * 断るのは次の2つだけにしてある。
+ *
+ * - 作業コピー (`branches/…`) そのものを名指しされたとき。あれを外すと
+ *   版だけが宙に浮く。捨てるのは改訂版のほうである
+ * - その文書の改訂版が残っているとき。同じ理由
+ *
+ * 未コミットの変更は理由にしない。何も壊れないうえ、外せない状態が
+ * 増えると「どうすれば外せるのか」が分からなくなる。
+ *
+ * @param {string} fileId
+ * @returns {{fileId:string, path:string, type:string}} 外したもの
+ */
+function repoUnregisterFile(fileId) {
+  var row = dbFindOne('files', 'fileId', fileId);
+  if (!row) throw new Error('登録されていません: ' + fileId);
+
+  var parts = branchSplitPath_(row.path);
+  if (parts.branch !== 'main') {
+    throw new Error(
+      'これは「' + parts.branch + '」の作業コピーです。' +
+      '外すのではなく、改訂版そのものを捨ててください');
+  }
+
+  var holders = branchesHolding(parts.path);
+  if (holders.length) {
+    throw new Error(
+      '改訂版が' + holders.length + '件あります (' + holders.join('、') + ')。' +
+      '先にそれらを捨ててから外してください');
+  }
+
+  dbDelete('files', 'fileId', fileId);
+  return {
+    fileId: String(row.fileId),
+    path: parts.path,
+    type: String(row.type),
+  };
+}
+
+/**
  * このアプリを持っている人を返す。
  *
  * この Web アプリは開いた人の権限で動く (executeAs: USER_ACCESSING) ため、

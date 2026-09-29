@@ -152,6 +152,20 @@ function apiRegisterFiles(fileIds) {
 }
 
 /**
+ * 文書を管理から外す (Web App API)。
+ *
+ * **Drive のファイルも、これまでの記録も消さない。** 消すのは台帳の1行
+ * だけで、登録し直せば履歴が戻る。だから持ち主だけに絞っていない。
+ * 間違って登録した本人が直せないほうが困る。
+ *
+ * @param {string} fileId
+ * @returns {{fileId:string, path:string, type:string}}
+ */
+function apiUnregisterFile(fileId) {
+  return repoUnregisterFile(fileId);
+}
+
+/**
  * 正式版の入れ物を Drive で開く場所を返す (Web App API)。
  *
  * @returns {string}

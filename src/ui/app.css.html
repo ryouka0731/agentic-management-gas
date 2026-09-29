@@ -2309,6 +2309,29 @@ button.gantt-name:hover { color: var(--accent); }
   text-align: left;
 }
 
+/*
+ * 管理から外す印。
+ *
+ * ゴミ箱と同じ赤にしない。**文書そのものを消すと読まれる。** 消えるのは
+ * 台帳の1行だけなので、目立たせず、押せないときは沈める
+ */
+.card-off {
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.card-off:hover { color: var(--ink); background: var(--bg-3); }
+.card-off .icon { width: 16px; height: 16px; }
+
+.card-off:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+
 .doc-head { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; }
 .doc-meta { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .chip-accent { background: var(--accent-bg); color: var(--accent); }

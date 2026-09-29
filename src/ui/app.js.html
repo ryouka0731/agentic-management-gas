@@ -299,6 +299,7 @@
     'act:done': '終わったことにします',
     'act:reopen': '完了を取り消して、やることに戻します',
     'act:archive': '捨てます。しばらくは「捨てたもの」から戻せます',
+    'act:unregister': 'この道具の管理から外します。文書そのものは消えず、登録し直せば履歴も戻ります',
     'act:approve': 'この改訂版を正式版に反映してよい、と返事をします',
     'act:merge': '改訂版の中身を正式版に書き戻します。承認が要ります',
     'act:bell': '名前を呼ばれたときや、返信があったときにここに出ます',
@@ -519,6 +520,7 @@
       plus: ['M12 5v14', 'M5 12h14'],
       inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
       folder: ['M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2z'],
+      'minus-circle': ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M8 12h8'],
       'file-text': ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
       pencil: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
       'git-commit': ['M12 3v6', 'M12 15v6'],
@@ -2270,9 +2272,59 @@
       open.addEventListener('click', function () { openDoc(f.fileId, f.path); });
       card.appendChild(open);
       card.appendChild(makeFileLink(f.type, f.fileId));
+      card.appendChild(makeUnregisterButton(f, drafts.length));
 
       docListEl.appendChild(card);
     });
+  }
+
+  /**
+   * 管理から外す入口を作る。
+   *
+   * 間違って登録したものを戻す道が無く、台帳を手で直すしかなかった。
+   *
+   * ゴミ箱の印は使わない。**文書そのものを消すと読まれる。** 消えるのは
+   * 台帳の1行だけなので、集まりから抜く印 (minus-circle) にしてある。
+   * 帯の文でも「文書そのものは消えません」と言い切る。
+   *
+   * 改訂版が残っているものは押させない。サーバも断るが、押せてから
+   * 断られるより、押せないほうが理由が伝わる。
+   *
+   * @param {object} f files 行
+   * @param {number} draftCount その文書の改訂版の数
+   * @returns {HTMLElement}
+   */
+  function makeUnregisterButton(f, draftCount) {
+    var off = document.createElement('button');
+    off.className = 'card-off';
+    off.appendChild(makeIcon('minus-circle'));
+    // 印だけなので、読み上げと吹き出しに名前を持たせる
+    off.setAttribute('aria-label', f.path + ' を管理から外す');
+
+    if (draftCount) {
+      off.disabled = true;
+      attachHint(off,
+        '改訂版が' + draftCount + '件あります。先にそれらを捨ててください');
+      return off;
+    }
+    hint(off, 'act:unregister');
+
+    off.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openConfirmStrip(docListEl,
+        '「' + f.path + '」を管理から外します。' +
+        'Drive の文書そのものは消えません。これまでの記録も残り、' +
+        '登録し直せば履歴もそのまま戻ります。',
+        '管理から外す',
+        function () {
+          call('apiUnregisterFile', [f.fileId], function () {
+            showSnack('「' + f.path + '」を管理から外しました', { kind: 'ok' });
+            loadFiles(renderDocs);
+            loadOverview();
+          });
+        });
+    });
+    return off;
   }
 
   function loadDocs() {

@@ -97,7 +97,7 @@ const API_NAMES = [
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
   'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiWorkspace',
-  'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl',
+  'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
 ];
 
 /** よく使う既定の応答 */

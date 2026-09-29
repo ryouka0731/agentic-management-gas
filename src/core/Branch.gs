@@ -25,6 +25,52 @@ function branchPath_(name, mainPath) {
 }
 
 /**
+ * `branchPath_` の逆。パスを「どの版の、どの文書か」に分ける。
+ *
+ * 作業コピーでなければ版の名は 'main' になる。**判定をあちこちで
+ * 書き直さないこと。** `indexOf('branches/') === 0` を散らすと、
+ * 語彙が変わったときに直し漏れる。
+ *
+ * @param {string} path
+ * @returns {{branch:string, path:string}}
+ */
+function branchSplitPath_(path) {
+  var text = String(path || '');
+  if (text.indexOf('branches/') !== 0) return { branch: 'main', path: text };
+
+  var at = text.indexOf('/', 'branches/'.length);
+  if (at < 0) return { branch: 'main', path: text };
+
+  return {
+    branch: text.substring('branches/'.length, at),
+    path: text.substring(at + 1),
+  };
+}
+
+/**
+ * ある文書の作業コピーを持っている版の名を返す。
+ *
+ * 管理から外すときに要る。作業コピーが残ったまま外すと、その版だけが
+ * 宙に浮き、画面のどこからも辿れなくなる。
+ *
+ * @param {string} mainPath 正式版のパス
+ * @returns {string[]} 版の名
+ */
+function branchesHolding(mainPath) {
+  var rows = dbReadAll('files');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    var parts = branchSplitPath_(rows[i].path);
+    if (parts.branch === 'main') continue;
+    if (parts.path !== String(mainPath)) continue;
+
+    out.push(parts.branch);
+  }
+  return out;
+}
+
+/**
  * ブランチ一覧を返す。
  *
  * @returns {object[]} branches 行
@@ -69,7 +115,7 @@ function branchCreate(name, fileId) {
 
   var mainRow = dbFindOne('files', 'fileId', fileId);
   if (!mainRow) throw new Error('管理対象に登録されていません: ' + fileId);
-  if (String(mainRow.path).indexOf('branches/') === 0) {
+  if (branchSplitPath_(mainRow.path).branch !== 'main') {
     throw new Error('ブランチの作業コピーからは分岐できません。mainのファイルを選んでください');
   }
 

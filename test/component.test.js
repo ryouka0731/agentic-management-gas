@@ -4496,6 +4496,114 @@ describe('どのワークスペースを見ているか', () => {
   });
 });
 
+describe('管理から外す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 改訂版の無い文書を1つだけ置く */
+  const ALONE = {
+    apiListFiles: [{ fileId: 'DOC1', path: '就業規則.doc', type: 'doc' }],
+  };
+
+  function openDocs(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="docs"]').click();
+    return app;
+  }
+
+  function offButton() {
+    return document.querySelector('#doc-list .card-off');
+  }
+
+  it('文書のカードから外せる', () => {
+    // 間違って登録したものを戻す道が無く、台帳を手で直すしかなかった
+    openDocs(ALONE);
+
+    expect(offButton().getAttribute('aria-label'))
+      .toBe('就業規則.doc を管理から外す');
+  });
+
+  it('ゴミ箱の印は使わない', () => {
+    openDocs(ALONE);
+    const del = document.querySelector('#issue-list .btn-danger');
+
+    // 文書そのものを消すと読まれる。消えるのは台帳の1行だけである
+    expect(offButton().classList.contains('btn-danger')).toBe(false);
+    expect(offButton().querySelector('svg').innerHTML)
+      .not.toBe(del ? del.querySelector('svg').innerHTML : 'x');
+    expect(offButton().dataset.hint).toContain('文書そのものは消えず');
+  });
+
+  it('確かめてからでないと外さない', () => {
+    const app = openDocs(ALONE);
+    offButton().click();
+
+    expect(app.calls.some((c) => c.name === 'apiUnregisterFile')).toBe(false);
+
+    const strip = document.querySelector('#doc-list .confirm-strip');
+    expect(strip.textContent).toContain('文書そのものは消えません');
+    expect(strip.textContent).toContain('登録し直せば履歴もそのまま戻ります');
+
+    strip.querySelector('.btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiUnregisterFile').pop().args[0])
+      .toBe('DOC1');
+  });
+
+  it('やめれば何も起きない', () => {
+    const app = openDocs(ALONE);
+    offButton().click();
+
+    const strip = document.querySelector('#doc-list .confirm-strip');
+    strip.querySelectorAll('.btn')[1].click();
+
+    expect(document.querySelector('#doc-list .confirm-strip')).toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiUnregisterFile')).toBe(false);
+  });
+
+  it('開くための面の中には入れない', () => {
+    // カードの大半は「開く」ための button である。その中に入れると、
+    // 印を押したつもりで文書が開く
+    const app = openDocs(ALONE);
+
+    expect(offButton().closest('.doc-open')).toBeNull();
+    expect(offButton().parentElement.classList.contains('doc-card')).toBe(true);
+
+    offButton().click();
+    expect(document.getElementById('panel-content').hidden).toBe(true);
+    expect(app.calls.some((c) => c.name === 'apiGetFileHtml')).toBe(false);
+  });
+
+  it('改訂版が残っているものは押せない', () => {
+    // 押せてから断られるより、押せないほうが理由が伝わる
+    openDocs();
+
+    expect(offButton().disabled).toBe(true);
+    expect(offButton().dataset.hint).toContain('改訂版が2件あります');
+  });
+
+  it('外したら一覧と数を取り直す', () => {
+    const app = openDocs(ALONE);
+    offButton().click();
+    document.querySelector('#doc-list .confirm-strip .btn-primary').click();
+
+    const after = app.calls.map((c) => c.name);
+    const at = after.lastIndexOf('apiUnregisterFile');
+
+    expect(after.slice(at)).toContain('apiListFiles');
+    expect(after.slice(at)).toContain('apiOverview');
+  });
+
+  it('外せなかったら理由を知らせる', () => {
+    openDocs(Object.assign({}, ALONE, {
+      apiUnregisterFile: new Error('改訂版が1件あります'),
+    }));
+    offButton().click();
+    document.querySelector('#doc-list .confirm-strip .btn-primary').click();
+
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('改訂版が1件あります');
+  });
+});
+
 describe('使い方の目次', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
