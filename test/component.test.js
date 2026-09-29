@@ -4355,6 +4355,84 @@ describe('はじめにの入口', () => {
   });
 });
 
+describe('サーバを呼ぶところ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  /** いま出ている短い帯の文 */
+  function snack() {
+    const bar = document.getElementById('snackbar');
+    return bar ? bar.textContent : '';
+  }
+
+  it('失敗ハンドラを書かなくても、失敗は黙らない', () => {
+    // google.script.run は付け忘れると失敗が完全に黙る。その画面だけが
+    // 「押しても何も起きない」になる
+    openIssues({ apiIssueArchive: new Error('持ち主ではありません') });
+
+    document.querySelector('#issue-list .row-item .btn-danger').click();
+    document.querySelector('#panel-issues .confirm-strip .btn-primary').click();
+
+    expect(snack()).toContain('持ち主ではありません');
+    expect(document.getElementById('snackbar').className).toContain('ng');
+  });
+
+  it('一覧が出ないときは器の中に出す', () => {
+    // 帯は数秒で消えるため、後から見た人に「ここが出ていない」が伝わらない
+    openIssues({ apiIssueList: new Error('台帳が読めません') });
+
+    expect(document.getElementById('issue-list').textContent)
+      .toBe('エラー: 台帳が読めません');
+  });
+
+  it('失敗しても押し直せる', () => {
+    const app = mount({ apiCommit: new Error('もう変わっています') });
+    const commit = document.getElementById('commit-btn');
+    commit.click();
+
+    document.querySelector('#side-body form input').value = '第3条を改訂';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    // 戻さないと二度と押せなくなる。失敗したのに押し直せないがいちばん困る
+    expect(app.calls.some((c) => c.name === 'apiCommit')).toBe(true);
+    expect(commit.disabled).toBe(false);
+    expect(snack()).toContain('記録できませんでした');
+    expect(snack()).toContain('もう変わっています');
+  });
+
+  it('黙って済ませるものは、跡だけ残す', () => {
+    const seen = [];
+    const warn = window.console.warn;
+    window.console.warn = (text) => seen.push(String(text));
+
+    try {
+      mount({ apiTagList: new Error('読めません') });
+    } finally {
+      window.console.warn = warn;
+    }
+
+    // 以前は空の関数だったため、失敗したことがどこにも残らなかった
+    expect(snack()).toBe('');
+    expect(seen.join('\n')).toContain('選べないだけで手で書ける: 読めません');
+  });
+
+  it('前置きを添えて何ができなかったかを伝える', () => {
+    openIssues({ apiIssueCreate: new Error('題がありません') });
+    document.getElementById('issue-create-btn').click();
+
+    document.querySelector('#side-body form input').value = 'x';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    // サーバからの文だけでは、押した操作と結び付かないことがある
+    expect(snack()).toContain('題がありません');
+  });
+});
+
 describe('どのワークスペースを見ているか', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

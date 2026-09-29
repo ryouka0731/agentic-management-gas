@@ -1145,16 +1145,11 @@ function inquiryToPlain_(row) {
  * @returns {object}
  */
 function inquiryReplyToPlain_(row, me) {
-  return {
-    id: Number(row.id),
-    inquiryNumber: Number(row.inquiryNumber),
-    body: plainText(row.body),
-    by: plainText(row.by),
-    at: plainDate(row.at),
-    editedAt: plainDate(row.editedAt),
-    shots: inquiryShotLinks_(row),
-    canEdit: String(row.by) === String(me) && Number(row.id) > 0,
-  };
+  var out = plainTalk(row, me, 'inquiryNumber');
+
+  // 画像の添えは報告の返信にしか無い
+  out.shots = inquiryShotLinks_(row);
+  return out;
 }
 
 /**
@@ -1555,15 +1550,7 @@ function apiMemberSet(email, manager, name) {
  * @returns {object}
  */
 function issueCommentToPlain_(row, me) {
-  return {
-    id: Number(row.id),
-    issueNumber: Number(row.issueNumber),
-    body: plainText(row.body),
-    by: plainText(row.by),
-    at: plainDate(row.at),
-    editedAt: plainDate(row.editedAt),
-    canEdit: String(row.by) === String(me) && Number(row.id) > 0,
-  };
+  return plainTalk(row, me, 'issueNumber');
 }
 
 /**

@@ -390,7 +390,7 @@ describe('やることの操作', () => {
   });
 
   it('担当者の候補を関わった人から出す', () => {
-    expect(js).toContain('apiKnownPeople()');
+    expect(js).toContain("call('apiKnownPeople'");
     expect(js).toContain("setAttribute('list', 'people-list')");
   });
 

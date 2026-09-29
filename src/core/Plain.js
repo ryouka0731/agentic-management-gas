@@ -73,3 +73,38 @@ function plainId(v) {
   var n = Number(v);
   return isNaN(n) ? 0 : n;
 }
+
+/**
+ * やりとりの1件を、画面に渡せる素の形にする。
+ *
+ * 「番号の付いたものに、誰かが何かを書き足す」という形は、報告
+ * (`inquiries`) とやること (`issues`) の両方にある。**同じ形を2か所に
+ * 書くと、片方だけ直したときに画面の片側だけ振る舞いが変わる。**
+ * 実際に `id` を足したあと、返信では名指しできるのにやりとりでは
+ * できない、という食い違いが起きかけた。
+ *
+ * 親を指す欄の名前だけが違う (`inquiryNumber` / `issueNumber`) ので、
+ * それを引数で受ける。画像の添えのように片方にしか無いものは、呼ぶ側で
+ * 足す。ここに `if` を増やすと、どちらの形なのかが読めなくなる。
+ *
+ * **書き換えてよいかはサーバ側で決める。** 画面から受け取ると、他人の
+ * 書き込みを自分のものだと名乗って直せる。
+ *
+ * @param {object} row
+ * @param {string} me いま開いている人
+ * @param {string} numberKey 親を指す欄の名前
+ * @returns {object}
+ */
+function plainTalk(row, me, numberKey) {
+  var out = {
+    id: plainId(row.id),
+    body: plainText(row.body),
+    by: plainText(row.by),
+    at: plainDate(row.at),
+    editedAt: plainDate(row.editedAt),
+    canEdit: plainText(row.by) === plainText(me) && plainId(row.id) > 0,
+  };
+
+  out[numberKey] = plainId(row[numberKey]);
+  return out;
+}

@@ -666,32 +666,29 @@
    * @param {HTMLElement} host
    */
   function fillWorkspace(host) {
-    google.script.run
-      .withSuccessHandler(function (place) {
-        if (!place || !place.name) return;
+    call('apiWorkspace', [], function (place) {
+      if (!place || !place.name) return;
 
-        var el = document.createElement(place.url ? 'a' : 'span');
-        el.className = 'brand-place';
+      var el = document.createElement(place.url ? 'a' : 'span');
+      el.className = 'brand-place';
 
-        if (place.url) {
-          el.href = place.url;
-          el.target = '_blank';
-          el.rel = 'noopener';
-        }
-        el.appendChild(makeIcon('folder'));
+      if (place.url) {
+        el.href = place.url;
+        el.target = '_blank';
+        el.rel = 'noopener';
+      }
+      el.appendChild(makeIcon('folder'));
 
-        var name = document.createElement('span');
-        name.className = 'brand-place-name';
-        name.textContent = place.name;
-        el.appendChild(name);
+      var name = document.createElement('span');
+      name.className = 'brand-place-name';
+      name.textContent = place.name;
+      el.appendChild(name);
 
-        attachHint(el, place.path
-          ? 'この道具が見ているのは ' + place.path + ' です'
-          : 'この道具が見ている置き場所です');
-        host.appendChild(el);
-      })
-      .withFailureHandler(function () { /* 分からなくても操作はできる */ })
-      .apiWorkspace();
+      attachHint(el, place.path
+        ? 'この道具が見ているのは ' + place.path + ' です'
+        : 'この道具が見ている置き場所です');
+      host.appendChild(el);
+    }, failQuiet('分からなくても操作はできる'));
   }
 
   var diagramSeq = 0;
@@ -1375,6 +1372,101 @@
 
     var ms = options.ms || (options.undo ? 10000 : 5000);
     snackTimer = window.setTimeout(function () { bar.remove(); }, ms);
+  }
+
+  // ===== サーバを呼ぶ =====
+
+  /**
+   * サーバの api 関数を呼ぶ。
+   *
+   * `google.script.run` は、**失敗ハンドラを付け忘れると失敗が完全に黙る**
+   * 作りになっている。呼ぶたびに書いていると、いつか1つ書き忘れ、その画面
+   * だけが「押しても何も起きない」になる。ここを通せば既定で知らせが出る。
+   *
+   * 以前は同じ形が86か所に写されていて、そのうち失敗の見せ方は6通りしか
+   * なかった。見せ方は下の `fail*` に寄せてある。
+   *
+   * 引数を配列で渡すのは、`google.script.run` が「名前を呼び出す」形だから
+   * である。`run[name].apply` で渡す。
+   *
+   * @param {string} name api 関数の名前
+   * @param {Array} args その引数
+   * @param {function} [onOk] 返ってきたときにすること
+   * @param {function} [onFail] 省略すると、短い帯で知らせる
+   */
+  function call(name, args, onOk, onFail) {
+    var run = google.script.run
+      .withSuccessHandler(onOk || function () {})
+      .withFailureHandler(onFail || failSnack());
+
+    run[name].apply(run, args || []);
+  }
+
+  /**
+   * 失敗を短い帯で知らせる。これが既定である。
+   *
+   * 前置きを添えると「何が」できなかったのかが伝わる。サーバからの文だけ
+   * では、押した操作と結び付かないことがある。
+   *
+   * @param {string} [prefix] 例 '記録できませんでした: '
+   * @returns {function}
+   */
+  function failSnack(prefix) {
+    return function (err) {
+      showSnack(String(prefix || '') + err.message, { kind: 'ng' });
+    };
+  }
+
+  /**
+   * 失敗を器の中に出す。
+   *
+   * 一覧そのものが出てこないときは、帯より器に出したほうが「ここが
+   * 出ていない」と分かる。帯は数秒で消えるため、後から見た人に伝わらない。
+   *
+   * @param {HTMLElement} el
+   * @returns {function}
+   */
+  function failInto(el) {
+    return function (err) {
+      el.textContent = 'エラー: ' + err.message;
+    };
+  }
+
+  /**
+   * 押せるように戻してから知らせる。
+   *
+   * 押した間は押せなくしてあるので、戻さないと**二度と押せなくなる**。
+   * 失敗したのに押し直せない、がいちばん困る。
+   *
+   * @param {HTMLElement} btn
+   * @param {string} [prefix]
+   * @returns {function}
+   */
+  function failEnable(btn, prefix) {
+    return function (err) {
+      btn.disabled = false;
+      showSnack(String(prefix || '') + err.message, { kind: 'ng' });
+    };
+  }
+
+  /**
+   * 知らせずに済ませる。
+   *
+   * 出なくても操作は続けられるもの (候補の一覧、既定値の取得など) に限る。
+   * **なぜ黙るのかを必ず書く。** 書けないなら、黙ってよい理由がない。
+   *
+   * 画面には出さないが、追えるようにはしておく。以前は空の関数だったため、
+   * 失敗したことがどこにも残らなかった。
+   *
+   * @param {string} why 黙ってよい理由
+   * @returns {function}
+   */
+  function failQuiet(why) {
+    return function (err) {
+      if (window.console && window.console.warn) {
+        window.console.warn(String(why) + ': ' + (err && err.message));
+      }
+    };
   }
 
   /**
@@ -2108,15 +2200,10 @@
   // ===== 文書の一覧 (ホーム) =====
 
   function loadFiles(then) {
-    google.script.run
-      .withSuccessHandler(function (list) {
-        allFiles = list || [];
-        if (then) then();
-      })
-      .withFailureHandler(function (err) {
-        docListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiListFiles();
+    call('apiListFiles', [], function (list) {
+      allFiles = list || [];
+      if (then) then();
+    }, failInto(docListEl));
   }
 
   /**
@@ -2201,20 +2288,17 @@
    * 何がいくつあるかが見えないと、次に何をすればよいか分からない。
    */
   function loadOverview() {
-    google.script.run
-      .withSuccessHandler(function (result) {
-        var o = result || { openIssues: 0, branches: 0, openPrs: 0, docs: 0 };
-        document.getElementById('flow-issues').textContent = o.openIssues;
-        document.getElementById('flow-branches').textContent = o.branches;
-        document.getElementById('flow-prs').textContent = o.openPrs;
-        document.getElementById('flow-docs').textContent = o.docs;
+    call('apiOverview', [], function (result) {
+      var o = result || { openIssues: 0, branches: 0, openPrs: 0, docs: 0 };
+      document.getElementById('flow-issues').textContent = o.openIssues;
+      document.getElementById('flow-branches').textContent = o.branches;
+      document.getElementById('flow-prs').textContent = o.openPrs;
+      document.getElementById('flow-docs').textContent = o.docs;
 
-        setCount('count-drafts', o.branches);
-        setCount('count-requests', o.openPrs);
-        setCount('count-todos', o.openIssues);
-      })
-      .withFailureHandler(function () { /* 数が出なくても操作はできる */ })
-      .apiOverview();
+      setCount('count-drafts', o.branches);
+      setCount('count-requests', o.openPrs);
+      setCount('count-todos', o.openIssues);
+    }, failQuiet('数が出なくても操作はできる'));
   }
 
   function setCount(id, n) {
@@ -2243,19 +2327,14 @@
     titleEl.textContent = docPath;
     renderVersionSelect();
 
-    google.script.run
-      .withSuccessHandler(function (res) {
-        openLink.href = res.url;
-        renderIntoViewer(res.html);
-        loadLinkedIssues(fileId);
-        setDocMode('view');
-        refreshStatus();
-        switchTab('content');
-      })
-      .withFailureHandler(function (err) {
-        showSnack('開けませんでした: ' + err.message, { kind: 'ng' });
-      })
-      .apiGetFileHtml(fileId);
+    call('apiGetFileHtml', [fileId], function (res) {
+      openLink.href = res.url;
+      renderIntoViewer(res.html);
+      loadLinkedIssues(fileId);
+      setDocMode('view');
+      refreshStatus();
+      switchTab('content');
+    }, failSnack('開けませんでした: '));
   }
 
   /**
@@ -2283,21 +2362,18 @@
   }
 
   function refreshStatus() {
-    google.script.run
-      .withSuccessHandler(function (st) {
-        current.headSha = st.headSha;
-        current.branch = st.branch;
+    call('apiFileStatus', [current.fileId], function (st) {
+      current.headSha = st.headSha;
+      current.branch = st.branch;
 
-        branchChip.textContent = branchLabel(st.branch);
-        branchChip.hidden = false;
-        dirtyBadge.hidden = !st.dirty;
+      branchChip.textContent = branchLabel(st.branch);
+      branchChip.hidden = false;
+      dirtyBadge.hidden = !st.dirty;
 
-        var isOfficial = st.branch === 'main';
-        commitBtn.hidden = isOfficial || !st.dirty;
-        stashBtn.hidden = !isOfficial || !st.dirty;
-      })
-      .withFailureHandler(function () { /* 状態表示の失敗は致命的ではない */ })
-      .apiFileStatus(current.fileId);
+      var isOfficial = st.branch === 'main';
+      commitBtn.hidden = isOfficial || !st.dirty;
+      stashBtn.hidden = !isOfficial || !st.dirty;
+    }, failQuiet('状態表示の失敗は致命的ではない'));
   }
 
   // ===== 本文: 読む / 直す =====
@@ -2394,18 +2470,12 @@
       '記録する',
       function (v) {
         commitBtn.disabled = true;
-        google.script.run
-          .withSuccessHandler(function () {
-            commitBtn.disabled = false;
-            showSnack('変更を記録しました', { kind: 'ok' });
-            refreshStatus();
-            loadOverview();
-          })
-          .withFailureHandler(function (err) {
-            commitBtn.disabled = false;
-            showSnack('記録できませんでした: ' + err.message, { kind: 'ng' });
-          })
-          .apiCommit(current.fileId, v.message, current.headSha);
+        call('apiCommit', [current.fileId, v.message, current.headSha], function () {
+          commitBtn.disabled = false;
+          showSnack('変更を記録しました', { kind: 'ok' });
+          refreshStatus();
+          loadOverview();
+        }, failEnable(commitBtn, '記録できませんでした: '));
       }
     );
   }
@@ -2421,37 +2491,28 @@
 
   function doStash() {
     stashBtn.disabled = true;
-    google.script.run
-      .withSuccessHandler(function () {
-        stashBtn.disabled = false;
-        showSnack('直接編集を退避しました', { kind: 'ok' });
-        refreshStatus();
-      })
-      .withFailureHandler(function (err) {
-        stashBtn.disabled = false;
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiStashMainDrift(current.fileId);
+    call('apiStashMainDrift', [current.fileId], function () {
+      stashBtn.disabled = false;
+      showSnack('直接編集を退避しました', { kind: 'ok' });
+      refreshStatus();
+    }, failEnable(stashBtn));
   }
 
   function loadLinkedIssues(fileId) {
     linkedIssuesEl.textContent = '';
     linkedIssuesEl.hidden = true;
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var issues = list || [];
-        if (!issues.length) return;
-        issues.forEach(function (issue) {
-          var chip = document.createElement('span');
-          chip.className = 'linked-issue';
-          chip.textContent = 'やること #' + issue.number + ' ' + issue.title;
-          linkedIssuesEl.appendChild(chip);
-        });
-        linkedIssuesEl.hidden = false;
-      })
-      .withFailureHandler(function () {})
-      .apiIssuesForFile(fileId);
+    call('apiIssuesForFile', [fileId], function (list) {
+      var issues = list || [];
+      if (!issues.length) return;
+      issues.forEach(function (issue) {
+        var chip = document.createElement('span');
+        chip.className = 'linked-issue';
+        chip.textContent = 'やること #' + issue.number + ' ' + issue.title;
+        linkedIssuesEl.appendChild(chip);
+      });
+      linkedIssuesEl.hidden = false;
+    }, failQuiet('知らせなくてよい'));
   }
 
   // ===== 改訂の履歴 =====
@@ -2540,102 +2601,92 @@
     showSkeleton(historyList, 'graph', 6);
     diffView.textContent = '';
 
-    google.script.run
-      .withSuccessHandler(function (result) {
-        var graph = result || { rows: [], laneCount: 1 };
-        historyList.textContent = '';
+    call('apiCommitGraph', [current.fileId], function (result) {
+      var graph = result || { rows: [], laneCount: 1 };
+      historyList.textContent = '';
 
-        if (!graph.rows.length) {
-          historyList.appendChild(makeBlankState(
-            'まだ記録がありません',
-            '本文を直して「変更を記録」を押すと、ここに残ります。'
-          ));
-          return;
+      if (!graph.rows.length) {
+        historyList.appendChild(makeBlankState(
+          'まだ記録がありません',
+          '本文を直して「変更を記録」を押すと、ここに残ります。'
+        ));
+        return;
+      }
+
+      // 系統の列幅を見出しと行で揃える。ずれると読み手が列を追えない
+      var laneWidth = Math.max(1, graph.laneCount) * 14 + 6;
+      document.getElementById('graph-pane')
+        .style.setProperty('--graph-w', laneWidth + 'px');
+
+      var headOf = {};
+      graph.rows.forEach(function (c) {
+        if (!headOf[c.branch]) headOf[c.branch] = c.sha;
+      });
+
+      graph.rows.forEach(function (c) {
+        var btn = document.createElement('button');
+        btn.className = 'commit-item graph-row';
+        btn.appendChild(makeGraphCell(c, graph.laneCount));
+
+        var desc = document.createElement('div');
+        desc.className = 'graph-col-desc';
+
+        if (headOf[c.branch] === c.sha) {
+          var label = document.createElement('span');
+          label.className = 'branch-label lane-' + (c.lane % 4);
+          label.appendChild(makeIcon('git-branch'));
+          label.appendChild(document.createTextNode(branchLabel(c.branch)));
+          desc.appendChild(label);
         }
 
-        // 系統の列幅を見出しと行で揃える。ずれると読み手が列を追えない
-        var laneWidth = Math.max(1, graph.laneCount) * 14 + 6;
-        document.getElementById('graph-pane')
-          .style.setProperty('--graph-w', laneWidth + 'px');
+        var msg = document.createElement('span');
+        msg.className = 'commit-message';
+        msg.textContent = c.message;
+        desc.appendChild(msg);
+        btn.appendChild(desc);
 
-        var headOf = {};
-        graph.rows.forEach(function (c) {
-          if (!headOf[c.branch]) headOf[c.branch] = c.sha;
+        var date = document.createElement('span');
+        date.className = 'graph-col-date';
+        date.textContent = new Date(c.timestamp).toLocaleString('ja-JP', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
         });
+        btn.appendChild(date);
 
-        graph.rows.forEach(function (c) {
-          var btn = document.createElement('button');
-          btn.className = 'commit-item graph-row';
-          btn.appendChild(makeGraphCell(c, graph.laneCount));
+        var author = document.createElement('span');
+        author.className = 'graph-col-author';
+        author.textContent = personName(c.author);
+        btn.appendChild(author);
 
-          var desc = document.createElement('div');
-          desc.className = 'graph-col-desc';
+        var sha = document.createElement('span');
+        sha.className = 'graph-col-sha';
+        sha.textContent = String(c.sha).substring(0, 7);
+        btn.appendChild(sha);
 
-          if (headOf[c.branch] === c.sha) {
-            var label = document.createElement('span');
-            label.className = 'branch-label lane-' + (c.lane % 4);
-            label.appendChild(makeIcon('git-branch'));
-            label.appendChild(document.createTextNode(branchLabel(c.branch)));
-            desc.appendChild(label);
+        btn.addEventListener('click', function () {
+          var items = historyList.querySelectorAll('.commit-item');
+          for (var i = 0; i < items.length; i++) {
+            items[i].setAttribute('aria-current', String(items[i] === btn));
           }
+          // 狭めて列を畳んでいても、選んだ記録の素性はここで読める
+          diffCaption.textContent = [
+            c.message,
+            date.textContent,
+            String(c.author).replace(/@.*$/, ''),
+            String(c.sha).substring(0, 7),
+          ].join(' · ');
 
-          var msg = document.createElement('span');
-          msg.className = 'commit-message';
-          msg.textContent = c.message;
-          desc.appendChild(msg);
-          btn.appendChild(desc);
-
-          var date = document.createElement('span');
-          date.className = 'graph-col-date';
-          date.textContent = new Date(c.timestamp).toLocaleString('ja-JP', {
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-          });
-          btn.appendChild(date);
-
-          var author = document.createElement('span');
-          author.className = 'graph-col-author';
-          author.textContent = personName(c.author);
-          btn.appendChild(author);
-
-          var sha = document.createElement('span');
-          sha.className = 'graph-col-sha';
-          sha.textContent = String(c.sha).substring(0, 7);
-          btn.appendChild(sha);
-
-          btn.addEventListener('click', function () {
-            var items = historyList.querySelectorAll('.commit-item');
-            for (var i = 0; i < items.length; i++) {
-              items[i].setAttribute('aria-current', String(items[i] === btn));
-            }
-            // 狭めて列を畳んでいても、選んだ記録の素性はここで読める
-            diffCaption.textContent = [
-              c.message,
-              date.textContent,
-              String(c.author).replace(/@.*$/, ''),
-              String(c.sha).substring(0, 7),
-            ].join(' · ');
-
-            showSkeleton(diffView, 'block');
-            google.script.run
-              .withSuccessHandler(function (ops) {
-                diffView.textContent = '';
-                renderDiffInto(ops || [], diffView, false);
-              })
-              .withFailureHandler(function (err) {
-                diffView.textContent = 'エラー: ' + err.message;
-              })
-              .apiCommitDiff(c.diffFrom || c.parentSha || '', c.sha);
-          });
-
-          historyList.appendChild(btn);
+          showSkeleton(diffView, 'block');
+          call('apiCommitDiff', [c.diffFrom || c.parentSha || '', c.sha], function (ops) {
+            diffView.textContent = '';
+            renderDiffInto(ops || [], diffView, false);
+          }, failInto(diffView));
         });
 
-        historyList.firstChild.click();
-      })
-      .withFailureHandler(function (err) {
-        historyList.textContent = 'エラー: ' + err.message;
-      })
-      .apiCommitGraph(current.fileId);
+        historyList.appendChild(btn);
+      });
+
+      historyList.firstChild.click();
+    }, failInto(historyList));
   }
 
   // ===== この文書の改訂版 =====
@@ -2693,19 +2744,14 @@
       [{ name: 'name', label: '改訂版の名前 (例: 第7条の見直し)。/ と \\ は使えません', required: true }],
       '作る',
       function (v) {
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('改訂版「' + v.name + '」を作りました', { kind: 'ok' });
-            loadFiles(function () {
-              loadDrafts();
-              renderVersionSelect();
-            });
-            loadOverview();
-          })
-          .withFailureHandler(function (err) {
-            showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
-          })
-          .apiBranchCreate(v.name, current.docFileId);
+        call('apiBranchCreate', [v.name, current.docFileId], function () {
+          showSnack('改訂版「' + v.name + '」を作りました', { kind: 'ok' });
+          loadFiles(function () {
+            loadDrafts();
+            renderVersionSelect();
+          });
+          loadOverview();
+        }, failSnack('作れませんでした: '));
       }
     );
   }
@@ -2715,99 +2761,89 @@
   function loadBranches() {
     showSkeleton(branchListEl, 'list', 3);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var branches = list || [];
-        branchListEl.textContent = '';
+    call('apiBranchList', [], function (list) {
+      var branches = list || [];
+      branchListEl.textContent = '';
 
-        var drafts = branches.filter(function (b) { return b.name !== 'main'; });
-        if (!drafts.length) {
-          branchListEl.appendChild(makeBlankState(
-            '改訂中の版はありません',
-            '文書を開いて「この文書の改訂版」から作れます。'
-          ));
-          return;
+      var drafts = branches.filter(function (b) { return b.name !== 'main'; });
+      if (!drafts.length) {
+        branchListEl.appendChild(makeBlankState(
+          '改訂中の版はありません',
+          '文書を開いて「この文書の改訂版」から作れます。'
+        ));
+        return;
+      }
+
+      drafts.forEach(function (b) {
+        var row = document.createElement('div');
+        row.className = 'row-item';
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = b.name;
+        main.appendChild(title);
+
+        var files = allFiles.filter(function (f) {
+          return splitPath(f.path).branch === b.name;
+        });
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = personName(b.createdBy) +
+          (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中') +
+          (files.length ? ' · ' + splitPath(files[0].path).path : '');
+        main.appendChild(meta);
+
+        // 版そのものを押して中身に入れるようにする。
+        // 一覧に並んでいて押せないものは、押せると思って押される
+        var open = document.createElement('button');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('git-branch'));
+        open.appendChild(main);
+        open.disabled = !files.length;
+        open.title = files.length
+          ? '「' + b.name + '」の本文を開く'
+          : 'この版に文書がありません';
+        open.addEventListener('click', function () {
+          if (!files.length) return;
+          openDoc(files[0].fileId, splitPath(files[0].path).path);
+        });
+        row.appendChild(open);
+
+        if (b.state !== 'merged') {
+          var prBtn = document.createElement('button');
+          prBtn.className = 'btn btn-primary';
+          prBtn.textContent = '確認を依頼する';
+          prBtn.addEventListener('click', function () { createRequest(b.name); });
+          row.appendChild(prBtn);
         }
 
-        drafts.forEach(function (b) {
-          var row = document.createElement('div');
-          row.className = 'row-item';
-
-          var main = document.createElement('div');
-          main.className = 'row-main';
-
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = b.name;
-          main.appendChild(title);
-
-          var files = allFiles.filter(function (f) {
-            return splitPath(f.path).branch === b.name;
-          });
-
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = personName(b.createdBy) +
-            (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中') +
-            (files.length ? ' · ' + splitPath(files[0].path).path : '');
-          main.appendChild(meta);
-
-          // 版そのものを押して中身に入れるようにする。
-          // 一覧に並んでいて押せないものは、押せると思って押される
-          var open = document.createElement('button');
-          open.className = 'row-open';
-          open.appendChild(makeIcon('git-branch'));
-          open.appendChild(main);
-          open.disabled = !files.length;
-          open.title = files.length
-            ? '「' + b.name + '」の本文を開く'
-            : 'この版に文書がありません';
-          open.addEventListener('click', function () {
-            if (!files.length) return;
-            openDoc(files[0].fileId, splitPath(files[0].path).path);
-          });
-          row.appendChild(open);
-
-          if (b.state !== 'merged') {
-            var prBtn = document.createElement('button');
-            prBtn.className = 'btn btn-primary';
-            prBtn.textContent = '確認を依頼する';
-            prBtn.addEventListener('click', function () { createRequest(b.name); });
-            row.appendChild(prBtn);
-          }
-
-          var del = document.createElement('button');
-          del.className = 'btn btn-danger';
-          del.appendChild(makeIcon('trash'));
-          // アイコンだけなので、読み上げと吹き出しに名前を持たせる
-          del.title = '改訂版「' + b.name + '」を捨てる';
-          del.setAttribute('aria-label', del.title);
-          del.addEventListener('click', function () {
-            openConfirmStrip(panelBranches,
-              '改訂版「' + b.name + '」を捨てます。中の変更は元に戻せません。',
-              '捨てる',
-              function () {
-                google.script.run
-                  .withSuccessHandler(function () {
-                    showSnack('改訂版を捨てました', { kind: 'ok' });
-                    loadFiles(loadBranches);
-                    loadOverview();
-                  })
-                  .withFailureHandler(function (err) {
-                    showSnack(err.message, { kind: 'ng' });
-                  })
-                  .apiBranchDelete(b.name);
+        var del = document.createElement('button');
+        del.className = 'btn btn-danger';
+        del.appendChild(makeIcon('trash'));
+        // アイコンだけなので、読み上げと吹き出しに名前を持たせる
+        del.title = '改訂版「' + b.name + '」を捨てる';
+        del.setAttribute('aria-label', del.title);
+        del.addEventListener('click', function () {
+          openConfirmStrip(panelBranches,
+            '改訂版「' + b.name + '」を捨てます。中の変更は元に戻せません。',
+            '捨てる',
+            function () {
+              call('apiBranchDelete', [b.name], function () {
+                showSnack('改訂版を捨てました', { kind: 'ok' });
+                loadFiles(loadBranches);
+                loadOverview();
               });
-          });
-          row.appendChild(del);
-
-          branchListEl.appendChild(row);
+            });
         });
-      })
-      .withFailureHandler(function (err) {
-        branchListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiBranchList();
+        row.appendChild(del);
+
+        branchListEl.appendChild(row);
+      });
+    }, failInto(branchListEl));
   }
 
   /**
@@ -2856,16 +2892,11 @@
       ],
       '確認を依頼する',
       function (v) {
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('確認を依頼しました', { kind: 'ok' });
-            switchTab('pulls');
-            loadOverview();
-          })
-          .withFailureHandler(function (err) {
-            showSnack('依頼できませんでした: ' + err.message, { kind: 'ng' });
-          })
-          .apiPrCreate(v.title, v.body, branchName, doc.fileId, v.into);
+        call('apiPrCreate', [v.title, v.body, branchName, doc.fileId, v.into], function () {
+          showSnack('確認を依頼しました', { kind: 'ok' });
+          switchTab('pulls');
+          loadOverview();
+        }, failSnack('依頼できませんでした: '));
       }
     );
 
@@ -2878,25 +2909,19 @@
   function bulkCommit() {
     bulkCommitBtn.disabled = true;
 
-    google.script.run
-      .withSuccessHandler(function (branches) {
-        bulkCommitBtn.disabled = false;
+    call('apiBranchList', [], function (branches) {
+      bulkCommitBtn.disabled = false;
 
-        var drafts = branches.filter(function (b) {
-          return b.name !== 'main' && b.state !== 'merged';
-        });
+      var drafts = branches.filter(function (b) {
+        return b.name !== 'main' && b.state !== 'merged';
+      });
 
-        if (!drafts.length) {
-          showSnack('改訂中の版がありません');
-          return;
-        }
-        collectDirty(drafts.map(function (b) { return b.name; }));
-      })
-      .withFailureHandler(function (err) {
-        bulkCommitBtn.disabled = false;
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiBranchList();
+      if (!drafts.length) {
+        showSnack('改訂中の版がありません');
+        return;
+      }
+      collectDirty(drafts.map(function (b) { return b.name; }));
+    }, failEnable(bulkCommitBtn));
   }
 
   /**
@@ -2965,20 +2990,15 @@
           return;
         }
 
-        google.script.run
-          .withSuccessHandler(function (res) {
-            var text = res.committed.length + '件記録しました';
-            if (res.failed.length) {
-              text += ' / ' + res.failed.length + '件できませんでした: ' +
-                res.failed[0].path + ' ' + res.failed[0].error;
-            }
-            showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
-            loadOverview();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiCommitMany(ids, v.message);
+        call('apiCommitMany', [ids, v.message], function (res) {
+          var text = res.committed.length + '件記録しました';
+          if (res.failed.length) {
+            text += ' / ' + res.failed.length + '件できませんでした: ' +
+              res.failed[0].path + ' ' + res.failed[0].error;
+          }
+          showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+          loadOverview();
+        });
       }
     );
     form.insertBefore(list, form.querySelector('.inline-form-actions'));
@@ -2997,71 +3017,66 @@
     showSkeleton(prListEl, 'list', 4);
     prDetail.textContent = '';
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var prs = list || [];
-        prListEl.textContent = '';
+    call('apiPrList', [], function (list) {
+      var prs = list || [];
+      prListEl.textContent = '';
 
-        if (!prs.length) {
-          prListEl.appendChild(makeBlankState(
-            '確認依頼はありません',
-            '改訂版を直したら「改訂中の版」から確認を依頼してください。'
-          ));
-          return;
+      if (!prs.length) {
+        prListEl.appendChild(makeBlankState(
+          '確認依頼はありません',
+          '改訂版を直したら「改訂中の版」から確認を依頼してください。'
+        ));
+        return;
+      }
+
+      prs.forEach(function (pr) {
+        var btn = document.createElement('button');
+        btn.className = 'row-item';
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + pr.number + ' ' + pr.title;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
+          ' · ' + personName(pr.author);
+
+        if (pr.reviewers && pr.reviewers.length) {
+          meta.appendChild(document.createTextNode(' · 確認 '));
+          meta.appendChild(makeAvatars(pr.reviewers));
         }
+        main.appendChild(meta);
 
-        prs.forEach(function (pr) {
-          var btn = document.createElement('button');
-          btn.className = 'row-item';
+        // 他の一覧と同じ器に入れる。入れないとこの行だけ背が低くなる
+        var open = document.createElement('span');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('clipboard-check'));
+        open.appendChild(main);
+        btn.appendChild(open);
 
-          var main = document.createElement('div');
-          main.className = 'row-main';
+        var state = document.createElement('span');
+        state.className = 'state state-' + pr.state;
+        state.textContent = stateLabel(pr.state);
+        btn.appendChild(state);
 
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = '#' + pr.number + ' ' + pr.title;
-          main.appendChild(title);
-
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
-            ' · ' + personName(pr.author);
-
-          if (pr.reviewers && pr.reviewers.length) {
-            meta.appendChild(document.createTextNode(' · 確認 '));
-            meta.appendChild(makeAvatars(pr.reviewers));
+        btn.addEventListener('click', function () {
+          var items = prListEl.querySelectorAll('.row-item');
+          for (var i = 0; i < items.length; i++) {
+            items[i].setAttribute('aria-current', String(items[i] === btn));
           }
-          main.appendChild(meta);
-
-          // 他の一覧と同じ器に入れる。入れないとこの行だけ背が低くなる
-          var open = document.createElement('span');
-          open.className = 'row-open';
-          open.appendChild(makeIcon('clipboard-check'));
-          open.appendChild(main);
-          btn.appendChild(open);
-
-          var state = document.createElement('span');
-          state.className = 'state state-' + pr.state;
-          state.textContent = stateLabel(pr.state);
-          btn.appendChild(state);
-
-          btn.addEventListener('click', function () {
-            var items = prListEl.querySelectorAll('.row-item');
-            for (var i = 0; i < items.length; i++) {
-              items[i].setAttribute('aria-current', String(items[i] === btn));
-            }
-            showPrDetail(pr);
-          });
-
-          prListEl.appendChild(btn);
+          showPrDetail(pr);
         });
 
-        prListEl.firstChild.click();
-      })
-      .withFailureHandler(function (err) {
-        prListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiPrList();
+        prListEl.appendChild(btn);
+      });
+
+      prListEl.firstChild.click();
+    }, failInto(prListEl));
   }
 
   /**
@@ -3218,16 +3233,11 @@
       }],
       '決める',
       function (v) {
-        google.script.run
-          .withSuccessHandler(function (list) {
-            pr.reviewers = list || [];
-            showSnack((pr.reviewers.length || 0) + '人に頼みました', { kind: 'ok' });
-            showPrDetail(pr);
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiPrSetReviewers(pr.number, String(v.people || '').split(','));
+        call('apiPrSetReviewers', [pr.number, String(v.people || '').split(',')], function (list) {
+          pr.reviewers = list || [];
+          showSnack((pr.reviewers.length || 0) + '人に頼みました', { kind: 'ok' });
+          showPrDetail(pr);
+        });
       },
       sourceEl
     );
@@ -3249,38 +3259,33 @@
     first.appendChild(body);
     container.appendChild(first);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var reviews = list || [];
-        var labels = {
-          approve: '承認', request_changes: '直してほしい', comment: 'コメント',
-        };
+    call('apiPrReviews', [pr.number], function (list) {
+      var reviews = list || [];
+      var labels = {
+        approve: '承認', request_changes: '直してほしい', comment: 'コメント',
+      };
 
-        reviews.forEach(function (r) {
-          var el = document.createElement('div');
-          el.className = 'comment';
+      reviews.forEach(function (r) {
+        var el = document.createElement('div');
+        el.className = 'comment';
 
-          var h = makeCommentHead(r.reviewer,
-            (labels[r.state] || r.state) + (r.editedAt ? ' · 直しました' : ''));
+        var h = makeCommentHead(r.reviewer,
+          (labels[r.state] || r.state) + (r.editedAt ? ' · 直しました' : ''));
 
-          if (r.canEdit) h.appendChild(makeCommentTools(pr, r, el));
-          el.appendChild(h);
+        if (r.canEdit) h.appendChild(makeCommentTools(pr, r, el));
+        el.appendChild(h);
 
-          if (r.body) {
-            var b = document.createElement('div');
-            b.className = 'comment-body';
-            b.textContent = r.body;
-            el.appendChild(b);
-          }
-          container.appendChild(el);
-        });
+        if (r.body) {
+          var b = document.createElement('div');
+          b.className = 'comment-body';
+          b.textContent = r.body;
+          el.appendChild(b);
+        }
+        container.appendChild(el);
+      });
 
-        container.appendChild(makeCommentForm(pr));
-      })
-      .withFailureHandler(function (err) {
-        container.textContent = 'エラー: ' + err.message;
-      })
-      .apiPrReviews(pr.number);
+      container.appendChild(makeCommentForm(pr));
+    }, failInto(container));
   }
 
   /**
@@ -3308,15 +3313,10 @@
         [{ name: 'body', label: '中身', required: true, multiline: true }],
         '直す',
         function (v) {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('コメントを直しました', { kind: 'ok' });
-              showPrDetail(pr);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiReviewEdit(review.id, v.body);
+          call('apiReviewEdit', [review.id, v.body], function () {
+            showSnack('コメントを直しました', { kind: 'ok' });
+            showPrDetail(pr);
+          });
         },
         host
       );
@@ -3334,15 +3334,10 @@
         'このコメントを消します。元には戻せません。',
         '消す',
         function () {
-          google.script.run
-            .withSuccessHandler(function (msg) {
-              showSnack(msg, { kind: 'ok' });
-              showPrDetail(pr);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiReviewDelete(review.id);
+          call('apiReviewDelete', [review.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            showPrDetail(pr);
+          });
         });
     });
     tools.appendChild(del);
@@ -3363,13 +3358,9 @@
     send.addEventListener('click', function () {
       if (!input.value) return;
       send.disabled = true;
-      google.script.run
-        .withSuccessHandler(function () { showPrDetail(pr); })
-        .withFailureHandler(function (err) {
-          send.disabled = false;
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiPrReview(pr.number, 'comment', input.value);
+      call('apiPrReview', [pr.number, 'comment', input.value],
+        function () { showPrDetail(pr); },
+        failEnable(send));
     });
 
     form.appendChild(send);
@@ -3379,173 +3370,153 @@
   function renderPrCommits(pr, container) {
     showSkeleton(container, 'list', 3);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var commits = list || [];
-        container.textContent = '';
-        if (!commits.length) {
-          container.textContent = '記録はありません';
-          return;
-        }
+    call('apiPrCommits', [pr.number], function (list) {
+      var commits = list || [];
+      container.textContent = '';
+      if (!commits.length) {
+        container.textContent = '記録はありません';
+        return;
+      }
 
-        commits.forEach(function (c) {
-          var row = document.createElement('div');
-          row.className = 'row-item';
+      commits.forEach(function (c) {
+        var row = document.createElement('div');
+        row.className = 'row-item';
 
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = c.message;
-          row.appendChild(title);
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = c.message;
+        row.appendChild(title);
 
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author;
-          row.appendChild(meta);
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author;
+        row.appendChild(meta);
 
-          container.appendChild(row);
-        });
-      })
-      .withFailureHandler(function (err) {
-        container.textContent = 'エラー: ' + err.message;
-      })
-      .apiPrCommits(pr.number);
+        container.appendChild(row);
+      });
+    }, failInto(container));
   }
 
   function showPrDetail(pr) {
     showSkeleton(prDetail, 'block');
 
-    google.script.run
-      .withSuccessHandler(function (preview) {
-        prDetail.textContent = '';
+    call('apiPrPreview', [pr.number], function (preview) {
+      prDetail.textContent = '';
 
-        var head = document.createElement('div');
-        head.className = 'pr-title';
-        head.textContent = '#' + pr.number + ' ' + pr.title;
-        prDetail.appendChild(head);
+      var head = document.createElement('div');
+      head.className = 'pr-title';
+      head.textContent = '#' + pr.number + ' ' + pr.title;
+      prDetail.appendChild(head);
 
-        var meta = document.createElement('div');
-        meta.className = 'row-meta';
-        meta.textContent =
-          pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' +
-          personName(pr.author) +
-          ' · 承認 ' + preview.approvals + '件 · ' +
-          (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
-        prDetail.appendChild(meta);
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent =
+        pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' +
+        personName(pr.author) +
+        ' · 承認 ' + preview.approvals + '件 · ' +
+        (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
+      prDetail.appendChild(meta);
 
-        prDetail.appendChild(makeReviewerRow(pr));
+      prDetail.appendChild(makeReviewerRow(pr));
 
-        var getChoices = function () { return []; };
+      var getChoices = function () { return []; };
+
+      if (preview.problems && preview.problems.length) {
+        var warn = document.createElement('div');
+        warn.className = 'confirm-strip';
+        warn.textContent = '反映できません: ' + preview.problems.join(' / ');
+        prDetail.appendChild(warn);
+      }
+
+      if (!preview.clean) getChoices = renderConflicts(preview.conflicts, prDetail);
+
+      if (pr.state !== 'merged' && pr.state !== 'closed') {
+        var actions = document.createElement('div');
+        actions.className = 'pr-actions';
+
+        var approveBtn = document.createElement('button');
+        approveBtn.className = 'btn';
+        approveBtn.textContent = '承認する';
+        hint(approveBtn, 'act:approve');
+
+        // 押せるのに失敗する状態を作らない
+        if (currentUser && String(pr.author) === currentUser) {
+          approveBtn.disabled = true;
+          approveBtn.title = '自分が出した依頼は自分で承認できません';
+        }
+
+        approveBtn.addEventListener('click', function () {
+          approveBtn.disabled = true;
+          call('apiPrReview', [pr.number, 'approve', ''],
+            function () { showPrDetail(pr); },
+            failEnable(approveBtn));
+        });
+
+        var mergeBtn = document.createElement('button');
+        mergeBtn.className = 'btn btn-primary';
+        mergeBtn.textContent = branchLabel(pr.targetBranch) + 'に反映する';
 
         if (preview.problems && preview.problems.length) {
-          var warn = document.createElement('div');
-          warn.className = 'confirm-strip';
-          warn.textContent = '反映できません: ' + preview.problems.join(' / ');
-          prDetail.appendChild(warn);
+          mergeBtn.disabled = true;
+          mergeBtn.title = '反映できない内容が含まれています';
+        } else if (preview.approvals < 1) {
+          mergeBtn.disabled = true;
+          mergeBtn.title = '反映には1件以上の承認が必要です';
         }
 
-        if (!preview.clean) getChoices = renderConflicts(preview.conflicts, prDetail);
+        mergeBtn.addEventListener('click', function () {
+          openConfirmStrip(
+            prDetail,
+            OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。',
+            '反映する',
+            function () {
+              mergeBtn.disabled = true;
+              call('apiPrMerge', [pr.number, getChoices()], function () {
+                showSnack('#' + pr.number + ' を' + OFFICIAL + 'に反映しました',
+                  { kind: 'ok' });
+                loadPulls();
+                loadOverview();
+              }, failEnable(mergeBtn, '反映できませんでした: '));
+            }
+          );
+        });
 
-        if (pr.state !== 'merged' && pr.state !== 'closed') {
-          var actions = document.createElement('div');
-          actions.className = 'pr-actions';
+        actions.appendChild(approveBtn);
+        actions.appendChild(mergeBtn);
+        prDetail.appendChild(actions);
+      }
 
-          var approveBtn = document.createElement('button');
-          approveBtn.className = 'btn';
-          approveBtn.textContent = '承認する';
-          hint(approveBtn, 'act:approve');
+      var prTabs = document.createElement('div');
+      prTabs.className = 'pr-tabs';
+      var prBody = document.createElement('div');
 
-          // 押せるのに失敗する状態を作らない
-          if (currentUser && String(pr.author) === currentUser) {
-            approveBtn.disabled = true;
-            approveBtn.title = '自分が出した依頼は自分で承認できません';
-          }
+      var views = {
+        conversation: function () { renderConversation(pr, prBody); },
+        commits: function () { renderPrCommits(pr, prBody); },
+        files: function () { renderDiffInto(preview.ops, prBody, true); },
+      };
 
-          approveBtn.addEventListener('click', function () {
-            approveBtn.disabled = true;
-            google.script.run
-              .withSuccessHandler(function () { showPrDetail(pr); })
-              .withFailureHandler(function (err) {
-                approveBtn.disabled = false;
-                showSnack(err.message, { kind: 'ng' });
-              })
-              .apiPrReview(pr.number, 'approve', '');
+      [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分']]
+        .forEach(function (t) {
+          var b = document.createElement('button');
+          b.className = 'pr-tab';
+          b.textContent = t[1];
+          b.setAttribute('aria-current', String(t[0] === 'conversation'));
+          b.addEventListener('click', function () {
+            var all = prTabs.querySelectorAll('.pr-tab');
+            for (var i = 0; i < all.length; i++) {
+              all[i].setAttribute('aria-current', String(all[i] === b));
+            }
+            prBody.textContent = '';
+            views[t[0]]();
           });
+          prTabs.appendChild(b);
+        });
 
-          var mergeBtn = document.createElement('button');
-          mergeBtn.className = 'btn btn-primary';
-          mergeBtn.textContent = branchLabel(pr.targetBranch) + 'に反映する';
-
-          if (preview.problems && preview.problems.length) {
-            mergeBtn.disabled = true;
-            mergeBtn.title = '反映できない内容が含まれています';
-          } else if (preview.approvals < 1) {
-            mergeBtn.disabled = true;
-            mergeBtn.title = '反映には1件以上の承認が必要です';
-          }
-
-          mergeBtn.addEventListener('click', function () {
-            openConfirmStrip(
-              prDetail,
-              OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。',
-              '反映する',
-              function () {
-                mergeBtn.disabled = true;
-                google.script.run
-                  .withSuccessHandler(function () {
-                    showSnack('#' + pr.number + ' を' + OFFICIAL + 'に反映しました',
-                      { kind: 'ok' });
-                    loadPulls();
-                    loadOverview();
-                  })
-                  .withFailureHandler(function (err) {
-                    mergeBtn.disabled = false;
-                    showSnack('反映できませんでした: ' + err.message, { kind: 'ng' });
-                  })
-                  .apiPrMerge(pr.number, getChoices());
-              }
-            );
-          });
-
-          actions.appendChild(approveBtn);
-          actions.appendChild(mergeBtn);
-          prDetail.appendChild(actions);
-        }
-
-        var prTabs = document.createElement('div');
-        prTabs.className = 'pr-tabs';
-        var prBody = document.createElement('div');
-
-        var views = {
-          conversation: function () { renderConversation(pr, prBody); },
-          commits: function () { renderPrCommits(pr, prBody); },
-          files: function () { renderDiffInto(preview.ops, prBody, true); },
-        };
-
-        [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分']]
-          .forEach(function (t) {
-            var b = document.createElement('button');
-            b.className = 'pr-tab';
-            b.textContent = t[1];
-            b.setAttribute('aria-current', String(t[0] === 'conversation'));
-            b.addEventListener('click', function () {
-              var all = prTabs.querySelectorAll('.pr-tab');
-              for (var i = 0; i < all.length; i++) {
-                all[i].setAttribute('aria-current', String(all[i] === b));
-              }
-              prBody.textContent = '';
-              views[t[0]]();
-            });
-            prTabs.appendChild(b);
-          });
-
-        prDetail.appendChild(prTabs);
-        prDetail.appendChild(prBody);
-        views.conversation();
-      })
-      .withFailureHandler(function (err) {
-        prDetail.textContent = 'エラー: ' + err.message;
-      })
-      .apiPrPreview(pr.number);
+      prDetail.appendChild(prTabs);
+      prDetail.appendChild(prBody);
+      views.conversation();
+    }, failInto(prDetail));
   }
 
   // ===== やること =====
@@ -4059,15 +4030,12 @@
    * @param {number|string} parent 空なら親を外す
    */
   function setIssueParent(child, parent) {
-    google.script.run
-      .withSuccessHandler(function () {
-        showSnack(parent
-          ? '#' + child + ' を #' + parent + ' の下に移しました'
-          : '#' + child + ' の親子を解除しました', { kind: 'ok' });
-        reloadIssueView();
-      })
-      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
-      .apiIssueUpdate(child, { parent: parent === '' ? '' : Number(parent) });
+    call('apiIssueUpdate', [child, { parent: parent === '' ? '' : Number(parent) }], function () {
+      showSnack(parent
+        ? '#' + child + ' を #' + parent + ' の下に移しました'
+        : '#' + child + ' の親子を解除しました', { kind: 'ok' });
+      reloadIssueView();
+    });
   }
 
   /**
@@ -4314,170 +4282,154 @@
   function loadIssues() {
     showSkeleton(issueListEl, 'list', 4);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var issues = list || [];
-        lastIssues = issues;
-        issueListEl.textContent = '';
+    call('apiIssueList', [''], function (list) {
+      var issues = list || [];
+      lastIssues = issues;
+      issueListEl.textContent = '';
 
-        // 件数は先に出す。0件のときだけ前の値が残っていた
-        var shown = issues.filter(matchesFilter);
-        issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+      // 件数は先に出す。0件のときだけ前の値が残っていた
+      var shown = issues.filter(matchesFilter);
+      issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
 
-        if (!issues.length) {
-          issueListEl.appendChild(makeBlankState(
-            'やることがありません',
-            '直したい文書を選んでから作ると、その文書に紐づきます。',
-            { label: 'やることを作る', onClick: createIssue }
-          ));
-          return;
+      if (!issues.length) {
+        issueListEl.appendChild(makeBlankState(
+          'やることがありません',
+          '直したい文書を選んでから作ると、その文書に紐づきます。',
+          { label: 'やることを作る', onClick: createIssue }
+        ));
+        return;
+      }
+
+      if (!shown.length) {
+        issueListEl.appendChild(makeBlankState(
+          '絞り込みに合うやることがありません',
+          '絞り込みを消すか、別の言葉で試してください。'
+        ));
+        return;
+      }
+
+      groupIssues(shown, issueGroupSel.value).forEach(function (group) {
+        issueListEl.appendChild(
+          makeGroupHead(group.label, group.issues.length, group.key));
+        if (collapsed[group.key]) return;
+
+        // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
+        issueTreeRows(group.issues).forEach(renderIssueRow);
+      });
+
+      function renderIssueRow(issue) {
+        var row = document.createElement('div');
+        row.className = 'row-item';
+        row.dataset.number = issue.number;
+        makeIssueDraggable(row, issue);
+
+        if (issue.depth) {
+          row.classList.add('nested');
+          row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
         }
 
-        if (!shown.length) {
-          issueListEl.appendChild(makeBlankState(
-            '絞り込みに合うやることがありません',
-            '絞り込みを消すか、別の言葉で試してください。'
-          ));
-          return;
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + issue.number + ' ' + issue.title;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
+          (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
+
+        var effort = rollupEffort(issue);
+        if (effort.planned || effort.actual || effort.estimate) {
+          var hours = document.createElement('span');
+          hours.className = 'effort';
+          hours.appendChild(makeIcon('clock'));
+
+          var text = [];
+          if (effort.estimate) text.push('見積 ' + effort.estimate);
+          if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+          if (effort.actual) text.push('実績 ' + effort.actual + '人日');
+
+          hours.appendChild(document.createTextNode(text.join(' / ')));
+          if (issue.children.length) hours.title = '子の分を含めた合計';
+          meta.appendChild(hours);
         }
 
-        groupIssues(shown, issueGroupSel.value).forEach(function (group) {
-          issueListEl.appendChild(
-            makeGroupHead(group.label, group.issues.length, group.key));
-          if (collapsed[group.key]) return;
+        meta.appendChild(makeRelationChips(issue.number));
 
-          // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
-          issueTreeRows(group.issues).forEach(renderIssueRow);
+        var stale = makeStaleBadge(issue);
+        if (stale) meta.appendChild(stale);
+
+        var labelEls = makeLabels(issue.labels);
+        if (labelEls) meta.appendChild(labelEls);
+        main.appendChild(meta);
+        applyRot(row, issue);
+
+        var open = document.createElement('button');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('circle-dot'));
+        open.appendChild(main);
+        open.addEventListener('click', function () {
+          openIssueDetail(issue, row);
         });
+        row.appendChild(open);
+        row.appendChild(makeAvatars(issue.assignees || issue.assignee));
 
-        function renderIssueRow(issue) {
-          var row = document.createElement('div');
-          row.className = 'row-item';
-          row.dataset.number = issue.number;
-          makeIssueDraggable(row, issue);
+        var edit = document.createElement('button');
+        edit.className = 'icon-btn';
+        edit.appendChild(makeIcon('pencil'));
+        edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
+        hint(edit, 'act:edit');
+        edit.addEventListener('click', function () { openIssueDetail(issue, row); });
+        row.appendChild(edit);
 
-          if (issue.depth) {
-            row.classList.add('nested');
-            row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
-          }
-
-          var main = document.createElement('div');
-          main.className = 'row-main';
-
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = '#' + issue.number + ' ' + issue.title;
-          main.appendChild(title);
-
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
-            (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
-
-          var effort = rollupEffort(issue);
-          if (effort.planned || effort.actual || effort.estimate) {
-            var hours = document.createElement('span');
-            hours.className = 'effort';
-            hours.appendChild(makeIcon('clock'));
-
-            var text = [];
-            if (effort.estimate) text.push('見積 ' + effort.estimate);
-            if (effort.planned) text.push('予定 ' + effort.planned + '人日');
-            if (effort.actual) text.push('実績 ' + effort.actual + '人日');
-
-            hours.appendChild(document.createTextNode(text.join(' / ')));
-            if (issue.children.length) hours.title = '子の分を含めた合計';
-            meta.appendChild(hours);
-          }
-
-          meta.appendChild(makeRelationChips(issue.number));
-
-          var stale = makeStaleBadge(issue);
-          if (stale) meta.appendChild(stale);
-
-          var labelEls = makeLabels(issue.labels);
-          if (labelEls) meta.appendChild(labelEls);
-          main.appendChild(meta);
-          applyRot(row, issue);
-
-          var open = document.createElement('button');
-          open.className = 'row-open';
-          open.appendChild(makeIcon('circle-dot'));
-          open.appendChild(main);
-          open.addEventListener('click', function () {
-            openIssueDetail(issue, row);
+        if (issue.state === 'open') {
+          var done = document.createElement('button');
+          done.className = 'icon-btn ok';
+          done.appendChild(makeIcon('check'));
+          done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
+          hint(done, 'act:done');
+          done.addEventListener('click', function () {
+            call('apiIssueClose', [issue.number], function () {
+              showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+              refreshIssueViews();
+            });
           });
-          row.appendChild(open);
-          row.appendChild(makeAvatars(issue.assignees || issue.assignee));
-
-          var edit = document.createElement('button');
-          edit.className = 'icon-btn';
-          edit.appendChild(makeIcon('pencil'));
-          edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
-          hint(edit, 'act:edit');
-          edit.addEventListener('click', function () { openIssueDetail(issue, row); });
-          row.appendChild(edit);
-
-          if (issue.state === 'open') {
-            var done = document.createElement('button');
-            done.className = 'icon-btn ok';
-            done.appendChild(makeIcon('check'));
-            done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
-            hint(done, 'act:done');
-            done.addEventListener('click', function () {
-              google.script.run
-                .withSuccessHandler(function () {
-                  showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
-                  refreshIssueViews();
-                })
-                .withFailureHandler(function (err) {
-                  showSnack(err.message, { kind: 'ng' });
-                })
-                .apiIssueClose(issue.number);
-            });
-            row.appendChild(done);
-          } else {
-            var back = document.createElement('button');
-            back.className = 'icon-btn';
-            back.appendChild(makeIcon('back'));
-            back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
-            hint(back, 'act:reopen');
-            back.addEventListener('click', function () {
-              reopenIssue(issue.number);
-            });
-            row.appendChild(back);
-          }
-
-          row.appendChild(makeArchiveButton(issue, panelIssues));
-
-          if (issue.state === 'open' && current.docFileId) {
-            var branchBtn = document.createElement('button');
-            branchBtn.className = 'btn btn-primary';
-            branchBtn.textContent = 'この作業の改訂版を作る';
-            branchBtn.addEventListener('click', function () {
-              branchBtn.disabled = true;
-              google.script.run
-                .withSuccessHandler(function (b) {
-                  showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
-                  loadFiles(function () { loadIssues(); });
-                  loadOverview();
-                })
-                .withFailureHandler(function (err) {
-                  branchBtn.disabled = false;
-                  showSnack(err.message, { kind: 'ng' });
-                })
-                .apiIssueCreateBranch(issue.number, current.docFileId);
-            });
-            row.appendChild(branchBtn);
-          }
-
-          issueListEl.appendChild(row);
+          row.appendChild(done);
+        } else {
+          var back = document.createElement('button');
+          back.className = 'icon-btn';
+          back.appendChild(makeIcon('back'));
+          back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
+          hint(back, 'act:reopen');
+          back.addEventListener('click', function () {
+            reopenIssue(issue.number);
+          });
+          row.appendChild(back);
         }
-      })
-      .withFailureHandler(function (err) {
-        issueListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiIssueList('');
+
+        row.appendChild(makeArchiveButton(issue, panelIssues));
+
+        if (issue.state === 'open' && current.docFileId) {
+          var branchBtn = document.createElement('button');
+          branchBtn.className = 'btn btn-primary';
+          branchBtn.textContent = 'この作業の改訂版を作る';
+          branchBtn.addEventListener('click', function () {
+            branchBtn.disabled = true;
+            call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
+              showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
+              loadFiles(function () { loadIssues(); });
+              loadOverview();
+            }, failEnable(branchBtn));
+          });
+          row.appendChild(branchBtn);
+        }
+
+        issueListEl.appendChild(row);
+      }
+    }, failInto(issueListEl));
   }
 
   /**
@@ -4826,36 +4778,26 @@
         [{ name: 'name', label: '名前 (例: 週報)', required: true }],
         '残す',
         function (v) {
-          google.script.run
-            .withSuccessHandler(function (row) {
-              if (row) {
-                templates = templates.filter(function (t) {
-                  return t.name !== row.name;
-                });
-                templates.push({ name: row.name, body: row.body, mine: true });
-              }
-              showSnack('下書き「' + v.name + '」を残しました', { kind: 'ok' });
-              closeSide();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiTemplateSave(v.name, input.value);
+          call('apiTemplateSave', [v.name, input.value], function (row) {
+            if (row) {
+              templates = templates.filter(function (t) {
+                return t.name !== row.name;
+              });
+              templates.push({ name: row.name, body: row.body, mine: true });
+            }
+            showSnack('下書き「' + v.name + '」を残しました', { kind: 'ok' });
+            closeSide();
+          });
         }
       );
     }
 
     function drop(name) {
-      google.script.run
-        .withSuccessHandler(function (msg) {
-          templates = templates.filter(function (t) { return t.name !== name; });
-          showSnack(msg, { kind: 'ok' });
-          draw();
-        })
-        .withFailureHandler(function (err) {
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiTemplateDelete(name);
+      call('apiTemplateDelete', [name], function (msg) {
+        templates = templates.filter(function (t) { return t.name !== name; });
+        showSnack(msg, { kind: 'ok' });
+        draw();
+      });
     }
 
     draw();
@@ -4918,18 +4860,13 @@
           if (moved) patch.dueDate = moved;
         }
 
-        google.script.run
-          .withSuccessHandler(function (after) {
-            showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
-            // 直したら読む形に戻す。書き換えの形のまま残ると、
-            // どこまで反映されたのかが分からない
-            if (after) openIssueDetail(after, sideSource);
-            refreshIssueViews();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiIssueUpdate(issue.number, patch);
+        call('apiIssueUpdate', [issue.number, patch], function (after) {
+          showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
+          // 直したら読む形に戻す。書き換えの形のまま残ると、
+          // どこまで反映されたのかが分からない
+          if (after) openIssueDetail(after, sideSource);
+          refreshIssueViews();
+        });
       },
       sourceEl
     );
@@ -4994,16 +4931,11 @@
       done.appendChild(makeIcon('check'));
       done.appendChild(document.createTextNode('完了にする'));
       done.addEventListener('click', function () {
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
-            form.remove();
-            refreshIssueViews();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiIssueClose(issue.number);
+        call('apiIssueClose', [issue.number], function () {
+          showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+          form.remove();
+          refreshIssueViews();
+        });
       });
       extra.appendChild(done);
     } else {
@@ -5033,16 +4965,11 @@
         archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
         '捨てる',
         function () {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
-              closeSide();
-              refreshIssueViews();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiIssueArchive(issue.number);
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            closeSide();
+            refreshIssueViews();
+          });
         });
     });
     extra.appendChild(del);
@@ -5242,16 +5169,13 @@
     list.id = 'people-list';
     form.appendChild(list);
 
-    google.script.run
-      .withSuccessHandler(function (people) {
-        (people || []).forEach(function (email) {
-          var opt = document.createElement('option');
-          opt.value = email;
-          list.appendChild(opt);
-        });
-      })
-      .withFailureHandler(function () { /* 候補が無くても手で書ける */ })
-      .apiKnownPeople();
+    call('apiKnownPeople', [], function (people) {
+      (people || []).forEach(function (email) {
+        var opt = document.createElement('option');
+        opt.value = email;
+        list.appendChild(opt);
+      });
+    }, failQuiet('候補が無くても手で書ける'));
   }
 
   /** やることを扱う画面をまとめて描き直す */
@@ -5285,13 +5209,10 @@
    * @param {number} number
    */
   function reopenIssue(number) {
-    google.script.run
-      .withSuccessHandler(function () {
-        showSnack('#' + number + ' をやることに戻しました', { kind: 'ok' });
-        refreshIssueViews();
-      })
-      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
-      .apiIssueReopen(number);
+    call('apiIssueReopen', [number], function () {
+      showSnack('#' + number + ' をやることに戻しました', { kind: 'ok' });
+      refreshIssueViews();
+    });
   }
 
   /**
@@ -5318,15 +5239,10 @@
         archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
         '捨てる',
         function () {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
-              refreshIssueViews();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiIssueArchive(issue.number);
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            refreshIssueViews();
+          });
         });
     });
     return del;
@@ -5340,94 +5256,79 @@
   function loadTrash() {
     showSkeleton(trashListEl, 'list', 3);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var rows = list || [];
-        trashListEl.textContent = '';
-        issueCountEl.textContent = rows.length + '件';
+    call('apiIssueArchivedList', [], function (list) {
+      var rows = list || [];
+      trashListEl.textContent = '';
+      issueCountEl.textContent = rows.length + '件';
 
-        if (!rows.length) {
-          trashListEl.appendChild(makeBlankState(
-            '捨てたものはありません',
-            '捨てたやることはここに' + archiveKeepDays +
-            '日置かれ、その間はいつでも戻せます。'
-          ));
-          return;
-        }
+      if (!rows.length) {
+        trashListEl.appendChild(makeBlankState(
+          '捨てたものはありません',
+          '捨てたやることはここに' + archiveKeepDays +
+          '日置かれ、その間はいつでも戻せます。'
+        ));
+        return;
+      }
 
-        rows.forEach(function (issue) {
-          var row = document.createElement('div');
-          row.className = 'row-item archived';
+      rows.forEach(function (issue) {
+        var row = document.createElement('div');
+        row.className = 'row-item archived';
 
-          var main = document.createElement('div');
-          main.className = 'row-main';
+        var main = document.createElement('div');
+        main.className = 'row-main';
 
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = '#' + issue.number + ' ' + issue.title;
-          main.appendChild(title);
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + issue.number + ' ' + issue.title;
+        main.appendChild(title);
 
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = '捨てた日 ' + String(issue.archivedAt).substring(0, 10) +
-            ' · あと' + issue.daysLeft + '日で消えます';
-          main.appendChild(meta);
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = '捨てた日 ' + String(issue.archivedAt).substring(0, 10) +
+          ' · あと' + issue.daysLeft + '日で消えます';
+        main.appendChild(meta);
 
-          var open = document.createElement('div');
-          open.className = 'row-open';
-          open.appendChild(makeIcon('archive'));
-          open.appendChild(main);
-          row.appendChild(open);
+        var open = document.createElement('div');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('archive'));
+        open.appendChild(main);
+        row.appendChild(open);
 
-          var back = document.createElement('button');
-          back.className = 'btn';
-          back.appendChild(makeIcon('back'));
-          back.appendChild(document.createTextNode('元に戻す'));
-          back.addEventListener('click', function () {
-            google.script.run
-              .withSuccessHandler(function () {
-                showSnack('#' + issue.number + ' を戻しました', { kind: 'ok' });
-                loadTrash();
-                loadOverview();
-              })
-              .withFailureHandler(function (err) {
-                showSnack(err.message, { kind: 'ng' });
-              })
-              .apiIssueRestore(issue.number);
+        var back = document.createElement('button');
+        back.className = 'btn';
+        back.appendChild(makeIcon('back'));
+        back.appendChild(document.createTextNode('元に戻す'));
+        back.addEventListener('click', function () {
+          call('apiIssueRestore', [issue.number], function () {
+            showSnack('#' + issue.number + ' を戻しました', { kind: 'ok' });
+            loadTrash();
+            loadOverview();
           });
-          row.appendChild(back);
-
-          var purge = document.createElement('button');
-          purge.className = 'btn btn-danger';
-          purge.appendChild(makeIcon('trash'));
-          purge.title = '#' + issue.number + ' を完全に消す';
-          purge.setAttribute('aria-label', purge.title);
-          purge.addEventListener('click', function () {
-            openConfirmStrip(panelIssues,
-              '#' + issue.number + '「' + issue.title + '」を完全に消します。' +
-              'もう戻せません。',
-              '完全に消す',
-              function () {
-                google.script.run
-                  .withSuccessHandler(function (msg) {
-                    showSnack(msg, { kind: 'ok' });
-                    loadTrash();
-                  })
-                  .withFailureHandler(function (err) {
-                    showSnack(err.message, { kind: 'ng' });
-                  })
-                  .apiIssuePurge(issue.number);
-              });
-          });
-          row.appendChild(purge);
-
-          trashListEl.appendChild(row);
         });
-      })
-      .withFailureHandler(function (err) {
-        trashListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiIssueArchivedList();
+        row.appendChild(back);
+
+        var purge = document.createElement('button');
+        purge.className = 'btn btn-danger';
+        purge.appendChild(makeIcon('trash'));
+        purge.title = '#' + issue.number + ' を完全に消す';
+        purge.setAttribute('aria-label', purge.title);
+        purge.addEventListener('click', function () {
+          openConfirmStrip(panelIssues,
+            '#' + issue.number + '「' + issue.title + '」を完全に消します。' +
+            'もう戻せません。',
+            '完全に消す',
+            function () {
+              call('apiIssuePurge', [issue.number], function (msg) {
+                showSnack(msg, { kind: 'ok' });
+                loadTrash();
+              });
+            });
+        });
+        row.appendChild(purge);
+
+        trashListEl.appendChild(row);
+      });
+    }, failInto(trashListEl));
   }
 
   function refreshIssueViews() {
@@ -5457,23 +5358,18 @@
         var linked = (linkBox && linkBox.checked && current.docFileId)
           ? [current.docFileId] : [];
 
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('やることを作りました', { kind: 'ok' });
-            // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
-            if (panelIssues.hidden) switchTab('issues');
-            else refreshIssueViews();
-          })
-          .withFailureHandler(function (err) {
-            showSnack('作れませんでした: ' + err.message, { kind: 'ng' });
-          })
-          .apiIssueCreate(v.title, v.body, linked, picker ? picker.value() : '', {
-            assignee: people ? people.value() : '',
-            startDate: v.startDate,
-            dueDate: v.dueDate,
-            estimate: v.estimate,
-            plannedHours: v.plannedHours,
-          });
+        call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', {
+          assignee: people ? people.value() : '',
+          startDate: v.startDate,
+          dueDate: v.dueDate,
+          estimate: v.estimate,
+          plannedHours: v.plannedHours,
+        }], function () {
+          showSnack('やることを作りました', { kind: 'ok' });
+          // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
+          if (panelIssues.hidden) switchTab('issues');
+          else refreshIssueViews();
+        }, failSnack('作れませんでした: '));
       },
       sourceEl
     );
@@ -5642,16 +5538,11 @@
       hint(done, 'act:done');
 
       done.addEventListener('click', function () {
-        google.script.run
-          .withSuccessHandler(function () {
-            showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
-            closeSide();
-            refreshIssueViews();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiIssueClose(issue.number);
+        call('apiIssueClose', [issue.number], function () {
+          showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+          closeSide();
+          refreshIssueViews();
+        });
       });
       wrap.appendChild(done);
     } else {
@@ -5680,16 +5571,11 @@
         archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
         '捨てる',
         function () {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
-              closeSide();
-              refreshIssueViews();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiIssueArchive(issue.number);
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            closeSide();
+            refreshIssueViews();
+          });
         });
     });
     wrap.appendChild(del);
@@ -5744,12 +5630,9 @@
     }
 
     function load() {
-      google.script.run
-        .withSuccessHandler(function (rows) { draw(rows || []); })
-        .withFailureHandler(function (err) {
-          list.textContent = 'エラー: ' + err.message;
-        })
-        .apiIssueComments(issue.number);
+      call('apiIssueComments', [issue.number],
+        function (rows) { draw(rows || []); },
+        failInto(list));
     }
 
     var form = document.createElement('div');
@@ -5767,18 +5650,12 @@
       if (!input.value) return;
       send.disabled = true;
 
-      google.script.run
-        .withSuccessHandler(function () {
-          send.disabled = false;
-          input.value = '';
-          showSnack('書き込みました', { kind: 'ok' });
-          load();
-        })
-        .withFailureHandler(function (err) {
-          send.disabled = false;
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiIssueComment(issue.number, input.value);
+      call('apiIssueComment', [issue.number, input.value], function () {
+        send.disabled = false;
+        input.value = '';
+        showSnack('書き込みました', { kind: 'ok' });
+        load();
+      }, failEnable(send));
     });
     form.appendChild(send);
     wrap.appendChild(form);
@@ -5811,15 +5688,10 @@
         [{ name: 'body', label: '中身', required: true, multiline: true }],
         '直す',
         function (v) {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('直しました', { kind: 'ok' });
-              openIssueDetail(issue, sideSource);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiIssueCommentEdit(row.id, v.body);
+          call('apiIssueCommentEdit', [row.id, v.body], function () {
+            showSnack('直しました', { kind: 'ok' });
+            openIssueDetail(issue, sideSource);
+          });
         },
         host
       );
@@ -5838,15 +5710,10 @@
         'この書き込みを消します。元には戻せません。',
         '消す',
         function () {
-          google.script.run
-            .withSuccessHandler(function (msg) {
-              showSnack(msg, { kind: 'ok' });
-              openIssueDetail(issue, sideSource);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiIssueCommentDelete(row.id);
+          call('apiIssueCommentDelete', [row.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            openIssueDetail(issue, sideSource);
+          });
         });
     });
     tools.appendChild(del);
@@ -5862,20 +5729,17 @@
    * @param {HTMLElement} [sourceEl]
    */
   function openIssueByNumber(number, sourceEl) {
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var found = (list || []).filter(function (i) {
-          return Number(i.number) === Number(number);
-        })[0];
+    call('apiIssueList', [''], function (list) {
+      var found = (list || []).filter(function (i) {
+        return Number(i.number) === Number(number);
+      })[0];
 
-        if (!found) {
-          showSnack('やること #' + number + ' が見つかりません', { kind: 'ng' });
-          return;
-        }
-        openIssueDetail(found, sourceEl);
-      })
-      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
-      .apiIssueList('');
+      if (!found) {
+        showSnack('やること #' + number + ' が見つかりません', { kind: 'ng' });
+        return;
+      }
+      openIssueDetail(found, sourceEl);
+    });
   }
 
   // ===== 工程表 =====
@@ -6193,176 +6057,171 @@
   function loadGantt() {
     showSkeleton(ganttEl, 'gantt', 5);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var issues = list || [];
-        ganttEl.textContent = '';
+    call('apiIssueList', [''], function (list) {
+      var issues = list || [];
+      ganttEl.textContent = '';
 
-        lastIssues = issues;
-        issues = issues.filter(matchesFilter);
+      lastIssues = issues;
+      issues = issues.filter(matchesFilter);
 
-        var g = ganttLayout(issues, new Date());
-        issueCountEl.textContent = g.rows.length + ' / ' + issues.length + '件';
+      var g = ganttLayout(issues, new Date());
+      issueCountEl.textContent = g.rows.length + ' / ' + issues.length + '件';
 
-        if (!g.rows.length) {
-          ganttEl.appendChild(makeBlankState(
-            'やることがありません',
-            '期限を入れたやることが、ここに時系列の棒で並びます。',
-            { label: 'やることを作る', onClick: createIssue }
-          ));
-          return;
-        }
+      if (!g.rows.length) {
+        ganttEl.appendChild(makeBlankState(
+          'やることがありません',
+          '期限を入れたやることが、ここに時系列の棒で並びます。',
+          { label: 'やることを作る', onClick: createIssue }
+        ));
+        return;
+      }
 
-        var COL = 26;
-        var chart = document.createElement('div');
-        chart.className = 'gantt';
-        chart.style.setProperty('--gantt-days', String(g.days));
-        chart.style.setProperty('--gantt-col', COL + 'px');
+      var COL = 26;
+      var chart = document.createElement('div');
+      chart.className = 'gantt';
+      chart.style.setProperty('--gantt-days', String(g.days));
+      chart.style.setProperty('--gantt-col', COL + 'px');
 
-        // 目盛りの週の区切りを、先頭の日から月曜までのずれで合わせる
-        var firstDay = new Date(g.from).getDay();
-        chart.style.setProperty('--week-offset', String((firstDay + 6) % 7));
+      // 目盛りの週の区切りを、先頭の日から月曜までのずれで合わせる
+      var firstDay = new Date(g.from).getDay();
+      chart.style.setProperty('--week-offset', String((firstDay + 6) % 7));
 
-        // 上段に月、下段に日を出す。日だけでは何月か分からない
-        var monthHead = document.createElement('div');
-        monthHead.className = 'gantt-head';
+      // 上段に月、下段に日を出す。日だけでは何月か分からない
+      var monthHead = document.createElement('div');
+      monthHead.className = 'gantt-head';
 
-        var monthName = document.createElement('div');
-        monthName.className = 'gantt-name';
-        monthHead.appendChild(monthName);
+      var monthName = document.createElement('div');
+      monthName.className = 'gantt-name';
+      monthHead.appendChild(monthName);
 
-        var monthScale = document.createElement('div');
-        monthScale.className = 'gantt-scale';
+      var monthScale = document.createElement('div');
+      monthScale.className = 'gantt-scale';
 
-        ganttMonths(g.from, g.days).forEach(function (m) {
-          var cell = document.createElement('div');
-          cell.className = 'gantt-month';
-          cell.style.gridColumn = 'span ' + m.span;
-          cell.textContent = m.label;
-          monthScale.appendChild(cell);
-        });
-        monthHead.appendChild(monthScale);
-        chart.appendChild(monthHead);
+      ganttMonths(g.from, g.days).forEach(function (m) {
+        var cell = document.createElement('div');
+        cell.className = 'gantt-month';
+        cell.style.gridColumn = 'span ' + m.span;
+        cell.textContent = m.label;
+        monthScale.appendChild(cell);
+      });
+      monthHead.appendChild(monthScale);
+      chart.appendChild(monthHead);
 
-        var head = document.createElement('div');
-        head.className = 'gantt-head';
+      var head = document.createElement('div');
+      head.className = 'gantt-head';
 
-        var headName = document.createElement('div');
-        headName.className = 'gantt-name';
-        headName.textContent = 'やること';
-        head.appendChild(headName);
+      var headName = document.createElement('div');
+      headName.className = 'gantt-name';
+      headName.textContent = 'やること';
+      head.appendChild(headName);
 
-        var scale = document.createElement('div');
-        scale.className = 'gantt-scale';
+      var scale = document.createElement('div');
+      scale.className = 'gantt-scale';
 
-        for (var d = 0; d < g.days; d++) {
-          var day = new Date(g.from + d * 24 * 60 * 60 * 1000);
-          var weekend = day.getDay() === 0 || day.getDay() === 6;
+      for (var d = 0; d < g.days; d++) {
+        var day = new Date(g.from + d * 24 * 60 * 60 * 1000);
+        var weekend = day.getDay() === 0 || day.getDay() === 6;
 
-          var cell = document.createElement('div');
-          cell.className = 'gantt-day' +
-            (d === g.todayOffset ? ' today' : '') + (weekend ? ' weekend' : '');
-          cell.textContent = day.getDate();
-          cell.title = day.toLocaleDateString('ja-JP');
-          scale.appendChild(cell);
-        }
-        head.appendChild(scale);
-        chart.appendChild(head);
+        var cell = document.createElement('div');
+        cell.className = 'gantt-day' +
+          (d === g.todayOffset ? ' today' : '') + (weekend ? ' weekend' : '');
+        cell.textContent = day.getDate();
+        cell.title = day.toLocaleDateString('ja-JP');
+        scale.appendChild(cell);
+      }
+      head.appendChild(scale);
+      chart.appendChild(head);
 
-        /*
-         * 目盛りと今日の線は、行ごとではなく1枚の下敷きに描く。
-         * 行ごとに描くと行間で途切れ、日付を縦にたどれない。
-         */
-        var rows = document.createElement('div');
-        rows.className = 'gantt-rows';
+      /*
+       * 目盛りと今日の線は、行ごとではなく1枚の下敷きに描く。
+       * 行ごとに描くと行間で途切れ、日付を縦にたどれない。
+       */
+      var rows = document.createElement('div');
+      rows.className = 'gantt-rows';
 
-        var grid = document.createElement('div');
-        grid.className = 'gantt-grid';
-        rows.appendChild(grid);
+      var grid = document.createElement('div');
+      grid.className = 'gantt-grid';
+      rows.appendChild(grid);
 
-        if (g.todayOffset >= 0 && g.todayOffset < g.days) {
-          var todayLine = document.createElement('div');
-          todayLine.className = 'gantt-today';
-          todayLine.style.left = 'calc(var(--gantt-col) * ' + g.todayOffset + ')';
-          grid.appendChild(todayLine);
-        }
+      if (g.todayOffset >= 0 && g.todayOffset < g.days) {
+        var todayLine = document.createElement('div');
+        todayLine.className = 'gantt-today';
+        todayLine.style.left = 'calc(var(--gantt-col) * ' + g.todayOffset + ')';
+        grid.appendChild(todayLine);
+      }
 
-        // 行を束ねて見出しを付ける
-        var byNumber = {};
-        g.rows.forEach(function (r) { byNumber[r.number] = r; });
+      // 行を束ねて見出しを付ける
+      var byNumber = {};
+      g.rows.forEach(function (r) { byNumber[r.number] = r; });
 
-        groupIssues(issues, issueGroupSel.value).forEach(function (group) {
-          var shown = group.issues
-            .map(function (i) { return byNumber[i.number]; })
-            .filter(function (r) { return !!r; });
+      groupIssues(issues, issueGroupSel.value).forEach(function (group) {
+        var shown = group.issues
+          .map(function (i) { return byNumber[i.number]; })
+          .filter(function (r) { return !!r; });
 
-          if (!shown.length) return;
-          rows.appendChild(makeGroupHead(group.label, shown.length, group.key));
-          if (collapsed[group.key]) return;
+        if (!shown.length) return;
+        rows.appendChild(makeGroupHead(group.label, shown.length, group.key));
+        if (collapsed[group.key]) return;
 
-          shown.forEach(function (r) {
-            var row = document.createElement('div');
-            row.className = 'gantt-row';
-            row.dataset.number = r.number;
+        shown.forEach(function (r) {
+          var row = document.createElement('div');
+          row.className = 'gantt-row';
+          row.dataset.number = r.number;
 
-            var name = document.createElement('button');
-            name.className = 'gantt-name';
+          var name = document.createElement('button');
+          name.className = 'gantt-name';
 
-            // 親の下にあることを、字下げでも示す
-            var depth = depthOf(r.number);
-            if (depth) {
-              row.classList.add('nested');
-              name.style.paddingLeft = (depth * 14 + 8) + 'px';
-            }
+          // 親の下にあることを、字下げでも示す
+          var depth = depthOf(r.number);
+          if (depth) {
+            row.classList.add('nested');
+            name.style.paddingLeft = (depth * 14 + 8) + 'px';
+          }
 
-            name.appendChild(makeAvatars(r.assignee));
+          name.appendChild(makeAvatars(r.assignee));
 
-            var who = document.createElement('span');
-            who.className = 'gantt-title';
-            who.textContent = '#' + r.number + ' ' + r.title;
-            name.appendChild(who);
+          var who = document.createElement('span');
+          who.className = 'gantt-title';
+          who.textContent = '#' + r.number + ' ' + r.title;
+          name.appendChild(who);
 
-            var rel = makeRelationChips(r.number);
-            if (rel.childNodes.length) name.appendChild(rel);
-            name.title = (r.assignee || '担当なし');
-            name.addEventListener('click', function () {
-              openIssueByNumber(r.number, row);
-            });
-            row.appendChild(name);
-
-            var track = document.createElement('div');
-            track.className = 'gantt-track';
-
-            var bar = document.createElement('button');
-            bar.className = 'gantt-bar' +
-              (String(r.state) === 'closed' ? ' done' : '') +
-              (r.overdue ? ' overdue' : '') +
-              (r.hasDue ? '' : ' nodue');
-            bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
-            bar.appendChild(makeAvatars(r.assignee));
-
-            var days = document.createElement('span');
-            days.className = 'gantt-days';
-            days.textContent = r.span + '人日';
-            bar.appendChild(days);
-            bar.title = '#' + r.number + ' ' + r.title +
-              (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
-              ' — 押すと中身を開きます。端を掴むと期限、真ん中を掴むと全体を動かせます';
-            track.appendChild(bar);
-            makeBarDraggable(bar, r, g, COL, row);
-
-            row.appendChild(track);
-            rows.appendChild(row);
+          var rel = makeRelationChips(r.number);
+          if (rel.childNodes.length) name.appendChild(rel);
+          name.title = (r.assignee || '担当なし');
+          name.addEventListener('click', function () {
+            openIssueByNumber(r.number, row);
           });
-        });
+          row.appendChild(name);
 
-        chart.appendChild(rows);
-        ganttEl.appendChild(chart);
-      })
-      .withFailureHandler(function (err) {
-        ganttEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiIssueList('');
+          var track = document.createElement('div');
+          track.className = 'gantt-track';
+
+          var bar = document.createElement('button');
+          bar.className = 'gantt-bar' +
+            (String(r.state) === 'closed' ? ' done' : '') +
+            (r.overdue ? ' overdue' : '') +
+            (r.hasDue ? '' : ' nodue');
+          bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
+          bar.appendChild(makeAvatars(r.assignee));
+
+          var days = document.createElement('span');
+          days.className = 'gantt-days';
+          days.textContent = r.span + '人日';
+          bar.appendChild(days);
+          bar.title = '#' + r.number + ' ' + r.title +
+            (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
+            ' — 押すと中身を開きます。端を掴むと期限、真ん中を掴むと全体を動かせます';
+          track.appendChild(bar);
+          makeBarDraggable(bar, r, g, COL, row);
+
+          row.appendChild(track);
+          rows.appendChild(row);
+        });
+      });
+
+      chart.appendChild(rows);
+      ganttEl.appendChild(chart);
+    }, failInto(ganttEl));
   }
 
 
@@ -6434,49 +6293,44 @@
 
     showSkeleton(tallyEl, 'list', 3);
 
-    google.script.run
-      .withSuccessHandler(function (result) {
-        var res = result || { periods: [], people: [], total: {}, hidden: 0 };
-        tallyEl.textContent = '';
-        issueCountEl.textContent = 'チーム全体 ' + res.total.count + '件 / 予定 ' +
-          daysText(res.total.planned) + '人日 · 実績 ' +
-          daysText(res.total.actual) + '人日';
+    call('apiTallyEffort', [tallyUnitSel.value, tallyBasisSel.value, tallyWhoSel.value], function (result) {
+      var res = result || { periods: [], people: [], total: {}, hidden: 0 };
+      tallyEl.textContent = '';
+      issueCountEl.textContent = 'チーム全体 ' + res.total.count + '件 / 予定 ' +
+        daysText(res.total.planned) + '人日 · 実績 ' +
+        daysText(res.total.actual) + '人日';
 
-        if (!res.periods.length) {
-          tallyEl.appendChild(makeBlankState(
-            '集計できるやることがありません',
-            '予定工数か実績工数を入れて、数える日 (期限・完了日・開始日) を' +
-            '埋めたものが集まります。'
-          ));
-          return;
-        }
+      if (!res.periods.length) {
+        tallyEl.appendChild(makeBlankState(
+          '集計できるやることがありません',
+          '予定工数か実績工数を入れて、数える日 (期限・完了日・開始日) を' +
+          '埋めたものが集まります。'
+        ));
+        return;
+      }
 
-        tallyEl.appendChild(makeTallySummary(res));
-        tallyEl.appendChild(makeTallyTable(res));
-        tallyEl.appendChild(makePeopleTable(res));
+      tallyEl.appendChild(makeTallySummary(res));
+      tallyEl.appendChild(makeTallyTable(res));
+      tallyEl.appendChild(makePeopleTable(res));
 
-        if (res.hidden) {
-          var scope = document.createElement('div');
-          scope.className = 'tally-note row-meta';
-          scope.textContent = '人ごとの内訳に出るのは自分' +
-            (tallyScope.isManager ? 'と配下の人' : '') +
-            'のぶんだけです。ほかの' + res.hidden +
-            '件は全体の合計にだけ入っています。';
-          tallyEl.appendChild(scope);
-        }
+      if (res.hidden) {
+        var scope = document.createElement('div');
+        scope.className = 'tally-note row-meta';
+        scope.textContent = '人ごとの内訳に出るのは自分' +
+          (tallyScope.isManager ? 'と配下の人' : '') +
+          'のぶんだけです。ほかの' + res.hidden +
+          '件は全体の合計にだけ入っています。';
+        tallyEl.appendChild(scope);
+      }
 
-        if (res.skipped) {
-          var note = document.createElement('div');
-          note.className = 'tally-note tally-skipped row-meta';
-          note.textContent = res.skipped + '件は、数える日が空のため入っていません。' +
-            '「数え方」を変えると入ることがあります。';
-          tallyEl.appendChild(note);
-        }
-      })
-      .withFailureHandler(function (err) {
-        tallyEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiTallyEffort(tallyUnitSel.value, tallyBasisSel.value, tallyWhoSel.value);
+      if (res.skipped) {
+        var note = document.createElement('div');
+        note.className = 'tally-note tally-skipped row-meta';
+        note.textContent = res.skipped + '件は、数える日が空のため入っていません。' +
+          '「数え方」を変えると入ることがあります。';
+        tallyEl.appendChild(note);
+      }
+    }, failInto(tallyEl));
   }
 
   /**
@@ -6692,153 +6546,143 @@
 
     // 絞り込みに使うため、やることの中身も持っておく
     if (!lastIssues.length) {
-      google.script.run
-        .withSuccessHandler(function (list) { lastIssues = list || []; })
-        .withFailureHandler(function () {})
-        .apiIssueList('');
+      call('apiIssueList', [''],
+        function (list) { lastIssues = list || []; },
+        failQuiet('知らせなくてよい'));
     }
 
-    google.script.run
-      .withSuccessHandler(function (result) {
-        var board = result || {};
-        COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
-        boardEl.textContent = '';
+    call('apiProjectBoard', [], function (result) {
+      var board = result || {};
+      COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
+      boardEl.textContent = '';
 
-        // 絞り込みは番号で当てる。カードは中身を全部持っていない
-        var keep = null;
-        if (String(issueFilterEl.value || '')) {
-          keep = {};
-          (lastIssues || []).filter(matchesFilter).forEach(function (i) {
-            keep[i.number] = true;
-          });
-          COLUMNS.forEach(function (c) {
-            board[c[0]] = board[c[0]].filter(function (card) {
-              return keep[card.issueNumber];
-            });
-          });
-        }
-
-        var total = 0;
-        COLUMNS.forEach(function (c) { total += board[c[0]].length; });
-        issueCountEl.textContent = total + '枚';
-
-        if (total === 0) {
-          boardEl.appendChild(makeBlankState(
-            'カードがありません',
-            'カードは「やること」です。作ると「これから」に並び、' +
-            '改訂版や確認依頼に応じて自動で右に動きます。',
-            { label: 'やることを作る', onClick: createIssue }
-          ));
-          return;
-        }
-
-        COLUMNS.forEach(function (pair) {
-          var column = pair[0];
-
-          var col = document.createElement('div');
-          col.className = 'board-column';
-
-          var head = document.createElement('h3');
-          head.textContent = pair[1] + ' (' + board[column].length + ')';
-          hint(head, 'board:' + column);
-          col.appendChild(head);
-
-          col.addEventListener('dragover', function (e) {
-            e.preventDefault();
-            col.classList.add('drop-target');
-          });
-          col.addEventListener('dragleave', function () {
-            col.classList.remove('drop-target');
-          });
-          col.addEventListener('drop', function (e) {
-            e.preventDefault();
-            col.classList.remove('drop-target');
-
-            var issueNumber = Number(e.dataTransfer.getData('text/plain'));
-            if (!issueNumber) return;
-
-            google.script.run
-              .withSuccessHandler(function () { loadBoard(); })
-              .withFailureHandler(function (err) {
-                showSnack(err.message, { kind: 'ng' });
-              })
-              .apiProjectMove(issueNumber, column, board[column].length);
-          });
-
-          board[column].forEach(function (card) {
-            var el = document.createElement('div');
-            el.className = 'board-card';
-            el.draggable = true;
-
-            var num = document.createElement('span');
-            num.className = 'card-number';
-            num.textContent = '#' + card.issueNumber;
-            el.appendChild(num);
-
-            var title = document.createElement('div');
-            title.className = 'card-title';
-            title.textContent = card.title;
-            el.appendChild(title);
-
-            el.dataset.number = card.issueNumber;
-
-            var rel = makeRelationChips(card.issueNumber);
-            if (rel.childNodes.length) {
-              var relBox = document.createElement('div');
-              relBox.className = 'card-rel';
-              relBox.appendChild(rel);
-              el.appendChild(relBox);
-            }
-
-            var labelEls = makeLabels(card.labels);
-            if (labelEls) el.appendChild(labelEls);
-            applyRot(el, card);
-
-            el.addEventListener('dragstart', function (e) {
-              e.dataTransfer.setData('text/plain', String(card.issueNumber));
-            });
-
-            // 掴んで動かすだけでなく、押して中身を直せるようにする
-            el.addEventListener('click', function () {
-              openIssueByNumber(card.issueNumber, el);
-            });
-            el.tabIndex = 0;
-            el.addEventListener('keydown', function (e) {
-              if (e.key !== 'Enter' && e.key !== ' ') return;
-              e.preventDefault();
-              openIssueByNumber(card.issueNumber, el);
-            });
-
-            var foot = document.createElement('div');
-            foot.className = 'card-foot';
-
-            var when = document.createElement('span');
-            when.className = 'row-meta';
-            when.textContent = card.dueDate
-              ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
-
-            var cardStale = makeStaleBadge(card);
-            if (cardStale) when.appendChild(cardStale);
-            foot.appendChild(when);
-            foot.appendChild(makeAvatars(card.assignees || card.assignee));
-
-            // 一覧と同じく、カードからも捨てられるようにする。
-            // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
-            foot.appendChild(makeArchiveButton(
-              { number: card.issueNumber, title: card.title }, panelIssues));
-
-            el.appendChild(foot);
-
-            col.appendChild(el);
-          });
-
-          boardEl.appendChild(col);
+      // 絞り込みは番号で当てる。カードは中身を全部持っていない
+      var keep = null;
+      if (String(issueFilterEl.value || '')) {
+        keep = {};
+        (lastIssues || []).filter(matchesFilter).forEach(function (i) {
+          keep[i.number] = true;
         });
-      })
-      .withFailureHandler(function (err) {
-        boardEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiProjectBoard();
+        COLUMNS.forEach(function (c) {
+          board[c[0]] = board[c[0]].filter(function (card) {
+            return keep[card.issueNumber];
+          });
+        });
+      }
+
+      var total = 0;
+      COLUMNS.forEach(function (c) { total += board[c[0]].length; });
+      issueCountEl.textContent = total + '枚';
+
+      if (total === 0) {
+        boardEl.appendChild(makeBlankState(
+          'カードがありません',
+          'カードは「やること」です。作ると「これから」に並び、' +
+          '改訂版や確認依頼に応じて自動で右に動きます。',
+          { label: 'やることを作る', onClick: createIssue }
+        ));
+        return;
+      }
+
+      COLUMNS.forEach(function (pair) {
+        var column = pair[0];
+
+        var col = document.createElement('div');
+        col.className = 'board-column';
+
+        var head = document.createElement('h3');
+        head.textContent = pair[1] + ' (' + board[column].length + ')';
+        hint(head, 'board:' + column);
+        col.appendChild(head);
+
+        col.addEventListener('dragover', function (e) {
+          e.preventDefault();
+          col.classList.add('drop-target');
+        });
+        col.addEventListener('dragleave', function () {
+          col.classList.remove('drop-target');
+        });
+        col.addEventListener('drop', function (e) {
+          e.preventDefault();
+          col.classList.remove('drop-target');
+
+          var issueNumber = Number(e.dataTransfer.getData('text/plain'));
+          if (!issueNumber) return;
+
+          call('apiProjectMove', [issueNumber, column, board[column].length],
+            function () { loadBoard(); });
+        });
+
+        board[column].forEach(function (card) {
+          var el = document.createElement('div');
+          el.className = 'board-card';
+          el.draggable = true;
+
+          var num = document.createElement('span');
+          num.className = 'card-number';
+          num.textContent = '#' + card.issueNumber;
+          el.appendChild(num);
+
+          var title = document.createElement('div');
+          title.className = 'card-title';
+          title.textContent = card.title;
+          el.appendChild(title);
+
+          el.dataset.number = card.issueNumber;
+
+          var rel = makeRelationChips(card.issueNumber);
+          if (rel.childNodes.length) {
+            var relBox = document.createElement('div');
+            relBox.className = 'card-rel';
+            relBox.appendChild(rel);
+            el.appendChild(relBox);
+          }
+
+          var labelEls = makeLabels(card.labels);
+          if (labelEls) el.appendChild(labelEls);
+          applyRot(el, card);
+
+          el.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', String(card.issueNumber));
+          });
+
+          // 掴んで動かすだけでなく、押して中身を直せるようにする
+          el.addEventListener('click', function () {
+            openIssueByNumber(card.issueNumber, el);
+          });
+          el.tabIndex = 0;
+          el.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            openIssueByNumber(card.issueNumber, el);
+          });
+
+          var foot = document.createElement('div');
+          foot.className = 'card-foot';
+
+          var when = document.createElement('span');
+          when.className = 'row-meta';
+          when.textContent = card.dueDate
+            ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
+
+          var cardStale = makeStaleBadge(card);
+          if (cardStale) when.appendChild(cardStale);
+          foot.appendChild(when);
+          foot.appendChild(makeAvatars(card.assignees || card.assignee));
+
+          // 一覧と同じく、カードからも捨てられるようにする。
+          // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
+          foot.appendChild(makeArchiveButton(
+            { number: card.issueNumber, title: card.title }, panelIssues));
+
+          el.appendChild(foot);
+
+          col.appendChild(el);
+        });
+
+        boardEl.appendChild(col);
+      });
+    }, failInto(boardEl));
   }
 
   // ===== 使い方 =====
@@ -7129,16 +6973,11 @@
       ],
       '送る',
       function (v) {
-        google.script.run
-          .withSuccessHandler(function (row) {
-            showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
-            closeSide();
-            loadReports();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiInquiryCreate(v.kind, reportBody(v), reportContext(), shots);
+        call('apiInquiryCreate', [v.kind, reportBody(v), reportContext(), shots], function (row) {
+          showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
+          closeSide();
+          loadReports();
+        });
       },
       sourceEl
     );
@@ -7499,81 +7338,76 @@
   function loadReports() {
     showSkeleton(reportListEl, 'list', 3);
 
-    google.script.run
-      .withSuccessHandler(function (list) {
-        var rows = list || [];
-        reportListEl.textContent = '';
-        setCount('count-reports', rows.filter(function (r) {
-          return r.state === 'open';
-        }).length);
+    call('apiInquiryList', [], function (list) {
+      var rows = list || [];
+      reportListEl.textContent = '';
+      setCount('count-reports', rows.filter(function (r) {
+        return r.state === 'open';
+      }).length);
 
-        var shown = rows.filter(matchesReport);
+      var shown = rows.filter(matchesReport);
 
-        if (rows.length && !shown.length) {
-          reportDetail.textContent = '';
-          reportListEl.appendChild(makeBlankState(
-            '絞り込みに合う報告がありません',
-            '絞り込みを消すか、「未解決だけ」を外してみてください。'
-          ));
-          return;
-        }
+      if (rows.length && !shown.length) {
+        reportDetail.textContent = '';
+        reportListEl.appendChild(makeBlankState(
+          '絞り込みに合う報告がありません',
+          '絞り込みを消すか、「未解決だけ」を外してみてください。'
+        ));
+        return;
+      }
 
-        if (!rows.length) {
-          reportDetail.textContent = '';
-          reportListEl.appendChild(makeBlankState(
-            'まだ何も伝えていません',
-            'うまく動かないこと、こうしてほしいこと、分からないことを送って' +
-            'ください。見ている画面と環境も一緒に届き、開発者のやることに積まれます。',
-            { label: '開発者に伝える', onClick: createReport }
-          ));
-          return;
-        }
+      if (!rows.length) {
+        reportDetail.textContent = '';
+        reportListEl.appendChild(makeBlankState(
+          'まだ何も伝えていません',
+          'うまく動かないこと、こうしてほしいこと、分からないことを送って' +
+          'ください。見ている画面と環境も一緒に届き、開発者のやることに積まれます。',
+          { label: '開発者に伝える', onClick: createReport }
+        ));
+        return;
+      }
 
-        shown.forEach(function (r) {
-          var btn = document.createElement('button');
-          // 済んだものは一段沈める。まだ手の要るものを先に拾えるようにする
-          btn.className = 'row-item' + (r.state === 'done' ? ' resolved' : '');
-          btn.dataset.number = r.number;
+      shown.forEach(function (r) {
+        var btn = document.createElement('button');
+        // 済んだものは一段沈める。まだ手の要るものを先に拾えるようにする
+        btn.className = 'row-item' + (r.state === 'done' ? ' resolved' : '');
+        btn.dataset.number = r.number;
 
-          var main = document.createElement('div');
-          main.className = 'row-main';
+        var main = document.createElement('div');
+        main.className = 'row-main';
 
-          var title = document.createElement('div');
-          title.className = 'row-title';
-          title.textContent = '#' + r.number + ' ' + r.title;
-          main.appendChild(title);
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + r.number + ' ' + r.title;
+        main.appendChild(title);
 
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = r.kindLabel + ' · ' + personName(r.by) + ' · ' +
-            String(r.at).substring(0, 10) +
-            (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
-          main.appendChild(meta);
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = r.kindLabel + ' · ' + personName(r.by) + ' · ' +
+          String(r.at).substring(0, 10) +
+          (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
+        main.appendChild(meta);
 
-          var open = document.createElement('div');
-          open.className = 'row-open';
-          open.appendChild(makeIcon(r.state === 'done' ? 'check' : 'inbox'));
-          open.appendChild(main);
-          btn.appendChild(open);
+        var open = document.createElement('div');
+        open.className = 'row-open';
+        open.appendChild(makeIcon(r.state === 'done' ? 'check' : 'inbox'));
+        open.appendChild(main);
+        btn.appendChild(open);
 
-          var state = document.createElement('span');
-          state.className = 'state' + (r.state === 'done' ? ' state-merged' : '');
-          state.textContent = r.state === 'done' ? '解決' : '未解決';
-          btn.appendChild(state);
+        var state = document.createElement('span');
+        state.className = 'state' + (r.state === 'done' ? ' state-merged' : '');
+        state.textContent = r.state === 'done' ? '解決' : '未解決';
+        btn.appendChild(state);
 
-          btn.addEventListener('click', function () { openReport(r.number); });
-          reportListEl.appendChild(btn);
-        });
+        btn.addEventListener('click', function () { openReport(r.number); });
+        reportListEl.appendChild(btn);
+      });
 
-        // 開いていた話を開き直す。返信するたび先頭に戻ると読み進められない
-        var keep = reportShown &&
-          shown.filter(function (r) { return r.number === reportShown; })[0];
-        openReport(keep ? keep.number : (shown[0] && shown[0].number));
-      })
-      .withFailureHandler(function (err) {
-        reportListEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiInquiryList();
+      // 開いていた話を開き直す。返信するたび先頭に戻ると読み進められない
+      var keep = reportShown &&
+        shown.filter(function (r) { return r.number === reportShown; })[0];
+      openReport(keep ? keep.number : (shown[0] && shown[0].number));
+    }, failInto(reportListEl));
   }
 
   /**
@@ -7613,15 +7447,10 @@
     }
     showSkeleton(reportDetail, 'block');
 
-    google.script.run
-      .withSuccessHandler(function (thread) {
-        if (!thread) return;
-        renderReportThread(thread.inquiry, thread.replies || []);
-      })
-      .withFailureHandler(function (err) {
-        reportDetail.textContent = 'エラー: ' + err.message;
-      })
-      .apiInquiryThread(number);
+    call('apiInquiryThread', [number], function (thread) {
+      if (!thread) return;
+      renderReportThread(thread.inquiry, thread.replies || []);
+    }, failInto(reportDetail));
   }
 
   /**
@@ -7755,16 +7584,11 @@
         [{ name: 'body', label: '中身', required: true, multiline: true }],
         '直す',
         function (v) {
-          google.script.run
-            .withSuccessHandler(function () {
-              showSnack('返信を直しました', { kind: 'ok' });
-              closeSide();
-              openReport(reply.inquiryNumber);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiInquiryReplyEdit(reply.id, v.body);
+          call('apiInquiryReplyEdit', [reply.id, v.body], function () {
+            showSnack('返信を直しました', { kind: 'ok' });
+            closeSide();
+            openReport(reply.inquiryNumber);
+          });
         },
         host
       );
@@ -7782,15 +7606,10 @@
         'この返信を消します。元には戻せません。',
         '消す',
         function () {
-          google.script.run
-            .withSuccessHandler(function (msg) {
-              showSnack(msg, { kind: 'ok' });
-              openReport(reply.inquiryNumber);
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiInquiryReplyDelete(reply.id);
+          call('apiInquiryReplyDelete', [reply.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            openReport(reply.inquiryNumber);
+          });
         });
     });
     tools.appendChild(del);
@@ -7823,16 +7642,10 @@
       if (!input.value) return;
       send.disabled = true;
 
-      google.script.run
-        .withSuccessHandler(function () {
-          showSnack('返信しました', { kind: 'ok' });
-          openReport(q.number);
-        })
-        .withFailureHandler(function (err) {
-          send.disabled = false;
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiInquiryReply(q.number, input.value, shots);
+      call('apiInquiryReply', [q.number, input.value, shots], function () {
+        showSnack('返信しました', { kind: 'ok' });
+        openReport(q.number);
+      }, failEnable(send));
     });
 
     form.appendChild(send);
@@ -7850,18 +7663,15 @@
    * 断られるだけになる。
    */
   function loadTasksState() {
-    google.script.run
-      .withSuccessHandler(function (res) {
-        tasksState = res || { available: false, listId: '', lists: [] };
-        var btn = document.getElementById('tasks-btn');
+    call('apiTasksState', [], function (res) {
+      tasksState = res || { available: false, listId: '', lists: [] };
+      var btn = document.getElementById('tasks-btn');
 
-        btn.hidden = !tasksState.available;
-        btn.title = tasksState.listId
-          ? '自分の担当を Google ToDo と同期します'
-          : '入れ先の ToDo リストを選びます';
-      })
-      .withFailureHandler(function () { /* 使えないだけ */ })
-      .apiTasksState();
+      btn.hidden = !tasksState.available;
+      btn.title = tasksState.listId
+        ? '自分の担当を Google ToDo と同期します'
+        : '入れ先の ToDo リストを選びます';
+    }, failQuiet('使えないだけ'));
   }
 
   /**
@@ -7875,20 +7685,14 @@
     var btn = document.getElementById('tasks-btn');
     btn.disabled = true;
 
-    google.script.run
-      .withSuccessHandler(function (res) {
-        btn.disabled = false;
-        var msg = (res.pushed || 0) + '件を ToDo に送りました';
-        if (res.closed) msg += ' / ' + res.closed + '件を完了にしました';
+    call('apiTasksSync', [], function (res) {
+      btn.disabled = false;
+      var msg = (res.pushed || 0) + '件を ToDo に送りました';
+      if (res.closed) msg += ' / ' + res.closed + '件を完了にしました';
 
-        showSnack(msg, { kind: 'ok' });
-        refreshIssueViews();
-      })
-      .withFailureHandler(function (err) {
-        btn.disabled = false;
-        showSnack(err.message, { kind: 'ng' });
-      })
-      .apiTasksSync();
+      showSnack(msg, { kind: 'ok' });
+      refreshIssueViews();
+    }, failEnable(btn));
   }
 
   /**
@@ -7911,17 +7715,12 @@
       [{ name: 'listId', label: '入れ先のリスト', choices: choices }],
       '決める',
       function (v) {
-        google.script.run
-          .withSuccessHandler(function (id) {
-            tasksState.listId = id;
-            showSnack('入れ先を決めました。もう一度押すと同期します',
-              { kind: 'ok' });
-            loadTasksState();
-          })
-          .withFailureHandler(function (err) {
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiTasksChooseList(v.listId);
+        call('apiTasksChooseList', [v.listId], function (id) {
+          tasksState.listId = id;
+          showSnack('入れ先を決めました。もう一度押すと同期します',
+            { kind: 'ok' });
+          loadTasksState();
+        });
       },
       sourceEl
     );
@@ -7953,12 +7752,9 @@
     lead.textContent = '正式版の入れ物 (main) を見ています…';
     box.appendChild(lead);
 
-    google.script.run
-      .withSuccessHandler(function (list) { draw(list || []); })
-      .withFailureHandler(function (err) {
-        lead.textContent = 'エラー: ' + err.message;
-      })
-      .apiFoundFiles();
+    call('apiFoundFiles', [],
+      function (list) { draw(list || []); },
+      failInto(lead));
 
     function draw(found) {
       box.textContent = '';
@@ -8024,24 +7820,18 @@
         }
         go.disabled = true;
 
-        google.script.run
-          .withSuccessHandler(function (res) {
-            go.disabled = false;
-            var text = res.added.length + '件を登録しました';
+        call('apiRegisterFiles', [ids], function (res) {
+          go.disabled = false;
+          var text = res.added.length + '件を登録しました';
 
-            if (res.failed.length) {
-              text += ' / ' + res.failed.length + '件できませんでした';
-            }
-            showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+          if (res.failed.length) {
+            text += ' / ' + res.failed.length + '件できませんでした';
+          }
+          showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
 
-            closeSide();
-            loadFiles(function () { switchTab('docs'); });
-          })
-          .withFailureHandler(function (err) {
-            go.disabled = false;
-            showSnack(err.message, { kind: 'ng' });
-          })
-          .apiRegisterFiles(ids);
+          closeSide();
+          loadFiles(function () { switchTab('docs'); });
+        }, failEnable(go));
       });
       box.appendChild(go);
 
@@ -8049,20 +7839,17 @@
     }
 
     function addFolderLink(host) {
-      google.script.run
-        .withSuccessHandler(function (url) {
-          if (!url) return;
+      call('apiMainFolderUrl', [], function (url) {
+        if (!url) return;
 
-          var link = document.createElement('a');
-          link.className = 'btn';
-          link.href = url;
-          link.target = '_blank';
-          link.rel = 'noopener';
-          link.textContent = '入れ物を Drive で開く';
-          host.appendChild(link);
-        })
-        .withFailureHandler(function () { /* 開く口が無いだけ */ })
-        .apiMainFolderUrl();
+        var link = document.createElement('a');
+        link.className = 'btn';
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = '入れ物を Drive で開く';
+        host.appendChild(link);
+      }, failQuiet('開く口が無いだけ'));
     }
   }
 
@@ -8098,21 +7885,15 @@
     kit.addEventListener('click', function () {
       kit.disabled = true;
 
-      google.script.run
-        .withSuccessHandler(function (res) {
-          kit.disabled = false;
-          if (!res) return;
+      call('apiAgentKit', [], function (res) {
+        kit.disabled = false;
+        if (!res) return;
 
-          // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
-          window.open(res.url, '_blank');
-          showSnack(res.name + ' を落としています', { kind: 'ok' });
-          openKitSteps(res);
-        })
-        .withFailureHandler(function (err) {
-          kit.disabled = false;
-          showSnack(err.message, { kind: 'ng' });
-        })
-        .apiAgentKit();
+        // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
+        window.open(res.url, '_blank');
+        showSnack(res.name + ' を落としています', { kind: 'ok' });
+        openKitSteps(res);
+      }, failEnable(kit));
     });
     return kit;
   }
@@ -8136,17 +7917,12 @@
         [{ name: 'name', label: '名前', required: true }],
         '決める',
         function (v) {
-          google.script.run
-            .withSuccessHandler(function (row) {
-              peopleNames[currentUser] = row.name;
-              showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
-              closeSide();
-              drawMe();
-            })
-            .withFailureHandler(function (err) {
-              showSnack(err.message, { kind: 'ng' });
-            })
-            .apiPeopleSetName(currentUser, v.name);
+          call('apiPeopleSetName', [currentUser, v.name], function (row) {
+            peopleNames[currentUser] = row.name;
+            showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
+            closeSide();
+            drawMe();
+          });
         },
         rename
       );
@@ -8386,10 +8162,7 @@
     if (!rows.length) return;
 
     usageBuffer = {};
-    google.script.run
-      .withSuccessHandler(function () {})
-      .withFailureHandler(function () { /* 数えられなくても操作はできる */ })
-      .apiUsageRecord(rows);
+    call('apiUsageRecord', [rows], function () {}, failQuiet('数えられなくても操作はできる'));
   }
 
   // ===== 使われ方のボード =====
@@ -8451,32 +8224,27 @@
     usageFlush();
     showSkeleton(usageEl, 'list', 4);
 
-    google.script.run
-      .withSuccessHandler(function (res) {
-        var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
-        fillUsageWho(data.byUser || []);
-        usageEl.textContent = '';
+    call('apiUsageSummary', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
+      fillUsageWho(data.byUser || []);
+      usageEl.textContent = '';
 
-        if (!data.total && !(data.byUser || []).length) {
-          usageEl.appendChild(makeBlankState(
-            'まだ記録がありません',
-            'しばらく使うと、どこがよく押されているかがここに出ます。'
-          ));
-          return;
-        }
+      if (!data.total && !(data.byUser || []).length) {
+        usageEl.appendChild(makeBlankState(
+          'まだ記録がありません',
+          'しばらく使うと、どこがよく押されているかがここに出ます。'
+        ));
+        return;
+      }
 
-        usageEl.appendChild(makeUsageSummary(data));
-        usageEl.appendChild(makeUsagePeople(data.byUser || []));
-        usageEl.appendChild(makeUsageRanking('よく押されている操作',
-          data.byTarget.filter(function (t) { return t.kind === 'action'; })));
-        usageEl.appendChild(makeUsageRanking('よく開かれている画面',
-          data.byTarget.filter(function (t) { return t.kind === 'view'; })));
-        usageEl.appendChild(makeUsageDays(data.byDay));
-      })
-      .withFailureHandler(function (err) {
-        usageEl.textContent = 'エラー: ' + err.message;
-      })
-      .apiUsageSummary(Number(usageDaysSel.value) || 30, usageWhoSel.value);
+      usageEl.appendChild(makeUsageSummary(data));
+      usageEl.appendChild(makeUsagePeople(data.byUser || []));
+      usageEl.appendChild(makeUsageRanking('よく押されている操作',
+        data.byTarget.filter(function (t) { return t.kind === 'action'; })));
+      usageEl.appendChild(makeUsageRanking('よく開かれている画面',
+        data.byTarget.filter(function (t) { return t.kind === 'view'; })));
+      usageEl.appendChild(makeUsageDays(data.byDay));
+    }, failInto(usageEl));
   }
 
   /**
@@ -8774,33 +8542,30 @@
    * @param {boolean} [quiet] 初回は前からあるぶんで驚かせない
    */
   function loadNotices(quiet) {
-    google.script.run
-      .withSuccessHandler(function (res) {
-        var data = res || { items: [], unread: 0 };
-        renderNotices(data.items);
+    call('apiNotifications', [30], function (res) {
+      var data = res || { items: [], unread: 0 };
+      renderNotices(data.items);
 
-        bellCount.textContent = data.unread;
-        bellCount.hidden = !data.unread;
-        bellBtn.title = data.unread
-          ? '知らせが' + data.unread + '件あります' : '知らせ';
-        bellBtn.setAttribute('aria-label', bellBtn.title);
+      bellCount.textContent = data.unread;
+      bellCount.hidden = !data.unread;
+      bellBtn.title = data.unread
+        ? '知らせが' + data.unread + '件あります' : '知らせ';
+      bellBtn.setAttribute('aria-label', bellBtn.title);
 
-        // 前に見た番号より新しく、まだ読んでいないものだけを前に出す
-        var fresh = data.items.filter(function (n) {
-          return !n.read && n.id > seenNoticeId;
-        });
+      // 前に見た番号より新しく、まだ読んでいないものだけを前に出す
+      var fresh = data.items.filter(function (n) {
+        return !n.read && n.id > seenNoticeId;
+      });
 
-        data.items.forEach(function (n) {
-          if (n.id > seenNoticeId) seenNoticeId = n.id;
-        });
+      data.items.forEach(function (n) {
+        if (n.id > seenNoticeId) seenNoticeId = n.id;
+      });
 
-        if (quiet || !fresh.length) return;
+      if (quiet || !fresh.length) return;
 
-        showSnack(fresh[0].title, { kind: 'ok' });
-        fresh.forEach(popDesktop);
-      })
-      .withFailureHandler(function () { /* 知らせが出ないだけ */ })
-      .apiNotifications(30);
+      showSnack(fresh[0].title, { kind: 'ok' });
+      fresh.forEach(popDesktop);
+    }, failQuiet('知らせが出ないだけ'));
   }
 
   /**
@@ -8842,10 +8607,9 @@
       }
 
       row.addEventListener('click', function () {
-        google.script.run
-          .withSuccessHandler(function () { loadNotices(true); })
-          .withFailureHandler(function () {})
-          .apiNotificationsRead([n.id]);
+        call('apiNotificationsRead', [[n.id]],
+          function () { loadNotices(true); },
+          failQuiet('知らせなくてよい'));
         openNoticeLink(n);
       });
 
@@ -9038,12 +8802,9 @@
   usageDaysSel.addEventListener('change', loadUsage);
   usageWhoSel.addEventListener('change', loadUsage);
 
-  google.script.run
-    .withSuccessHandler(function (res) {
-      tallyScope = res || { me: '', canSee: [], isManager: false };
-    })
-    .withFailureHandler(function () { /* 自分のぶんだけになる */ })
-    .apiTallyScope();
+  call('apiTallyScope', [], function (res) {
+    tallyScope = res || { me: '', canSee: [], isManager: false };
+  }, failQuiet('自分のぶんだけになる'));
   issueFilterEl.addEventListener('input', reloadIssueView);
 
   dropRootEl.addEventListener('dragover', function (e) {
@@ -9121,10 +8882,7 @@
   });
 
   document.getElementById('notice-read-all').addEventListener('click', function () {
-    google.script.run
-      .withSuccessHandler(function () { loadNotices(true); })
-      .withFailureHandler(function (err) { showSnack(err.message, { kind: 'ng' }); })
-      .apiNotificationsRead([]);
+    call('apiNotificationsRead', [[]], function () { loadNotices(true); });
   });
 
   document.getElementById('notice-desktop').addEventListener('click', function () {
@@ -9159,38 +8917,30 @@
     else if (diffPane.classList.contains('full')) setDiffFull(false);
   });
 
-  google.script.run
-    .withSuccessHandler(function (who) {
-      currentUser = (who || {}).activeUser || '';
-      drawMe();
-    })
-    .withFailureHandler(function () { /* 判定できなければ従来どおり押せる */ })
-    .apiWhoAmI();
+  call('apiWhoAmI', [], function (who) {
+    currentUser = (who || {}).activeUser || '';
+    drawMe();
+  }, failQuiet('判定できなければ従来どおり押せる'));
 
-  google.script.run
-    .withSuccessHandler(function (map) { peopleNames = map || {}; })
-    .withFailureHandler(function () { /* アドレスの手前で出る */ })
-    .apiPeopleNames();
+  call('apiPeopleNames', [],
+    function (map) { peopleNames = map || {}; },
+    failQuiet('アドレスの手前で出る'));
 
-  google.script.run
-    .withSuccessHandler(function (list) { templates = list || []; })
-    .withFailureHandler(function () { /* 差し込めないだけで書ける */ })
-    .apiTemplateList();
+  call('apiTemplateList', [],
+    function (list) { templates = list || []; },
+    failQuiet('差し込めないだけで書ける'));
 
-  google.script.run
-    .withSuccessHandler(function (list) { tags = list || []; })
-    .withFailureHandler(function () { /* 選べないだけで手で書ける */ })
-    .apiTagList();
+  call('apiTagList', [],
+    function (list) { tags = list || []; },
+    failQuiet('選べないだけで手で書ける'));
 
-  google.script.run
-    .withSuccessHandler(function (list) { roster = list || []; })
-    .withFailureHandler(function () { /* 呼べないだけで書き込みはできる */ })
-    .apiKnownPeople();
+  call('apiKnownPeople', [],
+    function (list) { roster = list || []; },
+    failQuiet('呼べないだけで書き込みはできる'));
 
-  google.script.run
-    .withSuccessHandler(function (days) { archiveKeepDays = Number(days) || 30; })
-    .withFailureHandler(function () { /* 既定の30日で表示する */ })
-    .apiArchiveKeepDays();
+  call('apiArchiveKeepDays', [],
+    function (days) { archiveKeepDays = Number(days) || 30; },
+    failQuiet('既定の30日で表示する'));
 
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
 
-const { plainText, plainDate, plainNumber, plainId } =
+const { plainText, plainDate, plainNumber, plainId, plainTalk } =
   loadGas('src/core/Plain.js');
 
 /*
@@ -86,5 +86,48 @@ describe('plainId', () => {
     expect(plainId('')).toBe(0);
     expect(plainId(null)).toBe(0);
     expect(plainId('あ')).toBe(0);
+  });
+});
+
+describe('plainTalk', () => {
+  const row = {
+    id: 7, issueNumber: 3, body: 'そうしましょう', by: 'a@example.com',
+    at: new Date('2026-09-29T01:00:00.000Z'), editedAt: '',
+  };
+
+  it('親を指す欄の名前は呼ぶ側が決める', () => {
+    // 報告の返信とやることのやりとりで、この欄だけが違う
+    expect(plainTalk(row, 'a@example.com', 'issueNumber').issueNumber).toBe(3);
+    expect(plainTalk({ ...row, inquiryNumber: 9 }, '', 'inquiryNumber')
+      .inquiryNumber).toBe(9);
+  });
+
+  it('日時は字にして返す', () => {
+    const out = plainTalk(row, '', 'issueNumber');
+
+    expect(out.at).toBe('2026-09-29T01:00:00.000Z');
+    expect(out.editedAt).toBe('');
+  });
+
+  it('書いた本人だけが直せる', () => {
+    expect(plainTalk(row, 'a@example.com', 'issueNumber').canEdit).toBe(true);
+    expect(plainTalk(row, 'b@example.com', 'issueNumber').canEdit).toBe(false);
+  });
+
+  it('id を持たない古い行は直せない', () => {
+    // id を足す前に書かれた行は名指しできない。直そうとすると
+    // 「やりとりを指定してください」で止まる
+    expect(plainTalk({ ...row, id: '' }, 'a@example.com', 'issueNumber').canEdit)
+      .toBe(false);
+    expect(plainTalk({ ...row, id: '' }, 'a@example.com', 'issueNumber').id)
+      .toBe(0);
+  });
+
+  it('Date を1つも残さない', () => {
+    const out = plainTalk(row, 'a@example.com', 'issueNumber');
+
+    Object.keys(out).forEach((key) => {
+      expect(out[key] instanceof Date, key).toBe(false);
+    });
   });
 });
