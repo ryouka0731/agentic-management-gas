@@ -31,8 +31,10 @@ const SOURCES = [
   'src/core/Project.gs',
   'src/core/Mention.js',
   'src/core/Inquiry.gs',
+  'src/core/Brand.js',
   'src/core/Notifier.gs',
   'src/core/Tally.js',
+  'src/core/Plain.js',
   'src/Main.gs',
 ];
 

@@ -14,16 +14,40 @@ function read(path) {
 }
 
 describe('サービス名', () => {
-  it('ブラウザのタブに出る', () => {
-    expect(read('src/Main.gs')).toContain(".setTitle('" + NAME + "')");
+  it('名前の出どころは1か所である', () => {
+    // 散らすと、名前が変わるたびに全部を直すことになり、直し漏れた
+    // 1通だけが古い名前で届く
+    expect(read('src/core/Brand.js'))
+      .toContain("return '" + NAME + "';");
   });
 
-  it('通知メールの件名がすべて揃っている', () => {
-    const text = read('src/core/Notifier.gs');
-    const subjects = text.match(/'\[[^\]]+\] /g) || [];
+  it('ブラウザのタブに出る', () => {
+    expect(read('src/Main.gs')).toContain('.setTitle(APP_NAME())');
+  });
 
-    expect(subjects.length).toBeGreaterThan(5);
-    subjects.forEach((one) => expect(one).toContain('[' + NAME + ']'));
+  it('サーバ側に名前の字を書かない', () => {
+    // タブと通知と概要で食い違わないよう、どれも出どころから引く
+    const text = read('src/Main.gs');
+
+    expect(text).toContain('repo: APP_NAME()');
+    expect(text).not.toContain("'" + NAME + "'");
+  });
+
+  it('画面の左上にも同じ名前が出る', () => {
+    // 画面側はサーバの関数を呼べないため字で持つ。往復を1つ増やして
+    // 左上が一瞬空になるほうが損である
+    expect(read('src/ui/app.js.html'))
+      .toContain("name.textContent = '" + NAME + "';");
+  });
+
+  it('通知メールの件名は1か所で組む', () => {
+    const text = read('src/core/Notifier.gs');
+
+    // 以前は同じ接頭辞が10か所に写されていた
+    expect(text).toContain("'[' + APP_NAME() + '] '");
+    expect(text.match(/'\[[^\]]+\] /g) || []).toHaveLength(1);
+    expect((text.match(/notifySubject_\(/g) || []).length)
+      .toBeGreaterThan(5);
   });
 
   it('配る道具にも同じ名前が入っている', () => {
@@ -42,7 +66,8 @@ describe('サービス名', () => {
 
   it('仮の名前が人の目に触れる場所に残っていない', () => {
     const brand = [
-      'src/Main.gs', 'src/core/Notifier.gs', 'src/core/AgentKit.gs',
+      'src/core/Brand.js', 'src/Main.gs', 'src/core/Notifier.gs',
+      'src/core/AgentKit.gs',
       'kit/README.md', 'kit/AGENTS.md', 'kit/package.json',
     ];
 

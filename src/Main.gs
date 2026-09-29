@@ -10,7 +10,7 @@ function doGet(e) {
 
   var template = HtmlService.createTemplateFromFile('ui/wiki');
   return template.evaluate()
-    .setTitle('SoftBanto')
+    .setTitle(APP_NAME())
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -390,7 +390,7 @@ function apiCommitHistory(fileId) {
       parentSha: rows[i].parentSha,
       author: rows[i].author,
       message: rows[i].message,
-      timestamp: new Date(rows[i].timestamp).toISOString(),
+      timestamp: plainDate(rows[i].timestamp),
     });
   }
   return out;
@@ -427,7 +427,7 @@ function apiBranchList() {
       baseSha: rows[i].baseSha,
       state: rows[i].state,
       createdBy: rows[i].createdBy,
-      createdAt: rows[i].createdAt ? new Date(rows[i].createdAt).toISOString() : '',
+      createdAt: plainDate(rows[i].createdAt),
     });
   }
   return out;
@@ -472,8 +472,8 @@ function apiPrList() {
       targetBranch: rows[i].targetBranch,
       state: rows[i].state,
       author: rows[i].author,
-      createdAt: rows[i].createdAt ? new Date(rows[i].createdAt).toISOString() : '',
-      body: String(rows[i].body == null ? '' : rows[i].body),
+      createdAt: plainDate(rows[i].createdAt),
+      body: plainText(rows[i].body),
       reviewers: prReviewers(rows[i]),
     });
   }
@@ -717,9 +717,9 @@ function apiCommitGraph(fileId) {
     var r = rows[p];
     plain.push({
       sha: String(r.sha), parentSha: String(r.parentSha || ''),
-      branch: String(r.branch), message: String(r.message == null ? '' : r.message),
-      author: String(r.author == null ? '' : r.author),
-      timestamp: r.timestamp ? new Date(r.timestamp).toISOString() : '',
+      branch: String(r.branch), message: plainText(r.message),
+      author: plainText(r.author),
+      timestamp: plainDate(r.timestamp),
       lane: r.lane, activeLanes: r.activeLanes,
       fork: r.fork, forkLane: r.forkLane, merge: r.merge,
     });
@@ -831,7 +831,7 @@ function apiOverview() {
   }
 
   return {
-    repo: 'SoftBanto',
+    repo: APP_NAME(),
     me: String(Session.getActiveUser().getEmail() || ''),
     docs: docs,
     branches: openBranches,
@@ -942,12 +942,12 @@ function apiPrReviews(number) {
     if (Number(rows[i].prNumber) !== Number(number)) continue;
     // 日時は文字列にする。Date のまま返すと運べず、画面には null が届く
     out.push({
-      id: rows[i].id === '' || rows[i].id == null ? '' : Number(rows[i].id),
-      reviewer: String(rows[i].reviewer == null ? '' : rows[i].reviewer),
-      state: String(rows[i].state == null ? '' : rows[i].state),
-      body: String(rows[i].body == null ? '' : rows[i].body),
-      at: rows[i].at ? new Date(rows[i].at).toISOString() : '',
-      editedAt: rows[i].editedAt ? new Date(rows[i].editedAt).toISOString() : '',
+      id: plainNumber(rows[i].id),
+      reviewer: plainText(rows[i].reviewer),
+      state: plainText(rows[i].state),
+      body: plainText(rows[i].body),
+      at: plainDate(rows[i].at),
+      editedAt: plainDate(rows[i].editedAt),
       // 直せるかどうかは画面では決められない。書いた本人かをここで見る
       canEdit: String(rows[i].reviewer) === String(me) &&
         String(rows[i].state) === 'comment' &&
@@ -976,10 +976,9 @@ function apiPrCommits(number) {
   for (var i = 0; i < commits.length; i++) {
     out.push({
       sha: String(commits[i].sha),
-      message: String(commits[i].message == null ? '' : commits[i].message),
-      author: String(commits[i].author == null ? '' : commits[i].author),
-      timestamp: commits[i].timestamp
-        ? new Date(commits[i].timestamp).toISOString() : '',
+      message: plainText(commits[i].message),
+      author: plainText(commits[i].author),
+      timestamp: plainDate(commits[i].timestamp),
     });
   }
   return out;
@@ -998,39 +997,27 @@ function apiPrCommits(number) {
  * @returns {object}
  */
 function issueToPlain_(row) {
-  function iso(v) {
-    if (!v) return '';
-    var d = new Date(v);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
-  }
-
-  function num(v) {
-    if (v === '' || v === null || v === undefined) return '';
-    var n = Number(v);
-    return isNaN(n) ? '' : n;
-  }
-
   return {
     number: Number(row.number),
-    title: String(row.title == null ? '' : row.title),
-    body: String(row.body == null ? '' : row.body),
-    state: String(row.state == null ? '' : row.state),
-    assignee: String(row.assignee == null ? '' : row.assignee),
+    title: plainText(row.title),
+    body: plainText(row.body),
+    state: plainText(row.state),
+    assignee: plainText(row.assignee),
     assignees: issueAssignees(row),
-    labels: String(row.labels == null ? '' : row.labels),
-    linkedFileIds: String(row.linkedFileIds == null ? '' : row.linkedFileIds),
-    linkedPr: row.linkedPr === '' || row.linkedPr == null ? '' : Number(row.linkedPr),
-    createdAt: iso(row.createdAt),
-    closedAt: iso(row.closedAt),
-    dueDate: iso(row.dueDate),
-    startDate: iso(row.startDate),
-    parent: row.parent === '' || row.parent == null ? '' : Number(row.parent),
-    estimate: num(row.estimate),
-    plannedHours: num(row.plannedHours),
-    actualHours: num(row.actualHours),
-    archivedAt: iso(row.archivedAt),
+    labels: plainText(row.labels),
+    linkedFileIds: plainText(row.linkedFileIds),
+    linkedPr: plainNumber(row.linkedPr),
+    createdAt: plainDate(row.createdAt),
+    closedAt: plainDate(row.closedAt),
+    dueDate: plainDate(row.dueDate),
+    startDate: plainDate(row.startDate),
+    parent: plainNumber(row.parent),
+    estimate: plainNumber(row.estimate),
+    plannedHours: plainNumber(row.plannedHours),
+    actualHours: plainNumber(row.actualHours),
+    archivedAt: plainDate(row.archivedAt),
     daysLeft: row.archivedAt ? archiveDaysLeft(row.archivedAt, new Date()) : '',
-    updatedAt: iso(row.updatedAt),
+    updatedAt: plainDate(row.updatedAt),
     staleDays: stalenessOf(row, new Date()).days,
     staleLevel: stalenessOf(row, new Date()).level,
   };
@@ -1111,28 +1098,22 @@ function apiIssueClose(number) {
  * @returns {object}
  */
 function inquiryToPlain_(row) {
-  function iso(v) {
-    if (!v) return '';
-    var d = new Date(v);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
-  }
-
   var me = Session.getActiveUser().getEmail();
   var owner = inquiryOwner_();
 
   return {
     number: Number(row.number),
-    kind: String(row.kind == null ? '' : row.kind),
+    kind: plainText(row.kind),
     kindLabel: INQUIRY_KINDS()[row.kind] || String(row.kind || ''),
     title: String(row.title || inquiryTitleOf_(row.body)),
-    body: String(row.body == null ? '' : row.body),
-    by: String(row.by == null ? '' : row.by),
-    state: String(row.state == null ? '' : row.state),
-    context: String(row.context == null ? '' : row.context),
-    answer: String(row.answer == null ? '' : row.answer),
-    closedBy: String(row.closedBy == null ? '' : row.closedBy),
-    at: iso(row.at),
-    answeredAt: iso(row.answeredAt),
+    body: plainText(row.body),
+    by: plainText(row.by),
+    state: plainText(row.state),
+    context: plainText(row.context),
+    answer: plainText(row.answer),
+    closedBy: plainText(row.closedBy),
+    at: plainDate(row.at),
+    answeredAt: plainDate(row.answeredAt),
     shots: inquiryShotLinks_(row),
     issueNumber: row.issueNumber === '' || row.issueNumber == null
       ? '' : Number(row.issueNumber),
@@ -1152,19 +1133,13 @@ function inquiryToPlain_(row) {
  * @returns {object}
  */
 function inquiryReplyToPlain_(row, me) {
-  function iso(v) {
-    if (!v) return '';
-    var d = new Date(v);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
-  }
-
   return {
     id: Number(row.id),
     inquiryNumber: Number(row.inquiryNumber),
-    body: String(row.body == null ? '' : row.body),
-    by: String(row.by == null ? '' : row.by),
-    at: iso(row.at),
-    editedAt: iso(row.editedAt),
+    body: plainText(row.body),
+    by: plainText(row.by),
+    at: plainDate(row.at),
+    editedAt: plainDate(row.editedAt),
     shots: inquiryShotLinks_(row),
     canEdit: String(row.by) === String(me) && Number(row.id) > 0,
   };
@@ -1317,7 +1292,7 @@ function apiNotifications(limit) {
       title: String(rows[i].title || ''),
       body: String(rows[i].body || ''),
       link: String(rows[i].link || ''),
-      at: rows[i].at ? new Date(rows[i].at).toISOString() : '',
+      at: plainDate(rows[i].at),
       read: !!read,
     });
   }
@@ -1568,19 +1543,13 @@ function apiMemberSet(email, manager, name) {
  * @returns {object}
  */
 function issueCommentToPlain_(row, me) {
-  function iso(v) {
-    if (!v) return '';
-    var d = new Date(v);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
-  }
-
   return {
     id: Number(row.id),
     issueNumber: Number(row.issueNumber),
-    body: String(row.body == null ? '' : row.body),
-    by: String(row.by == null ? '' : row.by),
-    at: iso(row.at),
-    editedAt: iso(row.editedAt),
+    body: plainText(row.body),
+    by: plainText(row.by),
+    at: plainDate(row.at),
+    editedAt: plainDate(row.editedAt),
     canEdit: String(row.by) === String(me) && Number(row.id) > 0,
   };
 }

@@ -17,6 +17,7 @@ const SOURCES = [
   'src/core/Project.gs',
   'src/core/Mention.js',
   'src/core/Inquiry.gs',
+  'src/core/Brand.js',
   'src/core/Notifier.gs',
 ];
 

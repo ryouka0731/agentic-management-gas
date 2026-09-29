@@ -16,6 +16,7 @@ const SOURCES = [
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',
+  'src/core/Brand.js',
   'src/core/Notifier.gs',
   'src/core/GoogleTasks.gs',
 ];

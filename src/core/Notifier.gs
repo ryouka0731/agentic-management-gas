@@ -22,6 +22,24 @@ function notify(to, subject, body) {
 }
 
 /**
+ * 便りの件名を組む。
+ *
+ * 名前は10か所に散らさない。散らすと、名前が変わるたびに全部を直す
+ * ことになり、直し漏れた1通だけが古い名前で届く。
+ *
+ * 「何の、どれが、どうなったか」の順に書く。受け取る側は件名だけで
+ * 一覧を捌くため、種類と番号が先に来ないと開くまで分からない。
+ *
+ * @param {string} what 何の ('PR' | '報告' | 'やること')
+ * @param {number} number どれが
+ * @param {string} happened どうなったか
+ * @returns {string}
+ */
+function notifySubject_(what, number, happened) {
+  return '[' + APP_NAME() + '] ' + what + ' #' + number + ' ' + happened;
+}
+
+/**
  * 次の知らせの番号を返す。
  *
  * @returns {number}
@@ -118,7 +136,7 @@ function noticeMarkRead(ids) {
 function notifyPrCreated(pr) {
   notify(
     pr.author,
-    '[SoftBanto] PR #' + pr.number + ' が作成されました',
+    notifySubject_('PR', pr.number, 'が作成されました'),
     pr.title + '\n\nWiki のプルリクエストタブから確認してください。'
   );
 }
@@ -131,7 +149,7 @@ function notifyPrCreated(pr) {
 function notifyPrMerged(pr) {
   notify(
     pr.author,
-    '[SoftBanto] PR #' + pr.number + ' がマージされました',
+    notifySubject_('PR', pr.number, 'がマージされました'),
     pr.title + '\n\nmain の文書が更新されました。'
   );
 }
@@ -148,7 +166,7 @@ function notifyPrReviewRequested(pr, to) {
 
   notify(
     to,
-    '[SoftBanto] PR #' + pr.number + ' の確認を頼まれました',
+    notifySubject_('PR', pr.number, 'の確認を頼まれました'),
     pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。'
   );
 }
@@ -167,7 +185,7 @@ function notifyInquiry(row) {
 
   notify(
     owner,
-    '[SoftBanto] 報告 #' + row.number + ' が届きました',
+    notifySubject_('報告', row.number, 'が届きました'),
     INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
     row.body + '\n\n' + (row.context || '')
   );
@@ -181,7 +199,7 @@ function notifyInquiry(row) {
 function notifyInquiryAnswered(row) {
   notify(
     row.by,
-    '[SoftBanto] 報告 #' + row.number + ' に返事がありました',
+    notifySubject_('報告', row.number, 'に返事がありました'),
     row.body + '\n\n--- 返事 ---\n' + row.answer
   );
 }
@@ -202,7 +220,7 @@ function notifyInquiryReply(inquiry, reply, talkers) {
 
     notify(
       talkers[i],
-      '[SoftBanto] 報告 #' + inquiry.number + ' に返信がありました',
+      notifySubject_('報告', inquiry.number, 'に返信がありました'),
       (inquiry.title || inquiry.body) + '\n\n' +
       reply.by + ':\n' + reply.body
     );
@@ -225,7 +243,7 @@ function notifyInquiryMention(inquiry, post, people) {
   for (var i = 0; i < (people || []).length; i++) {
     notify(
       people[i],
-      '[SoftBanto] 報告 #' + inquiry.number + ' であなたが呼ばれました',
+      notifySubject_('報告', inquiry.number, 'であなたが呼ばれました'),
       (inquiry.title || inquiry.body) + '\n\n' +
       post.by + ':\n' + post.body
     );
@@ -249,7 +267,7 @@ function notifyPrMention(pr, review, to) {
 
   notify(
     to,
-    '[SoftBanto] PR #' + pr.number + ' であなたが呼ばれました',
+    notifySubject_('PR', pr.number, 'であなたが呼ばれました'),
     pr.title + '\n\n' + review.reviewer + ':\n' + review.body
   );
 }
@@ -269,7 +287,7 @@ function notifyIssueComment(issue, row, people) {
 
     notify(
       people[i],
-      '[SoftBanto] やること #' + issue.number + ' に書き込みがありました',
+      notifySubject_('やること', issue.number, 'に書き込みがありました'),
       issue.title + '\n\n' + row.by + ':\n' + row.body
     );
   }
@@ -290,7 +308,7 @@ function notifyIssueCommentMention(issue, row, people) {
 
     notify(
       people[i],
-      '[SoftBanto] やること #' + issue.number + ' であなたが呼ばれました',
+      notifySubject_('やること', issue.number, 'であなたが呼ばれました'),
       issue.title + '\n\n' + row.by + ':\n' + row.body
     );
   }
