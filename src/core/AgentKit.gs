@@ -31,7 +31,7 @@ function AGENT_KIT_FILES() {
  * @returns {string}
  */
 function AGENT_KIT_VERSION() {
-  return '1.0.0';
+  return '1.1.0';
 }
 
 /**
@@ -60,7 +60,7 @@ function agentKitBuild_() {
     blobs.push(Utilities.newBlob(text, 'text/plain', files[i][1]));
   }
 
-  var name = 'agentic-management-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
+  var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
   var zip = Utilities.zip(blobs, name);
   var folder = agentKitFolder_();
 
@@ -79,7 +79,7 @@ function agentKitBuild_() {
  * @returns {{name:string, url:string, version:string}}
  */
 function agentKitFile() {
-  var name = 'agentic-management-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
+  var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
   var found = agentKitFolder_().getFilesByName(name);
   var file = found.hasNext() ? found.next() : agentKitBuild_();
 

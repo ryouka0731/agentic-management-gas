@@ -10,7 +10,7 @@ function doGet(e) {
 
   var template = HtmlService.createTemplateFromFile('ui/wiki');
   return template.evaluate()
-    .setTitle('Agentic Management')
+    .setTitle('SoftBanto')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -754,7 +754,7 @@ function apiOverview() {
   }
 
   return {
-    repo: 'agentic-management',
+    repo: 'SoftBanto',
     me: String(Session.getActiveUser().getEmail() || ''),
     docs: docs,
     branches: openBranches,

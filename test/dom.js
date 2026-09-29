@@ -106,7 +106,7 @@ export const DEFAULTS = {
     { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
     { fileId: 'W2', path: 'branches/土台/就業規則.doc', type: 'doc' },
   ],
-  apiOverview: { repo: 'agentic-management', docs: 1, branches: 1, openIssues: 2, openPrs: 1, commits: 5 },
+  apiOverview: { repo: 'SoftBanto', docs: 1, branches: 1, openIssues: 2, openPrs: 1, commits: 5 },
   apiWhoAmI: { activeUser: 'me@example.com', effectiveUser: 'me@example.com', sameUser: true },
   apiArchiveKeepDays: 30,
   apiIssueArchivedList: [],
@@ -117,7 +117,7 @@ export const DEFAULTS = {
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
   apiAgentKit: {
-    name: 'agentic-management-agent-kit-1.0.0.zip',
+    name: 'softbanto-agent-kit-1.1.0.zip',
     version: '1.0.0',
     url: 'https://drive.google.com/uc?export=download&id=KIT1',
   },

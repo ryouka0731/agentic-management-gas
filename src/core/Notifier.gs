@@ -118,7 +118,7 @@ function noticeMarkRead(ids) {
 function notifyPrCreated(pr) {
   notify(
     pr.author,
-    '[agentic-management] PR #' + pr.number + ' が作成されました',
+    '[SoftBanto] PR #' + pr.number + ' が作成されました',
     pr.title + '\n\nWiki のプルリクエストタブから確認してください。'
   );
 }
@@ -131,7 +131,7 @@ function notifyPrCreated(pr) {
 function notifyPrMerged(pr) {
   notify(
     pr.author,
-    '[agentic-management] PR #' + pr.number + ' がマージされました',
+    '[SoftBanto] PR #' + pr.number + ' がマージされました',
     pr.title + '\n\nmain の文書が更新されました。'
   );
 }
@@ -148,7 +148,7 @@ function notifyPrReviewRequested(pr, to) {
 
   notify(
     to,
-    '[agentic-management] PR #' + pr.number + ' の確認を頼まれました',
+    '[SoftBanto] PR #' + pr.number + ' の確認を頼まれました',
     pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。'
   );
 }
@@ -167,7 +167,7 @@ function notifyInquiry(row) {
 
   notify(
     owner,
-    '[agentic-management] 報告 #' + row.number + ' が届きました',
+    '[SoftBanto] 報告 #' + row.number + ' が届きました',
     INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
     row.body + '\n\n' + (row.context || '')
   );
@@ -181,7 +181,7 @@ function notifyInquiry(row) {
 function notifyInquiryAnswered(row) {
   notify(
     row.by,
-    '[agentic-management] 報告 #' + row.number + ' に返事がありました',
+    '[SoftBanto] 報告 #' + row.number + ' に返事がありました',
     row.body + '\n\n--- 返事 ---\n' + row.answer
   );
 }
@@ -202,7 +202,7 @@ function notifyInquiryReply(inquiry, reply, talkers) {
 
     notify(
       talkers[i],
-      '[agentic-management] 報告 #' + inquiry.number + ' に返信がありました',
+      '[SoftBanto] 報告 #' + inquiry.number + ' に返信がありました',
       (inquiry.title || inquiry.body) + '\n\n' +
       reply.by + ':\n' + reply.body
     );
@@ -225,7 +225,7 @@ function notifyInquiryMention(inquiry, post, people) {
   for (var i = 0; i < (people || []).length; i++) {
     notify(
       people[i],
-      '[agentic-management] 報告 #' + inquiry.number + ' であなたが呼ばれました',
+      '[SoftBanto] 報告 #' + inquiry.number + ' であなたが呼ばれました',
       (inquiry.title || inquiry.body) + '\n\n' +
       post.by + ':\n' + post.body
     );
@@ -249,7 +249,7 @@ function notifyPrMention(pr, review, to) {
 
   notify(
     to,
-    '[agentic-management] PR #' + pr.number + ' であなたが呼ばれました',
+    '[SoftBanto] PR #' + pr.number + ' であなたが呼ばれました',
     pr.title + '\n\n' + review.reviewer + ':\n' + review.body
   );
 }
@@ -269,7 +269,7 @@ function notifyIssueComment(issue, row, people) {
 
     notify(
       people[i],
-      '[agentic-management] やること #' + issue.number + ' に書き込みがありました',
+      '[SoftBanto] やること #' + issue.number + ' に書き込みがありました',
       issue.title + '\n\n' + row.by + ':\n' + row.body
     );
   }
@@ -290,7 +290,7 @@ function notifyIssueCommentMention(issue, row, people) {
 
     notify(
       people[i],
-      '[agentic-management] やること #' + issue.number + ' であなたが呼ばれました',
+      '[SoftBanto] やること #' + issue.number + ' であなたが呼ばれました',
       issue.title + '\n\n' + row.by + ':\n' + row.body
     );
   }

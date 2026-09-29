@@ -1,4 +1,8 @@
-# Agentic Management (GAS)
+# SoftBanto（そふと番頭） / 通称 Banto
+
+主に代わって帳面をつけ、段取りをし、確認を取り次ぐ——番頭の役どころから
+名前を取っている。リポジトリ名 `agentic-management-gas` は開発上の呼び名として
+そのまま残してある。
 
 Google Workspace 上の文書に Git の概念（コミット / ブランチ / PR / Issue / Projects）を
 与えて管理するシステム。**GAS 標準サービスのみ**で構築され、外部 API を一切使用しない。
@@ -268,7 +272,7 @@ npm install
 
 ```bash
 clasp login
-clasp create-script --type standalone --title "Agentic Management" --rootDir src
+clasp create-script --type standalone --title "SoftBanto" --rootDir src
 clasp push --force
 ```
 

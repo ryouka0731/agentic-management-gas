@@ -3,6 +3,18 @@
 Google Workspace の文書（Docs / Sheets / Slides）に Git 相当の版管理を与える
 Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を参照。
 
+## 名前
+
+人に見せる名前は **SoftBanto（そふと番頭）**、通称 **番頭**。リポジトリ名
+`agentic-management-gas` は開発上の呼び名としてそのまま残してある。
+
+**Drive のフォルダ名だけは `agentic-management` のまま**にしてある。既に動いて
+いる実体をリネームする必然性がなく、変えると画面やドキュメントが指す先と
+食い違う。設定はフォルダ ID で持っているので、名前は表示以外に効かない。
+
+名前はタブ・通知メールの件名・配る道具の3か所に出る。`test/naming.test.js` が
+揃っていることを固定している。**片方だけ直すと、食い違ったまま気づかれない。**
+
 ## この設計の中核
 
 **すべてを正規化 HTML に変換し、それを blob として扱う。**
