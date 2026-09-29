@@ -4354,6 +4354,85 @@ describe('はじめにの入口', () => {
   });
 });
 
+describe('使い方の目次', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHelp() {
+    mount();
+    document.querySelector('[data-tab="help"]').click();
+    return document.querySelector('#guide .guide-toc');
+  }
+
+  it('節の数だけ並ぶ', () => {
+    const toc = openHelp();
+    const heads = [...document.querySelectorAll('#guide h2')];
+    const items = [...toc.querySelectorAll('.guide-toc-item')];
+
+    // 節を足して目次に載らないと、そこだけ辿り着けない
+    expect(items.map((b) => b.textContent))
+      .toEqual(heads.map((h) => h.textContent));
+  });
+
+  it('押すとその節へ寄る', () => {
+    const toc = openHelp();
+    const heads = [...document.querySelectorAll('#guide h2')];
+    const seen = [];
+
+    heads.forEach((h) => { h.scrollIntoView = () => seen.push(h.textContent); });
+    toc.querySelectorAll('.guide-toc-item')[3].click();
+
+    expect(seen).toEqual([heads[3].textContent]);
+  });
+
+  it('飛び先ではなく押して寄せる', () => {
+    const toc = openHelp();
+
+    // 枠の中で動いているため、場所を変えると外側の頁ごと動くことがある
+    expect(toc.querySelectorAll('a')).toHaveLength(0);
+    expect(toc.querySelector('.guide-toc-item').tagName).toBe('BUTTON');
+  });
+
+  it('器のいちばん上にあり、送っても残る', () => {
+    const toc = openHelp();
+    const css = document.querySelector('style').textContent;
+    const rule = css.substring(css.indexOf('\n.guide-toc {'));
+
+    // 先頭でないと、上の余白を打ち消す指定が操作の帯を食う
+    expect(document.getElementById('guide').firstElementChild).toBe(toc);
+    expect(rule.substring(0, rule.indexOf('}'))).toContain('position: sticky');
+  });
+
+  it('いま読んでいる節を示す', () => {
+    const toc = openHelp();
+    const items = [...toc.querySelectorAll('.guide-toc-item')];
+    const guide = document.getElementById('guide');
+
+    // jsdom は位置を持たないので、見出しの位置を差し込んで送る
+    const heads = [...document.querySelectorAll('#guide h2')];
+    heads.forEach((h, i) => {
+      Object.defineProperty(h, 'offsetTop', { value: 40 + i * 500 });
+    });
+
+    /** @param {number} to */
+    function scrollTo(to) {
+      guide.scrollTop = to;
+      guide.dispatchEvent(new window.Event('scroll'));
+      return items.map((b) => b.getAttribute('aria-current'));
+    }
+
+    // 色だけでは気づけない人がいるので aria-current でも示す。
+    // 示すのは必ず1つ。0個だと目次が死んで見え、2個だとどちらか分からない
+    [0, 1100, 4000].forEach(function (at) {
+      expect(scrollTo(at).filter((v) => v === 'true')).toHaveLength(1);
+    });
+
+    expect(scrollTo(0)[0]).toBe('true');
+    expect(scrollTo(1100)[2]).toBe('true');
+    expect(scrollTo(1100)[0]).toBe('false');
+    expect(scrollTo(4000)[items.length - 1]).toBe('true');
+  });
+});
+
 describe('カードの幅', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

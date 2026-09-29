@@ -6869,12 +6869,42 @@
   function loadHelp() {
     if (guideEl.dataset.ready) return;
 
-    // 操作は先に置く。読み物の底に置くと、困ったときにしか開かれない
+    // 目次は器のいちばん上に置く。送っても上に残る (sticky) ため、
+    // 底の節からでも一息で戻れる。器の先頭でないと、上の余白を
+    // 打ち消す指定が操作の帯を食う
+    var toc = document.createElement('nav');
+    toc.className = 'guide-toc';
+    toc.setAttribute('aria-label', '使い方の目次');
+    guideEl.appendChild(toc);
+
+    // 操作は読み物より先に置く。底に置くと、困ったときにしか開かれない
     // 場所に埋もれる
     var top = document.createElement('div');
     top.className = 'guide-foot guide-top';
     makeMeActions().forEach(function (el) { top.appendChild(el); });
     guideEl.appendChild(top);
+
+    var tocItems = [];
+
+    /**
+     * 目次の項を作る。
+     *
+     * href の飛び先にはしない。この画面は枠の中で動いているため、
+     * 場所が変わると外側の頁ごと動くことがある。押して寄せる
+     *
+     * @param {string} label
+     * @param {HTMLElement} target 寄せたい見出し
+     */
+    function addToc(label, target) {
+      var btn = document.createElement('button');
+      btn.className = 'guide-toc-item';
+      btn.textContent = label;
+      btn.addEventListener('click', function () {
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+      toc.appendChild(btn);
+      tocItems.push({ btn: btn, target: target });
+    }
 
     // 節ごとに、その話の図を先に置く。字だけの説明は読まれない。
     // 全部の節に置いてあるのは、図だけ見て帰れるようにするため
@@ -6891,6 +6921,7 @@
       var h = document.createElement('h2');
       h.textContent = section[0];
       guideEl.appendChild(h);
+      addToc(section[0], h);
 
       if (figures[section[0]]) {
         guideEl.appendChild(makeDiagram(figures[section[0]]));
@@ -6913,6 +6944,27 @@
     who.id = 'whoami';
     foot.appendChild(who);
     guideEl.appendChild(foot);
+
+    /**
+     * いま読んでいる節を目次の側で示す。
+     *
+     * どこを読んでいるのか分からないまま長い頁を送ると、戻る先を
+     * 見失う。色だけでなく aria-current でも示す
+     */
+    function markToc() {
+      var line = guideEl.scrollTop + 80;
+      var at = 0;
+
+      for (var i = 0; i < tocItems.length; i++) {
+        if (tocItems[i].target.offsetTop <= line) at = i;
+      }
+      tocItems.forEach(function (item, i) {
+        item.btn.setAttribute('aria-current', String(i === at));
+      });
+    }
+
+    guideEl.addEventListener('scroll', markToc);
+    markToc();
 
     guideEl.dataset.ready = '1';
 
