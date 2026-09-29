@@ -619,7 +619,12 @@
   function fillBrand() {
     var host = document.getElementById('brand');
     host.textContent = '';
-    host.appendChild(makeLogo());
+
+    // 印と名前は横に並べ、何をする道具かは下に一行で置く。名前の横に
+    // 足すと、260px の帯では名前が潰れる
+    var row = document.createElement('span');
+    row.className = 'brand-row';
+    row.appendChild(makeLogo());
 
     var words = document.createElement('span');
     words.className = 'brand-words';
@@ -634,7 +639,14 @@
     sub.textContent = 'そふと番頭';
     words.appendChild(sub);
 
-    host.appendChild(words);
+    row.appendChild(words);
+    host.appendChild(row);
+
+    var tag = document.createElement('span');
+    tag.className = 'brand-tag';
+    tag.textContent = 'AIで文書とタスクを管理するシステム';
+    host.appendChild(tag);
+
     attachHint(host,
       '文書の版を残し、確認を経て反映する道具です。通称は「番頭」です');
   }
@@ -651,7 +663,17 @@
    * この画面は外から何も取ってこない作りにしてある。地の色に合わせる
    * のも、その場で描いたほうが確実。
    *
-   * @param {object} spec {title, desc, width, height, boxes, arrows}
+   * 語彙:
+   *   lanes  背景の帯。主語（正式版/改訂版、できる/できない）を囲む
+   *   arrows 線。soft で戻り、dash で補い、bare で先を付けない
+   *   boxes  角丸の箱。label は改行可、sub は下に小さく
+   *   dots   線の上の点。記録のような「その時点」を表す
+   *   notes  自由な字。木の形や但し書きに使う。mono で等幅
+   *
+   * 帯 → 線 → 箱 → 点 → 字 の順に重ねる。あとのものが上に乗る。
+   *
+   * @param {object} spec {title, desc, width, height, lanes, arrows, boxes,
+   *   dots, notes, caption}
    * @returns {HTMLElement}
    */
   function makeDiagram(spec) {
@@ -711,12 +733,35 @@
       return el;
     }
 
-    (spec.arrows || []).forEach(function (arrow) {
-      add('path', {
-        d: arrow.d,
-        class: 'diagram-arrow' + (arrow.soft ? ' soft' : ''),
-        'marker-end': 'url(#' + mark + (arrow.soft ? '-soft' : '') + ')',
+    // 帯は主語を囲むもの。いちばん下に敷く
+    (spec.lanes || []).forEach(function (lane) {
+      add('rect', {
+        x: lane.x, y: lane.y, width: lane.w, height: lane.h, rx: 8,
+        class: 'diagram-lane' + (lane.tone ? ' ' + lane.tone : ''),
       });
+
+      if (!lane.label) return;
+
+      var tag = add('text', {
+        x: lane.x + 12, y: lane.y + 18,
+        class: 'diagram-lane-text' + (lane.tone ? ' ' + lane.tone : ''),
+      });
+      tag.textContent = lane.label;
+    });
+
+    (spec.arrows || []).forEach(function (arrow) {
+      var line = add('path', {
+        d: arrow.d,
+        class: 'diagram-arrow' + (arrow.soft ? ' soft' : '') +
+          (arrow.dash ? ' dash' : ''),
+      });
+
+      // 帯の底や時間の流れを表す線には先を付けない。先が2つ並ぶと
+      // どちらへ向かっているのか読めなくなる
+      if (!arrow.bare) {
+        line.setAttribute(
+          'marker-end', 'url(#' + mark + (arrow.soft ? '-soft' : '') + ')');
+      }
 
       if (!arrow.label) return;
 
@@ -733,16 +778,52 @@
         class: 'diagram-box' + (box.tone ? ' ' + box.tone : ''),
       });
 
+      // 下に小さい字を足すぶん、見出しは上へ寄せる
+      var mid = box.y + box.h / 2 + (box.sub ? -8 : 0);
       var lines = box.label.split('\n');
       lines.forEach(function (line, at) {
         var text = add('text', {
           x: box.x + box.w / 2,
-          y: box.y + box.h / 2 + (at - (lines.length - 1) / 2) * 15 + 5,
+          y: mid + (at - (lines.length - 1) / 2) * 15 + 5,
           class: 'diagram-text' + (box.tone ? ' ' + box.tone : ''),
           'text-anchor': 'middle',
         });
         text.textContent = line;
       });
+
+      if (!box.sub) return;
+
+      var sub = add('text', {
+        x: box.x + box.w / 2, y: box.y + box.h - 9,
+        class: 'diagram-sub', 'text-anchor': 'middle',
+      });
+      sub.textContent = box.sub;
+    });
+
+    // 点は「その時点」。記録が並んでいく様子を線の上に置く
+    (spec.dots || []).forEach(function (dot) {
+      add('circle', {
+        cx: dot.cx, cy: dot.cy, r: dot.r || 7,
+        class: 'diagram-dot' + (dot.tone ? ' ' + dot.tone : ''),
+      });
+
+      if (!dot.label) return;
+
+      var text = add('text', {
+        x: dot.cx, y: dot.cy + (dot.below ? 24 : -15),
+        class: 'diagram-label', 'text-anchor': 'middle',
+      });
+      text.textContent = dot.label;
+    });
+
+    (spec.notes || []).forEach(function (note) {
+      var text = add('text', {
+        x: note.x, y: note.y,
+        class: 'diagram-note' + (note.mono ? ' mono' : '') +
+          (note.tone ? ' ' + note.tone : ''),
+        'text-anchor': note.anchor || 'start',
+      });
+      text.textContent = note.text;
     });
 
     wrap.appendChild(svg);
@@ -759,51 +840,288 @@
   /** 文書が変わっていく道のり */
   var FLOW_DIAGRAM = {
     title: '文書が変わっていく道のり',
-    desc: '正式版をコピーして改訂版を作り、直して記録し、確認依頼を出し、' +
-      '承認されると正式版に反映される。反映されたものが次の正式版になる。',
+    desc: '上の帯が正式版、下の帯が改訂版。正式版をコピーして改訂版を作り、' +
+      '直すたびに記録を残し、確認を依頼する。承認されると正式版に反映され、' +
+      'それが次の正式版になる。',
     width: 760,
-    height: 190,
-    boxes: [
-      { x: 10, y: 20, w: 120, h: 56, label: '正式版', tone: 'strong' },
-      { x: 166, y: 20, w: 120, h: 56, label: '改訂版を\n作る' },
-      { x: 322, y: 20, w: 120, h: 56, label: '直して\n記録する' },
-      { x: 478, y: 20, w: 120, h: 56, label: '確認を\n依頼する' },
-      { x: 634, y: 20, w: 116, h: 56, label: '正式版に\n反映', tone: 'ok' },
-    ],
-    arrows: [
-      { d: 'M130 48h30', lx: 148, ly: 14, label: 'コピー' },
-      { d: 'M286 48h30', lx: 301, ly: 14, label: '' },
-      { d: 'M442 48h30', lx: 460, ly: 14, label: '' },
-      { d: 'M598 48h30', lx: 616, ly: 14, label: '承認' },
+    height: 282,
+    lanes: [
       {
-        d: 'M692 76v34a8 8 0 0 1-8 8H78a8 8 0 0 0-8 8v14',
-        lx: 380, ly: 133, label: '反映されたものが、次の正式版になる', soft: true,
+        x: 0, y: 26, w: 760, h: 92, tone: 'strong',
+        label: '正式版 — 全員が見るもの。直接なおさない',
+      },
+      {
+        x: 0, y: 150, w: 760, h: 92,
+        label: '改訂版 — 自分の作業用。正式版には影響しない',
       },
     ],
-    caption: '正式版は直接なおしません。必ずコピー（改訂版）で直します。',
+    arrows: [
+      { d: 'M116 82h604', bare: true },
+      { d: 'M252 206h296', bare: true },
+      {
+        d: 'M196 82C214 82 220 206 246 206',
+        lx: 316, ly: 141, label: '① コピーして改訂版を作る',
+      },
+      {
+        d: 'M556 206C650 206 656 82 712 82',
+        lx: 622, ly: 141, label: '④ 承認されたら反映',
+      },
+    ],
+    dots: [
+      { cx: 164, cy: 82, label: 'いまの正式版' },
+      { cx: 288, cy: 206, label: '② 直して記録', below: true },
+      { cx: 374, cy: 206, label: '記録', below: true },
+      { cx: 460, cy: 206, label: '記録', below: true },
+      { cx: 544, cy: 206, tone: 'strong', label: '③ 確認を依頼', below: true },
+      { cx: 716, cy: 82, tone: 'ok', label: '次の正式版' },
+    ],
+    notes: [
+      {
+        x: 380, y: 272, anchor: 'middle',
+        text: '点はひとつずつの記録。いつでも見比べられ、前の状態にも戻れます',
+      },
+    ],
+    caption: '正式版は直接なおしません。必ずコピー（改訂版）で直し、' +
+      '確認を経て反映します。',
+  };
+
+  /** 言葉どうしのつながり */
+  var VOCAB_DIAGRAM = {
+    title: '言葉どうしのつながり',
+    desc: '文書には変更の記録と改訂版がぶら下がり、改訂版から確認依頼が出る。' +
+      'やることにはやりとり・担当者と工数・タグがぶら下がる。' +
+      'やることは文書に紐づけてもよいし、紐づけなくてもよい。',
+    width: 760,
+    height: 316,
+    boxes: [
+      { x: 40, y: 124, w: 120, h: 52, label: '文書', tone: 'strong' },
+      {
+        x: 206, y: 44, w: 134, h: 48,
+        label: '変更の記録', sub: 'その時点を丸ごと',
+      },
+      { x: 206, y: 126, w: 134, h: 48, label: '改訂版', sub: '作業用のコピー' },
+      {
+        x: 206, y: 208, w: 134, h: 48,
+        label: '確認依頼', sub: '反映してよいか', tone: 'ok',
+      },
+      { x: 430, y: 124, w: 120, h: 52, label: 'やること', tone: 'strong' },
+      { x: 596, y: 44, w: 154, h: 48, label: 'やりとり', sub: 'なぜそう決めたか' },
+      {
+        x: 596, y: 126, w: 154, h: 48,
+        label: '担当者と工数', sub: '複数なら頭数で割る',
+      },
+      { x: 596, y: 208, w: 154, h: 48, label: 'タグ', sub: '「#」で書く種類' },
+    ],
+    arrows: [
+      { d: 'M160 140C184 140 184 68 202 68' },
+      { d: 'M160 150h38' },
+      { d: 'M273 174v30' },
+      { d: 'M550 140C574 140 574 68 592 68' },
+      { d: 'M550 150h38' },
+      { d: 'M550 160C574 160 574 232 592 232' },
+      {
+        d: 'M430 178C430 288 100 288 100 182', dash: true,
+        lx: 266, ly: 306, label: 'やることは文書に紐づけてもよい（なくてもよい）',
+      },
+    ],
+    caption: '改訂版から確認依頼が出ます。確認依頼だけを先に作ることはできません。',
+  };
+
+  /** 基本の流れ。押す場所の名前をそのまま置く */
+  var STEPS_DIAGRAM = {
+    title: '基本の流れ（押す順に）',
+    desc: '文書を開き、改訂版を作り、本文を直して保存し、変更を記録し、' +
+      '確認を依頼し、承認されたら正式版に反映する。',
+    width: 760,
+    height: 222,
+    boxes: [
+      { x: 10, y: 30, w: 232, h: 64, label: '① 文書を開く' },
+      {
+        x: 264, y: 30, w: 232, h: 64,
+        label: '②「この文書の改訂版」で\n改訂版を作る',
+      },
+      {
+        x: 518, y: 30, w: 232, h: 64,
+        label: '③ 本文の「直す」で\n書き換えて保存',
+      },
+      {
+        x: 10, y: 140, w: 232, h: 64,
+        label: '④「変更を記録」で\nその時点を残す',
+      },
+      {
+        x: 264, y: 140, w: 232, h: 64,
+        label: '⑤「改訂中の版」から\n確認を依頼', tone: 'strong',
+      },
+      {
+        x: 518, y: 140, w: 232, h: 64,
+        label: '⑥ 承認されたら\n「正式版に反映する」', tone: 'ok',
+      },
+    ],
+    arrows: [
+      { d: 'M242 62h16' },
+      { d: 'M496 62h16' },
+      { d: 'M634 94v14a8 8 0 0 1-8 8H134a8 8 0 0 0-8 8v12' },
+      { d: 'M242 172h16' },
+      { d: 'M496 172h16' },
+    ],
+    caption: '長い改訂は、途中の版を土台にして分けて進められます。' +
+      '確認依頼は改訂版どうしでも出せます。',
+  };
+
+  /** はじめての設定。エディタを触るのがどこまでかを示す */
+  var SETUP_DIAGRAM = {
+    title: 'はじめての設定（最初の一人だけ）',
+    desc: 'エディタで setupRepo を一度だけ実行し、Google の確認を許可すると、' +
+      'スクリプトと同じ場所に入れ物と台帳ができる。' +
+      'あとは main フォルダに文書を入れ、画面の「文書を登録する」を押す。' +
+      'エディタを触るのは最初の一人の一度だけで、文書を足すときは要らない。',
+    width: 760,
+    height: 306,
+    lanes: [
+      {
+        x: 396, y: 118, w: 354, h: 154,
+        label: '③ でできるもの（スクリプトと同じ場所）',
+      },
+    ],
+    boxes: [
+      {
+        x: 10, y: 30, w: 176, h: 66,
+        label: '① エディタで\nsetupRepo を実行', tone: 'strong',
+      },
+      { x: 206, y: 30, w: 176, h: 66, label: '② Google の確認を\n許可する' },
+      {
+        x: 402, y: 30, w: 176, h: 66,
+        label: '③ 入れ物と台帳が\nできる', tone: 'ok',
+      },
+      {
+        x: 10, y: 142, w: 176, h: 66,
+        label: '④ 管理したい文書を\nmain に入れる',
+      },
+      {
+        x: 10, y: 224, w: 176, h: 66,
+        label: '⑤ 画面の\n「文書を登録する」', tone: 'ok',
+      },
+    ],
+    arrows: [
+      { d: 'M186 63h12' },
+      { d: 'M382 63h12' },
+      { d: 'M490 96v14' },
+      { d: 'M98 208v12' },
+      { d: 'M418 175H192', dash: true, lx: 306, ly: 165, label: 'ここに入れる' },
+    ],
+    notes: [
+      { x: 418, y: 156, text: 'agentic-management', mono: true },
+      { x: 436, y: 180, text: 'main', mono: true },
+      { x: 502, y: 180, text: '管理したい文書' },
+      { x: 436, y: 206, text: 'branches', mono: true },
+      { x: 526, y: 206, text: '改訂版が入る' },
+      { x: 436, y: 232, text: 'objects', mono: true },
+      { x: 526, y: 232, text: '記録の中身' },
+      { x: 418, y: 258, text: '台帳のスプレッドシート' },
+    ],
+    caption: '① と ② は最初の一人だけ、一度だけです。二人目からは配られた ' +
+      'URL を開くだけ。文書を足すときは ④ と ⑤ だけで、エディタは要りません。',
   };
 
   /** 手元から動かすときの往復 */
   var QUEUE_DIAGRAM = {
     title: '手元から動かすときの往復',
-    desc: '手元の道具が命令のファイルを Drive に置き、番頭が1分ごとに拾って' +
-      '実行し、結果のファイルを書き戻す。',
+    desc: '手元の agent.mjs が命令のファイルを同期フォルダに置き、' +
+      'Drive を通って .git/queue に届く。番頭が1分ごとに見張って実行し、' +
+      '結果のファイルが同じ道を返る。' +
+      '正式版を直接なおすことと承認は、手元からはできない。',
     width: 760,
-    height: 190,
-    boxes: [
-      { x: 10, y: 20, w: 170, h: 56, label: '手元\n(Claude / Codex)' },
-      { x: 296, y: 20, w: 170, h: 56, label: 'Drive の\nqueue フォルダ' },
-      { x: 582, y: 20, w: 168, h: 56, label: '番頭が実行', tone: 'strong' },
-    ],
-    arrows: [
-      { d: 'M180 48h110', lx: 235, ly: 14, label: '命令のファイル' },
-      { d: 'M466 48h110', lx: 521, ly: 14, label: '1分以内に拾う' },
+    height: 278,
+    lanes: [
       {
-        d: 'M666 76v34a8 8 0 0 1-8 8H103a8 8 0 0 0-8 8v14',
-        lx: 380, ly: 133, label: '結果のファイルが返る', soft: true,
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '手元からできる',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn',
+        label: '手元からはできない',
       },
     ],
-    caption: '返るまで最大1分かかります。すぐ返らなくても壊れてはいません。',
+    boxes: [
+      {
+        x: 10, y: 34, w: 170, h: 70,
+        label: '手元で\nnode agent.mjs', sub: 'Claude / Codex',
+      },
+      {
+        x: 212, y: 34, w: 170, h: 70,
+        label: '同期フォルダ', sub: 'Drive for desktop',
+      },
+      {
+        x: 414, y: 34, w: 150, h: 70,
+        label: '.git/queue', sub: '命令のファイル',
+      },
+      {
+        x: 596, y: 34, w: 154, h: 70,
+        label: '番頭が実行', sub: '1分ごとに見張る', tone: 'strong',
+      },
+    ],
+    arrows: [
+      { d: 'M180 69h26' },
+      { d: 'M382 69h26' },
+      { d: 'M564 69h26' },
+      {
+        d: 'M673 104C673 166 95 166 95 108', soft: true,
+        lx: 384, ly: 184, label: '結果のファイルが返る（遅くとも1分）',
+      },
+    ],
+    notes: [
+      { x: 26, y: 246, text: 'やること・改訂版・確認依頼をつくる / 一覧を見る' },
+      { x: 408, y: 246, text: '正式版を直接なおす / 確認依頼の承認' },
+    ],
+    caption: '鍵もトークンも要りません。要るのは Node.js 18 以上と、' +
+      '同期したフォルダだけです。',
+  };
+
+  /** 同じ場所が両方で変わったとき */
+  var CONFLICT_DIAGRAM = {
+    title: '同じ場所が両方で変わったとき',
+    desc: '分かれ目の版・正式版・改訂版の3つを見比べる。' +
+      '直した所が重なっていなければそのまま反映され、' +
+      '同じ場所が両方で変わっていたら、どちらを残すかを選ぶ。',
+    width: 760,
+    height: 248,
+    boxes: [
+      {
+        x: 14, y: 30, w: 232, h: 70,
+        label: '分かれ目の版', sub: '両方が分かれた時点',
+      },
+      {
+        x: 264, y: 30, w: 232, h: 70,
+        label: '正式版', sub: 'その後こう変わった', tone: 'strong',
+      },
+      {
+        x: 514, y: 30, w: 232, h: 70,
+        label: '改訂版', sub: '自分はこう直した',
+      },
+      {
+        x: 14, y: 158, w: 356, h: 72,
+        label: '直した所が重なっていなければ', sub: 'そのまま反映される',
+        tone: 'ok',
+      },
+      {
+        x: 390, y: 158, w: 356, h: 72,
+        label: '同じ場所が両方で変わっていたら',
+        sub: 'どちらを残すかを選ぶ', tone: 'warn',
+      },
+    ],
+    arrows: [
+      { d: 'M380 100v20', bare: true },
+      { d: 'M192 120H568', bare: true },
+      { d: 'M192 120v34' },
+      { d: 'M568 120v34' },
+    ],
+    dots: [
+      { cx: 380, cy: 120, r: 5 },
+    ],
+    notes: [
+      { x: 396, y: 116, text: '3つを見比べる' },
+    ],
+    caption: '「同じ場所が両方で変わっています」と出たら、' +
+      'どちらを残すかを選んでから反映してください。',
   };
 
   // ===== テーマ =====
@@ -6558,10 +6876,15 @@
     makeMeActions().forEach(function (el) { top.appendChild(el); });
     guideEl.appendChild(top);
 
-    // 節ごとに、その話の図を先に置く。字だけの説明は読まれない
+    // 節ごとに、その話の図を先に置く。字だけの説明は読まれない。
+    // 全部の節に置いてあるのは、図だけ見て帰れるようにするため
     var figures = {
       'このアプリについて': FLOW_DIAGRAM,
+      '言葉の意味': VOCAB_DIAGRAM,
+      '基本の流れ': STEPS_DIAGRAM,
+      'はじめての設定 (最初の一人だけ)': SETUP_DIAGRAM,
       '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
+      'つまずきやすい点': CONFLICT_DIAGRAM,
     };
 
     GUIDE.forEach(function (section) {

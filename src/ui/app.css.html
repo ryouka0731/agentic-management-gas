@@ -1627,13 +1627,25 @@ button:disabled {
  * 明示しないと確認依頼の一覧だけ文字が真ん中に寄る (実際に踏んだ)
  */
 /*
- * 幅は指定しない。display: flex で器いっぱいに伸びるので、width: 100%
- * を足すと左右の margin のぶんだけはみ出す (実際に右端が見切れた)
+ * 幅は器いっぱいまで伸ばす。
+ *
+ * button の既定 width: auto は、display: flex にしても中身に合わせて縮む
+ * (form の部品は shrink-to-fit になる)。行が <div> の一覧 (やること・
+ * 改訂版・下書き) は伸びるのに、<button> の一覧 (確認依頼・要望) だけ
+ * 題の長さで幅が変わり、カードの右端が揃わなかった。
+ *
+ * width: 100% は使えない。左右に margin があるぶんだけはみ出す
+ * (実際に右端が見切れた)。余っている幅に合わせる指定なら margin を
+ * 引いた幅になる。stripped されても今までどおり縮むだけなので、
+ * 古い環境でも壊れない
  */
 .row-item {
   display: flex;
   align-items: center;
   text-align: left;
+  width: -moz-available;
+  width: -webkit-fill-available;
+  width: stretch;
   /* どの一覧でも背の高さを揃える。器の形が違っても行の丈は変えない */
   min-height: 56px;
   gap: var(--sp-2);
@@ -3339,6 +3351,10 @@ button.label-pill {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  /* button は中身に合わせて縮む。隣の <div> の行と幅が揃わなくなる */
+  width: -moz-available;
+  width: -webkit-fill-available;
+  width: stretch;
 }
 
 .usage-person:hover .usage-name { color: var(--accent); }
@@ -3505,10 +3521,18 @@ button.label-pill {
  */
 .brand {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
   padding: 0 var(--sp-4) var(--sp-4);
   color: var(--ink);
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 
 .brand-mark {
@@ -3546,6 +3570,13 @@ button.label-pill {
   color: var(--ink-2);
 }
 
+/* 何をする道具かの一行。名前の横ではなく下に置き、折り返させる */
+.brand-tag {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
 /*
  * 説明の図。
  *
@@ -3557,15 +3588,41 @@ button.label-pill {
   padding: var(--sp-3);
   border-radius: var(--radius);
   background: var(--bg-2);
+
+  /* 狭い画面では縮めずに横へ流す。幅に合わせて縮めると字が潰れ、
+     読めない図になる。図だけは横に出してよい */
+  overflow-x: auto;
 }
 
 .diagram svg {
   display: block;
   width: 100%;
+  min-width: 680px;
   height: auto;
 }
 
 .diagram figcaption { margin-top: var(--sp-2); }
+
+/* 帯は主語を囲むもの。地よりわずかに沈ませ、箱と競わせない */
+.diagram-lane {
+  fill: var(--bg-3);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.diagram-lane.strong { fill: var(--accent-bg); stroke: var(--accent); }
+.diagram-lane.ok { fill: var(--success-bg); stroke: var(--success); }
+.diagram-lane.warn { fill: var(--warn-bg); stroke: var(--warn); }
+
+.diagram-lane-text {
+  fill: var(--ink-2);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.diagram-lane-text.strong { fill: var(--accent); }
+.diagram-lane-text.ok { fill: var(--success); }
+.diagram-lane-text.warn { fill: var(--warn); }
 
 .diagram-box {
   fill: var(--surface-raised);
@@ -3575,6 +3632,7 @@ button.label-pill {
 
 .diagram-box.strong { fill: var(--accent-bg); stroke: var(--accent); }
 .diagram-box.ok { fill: var(--success-bg); stroke: var(--success); }
+.diagram-box.warn { fill: var(--warn-bg); stroke: var(--warn); }
 
 .diagram-text {
   fill: var(--ink);
@@ -3584,6 +3642,23 @@ button.label-pill {
 
 .diagram-text.strong { fill: var(--accent); }
 .diagram-text.ok { fill: var(--success); }
+.diagram-text.warn { fill: var(--warn); }
+
+/* 箱の下に添える一行。見出しと同じ重さで置くと、どちらが主か消える */
+.diagram-sub {
+  fill: var(--ink-2);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.diagram-dot {
+  fill: var(--surface-raised);
+  stroke: var(--ink-2);
+  stroke-width: 2;
+}
+
+.diagram-dot.strong { fill: var(--accent); stroke: var(--accent); }
+.diagram-dot.ok { fill: var(--success); stroke: var(--success); }
 
 .diagram-arrow {
   fill: none;
@@ -3600,9 +3675,23 @@ button.label-pill {
   stroke-dasharray: 4 4;
 }
 
+/* 破線は「してもよい」「ここへ入れる」のような、必ずではない結び付き */
+.diagram-arrow.dash { stroke-dasharray: 5 4; }
+
 .diagram-label {
   fill: var(--ink-2);
   font-size: 11px;
   font-family: inherit;
+}
+
+.diagram-note {
+  fill: var(--ink-2);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.diagram-note.mono {
+  fill: var(--ink);
+  font-family: var(--mono);
 }
 </style>

@@ -229,6 +229,18 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
   壊す。基礎で `button { color: inherit; border: 0 }` を当てている
 - **`display: flex` の行に `width: 100%` を足さない。** 左右に margin があると
   その分はみ出す（実際に右端が見切れた）
+- **`button` は `display: flex` にしても幅が伸びない。** form の部品は
+  `width: auto` が shrink-to-fit になるため、行が `<div>` の一覧（やること・
+  改訂版・下書き）は器いっぱいに伸びるのに、`<button>` の一覧（確認依頼・
+  要望・使われ方）だけ題の長さで幅が変わる。`width: stretch` と
+  `-webkit-fill-available` / `-moz-available` を並べて当てる。`100%` は
+  上のとおり使えない
+- **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
+  `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
+  図が消える。図の座標は手で置いているため、`test/component.test.js` の
+  「描いたものが枠から出ない」「箱どうしが重ならない」が枠外と重なりを見ている。
+  狭い画面では縮めずに横へ流す（`min-width: 680px`）。縮めると字が潰れて
+  読めない図になる
 - **幅を掴んで変えるペインには `min-width: 0` を書く。** flex の既定
   (`min-width: auto`) は中身より小さくならず、「広げられるのに縮まない」になる
 - **掴む操作は `pointerup` だけに頼らない。** 枠の外で離すと届かず、掴んだまま

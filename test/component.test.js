@@ -4261,6 +4261,19 @@ describe('左上の名前', () => {
 
     expect(brand.querySelector('.brand-name').textContent).toBe('SoftBanto');
     expect(brand.querySelector('.brand-sub').textContent).toBe('そふと番頭');
+    expect(brand.querySelector('.brand-tag').textContent)
+      .toBe('AIで文書とタスクを管理するシステム');
+  });
+
+  it('何をする道具かは印と名前の下に置く', () => {
+    mount();
+    const brand = document.getElementById('brand');
+
+    // 名前の横に足すと、260px の帯では名前が潰れる
+    expect(brand.firstElementChild.className).toBe('brand-row');
+    expect(brand.lastElementChild.className).toBe('brand-tag');
+    expect(brand.querySelector('.brand-row .brand-name')).toBeTruthy();
+    expect(brand.querySelector('.brand-row .brand-tag')).toBeNull();
   });
 
   it('印は字と同じ色で描く', () => {
@@ -4341,6 +4354,68 @@ describe('はじめにの入口', () => {
   });
 });
 
+describe('カードの幅', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 宣言の塊を取り出す */
+  function ruleOf(selector) {
+    const css = document.querySelector('style').textContent;
+    const at = css.indexOf('\n' + selector + ' {');
+
+    expect(at, selector + ' が見つからない').toBeGreaterThan(-1);
+    return css.substring(at, css.indexOf('}', at));
+  }
+
+  it('行はどれも器いっぱいまで伸びる', () => {
+    mount();
+
+    // button の既定 width: auto は中身に合わせて縮むため、<button> の
+    // 一覧 (確認依頼・要望) だけ題の長さで幅が変わっていた
+    ['.row-item', '.usage-person'].forEach(function (sel) {
+      const rule = ruleOf(sel);
+
+      expect(rule, sel).toContain('width: stretch');
+      // stretch を知らない環境のための控え
+      expect(rule, sel).toContain('width: -webkit-fill-available');
+      expect(rule, sel).toContain('width: -moz-available');
+    });
+  });
+
+  it('幅の指定に 100% は使わない', () => {
+    mount();
+
+    // 左右に margin があるぶんだけはみ出す (実際に右端が見切れた)
+    const rule = ruleOf('.row-item');
+
+    expect(rule).toContain('margin: 0 var(--sp-4)');
+    expect(rule).not.toContain('width: 100%');
+  });
+
+  it('確認依頼と要望の行も同じクラスで組む', () => {
+    mount({
+      apiInquiryList: [{
+        number: 3, kind: 'bug', kindLabel: 'うまく動かない',
+        title: 'とても長い題を付けたときにカードの右端が揃わない',
+        body: 'x', by: 'me@example.com', state: 'open', context: '',
+        answer: '', at: '2026-09-09T00:00:00.000Z', answeredAt: '',
+        replyCount: 0,
+      }],
+    });
+
+    document.querySelector('[data-tab="pulls"]').click();
+    const pr = document.querySelector('#pr-list .row-item');
+
+    document.querySelector('[data-tab="report"]').click();
+    const report = document.querySelector('#report-list .row-item');
+
+    // 一覧ごとに別のクラスを当てると、幅の直しが片方にしか効かない
+    expect(pr.tagName).toBe('BUTTON');
+    expect(report.tagName).toBe('BUTTON');
+    expect(pr.classList.contains('row-item')).toBe(true);
+    expect(report.classList.contains('row-item')).toBe(true);
+  });
+});
+
 describe('使い方の図', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
@@ -4350,32 +4425,52 @@ describe('使い方の図', () => {
     return [...document.querySelectorAll('#guide .diagram')];
   }
 
-  it('流れと往復の2つを置く', () => {
-    const figures = openHelp();
+  const TITLES = [
+    '文書が変わっていく道のり',
+    '言葉どうしのつながり',
+    '基本の流れ（押す順に）',
+    'はじめての設定（最初の一人だけ）',
+    '手元から動かすときの往復',
+    '同じ場所が両方で変わったとき',
+  ];
 
-    // 字だけの説明は読まれない
-    expect(figures).toHaveLength(2);
-    expect(figures[0].querySelector('title').textContent)
-      .toBe('文書が変わっていく道のり');
-    expect(figures[1].querySelector('title').textContent)
-      .toBe('手元から動かすときの往復');
+  it('どの節にも図がある', () => {
+    const figures = openHelp();
+    const heads = [...document.querySelectorAll('#guide h2')];
+
+    // 図だけ見て帰れるようにする。ここが節の数と食い違うと、
+    // 図が無い節が生まれ、そこだけ読まれない
+    expect(figures).toHaveLength(heads.length);
+    expect(figures.map((f) => f.querySelector('title').textContent))
+      .toEqual(TITLES);
   });
 
-  it('説明より先に置く', () => {
+  it('その節の説明より先に置く', () => {
     const figures = openHelp();
-    const guide = document.getElementById('guide');
-    const firstList = guide.querySelector('ul');
+    const guide = [...document.getElementById('guide').children];
 
-    expect(figures[0].compareDocumentPosition(firstList) &
-      window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 見出し → 図 → 箇条書き の順。図が下に回ると読まれない
+    figures.forEach((fig) => {
+      const at = guide.indexOf(fig);
+
+      expect(guide[at - 1].tagName).toBe('H2');
+      expect(guide[at + 1].tagName).toBe('UL');
+    });
   });
 
   it('読み上げにも中身が届く', () => {
     const figures = openHelp();
-    const svg = figures[0].querySelector('svg');
 
-    expect(svg.getAttribute('role')).toBe('img');
-    expect(svg.querySelector('desc').textContent).toContain('正式版');
+    figures.forEach((fig) => {
+      const svg = fig.querySelector('svg');
+
+      expect(svg.getAttribute('role')).toBe('img');
+      // 図が読めない人には desc だけが届く。題だけでは何も伝わらない
+      expect(svg.querySelector('desc').textContent.length)
+        .toBeGreaterThan(40);
+    });
+    expect(figures[0].querySelector('desc').textContent)
+      .toContain('正式版');
   });
 
   it('外から何も取ってこない', () => {
@@ -4387,28 +4482,106 @@ describe('使い方の図', () => {
     expect(js).toContain('.diagram-box');
   });
 
-  it('矢印の先が付いている', () => {
+  it('向きのある線には先が付き、地の線には付かない', () => {
     const figures = openHelp();
-    const arrow = figures[0].querySelector('.diagram-arrow');
+    const arrows = [...figures[0].querySelectorAll('.diagram-arrow')];
+    const withHead = arrows.filter((a) => a.getAttribute('marker-end'));
+    const bare = arrows.filter((a) => !a.getAttribute('marker-end'));
 
-    expect(arrow.getAttribute('marker-end')).toMatch(/^url\(#arrow-\d+\)$/);
+    expect(withHead.length).toBeGreaterThan(0);
+    withHead.forEach((a) => {
+      expect(a.getAttribute('marker-end')).toMatch(/^url\(#arrow-\d+(-soft)?\)$/);
+    });
+    // 帯の底や時間の流れ。先が2つ並ぶとどちらへ向かうのか読めなくなる
+    expect(bare.length).toBeGreaterThan(0);
     expect(figures[0].querySelector('marker path')).toBeTruthy();
   });
 
-  it('2つの図で矢印の名前がぶつからない', () => {
+  it('図どうしで矢印の名前がぶつからない', () => {
     const figures = openHelp();
-    const a = figures[0].querySelector('marker').id;
-    const b = figures[1].querySelector('marker').id;
+    const ids = figures.map((f) => f.querySelector('marker').id);
 
-    expect(a).not.toBe(b);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('言葉での断りも添える', () => {
     const figures = openHelp();
 
+    figures.forEach((fig) => {
+      expect(fig.querySelector('figcaption').textContent.length)
+        .toBeGreaterThan(10);
+    });
     expect(figures[0].querySelector('figcaption').textContent)
       .toContain('正式版は直接なおしません');
-    expect(figures[1].querySelector('figcaption').textContent)
-      .toContain('最大1分');
+    expect(figures[4].querySelector('figcaption').textContent)
+      .toContain('Node.js 18');
+  });
+
+  it('描いたものが枠から出ない', () => {
+    const figures = openHelp();
+
+    figures.forEach((fig) => {
+      const svg = fig.querySelector('svg');
+      const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
+
+      // はみ出したぶんは切られて見えなくなる。座標を手で置いている
+      // ぶん、足したときに気付けないと黙って欠ける
+      svg.querySelectorAll('rect').forEach((el) => {
+        const x = Number(el.getAttribute('x'));
+        const y = Number(el.getAttribute('y'));
+
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(x + Number(el.getAttribute('width'))).toBeLessThanOrEqual(w);
+        expect(y + Number(el.getAttribute('height'))).toBeLessThanOrEqual(h);
+      });
+
+      svg.querySelectorAll('text').forEach((el) => {
+        expect(Number(el.getAttribute('y'))).toBeGreaterThan(0);
+        expect(Number(el.getAttribute('y'))).toBeLessThanOrEqual(h);
+        expect(Number(el.getAttribute('x'))).toBeGreaterThanOrEqual(0);
+        expect(Number(el.getAttribute('x'))).toBeLessThanOrEqual(w);
+      });
+
+      svg.querySelectorAll('circle').forEach((el) => {
+        const r = Number(el.getAttribute('r'));
+
+        expect(Number(el.getAttribute('cx')) - r).toBeGreaterThanOrEqual(0);
+        expect(Number(el.getAttribute('cx')) + r).toBeLessThanOrEqual(w);
+        expect(Number(el.getAttribute('cy')) + r).toBeLessThanOrEqual(h);
+      });
+    });
+  });
+
+  it('箱どうしが重ならない', () => {
+    const figures = openHelp();
+
+    figures.forEach((fig, at) => {
+      const boxes = [...fig.querySelectorAll('rect.diagram-box')].map((el) => ({
+        x: Number(el.getAttribute('x')),
+        y: Number(el.getAttribute('y')),
+        w: Number(el.getAttribute('width')),
+        h: Number(el.getAttribute('height')),
+      }));
+
+      // 重なると下の箱の字が読めなくなる。座標は手で置いている
+      boxes.forEach((a, i) => {
+        boxes.slice(i + 1).forEach((b) => {
+          const over = a.x < b.x + b.w && b.x < a.x + a.w &&
+                       a.y < b.y + b.h && b.y < a.y + a.h;
+
+          expect(over, TITLES[at] + ' の箱が重なっている').toBe(false);
+        });
+      });
+    });
+  });
+
+  it('狭い画面では縮めずに横へ流す', () => {
+    openHelp();
+    const css = document.querySelector('style').textContent;
+
+    // 幅に合わせて縮めると字が潰れて読めない図になる
+    expect(css).toMatch(/\.diagram\s*\{[^}]*overflow-x:\s*auto/);
+    expect(css).toMatch(/\.diagram svg\s*\{[^}]*min-width:\s*680px/);
   });
 });
