@@ -572,6 +572,73 @@
     usage: 'columns',
   };
 
+  /**
+   * 名前の印を作る。
+   *
+   * 番頭が守る帳面と、そこに挟んだ栞。帳面は版が積み重なることを、
+   * 栞は「いまどこを見ているか」を表す。
+   *
+   * 画像は置かない。読み込みを1つ増やさずに済み、明るい地でも暗い地でも
+   * 字と同じ色で出せる。
+   *
+   * @returns {SVGElement}
+   */
+  function makeLogo() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'brand-mark');
+    svg.setAttribute('aria-hidden', 'true');
+
+    /**
+     * @param {string} d
+     * @param {string} [cls]
+     */
+    function path(d, cls) {
+      var el = document.createElementNS(ns, 'path');
+      el.setAttribute('d', d);
+      if (cls) el.setAttribute('class', cls);
+      svg.appendChild(el);
+      return el;
+    }
+
+    // 帳面。背に沿って綴じ、下に重なった版をのぞかせる
+    path('M6 3h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z');
+    path('M7.5 3v16');
+    path('M6 21h12');
+
+    // 栞。いまどこを見ているか
+    path('M12.5 3v6l2-1.6L16.5 9V3', 'brand-mark-fill');
+    return svg;
+  }
+
+  /**
+   * 左上に名前を出す。
+   */
+  function fillBrand() {
+    var host = document.getElementById('brand');
+    host.textContent = '';
+    host.appendChild(makeLogo());
+
+    var words = document.createElement('span');
+    words.className = 'brand-words';
+
+    var name = document.createElement('span');
+    name.className = 'brand-name';
+    name.textContent = 'SoftBanto';
+    words.appendChild(name);
+
+    var sub = document.createElement('span');
+    sub.className = 'brand-sub';
+    sub.textContent = 'そふと番頭';
+    words.appendChild(sub);
+
+    host.appendChild(words);
+    attachHint(host,
+      '文書の版を残し、確認を経て反映する道具です。通称は「番頭」です');
+  }
+
   // ===== テーマ =====
 
   var THEME_ORDER = ['system', 'light', 'dark'];
@@ -7415,13 +7482,20 @@
    *
    * @returns {HTMLElement[]}
    */
-  function makeMeActions() {
-    var out = [];
-
+  /**
+   * 道具を落とすボタンを作る。
+   *
+   * はじめの案内と、自分まわりの両方から同じものを出す。2つ書くと
+   * 片方だけ直って食い違う。
+   *
+   * @param {string} [label]
+   * @returns {HTMLElement}
+   */
+  function makeKitButton(label) {
     var kit = document.createElement('button');
     kit.className = 'btn btn-primary';
     kit.appendChild(makeIcon('save'));
-    kit.appendChild(document.createTextNode('手元から動かす道具を落とす'));
+    kit.appendChild(document.createTextNode(label || '手元から動かす道具を落とす'));
     attachHint(kit,
       '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
       'Claude や Codex に読ませる説明も入っています');
@@ -7445,7 +7519,12 @@
         })
         .apiAgentKit();
     });
-    out.push(kit);
+    return kit;
+  }
+
+  function makeMeActions() {
+    var out = [];
+    out.push(makeKitButton());
 
     var rename = document.createElement('button');
     rename.className = 'btn';
@@ -8317,6 +8396,37 @@
     } catch (e) { /* 覚えられなくても表示は切り替わる */ }
   }
 
+  /**
+   * はじめの案内に、始めるための入口を置く。
+   *
+   * 文書を登録するのと、手元から動かす道具を取るのは、どちらも最初に
+   * 一度やること。流れの図の中に混ぜると手順と読めてしまうので、
+   * 下に分けて置く。
+   */
+  (function fillGuidelineExtra() {
+    var host = document.getElementById('guideline-extra');
+
+    var lead = document.createElement('span');
+    lead.className = 'row-meta';
+    lead.textContent = '最初にやること';
+    host.appendChild(lead);
+
+    var add = document.createElement('button');
+    add.className = 'btn';
+    add.appendChild(makeIcon('plus'));
+    add.appendChild(document.createTextNode('文書を登録する'));
+    attachHint(add, '入れ物に入れた文書を、この道具で管理できるようにします');
+    add.addEventListener('click', function () { addDocs(add); });
+    host.appendChild(add);
+
+    host.appendChild(makeKitButton('手元から動かす道具を落とす'));
+
+    var note = document.createElement('span');
+    note.className = 'row-meta';
+    note.textContent = 'Claude や Codex から操作する場合だけ';
+    host.appendChild(note);
+  }());
+
   document.getElementById('guideline-hide').addEventListener('click', function () {
     setGuideline(false);
     showSnack('案内をしまいました。「使い方」からいつでも出せます');
@@ -8536,6 +8646,7 @@
   document.addEventListener('scroll', hideHint, true);
   window.addEventListener('resize', hideHint);
 
+  fillBrand();
   applyHints();
   loadFiles(function () { switchTab('docs'); });
 })();

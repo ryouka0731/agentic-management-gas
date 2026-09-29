@@ -3481,4 +3481,68 @@ button.label-pill {
   color: var(--ink);
   white-space: nowrap;
 }
+
+/*
+ * はじめの案内の、始めるための入口。
+ *
+ * 流れの図とは分けて置く。図の中に混ぜると手順と読めてしまう
+ */
+.guideline-extra {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
+/*
+ * 名前の印。
+ *
+ * 画像は置かず、字と同じ色で描く。明るい地でも暗い地でも同じように
+ * 読め、読み込みも1つ増えない
+ */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-4);
+  color: var(--ink);
+}
+
+.brand-mark {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 栞だけは塗る。印の中で、どこを見ているかが一目で分かる */
+.brand-mark .brand-mark-fill {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.brand-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.brand-sub {
+  font-size: 10px;
+  color: var(--ink-2);
+}
 </style>

@@ -4251,3 +4251,92 @@ describe('画面から文書を登録する', () => {
     expect(document.getElementById('side-title').textContent).toBe('文書を登録する');
   });
 });
+
+describe('左上の名前', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('名前と読みを出す', () => {
+    mount();
+    const brand = document.getElementById('brand');
+
+    expect(brand.querySelector('.brand-name').textContent).toBe('SoftBanto');
+    expect(brand.querySelector('.brand-sub').textContent).toBe('そふと番頭');
+  });
+
+  it('印は字と同じ色で描く', () => {
+    mount();
+    const mark = document.querySelector('#brand .brand-mark');
+
+    // 画像を置かない。読み込みを増やさず、明るい地でも暗い地でも読める
+    expect(mark.tagName.toLowerCase()).toBe('svg');
+    expect(mark.getAttribute('aria-hidden')).toBe('true');
+    expect(mark.querySelectorAll('path').length).toBeGreaterThan(2);
+  });
+
+  it('栞だけは色を変える', () => {
+    mount();
+
+    expect(document.querySelector('#brand .brand-mark-fill')).toBeTruthy();
+  });
+
+  it('触れると何の道具かが出る', () => {
+    mount();
+
+    expect(document.getElementById('brand').dataset.hint)
+      .toContain('番頭');
+  });
+
+  it('左の並びの先頭にある', () => {
+    mount();
+    const sidebar = document.querySelector('.sidebar');
+
+    expect(sidebar.firstElementChild.id).toBe('brand');
+  });
+});
+
+describe('はじめにの入口', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('最初にやることを置く', () => {
+    mount();
+    const extra = document.getElementById('guideline-extra');
+
+    expect([...extra.querySelectorAll('.btn')].map((b) => b.textContent))
+      .toEqual(['文書を登録する', '手元から動かす道具を落とす']);
+  });
+
+  it('流れの図とは分けて置く', () => {
+    mount();
+    const body = document.getElementById('guideline-body');
+
+    // 図の中に混ぜると手順と読めてしまう
+    expect(body.querySelector('.flow-steps .btn')).toBe(null);
+    expect(body.querySelector('.guideline-extra')).toBeTruthy();
+  });
+
+  it('文書の登録に入れる', () => {
+    mount();
+
+    [...document.querySelectorAll('#guideline-extra .btn')]
+      .find((b) => b.textContent === '文書を登録する').click();
+
+    expect(document.getElementById('side-title').textContent).toBe('文書を登録する');
+  });
+
+  it('道具も落とせる', () => {
+    window.open = () => {};
+    const app = mount();
+
+    [...document.querySelectorAll('#guideline-extra .btn')]
+      .find((b) => b.textContent.includes('道具を落とす')).click();
+
+    expect(app.calls.some((c) => c.name === 'apiAgentKit')).toBe(true);
+  });
+
+  it('道具が要らない人には断りを添える', () => {
+    mount();
+
+    expect(document.getElementById('guideline-extra').textContent)
+      .toContain('Claude や Codex から操作する場合だけ');
+  });
+});
