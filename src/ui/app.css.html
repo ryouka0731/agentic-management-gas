@@ -3622,6 +3622,40 @@ button.label-pill {
 }
 
 /*
+ * いまどのワークスペースを見ているか。
+ *
+ * 複数のワークスペースに置くと画面だけでは見分けが付かない。説明より
+ * 強く出す必要があるので、面を持たせて名前の色を当てる
+ */
+.brand-place {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--sp-1);
+  max-width: 100%;
+  min-width: 0;
+  margin-top: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.6;
+  text-decoration: none;
+}
+
+.brand-place:hover { text-decoration: underline; }
+.brand-place .icon { flex: 0 0 auto; width: 12px; height: 12px; }
+
+/* 長い名前は器を広げずに切る。左の帯の幅は変えない */
+.brand-place-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
  * 説明の図。
  *
  * 字だけの説明は読まれない。地の色に合わせて描き、外からは何も

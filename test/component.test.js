@@ -4269,9 +4269,10 @@ describe('左上の名前', () => {
     mount();
     const brand = document.getElementById('brand');
 
-    // 名前の横に足すと、260px の帯では名前が潰れる
-    expect(brand.firstElementChild.className).toBe('brand-row');
-    expect(brand.lastElementChild.className).toBe('brand-tag');
+    // 名前の横に足すと、260px の帯では名前が潰れる。上から
+    // 印と名前 → 何をする道具か → どこを見ているか の順に積む
+    expect([...brand.children].map((el) => el.classList[0]))
+      .toEqual(['brand-row', 'brand-tag', 'brand-place']);
     expect(brand.querySelector('.brand-row .brand-name')).toBeTruthy();
     expect(brand.querySelector('.brand-row .brand-tag')).toBeNull();
   });
@@ -4351,6 +4352,69 @@ describe('はじめにの入口', () => {
 
     expect(document.getElementById('guideline-extra').textContent)
       .toContain('Claude や Codex から操作する場合だけ');
+  });
+});
+
+describe('どのワークスペースを見ているか', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('ロゴの下に置き場所の名前を出す', () => {
+    mount();
+
+    // 同じ道具を複数のワークスペースに置くと、画面だけでは見分けが
+    // 付かず、別のところの文書を直してしまう
+    const place = document.querySelector('#brand .brand-place');
+
+    expect(place.querySelector('.brand-place-name').textContent)
+      .toBe('総務共有');
+    expect(document.getElementById('brand').lastElementChild).toBe(place);
+  });
+
+  it('押すとその場所を開ける', () => {
+    mount();
+    const place = document.querySelector('#brand .brand-place');
+
+    expect(place.tagName).toBe('A');
+    expect(place.href).toContain('PLACE');
+    expect(place.target).toBe('_blank');
+    expect(place.rel).toBe('noopener');
+  });
+
+  it('上からの道のりも添える', () => {
+    mount();
+
+    expect(document.querySelector('#brand .brand-place').dataset.hint)
+      .toContain('総務共有/agentic-management');
+  });
+
+  it('場所が分からないときは何も出さない', () => {
+    // 空の器を先に置くと、名前が届いたときに左上の段がずれる
+    mount({ apiWorkspace: { name: '', path: '', url: '' } });
+
+    expect(document.querySelector('#brand .brand-place')).toBeNull();
+    expect(document.querySelector('#brand .brand-name')).toBeTruthy();
+  });
+
+  it('リンクが無いときは字だけ出す', () => {
+    mount({ apiWorkspace: { name: 'マイドライブ', path: '', url: '' } });
+    const place = document.querySelector('#brand .brand-place');
+
+    expect(place.tagName).toBe('SPAN');
+    expect(place.textContent).toContain('マイドライブ');
+  });
+
+  it('長い名前でも左の帯を広げない', () => {
+    mount({
+      apiWorkspace: {
+        name: 'とても長い名前のワークスペース共有フォルダ2026年度版',
+        path: 'x', url: '',
+      },
+    });
+    const css = document.querySelector('style').textContent;
+    const rule = css.substring(css.indexOf('\n.brand-place-name {'));
+
+    expect(rule.substring(0, rule.indexOf('}')))
+      .toContain('text-overflow: ellipsis');
   });
 });
 

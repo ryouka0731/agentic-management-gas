@@ -159,3 +159,59 @@ function repoOwnerEmail() {
     return '';
   }
 }
+
+/**
+ * フォルダの場所を「上から下へ」の字で言い表す。
+ *
+ * Drive はフォルダ ID で物を指すが、人に伝えるには名前の連なりが要る。
+ * 手元から動かすときの入れ先を伝える場面と、いまどのワークスペースを
+ * 見ているかを示す場面で同じものが要るので、ここに1つ置く。
+ *
+ * 壊れた木で回り続けないよう、上へ辿る回数に上限を置く。
+ *
+ * @param {Folder} folder
+ * @returns {string} 例 '総務共有/agentic-management/.git/queue'
+ */
+function repoFolderPath_(folder) {
+  var parts = [folder.getName()];
+  var cur = folder;
+
+  for (var i = 0; i < 12; i++) {
+    var parents = cur.getParents();
+    if (!parents.hasNext()) break;
+
+    cur = parents.next();
+    parts.unshift(cur.getName());
+  }
+  return parts.join('/');
+}
+
+/**
+ * いまどのワークスペースを見ているかを返す。
+ *
+ * 同じ道具を複数のワークスペースに置くと、画面だけでは見分けが付かず、
+ * 別のところの文書を直してしまう。入れ物を置いている親フォルダの名前が
+ * いちばん見分けに効くので、それを返す。
+ *
+ * 初期化前でも画面は開けなければならないため、分からないときは空で返す。
+ * ここで投げると左上が出ない。
+ *
+ * @returns {{name:string, path:string, url:string}}
+ */
+function repoWorkspace() {
+  try {
+    var root = DriveApp.getFolderById(repoConfig().rootId);
+    var parents = root.getParents();
+    var place = parents.hasNext() ? parents.next() : null;
+
+    return {
+      name: place ? String(place.getName() || '') : 'マイドライブ',
+      path: repoFolderPath_(root),
+      url: place
+        ? 'https://drive.google.com/drive/folders/' + place.getId() : '',
+    };
+  } catch (e) {
+    Logger.log('置き場所が分かりませんでした: ' + e.message);
+    return { name: '', path: '', url: '' };
+  }
+}

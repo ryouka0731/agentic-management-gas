@@ -88,31 +88,8 @@ function agentKitFile() {
     version: AGENT_KIT_VERSION(),
     url: 'https://drive.google.com/uc?export=download&id=' + file.getId(),
     // 設定に書く場所を当てさせない。ここがいちばん詰まる
-    queuePath: agentKitPathOf_(queue),
+    queuePath: repoFolderPath_(queue),
     queueUrl: 'https://drive.google.com/drive/folders/' + queue.getId(),
   };
 }
 
-/**
- * そのフォルダまでの道のりを、人が読める形で返す。
- *
- * 手元の設定に書くのは「同期したフォルダのどこにあるか」である。
- * 当てさせると必ず詰まるので、画面から見せる。
- *
- * @param {GoogleAppsScript.Drive.Folder} folder
- * @returns {string} 例: マイドライブ/社内システム/agentic-management/.git/queue
- */
-function agentKitPathOf_(folder) {
-  var parts = [folder.getName()];
-  var cur = folder;
-
-  // 深さは知れているが、壊れた木で回り続けないよう上限を置く
-  for (var i = 0; i < 12; i++) {
-    var parents = cur.getParents();
-    if (!parents.hasNext()) break;
-
-    cur = parents.next();
-    parts.unshift(cur.getName());
-  }
-  return parts.join('/');
-}

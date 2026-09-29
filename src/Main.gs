@@ -646,6 +646,18 @@ function debugDisableSelfApprove() {
 }
 
 /**
+ * いまどのワークスペースを見ているかを返す (Web App API)。
+ *
+ * 同じ道具を複数のワークスペースに置くと、画面だけでは見分けが付かず、
+ * 別のところの文書を直してしまう。左上に出すために使う。
+ *
+ * @returns {{name:string, path:string, url:string}}
+ */
+function apiWorkspace() {
+  return repoWorkspace();
+}
+
+/**
  * アプリが利用者を誰として認識しているかを返す (Web App API)。
  *
  * webapp.executeAs を ME に切り替える前に、別アカウントでこの値を
