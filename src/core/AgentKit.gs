@@ -51,9 +51,21 @@ function agentKitBuild_() {
   var zip = Utilities.zip(blobs, name);
   var folder = agentKitFolder_();
 
-  // 同じ名前の古いものは片付ける。増え続けると、どれが最新か分からない
-  var old = folder.getFilesByName(name);
-  while (old.hasNext()) old.next().setTrashed(true);
+  // 古いものは名前が違っても片付ける。残しておくと、前に配ったリンクから
+  // 壊れていたころの中身が落ち続ける
+  var old = [];
+  var it = folder.getFiles();
+  while (it.hasNext()) old.push(it.next());
+
+  for (var i = 0; i < old.length; i++) {
+    if (old[i].getName() === name) continue;
+    if (!/-agent-kit-.*\.zip$/.test(old[i].getName())) continue;
+
+    old[i].setTrashed(true);
+  }
+
+  var same = folder.getFilesByName(name);
+  while (same.hasNext()) same.next().setTrashed(true);
 
   var file = folder.createFile(zip);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);

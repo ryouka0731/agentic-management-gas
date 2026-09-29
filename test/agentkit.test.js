@@ -142,3 +142,36 @@ describe('道具の中身', () => {
     expect(kitText('AGENTS.md')).toContain('遅延は最大1分');
   });
 });
+
+describe('古い zip の片付け', () => {
+  it('前の版は名前が違っても片付ける', () => {
+    const { ctx } = setup();
+    const folder = ctx.agentKitFolder_();
+
+    // 壊れていたころのものが残っていると、前に配ったリンクから落ち続ける
+    folder.createFile('agentic-management-agent-kit-1.0.0.zip', 'ふるい', 'application/zip');
+    folder.createFile('softbanto-agent-kit-1.1.0.zip', 'ふるい', 'application/zip');
+
+    ctx.agentKitBuild_();
+
+    const left = [];
+    const it = folder.getFiles();
+    while (it.hasNext()) left.push(it.next().getName());
+
+    expect(left).toEqual(['softbanto-agent-kit-' + ctx.AGENT_KIT_VERSION() + '.zip']);
+  });
+
+  it('zip でないものは片付けない', () => {
+    const { ctx } = setup();
+    const folder = ctx.agentKitFolder_();
+    folder.createFile('おぼえがき.txt', 'x', 'text/plain');
+
+    ctx.agentKitBuild_();
+
+    const left = [];
+    const it = folder.getFiles();
+    while (it.hasNext()) left.push(it.next().getName());
+
+    expect(left).toContain('おぼえがき.txt');
+  });
+});

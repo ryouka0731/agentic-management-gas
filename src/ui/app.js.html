@@ -7382,6 +7382,13 @@
       '次の3つで、Claude や Codex から動かせるようになります。';
     box.appendChild(lead);
 
+    // 前に落としたものが手元に残っていると、それを使って詰まる
+    var ver = document.createElement('p');
+    ver.className = 'row-meta';
+    ver.textContent = '前に落としたものが残っていれば、捨ててください。' +
+      '使うのは ' + kit.name + ' です。';
+    box.appendChild(ver);
+
     var steps = document.createElement('ol');
     steps.className = 'setup-steps';
 
