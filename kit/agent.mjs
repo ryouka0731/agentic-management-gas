@@ -35,16 +35,37 @@ const POLL_MS = 2000;
  * @returns {{queueDir: string}}
  */
 function loadConfig() {
-  const fromArg = argValue('--queue');
-  if (fromArg) return { queueDir: fromArg };
+  const found = findConfig();
+  if (found) return found;
 
-  if (process.env.AGENTKIT_QUEUE) return { queueDir: process.env.AGENTKIT_QUEUE };
+  throw new Error(
+    '設定が見つかりません。まず `node agent.mjs setup` を実行してください。\n' +
+    '何が要るか、どこから取るかがその場に出ます'
+  );
+}
+
+/**
+ * 設定を探す。見つからなければ null を返す。
+ *
+ * 初回案内は「見つからない」を異常として扱わないため、投げずに返す。
+ *
+ * @returns {{queueDir: string, from: string}|null}
+ */
+function findConfig() {
+  const fromArg = argValue('--queue');
+  if (fromArg) return { queueDir: fromArg, from: '--queue' };
+
+  if (process.env.AGENTKIT_QUEUE) {
+    return { queueDir: process.env.AGENTKIT_QUEUE, from: 'AGENTKIT_QUEUE' };
+  }
 
   let dir = process.cwd();
   for (;;) {
     for (const name of CONFIG_NAMES) {
       const at = path.join(dir, name);
-      if (fs.existsSync(at)) return JSON.parse(fs.readFileSync(at, 'utf8'));
+      if (fs.existsSync(at)) {
+        return { ...JSON.parse(fs.readFileSync(at, 'utf8')), from: at };
+      }
     }
 
     const up = path.dirname(dir);
@@ -53,11 +74,10 @@ function loadConfig() {
   }
 
   const home = path.join(os.homedir(), '.agentkit.json');
-  if (fs.existsSync(home)) return JSON.parse(fs.readFileSync(home, 'utf8'));
-
-  throw new Error(
-    '設定が見つかりません。.agentkit.json を作るか、--queue でキューの場所を渡してください'
-  );
+  if (fs.existsSync(home)) {
+    return { ...JSON.parse(fs.readFileSync(home, 'utf8')), from: home };
+  }
+  return null;
 }
 
 /**
@@ -180,6 +200,70 @@ function readInput(value) {
   return fs.readFileSync(0, 'utf8');
 }
 
+/**
+ * 初回の案内を組む。
+ *
+ * この道具は鍵もトークンも要らない代わりに、**人にしか取れない場所が
+ * 3つある**。それを知らないまま `agent files` を叩くと「設定が
+ * 見つかりません」で止まり、次に何をすればよいか分からない。
+ *
+ * 向こう側 (Drive / Apps Script) には手元から触れないため、ここで
+ * 出せるのは「どこから取るか」までである。**当てずに人に聞くこと。**
+ *
+ * @returns {string}
+ */
+function setupGuide() {
+  const config = findConfig();
+  const queueDir = config ? String(config.queueDir || '') : '';
+  const queueOk = queueDir !== '' && fs.existsSync(queueDir);
+  const lines = [];
+
+  lines.push('SoftBanto (番頭) を手元から動かすための下ごしらえ');
+  lines.push('');
+  lines.push('この道具に鍵やトークンは要りません。要るのは次の3つです。');
+  lines.push('');
+  lines.push('1. 画面 (Web アプリ) のリンク');
+  lines.push('   例 https://script.google.com/macros/s/AKfycb.../exec');
+  lines.push('   道具を配っている人から渡されています。反映の承認など、');
+  lines.push('   人が決める操作はここでしか行えません。');
+  lines.push('   .agentkit.json の webAppUrl に書いておくと、人に頼む');
+  lines.push('   ときにそのまま渡せます。');
+  lines.push('');
+  lines.push('2. 命令の入れ先 (queue フォルダ) の、手元でのパス');
+  lines.push('   画面の右上の自分の顔 →「手元から動かす道具を落とす」を');
+  lines.push('   押すと、Drive の中での道のりが写せる形で出ます。');
+  lines.push('   Google Drive for desktop で同期したフォルダの下に、');
+  lines.push('   同じ道のりが出来ているので、そこを指してください。');
+  lines.push('');
+  lines.push('3. Apps Script のリンク (最初の一人だけ)');
+  lines.push('   例 https://script.google.com/home/projects/<id>/edit');
+  lines.push('   まだ誰も setupCommandQueue() を実行していないときだけ');
+  lines.push('   要ります。実行済みなら触る必要はありません。');
+  lines.push('');
+  lines.push('いまの状態:');
+  lines.push('  設定: ' + (config ? config.from : '見つかりません'));
+  lines.push('  入れ先: ' + (queueDir || '未設定'));
+  lines.push('  入れ先が手元にあるか: ' + (queueOk ? 'あります' : 'ありません'));
+  lines.push('  画面: ' + (config && config.webAppUrl ? config.webAppUrl
+    : '未設定 (人に決めてもらう操作を頼むときに要る)'));
+  lines.push('  Apps Script: ' + (config && config.scriptUrl ? config.scriptUrl
+    : '未設定 (最初の一人の下ごしらえが済んでいれば要らない)'));
+  lines.push('');
+
+  if (!config) {
+    lines.push('次にすること: agentkit.example.json を .agentkit.json として');
+    lines.push('写し、queueDir に 2 のパスを書いてください。');
+  } else if (!queueOk) {
+    lines.push('次にすること: queueDir の指す場所がありません。Drive for');
+    lines.push('desktop が同期しているか、道のりの綴りを確かめてください。');
+  } else {
+    lines.push('次にすること: node agent.mjs files を実行してください。');
+    lines.push('文書の一覧が返れば通っています。**返るまで最大1分**かかり、');
+    lines.push('すぐ返らないのは異常ではありません。');
+  }
+  return lines.join('\n');
+}
+
 function usage() {
   const lines = [
     'SoftBanto (番頭) を手元から動かす道具',
@@ -199,7 +283,9 @@ function usage() {
   lines.push('  cat body.md | agent write <fileId> -');
   lines.push('  agent commit <fileId> "第3条を改訂"');
   lines.push('  agent pr "第3条の改訂" "" 見直し <mainFileId>');
+  lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');
+  lines.push('はじめてなら、まず agent setup を実行する');
   lines.push('キューの場所は .agentkit.json か --queue か AGENTKIT_QUEUE で渡す');
 
   return lines.join('\n');
@@ -209,6 +295,13 @@ async function main() {
   const name = process.argv[2];
   if (!name || name === '--help' || name === '-h') {
     process.stdout.write(usage() + '\n');
+    return;
+  }
+
+  // 下ごしらえは向こう側に命令を送らない。設定が無い状態でも読めなければ
+  // 案内の意味がない
+  if (name === 'setup') {
+    process.stdout.write(setupGuide() + '\n');
     return;
   }
 

@@ -1,4 +1,7 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
@@ -140,6 +143,84 @@ describe('道具の中身', () => {
 
   it('待ち時間があることを断ってある', () => {
     expect(kitText('AGENTS.md')).toContain('遅延は最大1分');
+  });
+});
+
+describe('初めて動くときの案内', () => {
+  /*
+   * この道具に鍵もトークンも要らない代わりに、人にしか取れない場所が
+   * 3つある。それを知らないまま agent files を叩くと「設定が
+   * 見つかりません」で止まり、次に何をすればよいか分からなくなる。
+   */
+
+  /** 設定の無い場所で走らせる。初回の状態を作るため */
+  function runSetup() {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
+
+    return execFileSync(process.execPath,
+      [path.resolve('kit/agent.mjs'), 'setup'],
+      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+  }
+
+  it('設定が無くても案内が出る', () => {
+    const out = runSetup();
+
+    // 設定を読めないと投げる作りだと、いちばん要るときに出ない
+    expect(out).toContain('要るのは次の3つ');
+    expect(out).toContain('見つかりません');
+  });
+
+  it('要る3つと、その取り方を出す', () => {
+    const out = runSetup();
+
+    expect(out).toContain('画面 (Web アプリ) のリンク');
+    expect(out).toContain('命令の入れ先');
+    expect(out).toContain('Apps Script のリンク');
+    // 向こう側には手元から触れない。当てさせず、取り方を伝える
+    expect(out).toContain('手元から動かす道具を落とす');
+  });
+
+  it('次にすることを1つだけ出す', () => {
+    const out = runSetup();
+
+    expect(out).toContain('次にすること');
+    expect((out.match(/次にすること/g) || [])).toHaveLength(1);
+  });
+
+  it('使い方の一覧からも辿れる', () => {
+    const out = execFileSync(process.execPath,
+      [path.resolve('kit/agent.mjs')], { encoding: 'utf8' });
+
+    expect(out).toContain('まず agent setup を実行する');
+  });
+
+  it('Claude / Codex にまずこれを実行させる', () => {
+    // zip では AGENTS.md が CLAUDE.md にも入る。読ませる相手はこちら
+    const text = kitText('AGENTS.md');
+
+    expect(text).toContain('node agent.mjs setup');
+    expect(text).toContain('何か頼まれる前に');
+    expect(text).toContain('当てないこと');
+  });
+
+  it('配るものに CLAUDE.md が入っている', () => {
+    const names = FILES.map((one) => one[1]);
+
+    expect(names).toContain('CLAUDE.md');
+    expect(names).toContain('AGENTS.md');
+  });
+
+  it('人向けの説明にも入口がある', () => {
+    expect(kitText('README.md')).toContain('node agent.mjs setup');
+  });
+
+  it('画面のリンクを持っておける', () => {
+    // 承認のように人しかできない操作を頼むとき、毎回尋ねずに渡せる
+    const example = JSON.parse(kitText('agentkit.example.json'));
+
+    expect(example.queueDir).toBeTruthy();
+    expect(example.webAppUrl).toContain('/exec');
+    expect(kitText('agent.mjs')).toContain('config.webAppUrl');
   });
 });
 

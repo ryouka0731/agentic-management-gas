@@ -1,3 +1,5 @@
 {
-  "queueDir": "/Users/あなた/Library/CloudStorage/GoogleDrive-あなた@example.com/マイドライブ/agentic-management/.git/queue"
+  "queueDir": "/Users/あなた/Library/CloudStorage/GoogleDrive-あなた@example.com/マイドライブ/agentic-management/.git/queue",
+  "webAppUrl": "https://script.google.com/macros/s/AKfycb.../exec",
+  "scriptUrl": "https://script.google.com/home/projects/<スクリプトのid>/edit"
 }

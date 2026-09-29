@@ -11,6 +11,15 @@ Claude や Codex に作業させるときは、同じフォルダの `AGENTS.md`
 
 鍵もトークンも要りません。同期したフォルダにファイルを置くだけで動きます。
 
+## まず、何が要るかを出す
+
+```sh
+node agent.mjs setup
+```
+
+下ごしらえに要る3つの場所と、いまどこまで出来ているかが出ます。迷ったら
+いつでもこれを打ってください。
+
 ## 設定 (ここだけ最初にやる)
 
 `agentkit.example.json` を `.agentkit.json` という名前で写し、`queueDir` に
@@ -18,9 +27,14 @@ Claude や Codex に作業させるときは、同じフォルダの `AGENTS.md`
 
 ```json
 {
-  "queueDir": "<同期しているフォルダ>/agentic-management/.git/queue"
+  "queueDir": "<同期しているフォルダ>/agentic-management/.git/queue",
+  "webAppUrl": "https://script.google.com/macros/s/AKfycb.../exec"
 }
 ```
+
+`queueDir` だけが必須です。`webAppUrl` に画面のリンクを書いておくと、承認の
+ように**人しかできない操作**を Claude や Codex が頼むときに、リンクをそのまま
+出せます。毎回尋ねられずに済みます。
 
 ### 場所が分からないとき
 
@@ -65,7 +79,7 @@ node agent.mjs commit <fileId> "第3条を改訂"
 
 | 出るもの | 見るところ |
 |---|---|
-| `設定が見つかりません` | `.agentkit.json` の置き場所。この道具と同じフォルダか、その親にあるか |
+| `設定が見つかりません` | `node agent.mjs setup` を打つと、いまどこまで出来ているかが出ます |
 | `キューのフォルダがありません` | `queueDir` のパス。Drive の同期が終わっているか |
 | `結果が返りませんでした` | 向こう側で `setupCommandQueue()` を実行したか。1分待ったか |
 | `実行できない操作です` | その操作はここからは行えない (画面から行う) |
