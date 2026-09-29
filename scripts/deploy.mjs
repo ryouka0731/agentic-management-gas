@@ -9,6 +9,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { writeKitSource } from './build-kit.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -52,6 +53,11 @@ function main() {
   }
 
   const id = deploymentId();
+
+  // 配る道具は kit/ が本物。焼き直してから送らないと、古い中身が配られる
+  if (writeKitSource()) {
+    process.stdout.write('src/KitFiles.gs を作り直しました\n');
+  }
 
   // 先に送る。送らずに差し替えると、前の中身のまま版だけが上がる
   clasp(['push', '-f']);

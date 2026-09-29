@@ -71,7 +71,8 @@ GCP プロジェクトが使えない環境では `clasp run`（Apps Script API�
 #### 手元から動かす道具 (agent kit)
 
 命令のファイルを手で書かなくてよいよう、小さな道具一式を配っている。
-画面の「使い方」から **「手元から動かす道具を落とす」** で zip が取れる。
+画面の右上の自分の顔から **「手元から動かす道具を落とす」** で zip が取れる。
+落とすと、続きの手順と**入れ先の場所が写せる形で**その場に出る。
 
 ```
 agent.mjs                 命令を置いて結果を待つ CLI
@@ -81,8 +82,12 @@ AGENTS.md / CLAUDE.md     Claude / Codex 向けの説明
 ```
 
 要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけで、
-鍵もトークンも要らない。中身は `src/kit/` にあり、GAS 側で zip にして
-`.git/kit/` に置いてから配る。
+鍵もトークンも要らない。
+
+中身の本体は `kit/` にある**本物のファイル**で、`scripts/build-kit.mjs` が
+base64 にして `src/KitFiles.gs` に焼き直し、GAS 側が zip にして `.git/kit/` に
+置いてから配る。**直すのは `kit/` のほう。** そのまま GAS の HTML ファイルとして
+置くと `<id>` がタグと解釈されて壊れる（実際に壊れた）。
 
 ```sh
 node agent.mjs files

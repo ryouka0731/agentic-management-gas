@@ -117,9 +117,11 @@ export const DEFAULTS = {
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
   apiAgentKit: {
-    name: 'softbanto-agent-kit-1.1.0.zip',
-    version: '1.0.0',
+    name: 'softbanto-agent-kit-1.2.0.zip',
+    version: '1.2.0',
     url: 'https://drive.google.com/uc?export=download&id=KIT1',
+    queuePath: 'マイドライブ/社内システム/agentic-management/.git/queue',
+    queueUrl: 'https://drive.google.com/drive/folders/Q1',
   },
   apiUsageSummary: {
     from: '2026-08-12', to: '2026-09-10', total: 0,

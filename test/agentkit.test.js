@@ -2,25 +2,25 @@ import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { buildKitSource, FILES } from '../scripts/build-kit.mjs';
 
 const SOURCES = [
   'src/core/Hash.js',
   'src/core/HashGas.gs',
   'src/core/Db.gs',
   'src/core/Repo.gs',
+  'src/core/CommandQueue.gs',
+  'src/KitFiles.gs',
   'src/core/AgentKit.gs',
 ];
 
-/** GAS に置いてある道具一式を、そのまま読む */
+/** kit/ にある本物のファイルを読む */
 function kitText(name) {
-  return fs.readFileSync('src/kit/' + name + '.html', 'utf8');
+  return fs.readFileSync('kit/' + name, 'utf8');
 }
 
 function setup() {
   const fake = createFakeGas();
-  ['agent.mjs', 'package.json', 'agentkit.example.json', 'README.md', 'AGENTS.md']
-    .forEach((name) => fake._setKitFile('kit/' + name, kitText(name)));
-
   const ctx = loadGasWith(fake, ...SOURCES);
   ctx.repoInit('agentic-management');
   return { ctx, fake };
@@ -29,7 +29,7 @@ function setup() {
 describe('手元から動かす道具を配る', () => {
   it('必要なものが揃っている', () => {
     const { ctx } = setup();
-    const names = ctx.AGENT_KIT_FILES().map((pair) => pair[1]);
+    const names = Object.keys(ctx.KIT_FILES());
 
     expect(names).toContain('agent.mjs');
     expect(names).toContain('README.md');
@@ -49,9 +49,18 @@ describe('手元から動かす道具を配る', () => {
   it('二度目は作り直さない', () => {
     const { ctx } = setup();
     const first = ctx.agentKitFile();
-    const second = ctx.agentKitFile();
 
-    expect(second.url).toBe(first.url);
+    expect(ctx.agentKitFile().url).toBe(first.url);
+  });
+
+  it('設定に書く場所を教える', () => {
+    const { ctx } = setup();
+    const kit = ctx.agentKitFile();
+
+    // ここがいちばん詰まる。当てさせない
+    expect(kit.queuePath).toMatch(/\/\.git\/queue$/);
+    expect(kit.queuePath.split('/').length).toBeGreaterThan(2);
+    expect(kit.queueUrl).toContain('drive.google.com/drive/folders/');
   });
 
   it('置き場は無ければ作る', () => {
@@ -59,6 +68,41 @@ describe('手元から動かす道具を配る', () => {
     ctx.agentKitFile();
 
     expect(ctx.agentKitFolder_().getName()).toBe('kit');
+  });
+});
+
+describe('中身が壊れずに運ばれるか', () => {
+  it('焼き直したものを戻すと元の字に一致する', () => {
+    const { ctx } = setup();
+    const files = ctx.KIT_FILES();
+
+    // 中身をそのまま HTML ファイルとして置くと `<id>` がタグと解釈され、
+    // `-->` がコメントの終わりと読まれて壊れる。実際に壊れた
+    FILES.forEach(([from, to]) => {
+      const back = Buffer.from(files[to], 'base64').toString('utf8');
+      expect(back).toBe(kitText(from));
+    });
+  });
+
+  it('タグに見える字がそのまま残っている', () => {
+    const { ctx } = setup();
+    const agents = Buffer.from(ctx.KIT_FILES()['AGENTS.md'], 'base64')
+      .toString('utf8');
+
+    expect(agents).toContain('<id>.cmd.json');
+    expect(agents).toContain('<mainFileId>');
+    expect(agents).toContain('-->');
+  });
+
+  it('kit/ を直したら焼き直しが要ると分かる', () => {
+    // 焼き直しを忘れると、古い中身が配られ続ける
+    const now = fs.readFileSync('src/KitFiles.gs', 'utf8');
+    expect(buildKitSource()).toBe(now);
+  });
+
+  it('焼き直したものは手で直さないと書いてある', () => {
+    expect(fs.readFileSync('src/KitFiles.gs', 'utf8'))
+      .toContain('手で直さない');
   });
 });
 
@@ -70,6 +114,13 @@ describe('道具の中身', () => {
     expect(text).toContain('queueDir');
     expect(text).toContain('.cmd.json');
     expect(text).toContain('.result.json');
+  });
+
+  it('そのまま node で動く', () => {
+    // .html の皮をかぶせていたころは、そのままでは動かなかった
+    expect(kitText('agent.mjs').startsWith('#!/usr/bin/env node')).toBe(true);
+    expect(() => JSON.parse(kitText('package.json'))).not.toThrow();
+    expect(() => JSON.parse(kitText('agentkit.example.json'))).not.toThrow();
   });
 
   it('できないことを AGENTS.md に書いてある', () => {

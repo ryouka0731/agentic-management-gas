@@ -4063,3 +4063,103 @@ describe('一覧の行の高さ', () => {
     expect(document.querySelector('#pr-list .row-item .avatars')).toBe(null);
   });
 });
+
+describe('はじめての設定の案内', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openHelp() {
+    mount();
+    document.querySelector('[data-tab="help"]').click();
+    return document.getElementById('guide').textContent;
+  }
+
+  it('GAS でやることを順番に書く', () => {
+    const text = openHelp();
+
+    expect(text).toContain('setupRepo');
+    expect(text).toContain('debugRegisterFile');
+    expect(text).toContain('setupCommandQueue');
+  });
+
+  it('承認を求められることを先に伝える', () => {
+    // 初回に出る Google の画面で止まる人がいちばん多い
+    expect(openHelp()).toContain('アクセスを承認してください');
+  });
+
+  it('二人目以降は設定が要らないと書く', () => {
+    expect(openHelp()).toContain('二人目からは');
+  });
+
+  it('つまずいたときの見どころを書く', () => {
+    expect(openHelp()).toContain('実行数');
+  });
+
+  it('手元から動かす手順も具体に書く', () => {
+    const text = openHelp();
+
+    expect(text).toContain('node agent.mjs files');
+    expect(text).toContain('AGENTS.md');
+    expect(text).toContain('Node.js 18 以上');
+  });
+});
+
+describe('道具を落としたあとの案内', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.open = () => {};
+  });
+
+  function download() {
+    const app = mount();
+    document.getElementById('me-btn').click();
+
+    [...document.querySelectorAll('#me-body .btn')]
+      .find((b) => b.textContent.includes('手元から動かす道具')).click();
+
+    return app;
+  }
+
+  it('落としたら続きの手順が出る', () => {
+    download();
+
+    // zip を渡して終わりにすると、設定に何を書けばよいか分からず止まる
+    const steps = [...document.querySelectorAll('#side-body .setup-steps li strong')]
+      .map((s) => s.textContent);
+
+    expect(steps).toEqual(['zip を広げる', 'Google ドライブを同期する', '入れ先を設定に書く']);
+  });
+
+  it('入れ先の場所を写せる形で出す', () => {
+    download();
+
+    const code = document.querySelector('#side-body .copy-line code');
+    expect(code.textContent).toContain('.git/queue');
+    expect(document.querySelector('#side-body .copy-line .btn').textContent)
+      .toBe('写す');
+  });
+
+  it('その場所を Drive で開ける', () => {
+    download();
+
+    const link = [...document.querySelectorAll('#side-body a')]
+      .find((a) => a.textContent.includes('Drive で開く'));
+
+    expect(link.href).toContain('drive.google.com/drive/folders/');
+    expect(link.target).toBe('_blank');
+  });
+
+  it('通ったかの確かめ方を書く', () => {
+    download();
+
+    expect(document.getElementById('side-body').textContent)
+      .toContain('node agent.mjs files');
+  });
+
+  it('自分の設定の画面は閉じる', () => {
+    download();
+
+    // 案内が後ろに隠れると気づかれない
+    expect(document.getElementById('me-panel').hidden).toBe(true);
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+  });
+});

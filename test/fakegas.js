@@ -100,6 +100,11 @@ export function createFakeGas() {
       },
       addFile: (f) => { f._parent = id; },
       removeFile: () => {},
+      getParents: () => {
+        const hits = folders.has(fo._parent) ? [folders.get(fo._parent)] : [];
+        let i = 0;
+        return { hasNext: () => i < hits.length, next: () => hits[i++] };
+      },
       getFoldersByName_unused: null,
       getOwner: () => ({ getEmail: () => fo._owner }),
       _setOwner: (email) => { fo._owner = email; return fo; },

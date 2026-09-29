@@ -27,8 +27,7 @@ describe('サービス名', () => {
   });
 
   it('配る道具にも同じ名前が入っている', () => {
-    ['src/kit/README.md.html', 'src/kit/AGENTS.md.html',
-     'src/kit/package.json.html', 'src/kit/agent.mjs.html']
+    ['kit/README.md', 'kit/AGENTS.md', 'kit/package.json', 'kit/agent.mjs']
       .forEach((path) => expect(read(path)).toContain(NAME));
   });
 
@@ -44,8 +43,7 @@ describe('サービス名', () => {
   it('仮の名前が人の目に触れる場所に残っていない', () => {
     const brand = [
       'src/Main.gs', 'src/core/Notifier.gs', 'src/core/AgentKit.gs',
-      'src/kit/README.md.html', 'src/kit/AGENTS.md.html',
-      'src/kit/package.json.html',
+      'kit/README.md', 'kit/AGENTS.md', 'kit/package.json',
     ];
 
     brand.forEach((path) => {

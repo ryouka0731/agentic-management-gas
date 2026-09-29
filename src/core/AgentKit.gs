@@ -7,23 +7,6 @@
  */
 
 /**
- * 配る中身。GAS 上のファイル名 → zip の中の名前。
- *
- * @returns {Array<Array<string>>}
- */
-function AGENT_KIT_FILES() {
-  return [
-    ['kit/agent.mjs', 'agent.mjs'],
-    ['kit/package.json', 'package.json'],
-    ['kit/agentkit.example.json', 'agentkit.example.json'],
-    ['kit/README.md', 'README.md'],
-    ['kit/AGENTS.md', 'AGENTS.md'],
-    // Claude も Codex も、同じ内容を別の名前で読みに行く
-    ['kit/AGENTS.md', 'CLAUDE.md'],
-  ];
-}
-
-/**
  * 配るものの版。中身を変えたら上げる。
  *
  * 版が同じなら作り直さず、前に作った zip をそのまま渡す。
@@ -31,7 +14,7 @@ function AGENT_KIT_FILES() {
  * @returns {string}
  */
 function AGENT_KIT_VERSION() {
-  return '1.1.0';
+  return '1.2.0';
 }
 
 /**
@@ -52,12 +35,16 @@ function agentKitFolder_() {
  * @returns {GoogleAppsScript.Drive.File}
  */
 function agentKitBuild_() {
-  var files = AGENT_KIT_FILES();
+  var files = KIT_FILES();
   var blobs = [];
 
-  for (var i = 0; i < files.length; i++) {
-    var text = HtmlService.createHtmlOutputFromFile(files[i][0]).getContent();
-    blobs.push(Utilities.newBlob(text, 'text/plain', files[i][1]));
+  for (var name0 in files) {
+    if (!Object.prototype.hasOwnProperty.call(files, name0)) continue;
+
+    // base64 のまま持っている。中身をそのまま HTML ファイルとして置くと
+    // `<id>` がタグと解釈され、`-->` がコメントの終わりと読まれて壊れる
+    blobs.push(Utilities.newBlob(
+      Utilities.base64Decode(files[name0]), 'text/plain', name0));
   }
 
   var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
@@ -82,10 +69,38 @@ function agentKitFile() {
   var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
   var found = agentKitFolder_().getFilesByName(name);
   var file = found.hasNext() ? found.next() : agentKitBuild_();
+  var queue = commandQueueFolder_();
 
   return {
     name: name,
     version: AGENT_KIT_VERSION(),
     url: 'https://drive.google.com/uc?export=download&id=' + file.getId(),
+    // 設定に書く場所を当てさせない。ここがいちばん詰まる
+    queuePath: agentKitPathOf_(queue),
+    queueUrl: 'https://drive.google.com/drive/folders/' + queue.getId(),
   };
+}
+
+/**
+ * そのフォルダまでの道のりを、人が読める形で返す。
+ *
+ * 手元の設定に書くのは「同期したフォルダのどこにあるか」である。
+ * 当てさせると必ず詰まるので、画面から見せる。
+ *
+ * @param {GoogleAppsScript.Drive.Folder} folder
+ * @returns {string} 例: マイドライブ/社内システム/agentic-management/.git/queue
+ */
+function agentKitPathOf_(folder) {
+  var parts = [folder.getName()];
+  var cur = folder;
+
+  // 深さは知れているが、壊れた木で回り続けないよう上限を置く
+  for (var i = 0; i < 12; i++) {
+    var parents = cur.getParents();
+    if (!parents.hasNext()) break;
+
+    cur = parents.next();
+    parts.unshift(cur.getName());
+  }
+  return parts.join('/');
 }

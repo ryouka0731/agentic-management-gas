@@ -3440,4 +3440,45 @@ button.label-pill {
 
 /* 使い方の頭に置く操作 */
 .guide-top { margin-bottom: var(--sp-4); }
+
+/*
+ * 手順。
+ *
+ * 番号を振って、何番まで進んだかを目で追えるようにする
+ */
+.setup-steps {
+  margin: 0;
+  padding-left: var(--sp-5);
+  font-size: 13px;
+}
+
+.setup-steps li { margin-bottom: var(--sp-3); }
+.setup-steps strong { color: var(--ink); }
+.setup-steps .row-meta { margin-top: 2px; }
+
+/* 写して貼るところ。打ち直させると必ずどこかで間違える */
+.copy-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.copy-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.copy-line code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+}
 </style>

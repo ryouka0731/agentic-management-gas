@@ -21,10 +21,17 @@ Apps Script API が使えない環境のため、**Drive 上のフォルダに�
 
 ## 最初にやること
 
-1. Google Drive for desktop で、リポジトリのフォルダを同期する
-2. `.agentkit.json` を作り、`queueDir` に `.git/queue` のローカルのパスを書く
+1. Google Drive for desktop で、この道具のフォルダを同期する
+2. `.agentkit.json` を作り、`queueDir` に `.git/queue` の手元でのパスを書く
    (`agentkit.example.json` を写して直す)
 3. `node agent.mjs files` が通れば準備完了
+
+**場所が分からないときは、人に聞くより画面から取るのが早い。** 画面の右上の
+自分の顔 →「手元から動かす道具を落とす」を押すと、Drive の中での道のりが
+写せる形で出る。手元で同期しているフォルダの場所に、それを繋ぐ。
+
+`node agent.mjs files` の結果は**最大1分待つ**。向こうは1分ごとに見に来る
+仕組みなので、すぐ返らないのは異常ではない。
 
 ## 使う言葉
 

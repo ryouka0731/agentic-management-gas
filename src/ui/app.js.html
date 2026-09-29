@@ -6277,10 +6277,22 @@
       '6. 承認されたら「正式版に反映する」',
       '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
     ]],
-    ['手元から動かす', [
-      '画面を開かずに、Claude や Codex から操作できます。下の「手元から動かす道具を落とす」から一式を取ってください。',
-      '要るのは Node.js と、Google Drive for desktop で同期したフォルダだけです。鍵もトークンも要りません。',
-      '命令のファイルを Drive の queue フォルダに置くと、1分以内に実行されて結果が返ります。遅延は最大1分です。',
+    ['はじめての設定 (最初の一人だけ)', [
+      'この道具を初めて置くときだけ必要な手順です。二人目からは、配られた URL を開くだけで使えます。',
+      '1. Apps Script のエディタを開き、関数の一覧から setupRepo を選んで一度だけ実行します。スクリプトと同じフォルダに入れ物 (agentic-management) と台帳のスプレッドシートができます。',
+      '2. 初回だけ Google から「アクセスを承認してください」と出ます。自分のアカウントを選び、内容を確かめて許可してください。文書・表・スライド・Drive・メールに触るための許可です。',
+      '3. 管理したい文書を、できた入れ物の main フォルダに入れます。',
+      '4. エディタで debugRegisterFile を実行すると、その文書が画面に現れます。',
+      '5. 手元 (Claude や Codex) からも動かすなら、エディタで setupCommandQueue を一度だけ実行します。1分ごとの見張りが置かれます。二度実行しても増えません。',
+      'うまくいかないときは、エディタの「実行数」でエラーの中身が読めます。',
+    ]],
+    ['手元から動かす (Claude / Codex)', [
+      '画面を開かずに、やること・改訂版・確認依頼を作れます。上の帯にある自分の顔から「手元から動かす道具を落とす」を押してください。',
+      '落とすと、続きの3手順と「入れ先の場所」がその場に出ます。場所は写して貼れる形で出るので、当てる必要はありません。',
+      '要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけです。鍵もトークンも要りません。',
+      '落とした一式には Claude / Codex 向けの説明 (AGENTS.md と CLAUDE.md) が入っています。作業させるときは、それを読ませてください。この道具の言葉と、できないことが書いてあります。',
+      '設定ができたら「node agent.mjs files」を打ってください。文書の一覧が返れば通っています。',
+      '命令はファイルとして Drive に置かれ、1分以内に実行されて結果が返ります。遅延は最大1分です。すぐ返らなくても壊れてはいません。',
       '正式版を直接なおすことと、確認依頼の承認は、手元からはできません。承認は人が画面で行う操作として残してあります。',
     ]],
     ['つまずきやすい点', [
@@ -7291,7 +7303,8 @@
 
           // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
           window.open(res.url, '_blank');
-          showSnack(res.name + ' を用意しました', { kind: 'ok' });
+          showSnack(res.name + ' を落としています', { kind: 'ok' });
+          openKitSteps(res);
         })
         .withFailureHandler(function (err) {
           kit.disabled = false;
@@ -7348,6 +7361,117 @@
     out.push(again);
 
     return out;
+  }
+
+  /**
+   * 落としたあとの続きを出す。
+   *
+   * zip を渡して終わりにすると、設定に何を書けばよいかが分からずそこで
+   * 止まる。いちばん詰まるのは入れ先の場所なので、写して貼れる形で出す。
+   *
+   * @param {object} kit apiAgentKit の戻り
+   */
+  function openKitSteps(kit) {
+    closeMe();
+
+    var box = openSideView('手元から動かす', null, null);
+
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = kit.name + ' を落としました。' +
+      '次の3つで、Claude や Codex から動かせるようになります。';
+    box.appendChild(lead);
+
+    var steps = document.createElement('ol');
+    steps.className = 'setup-steps';
+
+    [
+      ['zip を広げる', '好きな場所で構いません。中に agent.mjs と、' +
+        'Claude / Codex 向けの説明 (AGENTS.md / CLAUDE.md) が入っています。'],
+      ['Google ドライブを同期する', 'Google Drive for desktop で、' +
+        'この道具のフォルダを手元に同期してください。鍵もトークンも要りません。'],
+      ['入れ先を設定に書く', 'agentkit.example.json を .agentkit.json に写し、' +
+        'queueDir に下の場所までのパスを書きます。'],
+    ].forEach(function (pair) {
+      var li = document.createElement('li');
+
+      var head = document.createElement('strong');
+      head.textContent = pair[0];
+      li.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'row-meta';
+      body.textContent = pair[1];
+      li.appendChild(body);
+
+      steps.appendChild(li);
+    });
+    box.appendChild(steps);
+
+    box.appendChild(makeCopyRow('入れ先 (Drive の中での場所)', kit.queuePath));
+
+    var open = document.createElement('a');
+    open.className = 'btn';
+    open.href = kit.queueUrl;
+    open.target = '_blank';
+    open.rel = 'noopener';
+    open.textContent = 'この場所を Drive で開く';
+    box.appendChild(open);
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '手元のパスは、同期しているフォルダの場所に ' +
+      '上の道のりを繋いだものになります。書けたら「node agent.mjs files」' +
+      'を打って、文書の一覧が返れば設定完了です。';
+    box.appendChild(note);
+  }
+
+  /**
+   * 写して貼れる一行を作る。
+   *
+   * 目で読んで打ち直させると、必ずどこかで間違える。
+   *
+   * @param {string} label
+   * @param {string} value
+   * @returns {HTMLElement}
+   */
+  function makeCopyRow(label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'copy-row';
+
+    var name = document.createElement('div');
+    name.className = 'row-meta';
+    name.textContent = label;
+    wrap.appendChild(name);
+
+    var line = document.createElement('div');
+    line.className = 'copy-line';
+
+    var text = document.createElement('code');
+    text.textContent = value;
+    line.appendChild(text);
+
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = '写す';
+    btn.addEventListener('click', function () {
+      var area = document.createElement('textarea');
+      area.value = value;
+      document.body.appendChild(area);
+      area.select();
+
+      try {
+        document.execCommand('copy');
+        showSnack('写しました', { kind: 'ok' });
+      } catch (e) {
+        showSnack('写せませんでした。字を選んで手で写してください', { kind: 'ng' });
+      }
+      area.remove();
+    });
+    line.appendChild(btn);
+
+    wrap.appendChild(line);
+    return wrap;
   }
 
   function closeMe() {
