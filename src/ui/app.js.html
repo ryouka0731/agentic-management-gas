@@ -1537,8 +1537,9 @@
     if (!docs.length) {
       docListEl.appendChild(makeBlankState(
         '管理している文書がありません',
-        'Google ドライブの agentic-management/main に文書を置き、' +
-        'GASエディタで debugRegisterFile() を実行すると現れます。'
+        'Google ドライブで、この道具の「main」フォルダに文書を入れてから、' +
+        '「文書を登録する」を押してください。',
+        { label: '文書を登録する', onClick: addDocs }
       ));
       return;
     }
@@ -6281,8 +6282,8 @@
       'この道具を初めて置くときだけ必要な手順です。二人目からは、配られた URL を開くだけで使えます。',
       '1. Apps Script のエディタを開き、関数の一覧から setupRepo を選んで一度だけ実行します。スクリプトと同じフォルダに入れ物 (agentic-management) と台帳のスプレッドシートができます。',
       '2. 初回だけ Google から「アクセスを承認してください」と出ます。自分のアカウントを選び、内容を確かめて許可してください。文書・表・スライド・Drive・メールに触るための許可です。',
-      '3. 管理したい文書を、できた入れ物の main フォルダに入れます。',
-      '4. エディタで debugRegisterFile を実行すると、その文書が画面に現れます。',
+      '3. 管理したい文書を、できた入れ物の main フォルダに入れます。Google ドライブで、そのままドラッグして入れてください。',
+      '4. 画面の「文書」から「文書を登録する」を押すと、入れ物の中が一覧に出ます。管理したいものを選んで登録してください。',
       '5. 手元 (Claude や Codex) からも動かすなら、エディタで setupCommandQueue を一度だけ実行します。1分ごとの見張りが置かれます。二度実行しても増えません。',
       'うまくいかないときは、エディタの「実行数」でエラーの中身が読めます。',
     ]],
@@ -7271,6 +7272,138 @@
     form.insertBefore(note, form.querySelector('.inline-form-actions'));
   }
 
+  // ===== 文書を登録する =====
+
+  /**
+   * 正式版の入れ物にある文書を、画面から登録させる。
+   *
+   * ファイルの id を調べてスクリプトプロパティに書く、という手順は、
+   * この道具を使う人の仕事ではない。入れ物を覗いて、見つかったものを
+   * 選ばせる。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function addDocs(sourceEl) {
+    var box = openSideView('文書を登録する', sourceEl, null);
+
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = '正式版の入れ物 (main) を見ています…';
+    box.appendChild(lead);
+
+    google.script.run
+      .withSuccessHandler(function (list) { draw(list || []); })
+      .withFailureHandler(function (err) {
+        lead.textContent = 'エラー: ' + err.message;
+      })
+      .apiFoundFiles();
+
+    function draw(found) {
+      box.textContent = '';
+
+      if (!found.length) {
+        box.appendChild(makeBlankState(
+          '登録できる文書が見つかりません',
+          'Google ドライブで、この道具の「main」フォルダに文書を入れてから、' +
+          'もう一度開いてください。'
+        ));
+        addFolderLink(box);
+        return;
+      }
+
+      var head = document.createElement('p');
+      head.className = 'row-meta';
+      head.textContent = '入れ物の中にある、まだ登録していない文書です。' +
+        '管理したいものを選んでください。';
+      box.appendChild(head);
+
+      var list = document.createElement('div');
+      list.className = 'bulk-list';
+      var checks = [];
+
+      found.forEach(function (one) {
+        var row = document.createElement('label');
+        row.className = 'bulk-row';
+
+        var check = document.createElement('input');
+        check.type = 'checkbox';
+        check.value = one.fileId;
+        check.checked = one.ok;
+        check.disabled = !one.ok;
+        checks.push(check);
+        row.appendChild(check);
+
+        row.appendChild(makeIcon(one.ok ? 'file-text' : 'help-circle'));
+
+        var name = document.createElement('span');
+        name.textContent = one.name;
+        row.appendChild(name);
+
+        if (!one.ok) {
+          var why = document.createElement('span');
+          why.className = 'row-meta';
+          why.textContent = one.why;
+          row.appendChild(why);
+        }
+        list.appendChild(row);
+      });
+      box.appendChild(list);
+
+      var go = document.createElement('button');
+      go.className = 'btn btn-primary';
+      go.textContent = '登録する';
+      go.addEventListener('click', function () {
+        var ids = checks.filter(function (c) { return c.checked; })
+          .map(function (c) { return c.value; });
+
+        if (!ids.length) {
+          showSnack('登録するものが選ばれていません', { kind: 'ng' });
+          return;
+        }
+        go.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function (res) {
+            go.disabled = false;
+            var text = res.added.length + '件を登録しました';
+
+            if (res.failed.length) {
+              text += ' / ' + res.failed.length + '件できませんでした';
+            }
+            showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+
+            closeSide();
+            loadFiles(function () { switchTab('docs'); });
+          })
+          .withFailureHandler(function (err) {
+            go.disabled = false;
+            showSnack(err.message, { kind: 'ng' });
+          })
+          .apiRegisterFiles(ids);
+      });
+      box.appendChild(go);
+
+      addFolderLink(box);
+    }
+
+    function addFolderLink(host) {
+      google.script.run
+        .withSuccessHandler(function (url) {
+          if (!url) return;
+
+          var link = document.createElement('a');
+          link.className = 'btn';
+          link.href = url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = '入れ物を Drive で開く';
+          host.appendChild(link);
+        })
+        .withFailureHandler(function () { /* 開く口が無いだけ */ })
+        .apiMainFolderUrl();
+    }
+  }
+
   // ===== 自分まわり =====
 
   /**
@@ -8225,6 +8358,9 @@
   Object.keys(viewBtns).forEach(function (k) {
     viewBtns[k].addEventListener('click', function () { setIssueView(k); });
   });
+
+  document.getElementById('doc-add-btn')
+    .addEventListener('click', function () { addDocs(this); });
 
   document.getElementById('report-btn')
     .addEventListener('click', function () { createReport(this); });

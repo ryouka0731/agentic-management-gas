@@ -97,6 +97,7 @@ const API_NAMES = [
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
   'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit',
+  'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl',
 ];
 
 /** よく使う既定の応答 */
@@ -116,6 +117,12 @@ export const DEFAULTS = {
   apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
   apiTallyEffort: { periods: [], people: [], total: { planned: 0, actual: 0, diff: 0, count: 0 }, skipped: 0, hidden: 0 },
   apiIssueComments: [],
+  apiFoundFiles: [
+    { fileId: 'NEW1', name: '賃金規程', type: 'doc', ok: true, why: '' },
+    { fileId: 'NEW2', name: 'めも.txt', type: '', ok: false, why: 'この形のファイルは扱えません' },
+  ],
+  apiRegisterFiles: { added: [{ fileId: 'NEW1', path: '賃金規程' }], failed: [] },
+  apiMainFolderUrl: 'https://drive.google.com/drive/folders/MAIN1',
   apiAgentKit: {
     name: 'softbanto-agent-kit-1.2.0.zip',
     version: '1.2.0',

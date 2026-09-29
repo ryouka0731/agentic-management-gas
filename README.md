@@ -306,9 +306,15 @@ clasp open-web-app
 
 ### 5. 文書の登録
 
-対象の Google Doc を `agentic-management/main/` に置き、GAS エディタの
-**プロジェクトの設定 → スクリプト プロパティ**で `DEBUG_FILE_ID` にその fileId を
-設定してから、**`debugRegisterFile()`** を実行する。
+対象の文書（Docs / Sheets / Slides）を Drive で `agentic-management/main/` に
+ドラッグして入れ、**画面の「文書」タブ →「文書を登録する」**を押す。入れ物の中に
+あってまだ登録していないものが一覧に出るので、選んで登録する。
+
+**スクリプトプロパティも fileId も触らない。** ファイルの id を調べて設定に書く
+のは、この道具を使う人の仕事ではない。`debugRegisterFile()` は開発時の入口として
+残してあるが、通常の運用では使わない。
+
+> 2人目以降は何も要らない。配られた URL を開くだけで使える。
 
 ## 開発
 

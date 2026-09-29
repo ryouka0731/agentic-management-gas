@@ -4073,12 +4073,15 @@ describe('はじめての設定の案内', () => {
     return document.getElementById('guide').textContent;
   }
 
-  it('GAS でやることを順番に書く', () => {
+  it('エディタでやることだけを名指しする', () => {
     const text = openHelp();
 
     expect(text).toContain('setupRepo');
-    expect(text).toContain('debugRegisterFile');
     expect(text).toContain('setupCommandQueue');
+
+    // 文書の登録は画面からできる。id を調べさせるのは使う人の仕事ではない
+    expect(text).not.toContain('debugRegisterFile');
+    expect(text).toContain('文書を登録する');
   });
 
   it('承認を求められることを先に伝える', () => {
@@ -4161,5 +4164,90 @@ describe('道具を落としたあとの案内', () => {
     // 案内が後ろに隠れると気づかれない
     expect(document.getElementById('me-panel').hidden).toBe(true);
     expect(document.getElementById('side-panel').hidden).toBe(false);
+  });
+});
+
+describe('画面から文書を登録する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openAdd(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="docs"]').click();
+    document.getElementById('doc-add-btn').click();
+    return app;
+  }
+
+  it('入れ物の中身を一覧で出す', () => {
+    openAdd();
+    const rows = [...document.querySelectorAll('#side-body .bulk-row')];
+
+    // id を調べてスクリプトプロパティに書かせない
+    expect(rows.map((r) => r.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('賃金規程')]));
+  });
+
+  it('扱えるものだけ最初から選んでおく', () => {
+    openAdd();
+    const checks = [...document.querySelectorAll('#side-body .bulk-row input')];
+
+    expect(checks[0].checked).toBe(true);
+    expect(checks[1].checked).toBe(false);
+    expect(checks[1].disabled).toBe(true);
+  });
+
+  it('扱えない理由を添える', () => {
+    openAdd();
+
+    expect(document.getElementById('side-body').textContent)
+      .toContain('この形のファイルは扱えません');
+  });
+
+  it('選んだものを登録する', () => {
+    const app = openAdd();
+
+    [...document.querySelectorAll('#side-body .btn')]
+      .find((b) => b.textContent === '登録する').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiRegisterFiles').pop().args[0])
+      .toEqual(['NEW1']);
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('1件を登録しました');
+  });
+
+  it('何も選ばなければ断る', () => {
+    const app = openAdd();
+    document.querySelector('#side-body .bulk-row input').checked = false;
+
+    [...document.querySelectorAll('#side-body .btn')]
+      .find((b) => b.textContent === '登録する').click();
+
+    expect(app.calls.some((c) => c.name === 'apiRegisterFiles')).toBe(false);
+  });
+
+  it('入れ物を Drive で開ける', () => {
+    openAdd();
+
+    const link = [...document.querySelectorAll('#side-body a')]
+      .find((a) => a.textContent.includes('Drive で開く'));
+
+    expect(link.href).toContain('drive.google.com/drive/folders/');
+  });
+
+  it('見つからなければ入れ方を教える', () => {
+    openAdd({ apiFoundFiles: [] });
+
+    expect(document.getElementById('side-body').textContent)
+      .toContain('「main」フォルダに文書を入れて');
+  });
+
+  it('1件も管理していないときは、そこから登録に入れる', () => {
+    mount({ apiListFiles: [] });
+    document.querySelector('[data-tab="docs"]').click();
+
+    const btn = document.querySelector('#doc-list .blank-state .btn');
+    expect(btn.textContent).toBe('文書を登録する');
+
+    btn.click();
+    expect(document.getElementById('side-title').textContent).toBe('文書を登録する');
   });
 });

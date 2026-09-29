@@ -84,6 +84,83 @@ function apiRegisterFile(fileId, path) {
 }
 
 /**
+ * 正式版の入れ物にあって、まだ登録されていない文書を返す (Web App API)。
+ *
+ * 画面から登録できるようにするためのもの。ファイルの id を調べて
+ * スクリプトプロパティに書かせるのは、この道具を使う人の仕事ではない。
+ *
+ * @returns {Array<{fileId:string, name:string, type:string, ok:boolean,
+ *   why:string}>}
+ */
+function apiFoundFiles() {
+  var known = {};
+  var rows = dbReadAll('files');
+
+  for (var i = 0; i < rows.length; i++) known[String(rows[i].fileId)] = true;
+
+  var kinds = {};
+  kinds[MimeType.GOOGLE_DOCS] = 'doc';
+  kinds[MimeType.GOOGLE_SHEETS] = 'sheet';
+  kinds[MimeType.GOOGLE_SLIDES] = 'slide';
+
+  var out = [];
+  var it = DriveApp.getFolderById(repoConfig().mainId).getFiles();
+
+  while (it.hasNext() && out.length < 100) {
+    var file = it.next();
+    var id = file.getId();
+    if (known[id]) continue;
+
+    var type = kinds[file.getMimeType()] || '';
+    out.push({
+      fileId: id,
+      name: file.getName(),
+      type: type,
+      ok: !!type,
+      why: type ? '' : 'この形のファイルは扱えません',
+    });
+  }
+
+  out.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  return out;
+}
+
+/**
+ * まとめて登録する (Web App API)。
+ *
+ * 1件ずつ止まると、1つの失敗で残りが登録されない。
+ *
+ * @param {string[]} fileIds
+ * @returns {{added: object[], failed: object[]}}
+ */
+function apiRegisterFiles(fileIds) {
+  var ids = fileIds || [];
+  var added = [];
+  var failed = [];
+
+  for (var i = 0; i < ids.length; i++) {
+    try {
+      var file = DriveApp.getFileById(ids[i]);
+      var row = repoRegisterFile(ids[i], file.getName());
+
+      added.push({ fileId: String(row.fileId), path: String(row.path) });
+    } catch (e) {
+      failed.push({ fileId: String(ids[i]), error: e.message });
+    }
+  }
+  return { added: added, failed: failed };
+}
+
+/**
+ * 正式版の入れ物を Drive で開く場所を返す (Web App API)。
+ *
+ * @returns {string}
+ */
+function apiMainFolderUrl() {
+  return 'https://drive.google.com/drive/folders/' + repoConfig().mainId;
+}
+
+/**
  * 動作確認用のfileIdをスクリプトプロパティから読む。
  *
  * @returns {string}

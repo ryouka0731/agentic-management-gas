@@ -813,3 +813,63 @@ describe('2人で持つ仕事の集計', () => {
     expect(row.assignees).toEqual(['tester@example.com', 'aite@example.com']);
   });
 });
+
+describe('画面から文書を登録する', () => {
+  it('入れ物にあって、まだ登録していないものを返す', () => {
+    const env = setup();
+    const { ctx, fake } = env;
+    const config = ctx.repoConfig();
+
+    fake._createDoc('賃金規程', '<p>第1条</p>\n', config.mainId);
+
+    // 既に登録済みのものは出さない
+    const found = ctx.apiFoundFiles();
+    expect(found.map((f) => f.name)).toEqual(['賃金規程']);
+    expect(found[0].ok).toBe(true);
+    expect(found[0].type).toBe('doc');
+  });
+
+  it('扱えない形のものは理由を添えて返す', () => {
+    const env = setup();
+    const config = env.ctx.repoConfig();
+
+    env.fake.DriveApp.getFolderById(config.mainId)
+      .createFile('めも.txt', 'x', 'text/plain');
+
+    const found = env.ctx.apiFoundFiles();
+    expect(found[0].ok).toBe(false);
+    expect(found[0].why).toContain('扱えません');
+  });
+
+  it('まとめて登録できる', () => {
+    const env = setup();
+    const config = env.ctx.repoConfig();
+    const a = env.fake._createDoc('賃金規程', '<p>a</p>\n', config.mainId);
+    const b = env.fake._createDoc('育児規程', '<p>b</p>\n', config.mainId);
+
+    const res = env.ctx.apiRegisterFiles([a, b]);
+
+    expect(res.added).toHaveLength(2);
+    expect(res.failed).toEqual([]);
+    expect(env.ctx.apiFoundFiles()).toEqual([]);
+  });
+
+  it('1つ失敗しても残りは登録する', () => {
+    const env = setup();
+    const config = env.ctx.repoConfig();
+    const ok = env.fake._createDoc('賃金規程', '<p>a</p>\n', config.mainId);
+
+    const res = env.ctx.apiRegisterFiles(['ないファイル', ok]);
+
+    expect(res.added).toHaveLength(1);
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].error).toBeTruthy();
+  });
+
+  it('入れ物を開く場所を返す', () => {
+    const env = setup();
+
+    expect(env.ctx.apiMainFolderUrl())
+      .toContain('drive.google.com/drive/folders/');
+  });
+});
