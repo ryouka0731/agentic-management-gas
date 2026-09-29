@@ -4502,17 +4502,38 @@ describe('使い方の目次', () => {
   function openHelp() {
     mount();
     document.querySelector('[data-tab="help"]').click();
-    return document.querySelector('#guide .guide-toc');
+    return document.getElementById('guide-toc');
   }
 
-  it('節の数だけ並ぶ', () => {
+  it('左の帯に、節の数だけ並ぶ', () => {
     const toc = openHelp();
     const heads = [...document.querySelectorAll('#guide h2')];
-    const items = [...toc.querySelectorAll('.guide-toc-item')];
+    const items = [...toc.querySelectorAll('.nav-sub-item')];
 
     // 節を足して目次に載らないと、そこだけ辿り着けない
     expect(items.map((b) => b.textContent))
       .toEqual(heads.map((h) => h.textContent));
+  });
+
+  it('使い方のすぐ下に置く', () => {
+    const toc = openHelp();
+    const help = document.querySelector('.nav-item[data-tab="help"]');
+
+    // 離れた場所に出すと、何の目次なのかが分からない
+    expect(help.nextElementSibling).toBe(toc);
+    expect(document.querySelector('#guide .nav-sub-item')).toBeNull();
+  });
+
+  it('他を見ているときは出さない', () => {
+    const toc = openHelp();
+    expect(toc.hidden).toBe(false);
+
+    // 使い方の節を指すので、他を見ているときに出すと迷子になる
+    document.querySelector('[data-tab="issues"]').click();
+    expect(toc.hidden).toBe(true);
+
+    document.querySelector('[data-tab="help"]').click();
+    expect(toc.hidden).toBe(false);
   });
 
   it('押すとその節へ寄る', () => {
@@ -4521,7 +4542,7 @@ describe('使い方の目次', () => {
     const seen = [];
 
     heads.forEach((h) => { h.scrollIntoView = () => seen.push(h.textContent); });
-    toc.querySelectorAll('.guide-toc-item')[3].click();
+    toc.querySelectorAll('.nav-sub-item')[3].click();
 
     expect(seen).toEqual([heads[3].textContent]);
   });
@@ -4531,22 +4552,12 @@ describe('使い方の目次', () => {
 
     // 枠の中で動いているため、場所を変えると外側の頁ごと動くことがある
     expect(toc.querySelectorAll('a')).toHaveLength(0);
-    expect(toc.querySelector('.guide-toc-item').tagName).toBe('BUTTON');
-  });
-
-  it('器のいちばん上にあり、送っても残る', () => {
-    const toc = openHelp();
-    const css = document.querySelector('style').textContent;
-    const rule = css.substring(css.indexOf('\n.guide-toc {'));
-
-    // 先頭でないと、上の余白を打ち消す指定が操作の帯を食う
-    expect(document.getElementById('guide').firstElementChild).toBe(toc);
-    expect(rule.substring(0, rule.indexOf('}'))).toContain('position: sticky');
+    expect(toc.querySelector('.nav-sub-item').tagName).toBe('BUTTON');
   });
 
   it('いま読んでいる節を示す', () => {
     const toc = openHelp();
-    const items = [...toc.querySelectorAll('.guide-toc-item')];
+    const items = [...toc.querySelectorAll('.nav-sub-item')];
     const guide = document.getElementById('guide');
 
     // jsdom は位置を持たないので、見出しの位置を差し込んで送る
@@ -4572,6 +4583,15 @@ describe('使い方の目次', () => {
     expect(scrollTo(1100)[2]).toBe('true');
     expect(scrollTo(1100)[0]).toBe('false');
     expect(scrollTo(4000)[items.length - 1]).toBe('true');
+  });
+
+  it('現在地の線を二重に引かない', () => {
+    openHelp();
+    const css = document.querySelector('style').textContent;
+    const rule = css.substring(css.indexOf("\n.nav-sub-item[aria-current='true'] {"));
+
+    // 親の .nav-item が線を引いている。二重だとどちらが現在地か読めない
+    expect(rule.substring(0, rule.indexOf('}'))).not.toContain('border');
   });
 });
 

@@ -496,55 +496,11 @@ body {
 .guide {
   flex: 1;
   overflow-y: auto;
-  /* 目次が余白を打ち消して器いっぱいに広がるため、トークンで揃える。
-     数値で書くと片方だけ動いて段がずれる */
   padding: var(--sp-5) var(--sp-6);
   max-width: 760px;
   color: var(--ink);
   line-height: 1.9;
   font-size: 14px;
-}
-
-/*
- * 使い方の目次。
- *
- * 節が6つに増えたので、底の節へ上から一息で飛べるようにする。
- * 送っても上に残す。器の余白ぶんだけ外へ広げて、寄ってきた字が
- * 目次の上から覗かないようにする
- */
-.guide-toc {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-6)) var(--sp-5);
-  padding: var(--sp-5) var(--sp-6) var(--sp-3);
-  background: var(--bg);
-  /* 送ってきた字の上に乗るので、境界は段で表す。線を1本増やすより、
-     面が浮いていることを示したほうが意味が伝わる */
-  box-shadow: var(--elev-1);
-}
-
-.guide-toc-item {
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: 999px;
-  background: var(--bg-2);
-  color: var(--ink-2);
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.6;
-  cursor: pointer;
-}
-
-.guide-toc-item:hover { background: var(--bg-3); color: var(--ink); }
-
-/* いま読んでいる節。色だけでは気づけない人がいるので字も濃くする */
-.guide-toc-item[aria-current='true'] {
-  background: var(--accent-bg);
-  color: var(--accent);
-  font-weight: 600;
 }
 
 .guide h2 {
@@ -1244,6 +1200,45 @@ button:disabled {
   color: var(--ink);
   background: var(--bg-3);
   border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+/*
+ * 左の帯に出す下位の目次。
+ *
+ * 読み物の中に置くと、送るほど遠ざかる。左は常に見えているので、
+ * どこからでも一息で飛べる。
+ *
+ * 現在地の線は親 (.nav-item) が引いているので、こちらは引かない。
+ * 二重に引くと、どちらが現在地なのか読めなくなる
+ */
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1) 0 var(--sp-2);
+}
+
+.nav-sub-item {
+  /* button は中身に合わせて縮む。並んだ行の幅が揃わなくなる */
+  width: -moz-available;
+  width: -webkit-fill-available;
+  width: stretch;
+  min-height: 28px;
+  padding: var(--sp-1) var(--sp-4) var(--sp-1) 27px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-sub-item:hover { background: var(--bg-3); color: var(--ink); }
+
+/* いま読んでいる節。色だけでは気づけない人がいるので字も濃くする */
+.nav-sub-item[aria-current='true'] {
+  color: var(--accent);
   font-weight: 600;
 }
 

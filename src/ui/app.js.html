@@ -107,6 +107,7 @@
   var issueCreateBtn = document.getElementById('issue-create-btn');
   var boardEl = document.getElementById('board');
   var guideEl = document.getElementById('guide');
+  var guideTocEl = document.getElementById('guide-toc');
   var guidelineEl = document.getElementById('guideline');
   var guidelineToggle = document.getElementById('guideline-toggle');
   var guidelineBody = document.getElementById('guideline-body');
@@ -2151,6 +2152,8 @@
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelHelp.hidden = name !== 'help';
+    // 目次は使い方の節を指すので、他を見ているときに出すと迷子になる
+    guideTocEl.hidden = name !== 'help';
     panelReport.hidden = name !== 'report';
     panelUsage.hidden = name !== 'usage';
 
@@ -6756,13 +6759,11 @@
   function loadHelp() {
     if (guideEl.dataset.ready) return;
 
-    // 目次は器のいちばん上に置く。送っても上に残る (sticky) ため、
-    // 底の節からでも一息で戻れる。器の先頭でないと、上の余白を
-    // 打ち消す指定が操作の帯を食う
-    var toc = document.createElement('nav');
-    toc.className = 'guide-toc';
+    // 目次は左の帯に出す。読み物の中に置くと、送るほど遠ざかる。
+    // 左は常に見えているので、どこからでも一息で飛べる
+    var toc = guideTocEl;
+    toc.textContent = '';
     toc.setAttribute('aria-label', '使い方の目次');
-    guideEl.appendChild(toc);
 
     // 操作は読み物より先に置く。底に置くと、困ったときにしか開かれない
     // 場所に埋もれる
@@ -6784,7 +6785,7 @@
      */
     function addToc(label, target) {
       var btn = document.createElement('button');
-      btn.className = 'guide-toc-item';
+      btn.className = 'nav-sub-item';
       btn.textContent = label;
       btn.addEventListener('click', function () {
         target.scrollIntoView({ block: 'start', behavior: 'smooth' });
