@@ -2036,6 +2036,39 @@ button.gantt-name:hover { color: var(--accent); }
 
 .side-body .inline-form-actions { flex-wrap: wrap; }
 
+/*
+ * 差分の中の文書の見出し。
+ *
+ * 1つの依頼に複数の文書が入るので、どれの差分なのかを言わずに並べると
+ * 読めない
+ */
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+
+.diff-file-head:first-child { margin-top: 0; }
+
+.diff-file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* 入力の手前に置く断り。何が一緒に起きるのかを先に見せる */
+.side-note {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 @media (max-width: 767px) {
   /* 狭いと横に並べられない。手前に重ねる */
   .side-panel {

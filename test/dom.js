@@ -82,7 +82,7 @@ export function mountApp(responses) {
 const API_NAMES = [
   'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
   'apiCommitDiff', 'apiCommitHistory', 'apiBranchList', 'apiBranchCreate',
-  'apiBranchDelete', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
+  'apiBranchDelete', 'apiBranchAddFile', 'apiBranchAddable', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
   'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
@@ -191,7 +191,14 @@ export const DEFAULTS = {
       at: '2026-09-06T00:00:00.000Z', editedAt: '', canEdit: false,
     },
   ],
-  apiPrPreview: { clean: true, problems: [], conflicts: [], approvals: 0, ops: [] },
+  apiPrPreview: {
+    clean: true, problems: [], conflicts: [], approvals: 0, ops: [],
+    // 変更セットは文書ごとの中身も持つ
+    files: [{
+      fileId: 'DOC1', path: '就業規則.doc', type: 'doc',
+      clean: true, problems: [], conflicts: [], ops: [],
+    }],
+  },
   apiPrCommits: [],
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com', 'other@example.com'],

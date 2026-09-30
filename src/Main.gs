@@ -468,6 +468,58 @@ function apiBranchCreate(name, fileId) {
  * @param {string} name
  * @returns {string}
  */
+/**
+ * 既にある改訂版に、もう1つ文書を足す (Web App API)。
+ *
+ * 1つの改訂で規程と細則の両方を直したいとき、別々の改訂版に分けると
+ * 確認依頼も別々になり、片方だけ反映されうる。
+ *
+ * @param {string} name 改訂版の名
+ * @param {string} fileId 正式版の側の fileId
+ * @returns {{path:string, fileId:string}}
+ */
+function apiBranchAddFile(name, fileId) {
+  var row = branchAddFile(name, fileId);
+  return { path: plainText(row.path), fileId: plainText(row.fileId) };
+}
+
+/**
+ * その改訂版に入っていない正式版の文書を返す (Web App API)。
+ *
+ * 足せるものだけを選ばせる。入っているものを選べてしまうと、押してから
+ * 断られる
+ *
+ * @param {string} name
+ * @returns {Array<{fileId:string, path:string, type:string}>}
+ */
+function apiBranchAddable(name) {
+  var inBranch = {};
+  var rows = branchFiles(name);
+
+  for (var i = 0; i < rows.length; i++) {
+    inBranch[branchSplitPath_(rows[i].path).path] = true;
+  }
+
+  var all = dbReadAll('files');
+  var out = [];
+
+  for (var k = 0; k < all.length; k++) {
+    var parts = branchSplitPath_(all[k].path);
+    if (parts.branch !== 'main') continue;
+    if (inBranch[parts.path]) continue;
+    // Slides は反映できないので、足しても確認依頼が出せない
+    if (String(all[k].type) === 'slide') continue;
+
+    out.push({
+      fileId: plainText(all[k].fileId),
+      path: plainText(parts.path),
+      type: plainText(all[k].type),
+    });
+  }
+  out.sort(function (x, y) { return x.path < y.path ? -1 : 1; });
+  return out;
+}
+
 function apiBranchDelete(name) {
   branchDelete(name);
   return name;
@@ -530,15 +582,43 @@ function apiPrCreate(title, body, sourceBranch, mainFileId, targetBranch) {
  * @returns {object}
  */
 function apiPrPreview(number) {
-  var preview = prPreviewMerge(number);
-  var mergedHtml = linesToHtml_(preview.lines);
+  var all = prPreviewAll(number);
+  var files = [];
+
+  for (var i = 0; i < all.files.length; i++) {
+    var one = all.files[i];
+
+    files.push({
+      fileId: plainText(one.mainFileId),
+      path: plainText(one.path),
+      type: plainText(one.type),
+      clean: !!one.clean,
+      problems: one.problems,
+      conflicts: one.conflicts,
+      ops: diffHtml(one.oursHtml, linesToHtml_(one.lines)),
+    });
+  }
+
+  /*
+   * 変更セット全体の姿を上に、文書ごとの中身を下に返す。
+   *
+   * clean と problems は**全体の判断**である。どれか1つでも書き戻せなければ
+   * その依頼は反映できないので、画面は文書ごとに押させてはならない。
+   *
+   * clean / problems / conflicts / ops は1文書だったころの形のまま残して
+   * ある。画面を直すまでのあいだ、1つ目のぶんが従来どおり届く
+   */
+  var head = files.length ? files[0] : {
+    clean: true, problems: [], conflicts: [], ops: [],
+  };
 
   return {
-    clean: preview.clean,
-    problems: preview.problems,
-    conflicts: preview.conflicts,
+    clean: all.clean,
+    problems: all.problems,
+    conflicts: head.conflicts,
     approvals: prApprovalCount(number),
-    ops: diffHtml(preview.oursHtml, mergedHtml),
+    ops: head.ops,
+    files: files,
   };
 }
 

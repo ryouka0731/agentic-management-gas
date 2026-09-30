@@ -214,7 +214,7 @@ describe('Phase 2 統合: 書き戻しの安全機構', () => {
 
     // 未コミットの編集は3-way mergeに参加できないため、
     // 書き戻しで黙って失わせずに手前で止める
-    expect(() => ctx.prMerge(pr.number, [])).toThrow(/「正式版」に記録していない変更があります/);
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/「正式版」の .+ に記録していない変更があります/);
     expect(fake._docs.get(mainFileId)).toBe(draft);
     expect(ctx.prGet(pr.number).state).not.toBe('merged');
 

@@ -300,6 +300,7 @@
     'act:done': '終わったことにします',
     'act:reopen': '完了を取り消して、やることに戻します',
     'act:archive': '捨てます。しばらくは「捨てたもの」から戻せます',
+    'act:branch-add': 'この改訂版に文書を足します。1回の確認依頼でまとめて反映できます',
     'act:pr-close': 'この依頼をやめます。改訂版そのものは残るので、直した中身は消えません',
     'act:unregister': 'この道具の管理から外します。文書そのものは消えず、登録し直せば履歴も戻ります',
     'act:approve': 'この改訂版を正式版に反映してよい、と返事をします',
@@ -2908,9 +2909,12 @@
 
         var meta = document.createElement('div');
         meta.className = 'row-meta';
+        var names = files.map(function (f) { return splitPath(f.path).path; });
+
         meta.textContent = personName(b.createdBy) +
           (b.state === 'merged' ? ' · 反映済み' : ' · 改訂中') +
-          (files.length ? ' · ' + splitPath(files[0].path).path : '');
+          // 1件目の名前だけだと、2件目があることが分からない
+          (names.length ? ' · ' + names.join('、') : '');
         main.appendChild(meta);
 
         // 版そのものを押して中身に入れるようにする。
@@ -2930,6 +2934,15 @@
         row.appendChild(open);
 
         if (b.state !== 'merged') {
+          // 1つの改訂で規程と細則の両方を直したい、というのが現実にある。
+          // 別々の改訂版に分けると確認依頼も別々になり、片方だけ反映されうる
+          var addBtn = document.createElement('button');
+          addBtn.className = 'btn';
+          addBtn.textContent = '文書を足す';
+          hint(addBtn, 'act:branch-add');
+          addBtn.addEventListener('click', function () { addToBranch(b.name); });
+          row.appendChild(addBtn);
+
           var prBtn = document.createElement('button');
           prBtn.className = 'btn btn-primary';
           prBtn.textContent = '確認を依頼する';
@@ -2967,54 +2980,165 @@
    *
    * @param {string} branchName
    */
-  function createRequest(branchName) {
-    var work = allFiles.filter(function (f) {
-      return splitPath(f.path).branch === branchName;
-    })[0];
+  /**
+   * 既にある改訂版に、もう1つ文書を足す。
+   *
+   * 足せるものだけを選ばせる。入っているものを選べてしまうと、押してから
+   * 断られる。**候補はサーバに出させる。** 画面で組むと、足せない理由
+   * (Slides は反映できない等) を2か所に書くことになる。
+   *
+   * @param {string} branchName
+   */
+  function addToBranch(branchName) {
+    call('apiBranchAddable', [branchName], function (list) {
+      var docs = list || [];
 
-    if (!work) {
+      if (!docs.length) {
+        showSnack('足せる文書がありません', { kind: 'ng' });
+        return;
+      }
+
+      var choices = docs.map(function (d) { return [d.fileId, d.path]; });
+
+      openInlineForm(
+        '「' + branchName + '」に文書を足す',
+        [{ name: 'fileId', label: 'どの文書を足すか', choices: choices }],
+        '足す',
+        function (v) {
+          call('apiBranchAddFile', [branchName, v.fileId], function (res) {
+            showSnack(splitPath(res.path).path + ' を足しました', { kind: 'ok' });
+            loadFiles(loadBranches);
+          }, failSnack('足せませんでした: '));
+        }
+      );
+    }, failSnack('候補を取れませんでした: '));
+  }
+
+  /**
+   * 確認依頼の差分を、文書ごとに出す。
+   *
+   * 1つの依頼に複数の文書が入るので、**どれの差分なのかを言わずに並べると
+   * 読めない。** 1件だけのときは見出しを出さない (自明なので邪魔になる)。
+   *
+   * @param {object} preview apiPrPreview の返り
+   * @param {HTMLElement} host
+   */
+  function renderPrDiffs(preview, host) {
+    var files = preview.files || [];
+
+    if (files.length < 2) {
+      renderDiffInto(preview.ops, host, true);
+      return;
+    }
+    host.textContent = '';
+
+    files.forEach(function (one) {
+      var head = document.createElement('div');
+      head.className = 'diff-file-head';
+
+      var name = document.createElement('span');
+      name.className = 'diff-file-name';
+      name.textContent = one.path;
+      head.appendChild(name);
+
+      // 食い違いがある文書は先に分かるようにする
+      if (!one.clean) {
+        var chip = document.createElement('span');
+        chip.className = 'chip chip-pri-high';
+        chip.textContent = '同じ場所が両方で変わっています';
+        head.appendChild(chip);
+      }
+      host.appendChild(head);
+
+      var box = document.createElement('div');
+      host.appendChild(box);
+      renderDiffInto(one.ops, box, true);
+    });
+  }
+
+  function createRequest(branchName) {
+    // 改訂版は複数の文書を持てる。**1つ目だけ送ってはいけない。** 残りは
+    // 確認も反映もされないまま、直したつもりで置き去りになる
+    var paths = allFiles
+      .filter(function (f) { return splitPath(f.path).branch === branchName; })
+      .map(function (f) { return splitPath(f.path).path; });
+
+    if (!paths.length) {
       showSnack('対象の文書が見つかりません', { kind: 'ng' });
       return;
     }
 
-    var docPath = splitPath(work.path).path;
-    var doc = allFiles.filter(function (f) {
-      return splitPath(f.path).branch === 'main' && f.path === docPath;
-    })[0];
+    var docs = [];
+    paths.forEach(function (path) {
+      var main = allFiles.filter(function (f) {
+        return splitPath(f.path).branch === 'main' && f.path === path;
+      })[0];
+      if (main) docs.push(main);
+    });
 
-    if (!doc) {
+    if (docs.length !== paths.length) {
       showSnack(OFFICIAL + 'の文書が見つかりません', { kind: 'ng' });
       return;
     }
 
-    // 反映先。既定は正式版だが、同じ文書の別の改訂版にも出せる。
-    // 長い改訂を分けて進めるとき、途中の版に先に取り込めないと待ち行列ができる
-    var targets = [['main', OFFICIAL]];
+    /*
+     * 反映先。既定は正式版だが、別の改訂版にも出せる。長い改訂を分けて
+     * 進めるとき、途中の版に先に取り込めないと待ち行列ができる。
+     *
+     * ただし**この改訂版の文書を全部持っている版だけ**を出す。1つでも
+     * 欠けている版に出すと、反映のときに作業コピーが見つからず落ちる
+     */
+    var have = {};
     allFiles.forEach(function (f) {
       var parts = splitPath(f.path);
       if (parts.branch === 'main') return;
-      if (parts.branch === branchName) return;
-      if (parts.path !== docPath) return;
 
-      targets.push([parts.branch, parts.branch]);
+      if (!have[parts.branch]) have[parts.branch] = {};
+      have[parts.branch][parts.path] = true;
     });
+
+    var targets = [['main', OFFICIAL]];
+    for (var name in have) {
+      if (!Object.prototype.hasOwnProperty.call(have, name)) continue;
+      if (name === branchName) continue;
+
+      var all = true;
+      for (var i = 0; i < paths.length; i++) {
+        if (!have[name][paths[i]]) all = false;
+      }
+      if (all) targets.push([name, name]);
+    }
+
+    var fields = [
+      { name: 'title', label: '何を変えたか', required: true },
+      { name: 'body', label: '補足 (任意)', multiline: true },
+      { name: 'into', label: 'どこに反映するか', choices: targets },
+    ];
 
     var form = openInlineForm(
       '確認を依頼する: ' + branchName,
-      [
-        { name: 'title', label: '何を変えたか', required: true },
-        { name: 'body', label: '補足 (任意)', multiline: true },
-        { name: 'into', label: 'どこに反映するか', choices: targets },
-      ],
+      fields,
       '確認を依頼する',
       function (v) {
-        call('apiPrCreate', [v.title, v.body, branchName, doc.fileId, v.into], function () {
-          showSnack('確認を依頼しました', { kind: 'ok' });
-          switchTab('pulls');
-          loadOverview();
-        }, failSnack('依頼できませんでした: '));
+        var ids = docs.map(function (d) { return d.fileId; });
+
+        call('apiPrCreate', [v.title, v.body, branchName, ids, v.into],
+          function () {
+            showSnack('確認を依頼しました', { kind: 'ok' });
+            switchTab('pulls');
+            loadOverview();
+          }, failSnack('依頼できませんでした: '));
       }
     );
+
+    // 何が一緒に出るのかを先に見せる。1件のときは自明なので出さない
+    if (docs.length > 1) {
+      var note = document.createElement('div');
+      note.className = 'side-note';
+      note.textContent = 'この依頼には ' + docs.length + '件の文書が入ります: ' +
+        docs.map(function (d) { return d.path; }).join(' / ');
+      form.insertBefore(note, form.firstChild);
+    }
 
     if (targets.length < 2) {
       // 選びようが無いときに選択肢を見せても、迷わせるだけ
@@ -3642,7 +3766,7 @@
       var views = {
         conversation: function () { renderConversation(pr, prBody); },
         commits: function () { renderPrCommits(pr, prBody); },
-        files: function () { renderDiffInto(preview.ops, prBody, true); },
+        files: function () { renderPrDiffs(preview, prBody); },
       };
 
       [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分']]

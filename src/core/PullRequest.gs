@@ -25,6 +25,37 @@ function prTargetFileId_(body) {
 }
 
 /**
+ * その確認依頼が反映しようとしている文書を返す。
+ *
+ * 確認依頼は**変更の集まり**である。1つの改訂で規程と細則の両方を直したら、
+ * 確認も反映も1回で済まなければ、片方だけ反映された状態が作れてしまう。
+ *
+ * `targetFiles` 列が本体。この列を足す前の依頼は本文の `[target-file:...]`
+ * にしか対象を持たないため、そこへ落とす。
+ *
+ * @param {object} pr pulls 行
+ * @returns {string[]} 正式版の側の fileId
+ */
+function prTargetFiles(pr) {
+  var raw = String((pr && pr.targetFiles) || '');
+  var out = [];
+  var seen = {};
+  var parts = raw.split(',');
+
+  for (var i = 0; i < parts.length; i++) {
+    var one = parts[i].replace(/^\s+|\s+$/g, '');
+    if (!one || seen[one]) continue;
+
+    seen[one] = true;
+    out.push(one);
+  }
+  if (out.length) return out;
+
+  var old = prTargetFileId_(pr && pr.body);
+  return old ? [old] : [];
+}
+
+/**
  * PRを作成する。
  *
  * @param {string} title
@@ -34,6 +65,20 @@ function prTargetFileId_(body) {
  * @returns {object} 作成された pulls 行
  */
 function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
+  // 1つでも配列でも受ける。呼ぶ側を一斉に直さなくても変更セットになる
+  var wanted = [];
+  var raw = Array.isArray(mainFileId) ? mainFileId : [mainFileId];
+  var seenWanted = {};
+
+  for (var w = 0; w < raw.length; w++) {
+    var one = String(raw[w] || '');
+    if (!one || seenWanted[one]) continue;
+
+    seenWanted[one] = true;
+    wanted.push(one);
+  }
+  if (!wanted.length) throw new Error('反映する文書を選んでください');
+
   if (!/^[\s\S]{1,200}$/.test(String(title || ''))) {
     throw new Error('タイトルを入力してください');
   }
@@ -57,16 +102,29 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     throw new Error('反映先の版は既に閉じられています: ' + into);
   }
 
-  var targetRow = dbFindOne('files', 'fileId', mainFileId);
-  if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
+  for (var t = 0; t < wanted.length; t++) {
+    var targetRow = dbFindOne('files', 'fileId', wanted[t]);
+    if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
 
-  // Slides は書き戻せないため、PRを作らせない。閲覧・履歴・diff は使える。
-  // fast-forward でコピーを採用する案は fileId が変わるため採らない
-  if (String(targetRow.type) === 'slide') {
-    throw new Error(
-      'Slidesはマージに対応していません。履歴とdiffは見られますが、' +
-      '反映はSlides上で直接行ってください'
-    );
+    if (branchSplitPath_(targetRow.path).branch !== 'main') {
+      throw new Error('正式版の文書を選んでください: ' + targetRow.path);
+    }
+
+    // Slides は書き戻せないため、PRを作らせない。閲覧・履歴・diff は使える。
+    // fast-forward でコピーを採用する案は fileId が変わるため採らない
+    if (String(targetRow.type) === 'slide') {
+      throw new Error(
+        'Slidesはマージに対応していません。履歴とdiffは見られますが、' +
+        '反映はSlides上で直接行ってください'
+      );
+    }
+
+    // その改訂版に入っていない文書は反映できない。作業コピーが無いと
+    // 「何を反映するのか」が無い
+    if (!branchWorkingFileId(sourceBranch, wanted[t])) {
+      throw new Error(
+        'その文書は「' + sourceBranch + '」に入っていません: ' + targetRow.path);
+    }
   }
 
   // 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる
@@ -86,7 +144,8 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     title: title,
     // 対象ファイルを本文の末尾に記録する。pulls シートに列を増やさずに
     // 対象を辿れるようにするための最小限の措置
-    body: (body || '') + '\n\n[target-file:' + mainFileId + ']',
+    body: (body || '') + '\n\n[target-file:' + wanted[0] + ']',
+    targetFiles: wanted.join(','),
     sourceBranch: sourceBranch,
     targetBranch: into,
     state: 'open',
@@ -162,12 +221,13 @@ function prApprovalCount(number) {
  * @param {number} number
  * @returns {{clean:boolean, lines:string[], conflicts:object[], problems:string[], mainFileId:string, oursHtml:string}}
  */
-function prPreviewMerge(number) {
+function prPreviewMerge(number, wantFileId) {
   var pr = prGet(number);
   var branch = dbFindOne('branches', 'name', pr.sourceBranch);
   if (!branch) throw new Error('ブランチが見つかりません: ' + pr.sourceBranch);
 
-  var mainFileId = prTargetFileId_(pr.body);
+  // 対象を指定しなければ1つ目を見る。変更セットの全件は prPreviewAll
+  var mainFileId = String(wantFileId || '') || prTargetFiles(pr)[0];
   if (!mainFileId) throw new Error('PRの対象ファイルを特定できません');
 
   var into = prTargetBranch(pr);
@@ -400,6 +460,62 @@ function prAssertCanClose_(pr) {
 }
 
 /**
+ * 食い違いの選択を、文書ごとに引ける形にする。
+ *
+ * 1ファイルだったころは配列1本で渡していた。変更セットでは文書ごとに
+ * 分かれるため `{fileId: [...]}` で受ける。**古い形も通す。** 通さないと、
+ * 画面を直すまでのあいだ解決した選択が届かず、選んだのに反映されない。
+ *
+ * @param {Array|Object} choices
+ * @param {string[]} targets
+ * @returns {Object<string, Array>}
+ */
+function prChoiceMap_(choices, targets) {
+  if (!choices) return {};
+  if (!Array.isArray(choices)) return choices;
+
+  // 配列のときは1つ目の文書ぶんとして扱う
+  var out = {};
+  if (targets.length) out[targets[0]] = choices;
+  return out;
+}
+
+/**
+ * 変更セットの全件を見比べる。
+ *
+ * **1件ずつ押させない。** 確認する人は「この依頼を反映してよいか」を
+ * 決めるのであって、ファイルごとに判断するわけではない。どれか1つでも
+ * 書き戻せなければ、その依頼は反映できない。
+ *
+ * @param {number} number
+ * @returns {{files:object[], clean:boolean, problems:string[]}}
+ */
+function prPreviewAll(number) {
+  var pr = prGet(number);
+  var targets = prTargetFiles(pr);
+  if (!targets.length) throw new Error('PRの対象ファイルを特定できません');
+
+  var out = [];
+  var clean = true;
+  var problems = [];
+
+  for (var i = 0; i < targets.length; i++) {
+    var row = dbFindOne('files', 'fileId', targets[i]);
+    var one = prPreviewMerge(number, targets[i]);
+
+    one.path = row ? branchSplitPath_(row.path).path : targets[i];
+    one.type = row ? String(row.type) : 'doc';
+    out.push(one);
+
+    if (!one.clean) clean = false;
+    for (var p = 0; p < one.problems.length; p++) {
+      problems.push(one.path + ': ' + one.problems[p]);
+    }
+  }
+  return { files: out, clean: clean, problems: problems };
+}
+
+/**
  * PRをマージし、結果を main の Doc に書き戻す。
  *
  * 書き戻しは破壊的操作であるため、以下の順序を厳守する:
@@ -433,59 +549,87 @@ function prMerge(number, choices) {
     // 未コミットの編集はマージに参加できず、書き戻しで黙って
     // 上書きされてしまう。git が dirty な作業ツリーでのマージを
     // 拒むのと同じ理由による
-    var targetFileId = prTargetFileId_(pr.body);
-    if (!targetFileId) throw new Error('PRの対象ファイルを特定できません');
+    var targets = prTargetFiles(pr);
+    if (!targets.length) throw new Error('PRの対象ファイルを特定できません');
 
     var into = prTargetBranch(pr);
-    var intoFileId = prTargetBranchFileId(pr, targetFileId);
+    var choiceMap = prChoiceMap_(choices, targets);
 
-    if (fileStatus(intoFileId, into).dirty) {
-      throw new Error(
-        '「' + (into === 'main' ? '正式版' : into) + '」に記録していない変更があります。' +
-        '先にそちらを記録してから反映してください'
+    /*
+     * ここから先の順序を崩してはならない。
+     *
+     *   1. 全件のマージ結果を作り、全件が書き戻せることを確かめる
+     *   2. どれか1つでも駄目なら、何も変えずに中断する
+     *   3. そのあとで、まとめて書き戻す
+     *
+     * **1件ずつ「検証して書く」を繰り返してはいけない。** 3件目で落ちた
+     * とき、1件目と2件目だけ反映された状態が残り、確認を経ていない
+     * 中途半端な正式版ができる。戻す手立ても無い。
+     */
+    var plan = [];
+
+    for (var t = 0; t < targets.length; t++) {
+      var mainRow = dbFindOne('files', 'fileId', targets[t]);
+      var path = mainRow ? branchSplitPath_(mainRow.path).path : targets[t];
+      var type = mainRow ? String(mainRow.type) : 'doc';
+      var intoFileId = prTargetBranchFileId(pr, targets[t]);
+
+      if (fileStatus(intoFileId, into).dirty) {
+        throw new Error(
+          '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
+          ' に記録していない変更があります。先にそちらを記録してから' +
+          '反映してください'
+        );
+      }
+
+      var preview = prPreviewMerge(number, targets[t]);
+      var lines = preview.clean
+        ? preview.lines
+        : resolveConflicts(
+            { lines: preview.lines, conflicts: preview.conflicts },
+            choiceMap[targets[t]] || []
+          );
+
+      var mergedHtml = linesToHtml_(lines);
+
+      // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
+      var mergedBlocks = parseBlocks(mergedHtml);
+      var problems = (type === 'sheet')
+        ? sheetWriterValidate(mergedBlocks)
+        : htmlWriterValidate(mergedBlocks);
+
+      if (problems.length > 0) {
+        throw new Error(
+          path + ' のマージ結果を書き戻せません:\n' + problems.join('\n'));
+      }
+
+      plan.push({
+        fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
+      });
+    }
+
+    var mergeCommit = null;
+
+    for (var k = 0; k < plan.length; k++) {
+      var step = plan[k];
+
+      // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
+      // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
+      // 通常は上の検査で弾かれるためここは通らない
+      if (fileStatus(step.fileId, into).dirty) {
+        commitFile(step.fileId, into, 'PR #' + number + ' マージ前の自動退避', null);
+      }
+
+      writeHtmlToFile(step.fileId, step.html, step.type);
+      liveCacheInvalidate(step.fileId);
+
+      mergeCommit = commitFile(
+        step.fileId,
+        into,
+        'マージ: PR #' + number + ' ' + pr.title,
+        null
       );
     }
-
-    var preview = prPreviewMerge(number);
-    var mainFileId = preview.intoFileId;
-
-    var lines = preview.clean
-      ? preview.lines
-      : resolveConflicts(
-          { lines: preview.lines, conflicts: preview.conflicts },
-          choices || []
-        );
-
-    var mergedHtml = linesToHtml_(lines);
-
-    // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
-    var mergeRow = dbFindOne('files', 'fileId', targetFileId);
-    var mergeType = mergeRow ? String(mergeRow.type) : 'doc';
-    var mergedBlocks = parseBlocks(mergedHtml);
-    var problems = (mergeType === 'sheet')
-      ? sheetWriterValidate(mergedBlocks)
-      : htmlWriterValidate(mergedBlocks);
-    if (problems.length > 0) {
-      throw new Error('マージ結果を書き戻せません:\n' + problems.join('\n'));
-    }
-
-    // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
-    // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
-    // 通常は上の検査で弾かれるためここは通らない
-    var status = fileStatus(mainFileId, into);
-    if (status.dirty) {
-      commitFile(mainFileId, into, 'PR #' + number + ' マージ前の自動退避', null);
-    }
-
-    writeHtmlToFile(mainFileId, mergedHtml, mergeType);
-    liveCacheInvalidate(mainFileId);
-
-    var mergeCommit = commitFile(
-      mainFileId,
-      into,
-      'マージ: PR #' + number + ' ' + pr.title,
-      null
-    );
 
     dbUpdate('pulls', 'number', number, {
       state: 'merged',

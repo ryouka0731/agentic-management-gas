@@ -158,3 +158,152 @@ describe('起点は文書ごとに持つ', () => {
     expect(row).toBeTruthy();
   });
 });
+
+describe('確認依頼は変更の集まり', () => {
+  /** 2つの文書を1つの改訂版で直し、両方を対象にした依頼を出す */
+  function both(ctx, fake, a, b) {
+    ctx.branchCreate('見直し', a);
+    ctx.branchAddFile('見直し', b);
+
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    const wb = ctx.branchWorkingFileId('見直し', b);
+
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+    fake._docs.set(wb, '<p>B1</p>\n<p>B2</p>\n');
+    ctx.commitFile(wb, '見直し', 'Bを直した', null);
+
+    const pr = ctx.prCreate('規程と細則の改訂', '', '見直し', [a, b]);
+    ctx.dbUpdate('pulls', 'number', pr.number, { state: 'approved' });
+    ctx.dbAppend('reviews', {
+      prNumber: pr.number, reviewer: 'r@x.com', state: 'approve',
+      body: '', at: new Date(), id: 1, editedAt: '',
+    });
+    return pr;
+  }
+
+  it('2つの文書を対象にできる', () => {
+    const { ctx, fake, a, b } = setup();
+    const pr = both(ctx, fake, a, b);
+
+    expect(ctx.prTargetFiles(ctx.prGet(pr.number))).toEqual([a, b]);
+  });
+
+  it('全件をまとめて見比べられる', () => {
+    const { ctx, fake, a, b } = setup();
+    const pr = both(ctx, fake, a, b);
+    const all = ctx.prPreviewAll(pr.number);
+
+    expect(all.files.map((f) => f.path).sort())
+      .toEqual(['就業規則.doc', '賃金規程.doc'].sort());
+    expect(all.clean).toBe(true);
+    expect(all.problems).toEqual([]);
+  });
+
+  it('1回の反映で両方が書き戻る', () => {
+    const { ctx, fake, a, b } = setup();
+    const pr = both(ctx, fake, a, b);
+
+    ctx.prMerge(pr.number, {});
+
+    // 片方だけ反映された状態を作らない
+    expect(fake._docs.get(a)).toContain('A2');
+    expect(fake._docs.get(b)).toContain('B2');
+    expect(ctx.prGet(pr.number).state).toBe('merged');
+  });
+
+  it('その改訂版に入っていない文書は対象にできない', () => {
+    const { ctx, a, b } = setup();
+    ctx.branchCreate('見直し', a);
+
+    // 作業コピーが無いと「何を反映するのか」が無い
+    expect(() => ctx.prCreate('だめ', '', '見直し', [a, b]))
+      .toThrow('「見直し」に入っていません');
+  });
+
+  it('対象が空なら作れない', () => {
+    const { ctx, a } = setup();
+    ctx.branchCreate('見直し', a);
+
+    expect(() => ctx.prCreate('だめ', '', '見直し', []))
+      .toThrow('反映する文書を選んでください');
+  });
+
+  it('列を足す前の依頼も1件の変更セットとして読める', () => {
+    const { ctx, fake, a } = setup();
+    ctx.branchCreate('見直し', a);
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+
+    const pr = ctx.prCreate('Aの改訂', '', '見直し', a);
+    // 以前の依頼は本文の印にしか対象を持たない
+    ctx.dbUpdate('pulls', 'number', pr.number, { targetFiles: '' });
+
+    expect(ctx.prTargetFiles(ctx.prGet(pr.number))).toEqual([a]);
+  });
+});
+
+describe('途中で失敗しても中途半端に反映しない', () => {
+  /**
+   * 2件のうち後ろの1件だけが書き戻せない状態を作る。
+   *
+   * 1件ずつ「検証して書く」を繰り返していると、1件目だけ反映された
+   * 状態が残り、確認を経ていない中途半端な正式版ができる。
+   */
+  function oneBad(ctx, fake, a, b) {
+    ctx.branchCreate('見直し', a);
+    ctx.branchAddFile('見直し', b);
+
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    const wb = ctx.branchWorkingFileId('見直し', b);
+
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+    fake._docs.set(wb, '<p>B1</p>\n<p>B2</p>\n');
+    ctx.commitFile(wb, '見直し', 'Bを直した', null);
+
+    const pr = ctx.prCreate('両方', '', '見直し', [a, b]);
+    ctx.dbAppend('reviews', {
+      prNumber: pr.number, reviewer: 'r@x.com', state: 'approve',
+      body: '', at: new Date(), id: 1, editedAt: '',
+    });
+
+    // 2件目だけ書き戻せないことにする
+    const realValidate = ctx.htmlWriterValidate;
+    ctx.htmlWriterValidate = (blocks) => {
+      const text = JSON.stringify(blocks);
+      if (text.indexOf('B2') > -1) return ['取り出せない画像があります'];
+      return realValidate(blocks);
+    };
+    return pr;
+  }
+
+  it('1件目も書き戻さない', () => {
+    const { ctx, fake, a, b } = setup();
+    const before = fake._docs.get(a);
+    const pr = oneBad(ctx, fake, a, b);
+
+    expect(() => ctx.prMerge(pr.number, {})).toThrow('書き戻せません');
+
+    // ここが崩れると、確認を経ていない中途半端な正式版ができる
+    expect(fake._docs.get(a)).toBe(before);
+    expect(ctx.prGet(pr.number).state).not.toBe('merged');
+  });
+
+  it('どの文書が駄目なのかを言う', () => {
+    const { ctx, fake, a, b } = setup();
+    const pr = oneBad(ctx, fake, a, b);
+
+    expect(() => ctx.prMerge(pr.number, {})).toThrow('賃金規程.doc');
+  });
+
+  it('見比べた時点でも全件の問題を挙げる', () => {
+    const { ctx, fake, a, b } = setup();
+    const pr = oneBad(ctx, fake, a, b);
+    const all = ctx.prPreviewAll(pr.number);
+
+    // 押してから落ちるより、押す前に分かるほうがよい
+    expect(all.problems.join('\n')).toContain('賃金規程.doc');
+  });
+});

@@ -4801,6 +4801,169 @@ describe('確認依頼を取り下げる', () => {
   });
 });
 
+describe('1つの改訂版で複数の文書', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 「見直し」に2件入っている状態 */
+  const TWO = {
+    apiListFiles: [
+      { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
+      { fileId: 'DOC2', path: '賃金規程.doc', type: 'doc' },
+      { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
+      { fileId: 'W2', path: 'branches/見直し/賃金規程.doc', type: 'doc' },
+    ],
+  };
+
+  function openBranches(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="branches"]').click();
+    return app;
+  }
+
+  function row() {
+    return document.querySelector('#branch-list .row-item');
+  }
+
+  function btn(label) {
+    return [...row().querySelectorAll('.btn')]
+      .filter((b) => b.textContent === label)[0];
+  }
+
+  it('入っている文書を全部出す', () => {
+    openBranches(TWO);
+
+    // 1件目の名前だけだと、2件目があることが分からない
+    expect(row().querySelector('.row-meta').textContent)
+      .toContain('就業規則.doc、賃金規程.doc');
+  });
+
+  it('文書を足せる', () => {
+    const app = openBranches({
+      apiListFiles: TWO.apiListFiles.slice(0, 3),
+      apiBranchAddable: [{ fileId: 'DOC2', path: '賃金規程.doc', type: 'doc' }],
+    });
+    btn('文書を足す').click();
+
+    // 候補はサーバに出させる。画面で組むと足せない理由を2か所に書くことになる
+    expect(app.calls.some((c) => c.name === 'apiBranchAddable')).toBe(true);
+
+    const select = document.querySelector('#side-body select');
+    expect([...select.options].map((o) => o.textContent)).toEqual(['賃金規程.doc']);
+
+    document.querySelector('#side-body form .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiBranchAddFile').pop().args)
+      .toEqual(['見直し', 'DOC2']);
+  });
+
+  it('足せるものが無ければ入力を出さない', () => {
+    openBranches({
+      apiListFiles: TWO.apiListFiles.slice(0, 3),
+      apiBranchAddable: [],
+    });
+    btn('文書を足す').click();
+
+    expect(document.querySelector('#side-body select')).toBeNull();
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('足せる文書がありません');
+  });
+
+  it('確認依頼には入っている文書を全部送る', () => {
+    const app = openBranches(TWO);
+    btn('確認を依頼する').click();
+
+    document.querySelector('#side-body form input').value = '規程と細則の改訂';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    // 1つ目だけ送ると、残りは確認も反映もされないまま置き去りになる
+    const call = app.calls.filter((c) => c.name === 'apiPrCreate').pop();
+    expect(call.args[3]).toEqual(['DOC1', 'DOC2']);
+  });
+
+  it('何が一緒に出るのかを先に見せる', () => {
+    openBranches(TWO);
+    btn('確認を依頼する').click();
+
+    const note = document.querySelector('#side-body .side-note');
+    expect(note.textContent).toContain('2件の文書が入ります');
+    expect(note.textContent).toContain('賃金規程.doc');
+  });
+
+  it('1件だけのときは断りを出さない', () => {
+    openBranches({ apiListFiles: TWO.apiListFiles.slice(0, 3) });
+    btn('確認を依頼する').click();
+
+    // 自明なことを書くと、読む値打ちのある文まで読まれなくなる
+    expect(document.querySelector('#side-body .side-note')).toBeNull();
+  });
+
+  it('文書が欠けている版は反映先に出さない', () => {
+    openBranches({
+      apiListFiles: TWO.apiListFiles.concat([
+        // 就業規則だけ持っている版
+        { fileId: 'W3', path: 'branches/土台/就業規則.doc', type: 'doc' },
+      ]),
+    });
+    btn('確認を依頼する').click();
+
+    // 1つでも欠けた版に出すと、反映のとき作業コピーが無くて落ちる
+    expect([...document.querySelectorAll('#side-body select option')]
+      .map((o) => o.value)).toEqual(['main']);
+  });
+});
+
+describe('確認依頼の差分を文書ごとに出す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const TWO_FILES = {
+    apiPrPreview: {
+      clean: false, problems: [], conflicts: [], approvals: 1, ops: [],
+      files: [
+        {
+          fileId: 'DOC1', path: '就業規則.doc', type: 'doc',
+          clean: true, problems: [], conflicts: [],
+          ops: [{ type: 'insert', line: '<p>第3条</p>' }],
+        },
+        {
+          fileId: 'DOC2', path: '賃金規程.doc', type: 'doc',
+          clean: false, problems: [], conflicts: [{ ours: [], theirs: [] }],
+          ops: [{ type: 'insert', line: '<p>第2条</p>' }],
+        },
+      ],
+    },
+  };
+
+  function openDiff(over) {
+    mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    [...document.querySelectorAll('#pr-detail .pr-tab')]
+      .filter((b) => b.textContent === '差分')[0].click();
+  }
+
+  it('どの文書の差分かを言う', () => {
+    openDiff(TWO_FILES);
+
+    // 言わずに並べると読めない
+    expect([...document.querySelectorAll('#pr-detail .diff-file-name')]
+      .map((el) => el.textContent)).toEqual(['就業規則.doc', '賃金規程.doc']);
+  });
+
+  it('食い違っている文書を先に分かるようにする', () => {
+    openDiff(TWO_FILES);
+    const heads = [...document.querySelectorAll('#pr-detail .diff-file-head')];
+
+    expect(heads[0].querySelector('.chip')).toBeNull();
+    expect(heads[1].querySelector('.chip').textContent)
+      .toContain('同じ場所が両方で変わっています');
+  });
+
+  it('1件だけのときは見出しを出さない', () => {
+    openDiff();
+
+    // 自明なので邪魔になる
+    expect(document.querySelector('#pr-detail .diff-file-head')).toBeNull();
+  });
+});
+
 describe('管理から外す', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
