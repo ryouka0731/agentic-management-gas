@@ -733,11 +733,34 @@
     var want = String(issue.priority || 'normal');
     if (want === 'normal') return null;
 
-    var chip = document.createElement('span');
-    chip.className = 'chip chip-pri chip-pri-' + want;
     // 色だけでは気づけない人がいるので字でも示す
-    chip.textContent = '優先度' + priorityLabel(want);
-    return chip;
+    return makePill('優先度' + priorityLabel(want),
+      'chip chip-pri chip-pri-' + want);
+  }
+
+  /**
+   * 小さな札を作る。
+   *
+   * 「動きなし」「文書改訂」「優先度高」「対応中」のような短い印は、どれも
+   * 同じ形でなければ並んだときに高さが揃わない。**形は CSS の共通の規則が
+   * 決め、組み立てはここに寄せる。**
+   *
+   * 以前は17か所がそれぞれ span を作ってクラスを当てていて、7種類が
+   * 別々の字の大きさと余白を持っていた。
+   *
+   * @param {string} text 出す字
+   * @param {string} [kind] 色の種類 ('chip' / 'state state-open' など)
+   * @param {string} [icon] 添える印の名
+   * @returns {HTMLElement}
+   */
+  function makePill(text, kind, icon) {
+    var el = document.createElement('span');
+    el.className = kind || 'chip';
+
+    if (icon) el.appendChild(makeIcon(icon));
+    // 他人が書いた題名やタグが入るので、字としてだけ置く
+    el.appendChild(document.createTextNode(String(text)));
+    return el;
   }
 
   var diagramSeq = 0;
@@ -2319,16 +2342,12 @@
       var meta = document.createElement('div');
       meta.className = 'doc-meta';
 
-      var type = document.createElement('span');
-      type.className = 'chip';
-      type.textContent = { doc: '文書', sheet: '表', slide: 'スライド' }[f.type] || f.type;
-      meta.appendChild(type);
+      meta.appendChild(makePill(
+        { doc: '文書', sheet: '表', slide: 'スライド' }[f.type] || f.type));
 
       if (drafts.length) {
-        var chip = document.createElement('span');
-        chip.className = 'chip chip-accent';
-        chip.textContent = '改訂中 ' + drafts.length + '件';
-        meta.appendChild(chip);
+        meta.appendChild(makePill(
+          '改訂中 ' + drafts.length + '件', 'chip chip-accent'));
       }
       open.appendChild(meta);
 
@@ -3044,10 +3063,8 @@
 
       // 食い違いがある文書は先に分かるようにする
       if (!one.clean) {
-        var chip = document.createElement('span');
-        chip.className = 'chip chip-pri-high';
-        chip.textContent = '同じ場所が両方で変わっています';
-        head.appendChild(chip);
+        head.appendChild(makePill(
+          '同じ場所が両方で変わっています', 'chip chip-pri-high'));
       }
       host.appendChild(head);
 
@@ -3130,10 +3147,8 @@
         name.textContent = one.path;
         head.appendChild(name);
 
-        var stat = document.createElement('span');
-        stat.className = 'patch-stat';
-        stat.textContent = '+' + one.added + ' −' + one.removed;
-        head.appendChild(stat);
+        head.appendChild(makePill(
+          '+' + one.added + ' −' + one.removed, 'patch-stat'));
 
         var who = document.createElement('span');
         who.className = 'row-meta';
@@ -3197,10 +3212,8 @@
         }
         row.appendChild(main);
 
-        var state = document.createElement('span');
-        state.className = 'state state-' + workStateClass(w.state);
-        state.textContent = workStateLabel(w.state);
-        row.appendChild(state);
+        row.appendChild(makePill(workStateLabel(w.state),
+          'state state-' + workStateClass(w.state)));
 
         host.appendChild(row);
       });
@@ -4482,11 +4495,7 @@
   function makeStaleBadge(issue) {
     if (!Number(issue.staleLevel || 0)) return null;
 
-    var badge = document.createElement('span');
-    badge.className = 'stale-badge';
-    badge.appendChild(makeIcon('clock'));
-    badge.appendChild(document.createTextNode(issue.staleDays + '日動きなし'));
-    return badge;
+    return makePill(issue.staleDays + '日動きなし', 'stale-badge', 'clock');
   }
 
   /**

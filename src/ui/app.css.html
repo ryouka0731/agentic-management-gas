@@ -262,25 +262,63 @@ body {
 
 /* ===== Phase 2: タブ・履歴・差分・PR ===== */
 
-.badge {
+/*
+ * 小さな札 (pill)。
+ *
+ * 「動きなし」「文書改訂」「優先度高」「対応中」のような短い印は、どれも
+ * **同じ形でなければ並んだときに高さも大きさも揃わない。** 以前は 7 種類が
+ * 別々に字の大きさ (10/11/12px)・上下の余白 (0/1/2/3px)・角の丸み
+ * (10px/999px) を持っていて、同じ行に並ぶと段違いになっていた。
+ *
+ * **形はここだけで決める。** 下に並ぶクラスは色と、その札だけの事情
+ * (印を添える・押せる) しか持たない。字の大きさや余白を足したくなったら、
+ * それはここを直すべきということである。
+ *
+ * `min-height` で背を揃える。字だけの札と印つきの札が混ざっても段が
+ * 揃うようにするため
+ */
+.badge,
+.chip,
+.state,
+.label-pill,
+.stale-badge,
+.rel-chip,
+.patch-stat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  white-space: nowrap;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: 999px;
+  font-family: inherit;
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* 札の中の印も揃える。大きさが違うと札の背だけが伸びる */
+.badge .icon,
+.chip .icon,
+.state .icon,
+.label-pill .icon,
+.stale-badge .icon,
+.rel-chip .icon {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+}
+
+.badge {
   background: var(--warn-bg);
   color: var(--warn);
 }
 
 .chip {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
   background: var(--bg-3);
   color: var(--ink-2);
-  border: 0;
 }
 
 /*
@@ -448,9 +486,6 @@ body {
 .row-meta { font-size: 11px; color: var(--ink-2); }
 
 .state {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
   background: var(--bg-2);
   color: var(--ink-2);
 }
@@ -2092,8 +2127,7 @@ button.gantt-name:hover { color: var(--accent); }
 .patch-file { color: var(--ink-2); }
 
 .patch-stat {
-  font-family: var(--mono);
-  font-size: 12px;
+  background: var(--bg-3);
   color: var(--ink-2);
 }
 
@@ -2318,12 +2352,8 @@ button.gantt-name:hover { color: var(--accent); }
 .labels { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: var(--sp-2); }
 
 .label-pill {
-  font-size: 10px;
-  padding: 1px 8px;
-  border-radius: 999px;
   background: var(--accent-bg);
   color: var(--accent);
-  white-space: nowrap;
 }
 
 .avatar {
@@ -2685,15 +2715,9 @@ button.gantt-name:hover { color: var(--accent); }
  * 必ず添える。段階が上がるほど彩度と輪郭が失われ、面から浮かなくなる。
  */
 .stale-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   margin-left: var(--sp-2);
-  padding: 1px var(--sp-2);
-  border-radius: 999px;
   background: var(--warn-bg);
   color: var(--warn);
-  font-size: 11px;
 }
 
 .rot-1 { filter: saturate(0.75); }
@@ -3105,21 +3129,13 @@ button.label-pill {
  * どちらからでも一押しで行けるようにする
  */
 .rel-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
   margin-left: var(--sp-2);
-  padding: 0 var(--sp-2);
-  border-radius: 999px;
   background: var(--bg-3);
   color: var(--ink-2);
-  font-size: 11px;
-  font-family: inherit;
   cursor: pointer;
 }
 
 .rel-chip:hover { background: var(--accent-bg); color: var(--accent); }
-.rel-chip .icon { width: 12px; height: 12px; }
 
 .card-rel {
   display: flex;

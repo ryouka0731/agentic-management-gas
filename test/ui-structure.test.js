@@ -808,14 +808,112 @@ describe('上の帯の折り返し', () => {
     return css.slice(at, css.indexOf('}', at));
   }
 
+  /**
+   * その選択子だけで始まる規則の中身を返す。
+   *
+   * `block` は「文字列として最初に見つかった所」なので、共通の規則の
+   * 選択子の並びに同じ名前があると、そちらを拾ってしまう。行頭で始まる
+   * ものだけを単独の規則と見る。
+   *
+   * @param {string} selector
+   * @returns {string}
+   */
+  function ownRule(selector) {
+    let from = 0;
+
+    for (;;) {
+      const at = css.indexOf('\n' + selector + ' {', from);
+      expect(at, selector + ' の単独の規則が無い').toBeGreaterThan(-1);
+
+      // 直前が「,」なら、並びの一員である (共通の規則のほう)
+      const before = css.slice(0, at).replace(/\s+$/, '');
+      if (before.charAt(before.length - 1) !== ',') {
+        return css.slice(at, css.indexOf('}', at));
+      }
+      from = at + 1;
+    }
+  }
+
+  /**
+   * その選択子が並んでいる規則の中身を返す。
+   *
+   * 選択子の並びを字で書き写すと、1つ足したときに見つからなくなる。
+   * 「この選択子を含む規則」で探す。
+   *
+   * @param {string} selector
+   * @returns {string}
+   */
+  function ruleFor(selector) {
+    const re = new RegExp(
+      '(^|,)\\s*' + selector.replace('.', '\\.') + '\\s*(,|\\{)', 'm');
+    let at = 0;
+
+    for (;;) {
+      const open = css.indexOf('{', at);
+      expect(open, selector + ' を含む規則が無い').toBeGreaterThan(-1);
+
+      const head = css.slice(css.lastIndexOf('}', open) + 1, open + 1);
+      if (re.test(head)) return css.slice(open, css.indexOf('}', open));
+
+      at = open + 1;
+    }
+  }
+
+  /** 小さな札のクラス。形はここに並ぶもの全部で1つに決まっている */
+  const PILLS = ['.badge', '.chip', '.state', '.label-pill', '.stale-badge',
+    '.rel-chip', '.patch-stat'];
+
+  it('札の形は1か所で決まっている', () => {
+    /*
+     * 以前は7種類が別々に字の大きさ (10/11/12px)・上下の余白 (0/1/2/3px)・
+     * 角の丸み (10px/999px) を持っていて、同じ行に並ぶと段違いになっていた。
+     *
+     * **どれも同じ規則に並んでいなければ、また揃わなくなる。**
+     */
+    const shared = ruleFor('.chip');
+
+    PILLS.forEach((sel) => {
+      expect(ruleFor(sel), sel + ' が共通の規則に入っていない').toBe(shared);
+    });
+  });
+
+  it('札ごとに形を書き直さない', () => {
+    // 色と、その札だけの事情 (印を添える・押せる) しか持たせない。
+    // 形を足したくなったら、それは共通のほうを直すべきということである
+    const shared = ruleFor('.chip');
+
+    PILLS.forEach((sel) => {
+      const own = ownRule(sel);
+
+      ['font-size', 'padding', 'border-radius', 'line-height', 'min-height']
+        .forEach((prop) => {
+          expect(own, sel + ' が ' + prop + ' を持ち直している')
+            .not.toContain(prop + ':');
+        });
+    });
+    expect(shared).toContain('min-height: 20px');
+  });
+
+  it('札の中の印も揃っている', () => {
+    // 大きさが違うと、その札だけ背が伸びる
+    const icons = ruleFor('.chip .icon');
+
+    expect(icons).toContain('width: 12px');
+    expect(icons).toContain('height: 12px');
+  });
+
   it('札と戻り先は折り返さず縮まない', () => {
-    // 狭めると「正式版」が縦に割れ、「記録していない変更」が2行になった
-    ['.chip', '.badge', '.crumb-back', '.crumb-sep'].forEach((sel) => {
+    // 狭めると「正式版」が縦に割れ、「記録していない変更」が2行になった。
+    // 札の形は共通の1か所で決めているので、そこを見る
+    const pill = ruleFor('.chip');
+
+    expect(pill).toContain('flex: 0 0 auto');
+    expect(pill).toContain('white-space: nowrap');
+
+    ['.crumb-back', '.crumb-sep'].forEach((sel) => {
       expect(block(sel)).toContain('flex: 0 0 auto');
     });
-    ['.chip', '.badge', '.crumb-back'].forEach((sel) => {
-      expect(block(sel)).toContain('white-space: nowrap');
-    });
+    expect(block('.crumb-back')).toContain('white-space: nowrap');
   });
 
   it('縮めてよいのは文書名だけ', () => {

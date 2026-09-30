@@ -433,6 +433,13 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   通知が一度も届いていなかった
 - **UI は `textContent` のみで組み立てる。`innerHTML` は使わない**。他人が書いた
   文書・コメント・Issue 題名を表示するため
+- **小さな札 (`.chip` / `.state` / `.stale-badge` / `.label-pill` / `.badge` /
+  `.rel-chip` / `.patch-stat`) の形は1つの規則で決まっている。** 字の大きさ・
+  余白・角の丸み・背の高さをクラスごとに書き直さない。以前は7種類が別々に
+  10/11/12px、上下 0/1/2/3px、角 10px/999px を持っていて、同じ行に並ぶと
+  段違いになっていた。組み立ても `makePill(text, kind, icon)` に寄せてある
+  (以前は17か所がそれぞれ span を作っていた)。`test/ui-structure.test.js` の
+  「札の形は1か所で決まっている」「札ごとに形を書き直さない」が固定している
 - **CSS は既存トークンのみ** (`--ink` / `--ink-2` / `--line` / `--bg` / `--bg-2` /
   `--accent`)。未定義変数 + フォールバックの形は使わない。
   `[hidden] { display: none !important; }` は定義済み（`display` を持つクラスに
