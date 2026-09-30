@@ -92,6 +92,15 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 確認依頼は改訂版どうしでも出せる。`pulls.targetBranch` が反映先を指し、
 `prTargetBranchFileId` がその版の作業コピーを返す。
 
+**起点は文書ごとに持つ (`files.baseSha`)。** 改訂版は複数の文書を持てるので
+(`branchAddFile`)、2つ目を足した時点では正式版が1つ目より進んでいることがある。
+ブランチに1つだけ持たせていると、2つ目の起点が古すぎて「相手が消した」と読め、
+**黙って消える**。`branches.baseSha` は、この列を足す前に作られた改訂版のための
+落とし所として残してあるだけである。
+
+パスがどの版のものかは `branchSplitPath_` が唯一の定義。`branchOfPath_` は
+そこへ委ねるだけにしてある（以前は同じ判定を別実装で持っていた）。
+
 **3つを見比べる起点 (`prMergeBase_`) は、両方の分かれ目のうち古いほうを使う。**
 新しいほうを使うと、相手にまだ無い変更まで「相手が消した」と読め、黙って
 消える。`test/phase2-integration.test.js` の「分かれ目が違う版どうしを見比べる」

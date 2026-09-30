@@ -13,7 +13,7 @@ const gas = loadGas('src/core/Db.gs');
  * 列を増やすときは、この表の**末尾に足す**こと。
  */
 const EXPECTED = {
-  files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy'],
+  files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha'],
   commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
   branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
   pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers'],

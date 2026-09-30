@@ -103,6 +103,105 @@ function branchWorkingFileId(name, mainFileId) {
  * @param {string} fileId main上の対象ファイル
  * @returns {object} 作成された branches 行
  */
+/**
+ * その改訂版に入っている文書を返す。
+ *
+ * 改訂版は**複数の文書を持てる**。1つの改訂で規程と細則の両方を直す、
+ * というのが現実にあるためで、それを別々の改訂版に分けると確認依頼も
+ * 別々になり、片方だけ反映されうる。
+ *
+ * @param {string} name
+ * @returns {object[]} files 行 (作業コピーのほう)
+ */
+function branchFiles(name) {
+  var rows = dbReadAll('files');
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (branchSplitPath_(rows[i].path).branch !== String(name)) continue;
+    out.push(rows[i]);
+  }
+  return out;
+}
+
+/**
+ * その文書がどこから分かれたかを返す。
+ *
+ * **起点は文書ごとに違う。** 改訂版に2つ目の文書を足したとき、1つ目を
+ * 足した時点より正式版が進んでいることがある。ブランチに1つだけ持たせて
+ * いると、2つ目の起点が古すぎて「相手が消した」と読め、黙って消える。
+ *
+ * この列を足す前に作られた作業コピーは空なので、そのときだけ
+ * `branches.baseSha` に落とす。
+ *
+ * @param {string} name 改訂版の名
+ * @param {string} mainFileId 正式版の側の fileId
+ * @returns {string} 起点のコミット sha
+ */
+function branchBaseSha(name, mainFileId) {
+  var mainRow = dbFindOne('files', 'fileId', mainFileId);
+  if (!mainRow) return '';
+
+  var workRow = dbFindOne(
+    'files', 'path', branchPath_(name, branchSplitPath_(mainRow.path).path));
+
+  if (workRow && String(workRow.baseSha || '')) return String(workRow.baseSha);
+
+  var branch = dbFindOne('branches', 'name', name);
+  return String((branch && branch.baseSha) || '');
+}
+
+/**
+ * 既にある改訂版に、もう1つ文書を足す。
+ *
+ * 足した時点の正式版を、その文書の起点として覚える。
+ *
+ * @param {string} name 改訂版の名
+ * @param {string} fileId 正式版の側の fileId
+ * @returns {object} 足した作業コピーの files 行
+ */
+function branchAddFile(name, fileId) {
+  var branch = dbFindOne('branches', 'name', name);
+  if (!branch) throw new Error('改訂版が見つかりません: ' + name);
+  if (String(branch.state) !== 'open') {
+    throw new Error('この改訂版は既に閉じられています: ' + name);
+  }
+
+  var mainRow = dbFindOne('files', 'fileId', fileId);
+  if (!mainRow) throw new Error('管理対象に登録されていません: ' + fileId);
+  if (branchSplitPath_(mainRow.path).branch !== 'main') {
+    throw new Error('作業コピーは足せません。正式版の文書を選んでください');
+  }
+
+  var path = branchPath_(name, mainRow.path);
+  if (dbFindOne('files', 'path', path)) {
+    throw new Error('その文書はこの改訂版に入っています: ' + mainRow.path);
+  }
+
+  // 一度も記録していない文書から分かれると起点が無くなる。main は人の手では
+  // 記録できないため、ここで断ると行き止まりになる
+  var head = headCommit(fileId, 'main');
+  if (!head) head = commitFile(fileId, 'main', '最初の記録', null);
+
+  var workFolder = DriveApp.getFolderById(branch.workingFolderId);
+  var srcFile = DriveApp.getFileById(fileId);
+  var copy = srcFile.makeCopy(srcFile.getName(), workFolder);
+
+  var row = {
+    fileId: copy.getId(),
+    path: path,
+    type: mainRow.type,
+    registeredAt: new Date(),
+    registeredBy: Session.getActiveUser().getEmail(),
+    baseSha: head.sha,
+  };
+  dbAppend('files', row);
+
+  // 分かれた直後を最初の記録にする。これで差分の起点が常に存在する
+  commitFile(copy.getId(), name, mainRow.path + ' を ' + name + ' に足した', null);
+  return row;
+}
+
 function branchCreate(name, fileId) {
   if (!branchNameValid_(name)) {
     throw new Error(
@@ -141,6 +240,8 @@ function branchCreate(name, fileId) {
   var row = {
     name: name,
     headSha: head.sha,
+    // ブランチ側の baseSha は、この列を足す前に作られた改訂版のための
+    // 落とし所として残してある。**起点は files.baseSha が本体である**
     baseSha: head.sha,
     state: 'open',
     workingFolderId: workFolder.getId(),
@@ -156,6 +257,7 @@ function branchCreate(name, fileId) {
     type: mainRow.type,
     registeredAt: new Date(),
     registeredBy: Session.getActiveUser().getEmail(),
+    baseSha: head.sha,
   });
 
   // 分岐直後の状態を、そのブランチの最初のコミットとして記録する。

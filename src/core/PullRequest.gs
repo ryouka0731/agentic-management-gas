@@ -173,7 +173,7 @@ function prPreviewMerge(number) {
   var into = prTargetBranch(pr);
   var intoFileId = prTargetBranchFileId(pr, mainFileId);
 
-  var baseHtml = commitHtml(prMergeBase_(branch, into)) || '';
+  var baseHtml = commitHtml(prMergeBase_(branch, into, mainFileId)) || '';
 
   var intoHead = headCommit(intoFileId, into);
   var oursHtml = intoHead ? (objectGet(intoHead.blobSha) || '') : '';
@@ -770,22 +770,35 @@ function prTargetBranchFileId(pr, mainFileId) {
  * @param {string} into 反映先の版の名前
  * @returns {string} コミットの sha
  */
-function prMergeBase_(branch, into) {
-  if (String(into) === 'main') return String(branch.baseSha || '');
+function prMergeBase_(branch, into, mainFileId) {
+  // 起点は文書ごとに違う。改訂版に2つ目の文書を足したとき、1つ目を
+  // 足した時点より正式版が進んでいることがある
+  var mine = mainFileId
+    ? branchBaseSha(branch.name, mainFileId) : String(branch.baseSha || '');
 
-  var intoRow = dbFindOne('branches', 'name', into);
-  var mine = String(branch.baseSha || '');
-  var yours = String((intoRow && intoRow.baseSha) || '');
+  if (String(into) === 'main') return mine;
+
+  var yours = mainFileId
+    ? branchBaseSha(into, mainFileId)
+    : String((dbFindOne('branches', 'name', into) || {}).baseSha || '');
 
   if (!mine || !yours || mine === yours) return mine || yours;
 
-  // 正式版の並びで後ろに出てくるほう (古いほう) が共通の起点
+  // 正式版の並びで後ろに出てくるほう (古いほう) が共通の起点。
+  // 新しいほうを使うと、相手にまだ無い変更まで「相手が消した」と読め、
+  // 黙って消える
+  var chains = [];
+  if (mainFileId) chains.push(commitHistory(mainFileId, 'main'));
+
+  // 対象が分からない古い呼び出しのために、正式版の全文書を当たる形も残す
   var files = dbReadAll('files');
+  for (var i = 0; i < files.length && !mainFileId; i++) {
+    if (branchSplitPath_(files[i].path).branch !== 'main') continue;
+    chains.push(commitHistory(files[i].fileId, 'main'));
+  }
 
-  for (var i = 0; i < files.length; i++) {
-    if (/^branches\//.test(String(files[i].path))) continue;
-
-    var chain = commitHistory(files[i].fileId, 'main');
+  for (var k = 0; k < chains.length; k++) {
+    var chain = chains[k];
     var mineAt = -1;
     var yoursAt = -1;
 

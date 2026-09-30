@@ -12,7 +12,7 @@ function DB_SCHEMA() {
   // dueDate を createdAt の前に入れて実際に壊した (作成日時が空になり、
   // 工程表が全行を読み飛ばした)。順序は test/schema.test.js で固定している
   return {
-    files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy'],
+    files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha'],
     commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers'],

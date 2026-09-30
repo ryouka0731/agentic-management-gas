@@ -347,12 +347,15 @@ function debugEnsureMainBranch() {
  * 論理パスからブランチ名を判定する。
  * branches/<name>/... 形式なら <name>、そうでなければ 'main'。
  *
+ * **判定そのものは持たない。** 同じことを2か所で書いていて、語彙が
+ * 変わったときに直し漏れる形になっていた。分け方は `branchSplitPath_`
+ * が唯一の定義である。
+ *
  * @param {string} path
  * @returns {string}
  */
 function branchOfPath_(path) {
-  var m = /^branches\/([^\/]+)\//.exec(String(path || ''));
-  return m ? m[1] : 'main';
+  return branchSplitPath_(path).branch;
 }
 
 /**
