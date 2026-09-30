@@ -334,6 +334,72 @@ function projectMoveIfExists_(issueNumber, column) {
 }
 
 /**
+ * 確認依頼を取り下げる。
+ *
+ * 出したあとに取り下げる道が無く、思い直したものや間違って出したものが
+ * 開いたまま残り続けていた。左の帯の件数にも数えられるため、
+ * 「見なければならないもの」が減らない。
+ *
+ * `closed` という状態は最初から定義されていて、画面にも「取り下げ」という
+ * 言葉と、閉じたものには確認の欄を出さない作りが入っていた。**そこへ至る
+ * 道だけが無かった。**
+ *
+ * **改訂版は捨てない。** 取り下げるのは「いま反映してよいか尋ねること」で
+ * あって、直した中身ではない。捨てるかどうかは別に決める。
+ *
+ * **出すときにカードを「確認中」へ動かしているので、戻すときも戻す。**
+ * 片方だけだと、誰も見ていない依頼のカードが確認中に居座る。戻す先は
+ * 「作業中」にしてある。直したものは既にあるので、最初の列ではない。
+ *
+ * 反映済みのものは取り下げられない。書き戻しは終わっていて、取り消すには
+ * 元に戻す記録を別に作るしかない。
+ *
+ * @param {number} number
+ * @returns {object} 取り下げた pulls 行
+ */
+function prClose(number) {
+  var pr = prGet(number);
+  var state = String(pr.state);
+
+  if (state === 'merged') {
+    throw new Error(
+      'これは既に反映済みです。取り消すには、戻す変更を新しく記録してください');
+  }
+  if (state === 'closed') throw new Error('これは既に取り下げられています');
+
+  prAssertCanClose_(pr);
+
+  dbUpdate('pulls', 'number', number, { state: 'closed' });
+
+  // 出すときに動かしたぶんを戻す。片方だけだと確認中に居座る
+  var linked = prClosesIssues_(pr.body);
+  for (var i = 0; i < linked.length; i++) {
+    projectMoveIfExists_(linked[i], 'In Progress');
+  }
+
+  notifyPrClosed(prGet(number));
+  return prGet(number);
+}
+
+/**
+ * 取り下げられる人かを確かめる。
+ *
+ * 出した本人と、このアプリを持っている人だけが取り下げられる。確認を
+ * 頼まれた側が取り下げられると、頼んだ人の知らないうちに話が消える。
+ *
+ * @param {object} pr
+ */
+function prAssertCanClose_(pr) {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var owner = repoOwnerEmail();
+
+  if (String(pr.author) === me) return;
+  if (owner && String(owner) === me) return;
+
+  throw new Error('出した本人か、このアプリの持ち主だけが取り下げられます');
+}
+
+/**
  * PRをマージし、結果を main の Doc に書き戻す。
  *
  * 書き戻しは破壊的操作であるため、以下の順序を厳守する:

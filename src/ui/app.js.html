@@ -299,6 +299,7 @@
     'act:done': '終わったことにします',
     'act:reopen': '完了を取り消して、やることに戻します',
     'act:archive': '捨てます。しばらくは「捨てたもの」から戻せます',
+    'act:pr-close': 'この依頼をやめます。改訂版そのものは残るので、直した中身は消えません',
     'act:unregister': 'この道具の管理から外します。文書そのものは消えず、登録し直せば履歴も戻ります',
     'act:approve': 'この改訂版を正式版に反映してよい、と返事をします',
     'act:merge': '改訂版の中身を正式版に書き戻します。承認が要ります',
@@ -3536,7 +3537,40 @@
           );
         });
 
+        // 取り下げる道。出したあとに思い直せないと、誰も見ない依頼が
+        // 開いたまま残り、左の帯の件数が減らない
+        var offBtn = document.createElement('button');
+        offBtn.className = 'btn';
+        offBtn.textContent = '取り下げる';
+        hint(offBtn, 'act:pr-close');
+
+        // 押せるのに失敗する状態を作らない。誰が取り下げられるかは
+        // サーバが決めている
+        if (!pr.canClose) {
+          offBtn.disabled = true;
+          offBtn.title = '出した本人か、このアプリの持ち主だけが取り下げられます';
+        }
+
+        offBtn.addEventListener('click', function () {
+          openConfirmStrip(
+            prDetail,
+            '#' + pr.number + ' を取り下げます。' +
+            '改訂版そのものは残るので、直した中身は消えません。' +
+            'また出したくなったら、改めて依頼できます。',
+            '取り下げる',
+            function () {
+              offBtn.disabled = true;
+              call('apiPrClose', [pr.number], function () {
+                showSnack('#' + pr.number + ' を取り下げました', { kind: 'ok' });
+                loadPulls();
+                loadOverview();
+              }, failEnable(offBtn, '取り下げられませんでした: '));
+            }
+          );
+        });
+
         actions.appendChild(approveBtn);
+        actions.appendChild(offBtn);
         actions.appendChild(mergeBtn);
         prDetail.appendChild(actions);
       }

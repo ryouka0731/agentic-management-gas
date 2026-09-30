@@ -447,6 +447,7 @@ describe('画面に渡せる形か', () => {
   function prepared() {
     const env = setup();
     const issue = env.ctx.apiIssueCreate('やること', '補足', [env.fileId]);
+    env.issue = issue;
     env.ctx.apiIssueUpdate(issue.number, {
       assignee: 'a@example.com', dueDate: '2026-09-30',
     });
@@ -488,6 +489,17 @@ describe('画面に渡せる形か', () => {
     ['apiPrReviews', (ctx, env) => ctx.apiPrReviews(env.pr.number)],
     ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
     ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],
+    ['apiWorkspace', (ctx) => ctx.apiWorkspace()],
+    ['apiIssueComments', (ctx, env) => ctx.apiIssueComments(env.issue.number)],
+    // 消す側も走査する。返す形を間違えても、成功した以上は気づかれない
+    ['apiPrClose', (ctx, env) => ctx.apiPrClose(env.pr.number)],
+    // 外せるのは改訂版の無いものだけなので、別にもう1つ登録して外す
+    ['apiUnregisterFile', (ctx, env) => {
+      const id = env.fake._createDoc('賃金規程', '<p>x</p>\n',
+        ctx.repoConfig().mainId);
+      ctx.repoRegisterFile(id, '賃金規程');
+      return ctx.apiUnregisterFile(id);
+    }],
   ];
 
   CASES.forEach(([name, call]) => {

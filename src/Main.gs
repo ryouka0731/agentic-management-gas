@@ -478,9 +478,16 @@ function apiBranchDelete(name) {
 function apiPrList() {
   var rows = prList();
   var out = [];
+
+  // 取り下げられるかはサーバが決める。画面で決めると、他人の依頼を
+  // 自分のものだと名乗って取り下げられる
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var owner = repoOwnerEmail();
+  var isOwner = !!owner && String(owner) === me;
+
   for (var i = 0; i < rows.length; i++) {
     out.push({
-      number: Number(rows[i].number),
+      number: plainId(rows[i].number),
       title: rows[i].title,
       sourceBranch: rows[i].sourceBranch,
       targetBranch: rows[i].targetBranch,
@@ -489,6 +496,9 @@ function apiPrList() {
       createdAt: plainDate(rows[i].createdAt),
       body: plainText(rows[i].body),
       reviewers: prReviewers(rows[i]),
+      canClose: (isOwner || String(rows[i].author) === me) &&
+        String(rows[i].state) !== 'merged' &&
+        String(rows[i].state) !== 'closed',
     });
   }
   out.sort(function (a, b) { return b.number - a.number; });
@@ -574,6 +584,25 @@ function apiReviewDelete(id) {
  */
 function apiPrSetReviewers(number, emails) {
   return prReviewers(prSetReviewers(number, emails || []));
+}
+
+/**
+ * 確認依頼を取り下げる (Web App API)。
+ *
+ * 改訂版は捨てない。取り下げるのは「いま反映してよいか尋ねること」で
+ * あって、直した中身ではない。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiPrClose(number) {
+  var pr = prClose(number);
+
+  return {
+    number: plainId(pr.number),
+    state: plainText(pr.state),
+    title: plainText(pr.title),
+  };
 }
 
 /**

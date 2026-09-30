@@ -82,7 +82,7 @@ export function mountApp(responses) {
 const API_NAMES = [
   'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
   'apiCommitDiff', 'apiCommitHistory', 'apiBranchList', 'apiBranchCreate',
-  'apiBranchDelete', 'apiPrList', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
+  'apiBranchDelete', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
   'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
@@ -177,6 +177,8 @@ export const DEFAULTS = {
       number: 1, title: '第2条の改訂', sourceBranch: '見直し', targetBranch: 'main',
       state: 'open', author: 'other@example.com', createdAt: '',
       body: '第2条を直しました', reviewers: ['me@example.com'],
+      // 取り下げられるかはサーバが決める
+      canClose: false,
     },
   ],
   apiPrReviews: [

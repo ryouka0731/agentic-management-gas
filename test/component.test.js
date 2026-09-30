@@ -4496,6 +4496,110 @@ describe('どのワークスペースを見ているか', () => {
   });
 });
 
+describe('確認依頼を取り下げる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 自分が出した依頼にする */
+  const MINE = {
+    apiPrList: [{
+      number: 1, title: '第2条の改訂', sourceBranch: '見直し', targetBranch: 'main',
+      state: 'open', author: 'me@example.com', createdAt: '',
+      body: '第2条を直しました', reviewers: ['other@example.com'],
+      canClose: true,
+    }],
+  };
+
+  function openPulls(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  }
+
+  function offButton() {
+    return [...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .filter((b) => b.textContent === '取り下げる')[0];
+  }
+
+  it('確認依頼から取り下げられる', () => {
+    // 出したあとに思い直せず、誰も見ない依頼が開いたまま残っていた
+    openPulls(MINE);
+
+    expect(offButton()).toBeTruthy();
+    expect(offButton().disabled).toBe(false);
+  });
+
+  it('確かめてからでないと取り下げない', () => {
+    const app = openPulls(MINE);
+    offButton().click();
+
+    expect(app.calls.some((c) => c.name === 'apiPrClose')).toBe(false);
+
+    const strip = document.querySelector('#pr-detail .confirm-strip');
+    expect(strip.textContent).toContain('改訂版そのものは残る');
+    expect(strip.textContent).toContain('改めて依頼できます');
+
+    strip.querySelector('.btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrClose').pop().args[0]).toBe(1);
+  });
+
+  it('取り下げたら一覧と数を取り直す', () => {
+    const app = openPulls(MINE);
+    offButton().click();
+    document.querySelector('#pr-detail .confirm-strip .btn-primary').click();
+
+    const names = app.calls.map((c) => c.name);
+    const at = names.lastIndexOf('apiPrClose');
+
+    expect(names.slice(at)).toContain('apiPrList');
+    expect(names.slice(at)).toContain('apiOverview');
+  });
+
+  it('取り下げられない人には押させない', () => {
+    // 確認を頼まれた側が取り下げられると、頼んだ人の知らないうちに消える
+    openPulls();
+
+    expect(offButton().disabled).toBe(true);
+    expect(offButton().title).toContain('出した本人か、このアプリの持ち主だけ');
+  });
+
+  it('反映済みと取り下げ済みには操作の欄を出さない', () => {
+    ['merged', 'closed'].forEach((state) => {
+      window.localStorage.clear();
+      openPulls({
+        apiPrList: [Object.assign({}, MINE.apiPrList[0], {
+          state, canClose: false,
+        })],
+      });
+
+      expect(document.querySelector('#pr-detail .pr-actions')).toBeNull();
+    });
+  });
+
+  it('取り下げたものは「取り下げ」と出る', () => {
+    openPulls({
+      apiPrList: [Object.assign({}, MINE.apiPrList[0], {
+        state: 'closed', canClose: false,
+      })],
+    });
+
+    expect(document.querySelector('#pr-list .row-item .state').textContent)
+      .toBe('取り下げ');
+  });
+
+  it('取り下げられなかったら理由を知らせ、押し直せる', () => {
+    openPulls(Object.assign({}, MINE, {
+      apiPrClose: new Error('これは既に反映済みです'),
+    }));
+    const off = offButton();
+    off.click();
+    document.querySelector('#pr-detail .confirm-strip .btn-primary').click();
+
+    expect(document.getElementById('snackbar').textContent)
+      .toContain('これは既に反映済みです');
+    expect(off.disabled).toBe(false);
+  });
+});
+
 describe('管理から外す', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

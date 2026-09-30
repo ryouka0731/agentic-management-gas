@@ -155,6 +155,34 @@ function notifyPrMerged(pr) {
 }
 
 /**
+ * 確認依頼が取り下げられたことを知らせる。
+ *
+ * 知らせるのは頼まれた側である。出した本人は自分で取り下げたので要らない。
+ * 見ようとしていたものが黙って消えると、次に開いたときに何が起きたのか
+ * 分からない。
+ *
+ * @param {object} pr
+ */
+function notifyPrClosed(pr) {
+  var list = String(pr.reviewers || '').split(',');
+
+  for (var i = 0; i < list.length; i++) {
+    var to = list[i].replace(/^\s+|\s+$/g, '');
+    if (!to) continue;
+
+    noticeAdd(to, 'review',
+      'PR #' + pr.number + ' は取り下げられました', pr.title,
+      'pull:' + pr.number);
+
+    notify(
+      to,
+      notifySubject_('PR', pr.number, 'は取り下げられました'),
+      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。'
+    );
+  }
+}
+
+/**
  * 確認を頼んだことを本人に知らせる。
  *
  * @param {object} pr pulls 行
