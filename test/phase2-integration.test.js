@@ -24,6 +24,7 @@ const SOURCES = [
   'src/core/Branch.gs',
   'src/render/HtmlWriter.gs',
   'src/core/PullRequest.gs',
+  'src/core/PullPatch.gs',
   // PullRequest.gs は Issue とボードと通知を呼ぶ。GAS は全ファイルを
   // 同じグローバルに読むため、テストでも同じ集合を読ませる
   'src/core/Archive.js',

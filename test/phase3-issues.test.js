@@ -20,6 +20,7 @@ const SOURCES = [
   'src/core/Branch.gs',
   'src/render/HtmlWriter.gs',
   'src/core/PullRequest.gs',
+  'src/core/PullPatch.gs',
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Tag.gs',

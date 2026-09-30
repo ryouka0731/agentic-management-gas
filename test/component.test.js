@@ -4911,6 +4911,126 @@ describe('1つの改訂版で複数の文書', () => {
   });
 });
 
+describe('コードの変更を確認依頼で読む', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const PATCH = [
+    '--- a/src/core/Usage.gs',
+    '+++ b/src/core/Usage.gs',
+    '@@ -1,3 +1,4 @@',
+    ' function usageDay() {',
+    '-  return old;',
+    '+  return next;',
+    ' }',
+  ].join('\n');
+
+  const WITH_PATCH = {
+    apiPrPreview: {
+      clean: true, problems: [], conflicts: [], approvals: 1, ops: [],
+      patchCount: 1,
+      files: [{
+        fileId: 'DOC1', path: '就業規則.doc', type: 'doc',
+        clean: true, problems: [], conflicts: [], ops: [],
+      }],
+    },
+    apiPrPatches: [{
+      id: 1, path: 'src/core/Usage.gs', added: 1, removed: 1,
+      by: 'me@example.com', at: '2026-09-30T00:00:00.000Z', text: PATCH,
+    }],
+  };
+
+  function openPulls(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  }
+
+  function tab(label) {
+    return [...document.querySelectorAll('#pr-detail .pr-tab')]
+      .filter((b) => b.textContent === label)[0];
+  }
+
+  it('証跡があるときだけ見出しを出す', () => {
+    openPulls(WITH_PATCH);
+    expect(tab('コードの変更')).toBeTruthy();
+
+    // 空の頁を開かせない
+    window.localStorage.clear();
+    openPulls();
+    expect(tab('コードの変更')).toBeUndefined();
+  });
+
+  it('書いたとおりの字で出す', () => {
+    openPulls(WITH_PATCH);
+    tab('コードの変更').click();
+
+    // 1バイト違えば別物なのが前提。整形すると読み手が判断を誤る
+    const lines = [...document.querySelectorAll('#pr-detail .patch-line')]
+      .map((el) => el.textContent);
+
+    expect(lines).toContain('-  return old;');
+    expect(lines).toContain('+  return next;');
+    expect(lines).toContain('@@ -1,3 +1,4 @@');
+  });
+
+  it('足した行と消した行を見分けられる', () => {
+    openPulls(WITH_PATCH);
+    tab('コードの変更').click();
+
+    expect(document.querySelectorAll('#pr-detail .patch-add')).toHaveLength(1);
+    expect(document.querySelectorAll('#pr-detail .patch-del')).toHaveLength(1);
+    expect(document.querySelectorAll('#pr-detail .patch-hunk')).toHaveLength(1);
+  });
+
+  it('反映されないことを必ず断る', () => {
+    openPulls(WITH_PATCH);
+    tab('コードの変更').click();
+
+    // 書いていないと「承認したのに入っていない」になる
+    expect(document.querySelector('#pr-detail .side-note').textContent)
+      .toContain('この道具では反映されません');
+  });
+
+  it('反映の確認でも、コードは書き換えないと言う', () => {
+    openPulls(WITH_PATCH);
+    [...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .filter((b) => b.textContent.indexOf('反映') > -1)[0].click();
+
+    expect(document.querySelector('#pr-detail .confirm-strip').textContent)
+      .toContain('コードの変更は反映されません');
+  });
+
+  it('文書が無い依頼では「承認を記録する」になる', () => {
+    openPulls({
+      apiPrPreview: {
+        clean: true, problems: [], conflicts: [], approvals: 1, ops: [],
+        patchCount: 1, files: [],
+      },
+      apiPrPatches: WITH_PATCH.apiPrPatches,
+    });
+
+    // 書き戻すものが無いのに「反映する」と書くと、何が起きるか伝わらない
+    const btn = [...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .filter((b) => b.textContent === '承認を記録する')[0];
+
+    expect(btn).toBeTruthy();
+    btn.click();
+    expect(document.querySelector('#pr-detail .confirm-strip').textContent)
+      .toContain('書き換える文書はありません');
+  });
+
+  it('何も添えられていなければ、添え方を示す', () => {
+    openPulls({
+      apiPrPreview: Object.assign({}, WITH_PATCH.apiPrPreview),
+      apiPrPatches: [],
+    });
+    tab('コードの変更').click();
+
+    expect(document.querySelector('#pr-detail .blank-state').textContent)
+      .toContain('agent patch');
+  });
+});
+
 describe('確認依頼の差分を文書ごとに出す', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

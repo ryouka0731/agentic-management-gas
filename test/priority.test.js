@@ -17,6 +17,7 @@ const SOURCES = [
   'src/render/DocRenderer.gs',
   'src/render/LiveCache.gs',
   'src/core/PullRequest.gs',
+  'src/core/PullPatch.gs',
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Tag.gs',

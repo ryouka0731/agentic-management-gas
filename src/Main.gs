@@ -619,7 +619,71 @@ function apiPrPreview(number) {
     approvals: prApprovalCount(number),
     ops: head.ops,
     files: files,
+    // 証跡の数。中身は重いので、あるかどうかだけ先に渡す
+    patchCount: prPatchRows(number).length,
   };
+}
+
+/**
+ * 確認依頼にコードの変更を添える (Web App API)。
+ *
+ * **この道具はコードの版管理をしない。** 添えるのは「何が変わったのかを
+ * 人が読んで決める」ための証跡である。反映されるのは文書だけで、コードは
+ * 手元の git で進める。
+ *
+ * 手元で `git diff -- <path>` を走らせて送る。GAS 側では git のオブジェクトを
+ * 読めない (loose object は raw deflate で、Apps Script には raw inflate が
+ * 無い)。
+ *
+ * @param {number} number
+ * @param {string} path リポジトリの中での道のり
+ * @param {string} text unified diff の本文
+ * @returns {{id:number, path:string, added:number, removed:number}}
+ */
+function apiPrPatchAdd(number, path, text) {
+  var row = prPatchAdd(number, path, text);
+
+  return {
+    id: plainId(row.id),
+    path: plainText(row.path),
+    added: plainNumber(row.added),
+    removed: plainNumber(row.removed),
+  };
+}
+
+/**
+ * 確認依頼に添えられたコードの変更を返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object[]}
+ */
+function apiPrPatches(number) {
+  var rows = prPatches(number);
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    out.push({
+      id: plainId(rows[i].id),
+      path: plainText(rows[i].path),
+      added: plainNumber(rows[i].added),
+      removed: plainNumber(rows[i].removed),
+      by: plainText(rows[i].by),
+      at: plainDate(rows[i].at),
+      text: plainText(rows[i].text),
+    });
+  }
+  return out;
+}
+
+/**
+ * 添えたコードの変更を外す (Web App API)。
+ *
+ * @param {number} number
+ * @param {number} id
+ * @returns {{removed:number}}
+ */
+function apiPrPatchRemove(number, id) {
+  return { removed: plainNumber(prPatchRemove(number, id)) };
 }
 
 /**

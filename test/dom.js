@@ -83,7 +83,7 @@ const API_NAMES = [
   'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
   'apiCommitDiff', 'apiCommitHistory', 'apiBranchList', 'apiBranchCreate',
   'apiBranchDelete', 'apiBranchAddFile', 'apiBranchAddable', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
-  'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiIssueList', 'apiIssueCreate',
+  'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
@@ -193,6 +193,7 @@ export const DEFAULTS = {
   ],
   apiPrPreview: {
     clean: true, problems: [], conflicts: [], approvals: 0, ops: [],
+    patchCount: 0,
     // 変更セットは文書ごとの中身も持つ
     files: [{
       fileId: 'DOC1', path: '就業規則.doc', type: 'doc',

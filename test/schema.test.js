@@ -30,6 +30,7 @@ const EXPECTED = {
   inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
   issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours',
     'archivedAt', 'updatedAt', 'priority'],
+  pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
   project_items: ['issueNumber', 'column', 'order'],
 };
 

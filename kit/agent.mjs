@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
+import { execFileSync } from 'node:child_process';
 
 const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
 
@@ -150,6 +151,26 @@ const OPS = {
     args: (a) => ({ fileId: a[0], message: a[1] }),
   },
   'stash': { op: 'stashMainDrift', args: (a) => ({ fileId: a[0] }) },
+
+  /*
+   * コードの変更を確認依頼に添える。
+   *
+   * **差分を取るのは手元である。** 向こう側 (Apps Script) では git の
+   * オブジェクトを読めない。loose object は raw deflate で、Apps Script には
+   * raw inflate が無く、packfile はさらに delta チェーンになっている。
+   *
+   * 添えても反映はされない。この道具はコードの版管理をしない。入れるのは
+   * 手元の git で、向こうに残るのは「読んで進めてよいと決めた」記録だけ。
+   */
+  'patch': {
+    op: 'patchAdd',
+    args: (a) => ({ number: Number(a[0]), path: a[1], text: gitDiff(a[1], a[2]) }),
+  },
+  'patch-rm': {
+    op: 'patchRemove',
+    args: (a) => ({ number: Number(a[0]), id: Number(a[1]) }),
+  },
+  'patches': { op: 'patches', args: (a) => ({ number: Number(a[0]) }) },
   'branch': { op: 'branchCreate', args: (a) => ({ name: a[0], fileId: a[1] }) },
   'issues': { op: 'issueList', args: (a) => ({ state: a[0] || '' }) },
   'issue': {
@@ -264,6 +285,45 @@ function setupGuide() {
   return lines.join('\n');
 }
 
+/**
+ * 手元で差分を取る。
+ *
+ * 既定は「まだ記録していないぶん」(`git diff HEAD`)。第2引数を渡すと
+ * `git diff <そこ>` になるので、`main` を渡せばブランチ全体の差分になる。
+ *
+ * git が無い / リポジトリでない場合は、何が足りないのかを言って止まる。
+ * 黙って空の差分を送ると、読む人が「変更が無い」と誤解する。
+ *
+ * @param {string} path
+ * @param {string} [against]
+ * @returns {string} unified diff
+ */
+function gitDiff(path, against) {
+  if (!path) throw new Error('どのファイルの差分か渡してください');
+
+  const args = ['diff', '--no-color'];
+  if (against) args.push(against);
+  args.push('--', path);
+
+  let out;
+  try {
+    out = execFileSync('git', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  } catch (e) {
+    throw new Error(
+      'git で差分を取れませんでした。git が入っているか、いまいる場所が' +
+      'リポジトリかを確かめてください: ' + (e.message || e)
+    );
+  }
+
+  if (!out.trim()) {
+    throw new Error(
+      path + ' に差分がありません。記録していない変更が無いか、' +
+      '道のりが違うかのどちらかです (比べる先は第3引数で渡せます)'
+    );
+  }
+  return out;
+}
+
 function usage() {
   const lines = [
     'SoftBanto (番頭) を手元から動かす道具',
@@ -282,6 +342,9 @@ function usage() {
   lines.push('  agent read <fileId> > body.md');
   lines.push('  cat body.md | agent write <fileId> -');
   lines.push('  agent commit <fileId> "第3条を改訂"');
+  lines.push('  agent patch 3 src/core/Usage.gs        # 未記録のぶんを添える');
+  lines.push('  agent patch 3 src/core/Usage.gs main   # main との差を添える');
+  lines.push('  agent patches 3                        # 添えたものを見る');
   lines.push('  agent pr "第3条の改訂" "" 見直し <mainFileId>');
   lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');

@@ -43,6 +43,21 @@ function COMMAND_OPS() {
         a.targetBranch || 'main');
     },
     prPreview: function (a) { return apiPrPreview(a.number); },
+
+    /*
+     * コードの変更を添える。
+     *
+     * 承認 (prReview) を入れないのと違って、これは足しても危なくない。
+     * 証跡を置くだけで、反映も承認もしない。
+     *
+     * 手元で git diff を走らせて送る形にしてある。GAS 側では git の
+     * オブジェクトを読めない
+     */
+    patchAdd: function (a) {
+      return apiPrPatchAdd(a.number, a.path, a.text);
+    },
+    patchRemove: function (a) { return apiPrPatchRemove(a.number, a.id); },
+    patches: function (a) { return apiPrPatches(a.number); },
     prMerge: function (a) { return apiPrMerge(a.number, a.choices || []); },
 
     // 読むだけのものは足しても危なくない。手元から様子を見るために要る

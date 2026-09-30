@@ -2058,6 +2058,47 @@ button.gantt-name:hover { color: var(--accent); }
   color: var(--ink);
 }
 
+/*
+ * コードの変更。
+ *
+ * 文書の差分と同じ見せ方はしない。1バイト違えば別物なのが前提なので、
+ * 等幅で、書いたとおりの字で出す。折り返さずに横へ流す
+ */
+.patch {
+  margin: 0 0 var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  overflow-x: auto;
+}
+
+.patch-line {
+  padding: 0 var(--sp-3);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  color: var(--ink);
+}
+
+.patch-add { background: var(--success-bg); color: var(--success); }
+.patch-del { background: var(--danger-bg); color: var(--danger); }
+
+/* どこの話かの区切り。地の色を変えて段落として読ませる */
+.patch-hunk {
+  background: var(--bg-3);
+  color: var(--ink-2);
+}
+
+.patch-file { color: var(--ink-2); }
+
+.patch-stat {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.diff-file-name.mono { font-family: var(--mono); }
+
 /* 入力の手前に置く断り。何が一緒に起きるのかを先に見せる */
 .side-note {
   margin-bottom: var(--sp-3);

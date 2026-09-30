@@ -493,6 +493,11 @@ function prChoiceMap_(choices, targets) {
 function prPreviewAll(number) {
   var pr = prGet(number);
   var targets = prTargetFiles(pr);
+
+  // 文書が無く、コードの証跡だけの依頼もある。そこで投げると画面が開かない
+  if (!targets.length && prHasPatches(number)) {
+    return { files: [], clean: true, problems: [] };
+  }
   if (!targets.length) throw new Error('PRの対象ファイルを特定できません');
 
   var out = [];
@@ -550,7 +555,17 @@ function prMerge(number, choices) {
     // 上書きされてしまう。git が dirty な作業ツリーでのマージを
     // 拒むのと同じ理由による
     var targets = prTargetFiles(pr);
-    if (!targets.length) throw new Error('PRの対象ファイルを特定できません');
+
+    /*
+     * 文書が無く、コードの証跡だけの依頼もある。
+     *
+     * **その場合に断ってはいけない。** 断ると承認を記録する道が無くなり、
+     * 「読んで納得したのにどこにも残らない」ことになる。書き戻すものが
+     * 無いだけで、決めたこと自体は残す。
+     */
+    if (!targets.length && !prHasPatches(number)) {
+      throw new Error('PRの対象ファイルを特定できません');
+    }
 
     var into = prTargetBranch(pr);
     var choiceMap = prChoiceMap_(choices, targets);
@@ -637,6 +652,14 @@ function prMerge(number, choices) {
     });
     dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
 
+    /*
+     * **コードの証跡は書き戻さない。** この道具はコードの版管理をしない。
+     * ここで残るのは「読んで、進めてよいと決めた」記録だけで、実際に
+     * 入れるのは手元の git である。
+     *
+     * 押したら入っていると思わせないよう、画面の断りにもそう書いてある。
+     */
+
     // closes #N のIssueを閉じ、カードを Done に動かす
     var issues = prClosesIssues_(pr.body);
     for (var i = 0; i < issues.length; i++) {
@@ -647,7 +670,12 @@ function prMerge(number, choices) {
 
     notifyPrMerged(pr);
 
-    return mergeCommit;
+    // 文書が無い依頼では書き戻しが無いので記録も無い。呼ぶ側が形で
+    // 場合分けしないよう、何をしたのかを添えて返す
+    return mergeCommit || {
+      sha: '',
+      message: '承認を記録しました (コードの変更は手元で進めてください)',
+    };
   } finally {
     lock.releaseLock();
   }

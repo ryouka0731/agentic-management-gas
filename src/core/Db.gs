@@ -28,6 +28,9 @@ function DB_SCHEMA() {
       'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
     inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
     issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt', 'priority'],
+    // コードの変更を、確認依頼に添える証跡として持つ。版を持つ文書では
+    // ないので files には入れない (コピーも編集も書き戻しも無い)
+    pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
     project_items: ['issueNumber', 'column', 'order'],
   };
 }

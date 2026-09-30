@@ -256,3 +256,35 @@ describe('古い zip の片付け', () => {
     expect(left).toContain('おぼえがき.txt');
   });
 });
+
+describe('コードの変更を添える', () => {
+  it('手元で差分を取る形になっている', () => {
+    const text = kitText('agent.mjs');
+
+    // 向こう側では git のオブジェクトを読めない (raw inflate が無い)
+    expect(text).toContain("execFileSync('git'");
+    expect(text).toContain("'diff', '--no-color'");
+    expect(text).toContain("'patch':");
+  });
+
+  it('差分が空なら送らない', () => {
+    // 黙って空を送ると、読む人が「変更が無い」と誤解する
+    expect(kitText('agent.mjs')).toContain('に差分がありません');
+  });
+
+  it('反映されないことを説明に書いてある', () => {
+    const text = kitText('AGENTS.md');
+
+    expect(text).toContain('コードは反映されません');
+    expect(text).toContain('入れるのは手元の git');
+  });
+
+  it('言ってはいけない言い方を示してある', () => {
+    // 「承認されたので反映されました」は嘘になる
+    expect(kitText('AGENTS.md')).toContain('こちらで取り込みます');
+  });
+
+  it('規程とコードを1つにまとめる手順を書いてある', () => {
+    expect(kitText('AGENTS.md')).toContain('1つの確認依頼にまとめる');
+  });
+});

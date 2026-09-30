@@ -3056,6 +3056,96 @@
     });
   }
 
+  /**
+   * コードの変更 (unified diff) を描く。
+   *
+   * 文書の差分の描き方は使い回さない。あちらは HTML の行を「見出し2」の
+   * ように読み替えて見せるもので、コードには当てはまらない。**コードは
+   * 書いたとおりの字で見せる。** 1バイト違えば別物なのが前提なので、
+   * 整形して見せると読み手が判断を誤る。
+   *
+   * @param {string} text
+   * @param {HTMLElement} host
+   */
+  function renderPatch(text, host) {
+    var lines = String(text || '').split('\n');
+    var box = document.createElement('div');
+    box.className = 'patch';
+
+    lines.forEach(function (line) {
+      var row = document.createElement('div');
+      var head = line.charAt(0);
+      var kind = 'ctx';
+
+      if (line.indexOf('@@') === 0) kind = 'hunk';
+      else if (line.indexOf('+++') === 0 || line.indexOf('---') === 0) kind = 'file';
+      else if (head === '+') kind = 'add';
+      else if (head === '-') kind = 'del';
+
+      row.className = 'patch-line patch-' + kind;
+      // 他人が書いたコードを出すので、字としてだけ置く
+      row.textContent = line === '' ? ' ' : line;
+      box.appendChild(row);
+    });
+    host.appendChild(box);
+  }
+
+  /**
+   * 確認依頼に添えられたコードの変更を出す。
+   *
+   * **この道具はコードを反映しない。** 読んで決めるためのものなので、
+   * そう書いてある断りを必ず添える。書いていないと「承認したのに入って
+   * いない」になる。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} host
+   */
+  function renderPrPatches(pr, host) {
+    host.textContent = '';
+
+    var note = document.createElement('div');
+    note.className = 'side-note';
+    note.textContent = 'コードの変更は、この道具では反映されません。' +
+      '読んで確かめるためのもので、実際に入れるのは手元の git です。';
+    host.appendChild(note);
+
+    call('apiPrPatches', [pr.number], function (list) {
+      var rows = list || [];
+
+      if (!rows.length) {
+        host.appendChild(makeBlankState(
+          'コードの変更はありません',
+          '手元から「agent patch <確認依頼の番号> <ファイル>」で添えられます。'
+        ));
+        return;
+      }
+
+      rows.forEach(function (one) {
+        var head = document.createElement('div');
+        head.className = 'diff-file-head';
+
+        var name = document.createElement('span');
+        name.className = 'diff-file-name mono';
+        name.textContent = one.path;
+        head.appendChild(name);
+
+        var stat = document.createElement('span');
+        stat.className = 'patch-stat';
+        stat.textContent = '+' + one.added + ' −' + one.removed;
+        head.appendChild(stat);
+
+        var who = document.createElement('span');
+        who.className = 'row-meta';
+        who.textContent = personName(one.by) +
+          (one.at ? ' · ' + String(one.at).substring(0, 10) : '');
+        head.appendChild(who);
+
+        host.appendChild(head);
+        renderPatch(one.text, host);
+      });
+    }, failInto(host));
+  }
+
   function createRequest(branchName) {
     // 改訂版は複数の文書を持てる。**1つ目だけ送ってはいけない。** 残りは
     // 確認も反映もされないまま、直したつもりで置き去りになる
@@ -3704,11 +3794,28 @@
           mergeBtn.title = '反映には1件以上の承認が必要です';
         }
 
+        // 文書が無くコードの証跡だけなら、書き戻すものが無い。それでも
+        // 「読んで進めてよいと決めた」記録は残す
+        var docCount = (preview.files || []).length;
+        if (!docCount && preview.patchCount) {
+          mergeBtn.textContent = '承認を記録する';
+        }
+
         mergeBtn.addEventListener('click', function () {
+          var says = docCount
+            ? OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。'
+            : '読んで確かめたことを記録します。書き換える文書はありません。';
+
+          // 押したら入っていると思わせない。ここを書かないと
+          // 「承認したのに入っていない」になる
+          if (preview.patchCount) {
+            says += ' コードの変更は反映されません (手元の git で進めてください)。';
+          }
+
           openConfirmStrip(
             prDetail,
-            OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。',
-            '反映する',
+            says,
+            docCount ? '反映する' : '記録する',
             function () {
               mergeBtn.disabled = true;
               call('apiPrMerge', [pr.number, getChoices()], function () {
@@ -3767,10 +3874,16 @@
         conversation: function () { renderConversation(pr, prBody); },
         commits: function () { renderPrCommits(pr, prBody); },
         files: function () { renderPrDiffs(preview, prBody); },
+        patches: function () { renderPrPatches(pr, prBody); },
       };
 
-      [['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分']]
-        .forEach(function (t) {
+      var tabNames = [
+        ['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分'],
+      ];
+      // 証跡が無い依頼に見出しだけ出すと、空の頁を開かせることになる
+      if (preview.patchCount) tabNames.push(['patches', 'コードの変更']);
+
+      tabNames.forEach(function (t) {
           var b = document.createElement('button');
           b.className = 'pr-tab';
           b.textContent = t[1];
