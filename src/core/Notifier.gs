@@ -30,7 +30,7 @@ function notify(to, subject, body) {
  * 「何の、どれが、どうなったか」の順に書く。受け取る側は件名だけで
  * 一覧を捌くため、種類と番号が先に来ないと開くまで分からない。
  *
- * @param {string} what 何の ('PR' | '報告' | 'やること')
+ * @param {string} what 何の ('確認依頼' | '報告' | 'やること')
  * @param {number} number どれが
  * @param {string} happened どうなったか
  * @returns {string}
@@ -136,8 +136,8 @@ function noticeMarkRead(ids) {
 function notifyPrCreated(pr) {
   notify(
     pr.author,
-    notifySubject_('PR', pr.number, 'が作成されました'),
-    pr.title + '\n\nWiki のプルリクエストタブから確認してください。'
+    notifySubject_('確認依頼', pr.number, 'が出されました'),
+    pr.title + '\n\n「確認依頼」から中身を見てください。'
   );
 }
 
@@ -149,8 +149,8 @@ function notifyPrCreated(pr) {
 function notifyPrMerged(pr) {
   notify(
     pr.author,
-    notifySubject_('PR', pr.number, 'がマージされました'),
-    pr.title + '\n\nmain の文書が更新されました。'
+    notifySubject_('確認依頼', pr.number, 'が反映されました'),
+    pr.title + '\n\n正式版の文書が書き換わりました。'
   );
 }
 
@@ -171,12 +171,12 @@ function notifyPrClosed(pr) {
     if (!to) continue;
 
     noticeAdd(to, 'review',
-      'PR #' + pr.number + ' は取り下げられました', pr.title,
+      '確認依頼 #' + pr.number + ' は取り下げられました', pr.title,
       'pull:' + pr.number);
 
     notify(
       to,
-      notifySubject_('PR', pr.number, 'は取り下げられました'),
+      notifySubject_('確認依頼', pr.number, 'は取り下げられました'),
       pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。'
     );
   }
@@ -190,11 +190,11 @@ function notifyPrClosed(pr) {
  */
 function notifyPrReviewRequested(pr, to) {
   noticeAdd(to, 'review',
-    'PR #' + pr.number + ' の確認を頼まれました', pr.title, 'pull:' + pr.number);
+    '確認依頼 #' + pr.number + ' の確認を頼まれました', pr.title, 'pull:' + pr.number);
 
   notify(
     to,
-    notifySubject_('PR', pr.number, 'の確認を頼まれました'),
+    notifySubject_('確認依頼', pr.number, 'の確認を頼まれました'),
     pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。'
   );
 }
@@ -295,7 +295,7 @@ function notifyPrMention(pr, review, to) {
 
   notify(
     to,
-    notifySubject_('PR', pr.number, 'であなたが呼ばれました'),
+    notifySubject_('確認依頼', pr.number, 'であなたが呼ばれました'),
     pr.title + '\n\n' + review.reviewer + ':\n' + review.body
   );
 }

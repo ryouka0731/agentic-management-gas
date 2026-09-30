@@ -262,7 +262,7 @@ function branchCreate(name, fileId) {
 
   // 分岐直後の状態を、そのブランチの最初のコミットとして記録する。
   // これによりブランチのHEADが常に存在し、差分計算の起点が明確になる。
-  commitFile(copy.getId(), name, 'ブランチ ' + name + ' を作成', null);
+  commitFile(copy.getId(), name, '改訂版「' + name + '」を作成', null);
 
   return row;
 }

@@ -348,7 +348,9 @@ describe('通知', () => {
     const mails = fake._sentMails();
     expect(mails.length).toBe(1);
     expect(mails[0].to).toBe('a@example.com');
-    expect(mails[0].subject).toContain('PR #3');
+    // Git の言葉は人に見せない。件名は総務・人事が受け取るものである
+    expect(mails[0].subject).toContain('確認依頼 #3');
+    expect(mails[0].subject).not.toContain('PR');
   });
 
   it('PRマージで通知が飛ぶ', () => {
@@ -356,7 +358,8 @@ describe('通知', () => {
     ctx.notifyPrMerged({ number: 3, title: '改訂', author: 'a@example.com' });
 
     const mails = fake._sentMails();
-    expect(mails[0].subject).toContain('マージされました');
+    expect(mails[0].subject).toContain('反映されました');
+    expect(mails[0].subject).not.toContain('マージ');
   });
 
   it('PR作成とマージの一連の流れで2通届く', () => {

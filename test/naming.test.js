@@ -86,3 +86,51 @@ describe('サービス名', () => {
     expect(read('src/Main.gs')).toContain("repoInit('agentic-management')");
   });
 });
+
+/**
+ * Git の言葉を人に見せていないか。
+ *
+ * この道具を使うのは総務・人事であって、git を知っている人ではない。
+ * 画面だけ日本語にしても、**メールの件名と変更の記録に「PR」「マージ」が
+ * 残っていれば同じこと**である。実際に件名10件が Git の言葉のままだった。
+ */
+describe('Git の言葉を人に見せない', () => {
+  /** 人に届く字だけを取り出す (コメントと JSDoc は除く) */
+  function spoken(path) {
+    return read(path).split('\n')
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join('\n');
+  }
+
+  const WORDS = ['PR', 'マージ', 'プルリクエスト', 'ブランチ', 'コミット'];
+
+  it('通知の件名と本文に残っていない', () => {
+    const text = spoken('src/core/Notifier.gs');
+
+    WORDS.forEach((word) => {
+      expect(text, word + ' が残っている').not.toContain(word);
+    });
+  });
+
+  it('変更の記録に残る文にも残っていない', () => {
+    // 履歴は人が読む。ここに残ると、画面を日本語にした意味が無い
+    const text = spoken('src/core/PullRequest.gs') + spoken('src/core/Branch.gs');
+
+    ['マージ: PR', 'マージ前', "'ブランチ ' +"].forEach((bad) => {
+      expect(text, bad + ' が残っている').not.toContain(bad);
+    });
+  });
+
+  it('言い換えの表は配る道具にある', () => {
+    // 手元の Claude にも同じ言葉を使わせる
+    const text = read('kit/AGENTS.md');
+
+    expect(text).toContain('| 確認依頼 | プルリクエスト |');
+    expect(text).toContain('| 反映 | マージ |');
+  });
+
+  it('件名の接頭辞は変えていない', () => {
+    // 受信側の振り分けはここを見ている。言葉を直すときに動かさない
+    expect(read('src/core/Notifier.gs')).toContain("'[' + APP_NAME() + '] '");
+  });
+});

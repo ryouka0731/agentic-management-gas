@@ -546,7 +546,7 @@ function prMerge(number, choices) {
     if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
 
     if (prApprovalCount(number) < 1) {
-      throw new Error('マージには1件以上の承認が必要です');
+      throw new Error('反映には1件以上の承認が必要です');
     }
 
     // main に未コミットの変更があるうちはマージしない。
@@ -632,7 +632,7 @@ function prMerge(number, choices) {
       // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
       // 通常は上の検査で弾かれるためここは通らない
       if (fileStatus(step.fileId, into).dirty) {
-        commitFile(step.fileId, into, 'PR #' + number + ' マージ前の自動退避', null);
+        commitFile(step.fileId, into, '確認依頼 #' + number + ' を反映する前の退避', null);
       }
 
       writeHtmlToFile(step.fileId, step.html, step.type);
@@ -641,7 +641,7 @@ function prMerge(number, choices) {
       mergeCommit = commitFile(
         step.fileId,
         into,
-        'マージ: PR #' + number + ' ' + pr.title,
+        '反映: 確認依頼 #' + number + ' ' + pr.title,
         null
       );
     }

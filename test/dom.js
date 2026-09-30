@@ -201,6 +201,8 @@ export const DEFAULTS = {
     }],
   },
   apiOutboxList: [],
+  apiOutboxVerbs: [['diff', '差分を出して添える'],
+    ['merge', '承認されたので取り込む'], ['review', '中身を読んで意見をもらう']],
   apiPrCommits: [],
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com', 'other@example.com'],

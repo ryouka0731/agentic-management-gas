@@ -944,14 +944,15 @@ describe('確認依頼の一覧', () => {
 describe('確認依頼の中身の切り替え', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  it('3つの見方に分かれている', () => {
+  it('見方に分かれている', () => {
     mount();
     document.querySelector('[data-tab="pulls"]').click();
 
     const tabs = [...document.querySelectorAll('#pr-detail .pr-tab')]
       .map((el) => el.textContent);
 
-    expect(tabs).toEqual(['やりとり', '変更の記録', '差分']);
+    // 「コードの変更」は証跡があるときだけ出る
+    expect(tabs).toEqual(['やりとり', '変更の記録', '差分', '手元への頼みごと']);
   });
 });
 
@@ -5063,11 +5064,38 @@ describe('手元への頼みごと', () => {
     return tab;
   }
 
-  it('証跡があるときだけ見出しを出す', () => {
+  it('証跡が無くても頼める', () => {
+    // 「差分を出して」は証跡を作る前に頼むもの。見出しが無いと頼めない
     expect(openWork(WORK)).toBeTruthy();
 
     window.localStorage.clear();
-    expect(openWork()).toBeUndefined();
+    expect(openWork()).toBeTruthy();
+  });
+
+  it('人からも頼める', () => {
+    const app = mount(WORK);
+    document.querySelector('[data-tab="pulls"]').click();
+    [...document.querySelectorAll('#pr-detail .pr-tab')]
+      .filter((b) => b.textContent === '手元への頼みごと')[0].click();
+
+    [...document.querySelectorAll('#pr-detail .btn')]
+      .filter((b) => b.textContent === '手元に頼む')[0].click();
+
+    // 頼めることはサーバに出させる。写すと「選べるのに置けない」ものが出る
+    expect(app.calls.some((c) => c.name === 'apiOutboxVerbs')).toBe(true);
+
+    const select = document.querySelector('#side-body select');
+    // 取り込みは承認したときに自動で置かれる。手で二重に頼ませない
+    expect([...select.options].map((o) => o.value))
+      .toEqual(['diff', 'review']);
+
+    select.value = 'review';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    const call = app.calls.filter((c) => c.name === 'apiOutboxAdd').pop();
+    expect(call.args[0]).toBe('review');
+    expect(call.args[1]).toEqual({ branch: '見直し', against: 'main' });
+    expect(call.args[2].prNumber).toBe(1);
   });
 
   it('頼みごとと今の様子を出す', () => {

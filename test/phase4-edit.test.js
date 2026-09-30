@@ -202,7 +202,7 @@ describe('PRの会話とコミット', () => {
 
     expect(commits.length).toBe(2);
     expect(commits[0].message).toBe('第3条を追加');
-    expect(commits[1].message).toContain('ブランチ 改訂 を作成');
+    expect(commits[1].message).toContain('改訂版「改訂」を作成');
     expect(commits[0].sha.length).toBe(64);
   });
 });

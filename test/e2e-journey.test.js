@@ -116,7 +116,9 @@ describe('初めて使う人の一連の流れ', () => {
 
     expect(messages).toContain('最初の記録');
     expect(messages).toContain('第2条を改訂');
-    expect(messages.some((m) => m.indexOf('マージ') === 0)).toBe(true);
+    // 変更の記録は人が読む。Git の言葉を残さない
+    expect(messages.some((m) => m.indexOf('反映') === 0)).toBe(true);
+    expect(messages.some((m) => m.indexOf('マージ') > -1)).toBe(false);
   });
 
   it('やることから始めても最後まで通る', () => {

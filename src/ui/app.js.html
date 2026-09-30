@@ -300,6 +300,7 @@
     'act:done': '終わったことにします',
     'act:reopen': '完了を取り消して、やることに戻します',
     'act:archive': '捨てます。しばらくは「捨てたもの」から戻せます',
+    'act:ask-work': '手元で作業する人に頼みます。取りに来る形なので、すぐには動きません',
     'act:branch-add': 'この改訂版に文書を足します。1回の確認依頼でまとめて反映できます',
     'act:pr-close': 'この依頼をやめます。改訂版そのものは残るので、直した中身は消えません',
     'act:unregister': 'この道具の管理から外します。文書そのものは消えず、登録し直せば履歴も戻ります',
@@ -3210,7 +3211,63 @@
       note.textContent = '頼みごとは手元から取りに来る形です。' +
         '手元で作業する人が「agent work」を実行したときに届きます。';
       host.appendChild(note);
+
+      var ask = document.createElement('div');
+      ask.className = 'pr-actions';
+      ask.appendChild(makeAskButton(pr, host));
+      host.appendChild(ask);
     }, failInto(host));
+  }
+
+  /**
+   * 手元に頼む入口を作る。
+   *
+   * 頼めることはサーバに出させる (`apiOutboxVerbs`)。画面に写すと、動詞を
+   * 足したときに「選べるのに置けない」ものが出る。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} host 頼んだあとに描き直す器
+   * @returns {HTMLElement}
+   */
+  function makeAskButton(pr, host) {
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = '手元に頼む';
+    hint(btn, 'act:ask-work');
+
+    btn.addEventListener('click', function () {
+      call('apiOutboxVerbs', [], function (list) {
+        var verbs = (list || []).filter(function (v) {
+          // 取り込みは承認したときに自動で置かれる。手で二重に頼ませない
+          return v[0] !== 'merge';
+        });
+
+        if (!verbs.length) {
+          showSnack('頼めることがありません', { kind: 'ng' });
+          return;
+        }
+
+        openInlineForm(
+          '手元に頼む: 確認依頼 #' + pr.number,
+          [
+            { name: 'verb', label: '何を頼むか', choices: verbs },
+            { name: 'note', label: '一言 (任意)', multiline: true },
+          ],
+          '頼む',
+          function (v) {
+            call('apiOutboxAdd',
+              [v.verb, { branch: pr.sourceBranch, against: pr.targetBranch },
+                { prNumber: pr.number, note: v.note }],
+              function () {
+                showSnack('頼みごとを置きました', { kind: 'ok' });
+                renderPrWork(pr, host);
+              }, failSnack('頼めませんでした: '));
+          },
+          btn
+        );
+      }, failSnack('頼めることを取れませんでした: '));
+    });
+    return btn;
   }
 
   /**
@@ -3970,10 +4027,9 @@
         ['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分'],
       ];
       // 証跡が無い依頼に見出しだけ出すと、空の頁を開かせることになる
-      if (preview.patchCount) {
-        tabNames.push(['patches', 'コードの変更']);
-        tabNames.push(['work', '手元への頼みごと']);
-      }
+      if (preview.patchCount) tabNames.push(['patches', 'コードの変更']);
+      // 頼みごとは証跡が無くても出す。「差分を出して」は証跡を作る前に頼む
+      tabNames.push(['work', '手元への頼みごと']);
 
       tabNames.forEach(function (t) {
           var b = document.createElement('button');
