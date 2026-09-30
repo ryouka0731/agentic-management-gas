@@ -171,6 +171,25 @@ const OPS = {
     args: (a) => ({ number: Number(a[0]), id: Number(a[1]) }),
   },
   'patches': { op: 'patches', args: (a) => ({ number: Number(a[0]) }) },
+
+  /*
+   * 向こうから頼まれたことを取りに来る。
+   *
+   * **取るだけで、この道具は何も実行しない。** 頼みごとの表は Drive を
+   * 共有している人なら手で書き換えられるので、ここで実行する作りにすると、
+   * Drive に書ける人が全員の手元マシンで好きなコマンドを走らせられる。
+   *
+   * 中身は Claude に見せるところまで。何をするかは人と Claude が決める。
+   */
+  'work': { op: 'work', args: (a) => ({ limit: Number(a[0]) || 5 }) },
+  'work-done': {
+    op: 'workDone',
+    args: (a) => ({ id: Number(a[0]), result: a[1] || '' }),
+  },
+  'work-fail': {
+    op: 'workFail',
+    args: (a) => ({ id: Number(a[0]), reason: a[1] || '' }),
+  },
   'branch': { op: 'branchCreate', args: (a) => ({ name: a[0], fileId: a[1] }) },
   'issues': { op: 'issueList', args: (a) => ({ state: a[0] || '' }) },
   'issue': {
@@ -345,6 +364,8 @@ function usage() {
   lines.push('  agent patch 3 src/core/Usage.gs        # 未記録のぶんを添える');
   lines.push('  agent patch 3 src/core/Usage.gs main   # main との差を添える');
   lines.push('  agent patches 3                        # 添えたものを見る');
+  lines.push('  agent work                             # 頼まれたことを取る');
+  lines.push('  agent work-done 5 "取り込みました"      # 終わったと返す');
   lines.push('  agent pr "第3条の改訂" "" 見直し <mainFileId>');
   lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');

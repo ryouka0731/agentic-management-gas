@@ -31,6 +31,8 @@ const EXPECTED = {
   issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours',
     'archivedAt', 'updatedAt', 'priority'],
   pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
+  outbox: ['id', 'verb', 'args', 'note', 'state', 'prNumber',
+    'createdAt', 'createdBy', 'takenAt', 'takenBy', 'doneAt', 'result'],
   project_items: ['issueNumber', 'column', 'order'],
 };
 

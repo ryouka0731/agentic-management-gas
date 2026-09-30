@@ -3146,6 +3146,94 @@
     }, failInto(host));
   }
 
+  /**
+   * 手元への頼みごとを出す。
+   *
+   * この道具から手元へ向かう経路は Drive の同期だけで、**押すのではなく
+   * 取りに来る形**である。まだ取られていないものは「待っています」と出す。
+   * 「送りました」と書くと、すぐ動くと思われる。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} host
+   */
+  function renderPrWork(pr, host) {
+    host.textContent = '';
+
+    call('apiOutboxList', [''], function (list) {
+      var mine = (list || []).filter(function (w) {
+        return Number(w.prNumber) === Number(pr.number);
+      });
+
+      if (!mine.length) {
+        host.appendChild(makeBlankState(
+          '手元への頼みごとはありません',
+          '承認すると「取り込んでください」が自動で置かれます。'
+        ));
+      }
+
+      mine.forEach(function (w) {
+        var row = document.createElement('div');
+        row.className = 'row-item';
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = w.label || w.verb;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = w.note;
+        main.appendChild(meta);
+
+        if (w.result) {
+          var said = document.createElement('div');
+          said.className = 'row-meta';
+          said.textContent = '手元から: ' + w.result;
+          main.appendChild(said);
+        }
+        row.appendChild(main);
+
+        var state = document.createElement('span');
+        state.className = 'state state-' + workStateClass(w.state);
+        state.textContent = workStateLabel(w.state);
+        row.appendChild(state);
+
+        host.appendChild(row);
+      });
+
+      var note = document.createElement('div');
+      note.className = 'side-note';
+      // 「送りました」と書くと、すぐ動くと思われる
+      note.textContent = '頼みごとは手元から取りに来る形です。' +
+        '手元で作業する人が「agent work」を実行したときに届きます。';
+      host.appendChild(note);
+    }, failInto(host));
+  }
+
+  /**
+   * @param {string} state
+   * @returns {string}
+   */
+  function workStateLabel(state) {
+    return {
+      open: '待っています', taken: '手元で進行中',
+      done: '終わりました', failed: 'できませんでした',
+    }[String(state)] || String(state);
+  }
+
+  /**
+   * @param {string} state
+   * @returns {string}
+   */
+  function workStateClass(state) {
+    return {
+      open: 'open', taken: 'approved', done: 'merged', failed: 'closed',
+    }[String(state)] || 'open';
+  }
+
   function createRequest(branchName) {
     // 改訂版は複数の文書を持てる。**1つ目だけ送ってはいけない。** 残りは
     // 確認も反映もされないまま、直したつもりで置き去りになる
@@ -3875,13 +3963,17 @@
         commits: function () { renderPrCommits(pr, prBody); },
         files: function () { renderPrDiffs(preview, prBody); },
         patches: function () { renderPrPatches(pr, prBody); },
+        work: function () { renderPrWork(pr, prBody); },
       };
 
       var tabNames = [
         ['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分'],
       ];
       // 証跡が無い依頼に見出しだけ出すと、空の頁を開かせることになる
-      if (preview.patchCount) tabNames.push(['patches', 'コードの変更']);
+      if (preview.patchCount) {
+        tabNames.push(['patches', 'コードの変更']);
+        tabNames.push(['work', '手元への頼みごと']);
+      }
 
       tabNames.forEach(function (t) {
           var b = document.createElement('button');

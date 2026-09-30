@@ -668,6 +668,29 @@ function prMerge(number, choices) {
       projectMoveIfExists_(issues[i], 'Done');
     }
 
+    /*
+     * コードの証跡が添えられていたなら、手元に取り込みを頼む。
+     *
+     * **ここで自動的に取り込んではいけない。** この道具はコードを書き換え
+     * ないと決めてあるので、頼むところまでで止める。手元で人と Claude が
+     * 見て進める。
+     *
+     * 頼めなくてもマージは成立している。通知と同じく、失敗で巻き戻さない
+     */
+    if (prHasPatches(number)) {
+      try {
+        outboxAdd('merge',
+          { branch: String(pr.sourceBranch), into: String(into) },
+          {
+            prNumber: number,
+            note: '確認依頼 #' + number + '「' + pr.title +
+              '」が承認されました。コードの変更を取り込んでください。',
+          });
+      } catch (e) {
+        Logger.log('取り込みを頼めませんでした: ' + e.message);
+      }
+    }
+
     notifyPrMerged(pr);
 
     // 文書が無い依頼では書き戻しが無いので記録も無い。呼ぶ側が形で

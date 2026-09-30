@@ -58,6 +58,16 @@ function COMMAND_OPS() {
     },
     patchRemove: function (a) { return apiPrPatchRemove(a.number, a.id); },
     patches: function (a) { return apiPrPatches(a.number); },
+
+    /*
+     * 頼みごとを取りに来る / 結果を返す。
+     *
+     * **取るだけで、ここでは何も実行しない。** 中身は手元の Claude に
+     * 見せるところまでで、何をするかは人と Claude が決める。
+     */
+    work: function (a) { return apiOutboxTake(a.limit || 5); },
+    workDone: function (a) { return apiOutboxDone(a.id, a.result || ''); },
+    workFail: function (a) { return apiOutboxFail(a.id, a.reason || ''); },
     prMerge: function (a) { return apiPrMerge(a.number, a.choices || []); },
 
     // 読むだけのものは足しても危なくない。手元から様子を見るために要る

@@ -31,6 +31,10 @@ function DB_SCHEMA() {
     // コードの変更を、確認依頼に添える証跡として持つ。版を持つ文書では
     // ないので files には入れない (コピーも編集も書き戻しも無い)
     pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
+    // 手元の Claude に頼むことの置き場。**この道具から手元へ向かう唯一の
+    // 経路である。** 外部 API は使わないので、Drive の同期に乗せる
+    outbox: ['id', 'verb', 'args', 'note', 'state', 'prNumber',
+      'createdAt', 'createdBy', 'takenAt', 'takenBy', 'doneAt', 'result'],
     project_items: ['issueNumber', 'column', 'order'],
   };
 }

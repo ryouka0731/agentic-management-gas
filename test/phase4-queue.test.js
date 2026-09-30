@@ -23,6 +23,7 @@ const SOURCES = [
   'src/render/SheetWriter.gs',
   'src/core/PullRequest.gs',
   'src/core/PullPatch.gs',
+  'src/core/Outbox.gs',
   'src/core/Archive.js',
   'src/core/Staleness.js',
   'src/core/Tag.gs',

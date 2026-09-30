@@ -18,6 +18,7 @@ const SOURCES = [
   'src/render/LiveCache.gs',
   'src/core/PullRequest.gs',
   'src/core/PullPatch.gs',
+  'src/core/Outbox.gs',
   'src/core/Archive.js',
   'src/core/Tag.gs',
   'src/core/Staleness.js',

@@ -5031,6 +5031,104 @@ describe('コードの変更を確認依頼で読む', () => {
   });
 });
 
+describe('手元への頼みごと', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const WORK = {
+    apiPrPreview: {
+      clean: true, problems: [], conflicts: [], approvals: 1, ops: [],
+      patchCount: 1,
+      files: [{
+        fileId: 'DOC1', path: '就業規則.doc', type: 'doc',
+        clean: true, problems: [], conflicts: [], ops: [],
+      }],
+    },
+    apiOutboxList: [{
+      id: 5, verb: 'merge', label: '承認されたので取り込む',
+      args: { branch: '見直し', into: 'main' },
+      note: '確認依頼 #1「第2条の改訂」が承認されました。',
+      state: 'open', prNumber: 1,
+      createdAt: '2026-09-30T00:00:00.000Z', createdBy: 'me@example.com',
+      takenAt: '', takenBy: '', doneAt: '', result: '',
+    }],
+  };
+
+  function openWork(over) {
+    mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+
+    const tab = [...document.querySelectorAll('#pr-detail .pr-tab')]
+      .filter((b) => b.textContent === '手元への頼みごと')[0];
+    if (tab) tab.click();
+    return tab;
+  }
+
+  it('証跡があるときだけ見出しを出す', () => {
+    expect(openWork(WORK)).toBeTruthy();
+
+    window.localStorage.clear();
+    expect(openWork()).toBeUndefined();
+  });
+
+  it('頼みごとと今の様子を出す', () => {
+    openWork(WORK);
+    const row = document.querySelector('#pr-detail .row-item');
+
+    expect(row.querySelector('.row-title').textContent)
+      .toBe('承認されたので取り込む');
+    expect(row.textContent).toContain('承認されました');
+    expect(row.querySelector('.state').textContent).toBe('待っています');
+  });
+
+  it('「送りました」とは言わない', () => {
+    openWork(WORK);
+
+    // 押すのではなく取りに来る形である。すぐ動くと思われては困る
+    const note = document.querySelector('#pr-detail .side-note').textContent;
+    expect(note).toContain('取りに来る形');
+    expect(note).toContain('agent work');
+    expect(note).not.toContain('送りました');
+  });
+
+  it('手元からの返事も出す', () => {
+    openWork({
+      apiPrPreview: WORK.apiPrPreview,
+      apiOutboxList: [Object.assign({}, WORK.apiOutboxList[0], {
+        state: 'done', result: 'main に取り込んで push しました',
+      })],
+    });
+
+    expect(document.querySelector('#pr-detail .row-item').textContent)
+      .toContain('main に取り込んで push しました');
+    expect(document.querySelector('#pr-detail .state').textContent)
+      .toBe('終わりました');
+  });
+
+  it('できなかったことも残す', () => {
+    openWork({
+      apiPrPreview: WORK.apiPrPreview,
+      apiOutboxList: [Object.assign({}, WORK.apiOutboxList[0], {
+        state: 'failed', result: '食い違いがあります',
+      })],
+    });
+
+    // 黙って消すと、頼んだ人は待ち続けることになる
+    expect(document.querySelector('#pr-detail .state').textContent)
+      .toBe('できませんでした');
+  });
+
+  it('他の依頼の頼みごとは混ぜない', () => {
+    openWork({
+      apiPrPreview: WORK.apiPrPreview,
+      apiOutboxList: [Object.assign({}, WORK.apiOutboxList[0], { prNumber: 99 })],
+    });
+
+    expect(document.querySelector('#pr-detail .row-item')).toBeNull();
+    expect(document.querySelector('#pr-detail .blank-state').textContent)
+      .toContain('頼みごとはありません');
+  });
+});
+
 describe('確認依頼の差分を文書ごとに出す', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

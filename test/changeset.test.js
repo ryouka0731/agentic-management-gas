@@ -9,7 +9,8 @@ const SOURCES = [
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs',
   'src/render/DocRenderer.gs', 'src/render/LiveCache.gs',
   'src/core/PullRequest.gs',
-  'src/core/PullPatch.gs', 'src/core/Archive.js', 'src/core/Staleness.js',
+  'src/core/PullPatch.gs',
+  'src/core/Plain.js', 'src/core/Outbox.gs', 'src/core/Archive.js', 'src/core/Staleness.js',
   'src/core/Tag.gs', 'src/core/Issue.gs', 'src/core/Project.gs',
   'src/core/Mention.js', 'src/core/Brand.js', 'src/core/Notifier.gs',
 ];
@@ -488,5 +489,78 @@ describe('コードは書き戻さない', () => {
     // コードだからといって承認を省いてよい理由は無い
     expect(() => ctx.prMerge(pr.number, {})).toThrow('1件以上の承認が必要');
     expect(fake).toBeTruthy();
+  });
+});
+
+describe('承認したら手元に取り込みを頼む', () => {
+  const DIFF = '--- a/x.js\n+++ b/x.js\n@@ -1 +1 @@\n-a\n+b';
+
+  /** 文書1件 + 証跡1件の依頼を承認まで進める */
+  function approved(ctx, fake, a) {
+    ctx.branchCreate('見直し', a);
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+
+    const pr = ctx.prCreate('規程と実装', '', '見直し', a);
+    ctx.prPatchAdd(pr.number, 'x.js', DIFF);
+    ctx.dbAppend('reviews', {
+      prNumber: pr.number, reviewer: 'r@x.com', state: 'approve',
+      body: '', at: new Date(), id: 1, editedAt: '',
+    });
+    return pr;
+  }
+
+  it('証跡があれば頼みごとが置かれる', () => {
+    const { ctx, fake, a } = setup();
+    const pr = approved(ctx, fake, a);
+
+    ctx.prMerge(pr.number, {});
+
+    const work = ctx.outboxList('open');
+    expect(work).toHaveLength(1);
+    expect(work[0].verb).toBe('merge');
+    expect(work[0].args).toEqual({ branch: '見直し', into: 'main' });
+    expect(Number(work[0].prNumber)).toBe(pr.number);
+  });
+
+  it('自動で取り込まない', () => {
+    const { ctx, fake, a } = setup();
+    const pr = approved(ctx, fake, a);
+    ctx.prMerge(pr.number, {});
+
+    // この道具はコードを書き換えない。頼むところまでで止める
+    expect(ctx.outboxList('open')[0].state).toBe('open');
+    expect(ctx.prPatches(pr.number)[0].text).toBe(DIFF);
+  });
+
+  it('証跡が無ければ頼まない', () => {
+    const { ctx, fake, a } = setup();
+    ctx.branchCreate('見直し', a);
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+
+    const pr = ctx.prCreate('規程だけ', '', '見直し', a);
+    ctx.dbAppend('reviews', {
+      prNumber: pr.number, reviewer: 'r@x.com', state: 'approve',
+      body: '', at: new Date(), id: 1, editedAt: '',
+    });
+    ctx.prMerge(pr.number, {});
+
+    // 文書だけの依頼で手元に頼むことは無い
+    expect(ctx.outboxList('')).toEqual([]);
+  });
+
+  it('頼めなくてもマージは成立する', () => {
+    const { ctx, fake, a } = setup();
+    const pr = approved(ctx, fake, a);
+
+    // 通知と同じく、失敗で巻き戻さない
+    ctx.outboxAdd = () => { throw new Error('台帳が書けません'); };
+
+    expect(() => ctx.prMerge(pr.number, {})).not.toThrow();
+    expect(ctx.prGet(pr.number).state).toBe('merged');
+    expect(fake._docs.get(a)).toContain('A2');
   });
 });
