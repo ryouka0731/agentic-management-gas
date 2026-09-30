@@ -88,7 +88,7 @@ const API_NAMES = [
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
-  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
+  'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssuePriorities', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
   'apiInquiryReplyEdit', 'apiInquiryReplyDelete', 'apiInquiryClose', 'apiInquiryReopen', 'apiNotifications', 'apiNotificationsRead',
   'apiTagList', 'apiTagCreate', 'apiTagDelete', 'apiTagColors',
   'apiTasksState', 'apiTasksChooseList', 'apiTasksSync',

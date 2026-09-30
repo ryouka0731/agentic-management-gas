@@ -27,7 +27,7 @@ function DB_SCHEMA() {
     inquiries: ['number', 'kind', 'body', 'by', 'at', 'state', 'context',
       'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
     inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
-    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt'],
+    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt', 'priority'],
     project_items: ['issueNumber', 'column', 'order'],
   };
 }

@@ -55,6 +55,9 @@ function projectBoard() {
       assignee: String(issue.assignee == null ? '' : issue.assignee),
       assignees: issueAssignees(issue),
       labels: String(issue.labels == null ? '' : issue.labels),
+      // カードにも優先度を持たせる。一覧にだけ出ると、ボードで見て
+      // いる人には何が急ぎなのか伝わらない
+      priority: issuePriority(issue),
       dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
       staleDays: stalenessOf(issue, new Date()).days,
       staleLevel: stalenessOf(issue, new Date()).level,

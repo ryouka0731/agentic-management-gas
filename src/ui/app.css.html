@@ -2348,6 +2348,17 @@ button.gantt-name:hover { color: var(--accent); }
 .doc-meta { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .chip-accent { background: var(--accent-bg); color: var(--accent); }
 
+/*
+ * 優先度の印。
+ *
+ * 「ふつう」には出さない。ほとんどがふつうなので、全件に付けると印が
+ * 地になって、高いものが目に入らなくなる。
+ *
+ * 色だけに頼らない。字でも「優先度高」と書いてある
+ */
+.chip-pri-high { background: var(--danger-bg); color: var(--danger); }
+.chip-pri-low { background: var(--bg-3); color: var(--ink-2); }
+
 /* =====================================================================
  * 進め方の案内
  *

@@ -3677,7 +3677,8 @@ describe('起票のときに入れられるもの', () => {
       .map((l) => l.firstChild.textContent))
       .toEqual([
         'やること', '補足 (Markdown で書けます)',
-        '担当者 (「@」で選びます。何人でも)', '開始日 (任意)', '期限 (任意)',
+        '担当者 (「@」で選びます。何人でも)', '優先度',
+        '開始日 (任意)', '期限 (任意)',
         '見積もり (規模。数値)', '予定工数 (人日)',
         'タグ (「#」で書きます。例: #会議 #調査)',
       ]);
@@ -3702,6 +3703,7 @@ describe('起票のときに入れられるもの', () => {
       dueDate: '2026-10-31',
       estimate: '',
       plannedHours: '2.5',
+      priority: 'normal',
     });
   });
 
@@ -4493,6 +4495,120 @@ describe('どのワークスペースを見ているか', () => {
 
     expect(rule.substring(0, rule.indexOf('}')))
       .toContain('text-overflow: ellipsis');
+  });
+});
+
+describe('やることの優先度', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** 既定の2件に優先度を付けたもの */
+  const ROWS = {
+    apiIssueList: [
+      Object.assign({}, DEFAULTS.apiIssueList[0], { priority: 'high' }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { priority: 'low' }),
+      {
+        number: 9, title: 'ふつうの件', body: '', state: 'open',
+        assignee: '', assignees: [], labels: '', linkedFileIds: '', linkedPr: '',
+        createdAt: '2026-09-03T00:00:00.000Z', closedAt: '',
+        dueDate: '', startDate: '', parent: '',
+        estimate: '', plannedHours: '', actualHours: '', priority: 'normal',
+      },
+    ],
+  };
+
+  function openIssues(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    return app;
+  }
+
+  function chipsOf(n) {
+    const row = document.querySelector(
+      '#issue-list .row-item[data-number="' + n + '"]');
+
+    expect(row, '#' + n + ' の行が無い').toBeTruthy();
+    return [...row.querySelectorAll('.chip-pri')].map((c) => c.textContent);
+  }
+
+  it('高いものと低いものに印が出る', () => {
+    openIssues(ROWS);
+
+    expect(chipsOf(2)).toEqual(['優先度高']);
+    expect(chipsOf(1)).toEqual(['優先度低']);
+  });
+
+  it('ふつうには印を出さない', () => {
+    openIssues(ROWS);
+
+    // ほとんどがふつうなので、全件に付けると印が地になって、高いものが
+    // 目に入らなくなる
+    expect(chipsOf(9)).toEqual([]);
+  });
+
+  it('色だけに頼らない', () => {
+    openIssues(ROWS);
+    const chip = document.querySelector('#issue-list .chip-pri');
+
+    // 色の違いに気づけない人がいる
+    expect(chip.textContent).toContain('優先度');
+    expect(chip.className).toContain('chip-pri-high');
+  });
+
+  it('作るときに選べる', () => {
+    const app = openIssues();
+    document.getElementById('issue-create-btn').click();
+
+    const select = document.querySelector('#side-body select');
+    expect([...select.options].map((o) => o.textContent))
+      .toEqual(['高', 'ふつう', '低']);
+    expect(select.value).toBe('normal');
+
+    select.value = 'high';
+    document.querySelector('#side-body form input').value = '棚卸し';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate').pop().args[4])
+      .toMatchObject({ priority: 'high' });
+  });
+
+  it('直すときは今の値が選ばれている', () => {
+    const app = openIssues(ROWS);
+    document.querySelector('#issue-list .row-item[data-number="2"] .row-open')
+      .click();
+    document.getElementById('side-edit').click();
+
+    const select = document.querySelector('#side-body select');
+    expect(select.value).toBe('high');
+
+    select.value = 'low';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1])
+      .toMatchObject({ priority: 'low' });
+  });
+
+  it('語彙はサーバから取る', () => {
+    const app = openIssues();
+
+    // 写すと、足したときに選べるのに保存できない選択肢になる
+    expect(app.calls.some((c) => c.name === 'apiIssuePriorities')).toBe(true);
+  });
+
+  it('ボードのカードにも出る', () => {
+    openIssues({
+      apiProjectBoard: {
+        Backlog: [{
+          issueNumber: 3, order: 0, title: '急ぎの件', state: 'open',
+          assignee: '', assignees: [], labels: '', dueDate: '',
+          staleDays: 0, staleLevel: '', priority: 'high',
+        }],
+      },
+    });
+    document.getElementById('view-board').click();
+
+    // 一覧にだけ出ると、ボードで見ている人には何が急ぎなのか伝わらない
+    expect(document.querySelector('#board .chip-pri').textContent)
+      .toBe('優先度高');
   });
 });
 

@@ -29,7 +29,7 @@ const EXPECTED = {
     'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
   inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
   issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours',
-    'archivedAt', 'updatedAt'],
+    'archivedAt', 'updatedAt', 'priority'],
   project_items: ['issueNumber', 'column', 'order'],
 };
 

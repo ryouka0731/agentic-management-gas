@@ -14,6 +14,64 @@ function issueNextNumber_() {
 }
 
 /**
+ * 優先度の語彙。
+ *
+ * 3つに留めてある。4つ以上あると「どれにするか」を決められず、結局
+ * どれかに寄って差が付かなくなる。
+ *
+ * **並びは高いものから順に書く。** 画面の選択肢も、並べ替えの重みも
+ * この順を使う。
+ *
+ * @returns {Array<Array<string>>} [値, 見せる字]
+ */
+function ISSUE_PRIORITIES() {
+  return [
+    ['high', '高'],
+    ['normal', 'ふつう'],
+    ['low', '低'],
+  ];
+}
+
+/**
+ * その行の優先度を返す。
+ *
+ * **この列を足す前に書かれた行は空のままである。** 読むたびに「ふつう」
+ * として扱う。埋め直さないのは、空と「ふつう」を区別する意味が無く、
+ * 書き戻すと更新の跡 (`updatedAt`) が全件動いてしまうため。
+ *
+ * 知らない値も「ふつう」にする。台帳は人が手で書き換えられる表であり、
+ * 書き間違い1つで一覧が出なくなってはならない。
+ *
+ * @param {object} row issues 行
+ * @returns {string} 'high' | 'normal' | 'low'
+ */
+function issuePriority(row) {
+  var want = String((row && row.priority) || '');
+  var list = ISSUE_PRIORITIES();
+
+  for (var i = 0; i < list.length; i++) {
+    if (list[i][0] === want) return want;
+  }
+  return 'normal';
+}
+
+/**
+ * 並べ替えの重み。小さいほど先に出す。
+ *
+ * @param {object} row
+ * @returns {number}
+ */
+function issuePriorityRank_(row) {
+  var want = issuePriority(row);
+  var list = ISSUE_PRIORITIES();
+
+  for (var i = 0; i < list.length; i++) {
+    if (list[i][0] === want) return i;
+  }
+  return list.length;
+}
+
+/**
  * Issueを作成する。
  *
  * @param {string} title
@@ -50,6 +108,7 @@ function issueCreate(title, body, linkedFileIds, labels) {
     estimate: '',
     plannedHours: '',
     actualHours: '',
+    priority: 'normal',
     createdAt: new Date(),
     closedAt: '',
     archivedAt: '',
@@ -86,7 +145,18 @@ function issueList(state) {
     if (state && String(rows[i].state) !== String(state)) continue;
     out.push(rows[i]);
   }
-  out.sort(function (a, b) { return Number(b.number) - Number(a.number); });
+  /*
+   * 高いものを先に出す。同じ優先度のうちでは新しいものから。
+   *
+   * 付けても並びが変わらなければ、優先度は見た目の飾りになる。
+   * ボードは人が並べた order を持っているので、あちらは触らない。
+   */
+  out.sort(function (a, b) {
+    var diff = issuePriorityRank_(a) - issuePriorityRank_(b);
+    if (diff) return diff;
+
+    return Number(b.number) - Number(a.number);
+  });
   return out;
 }
 
@@ -140,8 +210,21 @@ function issueUpdate(number, patch) {
   }
 
   var allowed = {};
+  // 知らない値は受け取らない。ここを通ると台帳に残り、読むたびに
+  // 「ふつう」へ倒れるので、直したつもりが直っていない状態になる
+  if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
+    var want = String(patch.priority || '');
+    var known = ISSUE_PRIORITIES();
+    var ok = false;
+
+    for (var p = 0; p < known.length; p++) {
+      if (known[p][0] === want) ok = true;
+    }
+    if (!ok) throw new Error('知らない優先度です: ' + patch.priority);
+  }
+
   var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
-    'parent', 'estimate', 'plannedHours', 'actualHours'];
+    'parent', 'estimate', 'plannedHours', 'actualHours', 'priority'];
   allowed.updatedAt = new Date();
   for (var i = 0; i < keys.length; i++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[i])) {

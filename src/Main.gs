@@ -1053,10 +1053,12 @@ function apiPrCommits(number) {
  */
 function issueToPlain_(row) {
   return {
-    number: Number(row.number),
+    number: plainId(row.number),
     title: plainText(row.title),
     body: plainText(row.body),
     state: plainText(row.state),
+    // 空の行も「ふつう」として届く。画面側で空を場合分けしない
+    priority: issuePriority(row),
     assignee: plainText(row.assignee),
     assignees: issueAssignees(row),
     labels: plainText(row.labels),
@@ -1107,7 +1109,7 @@ function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
   // ものは、そのまま入れて1件にする
   if (patch && typeof patch === 'object') {
     var keys = ['assignee', 'startDate', 'dueDate', 'estimate',
-      'plannedHours', 'actualHours', 'parent'];
+      'plannedHours', 'actualHours', 'parent', 'priority'];
     var want = {};
     var any = false;
 
@@ -1132,6 +1134,18 @@ function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
  */
 function apiIssueUpdate(number, patch) {
   return issueToPlain_(issueUpdate(number, patch || {}));
+}
+
+/**
+ * 優先度の選択肢を返す (Web App API)。
+ *
+ * 語彙を画面側に写さない。写すと、足したときにサーバと画面でずれ、
+ * 選べるのに保存できない選択肢が出る。
+ *
+ * @returns {Array<Array<string>>} [値, 見せる字]
+ */
+function apiIssuePriorities() {
+  return ISSUE_PRIORITIES();
 }
 
 /**

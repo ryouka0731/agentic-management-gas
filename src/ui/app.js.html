@@ -696,6 +696,48 @@
     }, failQuiet('分からなくても操作はできる'));
   }
 
+  /**
+   * 優先度の選択肢。
+   *
+   * サーバの `ISSUE_PRIORITIES()` が本体である。取れなかったときのために
+   * 同じ並びを持っているが、**足すときはサーバ側を直す。** ここだけ足すと、
+   * 選べるのに保存できない選択肢になる。
+   */
+  var priorities = [['high', '高'], ['normal', 'ふつう'], ['low', '低']];
+
+  /**
+   * 優先度の見せる字を返す。
+   *
+   * @param {string} value
+   * @returns {string}
+   */
+  function priorityLabel(value) {
+    for (var i = 0; i < priorities.length; i++) {
+      if (priorities[i][0] === String(value)) return priorities[i][1];
+    }
+    return '';
+  }
+
+  /**
+   * 優先度の印を作る。
+   *
+   * 「ふつう」には出さない。ほとんどがふつうなので、全件に付けると
+   * 印が地になって、高いものが目に入らなくなる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement|null}
+   */
+  function makePriorityChip(issue) {
+    var want = String(issue.priority || 'normal');
+    if (want === 'normal') return null;
+
+    var chip = document.createElement('span');
+    chip.className = 'chip chip-pri chip-pri-' + want;
+    // 色だけでは気づけない人がいるので字でも示す
+    chip.textContent = '優先度' + priorityLabel(want);
+    return chip;
+  }
+
   var diagramSeq = 0;
 
   /**
@@ -1595,6 +1637,9 @@
       }
 
       if (f.required) input.required = true;
+      // 初期値は名前で入れる。位置で数えて入れると、欄を1つ足すたびに
+      // 後ろが全部ずれる
+      if (f.value !== undefined && f.value !== null) input.value = String(f.value);
       label.appendChild(input);
 
       inputs[f.name] = input;
@@ -4461,6 +4506,10 @@
           meta.appendChild(hours);
         }
 
+        // 優先度は先に出す。後ろに付けると他の印に埋もれて拾えない
+        var pri = makePriorityChip(issue);
+        if (pri) meta.appendChild(pri);
+
         meta.appendChild(makeRelationChips(issue.number));
 
         var stale = makeStaleBadge(issue);
@@ -4939,6 +4988,10 @@
         { name: 'title', label: 'やること', required: true },
         { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
         { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
+        {
+          name: 'priority', label: '優先度', choices: priorities,
+          value: issue.priority || 'normal',
+        },
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
         { name: 'estimate', label: '見積もり (規模。数値)' },
@@ -4954,6 +5007,7 @@
           labels: picker ? picker.value() : (issue.labels || ''),
           estimate: v.estimate, plannedHours: v.plannedHours,
           actualHours: v.actualHours, parent: v.parent,
+          priority: v.priority,
         };
 
         // 予定工数を書き換えたなら、棒の長さもそれに合わせる。
@@ -5452,6 +5506,7 @@
         { name: 'title', label: 'やること', required: true },
         { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
         { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
+        { name: 'priority', label: '優先度', choices: priorities, value: 'normal' },
         { name: 'startDate', label: '開始日 (任意)' },
         { name: 'dueDate', label: '期限 (任意)' },
         { name: 'estimate', label: '見積もり (規模。数値)' },
@@ -5468,6 +5523,7 @@
           dueDate: v.dueDate,
           estimate: v.estimate,
           plannedHours: v.plannedHours,
+          priority: v.priority,
         }], function () {
           showSnack('やることを作りました', { kind: 'ok' });
           // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
@@ -6768,6 +6824,9 @@
           when.className = 'row-meta';
           when.textContent = card.dueDate
             ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
+
+          var cardPri = makePriorityChip(card);
+          if (cardPri) when.appendChild(cardPri);
 
           var cardStale = makeStaleBadge(card);
           if (cardStale) when.appendChild(cardStale);
@@ -9046,6 +9105,10 @@
 
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });
+
+  call('apiIssuePriorities', [], function (list) {
+    if (list && list.length) priorities = list;
+  }, failQuiet('取れなくても同じ並びを持っている'));
 
   // 右端のペインなので、左へ引くほど広がる
   makeResizable(sideResizer, '--side-pane-w', 'sidePaneWidth',
