@@ -1241,27 +1241,43 @@ button:disabled {
 }
 
 /*
- * 左の帯に出す下位の目次。
+ * 使い方の目次。
  *
- * 読み物の中に置くと、送るほど遠ざかる。左は常に見えているので、
- * どこからでも一息で飛べる。
+ * 本文は 760px で止まるので、その右は空いている。**目次をそこに置く。**
+ * 左の帯に出していたときは、道具そのものの行き先と混ざって何の目次か
+ * 分からず、開くたびに左の並びが動いていた。
  *
- * 現在地の線は親 (.nav-item) が引いているので、こちらは引かない。
- * 二重に引くと、どちらが現在地なのか読めなくなる
+ * 送っても残す (sticky)。底の節からでも一息で戻れる
  */
-.nav-sub {
-  display: flex;
-  flex-direction: column;
-  padding: var(--sp-1) 0 var(--sp-2);
+.guide-aside {
+  flex: 0 0 240px;
+  min-width: 0;
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-4) var(--sp-5) 0;
 }
 
-.nav-sub-item {
+.guide-aside h2 {
+  margin: 0 0 var(--sp-2);
+  padding-left: var(--sp-3);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+
+.guide-toc-item {
   /* button は中身に合わせて縮む。並んだ行の幅が揃わなくなる */
   width: -moz-available;
   width: -webkit-fill-available;
   width: stretch;
+  display: block;
   min-height: 28px;
-  padding: var(--sp-1) var(--sp-4) var(--sp-1) 27px;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--ink-2);
   font-family: inherit;
@@ -1271,12 +1287,18 @@ button:disabled {
   cursor: pointer;
 }
 
-.nav-sub-item:hover { background: var(--bg-3); color: var(--ink); }
+.guide-toc-item:hover { background: var(--bg-2); color: var(--ink); }
 
-/* いま読んでいる節。色だけでは気づけない人がいるので字も濃くする */
-.nav-sub-item[aria-current='true'] {
+/* いま読んでいる節。色だけでは気づけない人がいるので線と太さでも示す */
+.guide-toc-item[aria-current='true'] {
+  border-left-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+@media (max-width: 1023px) {
+  /* 本文の幅が足りなくなる。見出しは本文の中にあるので、無くても辿れる */
+  .guide-aside { display: none; }
 }
 
 /* =====================================================================

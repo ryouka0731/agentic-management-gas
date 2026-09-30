@@ -2240,8 +2240,6 @@
     panelPulls.hidden = name !== 'pulls';
     panelIssues.hidden = name !== 'issues';
     panelHelp.hidden = name !== 'help';
-    // 目次は使い方の節を指すので、他を見ているときに出すと迷子になる
-    guideTocEl.hidden = name !== 'help';
     panelReport.hidden = name !== 'report';
     panelUsage.hidden = name !== 'usage';
 
@@ -7313,11 +7311,18 @@
   function loadHelp() {
     if (guideEl.dataset.ready) return;
 
-    // 目次は左の帯に出す。読み物の中に置くと、送るほど遠ざかる。
-    // 左は常に見えているので、どこからでも一息で飛べる
+    /*
+     * 目次は本文の右に置く。本文は 760px で止まるので、その右は空いている。
+     *
+     * 左の帯に出していたときは、道具そのものの行き先と混ざって何の目次か
+     * 分からず、開くたびに左の並びが動いていた。
+     */
     var toc = guideTocEl;
     toc.textContent = '';
-    toc.setAttribute('aria-label', '使い方の目次');
+
+    var tocHead = document.createElement('h2');
+    tocHead.textContent = 'この頁の中身';
+    toc.appendChild(tocHead);
 
     // 操作は読み物より先に置く。底に置くと、困ったときにしか開かれない
     // 場所に埋もれる
@@ -7339,7 +7344,7 @@
      */
     function addToc(label, target) {
       var btn = document.createElement('button');
-      btn.className = 'nav-sub-item';
+      btn.className = 'guide-toc-item';
       btn.textContent = label;
       btn.addEventListener('click', function () {
         target.scrollIntoView({ block: 'start', behavior: 'smooth' });

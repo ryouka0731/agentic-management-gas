@@ -5327,35 +5327,48 @@ describe('使い方の目次', () => {
     return document.getElementById('guide-toc');
   }
 
-  it('左の帯に、節の数だけ並ぶ', () => {
+  function items(toc) {
+    return [...toc.querySelectorAll('.guide-toc-item')];
+  }
+
+  it('本文の右に、節の数だけ並ぶ', () => {
     const toc = openHelp();
     const heads = [...document.querySelectorAll('#guide h2')];
-    const items = [...toc.querySelectorAll('.nav-sub-item')];
 
     // 節を足して目次に載らないと、そこだけ辿り着けない
-    expect(items.map((b) => b.textContent))
+    expect(items(toc).map((b) => b.textContent))
       .toEqual(heads.map((h) => h.textContent));
   });
 
-  it('使い方のすぐ下に置く', () => {
+  it('本文の隣に置く', () => {
     const toc = openHelp();
-    const help = document.querySelector('.nav-item[data-tab="help"]');
+    const guide = document.getElementById('guide');
 
-    // 離れた場所に出すと、何の目次なのかが分からない
-    expect(help.nextElementSibling).toBe(toc);
-    expect(document.querySelector('#guide .nav-sub-item')).toBeNull();
+    /*
+     * 本文は 760px で止まるので、その右は空いている。左の帯に出していた
+     * ときは、道具そのものの行き先と混ざって何の目次か分からず、開くたびに
+     * 左の並びが動いていた。
+     */
+    expect(guide.nextElementSibling).toBe(toc);
+    expect(toc.closest('#panel-help')).toBeTruthy();
+    expect(document.querySelector('.sidebar .guide-toc-item')).toBeNull();
   });
 
-  it('他を見ているときは出さない', () => {
+  it('何の目次かを言う', () => {
     const toc = openHelp();
-    expect(toc.hidden).toBe(false);
 
-    // 使い方の節を指すので、他を見ているときに出すと迷子になる
-    document.querySelector('[data-tab="issues"]').click();
-    expect(toc.hidden).toBe(true);
+    expect(toc.querySelector('h2').textContent).toBe('この頁の中身');
+    expect(toc.getAttribute('aria-label')).toBe('使い方の目次');
+  });
 
+  it('左の並びを動かさない', () => {
+    mount();
+    const before = [...document.querySelectorAll('.sidebar .nav-item')].length;
+
+    // 開くたびに左が伸び縮みすると、押したい行の位置が変わる
     document.querySelector('[data-tab="help"]').click();
-    expect(toc.hidden).toBe(false);
+    expect([...document.querySelectorAll('.sidebar .nav-item')].length)
+      .toBe(before);
   });
 
   it('押すとその節へ寄る', () => {
@@ -5364,7 +5377,7 @@ describe('使い方の目次', () => {
     const seen = [];
 
     heads.forEach((h) => { h.scrollIntoView = () => seen.push(h.textContent); });
-    toc.querySelectorAll('.nav-sub-item')[3].click();
+    items(toc)[3].click();
 
     expect(seen).toEqual([heads[3].textContent]);
   });
@@ -5374,12 +5387,12 @@ describe('使い方の目次', () => {
 
     // 枠の中で動いているため、場所を変えると外側の頁ごと動くことがある
     expect(toc.querySelectorAll('a')).toHaveLength(0);
-    expect(toc.querySelector('.nav-sub-item').tagName).toBe('BUTTON');
+    expect(items(toc)[0].tagName).toBe('BUTTON');
   });
 
   it('いま読んでいる節を示す', () => {
     const toc = openHelp();
-    const items = [...toc.querySelectorAll('.nav-sub-item')];
+    const list = items(toc);
     const guide = document.getElementById('guide');
 
     // jsdom は位置を持たないので、見出しの位置を差し込んで送る
@@ -5392,7 +5405,7 @@ describe('使い方の目次', () => {
     function scrollTo(to) {
       guide.scrollTop = to;
       guide.dispatchEvent(new window.Event('scroll'));
-      return items.map((b) => b.getAttribute('aria-current'));
+      return list.map((b) => b.getAttribute('aria-current'));
     }
 
     // 色だけでは気づけない人がいるので aria-current でも示す。
@@ -5404,16 +5417,35 @@ describe('使い方の目次', () => {
     expect(scrollTo(0)[0]).toBe('true');
     expect(scrollTo(1100)[2]).toBe('true');
     expect(scrollTo(1100)[0]).toBe('false');
-    expect(scrollTo(4000)[items.length - 1]).toBe('true');
+    expect(scrollTo(4000)[list.length - 1]).toBe('true');
   });
 
-  it('現在地の線を二重に引かない', () => {
+  it('送っても上に残す', () => {
     openHelp();
     const css = document.querySelector('style').textContent;
-    const rule = css.substring(css.indexOf("\n.nav-sub-item[aria-current='true'] {"));
+    const rule = css.substring(css.indexOf('\n.guide-aside {'));
 
-    // 親の .nav-item が線を引いている。二重だとどちらが現在地か読めない
-    expect(rule.substring(0, rule.indexOf('}'))).not.toContain('border');
+    // 底の節からでも一息で戻れるようにする
+    expect(rule.substring(0, rule.indexOf('}'))).toContain('position: sticky');
+  });
+
+  it('狭い画面では出さない', () => {
+    openHelp();
+    const css = document.querySelector('style').textContent;
+
+    // 本文の幅が足りなくなる。見出しは本文の中にあるので、無くても辿れる
+    expect(css).toMatch(
+      /@media \(max-width: 1023px\) \{[^}]*\.guide-aside \{ display: none/);
+  });
+
+  it('色だけで現在地を示さない', () => {
+    openHelp();
+    const css = document.querySelector('style').textContent;
+    const at = css.indexOf("\n.guide-toc-item[aria-current='true'] {");
+    const rule = css.substring(at, css.indexOf('}', at));
+
+    expect(rule).toContain('border-left-color');
+    expect(rule).toContain('font-weight');
   });
 });
 
