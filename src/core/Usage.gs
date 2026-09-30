@@ -33,6 +33,22 @@ function USAGE_KINDS() {
 }
 
 /**
+ * 残す日数。
+ *
+ * **片付けないと行は増え続ける。** 場所が20か所、種類が2つ、人が10人
+ * いれば1日で最大400行になり、1年で15万行に届く。この表は足し込みの
+ * たびに丸ごと読んで丸ごと書き戻すため、増えたぶんがそのまま待ち時間に
+ * なり、いずれ実行時間の上限に当たって数えられなくなる。
+ *
+ * 画面から見られるのは直近90日までなので、その倍を残せば足りる。
+ *
+ * @returns {number}
+ */
+function USAGE_KEEP_DAYS() {
+  return 180;
+}
+
+/**
  * その日の文字列を返す。
  *
  * @param {Date} [when]
@@ -75,18 +91,31 @@ function usageRecord(rows) {
     var values = last > 1
       ? sheet.getRange(2, 1, last - 1, cols.length).getValues() : [];
 
+    // 押した人は画面から受け取らない。名乗りを詐称できてしまう
+    var me = Session.getActiveUser().getEmail();
+    var day = usageDay();
+
+    // 古いぶんは落としてから足し込む。落とさないと丸ごとの読み書きが
+    // 際限なく重くなる
+    var kept = usageWithinKeep_(values, day);
+    var dropped = values.length - kept.length;
+    values = kept;
+
     var at = {};
     for (var r = 0; r < values.length; r++) {
       at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2] +
         '\t' + values[r][4]] = r;
     }
 
-    // 押した人は画面から受け取らない。名乗りを詐称できてしまう
-    var me = Session.getActiveUser().getEmail();
-    var day = usageDay();
     var kinds = USAGE_KINDS();
     var added = [];
-    var touched = false;
+
+    // 同じまとめの中に同じ場所が2度入ることがある。**足し先を values の
+    // 長さから数えると、まだ書いていない行を指してしまう。** 以前は
+    // `values[at[key]]` が undefined になって例外で終わり、そのまとめの
+    // ぶんが黙って失われていた
+    var addedAt = {};
+    var touched = dropped > 0;
     var done = 0;
 
     for (var i = 0; i < list.length; i++) {
@@ -103,8 +132,10 @@ function usageRecord(rows) {
       if (Object.prototype.hasOwnProperty.call(at, key)) {
         values[at[key]][3] = (Number(values[at[key]][3]) || 0) + count;
         touched = true;
+      } else if (Object.prototype.hasOwnProperty.call(addedAt, key)) {
+        added[addedAt[key]][3] = (Number(added[addedAt[key]][3]) || 0) + count;
       } else {
-        at[key] = values.length + added.length;
+        addedAt[key] = added.length;
         added.push([day, kind, target, count, me]);
       }
       done++;
@@ -117,10 +148,44 @@ function usageRecord(rows) {
       sheet.getRange(values.length + 2, 1, added.length, cols.length)
         .setValues(added);
     }
+
+    // 落としたぶんだけ行が余る。消さないと、書き戻した中身の下に
+    // 古い行が残ったままになる
+    for (var d = 0; d < dropped; d++) {
+      sheet.deleteRow(values.length + added.length + 2);
+    }
     return done;
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 残す期間に入っている行だけを返す。
+ *
+ * 日の文字列は `YYYY-MM-DD` なので、字のまま比べられる。
+ *
+ * @param {Array<Array>} values usage の行 (配列のまま)
+ * @param {string} today
+ * @returns {Array<Array>}
+ */
+function usageWithinKeep_(values, today) {
+  var parts = String(today).split('-');
+  var end = new Date(
+    Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  var from = usageDay(new Date(
+    end.getFullYear(), end.getMonth(), end.getDate() - USAGE_KEEP_DAYS() + 1));
+
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    // 日が読めない行は落とさない。手で書き換えられる表なので、
+    // 読めないことを理由に人の書いたものを消してはならない
+    var day = String(values[i][0] || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < from) continue;
+
+    out.push(values[i]);
+  }
+  return out;
 }
 
 /**

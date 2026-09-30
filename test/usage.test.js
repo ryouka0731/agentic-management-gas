@@ -231,3 +231,122 @@ describe('人ごとに見る', () => {
       .toBe('x@example.com');
   });
 });
+
+describe('溜まりすぎないようにする', () => {
+  /**
+   * 日をずらした行を直に置く。
+   *
+   * @param {object} ctx
+   * @param {number} back 今日から何日前か
+   * @param {string} target
+   */
+  function put(ctx, back, target) {
+    const now = new Date();
+    const day = ctx.usageDay(new Date(
+      now.getFullYear(), now.getMonth(), now.getDate() - back));
+
+    ctx.dbAppend('usage', {
+      day: day, kind: 'action', target: target, count: 1, user: 'a@x.com',
+    });
+    return day;
+  }
+
+  it('残す期間より古い行は落とす', () => {
+    const { ctx } = setup();
+    put(ctx, 400, 'long-ago');
+    put(ctx, 10, 'recent');
+
+    // 片付けないと行は増え続け、丸ごとの読み書きが際限なく重くなる
+    ctx.usageRecord([{ kind: 'action', target: 'now', count: 1 }]);
+
+    expect(ctx.dbReadAll('usage').map((r) => r.target).sort())
+      .toEqual(['now', 'recent']);
+  });
+
+  it('残す期間のうちは落とさない', () => {
+    const { ctx } = setup();
+    put(ctx, 179, 'kept');
+    put(ctx, 181, 'dropped');
+
+    ctx.usageRecord([{ kind: 'action', target: 'now', count: 1 }]);
+
+    const left = ctx.dbReadAll('usage').map((r) => r.target);
+    expect(left).toContain('kept');
+    expect(left).not.toContain('dropped');
+  });
+
+  it('落とした行が下に残らない', () => {
+    const { ctx } = setup();
+    put(ctx, 400, 'old1');
+    put(ctx, 400, 'old2');
+    put(ctx, 1, 'fresh');
+
+    ctx.usageRecord([{ kind: 'action', target: 'now', count: 1 }]);
+
+    // 消さないと、書き戻した中身の下に古い行が残ったままになる
+    const rows = ctx.dbReadAll('usage');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.target).sort()).toEqual(['fresh', 'now']);
+  });
+
+  it('日が読めない行は落とさない', () => {
+    const { ctx } = setup();
+
+    // 手で消されたセルは空になる。字のまま比べると、空はどの日付より
+    // 小さいので「ずっと前の行」として黙って消える
+    ctx.dbAppend('usage', {
+      day: '', kind: 'action', target: 'blank', count: 1, user: 'a@x.com',
+    });
+    ctx.dbAppend('usage', {
+      day: '2026', kind: 'action', target: 'partial', count: 1, user: 'a@x.com',
+    });
+
+    ctx.usageRecord([{ kind: 'action', target: 'now', count: 1 }]);
+
+    const left = ctx.dbReadAll('usage').map((r) => r.target);
+    expect(left).toContain('blank');
+    expect(left).toContain('partial');
+  });
+});
+
+describe('同じ場所が1回のまとめに2度入る', () => {
+  it('新しい場所でも落ちずに足し合わせる', () => {
+    const { ctx } = setup();
+
+    // 以前は足し先を values の長さから数えていたため、まだ書いていない
+    // 行を指して例外で終わり、そのまとめのぶんが黙って失われていた
+    expect(() => ctx.usageRecord([
+      { kind: 'action', target: 'twice', count: 2 },
+      { kind: 'action', target: 'twice', count: 3 },
+    ])).not.toThrow();
+
+    const rows = ctx.dbReadAll('usage');
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].count)).toBe(5);
+  });
+
+  it('既にある場所でも足し合わせる', () => {
+    const { ctx } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'twice', count: 1 }]);
+    ctx.usageRecord([
+      { kind: 'action', target: 'twice', count: 2 },
+      { kind: 'action', target: 'twice', count: 3 },
+    ]);
+
+    expect(Number(ctx.dbReadAll('usage')[0].count)).toBe(6);
+  });
+
+  it('新しい場所と既にある場所が混ざっても数え落とさない', () => {
+    const { ctx } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'existing', count: 1 }]);
+    ctx.usageRecord([
+      { kind: 'action', target: 'existing', count: 1 },
+      { kind: 'action', target: 'fresh', count: 1 },
+      { kind: 'action', target: 'fresh', count: 1 },
+    ]);
+
+    const byTarget = {};
+    ctx.dbReadAll('usage').forEach((r) => { byTarget[r.target] = Number(r.count); });
+    expect(byTarget).toEqual({ existing: 2, fresh: 2 });
+  });
+});
