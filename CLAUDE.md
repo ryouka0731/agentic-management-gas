@@ -449,6 +449,18 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
   `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort`
 - **イテレータを回しながら Drive のファイルを移動しない**。先に対象を集める
+- **コマンドキューは「処理済みへ移す」だけでは二度実行を防げない。** 命令は手元が
+  Drive の同期フォルダに置いたもので、手元に実体が残っていると同期の都合で
+  `queue/` に戻ってくる。実際に「やることを1つ作ったのに、同じものが番号違いで
+  複数できた」という形で現れた。`commandAlreadyRan_` で処理済みフォルダを見て
+  弾き、`agent.mjs` 側も結果を受け取ったら命令を消す
+- **結果を書く前に処理済みへ移す。** 逆にすると、結果を書いた直後に実行が
+  打ち切られた場合 (6分の上限など) 命令が `queue/` に残り、次の起動でもう一度走る
+- **`addFile` と `removeFile` は両方呼ぶ。** Drive のファイルは複数のフォルダに
+  属せるので、`addFile` だけでは `queue/` に残り、`removeFile` だけでは行き先が
+  無くなる。`commandRetire_` に寄せてある。
+  **`test/fakegas.js` の `removeFile` は空実装で、`addFile` が親を移す作りである。**
+  疑似GASのほうが実機より甘いので、片方だけ呼ぶ書き方はテストを通ってしまう
 - **`button` は地の色も枠も継がない。** 既定の `color: buttontext` は OS の設定で
   決まるため、暗い OS で明るいテーマを選ぶと白い面に白い文字が乗って消える
   (確認依頼の題名だけが見えなかった)。既定の `border` も面と影で段を表す設計を

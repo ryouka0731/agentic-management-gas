@@ -156,6 +156,26 @@ function runCommand_(cmd) {
  */
 function runCommandFile_(file, queue, done) {
   var id = file.getName().replace(/\.cmd\.json$/, '');
+
+  /*
+   * **一度実行した命令は二度実行しない。**
+   *
+   * 「処理済みへ移す」だけでは足りない。命令は手元が Drive の同期フォルダに
+   * 置いたもので、手元にはその実体が残り続ける (道具が消していなかった)。
+   * 同期の都合で `queue/` に戻ってくると、次の起動でもう一度実行される。
+   *
+   * 実際に「やることを1つ作ったのに、同じものが番号違いで複数できた」と
+   * いう形で現れた。作る命令なので、走った回数だけ増える。
+   *
+   * 処理済みのフォルダに同じ名前があれば、それは既に走ったものである。
+   * 実行せずに queue から外すだけにする。
+   */
+  if (commandAlreadyRan_(done, file.getName())) {
+    Logger.log('既に実行済みの命令でした: ' + file.getName());
+    commandRetire_(file, queue, done);
+    return;
+  }
+
   var op = '';
   var result;
 
@@ -168,11 +188,44 @@ function runCommandFile_(file, queue, done) {
   }
   result.at = new Date().toISOString();
 
-  queue.createFile(id + '.result.json', JSON.stringify(result), MimeType.PLAIN_TEXT);
+  /*
+   * **処理済みへ移してから結果を書く。**
+   *
+   * 逆にすると、結果を書いた直後に実行が打ち切られた場合 (6分の上限など)
+   * 命令が queue に残り、次の起動でもう一度走る。
+   */
+  commandRetire_(file, queue, done);
 
-  // 処理済みにする。移さないと次の起動で二度実行される
+  queue.createFile(id + '.result.json', JSON.stringify(result), MimeType.PLAIN_TEXT);
+}
+
+/**
+ * 命令を queue から引き上げる。
+ *
+ * **2つ呼ぶ必要がある。** Drive のファイルは複数のフォルダに属せるため、
+ * `addFile` だけでは queue に残り、`removeFile` だけでは行き先が無くなる。
+ *
+ * 実行した命令も、戻ってきた命令も、同じ道で片付ける。片方だけ別扱いに
+ * すると、片方が queue に残って毎回の起動で見に来ることになる。
+ *
+ * @param {GoogleAppsScript.Drive.File} file
+ * @param {GoogleAppsScript.Drive.Folder} queue
+ * @param {GoogleAppsScript.Drive.Folder} done
+ */
+function commandRetire_(file, queue, done) {
   done.addFile(file);
   queue.removeFile(file);
+}
+
+/**
+ * その名前の命令が既に走ったか。
+ *
+ * @param {GoogleAppsScript.Drive.Folder} done 処理済みのフォルダ
+ * @param {string} name 命令のファイル名
+ * @returns {boolean}
+ */
+function commandAlreadyRan_(done, name) {
+  return done.getFilesByName(name).hasNext();
 }
 
 /**

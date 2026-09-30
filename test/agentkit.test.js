@@ -335,3 +335,36 @@ describe('向こうから頼まれたことを取る', () => {
     expect(text).toContain('人が見ている前で進める');
   });
 });
+
+describe('置いた命令を片付ける', () => {
+  /*
+   * 残すと、同じ命令が何度も実行される。向こう側は命令を処理済みの
+   * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
+   * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
+   * 番号違いで複数できた」という形で現れた。
+   */
+  it('結果を受け取ったら命令を消す', () => {
+    const text = kitText('agent.mjs');
+
+    expect(text).toContain('function forget()');
+    expect(text).toContain('if (fs.existsSync(cmd)) fs.unlinkSync(cmd);');
+  });
+
+  it('返らなかったときも消す', () => {
+    const text = kitText('agent.mjs');
+    const at = text.indexOf('結果が返りませんでした');
+
+    // 残すと、あとで拾われて一度だけ走る
+    expect(text.slice(0, at)).toContain('// 返らなかったときも片付ける');
+  });
+
+  it('消せなくても操作は成立させる', () => {
+    // 片付けに失敗したからといって、返ってきた結果を捨てては困る
+    const text = kitText('agent.mjs');
+    const at = text.indexOf('function forget()');
+    const body = text.slice(at, text.indexOf('\n  }', at));
+
+    expect(body).toContain('try {');
+    expect(body).not.toContain('throw');
+  });
+});

@@ -168,3 +168,83 @@ describe('コマンドキュー', () => {
     expect(fake._docs.get(workFileId)).toContain('改訂しました');
   });
 });
+
+describe('同じ命令を二度実行しない', () => {
+  /*
+   * 「処理済みへ移す」だけでは足りなかった。命令は手元が Drive の同期
+   * フォルダに置いたもので、手元にはその実体が残り続けていた (道具が
+   * 消していなかった)。同期の都合で queue に戻ってくると、次の起動で
+   * もう一度実行される。
+   *
+   * 実際に「やることを1つ作ったのに、同じものが番号違いで複数できた」と
+   * いう形で現れた。作る命令なので、走った回数だけ増える。
+   */
+  function makeIssue(ctx, id) {
+    enqueue(ctx, id, {
+      op: 'issueCreate', args: { title: '棚卸しをする', body: '' },
+    });
+  }
+
+  it('戻ってきた命令は実行しない', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-dup');
+    ctx.processCommandQueue();
+
+    expect(ctx.issueList('')).toHaveLength(1);
+
+    // 同期で戻ってきた状況を作る
+    makeIssue(ctx, 'cmd-dup');
+    ctx.processCommandQueue();
+
+    expect(ctx.issueList('')).toHaveLength(1);
+  });
+
+  it('戻ってきたものは queue から外す', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-dup');
+    ctx.processCommandQueue();
+
+    makeIssue(ctx, 'cmd-dup');
+    ctx.processCommandQueue();
+
+    // 外さないと、毎回の起動で見に来ることになる
+    const left = [];
+    const it = ctx.commandQueueFolder_().getFiles();
+    while (it.hasNext()) left.push(it.next().getName());
+
+    expect(left.filter((n) => n === 'cmd-dup.cmd.json')).toEqual([]);
+  });
+
+  it('番号が違うものは別の命令として実行する', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-a');
+    makeIssue(ctx, 'cmd-b');
+    ctx.processCommandQueue();
+
+    // 二度実行を止めたつもりで、別の命令まで止めてはいけない
+    expect(ctx.issueList('')).toHaveLength(2);
+  });
+
+  it('結果を書く前に処理済みへ移す', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-order');
+
+    /*
+     * 逆にすると、結果を書いた直後に実行が打ち切られた場合 (6分の上限など)
+     * 命令が queue に残り、次の起動でもう一度走る。
+     */
+    const done = ctx.commandDoneFolder_();
+    const realCreate = ctx.commandQueueFolder_().createFile;
+    let movedFirst = false;
+
+    const queue = ctx.commandQueueFolder_();
+    queue.createFile = function (...a) {
+      movedFirst = done.getFilesByName('cmd-order.cmd.json').hasNext();
+      return realCreate.apply(queue, a);
+    };
+    ctx.commandQueueFolder_ = () => queue;
+
+    ctx.processCommandQueue();
+    expect(movedFirst).toBe(true);
+  });
+});

@@ -109,6 +109,24 @@ async function send(queueDir, op, args) {
 
   fs.writeFileSync(cmd, JSON.stringify({ op, args: args || {} }, null, 2));
 
+  /**
+   * 置いた命令を片付ける。
+   *
+   * **残すと、同じ命令が何度も実行される。** 向こう側は命令を処理済みの
+   * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
+   * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
+   * 番号違いで複数できた」という形で現れた。
+   *
+   * 消せなくても操作は成立しているので、投げない。
+   */
+  function forget() {
+    try {
+      if (fs.existsSync(cmd)) fs.unlinkSync(cmd);
+    } catch (e) {
+      process.stderr.write('命令のファイルを片付けられませんでした: ' + cmd + '\n');
+    }
+  }
+
   const until = Date.now() + WAIT_MS;
   while (Date.now() < until) {
     if (fs.existsSync(out)) {
@@ -117,6 +135,7 @@ async function send(queueDir, op, args) {
         const text = fs.readFileSync(out, 'utf8');
         const parsed = JSON.parse(text);
         fs.unlinkSync(out);
+        forget();
         return parsed;
       } catch (e) {
         // まだ書き終わっていない
@@ -124,6 +143,9 @@ async function send(queueDir, op, args) {
     }
     await new Promise((done) => setTimeout(done, POLL_MS));
   }
+
+  // 返らなかったときも片付ける。残すと、あとで拾われて一度だけ走る
+  forget();
 
   throw new Error(
     '結果が返りませんでした。向こう側で setupCommandQueue() を実行しているか、' +
