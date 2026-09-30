@@ -4496,6 +4496,91 @@ describe('どのワークスペースを見ているか', () => {
   });
 });
 
+describe('右のペインの幅', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /** やることを1つ開く */
+  function openOne(over) {
+    const app = mount(over);
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-open').click();
+    return app;
+  }
+
+  function handle() {
+    return document.getElementById('side-resizer');
+  }
+
+  it('掴んで動かせる', () => {
+    openOne();
+
+    // 360px 固定だと、補足や差分のように中身が長いものが縦に細長く伸び、
+    // 読むのに送り続けることになる
+    expect(handle().getAttribute('role')).toBe('separator');
+
+    handle().dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    const width = document.documentElement.style.getPropertyValue('--side-pane-w');
+
+    expect(width).not.toBe('');
+    expect(window.localStorage.getItem('sidePaneWidth'))
+      .toBe(parseInt(width, 10) + '');
+  });
+
+  it('二度押しで元の幅に戻せる', () => {
+    openOne();
+    handle().dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+
+    // 行き過ぎたときに戻す手立てが要る
+    handle().dispatchEvent(new window.MouseEvent('dblclick'));
+
+    expect(document.documentElement.style.getPropertyValue('--side-pane-w'))
+      .toBe('');
+    expect(window.localStorage.getItem('sidePaneWidth')).toBeNull();
+  });
+
+  it('掴み手はペインと一緒に出入りする', () => {
+    openOne();
+
+    // 片方だけ触ると、閉じているのに分け目の線だけが宙に残る
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    expect(handle().hidden).toBe(false);
+
+    document.getElementById('side-close').click();
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+    expect(handle().hidden).toBe(true);
+  });
+
+  it('入力を出すときにも掴み手が出る', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    expect(handle().hidden).toBe(true);
+
+    document.getElementById('issue-create-btn').click();
+    expect(handle().hidden).toBe(false);
+  });
+
+  it('広げられるのに縮まない形にしない', () => {
+    openOne();
+    const css = document.querySelector('style').textContent;
+    const rule = css.substring(css.indexOf('\n.side-panel {'));
+
+    // flex の既定 (min-width: auto) は中身より小さくならない
+    expect(rule.substring(0, rule.indexOf('}'))).toContain('min-width: 0');
+    expect(rule.substring(0, rule.indexOf('}')))
+      .toContain('flex: 0 0 var(--side-pane-w)');
+  });
+
+  it('狭い画面では掴ませない', () => {
+    openOne();
+    const css = document.querySelector('style').textContent;
+
+    // 縦積みになるため境界は掴めない
+    expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.resizer \{ display: none/);
+  });
+});
+
 describe('確認依頼を取り下げる', () => {
   beforeEach(() => { window.localStorage.clear(); });
 

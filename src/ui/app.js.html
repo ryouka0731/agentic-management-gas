@@ -112,6 +112,7 @@
   var guidelineToggle = document.getElementById('guideline-toggle');
   var guidelineBody = document.getElementById('guideline-body');
   var sidePanel = document.getElementById('side-panel');
+  var sideResizer = document.getElementById('side-resizer');
   var sideTitle = document.getElementById('side-title');
   var sideBody = document.getElementById('side-body');
   var sideClose = document.getElementById('side-close');
@@ -1505,10 +1506,24 @@
   }
 
   /**
+   * 右のペインを開くか閉じる。
+   *
+   * 掴み手 (resizer) はペインと同時に出し入れする。**片方だけ触ると、
+   * 閉じているのに分け目の線だけが宙に残る。** 以前は3か所で
+   * `sidePanel.hidden` を直に触っていたので、ここに寄せた。
+   *
+   * @param {boolean} open
+   */
+  function setSideOpen(open) {
+    sidePanel.hidden = !open;
+    sideResizer.hidden = !open;
+  }
+
+  /**
    * 右のパネルを閉じる。
    */
   function closeSide() {
-    sidePanel.hidden = true;
+    setSideOpen(false);
     sideBody.textContent = '';
     sideTitle.textContent = '';
     setSideEdit(null);
@@ -1553,7 +1568,7 @@
     setSideSource(sourceEl);
     sideBody.textContent = '';
     sideTitle.textContent = title;
-    sidePanel.hidden = false;
+    setSideOpen(true);
 
     var form = document.createElement('form');
     form.className = 'inline-form';
@@ -4682,7 +4697,7 @@
     setSideSource(sourceEl);
     sideBody.textContent = '';
     sideTitle.textContent = title;
-    sidePanel.hidden = false;
+    setSideOpen(true);
     setSideEdit(onEdit);
 
     var box = document.createElement('div');
@@ -9031,6 +9046,11 @@
 
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });
+
+  // 右端のペインなので、左へ引くほど広がる
+  makeResizable(sideResizer, '--side-pane-w', 'sidePaneWidth',
+    function (e) { return window.innerWidth - e.clientX; },
+    { min: 280, max: 900 });
 
   makeResizable(document.getElementById('pr-resizer'), '--pr-pane-w', 'prPaneWidth',
     function (e) {

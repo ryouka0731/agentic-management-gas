@@ -70,6 +70,8 @@
   --graph-pane-w: 46%;
   /* 確認依頼の一覧と中身の分け目 */
   --pr-pane-w: 38%;
+  /* 右のペインの幅。掴んで変えられる */
+  --side-pane-w: 360px;
   /* 報告の一覧と話の分け目 */
   --report-pane-w: 38%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
@@ -1970,8 +1972,18 @@ button.gantt-name:hover { color: var(--accent); }
  * 入力なのかが見えなくなる。右に出せば対象を見ながら書ける。
  * ===================================================================== */
 
+/*
+ * 右のペイン。
+ *
+ * 幅は掴んで変えられる。360px 固定だと、やることの補足や差分のように
+ * 中身が長いものが縦に細長く伸び、読むのに送り続けることになる。
+ *
+ * `min-width: 0` を書く。flex の既定 (`min-width: auto`) は中身より
+ * 小さくならないため、「広げられるのに縮まない」になる
+ */
 .side-panel {
-  flex: 0 0 360px;
+  flex: 0 0 var(--side-pane-w);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--line);
