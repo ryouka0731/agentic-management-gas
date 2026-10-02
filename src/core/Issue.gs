@@ -1,17 +1,3 @@
-/**
- * 次のIssue番号を返す。
- *
- * @returns {number}
- */
-function issueNextNumber_() {
-  var rows = dbReadAll('issues');
-  var max = 0;
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].number);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 優先度の語彙。
@@ -94,7 +80,6 @@ function issueCreate(title, body, linkedFileIds, labels) {
   }
 
   var row = {
-    number: issueNextNumber_(),
     title: title,
     body: body || '',
     state: 'open',
@@ -115,7 +100,7 @@ function issueCreate(title, body, linkedFileIds, labels) {
     updatedAt: new Date(),
   };
   tagAdopt(row.labels);
-  dbAppend('issues', row);
+  dbAppendNumbered('issues', 'number', row);
   return row;
 }
 
@@ -339,8 +324,58 @@ function issueRestore(number) {
  */
 function issuePurge(number) {
   issueGet(number);
-  dbDelete('issues', 'number', number);
-  dbDelete('project_items', 'issueNumber', number);
+
+  /*
+   * **ぶら下がっているものも全部消す。**
+   *
+   * 番号は「いま残っている中のいちばん大きい番号 + 1」で決まるので、消した
+   * 番号は next のやることに使い回される。やりとりや ToDo の結び付きを
+   * 残したままにすると、**新しいやることを開いたときに、前のやることの
+   * やりとりが付いてくる。**
+   *
+   * 知らせの行き先 (`issue:N`) も、消したものを指したまま残すと、押した人が
+   * 別のやることに連れて行かれる。
+   */
+  return dbWithLock_(30000, function () {
+    dbDelete('issues', 'number', number);
+    dbDelete('project_items', 'issueNumber', number);
+    dbDelete('issue_comments', 'issueNumber', number);
+    dbDelete('task_links', 'issueNumber', number);
+    issueUnlinkInquiries_(number);
+    issueDropNotices_(number);
+  });
+}
+
+/**
+ * 消したやることを指していた報告の結び付きを外す。
+ *
+ * 報告そのものは消さない。あちらは人が出したものであり、やることの
+ * 後始末で消えてよいものではない。
+ *
+ * @param {number} number
+ */
+function issueUnlinkInquiries_(number) {
+  var rows = dbReadAll('inquiries');
+
+  for (var i = 0; i < rows.length; i++) {
+    if (Number(rows[i].issueNumber) !== Number(number)) continue;
+    dbUpdate('inquiries', 'number', rows[i].number, { issueNumber: '' });
+  }
+}
+
+/**
+ * 消したやることを指していた知らせを落とす。
+ *
+ * @param {number} number
+ */
+function issueDropNotices_(number) {
+  var rows = dbReadAll('notifications');
+  var link = 'issue:' + number;
+
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].link) !== link) continue;
+    dbDelete('notifications', 'id', rows[i].id);
+  }
 }
 
 /**

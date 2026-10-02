@@ -54,21 +54,6 @@ function INQUIRY_TAGS() {
   };
 }
 
-/**
- * 次の受付番号を返す。
- *
- * @returns {number}
- */
-function inquiryNextNumber_() {
-  var rows = dbReadAll('inquiries');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].number);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 報告を受け付ける。
@@ -91,7 +76,6 @@ function inquiryCreate(kind, body, context, shots) {
   if (text.length > 2000) throw new Error('内容は2000文字までにしてください');
 
   var row = {
-    number: inquiryNextNumber_(),
     kind: key,
     title: inquiryTitleOf_(text),
     body: text,
@@ -105,7 +89,7 @@ function inquiryCreate(kind, body, context, shots) {
     shots: inquirySaveShots_(shots, 'report'),
     issueNumber: '',
   };
-  dbAppend('inquiries', row);
+  dbAppendNumbered('inquiries', 'number', row);
 
   var made = inquiryToIssue_(row);
   if (made) {
@@ -184,21 +168,6 @@ function inquiryGet(number) {
   return row;
 }
 
-/**
- * 次の返信の番号を返す。
- *
- * @returns {number}
- */
-function inquiryReplyNextId_() {
-  var rows = dbReadAll('inquiry_replies');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 報告に返信する。
@@ -220,7 +189,6 @@ function inquiryReply(number, body, shots) {
   if (text.length > 2000) throw new Error('内容は2000文字までにしてください');
 
   var row = {
-    id: inquiryReplyNextId_(),
     inquiryNumber: Number(number),
     body: text,
     by: Session.getActiveUser().getEmail(),
@@ -228,7 +196,7 @@ function inquiryReply(number, body, shots) {
     editedAt: '',
     shots: inquirySaveShots_(shots, 'reply-' + number),
   };
-  dbAppend('inquiry_replies', row);
+  dbAppendNumbered('inquiry_replies', 'id', row);
 
   var here = inquiryTalkers(number);
   notifyInquiryReply(inquiryGet(number), row, here);

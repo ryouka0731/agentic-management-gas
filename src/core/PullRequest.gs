@@ -1,17 +1,3 @@
-/**
- * 次のPR番号を採番する。
- *
- * @returns {number}
- */
-function prNextNumber_() {
-  var rows = dbReadAll('pulls');
-  var max = 0;
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].number);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * PR本文から対象ファイルのfileIdを取り出す。
@@ -140,7 +126,6 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
   }
 
   var row = {
-    number: prNextNumber_(),
     title: title,
     // 対象ファイルを本文の末尾に記録する。pulls シートに列を増やさずに
     // 対象を辿れるようにするための最小限の措置
@@ -153,7 +138,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     createdAt: new Date(),
     mergedAt: '',
   };
-  dbAppend('pulls', row);
+  dbAppendNumbered('pulls', 'number', row);
 
   // PR本文の closes #N に対応するカードを In Review に動かす。
   // 人が動かさなくても文書の状態変化がボードに反映される (spec §6.2)
@@ -342,10 +327,9 @@ function prReview(number, state, body) {
     body: body || '',
     at: new Date(),
     // 後から直したり消したりするには、1件を名指しできる必要がある
-    id: reviewNextId_(),
     editedAt: '',
   };
-  dbAppend('reviews', row);
+  dbAppendNumbered('reviews', 'id', row);
 
   // 確認依頼のやりとりでも名前を呼べるようにする。報告の場だけ呼べても、
   // 話しているのが別の場所ならすれ違う
@@ -535,173 +519,166 @@ function prPreviewAll(number) {
  * @returns {object} マージコミット行
  */
 function prMerge(number, choices) {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(60000)) {
-    throw new Error('他の処理が実行中です。しばらくしてから再試行してください');
-  }
+  return dbWithLock_(60000, function () {
+        var pr = prGet(number);
+        if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
+        if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
 
-  try {
-    var pr = prGet(number);
-    if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
-    if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
+        if (prApprovalCount(number) < 1) {
+          throw new Error('反映には1件以上の承認が必要です');
+        }
 
-    if (prApprovalCount(number) < 1) {
-      throw new Error('反映には1件以上の承認が必要です');
-    }
+        // main に未コミットの変更があるうちはマージしない。
+        // マージ結果はコミット済みのHEADを ours として計算されるため、
+        // 未コミットの編集はマージに参加できず、書き戻しで黙って
+        // 上書きされてしまう。git が dirty な作業ツリーでのマージを
+        // 拒むのと同じ理由による
+        var targets = prTargetFiles(pr);
 
-    // main に未コミットの変更があるうちはマージしない。
-    // マージ結果はコミット済みのHEADを ours として計算されるため、
-    // 未コミットの編集はマージに参加できず、書き戻しで黙って
-    // 上書きされてしまう。git が dirty な作業ツリーでのマージを
-    // 拒むのと同じ理由による
-    var targets = prTargetFiles(pr);
+        /*
+         * 文書が無く、コードの証跡だけの依頼もある。
+         *
+         * **その場合に断ってはいけない。** 断ると承認を記録する道が無くなり、
+         * 「読んで納得したのにどこにも残らない」ことになる。書き戻すものが
+         * 無いだけで、決めたこと自体は残す。
+         */
+        if (!targets.length && !prHasPatches(number)) {
+          throw new Error('PRの対象ファイルを特定できません');
+        }
 
-    /*
-     * 文書が無く、コードの証跡だけの依頼もある。
-     *
-     * **その場合に断ってはいけない。** 断ると承認を記録する道が無くなり、
-     * 「読んで納得したのにどこにも残らない」ことになる。書き戻すものが
-     * 無いだけで、決めたこと自体は残す。
-     */
-    if (!targets.length && !prHasPatches(number)) {
-      throw new Error('PRの対象ファイルを特定できません');
-    }
+        var into = prTargetBranch(pr);
+        var choiceMap = prChoiceMap_(choices, targets);
 
-    var into = prTargetBranch(pr);
-    var choiceMap = prChoiceMap_(choices, targets);
+        /*
+         * ここから先の順序を崩してはならない。
+         *
+         *   1. 全件のマージ結果を作り、全件が書き戻せることを確かめる
+         *   2. どれか1つでも駄目なら、何も変えずに中断する
+         *   3. そのあとで、まとめて書き戻す
+         *
+         * **1件ずつ「検証して書く」を繰り返してはいけない。** 3件目で落ちた
+         * とき、1件目と2件目だけ反映された状態が残り、確認を経ていない
+         * 中途半端な正式版ができる。戻す手立ても無い。
+         */
+        var plan = [];
 
-    /*
-     * ここから先の順序を崩してはならない。
-     *
-     *   1. 全件のマージ結果を作り、全件が書き戻せることを確かめる
-     *   2. どれか1つでも駄目なら、何も変えずに中断する
-     *   3. そのあとで、まとめて書き戻す
-     *
-     * **1件ずつ「検証して書く」を繰り返してはいけない。** 3件目で落ちた
-     * とき、1件目と2件目だけ反映された状態が残り、確認を経ていない
-     * 中途半端な正式版ができる。戻す手立ても無い。
-     */
-    var plan = [];
+        for (var t = 0; t < targets.length; t++) {
+          var mainRow = dbFindOne('files', 'fileId', targets[t]);
+          var path = mainRow ? branchSplitPath_(mainRow.path).path : targets[t];
+          var type = mainRow ? String(mainRow.type) : 'doc';
+          var intoFileId = prTargetBranchFileId(pr, targets[t]);
 
-    for (var t = 0; t < targets.length; t++) {
-      var mainRow = dbFindOne('files', 'fileId', targets[t]);
-      var path = mainRow ? branchSplitPath_(mainRow.path).path : targets[t];
-      var type = mainRow ? String(mainRow.type) : 'doc';
-      var intoFileId = prTargetBranchFileId(pr, targets[t]);
+          if (fileStatus(intoFileId, into).dirty) {
+            throw new Error(
+              '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
+              ' に記録していない変更があります。先にそちらを記録してから' +
+              '反映してください'
+            );
+          }
 
-      if (fileStatus(intoFileId, into).dirty) {
-        throw new Error(
-          '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
-          ' に記録していない変更があります。先にそちらを記録してから' +
-          '反映してください'
-        );
-      }
+          var preview = prPreviewMerge(number, targets[t]);
+          var lines = preview.clean
+            ? preview.lines
+            : resolveConflicts(
+                { lines: preview.lines, conflicts: preview.conflicts },
+                choiceMap[targets[t]] || []
+              );
 
-      var preview = prPreviewMerge(number, targets[t]);
-      var lines = preview.clean
-        ? preview.lines
-        : resolveConflicts(
-            { lines: preview.lines, conflicts: preview.conflicts },
-            choiceMap[targets[t]] || []
-          );
+          var mergedHtml = linesToHtml_(lines);
 
-      var mergedHtml = linesToHtml_(lines);
+          // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
+          var mergedBlocks = parseBlocks(mergedHtml);
+          var problems = (type === 'sheet')
+            ? sheetWriterValidate(mergedBlocks)
+            : htmlWriterValidate(mergedBlocks);
 
-      // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
-      var mergedBlocks = parseBlocks(mergedHtml);
-      var problems = (type === 'sheet')
-        ? sheetWriterValidate(mergedBlocks)
-        : htmlWriterValidate(mergedBlocks);
+          if (problems.length > 0) {
+            throw new Error(
+              path + ' のマージ結果を書き戻せません:\n' + problems.join('\n'));
+          }
 
-      if (problems.length > 0) {
-        throw new Error(
-          path + ' のマージ結果を書き戻せません:\n' + problems.join('\n'));
-      }
-
-      plan.push({
-        fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
-      });
-    }
-
-    var mergeCommit = null;
-
-    for (var k = 0; k < plan.length; k++) {
-      var step = plan[k];
-
-      // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
-      // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
-      // 通常は上の検査で弾かれるためここは通らない
-      if (fileStatus(step.fileId, into).dirty) {
-        commitFile(step.fileId, into, '確認依頼 #' + number + ' を反映する前の退避', null);
-      }
-
-      writeHtmlToFile(step.fileId, step.html, step.type);
-      liveCacheInvalidate(step.fileId);
-
-      mergeCommit = commitFile(
-        step.fileId,
-        into,
-        '反映: 確認依頼 #' + number + ' ' + pr.title,
-        null
-      );
-    }
-
-    dbUpdate('pulls', 'number', number, {
-      state: 'merged',
-      mergedAt: new Date(),
-    });
-    dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
-
-    /*
-     * **コードの証跡は書き戻さない。** この道具はコードの版管理をしない。
-     * ここで残るのは「読んで、進めてよいと決めた」記録だけで、実際に
-     * 入れるのは手元の git である。
-     *
-     * 押したら入っていると思わせないよう、画面の断りにもそう書いてある。
-     */
-
-    // closes #N のIssueを閉じ、カードを Done に動かす
-    var issues = prClosesIssues_(pr.body);
-    for (var i = 0; i < issues.length; i++) {
-      if (!dbFindOne('issues', 'number', issues[i])) continue;
-      issueClose(issues[i], number);
-      projectMoveIfExists_(issues[i], 'Done');
-    }
-
-    /*
-     * コードの証跡が添えられていたなら、手元に取り込みを頼む。
-     *
-     * **ここで自動的に取り込んではいけない。** この道具はコードを書き換え
-     * ないと決めてあるので、頼むところまでで止める。手元で人と Claude が
-     * 見て進める。
-     *
-     * 頼めなくてもマージは成立している。通知と同じく、失敗で巻き戻さない
-     */
-    if (prHasPatches(number)) {
-      try {
-        outboxAdd('merge',
-          { branch: String(pr.sourceBranch), into: String(into) },
-          {
-            prNumber: number,
-            note: '確認依頼 #' + number + '「' + pr.title +
-              '」が承認されました。コードの変更を取り込んでください。',
+          plan.push({
+            fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
           });
-      } catch (e) {
-        Logger.log('取り込みを頼めませんでした: ' + e.message);
-      }
-    }
+        }
 
-    notifyPrMerged(pr);
+        var mergeCommit = null;
 
-    // 文書が無い依頼では書き戻しが無いので記録も無い。呼ぶ側が形で
-    // 場合分けしないよう、何をしたのかを添えて返す
-    return mergeCommit || {
-      sha: '',
-      message: '承認を記録しました (コードの変更は手元で進めてください)',
-    };
-  } finally {
-    lock.releaseLock();
-  }
+        for (var k = 0; k < plan.length; k++) {
+          var step = plan[k];
+
+          // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
+          // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
+          // 通常は上の検査で弾かれるためここは通らない
+          if (fileStatus(step.fileId, into).dirty) {
+            commitFile(step.fileId, into, '確認依頼 #' + number + ' を反映する前の退避', null);
+          }
+
+          writeHtmlToFile(step.fileId, step.html, step.type);
+          liveCacheInvalidate(step.fileId);
+
+          mergeCommit = commitFile(
+            step.fileId,
+            into,
+            '反映: 確認依頼 #' + number + ' ' + pr.title,
+            null
+          );
+        }
+
+        dbUpdate('pulls', 'number', number, {
+          state: 'merged',
+          mergedAt: new Date(),
+        });
+        dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
+
+        /*
+         * **コードの証跡は書き戻さない。** この道具はコードの版管理をしない。
+         * ここで残るのは「読んで、進めてよいと決めた」記録だけで、実際に
+         * 入れるのは手元の git である。
+         *
+         * 押したら入っていると思わせないよう、画面の断りにもそう書いてある。
+         */
+
+        // closes #N のIssueを閉じ、カードを Done に動かす
+        var issues = prClosesIssues_(pr.body);
+        for (var i = 0; i < issues.length; i++) {
+          if (!dbFindOne('issues', 'number', issues[i])) continue;
+          issueClose(issues[i], number);
+          projectMoveIfExists_(issues[i], 'Done');
+        }
+
+        /*
+         * コードの証跡が添えられていたなら、手元に取り込みを頼む。
+         *
+         * **ここで自動的に取り込んではいけない。** この道具はコードを書き換え
+         * ないと決めてあるので、頼むところまでで止める。手元で人と Claude が
+         * 見て進める。
+         *
+         * 頼めなくてもマージは成立している。通知と同じく、失敗で巻き戻さない
+         */
+        if (prHasPatches(number)) {
+          try {
+            outboxAdd('merge',
+              { branch: String(pr.sourceBranch), into: String(into) },
+              {
+                prNumber: number,
+                note: '確認依頼 #' + number + '「' + pr.title +
+                  '」が承認されました。コードの変更を取り込んでください。',
+              });
+          } catch (e) {
+            Logger.log('取り込みを頼めませんでした: ' + e.message);
+          }
+        }
+
+        notifyPrMerged(pr);
+
+        // 文書が無い依頼では書き戻しが無いので記録も無い。呼ぶ側が形で
+        // 場合分けしないよう、何をしたのかを添えて返す
+        return mergeCommit || {
+          sha: '',
+          message: '承認を記録しました (コードの変更は手元で進めてください)',
+        };
+  });
 }
 
 /**
@@ -740,23 +717,6 @@ function reviewBackfillIds_() {
   return filled;
 }
 
-/**
- * 次のやりとりの番号を返す。
- *
- * @returns {number}
- */
-function reviewNextId_() {
-  reviewBackfillIds_();
-
-  var rows = dbReadAll('reviews');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * やりとりを1件返す。無ければエラー。

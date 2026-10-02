@@ -5,21 +5,6 @@
  * また一からやることになる。作業の場でそのまま話せるようにする。
  */
 
-/**
- * 次の番号を返す。
- *
- * @returns {number}
- */
-function issueCommentNextId_() {
-  var rows = dbReadAll('issue_comments');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * やりとりを1件返す。無ければエラー。
@@ -52,14 +37,13 @@ function issueCommentAdd(number, body) {
   if (text.length > 4000) throw new Error('内容は4000文字までにしてください');
 
   var row = {
-    id: issueCommentNextId_(),
     issueNumber: Number(number),
     body: text,
     by: Session.getActiveUser().getEmail(),
     at: new Date(),
     editedAt: '',
   };
-  dbAppend('issue_comments', row);
+  dbAppendNumbered('issue_comments', 'id', row);
 
   notifyIssueComment(issue, row, issueCommentAudience_(issue, row));
   notifyIssueCommentMention(issue, row, issueCommentCalled_(issue, text, row.by));

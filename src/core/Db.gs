@@ -102,6 +102,97 @@ function dbReadAll(table) {
 }
 
 /**
+ * いま鍵を持っている深さ。
+ *
+ * **入れ子で二度取りに行かないため。** コマンドキューは鍵を持ったまま命令を
+ * 実行し、その中で番号を採る。鍵を取り直す作りだと、取れるかどうかが
+ * LockService の入れ子の扱いに左右される。自分で数えて、持っているなら
+ * 取りに行かない。
+ */
+var dbLockDepth_ = 0;
+
+/**
+ * 台帳を書き換えるあいだ、他を待たせる。
+ *
+ * Web アプリと1分ごとのトリガーが同じ表に書くため、読んで決めて書く形は
+ * 鍵なしでは成立しない。
+ *
+ * @param {number} waitMs 待つ上限
+ * @param {function} fn 鍵を持って行うこと
+ * @param {function} [onBusy] 取れなかったときの返し。省略すると投げる
+ * @returns {*} fn の戻り
+ */
+function dbWithLock_(waitMs, fn, onBusy) {
+  if (dbLockDepth_ > 0) {
+    dbLockDepth_++;
+    try {
+      return fn();
+    } finally {
+      dbLockDepth_--;
+    }
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(waitMs)) {
+    if (onBusy) return onBusy();
+    throw new Error('混み合っています。少し待ってからもう一度お試しください');
+  }
+
+  dbLockDepth_++;
+  try {
+    return fn();
+  } finally {
+    dbLockDepth_--;
+    lock.releaseLock();
+  }
+}
+
+/**
+ * その列の次の番号を返す。
+ *
+ * **単独で呼ばない。** 読んだあと書くまでに他が割り込むと同じ番号になる。
+ * `dbAppendNumbered` から鍵の中で呼ぶ。
+ *
+ * @param {string} table
+ * @param {string} column
+ * @returns {number}
+ */
+function dbNextNumber_(table, column) {
+  var rows = dbReadAll(table);
+  var max = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var n = Number(rows[i][column]);
+    if (!isNaN(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+/**
+ * 番号を振って1行追記する。
+ *
+ * **番号を決めることと書くことを、1つの鍵の中で行う。** 分けると、ほぼ同時の
+ * 2件が同じ番号を取る。そうなると一覧に同じ番号のものが2つ並び、`dbFindOne`
+ * は先の1件しか返さないので、もう1件は見えるのに開けない幽霊になる。
+ *
+ * **番号は表ごとの通し番号にする。** 親ごとに振ると番号がかぶり、
+ * `dbUpdate` / `dbDelete` は列の値だけで行を探すため、関係のない親の行を
+ * 書き換えたり一緒に消したりする (実際に `pull_patches` で踏んだ)。
+ *
+ * @param {string} table
+ * @param {string} column 番号の列
+ * @param {object} row 番号以外を埋めた行
+ * @returns {object} 番号の入った行
+ */
+function dbAppendNumbered(table, column, row) {
+  return dbWithLock_(30000, function () {
+    row[column] = dbNextNumber_(table, column);
+    dbAppend(table, row);
+    return row;
+  });
+}
+
+/**
  * テーブルに1行追記する。スキーマに無いキーは無視される。
  *
  * @param {string} table

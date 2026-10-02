@@ -85,24 +85,6 @@ function outboxArgValid_(value) {
   return !/[\s\u0000-\u001f;&|`$<>(){}[\]'"\\!*?~#]/.test(text);
 }
 
-/**
- * 次の番号を返す。**通し番号にする。**
- *
- * 依頼ごとに振ると番号がかぶり、`dbUpdate` は id だけで行を探すため、
- * 関係のない頼みごとを書き換える。
- *
- * @returns {number}
- */
-function outboxNextId_() {
-  var rows = dbReadAll('outbox');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 頼みごとを置く。
@@ -135,7 +117,6 @@ function outboxAdd(verb, args, extra) {
 
   var options = extra || {};
   var row = {
-    id: outboxNextId_(),
     verb: want,
     args: JSON.stringify(kept),
     // 人が読む一言。手元の Claude にはこれが最初に届く
@@ -149,7 +130,7 @@ function outboxAdd(verb, args, extra) {
     doneAt: '',
     result: '',
   };
-  dbAppend('outbox', row);
+  dbAppendNumbered('outbox', 'id', row);
   return row;
 }
 
@@ -216,29 +197,23 @@ function outboxList(state) {
  */
 function outboxTake(limit) {
   var max = Math.max(1, Math.min(20, Number(limit) || 5));
-  var lock = LockService.getScriptLock();
-
   // 取る印を付ける前に他の手元が同じ行を読むと、二重に進む
-  if (!lock.tryLock(10000)) return [];
+  return dbWithLock_(10000, function () {
+        var rows = dbReadAll('outbox');
+        var me = Session.getActiveUser().getEmail();
+        var out = [];
 
-  try {
-    var rows = dbReadAll('outbox');
-    var me = Session.getActiveUser().getEmail();
-    var out = [];
+        for (var i = 0; i < rows.length && out.length < max; i++) {
+          if (String(rows[i].state) !== 'open') continue;
 
-    for (var i = 0; i < rows.length && out.length < max; i++) {
-      if (String(rows[i].state) !== 'open') continue;
+          var patch = { state: 'taken', takenAt: new Date(), takenBy: me };
+          dbUpdate('outbox', 'id', rows[i].id, patch);
 
-      var patch = { state: 'taken', takenAt: new Date(), takenBy: me };
-      dbUpdate('outbox', 'id', rows[i].id, patch);
-
-      var taken = dbFindOne('outbox', 'id', rows[i].id);
-      out.push(outboxToPlain_(taken));
-    }
-    return out;
-  } finally {
-    lock.releaseLock();
-  }
+          var taken = dbFindOne('outbox', 'id', rows[i].id);
+          out.push(outboxToPlain_(taken));
+        }
+        return out;
+  }, function () { return []; });
 }
 
 /**

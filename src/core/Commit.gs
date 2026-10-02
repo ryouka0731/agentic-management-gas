@@ -140,54 +140,47 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
     throw new Error('コミットメッセージを入力してください');
   }
 
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error('他の処理が実行中です。しばらくしてから再試行してください');
-  }
+  return dbWithLock_(30000, function () {
+        var head = headCommit(fileId, branch);
+        var headSha = head ? head.sha : null;
 
-  try {
-    var head = headCommit(fileId, branch);
-    var headSha = head ? head.sha : null;
+        if (expectedHeadSha !== undefined && expectedHeadSha !== null &&
+            expectedHeadSha !== '' &&
+            String(expectedHeadSha) !== String(headSha)) {
+          throw new Error(
+            'HEADが進んでいます。画面を再読み込みしてから再度コミットしてください'
+          );
+        }
 
-    if (expectedHeadSha !== undefined && expectedHeadSha !== null &&
-        expectedHeadSha !== '' &&
-        String(expectedHeadSha) !== String(headSha)) {
-      throw new Error(
-        'HEADが進んでいます。画面を再読み込みしてから再度コミットしてください'
-      );
-    }
+        var html = liveHtml(fileId);
+        var blobSha = sha256Hex(html);
 
-    var html = liveHtml(fileId);
-    var blobSha = sha256Hex(html);
+        if (head && String(head.blobSha) === blobSha) {
+          throw new Error('変更がありません');
+        }
 
-    if (head && String(head.blobSha) === blobSha) {
-      throw new Error('変更がありません');
-    }
+        objectPut(blobSha, html);
 
-    objectPut(blobSha, html);
+        var author = Session.getActiveUser().getEmail();
+        var timestamp = new Date();
+        var sha = commitSha_(headSha, blobSha, author, message, timestamp);
 
-    var author = Session.getActiveUser().getEmail();
-    var timestamp = new Date();
-    var sha = commitSha_(headSha, blobSha, author, message, timestamp);
+        var row = {
+          sha: sha,
+          parentSha: headSha || '',
+          branch: branch,
+          fileId: fileId,
+          blobSha: blobSha,
+          author: author,
+          message: message,
+          timestamp: timestamp,
+        };
+        dbAppend('commits', row);
 
-    var row = {
-      sha: sha,
-      parentSha: headSha || '',
-      branch: branch,
-      fileId: fileId,
-      blobSha: blobSha,
-      author: author,
-      message: message,
-      timestamp: timestamp,
-    };
-    dbAppend('commits', row);
+        if (dbFindOne('branches', 'name', branch)) {
+          dbUpdate('branches', 'name', branch, { headSha: sha });
+        }
 
-    if (dbFindOne('branches', 'name', branch)) {
-      dbUpdate('branches', 'name', branch, { headSha: sha });
-    }
-
-    return row;
-  } finally {
-    lock.releaseLock();
-  }
+        return row;
+  });
 }

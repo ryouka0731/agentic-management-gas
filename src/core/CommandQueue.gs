@@ -234,31 +234,27 @@ function commandAlreadyRan_(done, name) {
  * @returns {string} 処理件数の要約
  */
 function processCommandQueue() {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) return '他の処理が実行中です';
+  // 1分ごとに呼ばれるので、取れなければ次の回に回せばよい
+  return dbWithLock_(10000, function () {
+        var queue = commandQueueFolder_();
+        var done = commandDoneFolder_();
 
-  try {
-    var queue = commandQueueFolder_();
-    var done = commandDoneFolder_();
+        // イテレータを回しながらファイルを移動すると取りこぼす。
+        // 先に対象を集めてから処理する
+        var targets = [];
+        var it = queue.getFiles();
+        while (it.hasNext() && targets.length < COMMAND_QUEUE_BATCH()) {
+          var f = it.next();
+          if (/\.cmd\.json$/.test(f.getName())) targets.push(f);
+        }
 
-    // イテレータを回しながらファイルを移動すると取りこぼす。
-    // 先に対象を集めてから処理する
-    var targets = [];
-    var it = queue.getFiles();
-    while (it.hasNext() && targets.length < COMMAND_QUEUE_BATCH()) {
-      var f = it.next();
-      if (/\.cmd\.json$/.test(f.getName())) targets.push(f);
-    }
+        for (var i = 0; i < targets.length; i++) {
+          runCommandFile_(targets[i], queue, done);
+        }
 
-    for (var i = 0; i < targets.length; i++) {
-      runCommandFile_(targets[i], queue, done);
-    }
+        // 置き場の片付けもここに相乗りさせる (1日1回で自分でせき止める)
+        if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
 
-    // 置き場の片付けもここに相乗りさせる (1日1回で自分でせき止める)
-    if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
-
-    return targets.length + '件処理しました';
-  } finally {
-    lock.releaseLock();
-  }
+        return targets.length + '件処理しました';
+  }, function () { return '他の処理が実行中です'; });
 }

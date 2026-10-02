@@ -39,21 +39,6 @@ function notifySubject_(what, number, happened) {
   return '[' + APP_NAME() + '] ' + what + ' #' + number + ' ' + happened;
 }
 
-/**
- * 次の知らせの番号を返す。
- *
- * @returns {number}
- */
-function noticeNextId_() {
-  var rows = dbReadAll('notifications');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 画面の中に知らせを残す。
@@ -72,7 +57,6 @@ function noticeAdd(to, kind, title, body, link) {
   if (!to) return null;
 
   var row = {
-    id: noticeNextId_(),
     to: String(to),
     kind: String(kind || ''),
     title: String(title || '').substring(0, 200),
@@ -81,7 +65,7 @@ function noticeAdd(to, kind, title, body, link) {
     at: new Date(),
     readAt: '',
   };
-  dbAppend('notifications', row);
+  dbAppendNumbered('notifications', 'id', row);
   return row;
 }
 

@@ -80,84 +80,80 @@ function usageRecord(rows) {
 
   if (list.length > USAGE_MAX_KEYS()) list = list.slice(0, USAGE_MAX_KEYS());
 
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return 0;
+  // 数えられなくても操作は続けられる。取れなければ諦める
+  return dbWithLock_(5000, function () {
+        var cols = DB_SCHEMA().usage;
+        var sheet = dbSheet_('usage');
+        var last = sheet.getLastRow();
 
-  try {
-    var cols = DB_SCHEMA().usage;
-    var sheet = dbSheet_('usage');
-    var last = sheet.getLastRow();
+        var values = last > 1
+          ? sheet.getRange(2, 1, last - 1, cols.length).getValues() : [];
 
-    var values = last > 1
-      ? sheet.getRange(2, 1, last - 1, cols.length).getValues() : [];
+        // 押した人は画面から受け取らない。名乗りを詐称できてしまう
+        var me = Session.getActiveUser().getEmail();
+        var day = usageDay();
 
-    // 押した人は画面から受け取らない。名乗りを詐称できてしまう
-    var me = Session.getActiveUser().getEmail();
-    var day = usageDay();
+        // 古いぶんは落としてから足し込む。落とさないと丸ごとの読み書きが
+        // 際限なく重くなる
+        var kept = usageWithinKeep_(values, day);
+        var dropped = values.length - kept.length;
+        values = kept;
 
-    // 古いぶんは落としてから足し込む。落とさないと丸ごとの読み書きが
-    // 際限なく重くなる
-    var kept = usageWithinKeep_(values, day);
-    var dropped = values.length - kept.length;
-    values = kept;
+        var at = {};
+        for (var r = 0; r < values.length; r++) {
+          at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2] +
+            '\t' + values[r][4]] = r;
+        }
 
-    var at = {};
-    for (var r = 0; r < values.length; r++) {
-      at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2] +
-        '\t' + values[r][4]] = r;
-    }
+        var kinds = USAGE_KINDS();
+        var added = [];
 
-    var kinds = USAGE_KINDS();
-    var added = [];
+        // 同じまとめの中に同じ場所が2度入ることがある。**足し先を values の
+        // 長さから数えると、まだ書いていない行を指してしまう。** 以前は
+        // `values[at[key]]` が undefined になって例外で終わり、そのまとめの
+        // ぶんが黙って失われていた
+        var addedAt = {};
+        var touched = dropped > 0;
+        var done = 0;
 
-    // 同じまとめの中に同じ場所が2度入ることがある。**足し先を values の
-    // 長さから数えると、まだ書いていない行を指してしまう。** 以前は
-    // `values[at[key]]` が undefined になって例外で終わり、そのまとめの
-    // ぶんが黙って失われていた
-    var addedAt = {};
-    var touched = dropped > 0;
-    var done = 0;
+        for (var i = 0; i < list.length; i++) {
+          var kind = String(list[i].kind || '');
+          var target = String(list[i].target || '');
+          var count = Math.round(Number(list[i].count) || 0);
 
-    for (var i = 0; i < list.length; i++) {
-      var kind = String(list[i].kind || '');
-      var target = String(list[i].target || '');
-      var count = Math.round(Number(list[i].count) || 0);
+          if (kinds.indexOf(kind) < 0) continue;
+          if (!usageTargetValid_(target)) continue;
+          if (count < 1 || count > 10000) continue;
 
-      if (kinds.indexOf(kind) < 0) continue;
-      if (!usageTargetValid_(target)) continue;
-      if (count < 1 || count > 10000) continue;
+          var key = day + '\t' + kind + '\t' + target + '\t' + me;
 
-      var key = day + '\t' + kind + '\t' + target + '\t' + me;
+          if (Object.prototype.hasOwnProperty.call(at, key)) {
+            values[at[key]][3] = (Number(values[at[key]][3]) || 0) + count;
+            touched = true;
+          } else if (Object.prototype.hasOwnProperty.call(addedAt, key)) {
+            added[addedAt[key]][3] = (Number(added[addedAt[key]][3]) || 0) + count;
+          } else {
+            addedAt[key] = added.length;
+            added.push([day, kind, target, count, me]);
+          }
+          done++;
+        }
 
-      if (Object.prototype.hasOwnProperty.call(at, key)) {
-        values[at[key]][3] = (Number(values[at[key]][3]) || 0) + count;
-        touched = true;
-      } else if (Object.prototype.hasOwnProperty.call(addedAt, key)) {
-        added[addedAt[key]][3] = (Number(added[addedAt[key]][3]) || 0) + count;
-      } else {
-        addedAt[key] = added.length;
-        added.push([day, kind, target, count, me]);
-      }
-      done++;
-    }
+        if (touched && values.length) {
+          sheet.getRange(2, 1, values.length, cols.length).setValues(values);
+        }
+        if (added.length) {
+          sheet.getRange(values.length + 2, 1, added.length, cols.length)
+            .setValues(added);
+        }
 
-    if (touched && values.length) {
-      sheet.getRange(2, 1, values.length, cols.length).setValues(values);
-    }
-    if (added.length) {
-      sheet.getRange(values.length + 2, 1, added.length, cols.length)
-        .setValues(added);
-    }
-
-    // 落としたぶんだけ行が余る。消さないと、書き戻した中身の下に
-    // 古い行が残ったままになる
-    for (var d = 0; d < dropped; d++) {
-      sheet.deleteRow(values.length + added.length + 2);
-    }
-    return done;
-  } finally {
-    lock.releaseLock();
-  }
+        // 落としたぶんだけ行が余る。消さないと、書き戻した中身の下に
+        // 古い行が残ったままになる
+        for (var d = 0; d < dropped; d++) {
+          sheet.deleteRow(values.length + added.length + 2);
+        }
+        return done;
+  }, function () { return 0; });
 }
 
 /**

@@ -40,25 +40,6 @@ function PATCH_MAX_CHARS() {
   return 200000;
 }
 
-/**
- * 次の番号を返す。
- *
- * **依頼ごとではなく通し番号にする。** 依頼ごとに振ると別の依頼と番号が
- * かぶり、`dbUpdate` / `dbDelete` が id だけで行を探すため、関係のない
- * 依頼の証跡を書き換えたり一緒に消したりする。
- *
- * @returns {number}
- */
-function patchNextId_() {
-  var rows = dbReadAll('pull_patches');
-  var max = 0;
-
-  for (var i = 0; i < rows.length; i++) {
-    var n = Number(rows[i].id);
-    if (n > max) max = n;
-  }
-  return max + 1;
-}
 
 /**
  * 足した行と消した行を数える。
@@ -122,36 +103,45 @@ function prPatchAdd(prNumber, path, text) {
       '差分が大きすぎます (' + PATCH_MAX_CHARS() + '字まで): ' + want);
   }
 
-  var mine = prPatchRows(prNumber);
-  var found = null;
-
-  for (var i = 0; i < mine.length; i++) {
-    if (String(mine[i].path) === want) found = mine[i];
-  }
-  if (!found && mine.length >= PATCH_MAX_FILES()) {
-    throw new Error(
-      '1つの依頼に添えられるのは' + PATCH_MAX_FILES() + '件までです');
-  }
-
   var sha = sha256Hex(body);
   if (!objectExists(sha)) objectPut(sha, body);
 
   var stat = patchCount_(body);
-  var row = {
-    prNumber: Number(prNumber),
-    id: found ? Number(found.id) : patchNextId_(),
-    path: want,
-    blobSha: sha,
-    added: stat.added,
-    removed: stat.removed,
-    at: new Date(),
-    by: Session.getActiveUser().getEmail(),
-  };
 
-  if (found) dbUpdate('pull_patches', 'id', row.id, row);
-  else dbAppend('pull_patches', row);
+  /*
+   * **「あるかどうか見る」から「書く」までを1つの鍵の中で行う。**
+   *
+   * 分けると、ほぼ同時の2件が「どちらも無い」と読んで両方追加し、同じ
+   * 道のりの証跡が2つ並ぶ。読む人には同じ差分が2回出る。
+   */
+  return dbWithLock_(30000, function () {
+    var mine = prPatchRows(prNumber);
+    var found = null;
 
-  return row;
+    for (var i = 0; i < mine.length; i++) {
+      if (String(mine[i].path) === want) found = mine[i];
+    }
+    if (!found && mine.length >= PATCH_MAX_FILES()) {
+      throw new Error(
+        '1つの依頼に添えられるのは' + PATCH_MAX_FILES() + '件までです');
+    }
+
+    var row = {
+      prNumber: Number(prNumber),
+      path: want,
+      blobSha: sha,
+      added: stat.added,
+      removed: stat.removed,
+      at: new Date(),
+      by: Session.getActiveUser().getEmail(),
+    };
+
+    if (!found) return dbAppendNumbered('pull_patches', 'id', row);
+
+    row.id = Number(found.id);
+    dbUpdate('pull_patches', 'id', row.id, row);
+    return row;
+  });
 }
 
 /**
