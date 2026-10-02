@@ -148,10 +148,34 @@ function dbWithLock_(waitMs, fn, onBusy) {
 }
 
 /**
+ * これまでに出した番号の覚え書きの鍵。
+ *
+ * @param {string} table
+ * @param {string} column
+ * @returns {string}
+ */
+function dbHighKey_(table, column) {
+  return 'DB_HIGH_' + table + '_' + column;
+}
+
+/**
  * その列の次の番号を返す。
  *
  * **単独で呼ばない。** 読んだあと書くまでに他が割り込むと同じ番号になる。
  * `dbAppendNumbered` から鍵の中で呼ぶ。
+ *
+ * ## 一度出した番号は二度出さない
+ *
+ * 表の中のいちばん大きい番号だけを見ていると、**消した番号が次のものに
+ * 回る。** 行を消しても、それを指しているものは他に残る。
+ *
+ * 確認依頼の本文の `closes #7` がその例である。#7 を捨てて完全に消し、
+ * 無関係な新しいやることが #7 を受け取ると、その確認依頼を反映した時点で
+ * **身に覚えのないやることが完了になる。** 本文を書き換えて回る手もあるが、
+ * 指している先は本文だけとは限らない。
+ *
+ * だから出した番号を覚えておき、表が空になっても戻さない。覚え書きが
+ * 失われても、表の中の最大値より小さくはならないので、壊れはしない。
  *
  * @param {string} table
  * @param {string} column
@@ -165,7 +189,15 @@ function dbNextNumber_(table, column) {
     var n = Number(rows[i][column]);
     if (!isNaN(n) && n > max) max = n;
   }
-  return max + 1;
+
+  var props = PropertiesService.getScriptProperties();
+  var key = dbHighKey_(table, column);
+  var high = Number(props.getProperty(key));
+  if (!isNaN(high) && high > max) max = high;
+
+  var next = max + 1;
+  props.setProperty(key, String(next));
+  return next;
 }
 
 /**

@@ -81,17 +81,26 @@ function projectPlace(issueNumber, column) {
   projectAssertColumn_(column);
   issueGet(issueNumber);
 
-  var existing = dbFindOne('project_items', 'issueNumber', issueNumber);
-  if (existing) return existing;
+  /*
+   * **あるかどうか見るところから書くまでを、1つの鍵の中で行う。**
+   *
+   * 分けると、ほぼ同時の2件が「まだ無い」と読んで両方置く。板に同じカードが
+   * 2枚並び、`projectMove` は `issueNumber` で探して先の1枚だけ動かすので、
+   * もう1枚は元の列に残って画面から外す道が無くなる。
+   */
+  return dbWithLock_(30000, function () {
+    var existing = dbFindOne('project_items', 'issueNumber', issueNumber);
+    if (existing) return existing;
 
-  var board = projectBoard();
-  var row = {
-    issueNumber: issueNumber,
-    column: column,
-    order: board[column].length,
-  };
-  dbAppend('project_items', row);
-  return row;
+    var board = projectBoard();
+    var row = {
+      issueNumber: issueNumber,
+      column: column,
+      order: board[column].length,
+    };
+    dbAppend('project_items', row);
+    return row;
+  });
 }
 
 /**

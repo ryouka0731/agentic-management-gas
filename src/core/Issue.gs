@@ -337,12 +337,20 @@ function issuePurge(number) {
    * 別のやることに連れて行かれる。
    */
   return dbWithLock_(30000, function () {
-    dbDelete('issues', 'number', number);
+    /*
+     * **やることの行は最後に消す。**
+     *
+     * 先に消すと、途中で落ちたとき (表の書き込みの失敗、6分の上限、手で
+     * 空にされた id を `dbDelete` が拒む等) ぶら下がりだけが残り、
+     * `issueGet` が通らなくなって**もう一度片付けることができない**。
+     * 最後にすれば、落ちてもやり直せる。
+     */
     dbDelete('project_items', 'issueNumber', number);
     dbDelete('issue_comments', 'issueNumber', number);
     dbDelete('task_links', 'issueNumber', number);
     issueUnlinkInquiries_(number);
     issueDropNotices_(number);
+    dbDelete('issues', 'number', number);
   });
 }
 
@@ -374,6 +382,11 @@ function issueDropNotices_(number) {
 
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].link) !== link) continue;
+
+    // 手で空にされた id があると dbDelete が拒む。1件のために片付け全体を
+    // 止めない
+    if (String(rows[i].id || '') === '') continue;
+
     dbDelete('notifications', 'id', rows[i].id);
   }
 }

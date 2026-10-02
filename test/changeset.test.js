@@ -410,6 +410,20 @@ describe('コードの変更を確認依頼に添える', () => {
     expect(ctx.prPatches(pr2.number)).toHaveLength(1);
   });
 
+  it('断ったら中身を置き去りにしない', () => {
+    const { ctx, fake, a } = setup();
+    const pr = withPr(ctx, fake, a);
+
+    // 先に置くと、どこからも参照されない中身が残る
+    const before = ctx.dbReadAll('pull_patches').length;
+    ctx.PATCH_MAX_FILES = () => 0;
+
+    expect(() => ctx.prPatchAdd(pr.number, 'src/x.js', DIFF))
+      .toThrow('件までです');
+    expect(ctx.dbReadAll('pull_patches')).toHaveLength(before);
+    expect(ctx.objectExists(ctx.sha256Hex(DIFF))).toBe(false);
+  });
+
   it('空の差分は受け取らない', () => {
     const { ctx, fake, a } = setup();
     const pr = withPr(ctx, fake, a);

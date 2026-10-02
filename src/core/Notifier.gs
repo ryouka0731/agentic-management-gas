@@ -65,7 +65,22 @@ function noticeAdd(to, kind, title, body, link) {
     at: new Date(),
     readAt: '',
   };
-  dbAppendNumbered('notifications', 'id', row);
+  /*
+   * **知らせを残せなくても、本処理は巻き戻さない。**
+   *
+   * 番号を振るようになった結果、混み合うと投げるようになった。やりとりは
+   * 先に保存され、そのあとで知らせを置くため、ここで投げると「書き込みは
+   * 済んでいるのに失敗と出る」。人はもう一度書き込み、同じやりとりが2つ
+   * 並ぶ。宛先が何人かいれば、途中までは届いて残りは届かない。
+   *
+   * すぐ上の `notify` も同じ理由で例外を握っている。
+   */
+  try {
+    dbAppendNumbered('notifications', 'id', row);
+  } catch (e) {
+    Logger.log('知らせを残せませんでした: ' + e.message);
+    return null;
+  }
   return row;
 }
 

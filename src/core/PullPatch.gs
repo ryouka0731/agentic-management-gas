@@ -104,8 +104,6 @@ function prPatchAdd(prNumber, path, text) {
   }
 
   var sha = sha256Hex(body);
-  if (!objectExists(sha)) objectPut(sha, body);
-
   var stat = patchCount_(body);
 
   /*
@@ -125,6 +123,10 @@ function prPatchAdd(prNumber, path, text) {
       throw new Error(
         '1つの依頼に添えられるのは' + PATCH_MAX_FILES() + '件までです');
     }
+
+    // 中身を置くのは検査を通ってから。先に置くと、上限で断ったときや鍵が
+    // 取れなかったときに、どこからも参照されない中身が残る
+    if (!objectExists(sha)) objectPut(sha, body);
 
     var row = {
       prNumber: Number(prNumber),

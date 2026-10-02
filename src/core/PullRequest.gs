@@ -690,6 +690,23 @@ function prMerge(number, choices) {
  * @returns {number} 埋めた件数
  */
 function reviewBackfillIds_() {
+  /*
+   * **読んで決めて書くので、鍵の中で行う。**
+   *
+   * これは確認依頼を開くたびに走る。2人が同じ依頼を同時に開くと、どちらも
+   * 同じ `max` を読んで、別の空欄に同じ番号を振る。あとから書いたほうが
+   * 先のぶんを上書きするため、やりとりを1つ直したつもりで別のものが変わり、
+   * 1つ消したつもりで2つ消える。
+   */
+  return dbWithLock_(30000, reviewBackfillIdsLocked_, function () { return 0; });
+}
+
+/**
+ * 空欄の id を埋める本体。鍵を持った状態で呼ばれる。
+ *
+ * @returns {number} 埋めた数
+ */
+function reviewBackfillIdsLocked_() {
   var cols = DB_SCHEMA().reviews;
   var sheet = dbSheet_('reviews');
   var last = sheet.getLastRow();
