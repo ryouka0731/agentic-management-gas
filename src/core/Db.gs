@@ -266,6 +266,20 @@ function dbFindOne(table, key, value) {
  * @returns {boolean} 更新した行があれば true
  */
 function dbUpdate(table, key, value, patch) {
+  /*
+   * **読んだ位置へ書くので、鍵の中で行う。** dbDelete は行を詰める。並んで
+   * 走ると、読んでから書くまでに上の行が消され、1行ずれた別の行を丸ごと
+   * 上書きする。上書きされた行は黙って失われる。
+   */
+  return dbWithLock_(30000, function () {
+    return dbUpdateLocked_(table, key, value, patch);
+  });
+}
+
+/**
+ * dbUpdate の本体。鍵を持った状態で呼ばれる。
+ */
+function dbUpdateLocked_(table, key, value, patch) {
   var cols = DB_SCHEMA()[table];
   var sheet = dbSheet_(table);
   var last = sheet.getLastRow();
@@ -306,6 +320,16 @@ function dbDelete(table, key, value) {
     throw new Error('削除条件の値が空です: ' + table + '.' + key);
   }
 
+  // 行を詰めるので、dbUpdate と同じく鍵の中で行う
+  return dbWithLock_(30000, function () {
+    return dbDeleteLocked_(table, key, value);
+  });
+}
+
+/**
+ * dbDelete の本体。鍵を持った状態で呼ばれる。
+ */
+function dbDeleteLocked_(table, key, value) {
   var cols = DB_SCHEMA()[table];
   var sheet = dbSheet_(table);
   var last = sheet.getLastRow();

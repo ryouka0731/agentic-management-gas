@@ -371,6 +371,79 @@ describe('カードは二重に置かない', () => {
   });
 });
 
+describe('行を直すのも消すのも鍵の中', () => {
+  /*
+   * dbUpdate は読んだ時点の行の位置へ書き、dbDelete は行を詰める。鍵の外で
+   * 並ぶと、読んでから書くまでに上の行が消され、**1行ずれた別の行を丸ごと
+   * 上書きする。** 上書きされた行は黙って失われる。
+   */
+  function watch(ctx, fake) {
+    let held = false;
+    const seen = [];
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => { held = true; return true; },
+      releaseLock: () => { held = false; },
+    });
+
+    const bind = (o, k) => (typeof o[k] === 'function' ? o[k].bind(o) : o[k]);
+    const realSheet = ctx.dbSheet_;
+    ctx.dbSheet_ = (table) => new Proxy(realSheet(table), {
+      get(sheet, k) {
+        if (k === 'deleteRow') {
+          return (r) => { seen.push(held); return sheet.deleteRow(r); };
+        }
+        if (k !== 'getRange') return bind(sheet, k);
+
+        return (...a) => new Proxy(sheet.getRange(...a), {
+          get(range, kk) {
+            if (kk === 'getValues' || kk === 'setValues') {
+              return (...b) => { seen.push(held); return range[kk](...b); };
+            }
+            return bind(range, kk);
+          },
+        });
+      },
+    });
+    return seen;
+  }
+
+  it('dbUpdate は読むところから書くところまで鍵を持つ', () => {
+    const { ctx, fake } = setup();
+    const made = ctx.issueCreate('やること', '', [], '');
+    const seen = watch(ctx, fake);
+
+    ctx.dbUpdate('issues', 'number', made.number, { title: '直した' });
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true);
+  });
+
+  it('dbDelete は読むところから消すところまで鍵を持つ', () => {
+    const { ctx, fake } = setup();
+    const made = ctx.issueCreate('やること', '', [], '');
+    const seen = watch(ctx, fake);
+
+    ctx.dbDelete('issues', 'number', made.number);
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true);
+  });
+
+  it('鍵が取れなければ書き換えない', () => {
+    const { ctx, fake } = setup();
+    const made = ctx.issueCreate('やること', '', [], '');
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => false, releaseLock: () => {},
+    });
+
+    expect(() => ctx.dbUpdate('issues', 'number', made.number, { title: 'x' }))
+      .toThrow('混み合っています');
+    expect(() => ctx.dbDelete('issues', 'number', made.number))
+      .toThrow('混み合っています');
+    expect(ctx.issueGet(made.number).title).toBe('やること');
+  });
+});
+
 describe('鍵は1か所でしか取らない', () => {
   it('LockService を直に呼ぶのは Db.gs だけ', () => {
     /*
