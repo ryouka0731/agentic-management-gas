@@ -357,6 +357,21 @@ describe('画像を添える', () => {
     expect(() => ctx.inquiryCreate('bug', '本文', '', [huge])).toThrow(/5MB/);
   });
 
+  it('どれか1枚でも断ったら、1枚も置かない', () => {
+    const { ctx } = setup();
+    const bad = 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+
+    // 1枚ずつ検査して作ると、3枚目で断ったとき1-2枚目がどこからも指されない
+    // まま shots/ に残る
+    expect(() => ctx.inquiryCreate('bug', '本文', '', [PNG, PNG, bad]))
+      .toThrow(/受け取れない形式/);
+
+    const it2 = ctx.inquiryShotsFolder_().getFiles();
+    let count = 0;
+    while (it2.hasNext()) { it2.next(); count++; }
+    expect(count).toBe(0);
+  });
+
   it('添えなくても送れる', () => {
     const { ctx } = setup();
     expect(ctx.inquiryShotsOf(ctx.inquiryCreate('bug', '本文'))).toEqual([]);

@@ -405,9 +405,9 @@ function inquirySaveShots_(dataUrls, tag) {
     throw new Error('画像は' + limits.maxCount + '枚までにしてください');
   }
 
-  var folder = inquiryShotsFolder_();
-  var ids = [];
-
+  // 全部を検査してから置く。1枚ずつ検査して置くと、途中で断ったとき
+  // 先の画像がどこからも指されないまま shots/ に残る
+  var parsed = [];
   for (var i = 0; i < list.length; i++) {
     var m = /^data:([a-z\/+-]+);base64,([\s\S]+)$/.exec(String(list[i] || ''));
     if (!m) throw new Error('画像として読めませんでした');
@@ -419,9 +419,16 @@ function inquirySaveShots_(dataUrls, tag) {
     if (m[2].length * 3 / 4 > limits.maxBytes) {
       throw new Error('画像は1枚5MBまでにしてください');
     }
+    parsed.push({ mime: m[1], data: m[2], ext: ext });
+  }
 
+  var folder = inquiryShotsFolder_();
+  var ids = [];
+
+  for (var k = 0; k < parsed.length; k++) {
     var blob = Utilities.newBlob(
-      Utilities.base64Decode(m[2]), m[1], tag + '-' + (i + 1) + '.' + ext);
+      Utilities.base64Decode(parsed[k].data), parsed[k].mime,
+      tag + '-' + (k + 1) + '.' + parsed[k].ext);
     ids.push(folder.createFile(blob).getId());
   }
   return ids.join(',');
