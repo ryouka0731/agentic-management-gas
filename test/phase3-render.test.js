@@ -224,3 +224,76 @@ describe('種別ごとの分岐', () => {
     expect(ctx.renderSheet(ss.getId())).toContain('<td>b</td>');
   });
 });
+
+describe('liveHtml のキャッシュ', () => {
+  /*
+   * CacheService は1つの値を100KBまでしか持てない。区切りを字数で決めて
+   * いると、日本語 (UTF-8 で1字3バイト) では上限を超え、置けずに投げる。
+   * キャッシュは速くするためのものなので、置けなくても文書は読めなければ
+   * ならない。
+   */
+  function withCache(fake, opts) {
+    const store = new Map();
+    const bytes = (s) => Buffer.byteLength(String(s), 'utf8');
+    fake.CacheService = {
+      getScriptCache: () => ({
+        get: (k) => (store.has(k) ? store.get(k) : null),
+        getAll: (keys) => Object.fromEntries(keys.filter((k) => store.has(k)).map((k) => [k, store.get(k)])),
+        putAll: (obj) => {
+          if (opts && opts.broken) throw new Error('Service invoked too many times');
+          for (const [k, v] of Object.entries(obj)) {
+            if (bytes(v) > 100 * 1024) throw new Error('Argument too large: value');
+          }
+          for (const [k, v] of Object.entries(obj)) store.set(k, v);
+        },
+        removeAll: (keys) => keys.forEach((k) => store.delete(k)),
+      }),
+    };
+    return store;
+  }
+
+  function ready(opts) {
+    const fake = createFakeGas();
+    const store = withCache(fake, opts);
+    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs',
+      'src/core/Db.gs', 'src/core/Repo.gs', 'src/core/Normalize.js',
+      'src/render/LiveCache.gs');
+    const config = ctx.repoInit('agentic-management');
+    const id = fake._createDoc('就業規則', '', config.mainId);
+    ctx.repoRegisterFile(id, '就業規則.doc');
+
+    const big = '<p>' + 'あ'.repeat(60000) + '</p>\n';
+    let renders = 0;
+    ctx.renderDoc = () => { renders++; return big; };
+    return { ctx, id, big, store, renders: () => renders };
+  }
+
+  it('日本語の大きな文書でも読めて、2回目はキャッシュから返す', () => {
+    const { ctx, id, big, renders } = ready();
+
+    expect(ctx.liveHtml(id)).toBe(big);
+    expect(ctx.liveHtml(id)).toBe(big);
+    expect(renders()).toBe(1);
+  });
+
+  it('絵文字の途中で区切らない', () => {
+    const { ctx, store } = ready();
+    const size = ctx.CACHE_CHUNK_SIZE();
+    // ちょうど区切りの位置にサロゲートペアがまたがるようにする
+    const html = 'a'.repeat(size - 1) + '😀' + 'b'.repeat(10);
+    ctx.liveCachePut_('k', html);
+
+    for (const [key, v] of store) {
+      if (key === 'k:meta') continue;
+      const last = v.charCodeAt(v.length - 1);
+      expect(last >= 0xD800 && last <= 0xDBFF).toBe(false);
+    }
+    expect(ctx.liveCacheGet_('k')).toBe(html);
+  });
+
+  it('キャッシュが使えなくても読める', () => {
+    const { ctx, id, big } = ready({ broken: true });
+
+    expect(ctx.liveHtml(id)).toBe(big);
+  });
+});

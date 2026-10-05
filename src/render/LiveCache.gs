@@ -1,12 +1,14 @@
 /**
- * CacheServiceの1キーあたりの安全なサイズ上限(バイト)。
- * 公称100KBだが、UTF-8マルチバイトとキー自体のオーバーヘッドを考慮して
- * 余裕を持たせる。
+ * CacheServiceの1キーあたりに置く**字数**。
+ *
+ * 上限は1つの値につき100KB (バイト) である。区切りは字数で数えるので、
+ * 1字が最大3バイトになる日本語で上限に収まる数にする。以前は 80K 字で
+ * 区切っていて、日本語では約240KBになり、置けずに投げていた。
  *
  * @returns {number}
  */
 function CACHE_CHUNK_SIZE() {
-  return 80 * 1024;
+  return 25 * 1024;
 }
 
 /**
@@ -39,8 +41,14 @@ function liveCachePut_(prefix, html) {
   var cache = CacheService.getScriptCache();
   var size = CACHE_CHUNK_SIZE();
   var chunks = [];
-  for (var i = 0; i < html.length; i += size) {
-    chunks.push(html.substring(i, i + size));
+  for (var i = 0; i < html.length; ) {
+    var end = Math.min(html.length, i + size);
+    // サロゲートペアの間で切らない。半分ずつ置くと、置いた時点で壊れうる
+    var code = html.charCodeAt(end - 1);
+    if (end < html.length && code >= 0xD800 && code <= 0xDBFF) end--;
+
+    chunks.push(html.substring(i, end));
+    i = end;
   }
 
   var payload = {};
@@ -110,11 +118,22 @@ function liveHtml(fileId) {
   var lastUpdatedMs = DriveApp.getFileById(fileId).getLastUpdated().getTime();
   var prefix = liveCacheKey_(fileId, lastUpdatedMs);
 
-  var cached = liveCacheGet_(prefix);
+  var cached = null;
+  try {
+    cached = liveCacheGet_(prefix);
+  } catch (e) {
+    Logger.log('キャッシュを読めませんでした: ' + e.message);
+  }
   if (cached !== null) return cached;
 
   var html = renderByType_(fileId, row.type);
-  liveCachePut_(prefix, html);
+
+  // キャッシュは速くするためのもの。置けなくても文書は読めなければならない
+  try {
+    liveCachePut_(prefix, html);
+  } catch (e) {
+    Logger.log('キャッシュに置けませんでした: ' + e.message);
+  }
   return html;
 }
 

@@ -35,7 +35,10 @@ export function createFakeGas() {
       setName: (n) => { f._name = n; return f; },
       getMimeType: () => f._mime,
       getUrl: () => 'https://example.invalid/d/' + id,
-      getLastUpdated: () => new Date(),
+      // 実機と同じく、変わらない限り同じ時刻を返す。呼ぶたびに今を返すと、
+      // これを鍵にするキャッシュが当たったり外れたりする
+      _updated: new Date(),
+      getLastUpdated: () => f._updated,
       setTrashed: (v) => { f._trashed = v !== false; return f; },
       isTrashed: () => f._trashed,
       setSharing: () => f,
