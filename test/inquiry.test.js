@@ -167,6 +167,15 @@ describe('報告で話す', () => {
     expect(() => ctx.inquiryReply(row.number, '  ')).toThrow(/内容を入力/);
   });
 
+  it('返信を直すときも長さの上限を見る', () => {
+    const { ctx } = setup();
+    const row = ctx.inquiryCreate('bug', '本文');
+    const reply = ctx.inquiryReply(row.number, 'まえ');
+
+    expect(() => ctx.inquiryReplyEdit(reply.id, 'あ'.repeat(2001))).toThrow(/2000文字まで/);
+    expect(ctx.inquiryReplyGet(reply.id).body).toBe('まえ');
+  });
+
   it('自分の返信は直せる', () => {
     const { ctx } = setup();
     const row = ctx.inquiryCreate('bug', '本文');

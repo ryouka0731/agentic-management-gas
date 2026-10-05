@@ -404,6 +404,8 @@ function prReview(number, state, body) {
   if (!/^(approve|request_changes|comment)$/.test(String(state))) {
     throw new Error('不正なレビュー種別です: ' + state);
   }
+  prAssertReviewLength_(body);
+
   var pr = prGet(number);
   if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
   // 下で状態を書き換えるため、取り下げたものに通すと open / approved に
@@ -880,6 +882,20 @@ function reviewGet(id) {
 }
 
 /**
+ * やりとりの長さを確かめる。
+ *
+ * 台帳のセルは5万字までで、超えると書き込みそのものが落ちる。差分を貼った
+ * 長い指摘もあるので、やることの書き込み (4000字) より広く取ってある。
+ *
+ * @param {string} body
+ */
+function prAssertReviewLength_(body) {
+  if (String(body || '').length > 20000) {
+    throw new Error('内容は20000文字までにしてください');
+  }
+}
+
+/**
  * 書いた本人かどうかを確かめる。
  *
  * 他人の発言を書き換えられると、やりとりの記録が信じられなくなる。
@@ -922,6 +938,7 @@ function reviewEdit(id, body) {
   if (!String(body || '').replace(/^\s+|\s+$/g, '')) {
     throw new Error('中身を入力してください');
   }
+  prAssertReviewLength_(body);
 
   dbUpdate('reviews', 'id', id, { body: body, editedAt: new Date() });
   return reviewGet(id);

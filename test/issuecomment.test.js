@@ -45,6 +45,14 @@ describe('やることの中で話す', () => {
     expect(() => ctx.issueCommentAdd(999, 'なにか')).toThrow(/見つかりません/);
   });
 
+  it('直すときも長さの上限を見る', () => {
+    const { ctx, issue } = setup();
+    const row = ctx.issueCommentAdd(issue.number, 'まえ');
+
+    expect(() => ctx.issueCommentEdit(row.id, 'あ'.repeat(4001))).toThrow(/4000文字まで/);
+    expect(ctx.issueCommentGet(row.id).body).toBe('まえ');
+  });
+
   it('空は受け付けない', () => {
     const { ctx, issue } = setup();
     expect(() => ctx.issueCommentAdd(issue.number, '  ')).toThrow(/内容を入力/);

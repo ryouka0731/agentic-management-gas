@@ -512,6 +512,17 @@ describe('やりとりの直しと確認してもらう人', () => {
     expect(after.editedAt).not.toBe('');
   });
 
+  it('長すぎるものは、書くときも直すときも断る', () => {
+    const { ctx, pr } = withPr();
+    const long = 'あ'.repeat(20001);
+    expect(() => ctx.prReview(pr.number, 'comment', long)).toThrow(/20000文字まで/);
+
+    // 直すときに上限が無いと、セルの上限 (5万字) で書き込みそのものが落ちる
+    const a = ctx.prReview(pr.number, 'comment', 'まえ');
+    expect(() => ctx.reviewEdit(a.id, long)).toThrow(/20000文字まで/);
+    expect(ctx.reviewGet(a.id).body).toBe('まえ');
+  });
+
   it('空にはできない', () => {
     const { ctx, pr } = withPr();
     const a = ctx.prReview(pr.number, 'comment', 'なにか');

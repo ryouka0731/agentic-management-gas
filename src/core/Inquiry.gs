@@ -286,6 +286,8 @@ function inquiryReplyEdit(id, body) {
 
   var text = String(body || '').replace(/^\s+|\s+$/g, '');
   if (!text) throw new Error('内容を入力してください');
+  // 書くときと同じ上限。直すときに無いと、セルの上限で書き込みが落ちる
+  if (text.length > 2000) throw new Error('内容は2000文字までにしてください');
 
   dbUpdate('inquiry_replies', 'id', id, { body: text, editedAt: new Date() });
   return inquiryReplyGet(id);
