@@ -36,16 +36,29 @@ function projectBoard() {
   var board = {};
   for (var i = 0; i < cols.length; i++) board[cols[i]] = [];
 
+  // やることは1回だけ読んで番号で引く。カードごとに dbFindOne を呼ぶと
+  // 1枚ごとに表を丸ごと読むことになり、カード数に比例して遅くなる
+  // (projectPlace は鍵を持ったままここを通る)。先の1件を採るのは
+  // dbFindOne と同じ
+  var issues = dbReadAll('issues');
+  var byNumber = {};
+  for (var n = 0; n < issues.length; n++) {
+    var key = String(issues[n].number);
+    if (!Object.prototype.hasOwnProperty.call(byNumber, key)) byNumber[key] = issues[n];
+  }
+
+  var now = new Date();
   var items = dbReadAll('project_items');
   for (var j = 0; j < items.length; j++) {
     var column = String(items[j].column);
     if (!board[column]) continue;
 
-    var issue = dbFindOne('issues', 'number', items[j].issueNumber);
+    var issue = byNumber[String(items[j].issueNumber)];
     if (!issue || issue.archivedAt) continue;
 
     // 画面に渡すため、日時は文字列にして素の形にする
     var due = issue.dueDate ? new Date(issue.dueDate) : null;
+    var stale = stalenessOf(issue, now);
 
     board[column].push({
       issueNumber: Number(items[j].issueNumber),
@@ -59,8 +72,8 @@ function projectBoard() {
       // いる人には何が急ぎなのか伝わらない
       priority: issuePriority(issue),
       dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
-      staleDays: stalenessOf(issue, new Date()).days,
-      staleLevel: stalenessOf(issue, new Date()).level,
+      staleDays: stale.days,
+      staleLevel: stale.level,
     });
   }
 

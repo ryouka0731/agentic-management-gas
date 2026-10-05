@@ -195,6 +195,25 @@ describe('カンバンボード', () => {
     expect(board['In Progress'].length).toBe(0);
   });
 
+  it('カードが増えても、やることの表は1回しか読まない', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 5; i++) {
+      ctx.projectPlace(ctx.issueCreate('改訂' + i, '', []).number, 'Backlog');
+    }
+
+    // 1枚ごとに丸ごと読むと、実機ではカード数に比例して遅くなる。
+    // projectPlace は鍵を持ったまま板を作るので、鍵の時間も伸びる
+    const real = ctx.dbReadAll;
+    let reads = 0;
+    ctx.dbReadAll = (table) => {
+      if (table === 'issues') reads++;
+      return real(table);
+    };
+
+    expect(ctx.projectBoard()['Backlog']).toHaveLength(5);
+    expect(reads).toBe(1);
+  });
+
   it('列を移すと元の列から消える', () => {
     const { ctx } = setup();
     const issue = ctx.issueCreate('改訂', '', []);
