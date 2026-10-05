@@ -302,6 +302,24 @@ function branchDelete(name) {
   var row = dbFindOne('branches', 'name', name);
   if (!row) throw new Error('ブランチが見つかりません: ' + name);
 
+  // この版から出ている・この版へ向かう依頼が開いていたら捨てない。捨てても
+  // 依頼は開いたまま残り、反映すると状態が deleted から merged に書き換わって
+  // ゴミ箱の作業コピーが一覧に戻ってくる
+  var pulls = dbReadAll('pulls');
+  var open = [];
+  for (var p = 0; p < pulls.length; p++) {
+    var st = String(pulls[p].state);
+    if (st !== 'open' && st !== 'approved') continue;
+    if (String(pulls[p].sourceBranch) !== String(name) &&
+        String(pulls[p].targetBranch || 'main') !== String(name)) continue;
+    open.push('#' + pulls[p].number);
+  }
+  if (open.length) {
+    throw new Error(
+      'この改訂版には開いている確認依頼があります (' + open.join('、') + ')。' +
+      '先に取り下げるか反映してから捨ててください');
+  }
+
   var files = dbReadAll('files');
   var prefix = 'branches/' + name + '/';
   for (var i = 0; i < files.length; i++) {

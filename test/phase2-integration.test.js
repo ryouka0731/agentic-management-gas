@@ -436,6 +436,20 @@ describe('Phase 2 統合: ブランチの後始末', () => {
     expect(() => ctx.prPreviewMerge(pr.number)).not.toThrow();
   });
 
+  it('開いた確認依頼が残っているうちは捨てない', () => {
+    const { ctx, fake, mainFileId } = setup();
+    divergeBranch(ctx, fake, mainFileId, html([P1, P2, P3, '<p>第3条 休日</p>']), null);
+    const pr = ctx.prCreate('第3条を追加', '', '改訂', mainFileId);
+
+    // 捨てても依頼は開いたまま残り、反映すると改訂版の状態が deleted から
+    // merged に書き換わって、ゴミ箱の作業コピーが一覧に戻ってくる
+    expect(() => ctx.branchDelete('改訂')).toThrow('#' + pr.number);
+    expect(ctx.dbFindOne('branches', 'name', '改訂').state).toBe('open');
+
+    ctx.prClose(pr.number);
+    expect(() => ctx.branchDelete('改訂')).not.toThrow();
+  });
+
   it('空の値では dbDelete できない', () => {
     const { ctx } = setup();
     expect(() => ctx.dbDelete('files', 'fileId', '')).toThrow(/削除条件の値が空です/);
