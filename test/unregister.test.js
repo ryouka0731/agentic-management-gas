@@ -142,3 +142,29 @@ describe('パスを分ける', () => {
       .toEqual({ branch: 'main', path: 'branchesX/覚書' });
   });
 });
+
+describe('同じ名前は登録しない', () => {
+  /*
+   * 台帳は path で作業コピーを引く (branchWorkingFileId / branchBaseSha)。
+   * 同じ path の文書が2つあると、A を直した改訂版から B を対象に依頼でき、
+   * 反映すると **B に A の変更が入る** (実際にそうなった)。
+   */
+  it('正式版に同じ名前があれば断る', () => {
+    const { ctx, fake } = setup();
+    const other = fake._createDoc('賃金規程', '<p>別の文書</p>\n',
+      ctx.repoConfig().mainId);
+
+    expect(() => ctx.repoRegisterFile(other, '賃金規程'))
+      .toThrow('同じ名前の文書が既に登録されています');
+    expect(ctx.dbFindOne('files', 'fileId', other)).toBeNull();
+  });
+
+  it('外したあとなら同じ名前で登録できる', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.repoUnregisterFile(fileId);
+    const other = fake._createDoc('賃金規程', '<p>別の文書</p>\n',
+      ctx.repoConfig().mainId);
+
+    expect(ctx.repoRegisterFile(other, '賃金規程').path).toBe('賃金規程');
+  });
+});

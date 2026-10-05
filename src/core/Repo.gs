@@ -124,6 +124,15 @@ function repoRegisterFile(fileId, path) {
     throw new Error('すでに登録されています: ' + fileId);
   }
 
+  // path は作業コピーを引く鍵である (branchWorkingFileId / branchBaseSha)。
+  // Drive は同じ名前を許すので、重なると改訂版が別の文書の作業コピーを
+  // 掴み、**依頼を反映した時点で関係のない文書に変更が入る**
+  if (dbFindOne('files', 'path', path)) {
+    throw new Error(
+      '同じ名前の文書が既に登録されています: ' + path +
+      '。Drive で名前を変えてから登録してください');
+  }
+
   var mime = DriveApp.getFileById(fileId).getMimeType();
   var type;
   if (mime === MimeType.GOOGLE_DOCS) type = 'doc';
