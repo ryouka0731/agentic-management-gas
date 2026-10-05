@@ -464,9 +464,11 @@ function prReview(number, state, body) {
  */
 function prClosesIssues_(body) {
   var out = [];
-  var re = /closes\s+#(\d+)/gi;
+  // 語の途中は拾わない。'discloses #3' で #3 を閉じると、身に覚えのない
+  // やることが完了になる
+  var re = /(^|[^A-Za-z0-9_])closes\s+#(\d+)/gi;
   var m;
-  while ((m = re.exec(String(body || ''))) !== null) out.push(Number(m[1]));
+  while ((m = re.exec(String(body || ''))) !== null) out.push(Number(m[2]));
   return out;
 }
 

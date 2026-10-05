@@ -445,6 +445,21 @@ describe('やることの更新と担当', () => {
   });
 });
 
+describe('本文の closes #N を読む', () => {
+  it('語の途中の closes は拾わない', () => {
+    const { ctx } = setup();
+
+    // 'discloses #3' で #3 を閉じると、身に覚えのないやることが完了になる
+    expect(ctx.prClosesIssues_('This discloses #3 and closes #4')).toEqual([4]);
+  });
+
+  it('行の頭でも、記号のあとでも拾う', () => {
+    const { ctx } = setup();
+
+    expect(ctx.prClosesIssues_('closes #1\n(closes #2)\n対応: Closes #5')).toEqual([1, 2, 5]);
+  });
+});
+
 describe('結び付ける文書を直す', () => {
   it('管理外の文書は結び付けられない', () => {
     const { ctx, fileId } = setup();
