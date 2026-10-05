@@ -1295,8 +1295,9 @@ function issueToPlain_(row) {
     linkedPr: plainNumber(row.linkedPr),
     createdAt: plainDate(row.createdAt),
     closedAt: plainDate(row.closedAt),
-    dueDate: plainDate(row.dueDate),
-    startDate: plainDate(row.startDate),
+    // 時刻を持たない値。plainDate で ISO にすると、東京の0時が前日になる
+    dueDate: plainDay(row.dueDate),
+    startDate: plainDay(row.startDate),
     parent: plainNumber(row.parent),
     estimate: plainNumber(row.estimate),
     plannedHours: plainNumber(row.plannedHours),

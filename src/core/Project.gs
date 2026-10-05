@@ -57,7 +57,6 @@ function projectBoard() {
     if (!issue || issue.archivedAt) continue;
 
     // 画面に渡すため、日時は文字列にして素の形にする
-    var due = issue.dueDate ? new Date(issue.dueDate) : null;
     var stale = stalenessOf(issue, now);
 
     board[column].push({
@@ -71,7 +70,8 @@ function projectBoard() {
       // カードにも優先度を持たせる。一覧にだけ出ると、ボードで見て
       // いる人には何が急ぎなのか伝わらない
       priority: issuePriority(issue),
-      dueDate: (due && !isNaN(due.getTime())) ? due.toISOString() : '',
+      // 時刻を持たない値。ISO にすると、東京の0時が前日になる
+      dueDate: plainDay(issue.dueDate),
       staleDays: stale.days,
       staleLevel: stale.level,
     });

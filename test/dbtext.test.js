@@ -81,3 +81,19 @@ describe('書いた字は書いたとおりに残る', () => {
     expect(Number(rows[0].count)).toBe(3);
   });
 });
+
+describe('期限は日のまま画面に届く', () => {
+  it('台帳が日付に変えても、一覧とボードでは同じ日', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('期限あり', '', []);
+    ctx.issueUpdate(made.number, { dueDate: '2026-09-30', startDate: '2026-09-01' });
+    ctx.projectPlace(made.number, 'Backlog');
+
+    // 台帳には東京の0時の Date として入っている
+    expect(Object.prototype.toString.call(ctx.issueGet(made.number).dueDate))
+      .toBe('[object Date]');
+
+    const card = ctx.projectBoard().Backlog[0];
+    expect(card.dueDate.substring(0, 10)).toBe('2026-09-30');
+  });
+});

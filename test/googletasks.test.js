@@ -15,6 +15,7 @@ const SOURCES = [
   'src/core/Issue.gs',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
+  'src/core/Plain.js',
   'src/core/Mention.js',
   'src/core/Brand.js',
   'src/core/Notifier.gs',

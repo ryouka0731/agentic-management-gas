@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
 
-const { plainText, plainDate, plainNumber, plainId, plainTalk } =
+const { plainText, plainDate, plainDay, plainNumber, plainId, plainTalk } =
   loadGas('src/core/Plain.js');
 
 /*
@@ -129,5 +129,32 @@ describe('plainTalk', () => {
     Object.keys(out).forEach((key) => {
       expect(out[key] instanceof Date, key).toBe(false);
     });
+  });
+});
+
+describe('plainDay', () => {
+  /*
+   * 台帳の期限は東京の0時の Date で返る。plainDate で ISO にすると前日の15時Z
+   * になり、画面は先頭10字で日にするので1日前に見えた。編集画面にもその値が
+   * 入るため、そのまま保存すると期限が1日ずつ前へずれた。
+   */
+  it('東京の0時の Date は、その日になる', () => {
+    expect(plainDay(new Date('2026-09-30T00:00:00+09:00'))).toBe('2026-09-30');
+  });
+
+  it('東京の23時台も、その日のまま', () => {
+    expect(plainDay(new Date('2026-09-30T23:59:59+09:00'))).toBe('2026-09-30');
+  });
+
+  it('日付の字はそのまま', () => {
+    expect(plainDay('2026-09-30')).toBe('2026-09-30');
+    expect(plainDay('2026-09-30T00:00:00.000Z')).toBe('2026-09-30');
+  });
+
+  it('空と読めないものは空にする', () => {
+    expect(plainDay('')).toBe('');
+    expect(plainDay(null)).toBe('');
+    expect(plainDay('来週')).toBe('');
+    expect(plainDay(new Date('x'))).toBe('');
   });
 });

@@ -46,6 +46,32 @@ function plainDate(v) {
 }
 
 /**
+ * 日を 'YYYY-MM-DD' にする。期限や開始日のように、時刻を持たない値に使う。
+ *
+ * **plainDate を使ってはいけない。** 台帳の期限は東京の0時の Date で返る
+ * (Sheets が日付の字を日付として持つため)。ISO にすると前日の15時Z になり、
+ * 画面は先頭10字で日にするので1日前に見えた。編集画面にもその値が入るため、
+ * そのまま保存すると期限が1日ずつ前へずれていった。
+ *
+ * 東京の暦日で数える。この道具の時刻帯は Asia/Tokyo で固定してあり、
+ * 夏時間も無いので、9時間ずらして UTC の日を読めば東京の日になる。
+ *
+ * @param {*} v Date または 'YYYY-MM-DD...' の字
+ * @returns {string} 'YYYY-MM-DD'、または ''
+ */
+function plainDay(v) {
+  if (!v) return '';
+
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    if (isNaN(v.getTime())) return '';
+    return new Date(v.getTime() + 9 * 3600 * 1000).toISOString().substring(0, 10);
+  }
+
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
+  return m ? m[1] : '';
+}
+
+/**
  * 数にする。空欄と、数に見えないものは空文字にする。
  *
  * 0 を空欄と混同しないため、空欄は 0 ではなく '' で返す。工数の欄では
