@@ -112,19 +112,41 @@ function noticeList(to, limit) {
  * @returns {number} 読んだことにした件数
  */
 function noticeMarkRead(ids) {
-  var me = Session.getActiveUser().getEmail();
-  var rows = noticeList(me, 1000);
+  var me = String(Session.getActiveUser().getEmail());
   var want = ids || [];
-  var done = 0;
 
-  for (var i = 0; i < rows.length; i++) {
-    if (rows[i].readAt) continue;
-    if (want.length && want.indexOf(Number(rows[i].id)) < 0) continue;
+  /*
+   * **1回読んで、読んだ印の列だけ書き戻す。** 1件ごとに dbUpdate すると、
+   * そのたびに表を丸ごと読み書きする。「全部読んだ」は未読がたまったときに
+   * 押すものなので、件数がそのまま待ち時間になる。
+   */
+  return dbWithLock_(30000, function () {
+    var cols = DB_SCHEMA().notifications;
+    var sheet = dbSheet_('notifications');
+    var last = sheet.getLastRow();
+    if (last < 2) return 0;
 
-    dbUpdate('notifications', 'id', rows[i].id, { readAt: new Date() });
-    done++;
-  }
-  return done;
+    var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
+    var toCol = cols.indexOf('to');
+    var idCol = cols.indexOf('id');
+    var readCol = cols.indexOf('readAt');
+    var now = new Date();
+    var marks = [];
+    var done = 0;
+
+    for (var r = 0; r < values.length; r++) {
+      var mark = values[r][readCol];
+      if (String(values[r][toCol]) === me && !mark &&
+          (!want.length || want.indexOf(Number(values[r][idCol])) >= 0)) {
+        mark = now;
+        done++;
+      }
+      marks.push([mark]);
+    }
+
+    if (done) sheet.getRange(2, readCol + 1, marks.length, 1).setValues(marks);
+    return done;
+  });
 }
 
 /**

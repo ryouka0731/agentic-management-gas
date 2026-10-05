@@ -555,6 +555,39 @@ describe('画面の中の知らせ', () => {
     expect(left.map((n) => n.title)).toEqual(['b']);
   });
 
+  it('何件あっても、表は1回しか読まない', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 5; i++) ctx.noticeAdd('tester@example.com', 'mention', 'x' + i, '', '');
+    ctx.noticeAdd('aoki@example.com', 'mention', '他人あて', '', '');
+
+    // 1件ごとに dbUpdate すると、そのたびに表を丸ごと読み書きする
+    let reads = 0;
+    const realSheet = ctx.dbSheet_;
+    ctx.dbSheet_ = (t) => {
+      const sheet = realSheet(t);
+      if (t !== 'notifications') return sheet;
+      return new Proxy(sheet, {
+        get(o, k) {
+          if (k !== 'getRange') return typeof o[k] === 'function' ? o[k].bind(o) : o[k];
+          return (...a) => {
+            const r = o.getRange(...a);
+            return new Proxy(r, {
+              get(x, kk) {
+                if (kk === 'getValues') return () => { reads++; return x.getValues(); };
+                return typeof x[kk] === 'function' ? x[kk].bind(x) : x[kk];
+              },
+            });
+          };
+        },
+      });
+    };
+
+    expect(ctx.noticeMarkRead([])).toBe(5);
+    expect(reads).toBe(1);
+    ctx.dbSheet_ = realSheet;
+    expect(ctx.noticeList('aoki@example.com')[0].readAt).toBe('');
+  });
+
   it('二度読んでも数は増えない', () => {
     const { ctx } = setup();
     ctx.noticeAdd('tester@example.com', 'mention', 'x', '', '');
