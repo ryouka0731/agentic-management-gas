@@ -98,19 +98,61 @@ function mergeRuns(runs) {
 }
 
 /**
+ * Run配列の空白を、段落ひとまとまりとして正規化する。
+ *
+ * **run ごとに前後を削ってはいけない。** 以前は run ごとに normalizeSpace を
+ * 当てていたため、装飾やリンクの境目の空白が消えていた ('Hello ' + 太字
+ * 'world' が 'Helloworld' になり、書き戻すと文書から空白が消えた)。
+ *
+ * 連続する空白は境目をまたいでも1つにし、削るのは段落の頭と末尾だけにする。
+ * 空になった run を落としたあと、同じ装飾が隣り合えば結合し直す
+ * (結合しないと、同じ中身から違う HTML が出る)。
+ *
+ * @param {object[]} runs mergeRuns 済み
+ * @returns {object[]}
+ */
+function spaceRuns_(runs) {
+  var out = [];
+  var afterSpace = true;  // 段落の頭は空白の後と同じ扱いにして削る
+
+  for (var i = 0; i < runs.length; i++) {
+    var text = String(runs[i].text).replace(/\s+/g, ' ');
+    if (afterSpace) text = text.replace(/^ /, '');
+    if (!text) continue;
+
+    afterSpace = text.charAt(text.length - 1) === ' ';
+    var copy = normalizeRun_(runs[i]);
+    copy.text = text;
+    out.push(copy);
+  }
+
+  // 段落の末尾の空白を削る。空白だけの run なら、その手前も見る
+  for (var k = out.length - 1; k >= 0; k--) {
+    out[k].text = out[k].text.replace(/ $/, '');
+    if (out[k].text) break;
+  }
+  return mergeRuns(out);
+}
+
+/**
  * Run配列をインラインHTMLに変換する。
  * 装飾のネスト順は bold → italic → underline → strike → link で固定。
  * この順序を固定しないと、同じ内容から異なるHTMLが出て差分ノイズになる。
  *
  * @param {object[]} runs
+ * @param {boolean} [legacy] 空白を run ごとに削っていた以前の形で出す
+ *   (以前の記録と見比べるためだけに使う。serializeBlocksLegacy_ を参照)
  * @returns {string}
  */
-function serializeRuns_(runs) {
-  var merged = mergeRuns(runs || []);
+function serializeRuns_(runs, legacy) {
+  var merged = legacy ? mergeRuns(runs || []) : spaceRuns_(mergeRuns(runs || []));
   var out = '';
   for (var i = 0; i < merged.length; i++) {
     var r = merged[i];
-    var html = escapeText(normalizeSpace(r.text));
+    // 以前の形では空白だけの run が空の要素 (<strong></strong>) になっていた。
+    // 見比べるときは両側とも落とす。残すと、読み戻した側には無いので一致しない
+    if (legacy && !normalizeSpace(r.text)) continue;
+    var html = escapeText(legacy ? normalizeSpace(r.text) : r.text);
     if (r.link) html = '<a href="' + escapeAttr(r.link) + '">' + html + '</a>';
     if (r.strike) html = '<s>' + html + '</s>';
     if (r.underline) html = '<u>' + html + '</u>';
@@ -132,14 +174,52 @@ function serializeRuns_(runs) {
  * @returns {string} 各行が改行で終わるHTML文字列
  */
 function serializeBlocks(blocks) {
+  return serializeBlocksWith_(blocks, false);
+}
+
+/**
+ * 空白を run ごとに削っていた以前の形で出す。
+ *
+ * **以前の記録と見比べるためだけに使う。** 記録 (blob) はバイト単位で
+ * 比べるので、空白の扱いを改めた前と後の記録は、中身が同じでも食い違う。
+ * 両方をこの形にそろえると、空白の扱い以外で同じかどうかが分かる。
+ *
+ * @param {object[]} blocks
+ * @returns {string}
+ */
+function serializeBlocksLegacy_(blocks) {
+  return serializeBlocksWith_(blocks, true);
+}
+
+/**
+ * 正規化HTMLを、空白の扱いを比べないための形にそろえる。
+ *
+ * 以前の記録にも今の記録にも使える。両方をこれにして等しければ、違いは
+ * 空白の扱いだけである。
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function legacySpacingHtml(html) {
+  return serializeBlocksLegacy_(parseBlocks(html));
+}
+
+/**
+ * serializeBlocks の本体。
+ *
+ * @param {object[]} blocks
+ * @param {boolean} legacy
+ * @returns {string}
+ */
+function serializeBlocksWith_(blocks, legacy) {
   var lines = [];
   for (var i = 0; i < blocks.length; i++) {
     var b = blocks[i];
     if (b.type === 'heading') {
       var lv = Math.min(6, Math.max(1, b.level));
-      lines.push('<h' + lv + '>' + serializeRuns_(b.runs) + '</h' + lv + '>');
+      lines.push('<h' + lv + '>' + serializeRuns_(b.runs, legacy) + '</h' + lv + '>');
     } else if (b.type === 'paragraph') {
-      var inner = serializeRuns_(b.runs);
+      var inner = serializeRuns_(b.runs, legacy);
       // 空段落は出力しない。Docs上の空行は書式であって内容ではないため、
       // 空行を1つ足しただけで差分が出るのを防ぐ。
       if (inner) lines.push('<p>' + inner + '</p>');
@@ -147,14 +227,14 @@ function serializeBlocks(blocks) {
       lines.push(
         '<li data-list="' + (b.ordered ? 'ol' : 'ul') + '"' +
         ' data-depth="' + (b.depth || 0) + '">' +
-        serializeRuns_(b.runs) + '</li>'
+        serializeRuns_(b.runs, legacy) + '</li>'
       );
     } else if (b.type === 'table') {
       lines.push('<table>');
       for (var r = 0; r < b.rows.length; r++) {
         var cells = '';
         for (var c = 0; c < b.rows[r].length; c++) {
-          cells += '<td>' + serializeRuns_(b.rows[r][c]) + '</td>';
+          cells += '<td>' + serializeRuns_(b.rows[r][c], legacy) + '</td>';
         }
         lines.push('<tr>' + cells + '</tr>');
       }

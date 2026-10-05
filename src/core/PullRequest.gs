@@ -331,7 +331,9 @@ function prPreviewMerge(number, wantFileId) {
   var branchHead = headCommit(workFileId, pr.sourceBranch);
   var theirsHtml = branchHead ? (objectGet(branchHead.blobSha) || '') : '';
 
-  var result = merge3Html(baseHtml, oursHtml, theirsHtml);
+  // 起点が空白の扱いを改める前の形でも、空白だけの違いを変更と読まない
+  var result = merge3Html(
+    prUpgradeBaseSpacing_(baseHtml, oursHtml, theirsHtml), oursHtml, theirsHtml);
 
   var problems = [];
   if (result.clean) {
@@ -354,6 +356,77 @@ function prPreviewMerge(number, wantFileId) {
     targetBranch: into,
     oursHtml: oursHtml,
   };
+}
+
+/**
+ * 未記録の違いが空白の扱いだけなら、いまの形で記録し直す。
+ *
+ * @param {string|null} fileId
+ * @param {string} branch
+ * @returns {boolean} 記録していない変更が (空白の扱い以外に) 残っているか
+ */
+function prRecordSpacingOnly_(fileId, branch) {
+  if (!fileId) return false;
+
+  var status = fileStatus(fileId, branch);
+  if (!status.dirty) return false;
+
+  var head = headCommit(fileId, branch);
+  if (!head || !commitOnlySpacing_(head, liveHtml(fileId))) return true;
+
+  commitFile(fileId, branch, '空白の扱いを改めた記録 (中身は変わっていません)', null);
+  return false;
+}
+
+/**
+ * 起点の行を、空白の扱いをそろえた形に置き換える。
+ *
+ * 装飾の境目の空白を残すように改める前の記録は、空白が消えた形で残って
+ * いる。起点がその形のまま見比べると、空白だけの違いが「こちらが変えた」
+ * と読まれ、相手が直した段落が偽の食い違いになる。
+ *
+ * こちら (先に) か相手に、空白の扱い以外で同じ中身の行があれば、その行の
+ * 形を起点の行として使う。同じ中身なので、見比べの結果は変わらない。
+ *
+ * @param {string} baseHtml
+ * @param {string} oursHtml
+ * @param {string} theirsHtml
+ * @returns {string}
+ */
+function prUpgradeBaseSpacing_(baseHtml, oursHtml, theirsHtml) {
+  var base = splitLines(baseHtml);
+  var sides = splitLines(oursHtml).concat(splitLines(theirsHtml));
+  var raw = {};
+  var byCanon = {};
+
+  for (var i = 0; i < sides.length; i++) {
+    raw[sides[i]] = true;
+    var key = prLineCanon_(sides[i]);
+    if (!Object.prototype.hasOwnProperty.call(byCanon, key)) byCanon[key] = sides[i];
+  }
+
+  var out = [];
+  for (var b = 0; b < base.length; b++) {
+    var line = base[b];
+    if (!raw[line]) {
+      var k = prLineCanon_(line);
+      if (Object.prototype.hasOwnProperty.call(byCanon, k)) line = byCanon[k];
+    }
+    out.push(line);
+  }
+  return linesToHtml_(out);
+}
+
+/**
+ * 1行を、空白の扱いを比べない形にする。表の行は表として読む。
+ *
+ * @param {string} line
+ * @returns {string}
+ */
+function prLineCanon_(line) {
+  if (line.indexOf('<tr>') === 0) return legacySpacingHtml('<table>\n' + line + '\n</table>\n');
+  if (line.indexOf('<table') === 0 || line === '</table>') return line;
+  return legacySpacingHtml(line + '\n');
 }
 
 /**
@@ -696,7 +769,12 @@ function prMerge(number, choices) {
           var type = mainRow ? String(mainRow.type) : 'doc';
           var intoFileId = prTargetBranchFileId(pr, targets[t]);
 
-          if (fileStatus(intoFileId, into).dirty) {
+          // 空白の扱いを改める前の記録のままなら、いまの形で記録し直す。
+          // 中身は同じなので、何も編集していない人に退避を押させない
+          prRecordSpacingOnly_(branchWorkingFileId(pr.sourceBranch, targets[t]),
+            pr.sourceBranch);
+
+          if (prRecordSpacingOnly_(intoFileId, into)) {
             throw new Error(
               '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
               ' に記録していない変更があります。先にそちらを記録してから' +

@@ -461,3 +461,60 @@ describe('describeLine', () => {
     expect(gas.describeLine('<section data-slide="3">').text).toBe('3枚目');
   });
 });
+
+describe('装飾の境目の空白', () => {
+  /*
+   * 空白の正規化を run ごとに当てて前後を削っていたため、装飾やリンクの
+   * 境目の空白が消えていた。'Hello ' + 太字 'world' が 'Helloworld' になり、
+   * 反映や Markdown 保存で書き戻すと文書から空白が消えた。
+   */
+  const { parseBlocks } = loadGas('src/core/Normalize.js');
+  const p = (...runs) => serializeBlocks([{ type: 'paragraph', runs }]);
+
+  it('境目の空白を残す', () => {
+    expect(p(run('Hello '), run('world', { bold: true }), run(' and '),
+      run('link', { link: 'https://e.test/' })))
+      .toBe('<p>Hello <strong>world</strong> and <a href="https://e.test/">link</a></p>\n');
+  });
+
+  it('境目をまたぐ連続空白は1つにする', () => {
+    expect(p(run('a  '), run('  b', { bold: true })))
+      .toBe('<p>a <strong>b</strong></p>\n');
+  });
+
+  it('段落の頭と末尾の空白は削る', () => {
+    expect(p(run('  a', { bold: true }), run(' b  '))).toBe('<p><strong>a</strong> b</p>\n');
+  });
+
+  it('装飾付きの空白だけの run も、中ほどなら残す', () => {
+    expect(p(run('a'), run(' ', { bold: true }), run('b')))
+      .toBe('<p>a<strong> </strong>b</p>\n');
+  });
+
+  it('空白だけの run が末尾や頭にあれば消える', () => {
+    expect(p(run(' ', { bold: true }), run('a'), run(' ', { italic: true })))
+      .toBe('<p>a</p>\n');
+  });
+
+  it('消えた run を挟んで同じ装飾が並べば1つにまとめる', () => {
+    expect(p(run('a ', { bold: true }), run(' '), run('b', { bold: true })))
+      .toBe('<p><strong>a b</strong></p>\n');
+  });
+
+  it('読み戻して書いても同じになる', () => {
+    const html = p(run('Hello '), run('world', { bold: true }), run(' ', { italic: true }),
+      run('x'));
+    expect(serializeBlocks(parseBlocks(html))).toBe(html);
+  });
+
+  it('表のセルと見出しとリストも同じ扱い', () => {
+    const html = serializeBlocks([
+      { type: 'heading', level: 1, runs: [run('第1条 '), run('目的', { bold: true })] },
+      { type: 'listItem', ordered: false, depth: 0, runs: [run('a '), run('b', { italic: true })] },
+      { type: 'table', rows: [[[run('x '), run('y', { bold: true })]]] },
+    ]);
+    expect(html).toContain('<h1>第1条 <strong>目的</strong></h1>');
+    expect(html).toContain('>a <em>b</em></li>');
+    expect(html).toContain('<td>x <strong>y</strong></td>');
+  });
+});

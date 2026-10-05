@@ -401,6 +401,72 @@ describe('Phase 2 統合: 承認は承認した時点の中身にだけ効く', 
   });
 });
 
+describe('Phase 2 統合: 空白の扱いを改める前の記録', () => {
+  /*
+   * 装飾の境目の空白を残すように改めたため、以前の記録 (空白が消えた形) と
+   * いまの文書は、中身が同じでもバイト単位では食い違う。
+   *
+   * - 反映先が「記録していない変更あり」で止まると、何も編集していない人に
+   *   退避を押させることになる
+   * - 起点が以前の形のまま見比べると、空白だけの違いが変更に見え、相手が
+   *   直した段落が偽の食い違いになる
+   * - 空白の扱いだけ変わった記録で承認が古くなると、承認し直しを求められる
+   */
+  const OLD = '<p>Hello<strong>world</strong></p>\n<p>第2条</p>\n';
+  const NEW = '<p>Hello <strong>world</strong></p>\n<p>第2条</p>\n';
+
+  function transition() {
+    const env = setup();
+    const { ctx, fake, mainFileId } = env;
+    // 以前の形で記録された正式版と改訂版
+    fake._docs.set(mainFileId, OLD);
+    ctx.commitFile(mainFileId, 'main', '以前の形', null);
+    ctx.branchCreate('改訂', mainFileId);
+    const work = ctx.branchWorkingFileId('改訂', mainFileId);
+    fake._docs.set(work, OLD);
+
+    // 改めたあと: どちらの文書も、読むと空白の残った形になる
+    fake._docs.set(mainFileId, NEW);
+    fake._docs.set(work, NEW.replace('第2条', '第2条 (改)'));
+    ctx.commitFile(work, '改訂', '第2条を直した', null);
+
+    const pr = ctx.prCreate('第2条', '', '改訂', mainFileId);
+    fake._setUser('reviewer@example.com');
+    ctx.prReview(pr.number, 'approve', '');
+    fake._setUser('tester@example.com');
+    return { ...env, work, pr };
+  }
+
+  it('空白の扱いだけの違いでは止まらず、偽の食い違いも出さずに反映する', () => {
+    const { ctx, fake, mainFileId, pr } = transition();
+
+    expect(ctx.prPreviewMerge(pr.number).clean).toBe(true);
+    ctx.prMerge(pr.number, []);
+
+    expect(fake._docs.get(mainFileId))
+      .toBe('<p>Hello <strong>world</strong></p>\n<p>第2条 (改)</p>\n');
+  });
+
+  it('空白の扱いだけ変わった記録では、承認を古くしない', () => {
+    const { ctx, fake, work, pr } = transition();
+    // 以前の形に戻した記録を作り、もう一度いまの形にする (中身は同じ)
+    fake._docs.set(work, '<p>Hello<strong>world</strong></p>\n<p>第2条 (改)</p>\n');
+    ctx.commitFile(work, '改訂', '以前の形', null);
+    fake._docs.set(work, '<p>Hello <strong>world</strong></p>\n<p>第2条 (改)</p>\n');
+
+    // 承認のあとの記録だが、中身は同じ
+    expect(() => ctx.commitFile(work, '改訂', '空白の扱いだけ', null)).not.toThrow();
+    expect(ctx.prApprovalCount(pr.number)).toBe(1);
+  });
+
+  it('中身が違えば、これまでどおり記録を求める', () => {
+    const { ctx, fake, mainFileId, pr } = transition();
+    fake._docs.set(mainFileId, NEW.replace('第2条', '第2条 (正式版で直接)'));
+
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/記録していない変更があります/);
+  });
+});
+
 describe('Phase 2 統合: ブランチの後始末', () => {
   it('ブランチを削除すると作業コピーが一覧から消える', () => {
     const { ctx, fake, mainFileId } = setup();

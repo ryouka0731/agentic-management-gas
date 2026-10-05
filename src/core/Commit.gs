@@ -100,6 +100,21 @@ function commitHtml(sha) {
 }
 
 /**
+ * 前の記録との違いが空白の扱いだけかを返す。
+ *
+ * @param {object|null} head 前の記録 (commits 行)
+ * @param {string} html いまの中身
+ * @returns {boolean}
+ */
+function commitOnlySpacing_(head, html) {
+  if (!head || typeof legacySpacingHtml !== 'function') return false;
+
+  var before = objectGet(head.blobSha);
+  if (before === null) return false;
+  return legacySpacingHtml(before) === legacySpacingHtml(html);
+}
+
+/**
  * ファイルの現在の状態を返す。HEADコミットと現在のライブ内容を比較し、
  * 未コミットの変更があるかを判定する (git status 相当)。
  *
@@ -182,8 +197,13 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
         }
 
         // この版から出ている確認依頼の中身が変わった。承認は承認した時点の
-        // 中身にだけ効く (PullRequest.gs を読まない構成もあるので確かめる)
-        if (typeof prSourceChanged_ === 'function') prSourceChanged_(branch, fileId);
+        // 中身にだけ効く (PullRequest.gs を読まない構成もあるので確かめる)。
+        // 空白の扱いが変わっただけの記録は中身の変更ではないので、承認を古く
+        // しない (以前の形の記録を、いまの形で記録し直すとこうなる)
+        if (typeof prSourceChanged_ === 'function' &&
+            !commitOnlySpacing_(head, html)) {
+          prSourceChanged_(branch, fileId);
+        }
 
         return row;
   });
