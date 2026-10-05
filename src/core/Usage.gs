@@ -156,12 +156,19 @@ function usageRecord(rows) {
           done++;
         }
 
+        // 字のセルは ' を付けて書く (dbCell_)。付けないと '1-2' のような場所が
+        // 日付に化けて、次から足し込めなくなる
+        var cells = function (list) {
+          return list.map(function (row) {
+            return row.map(function (v, c) { return dbCell_(cols[c], v); });
+          });
+        };
         if (touched && values.length) {
-          sheet.getRange(2, 1, values.length, cols.length).setValues(values);
+          sheet.getRange(2, 1, values.length, cols.length).setValues(cells(values));
         }
         if (added.length) {
           sheet.getRange(values.length + 2, 1, added.length, cols.length)
-            .setValues(added);
+            .setValues(cells(added));
         }
 
         // 落としたぶんだけ行が余る。消さないと、書き戻した中身の下に

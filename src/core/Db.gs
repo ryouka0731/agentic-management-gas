@@ -246,6 +246,41 @@ function dbAppendNumbered(table, column, row) {
 }
 
 /**
+ * Sheets に字の解釈をさせてよい欄。
+ *
+ * 日付として書いている欄だけである。ここに無い欄の字は、書いたとおりに残す。
+ *
+ * @returns {Object<string, boolean>}
+ */
+function DB_TYPED_COLUMNS() {
+  return { dueDate: true, startDate: true, day: true };
+}
+
+/**
+ * 台帳のセルに書く値にする。
+ *
+ * **Sheets は書いた字を、人が打ち込んだときと同じように読む。** 題名や
+ * やりとりに '1/2' と書けば日付に、'007' と書けば 7 になり、'=' で始めれば
+ * 台帳の中で数式として動く (数式の差し込み)。先頭に ' を付けると解釈を止め、
+ * ' そのものは残らない。
+ *
+ * 数そのものの字 ('3') は数として書く。字のまま残すと、これまで数で読んで
+ * いたところと食い違う。String(Number(v)) === v のものだけを数と見なすので、
+ * '007' や '1e3' は字のまま残る。
+ *
+ * @param {string} column
+ * @param {*} v
+ * @returns {*}
+ */
+function dbCell_(column, v) {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string' || v === '') return v;
+  if (DB_TYPED_COLUMNS()[column]) return v;
+  if (String(Number(v)) === v) return v;
+  return "'" + v;
+}
+
+/**
  * テーブルに1行追記する。スキーマに無いキーは無視される。
  *
  * @param {string} table
@@ -254,10 +289,7 @@ function dbAppendNumbered(table, column, row) {
 function dbAppend(table, obj) {
   var cols = DB_SCHEMA()[table];
   var row = [];
-  for (var i = 0; i < cols.length; i++) {
-    var v = obj[cols[i]];
-    row.push(v === undefined || v === null ? '' : v);
-  }
+  for (var i = 0; i < cols.length; i++) row.push(dbCell_(cols[i], obj[cols[i]]));
   dbSheet_(table).appendRow(row);
 }
 
@@ -312,12 +344,15 @@ function dbUpdateLocked_(table, key, value, patch) {
   var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
   for (var r = 0; r < values.length; r++) {
     if (String(values[r][keyCol]) !== String(value)) continue;
+    // 直さない欄も書き戻すので、全部を dbCell_ に通す。字のセルは読むと
+    // ' の無い字で返ってくるため、そのまま書くと今度は解釈されてしまう
+    var line = [];
     for (var c = 0; c < cols.length; c++) {
-      if (Object.prototype.hasOwnProperty.call(patch, cols[c])) {
-        values[r][c] = patch[cols[c]];
-      }
+      var v = Object.prototype.hasOwnProperty.call(patch, cols[c])
+        ? patch[cols[c]] : values[r][c];
+      line.push(dbCell_(cols[c], v));
     }
-    sheet.getRange(r + 2, 1, 1, cols.length).setValues([values[r]]);
+    sheet.getRange(r + 2, 1, 1, cols.length).setValues([line]);
     return true;
   }
   return false;

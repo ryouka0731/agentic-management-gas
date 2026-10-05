@@ -150,6 +150,29 @@ export function createFakeGas() {
     deleteTrigger: () => {},
   };
 
+  /*
+   * 実機の Sheets は、appendRow / setValues で書いた字を、人がセルに打ち込んだ
+   * ときと同じように読む。'=' 始まりは数式に、'1/2' は日付に、'007' は 7 になる。
+   * 先頭の ' はその解釈を止め、' 自体は残らない。
+   *
+   * 既定では字をそのまま持つ (これまでのテストのため)。`_parseLikeSheets(true)`
+   * で実機と同じ読み方にする。先頭の ' はどちらでも外す
+   */
+  let parseLikeSheets = false;
+  function asTyped(v) {
+    if (typeof v !== 'string') return v;
+    if (v.charAt(0) === "'") return v.substring(1);
+    if (!parseLikeSheets) return v;
+    if (v.charAt(0) === '=') return { formula: v };
+    if (/^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(v)) return Number(v);
+    const md = /^(\d{1,2})[\/-](\d{1,2})$/.exec(v);
+    if (md) return new Date(2026, Number(md[1]) - 1, Number(md[2]));
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    if (/^(TRUE|FALSE)$/i.test(v)) return v.toUpperCase() === 'TRUE';
+    return v;
+  }
+
   // --- スプレッドシート (メタDB) ---
   function makeSheet(name) {
     const rows = [];
@@ -158,7 +181,7 @@ export function createFakeGas() {
       getName: () => name,
       getLastRow: () => rows.length,
       setFrozenRows: () => sheet,
-      appendRow: (vals) => { rows.push(vals.slice()); return sheet; },
+      appendRow: (vals) => { rows.push(vals.map(asTyped)); return sheet; },
       deleteRow: (r) => { rows.splice(r - 1, 1); return sheet; },
       /*
        * 実機と同じく、中身のある範囲だけを返す。消したセルは範囲から外れる。
@@ -216,7 +239,7 @@ export function createFakeGas() {
             const r = row - 1 + i;
             while (rows.length <= r) rows.push([]);
             for (let j = 0; j < vals[i].length; j++) {
-              rows[r][col - 1 + j] = vals[i][j];
+              rows[r][col - 1 + j] = asTyped(vals[i][j]);
             }
           }
         },
@@ -443,6 +466,7 @@ export function createFakeGas() {
       });
       return file.getId();
     },
+    _parseLikeSheets: (on) => { parseLikeSheets = !!on; },
     _setUser: (email) => { activeUser = email; },
     _setEffectiveUser: (email) => { effectiveUser = email; },
     _getUser: () => activeUser,
