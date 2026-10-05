@@ -316,6 +316,91 @@ describe('Phase 2 統合: 承認のゲート', () => {
   });
 });
 
+describe('Phase 2 統合: 承認は承認した時点の中身にだけ効く', () => {
+  /*
+   * 承認したあとに改訂版を直したり、添えたコードを差し替えたりしても承認が
+   * 残っていた。読んで決めたものと違うものが「承認された」として反映され、
+   * 手元にも取り込みを頼むことになる。
+   */
+  let env;
+  beforeEach(() => {
+    env = setup();
+    const { workFileId } = divergeBranch(
+      env.ctx, env.fake, env.mainFileId, html([P1, P2, P3, '<p>第4条</p>']), null);
+    env.workFileId = workFileId;
+    env.pr = env.ctx.prCreate('第4条を追加', '', '改訂', env.mainFileId);
+
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+  });
+
+  function editBranch() {
+    env.fake._docs.set(env.workFileId, html([P1, P2, P3, '<p>第4条</p>', '<p>第5条 (承認のあと)</p>']));
+    env.ctx.commitFile(env.workFileId, '改訂', '承認のあとに足した', null);
+  }
+
+  it('承認のあとに改訂版を直したら、その承認は数えない', () => {
+    editBranch();
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(0);
+    expect(env.ctx.prGet(env.pr.number).state).toBe('open');
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/承認のあとに中身が変わっています/);
+    expect(env.fake._docs.get(env.mainFileId)).not.toContain('第5条');
+  });
+
+  it('承認のあとにコードの証跡を差し替えたら、その承認は数えない', () => {
+    env.ctx.prPatchAdd(env.pr.number, 'src/a.js', '+console.log(1)\n');
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(0);
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/承認のあとに中身が変わっています/);
+  });
+
+  it('承認のあとに証跡を外しても、その承認は数えない', () => {
+    env.fake._setUser('tester@example.com');
+    const added = env.ctx.prPatchAdd(env.pr.number, 'src/a.js', '+x\n');
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+    env.ctx.prPatchRemove(env.pr.number, added.id);
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(0);
+  });
+
+  it('同じ差分を送り直しただけなら、承認は残る', () => {
+    env.ctx.prPatchAdd(env.pr.number, 'src/a.js', '+x\n');
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+
+    env.ctx.prPatchAdd(env.pr.number, 'src/a.js', '+x\n');
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
+  });
+
+  it('直したあとに承認し直せば反映できる', () => {
+    editBranch();
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
+    env.ctx.prMerge(env.pr.number, []);
+    expect(env.fake._docs.get(env.mainFileId)).toContain('第5条');
+  });
+
+  it('依頼に入っていない文書を直しても、承認は残る', () => {
+    const other = env.fake._createDoc('細則', '<p>細則</p>\n', env.ctx.repoConfig().mainId);
+    env.ctx.repoRegisterFile(other, '細則.doc');
+    env.ctx.branchAddFile('改訂', other);
+    const work = env.ctx.branchWorkingFileId('改訂', other);
+    env.fake._docs.set(work, '<p>細則</p>\n<p>追記</p>\n');
+    env.ctx.commitFile(work, '改訂', '細則を直した', null);
+
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
+  });
+});
+
 describe('Phase 2 統合: ブランチの後始末', () => {
   it('ブランチを削除すると作業コピーが一覧から消える', () => {
     const { ctx, fake, mainFileId } = setup();

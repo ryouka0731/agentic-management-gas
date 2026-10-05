@@ -15,7 +15,7 @@ function DB_SCHEMA() {
     files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha'],
     commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
-    pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles'],
+    pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles', 'staleReviewId'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
     task_links: ['issueNumber', 'user', 'taskId', 'listId', 'syncedAt'],
     issue_comments: ['id', 'issueNumber', 'body', 'by', 'at', 'editedAt'],
@@ -198,6 +198,27 @@ function dbNextNumber_(table, column) {
   var next = max + 1;
   props.setProperty(key, String(next));
   return next;
+}
+
+/**
+ * その列でこれまでに出した最大の番号を返す。番号は進めない。
+ *
+ * @param {string} table
+ * @param {string} column
+ * @returns {number} 1つも出していなければ 0
+ */
+function dbLastNumber_(table, column) {
+  var rows = dbReadAll(table);
+  var max = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var n = Number(rows[i][column]);
+    if (!isNaN(n) && n > max) max = n;
+  }
+
+  var high = Number(PropertiesService.getScriptProperties()
+    .getProperty(dbHighKey_(table, column)));
+  return !isNaN(high) && high > max ? high : max;
 }
 
 /**

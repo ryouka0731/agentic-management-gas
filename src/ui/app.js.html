@@ -3947,7 +3947,10 @@
           mergeBtn.title = '反映できない内容が含まれています';
         } else if (preview.approvals < 1) {
           mergeBtn.disabled = true;
-          mergeBtn.title = '反映には1件以上の承認が必要です';
+          // 承認したはずの人に「承認が必要」とだけ出すと首をかしげる
+          mergeBtn.title = preview.staleApprovals
+            ? '承認のあとに中身が変わっています。もう一度承認してもらってください'
+            : '反映には1件以上の承認が必要です';
         }
 
         // 文書が無くコードの証跡だけなら、書き戻すものが無い。それでも

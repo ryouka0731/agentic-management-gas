@@ -192,6 +192,24 @@ function prApprovalCount(number) {
 }
 
 /**
+ * 承認のあとに中身が変わって、数えなくなった承認の数を返す。
+ *
+ * Main.gs の apiPrPreview から呼ぶ。
+ *
+ * @param {number} number
+ * @returns {number}
+ */
+function prStaleApprovalCount(number) {
+  var latest = prDecisions_(number);
+  var count = 0;
+  for (var k in latest) {
+    if (!Object.prototype.hasOwnProperty.call(latest, k)) continue;
+    if (latest[k] === 'stale') count++;
+  }
+  return count;
+}
+
+/**
  * 人ごとの最後の判断 (approve / request_changes) を返す。
  *
  * **過去の承認を全部数えてはいけない。** 承認したあとに差し戻した人の
@@ -199,19 +217,73 @@ function prApprovalCount(number) {
  * 判断ではないので上書きしない。台帳は書いた順に並んでいる。
  *
  * @param {number} number
- * @returns {Object<string, string>} reviewer → 'approve' | 'request_changes'
+ * @returns {Object<string, string>} reviewer → 'approve' | 'request_changes' | 'stale'
  */
 function prDecisions_(number) {
   var rows = dbReadAll('reviews');
+  var stale = Number(prGet(number).staleReviewId) || 0;
   var latest = {};
   for (var i = 0; i < rows.length; i++) {
     if (Number(rows[i].prNumber) !== Number(number)) continue;
 
     var state = String(rows[i].state);
     if (state !== 'approve' && state !== 'request_changes') continue;
+
+    // 中身が変わる前の承認は、いまの中身を承認したものではない。差し戻しは
+    // 古くしない。直したかどうかを決めるのは差し戻した人である
+    if (state === 'approve' && Number(rows[i].id) <= stale) state = 'stale';
     latest[String(rows[i].reviewer)] = state;
   }
   return latest;
+}
+
+/**
+ * 確認依頼の中身が変わったことを記録する。
+ *
+ * **承認は、承認した時点の中身にだけ効く。** 承認のあとに改訂版を直したり
+ * 証跡を差し替えたりしても承認が残ると、読んで決めたものと違うものが
+ * 「承認された」として反映され、手元にも取り込みを頼むことになる。
+ *
+ * 時刻では比べない。同じミリ秒に起きると前後が決まらない。確認の番号は
+ * 通し番号なので、「ここまでに出た番号の承認は古い」と覚えておく。
+ *
+ * @param {object} pr pulls 行
+ */
+function prMarkChanged_(pr) {
+  var state = String(pr.state);
+  if (state !== 'open' && state !== 'approved') return;
+
+  dbUpdate('pulls', 'number', pr.number, {
+    staleReviewId: dbLastNumber_('reviews', 'id'),
+    // 一覧の「承認済み」を残すと、承認し直しが要ることが伝わらない
+    state: 'open',
+  });
+}
+
+/**
+ * 改訂版の文書が記録されたとき、それを対象にしている確認依頼を古くする。
+ *
+ * commitFile から呼ばれる。反映で別の改訂版に取り込んだときも、その版から
+ * 出ている依頼の中身は変わるので同じ扱いになる。
+ *
+ * @param {string} branch
+ * @param {string} fileId 記録した作業コピー
+ */
+function prSourceChanged_(branch, fileId) {
+  if (String(branch) === 'main') return;
+
+  var pulls = dbReadAll('pulls');
+  for (var i = 0; i < pulls.length; i++) {
+    if (String(pulls[i].sourceBranch) !== String(branch)) continue;
+
+    var targets = prTargetFiles(pulls[i]);
+    for (var t = 0; t < targets.length; t++) {
+      if (String(branchWorkingFileId(branch, targets[t])) !== String(fileId)) continue;
+
+      prMarkChanged_(pulls[i]);
+      break;
+    }
+  }
 }
 
 /**
@@ -545,13 +617,21 @@ function prMerge(number, choices) {
         if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
         if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
 
+        var decisions = prDecisions_(number);
         if (prApprovalCount(number) < 1) {
+          // 承認はあったが、そのあとに中身が変わった。黙って「承認が無い」と
+          // 言うと、承認したはずの人が首をかしげる
+          for (var sw in decisions) {
+            if (!Object.prototype.hasOwnProperty.call(decisions, sw)) continue;
+            if (decisions[sw] === 'stale') {
+              throw new Error('承認のあとに中身が変わっています。もう一度確認して承認してもらってください');
+            }
+          }
           throw new Error('反映には1件以上の承認が必要です');
         }
 
         // 誰かが差し戻したままなら反映しない。別の人の承認で押し切れると、
         // 差し戻しが意味を持たない
-        var decisions = prDecisions_(number);
         for (var who in decisions) {
           if (!Object.prototype.hasOwnProperty.call(decisions, who)) continue;
           if (decisions[who] === 'request_changes') {

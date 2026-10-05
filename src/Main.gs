@@ -617,6 +617,8 @@ function apiPrPreview(number) {
     problems: all.problems,
     conflicts: head.conflicts,
     approvals: prApprovalCount(number),
+    // 承認のあとに中身が変わって数えなくなった承認の数。押せない理由を言う
+    staleApprovals: prStaleApprovalCount(number),
     ops: head.ops,
     files: files,
     // 証跡の数。中身は重いので、あるかどうかだけ先に渡す

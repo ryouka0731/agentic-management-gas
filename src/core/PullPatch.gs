@@ -138,6 +138,10 @@ function prPatchAdd(prNumber, path, text) {
       by: Session.getActiveUser().getEmail(),
     };
 
+    // 証跡が変われば、それまでの承認は今の中身を承認したものではない。
+    // 同じ差分を送り直しただけなら中身は変わっていないので古くしない
+    if (!found || String(found.blobSha) !== sha) prMarkChanged_(pr);
+
     if (!found) return dbAppendNumbered('pull_patches', 'id', row);
 
     row.id = Number(found.id);
@@ -224,7 +228,9 @@ function prPatchRemove(prNumber, id) {
     if (Number(rows[i].id) !== Number(id)) continue;
 
     // 中身 (objects/) は消さない。過去の記録が同じ sha を指していることがある
-    return dbDelete('pull_patches', 'id', rows[i].id);
+    var gone = dbDelete('pull_patches', 'id', rows[i].id);
+    prMarkChanged_(pr);
+    return gone;
   }
   throw new Error('その証跡は見つかりません: ' + id);
 }

@@ -5680,3 +5680,30 @@ describe('使い方の図', () => {
     expect(css).toMatch(/\.diagram svg\s*\{[^}]*min-width:\s*680px/);
   });
 });
+
+describe('承認のあとに中身が変わった依頼', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function mergeButton() {
+    return [...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .filter((b) => /反映する/.test(b.textContent))[0];
+  }
+
+  it('押せない理由に、承認し直しが要ることを出す', () => {
+    mount({
+      apiPrPreview: { ...DEFAULTS.apiPrPreview, approvals: 0, staleApprovals: 1 },
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    // 「承認が必要」とだけ出ると、承認したはずの人が首をかしげる
+    expect(mergeButton().disabled).toBe(true);
+    expect(mergeButton().title).toContain('承認のあとに中身が変わっています');
+  });
+
+  it('古い承認が無ければ今までどおりの理由を出す', () => {
+    mount({ apiPrPreview: { ...DEFAULTS.apiPrPreview, approvals: 0 } });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    expect(mergeButton().title).toBe('反映には1件以上の承認が必要です');
+  });
+});

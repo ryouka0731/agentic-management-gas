@@ -181,6 +181,10 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
           dbUpdate('branches', 'name', branch, { headSha: sha });
         }
 
+        // この版から出ている確認依頼の中身が変わった。承認は承認した時点の
+        // 中身にだけ効く (PullRequest.gs を読まない構成もあるので確かめる)
+        if (typeof prSourceChanged_ === 'function') prSourceChanged_(branch, fileId);
+
         return row;
   });
 }
