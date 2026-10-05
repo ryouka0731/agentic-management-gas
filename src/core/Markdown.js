@@ -39,7 +39,7 @@ function runsToMd_(runs) {
     if (!r.text) continue;
 
     var md = escapeMd_(r.text);
-    if (r.link) md = '[' + md + '](' + r.link + ')';
+    if (r.link) md = '[' + md + '](' + escapeMdUrl_(r.link) + ')';
     if (r.strike) md = '~~' + md + '~~';
     if (r.underline) md = '<u>' + md + '</u>';
     if (r.italic) md = '*' + md + '*';
@@ -47,6 +47,19 @@ function runsToMd_(runs) {
     out += md;
   }
   return out;
+}
+
+/**
+ * リンクの URL を逃がす。
+ *
+ * 読むときは `)` で URL の終わりとみなすので、URL の中の `)` (例:
+ * `…/wiki/X_(Y)`) を逃がさないと URL が途中で切れ、残りが本文に漏れる。
+ *
+ * @param {string} url
+ * @returns {string}
+ */
+function escapeMdUrl_(url) {
+  return String(url).replace(/([\\)])/g, '\\$1');
 }
 
 /**
@@ -169,10 +182,11 @@ function mdTakeDecorated_(rest) {
     return { runs: runs, rest: rest.substring(end + f.close.length) };
   }
 
-  var link = /^\[([\s\S]*?)\]\(([^)]*)\)/.exec(rest);
+  var link = /^\[([\s\S]*?)\]\(((?:\\[\s\S]|[^)\\])*)\)/.exec(rest);
   if (link) {
+    var url = link[2].replace(/\\([\\)])/g, '$1');
     var lruns = mdToRuns_(link[1]);
-    for (var k = 0; k < lruns.length; k++) lruns[k].link = link[2];
+    for (var k = 0; k < lruns.length; k++) lruns[k].link = url;
     return { runs: lruns, rest: rest.substring(link[0].length) };
   }
   return null;
@@ -187,7 +201,9 @@ function mdTakeDecorated_(rest) {
  * @returns {object[]}
  */
 function mdToRuns_(md) {
-  var re = /(\*\*|\*|<u>|~~|\[)/;
+  // 逆斜線でも止まる。止まらないと、逃がしの \\ を手前の字と一緒に取り込み、
+  // 逃がしたはずの記号 (\\*) を装飾の始まりとして読んでしまう
+  var re = /(\\|\*\*|\*|<u>|~~|\[)/;
   var rest = String(md);
   var runs = [];
   var plain = '';
@@ -237,8 +253,26 @@ function mdToRuns_(md) {
  * @returns {Array<object[]>|null}
  */
 function mdTableRow_(line) {
-  var body = line.replace(/^\|/, '').replace(/\|$/, '');
-  var parts = body.split('|');
+  // 逃がした縦棒 (\\|) では割らない。書くときはセルの中の | を逃がしている
+  var parts = [];
+  var cur = '';
+  var body = line.replace(/^\|/, '');
+
+  for (var p = 0; p < body.length; p++) {
+    var ch = body.charAt(p);
+    if (ch === '\\' && p + 1 < body.length) {
+      cur += body.substring(p, p + 2);
+      p++;
+    } else if (ch === '|') {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  // 行末の | のあとは空。それ以外の字が残っていればセルとして扱う
+  if (cur.replace(/^\s+|\s+$/g, '') !== '' || !parts.length) parts.push(cur);
+
   var cells = [];
   var separator = true;
 

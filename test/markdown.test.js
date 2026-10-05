@@ -138,6 +138,16 @@ describe('往復', () => {
     ['画像', [{ type: 'image', sha: 'b'.repeat(64), alt: '図' }]],
     ['記号を含む文', [{ type: 'paragraph', runs: [run('a * b [c] ~ | <d>')] }]],
     ['見出しに見える段落', [{ type: 'paragraph', runs: [run('# これは段落')] }]],
+    // 逃がした記号が対になっていると、逃がしの \\ ごと装飾の始まりと読まれていた
+    ['対になった記号', [{ type: 'paragraph', runs: [run('注*1と注*2、[a]と[b]、~~x~~')] }]],
+    ['逆斜線', [{ type: 'paragraph', runs: [run('C:\\work\\*.txt')] }]],
+    ['セルの中の縦棒', [{ type: 'table', rows: [
+      [[run('A|B')], [run('C')]],
+      [[run('|')], [run('末尾\\')]],
+    ] }]],
+    ['括弧を含む URL', [{ type: 'paragraph', runs: [
+      run('記事', { link: 'https://ja.wikipedia.org/wiki/X_(Y)' }), run('のあと'),
+    ] }]],
   ];
 
   cases.forEach(([name, blocks]) => {
