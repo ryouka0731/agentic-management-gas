@@ -1391,11 +1391,14 @@ function apiIssueClose(number) {
  * inquiries の行を、画面に渡せる素の形にする。
  *
  * @param {object} row
+ * @param {object} [shared] 一覧で1回だけ求めたもの {me, owner, replies}
  * @returns {object}
  */
-function inquiryToPlain_(row) {
-  var me = Session.getActiveUser().getEmail();
-  var owner = inquiryOwner_();
+function inquiryToPlain_(row, shared) {
+  // 一覧では持ち主と返信の数を先に1回だけ求めて渡す。1件ごとに求めると
+  // 件数のぶん Drive と返信の表を読みに行き、報告が増えるほど遅くなる
+  var me = shared ? shared.me : Session.getActiveUser().getEmail();
+  var owner = shared ? shared.owner : inquiryOwner_();
 
   return {
     number: Number(row.number),
@@ -1417,7 +1420,9 @@ function inquiryToPlain_(row) {
     // 閉じられるかは画面では決められない。ここで決めて渡す
     canClose: String(row.by) === String(me) ||
       (!!owner && String(owner) === String(me)),
-    replyCount: inquiryReplies(row.number).length,
+    replyCount: shared
+      ? (shared.replies[String(Number(row.number))] || 0)
+      : inquiryReplies(row.number).length,
   };
 }
 
@@ -1484,7 +1489,18 @@ function apiInquiryList() {
   var rows = inquiryList(null);
   var out = [];
 
-  for (var i = 0; i < rows.length; i++) out.push(inquiryToPlain_(rows[i]));
+  var shared = {
+    me: Session.getActiveUser().getEmail(),
+    owner: inquiryOwner_(),
+    replies: {},
+  };
+  var replies = dbReadAll('inquiry_replies');
+  for (var r = 0; r < replies.length; r++) {
+    var key = String(Number(replies[r].inquiryNumber));
+    shared.replies[key] = (shared.replies[key] || 0) + 1;
+  }
+
+  for (var i = 0; i < rows.length; i++) out.push(inquiryToPlain_(rows[i], shared));
   return out;
 }
 

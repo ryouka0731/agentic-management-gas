@@ -889,3 +889,31 @@ describe('画面から文書を登録する', () => {
       .toContain('drive.google.com/drive/folders/');
   });
 });
+
+describe('報告の一覧を1回で組む', () => {
+  /*
+   * 1件ごとに持ち主 (Drive) と返信の表を読んでいたため、報告が増えるほど
+   * 一覧が遅くなっていた。持ち主も返信の数も一覧で1回だけ求める。
+   */
+  it('件数が増えても持ち主と返信は1回しか見に行かない', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 4; i++) ctx.inquiryCreate('bug', '動かない' + i, '');
+    ctx.inquiryReply(1, 'こちらでも起きます', []);
+
+    const real = { owner: ctx.repoOwnerEmail, read: ctx.dbReadAll };
+    let owners = 0;
+    let replyReads = 0;
+    ctx.repoOwnerEmail = () => { owners++; return real.owner(); };
+    ctx.dbReadAll = (t) => {
+      if (t === 'inquiry_replies') replyReads++;
+      return real.read(t);
+    };
+
+    const list = ctx.apiInquiryList();
+    expect(list).toHaveLength(4);
+    expect(list.find((x) => x.number === 1).replyCount).toBe(1);
+    expect(list.find((x) => x.number === 2).replyCount).toBe(0);
+    expect(owners).toBe(1);
+    expect(replyReads).toBe(1);
+  });
+});
