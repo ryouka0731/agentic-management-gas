@@ -66,6 +66,28 @@ function hunksOverlap_(h1, h2) {
 }
 
 /**
+ * base の [from, to) に、その範囲にある片側の変更を当てた結果を返す。
+ *
+ * @param {string[]} base
+ * @param {object[]} hunks 範囲の中の hunk (start 順)
+ * @param {number} from
+ * @param {number} to
+ * @returns {string[]}
+ */
+function applyHunks_(base, hunks, from, to) {
+  var out = [];
+  var pos = from;
+
+  for (var i = 0; i < hunks.length; i++) {
+    while (pos < hunks[i].start) out.push(base[pos++]);
+    for (var k = 0; k < hunks[i].lines.length; k++) out.push(hunks[i].lines[k]);
+    pos = hunks[i].end;
+  }
+  while (pos < to) out.push(base[pos++]);
+  return out;
+}
+
+/**
  * base / ours / theirs の3-wayマージを行う。
  *
  * base に対する ours の変更と theirs の変更をそれぞれ hunk に変換し、
@@ -109,30 +131,68 @@ function merge3(base, ours, theirs) {
     }
 
     if (oh && th && hunksOverlap_(oh, th)) {
-      if (sameLines_(oh.lines, th.lines)) {
-        for (var s = 0; s < oh.lines.length; s++) lines.push(oh.lines[s]);
-      } else {
-        conflicts.push({
-          index: lines.length,
-          base: base.slice(Math.min(oh.start, th.start), Math.max(oh.end, th.end)),
-          ours: oh.lines.slice(),
-          theirs: th.lines.slice(),
-        });
-        // 未解決状態のプレビュー用に ours を入れておく
-        for (var c = 0; c < oh.lines.length; c++) lines.push(oh.lines[c]);
-      }
-      basePos = Math.max(oh.end, th.end);
+      /*
+       * **重なる変更を、つながる限りまとめて1つの食い違いにする。**
+       *
+       * 1つずつしか突き合わせないと、片側の1つの変更が相手の2つにまたがる
+       * とき、相手の2つ目が食い違いから漏れる。こちらを選ぶと消したはずの
+       * 行が戻り、相手を選ぶと相手が残していた行が消えていた。
+       */
+      var from = Math.min(oh.start, th.start);
+      var to = Math.max(oh.end, th.end);
+      var mine = [oh];
+      var yours = [th];
       oi++;
       ti++;
 
-    } else if (oh && (!th || oh.start <= th.start)) {
+      var grew = true;
+      while (grew) {
+        grew = false;
+        while (oi < oursHunks.length &&
+               hunksOverlap_(oursHunks[oi], { start: from, end: to })) {
+          mine.push(oursHunks[oi]);
+          to = Math.max(to, oursHunks[oi].end);
+          oi++;
+          grew = true;
+        }
+        while (ti < theirsHunks.length &&
+               hunksOverlap_(theirsHunks[ti], { start: from, end: to })) {
+          yours.push(theirsHunks[ti]);
+          to = Math.max(to, theirsHunks[ti].end);
+          ti++;
+          grew = true;
+        }
+      }
+
+      var oursPart = applyHunks_(base, mine, from, to);
+      var theirsPart = applyHunks_(base, yours, from, to);
+
+      if (sameLines_(oursPart, theirsPart)) {
+        for (var s = 0; s < oursPart.length; s++) lines.push(oursPart[s]);
+      } else {
+        conflicts.push({
+          index: lines.length,
+          base: base.slice(from, to),
+          ours: oursPart,
+          theirs: theirsPart,
+        });
+        // 未解決の間は ours 側を入れておく
+        for (var c = 0; c < oursPart.length; c++) lines.push(oursPart[c]);
+      }
+      basePos = to;
+
+    } else if (oh && (!th || oh.start < th.start ||
+               (oh.start === th.start && oh.start === oh.end))) {
+      // 同じ位置で重ならないのは、片方が挿入のとき。挿入を先に置く。
+      // 削除を先に処理すると、読み進めた位置が後ろへ戻り、消した行を
+      // もう一度写してしまう
       for (var o = 0; o < oh.lines.length; o++) lines.push(oh.lines[o]);
-      basePos = oh.end;
+      basePos = Math.max(basePos, oh.end);
       oi++;
 
     } else {
       for (var t = 0; t < th.lines.length; t++) lines.push(th.lines[t]);
-      basePos = th.end;
+      basePos = Math.max(basePos, th.end);
       ti++;
     }
   }
