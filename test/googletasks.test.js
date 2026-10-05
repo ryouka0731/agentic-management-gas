@@ -198,6 +198,24 @@ describe('同期', () => {
     expect(ctx.dbReadAll('task_links')).toEqual([]);
   });
 
+  it('一時的に取れなかっただけなら結び付きを捨てない', () => {
+    const { ctx, fake } = ready();
+    const issue = ctx.issueCreate('残る', '', []);
+    ctx.issueUpdate(issue.number, { assignee: 'tester@example.com' });
+    ctx.tasksSyncMine();
+
+    // 通信や上限で落ちたのを「消えた」と読むと結び付きを捨て、次の同期で
+    // 同じ ToDo をもう1つ作る
+    const realGet = fake.Tasks.Tasks.get;
+    fake.Tasks.Tasks.get = () => { throw new Error('Rate Limit Exceeded'); };
+    ctx.tasksSyncMine();
+    fake.Tasks.Tasks.get = realGet;
+    ctx.tasksSyncMine();
+
+    expect(ctx.dbReadAll('task_links')).toHaveLength(1);
+    expect(fake.Tasks._items.size).toBe(1);
+  });
+
   it('捨てたやることは送らない', () => {
     const { ctx, fake } = ready();
     const issue = ctx.issueCreate('捨てる', '', []);

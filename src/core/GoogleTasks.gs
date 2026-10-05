@@ -177,6 +177,9 @@ function tasksSyncMine() {
     }
 
     var remote = tasksFetch_(link.listId, link.taskId);
+    // 取れなかっただけのものは今回は飛ばす。消えたと読むと結び付きを捨て、
+    // 次の同期で同じ ToDo をもう1つ作る
+    if (remote === undefined) continue;
     if (!remote) {
       // 向こうで消えていたら、結び付きも忘れる
       dbDelete('task_links', 'taskId', link.taskId);
@@ -220,17 +223,23 @@ function tasksDueDay_(v) {
 }
 
 /**
- * ToDo を1件取ってくる。消えていれば null。
+ * ToDo を1件取ってくる。消えていれば null、取れなければ undefined。
+ *
+ * **「無い」と「取れなかった」を分ける。** 通信や上限の失敗まで消えたと
+ * 読むと、結び付きを捨てて同じ ToDo を作り直してしまう。
  *
  * @param {string} listId
  * @param {string} taskId
- * @returns {object|null}
+ * @returns {object|null|undefined}
  */
 function tasksFetch_(listId, taskId) {
   try {
     var got = Tasks.Tasks.get(listId, taskId);
     return (got && got.deleted) ? null : got;
   } catch (e) {
-    return null;
+    if (/not\s*found|404/i.test(String(e && e.message))) return null;
+
+    Logger.log('ToDo を取れませんでした: ' + (e && e.message));
+    return undefined;
   }
 }
