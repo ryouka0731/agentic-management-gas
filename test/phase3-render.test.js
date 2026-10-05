@@ -187,6 +187,41 @@ describe('renderSlides', () => {
     expect(ctx.renderSlides(id)).toBe('<section data-slide="1">\n<p>本文</p>\n');
   });
 
+  /*
+   * getShapes はいちばん上の図形しか返さない。グループにまとめた図形と表の
+   * 中の字が版管理に入っておらず、変えても差分に出なかった。
+   */
+  it('グループの中の図形も、置いた順で拾う', () => {
+    const { ctx, fake } = setup(...SRC);
+    const id = fake._createSlides('提案書', [{
+      elements: [
+        { shape: '見出し' },
+        { group: [{ shape: '箱A' }, { group: [{ shape: '箱B' }] }] },
+        { shape: '結び' },
+      ],
+    }]);
+
+    expect(ctx.renderSlides(id)).toBe(
+      '<section data-slide="1">\n<p>見出し</p>\n<p>箱A</p>\n<p>箱B</p>\n<p>結び</p>\n');
+  });
+
+  it('表の中の字を表として拾う', () => {
+    const { ctx, fake } = setup(...SRC);
+    const id = fake._createSlides('提案書', [{
+      elements: [{ table: [['項目', '金額'], ['人件費', '  120 ']] }],
+    }]);
+
+    expect(ctx.renderSlides(id)).toBe('<section data-slide="1">\n<table>\n' +
+      '<tr><td>項目</td><td>金額</td></tr>\n<tr><td>人件費</td><td>120</td></tr>\n</table>\n');
+  });
+
+  it('画像など字の無いものは飛ばす', () => {
+    const { ctx, fake } = setup(...SRC);
+    const id = fake._createSlides('提案書', [{ elements: [{ image: true }, { shape: '本文' }] }]);
+
+    expect(ctx.renderSlides(id)).toBe('<section data-slide="1">\n<p>本文</p>\n');
+  });
+
   it('同じ内容からは常に同じ HTML が出る', () => {
     const { ctx, fake } = setup(...SRC);
     const id = fake._createSlides('提案書', [{ shapes: ['a'], notes: 'b' }]);

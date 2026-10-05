@@ -339,6 +339,29 @@ export function createFakeGas() {
     };
   }
 
+  /*
+   * スライドの要素。{shape: '字'} / {group: [要素]} / {table: [['a','b']]} /
+   * {image: true}。elements を書かなければ shapes を図形として並べる
+   */
+  function slideElements_(d) {
+    return d.elements || (d.shapes || []).map((t) => ({ shape: t }));
+  }
+
+  function slidePageElement_(e) {
+    const text = (t) => ({ getText: () => ({ asString: () => t }) });
+    const type = e.group ? 'GROUP' : e.table ? 'TABLE' : e.image ? 'IMAGE' : 'SHAPE';
+    return {
+      getPageElementType: () => type,
+      asShape: () => text(e.shape),
+      asGroup: () => ({ getChildren: () => e.group.map(slidePageElement_) }),
+      asTable: () => ({
+        getNumRows: () => e.table.length,
+        getNumColumns: () => e.table[0].length,
+        getCell: (r, c) => text(e.table[r][c]),
+      }),
+    };
+  }
+
   const kitFiles = new Map();
 
   const HtmlService = {
@@ -381,6 +404,7 @@ export function createFakeGas() {
     },
     Logger: { log: () => {} },
     SlidesApp: {
+      PageElementType: { SHAPE: 'SHAPE', GROUP: 'GROUP', TABLE: 'TABLE', IMAGE: 'IMAGE' },
       openById: (id) => {
         const pres = presentations.get(id);
         if (!pres) throw new Error('プレゼンテーションが見つかりません: ' + id);
@@ -404,9 +428,12 @@ export function createFakeGas() {
         'application/vnd.google-apps.presentation');
       presentations.set(file.getId(), {
         getSlides: () => slideDefs.map((d) => ({
-          getShapes: () => (d.shapes || []).map((t) => ({
-            getText: () => ({ asString: () => t }),
-          })),
+          // 実機と同じく、getShapes はいちばん上の図形だけを返す。グループの
+          // 中と表は getPageElements からしか辿れない
+          getShapes: () => slideElements_(d)
+            .filter((e) => e.shape !== undefined)
+            .map((e) => ({ getText: () => ({ asString: () => e.shape }) })),
+          getPageElements: () => slideElements_(d).map(slidePageElement_),
           getNotesPage: () => ({
             getSpeakerNotesShape: () => (d.notes
               ? { getText: () => ({ asString: () => d.notes }) }
