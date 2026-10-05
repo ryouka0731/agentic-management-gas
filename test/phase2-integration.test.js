@@ -274,6 +274,39 @@ describe('Phase 2 統合: 承認のゲート', () => {
     expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
   });
 
+  it('承認した人があとで差し戻したら、その承認は数えない', () => {
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.ctx.prReview(env.pr.number, 'request_changes', 'やはり直してほしい');
+    env.fake._setUser('tester@example.com');
+
+    // 過去の承認を全部数えると、差し戻されたまま反映できてしまう
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(0);
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/1件以上の承認/);
+  });
+
+  it('誰かの差し戻しが残っているうちは反映できない', () => {
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('other@example.com');
+    env.ctx.prReview(env.pr.number, 'request_changes', 'ここは直してほしい');
+    env.fake._setUser('tester@example.com');
+
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/差し戻し/);
+  });
+
+  it('差し戻した人が承認し直せば反映できる', () => {
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'request_changes', '');
+    env.ctx.prReview(env.pr.number, 'comment', 'ただの感想');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+
+    // ただのコメントは判断を上書きしない
+    expect(env.ctx.prApprovalCount(env.pr.number)).toBe(1);
+    expect(() => env.ctx.prMerge(env.pr.number, [])).not.toThrow();
+  });
+
   it('マージ済みのPRは再度マージできない', () => {
     env.fake._setUser('reviewer@example.com');
     env.ctx.prReview(env.pr.number, 'approve', '');

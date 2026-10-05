@@ -173,7 +173,7 @@ function prGet(number) {
 }
 
 /**
- * PRのapprove数を返す。同一レビュアーの複数承認は1件として数える。
+ * PRのapprove数を返す。人ごとに最後の判断が承認のものだけを1件と数える。
  *
  * Main.gs の apiPrPreview からも呼ぶため、末尾アンダースコアを付けない
  * (アンダースコアはファイル内部専用の目印という規約のため)。
@@ -182,18 +182,36 @@ function prGet(number) {
  * @returns {number}
  */
 function prApprovalCount(number) {
-  var rows = dbReadAll('reviews');
-  var seen = {};
-  for (var i = 0; i < rows.length; i++) {
-    if (Number(rows[i].prNumber) !== Number(number)) continue;
-    if (String(rows[i].state) !== 'approve') continue;
-    seen[String(rows[i].reviewer)] = true;
-  }
+  var latest = prDecisions_(number);
   var count = 0;
-  for (var k in seen) {
-    if (Object.prototype.hasOwnProperty.call(seen, k)) count++;
+  for (var k in latest) {
+    if (!Object.prototype.hasOwnProperty.call(latest, k)) continue;
+    if (latest[k] === 'approve') count++;
   }
   return count;
+}
+
+/**
+ * 人ごとの最後の判断 (approve / request_changes) を返す。
+ *
+ * **過去の承認を全部数えてはいけない。** 承認したあとに差し戻した人の
+ * 承認まで数えると、差し戻されたまま反映できてしまう。ただのコメントは
+ * 判断ではないので上書きしない。台帳は書いた順に並んでいる。
+ *
+ * @param {number} number
+ * @returns {Object<string, string>} reviewer → 'approve' | 'request_changes'
+ */
+function prDecisions_(number) {
+  var rows = dbReadAll('reviews');
+  var latest = {};
+  for (var i = 0; i < rows.length; i++) {
+    if (Number(rows[i].prNumber) !== Number(number)) continue;
+
+    var state = String(rows[i].state);
+    if (state !== 'approve' && state !== 'request_changes') continue;
+    latest[String(rows[i].reviewer)] = state;
+  }
+  return latest;
 }
 
 /**
@@ -529,6 +547,16 @@ function prMerge(number, choices) {
 
         if (prApprovalCount(number) < 1) {
           throw new Error('反映には1件以上の承認が必要です');
+        }
+
+        // 誰かが差し戻したままなら反映しない。別の人の承認で押し切れると、
+        // 差し戻しが意味を持たない
+        var decisions = prDecisions_(number);
+        for (var who in decisions) {
+          if (!Object.prototype.hasOwnProperty.call(decisions, who)) continue;
+          if (decisions[who] === 'request_changes') {
+            throw new Error(who + ' さんの差し戻しが残っています。直してもらうか、承認し直してもらってください');
+          }
         }
 
         // main に未コミットの変更があるうちはマージしない。
