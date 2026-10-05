@@ -55,25 +55,7 @@ function writeHtmlToSheet(fileId, html) {
     keep[block.name] = true;
 
     var sheet = ss.getSheetByName(block.name) || ss.insertSheet(block.name);
-    sheet.clear();
-    if (block.rows.length === 0) continue;
-
-    var width = 0;
-    for (var w = 0; w < block.rows.length; w++) {
-      if (block.rows[w].length > width) width = block.rows[w].length;
-    }
-
-    var matrix = [];
-    for (var r = 0; r < block.rows.length; r++) {
-      var line = [];
-      for (var c = 0; c < width; c++) {
-        var cell = block.rows[r][c];
-        // 数式があれば数式を書く。setValues は '=' 始まりを数式として解釈する
-        line.push(cell ? (cell.formula || cell.value) : '');
-      }
-      matrix.push(line);
-    }
-    sheet.getRange(1, 1, matrix.length, width).setValues(matrix);
+    sheetWriteBlock_(sheet, block);
   }
 
   // HTMLに無くなったシートは削除する。ただし最後の1枚は消せない
@@ -83,4 +65,56 @@ function writeHtmlToSheet(fileId, html) {
     if (ss.getSheets().length <= 1) break;
     ss.deleteSheet(existing[e]);
   }
+}
+
+/**
+ * 1枚のシートに書き戻す。
+ *
+ * **変わったセルだけを書く。** 読むのは表示値 (getDisplayValues) なので、
+ * 表示値をそのまま書き戻すと、反映で触っていないセルまで丸めた値に置き
+ * 換わる (3.14159 → 3.14、書式で付けた先頭の0 '0123' → 123)。表示値も数式も
+ * 今と同じセルは、いまの生の値 (数式があれば数式) を書き直すだけにする。
+ *
+ * **clear() しない。** 表示の書式まで消え、残したはずの値も違って見える。
+ * はみ出したぶんは空を書いて消す。
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {object} block sheet ブロック
+ */
+function sheetWriteBlock_(sheet, block) {
+  var range = sheet.getDataRange();
+  var rawNow = range.getValues();
+  var shownNow = range.getDisplayValues();
+  var formulaNow = range.getFormulas();
+
+  var height = Math.max(block.rows.length, rawNow.length);
+  var width = 0;
+  for (var w = 0; w < block.rows.length; w++) {
+    if (block.rows[w].length > width) width = block.rows[w].length;
+  }
+  for (var x = 0; x < rawNow.length; x++) {
+    if (rawNow[x].length > width) width = rawNow[x].length;
+  }
+  if (!height || !width) return;
+
+  var matrix = [];
+  for (var r = 0; r < height; r++) {
+    var line = [];
+    for (var c = 0; c < width; c++) {
+      var want = (block.rows[r] && block.rows[r][c]) || null;
+      var wantFormula = want && want.formula ? String(want.formula) : '';
+      var wantValue = want ? String(want.value == null ? '' : want.value) : '';
+
+      var had = r < rawNow.length && c < rawNow[r].length;
+      var hadFormula = had ? String(formulaNow[r][c] || '') : '';
+      var same = had && hadFormula === wantFormula &&
+        (wantFormula || String(shownNow[r][c]) === wantValue);
+
+      if (same) line.push(hadFormula || rawNow[r][c]);
+      // 数式があれば数式を書く。setValues は '=' 始まりを数式として解釈する
+      else line.push(wantFormula || wantValue);
+    }
+    matrix.push(line);
+  }
+  sheet.getRange(1, 1, height, width).setValues(matrix);
 }

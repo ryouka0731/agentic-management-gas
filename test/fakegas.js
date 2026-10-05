@@ -157,15 +157,43 @@ export function createFakeGas() {
       setFrozenRows: () => sheet,
       appendRow: (vals) => { rows.push(vals.slice()); return sheet; },
       deleteRow: (r) => { rows.splice(r - 1, 1); return sheet; },
-      getDataRange: () => ({
-        getDisplayValues: () => rows.map((r) => r.map(
-          (v) => (v === undefined || v === null ? '' : String(v))
-        )),
-        getFormulas: () => rows.map((r) => r.map(
-          (v) => (String(v === undefined ? '' : v).indexOf('=') === 0 ? String(v) : '')
-        )),
-      }),
-      clear: () => { rows.length = 0; return sheet; },
+      /*
+       * 実機と同じく、中身のある範囲だけを返す。消したセルは範囲から外れる。
+       *
+       * 表示値は `_format` を通す。実機では表示の書式 (小数の桁・先頭の0
+       * など) で表示値と生の値がずれる。既定はただの文字列で、ずれない
+       */
+      getDataRange: () => {
+        const empty = (v) => v === undefined || v === null || v === '';
+        let height = 0;
+        let width = 0;
+        rows.forEach((r, i) => r.forEach((v, j) => {
+          if (empty(v)) return;
+          height = Math.max(height, i + 1);
+          width = Math.max(width, j + 1);
+        }));
+        const box = () => {
+          const out = [];
+          for (let i = 0; i < height; i++) {
+            const line = [];
+            for (let j = 0; j < width; j++) {
+              const v = (rows[i] || [])[j];
+              line.push(v === undefined || v === null ? '' : v);
+            }
+            out.push(line);
+          }
+          return out;
+        };
+        return {
+          getValues: box,
+          getDisplayValues: () => box().map((r) => r.map((v) => (
+            sheet._format ? sheet._format(v) : String(v)))),
+          getFormulas: () => box().map((r) => r.map(
+            (v) => (String(v).indexOf('=') === 0 ? String(v) : ''))),
+        };
+      },
+      /** 表示の書式ごと消す。実機の clear() と同じく `_format` も落ちる */
+      clear: () => { rows.length = 0; sheet._format = null; return sheet; },
       getRange: (row, col, numRows, numCols) => ({
         getValues: () => {
           const out = [];

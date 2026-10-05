@@ -85,6 +85,54 @@ describe('writeHtmlToSheet', () => {
     expect(ctx.renderSheet(ss.getId())).toContain('data-formula="=1+1"');
   });
 
+  /*
+   * 読むのは表示値 (getDisplayValues) なので、書き戻しで表示値を書くと、
+   * 反映で触っていないセルまで丸めた値に置き換わる (3.14159 → 3.14)。
+   * clear() で表示の書式も消えるため、実機では '0123' が 123 になる。
+   */
+  function rounded(ctx) {
+    const ss = ctx.SpreadsheetApp.create('売上表');
+    const sheet = ss.insertSheet('S');
+    sheet.appendRow(['月', '金額']);
+    sheet.appendRow(['4月', 3.14159]);
+    sheet._format = (v) => (typeof v === 'number' ? v.toFixed(2) : String(v));
+    return { ss, sheet };
+  }
+
+  it('変えていないセルは、生の値のまま残す', () => {
+    const { ctx } = setup(...SRC);
+    const { ss, sheet } = rounded(ctx);
+    const html = ctx.renderSheet(ss.getId());
+    expect(html).toContain('3.14<');
+
+    // 見出しだけを直した結果を書き戻す
+    ctx.writeHtmlToSheet(ss.getId(), html.replace('>金額<', '>金額 (千円)<'));
+
+    expect(sheet._rows[0][1]).toBe('金額 (千円)');
+    expect(sheet._rows[1][1]).toBe(3.14159);
+  });
+
+  it('表示の書式を消さない', () => {
+    const { ctx } = setup(...SRC);
+    const { ss, sheet } = rounded(ctx);
+
+    ctx.writeHtmlToSheet(ss.getId(), ctx.renderSheet(ss.getId()));
+
+    // 書式まで消すと、残した値も違って見える
+    expect(typeof sheet._format).toBe('function');
+    expect(ctx.renderSheet(ss.getId())).toContain('3.14<');
+  });
+
+  it('変えたセルは書いた値になり、消した行は残らない', () => {
+    const { ctx } = setup(...SRC);
+    const { ss } = rounded(ctx);
+    ctx.writeHtmlToSheet(ss.getId(),
+      '<table data-sheet="S">\n<tr><td>月</td><td>金額</td></tr>\n</table>\n');
+
+    expect(ctx.renderSheet(ss.getId())).toBe(
+      '<table data-sheet="S">\n<tr><td>月</td><td>金額</td></tr>\n</table>\n');
+  });
+
   it('sheet 以外のブロックが混ざったら書き戻さない', () => {
     const { ctx } = setup(...SRC);
     const problems = ctx.sheetWriterValidate([{ type: 'paragraph', runs: [] }]);
