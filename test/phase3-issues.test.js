@@ -445,6 +445,40 @@ describe('やることの更新と担当', () => {
   });
 });
 
+describe('結び付ける文書を直す', () => {
+  it('管理外の文書は結び付けられない', () => {
+    const { ctx, fileId } = setup();
+    const issue = ctx.issueCreate('改訂', '', [fileId]);
+
+    // 作るときは断っていたのに、直すときは何でも入った
+    expect(() => ctx.issueUpdate(issue.number, { linkedFileIds: [fileId, 'nai'] }))
+      .toThrow('管理対象にない文書です: nai');
+    expect(ctx.issueGet(issue.number).linkedFileIds).toBe(fileId);
+  });
+
+  it('配列でもカンマ区切りでも受ける', () => {
+    const { ctx, fake, fileId } = setup();
+    const other = fake._createDoc('細則', '<p>x</p>\n', ctx.repoConfig().mainId);
+    ctx.repoRegisterFile(other, '細則.doc');
+    const issue = ctx.issueCreate('改訂', '', []);
+
+    ctx.issueUpdate(issue.number, { linkedFileIds: [fileId, other] });
+    expect(ctx.issueGet(issue.number).linkedFileIds).toBe(fileId + ',' + other);
+
+    ctx.issueUpdate(issue.number, { linkedFileIds: other + ', ' + other });
+    expect(ctx.issueGet(issue.number).linkedFileIds).toBe(other);
+  });
+
+  it('前から結び付いていて、あとで外した文書があっても直せる', () => {
+    const { ctx, fileId } = setup();
+    const issue = ctx.issueCreate('改訂', '', [fileId]);
+    ctx.repoUnregisterFile(fileId);
+
+    expect(() => ctx.issueUpdate(issue.number, { linkedFileIds: [fileId], title: '改題' }))
+      .not.toThrow();
+  });
+});
+
 describe('やることを捨てる', () => {
   it('捨てると一覧から消え、置き場に入る', () => {
     const { ctx } = setup();

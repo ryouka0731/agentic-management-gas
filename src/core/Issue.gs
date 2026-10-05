@@ -179,7 +179,7 @@ function issuesForFile(fileId) {
  * @returns {object} 更新後の行
  */
 function issueUpdate(number, patch) {
-  issueGet(number);
+  var before = issueGet(number);
   if (Object.prototype.hasOwnProperty.call(patch, 'state')) {
     throw new Error('stateはissueCloseで変更してください');
   }
@@ -192,6 +192,10 @@ function issueUpdate(number, patch) {
   // 担当者は複数入る。前後の空白と重なりを落としてから入れる
   if (Object.prototype.hasOwnProperty.call(patch, 'assignee')) {
     patch.assignee = issueAssigneeClean(patch.assignee);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'linkedFileIds')) {
+    patch.linkedFileIds = issueLinkedClean_(patch.linkedFileIds, before);
   }
 
   var allowed = {};
@@ -219,6 +223,34 @@ function issueUpdate(number, patch) {
 
   dbUpdate('issues', 'number', number, allowed);
   return issueGet(number);
+}
+
+/**
+ * 結び付ける文書の書き方を整え、管理外のものを断る。
+ *
+ * 作るときは断っていたのに、直すときは何でも入っていた。**新しく結び付ける
+ * ものだけを見る。** 前から結び付いていて、あとで管理から外した文書まで
+ * 断ると、題名を直すだけでも通らなくなる。
+ *
+ * @param {string|string[]} value
+ * @param {object} before 直す前の issues 行
+ * @returns {string} カンマ区切り
+ */
+function issueLinkedClean_(value, before) {
+  var list = Array.isArray(value) ? value : String(value || '').split(',');
+  var had = String(before.linkedFileIds || '').split(',');
+  var out = [];
+
+  for (var i = 0; i < list.length; i++) {
+    var one = String(list[i] || '').replace(/^\s+|\s+$/g, '');
+    if (!one || out.indexOf(one) >= 0) continue;
+
+    if (had.indexOf(one) < 0 && !dbFindOne('files', 'fileId', one)) {
+      throw new Error('管理対象にない文書です: ' + one);
+    }
+    out.push(one);
+  }
+  return out.join(',');
 }
 
 /**
