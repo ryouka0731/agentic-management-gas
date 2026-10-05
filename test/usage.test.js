@@ -350,3 +350,50 @@ describe('同じ場所が1回のまとめに2度入る', () => {
     expect(byTarget).toEqual({ existing: 2, fresh: 2 });
   });
 });
+
+describe('日付に変えられた日を読む', () => {
+  /*
+   * Sheets は 'yyyy-MM-dd' の字を書くと日付として持ち、Date で返す。
+   * 字のまま比べていると、足し込みも間引きも集計も全部外れる。
+   */
+  function asSheetsDoes(ctx) {
+    const sheet = ctx.dbSheet_('usage');
+    const last = sheet.getLastRow();
+    const v = sheet.getRange(2, 1, last - 1, 5).getValues();
+    for (const row of v) {
+      const [y, m, d] = String(row[0]).split('-').map(Number);
+      row[0] = new Date(y, m - 1, d);
+    }
+    sheet.getRange(2, 1, last - 1, 5).setValues(v);
+  }
+
+  it('同じ日の同じ場所に足し込む', () => {
+    const { ctx } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 2 }]);
+    asSheetsDoes(ctx);
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 5 }]);
+
+    const rows = ctx.dbReadAll('usage');
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].count)).toBe(7);
+  });
+
+  it('集計に数える', () => {
+    const { ctx } = setup();
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 2 }]);
+    asSheetsDoes(ctx);
+
+    expect(ctx.usageSummary(30).total).toBe(2);
+  });
+
+  it('古いものは落とす', () => {
+    const { ctx } = setup();
+    ctx.dbAppend('usage', {
+      day: new Date(2000, 0, 1), kind: 'action', target: 'old', count: 1,
+      user: 'tester@example.com',
+    });
+    ctx.usageRecord([{ kind: 'action', target: 'a', count: 1 }]);
+
+    expect(ctx.dbReadAll('usage').map((r) => r.target)).toEqual(['a']);
+  });
+});

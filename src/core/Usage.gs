@@ -59,6 +59,23 @@ function usageDay(when) {
 }
 
 /**
+ * 台帳から読んだ日を 'yyyy-MM-dd' にする。
+ *
+ * **Sheets は 'yyyy-MM-dd' の字を書くと日付として持ち、Date で返す。**
+ * 字のまま扱うと、足し込みの鍵が一致せず毎回行が増え、間引きも集計も
+ * その行を読み飛ばす。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function usageDayOf_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return isNaN(v.getTime()) ? '' : usageDay(v);
+  }
+  return String(v == null ? '' : v);
+}
+
+/**
  * 場所の名前として使えるかを見る。
  *
  * @param {string} target
@@ -101,7 +118,7 @@ function usageRecord(rows) {
 
         var at = {};
         for (var r = 0; r < values.length; r++) {
-          at[values[r][0] + '\t' + values[r][1] + '\t' + values[r][2] +
+          at[usageDayOf_(values[r][0]) + '\t' + values[r][1] + '\t' + values[r][2] +
             '\t' + values[r][4]] = r;
         }
 
@@ -176,7 +193,7 @@ function usageWithinKeep_(values, today) {
   for (var i = 0; i < values.length; i++) {
     // 日が読めない行は落とさない。手で書き換えられる表なので、
     // 読めないことを理由に人の書いたものを消してはならない
-    var day = String(values[i][0] || '');
+    var day = usageDayOf_(values[i][0]);
     if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < from) continue;
 
     out.push(values[i]);
@@ -211,7 +228,7 @@ function usageSummary(days, today, who) {
   var total = 0;
 
   for (var i = 0; i < rows.length; i++) {
-    var day = String(rows[i].day || '');
+    var day = usageDayOf_(rows[i].day);
     if (day < from || day > to) continue;
 
     var user = String(rows[i].user || '');
