@@ -205,6 +205,59 @@ describe('取ったまま放置されたものを戻す', () => {
   });
 });
 
+describe('状態を見てから書き換えるものは鍵の中', () => {
+  /*
+   * 戻す・終える、はどちらも「いまの状態を見てから書く」。鍵の外で読むと、
+   * 読んだあとに終わったものを open に戻し、終わった頼みごとがもう一度
+   * 手元に配られる。
+   */
+  function watch(ctx, fake) {
+    let held = false;
+    const seen = [];
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => { held = true; return true; },
+      releaseLock: () => { held = false; },
+    });
+    const realRead = ctx.dbReadAll;
+    ctx.dbReadAll = (t) => { if (t === 'outbox') seen.push(held); return realRead(t); };
+    return seen;
+  }
+
+  it('戻すときは読むところから鍵を持つ', () => {
+    const { ctx, fake } = setup();
+    ctx.outboxAdd('merge', { branch: 'x' });
+    ctx.outboxTake(5);
+    const seen = watch(ctx, fake);
+
+    ctx.outboxReclaim(24, new Date(Date.now() + 25 * 3600 * 1000));
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true);
+  });
+
+  it('戻す片付けは、鍵が取れなければ次に回す', () => {
+    const { ctx, fake } = setup();
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => false, releaseLock: () => {},
+    });
+
+    // 取りに来るついでの片付けなので、投げると取りに来たこと自体が落ちる
+    expect(ctx.outboxReclaim(24, new Date())).toBe(0);
+  });
+
+  it('終えるときも読むところから鍵を持つ', () => {
+    const { ctx, fake } = setup();
+    const row = ctx.outboxAdd('merge', { branch: 'x' });
+    ctx.outboxTake(5);
+    const seen = watch(ctx, fake);
+
+    ctx.outboxDone(row.id, 'ok');
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true);
+  });
+});
+
 describe('画面に渡せる形', () => {
   it('Date を1つも残さない', () => {
     const { ctx } = setup();

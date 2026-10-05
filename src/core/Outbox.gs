@@ -248,6 +248,17 @@ function outboxFail(id, reason) {
  * @returns {object}
  */
 function outboxFinish_(id, state, text) {
+  // 終わっているかを見てから書くので鍵の中で行う。outboxReclaim と並ぶと、
+  // 終えた直後に open へ戻されることがある
+  return dbWithLock_(30000, function () {
+    return outboxFinishLocked_(id, state, text);
+  });
+}
+
+/**
+ * outboxFinish_ の本体。鍵を持った状態で呼ばれる。
+ */
+function outboxFinishLocked_(id, state, text) {
   var row = dbFindOne('outbox', 'id', id);
   if (!row) throw new Error('その頼みごとは見つかりません: ' + id);
 
@@ -274,6 +285,19 @@ function outboxFinish_(id, state, text) {
  * @returns {number} 戻した数
  */
 function outboxReclaim(hours, now) {
+  // 読んだ時点で taken だったものを戻す。鍵の外で読むと、そのあとに
+  // 終わったものまで open に戻し、終わった頼みごとがもう一度配られる
+  // 取りに来るついでの片付けなので、取れなければ次の回に回す。投げると
+  // 取りに来たこと自体が失敗する (outboxTake も取れなければ空を返す)
+  return dbWithLock_(10000, function () {
+    return outboxReclaimLocked_(hours, now);
+  }, function () { return 0; });
+}
+
+/**
+ * outboxReclaim の本体。鍵を持った状態で呼ばれる。
+ */
+function outboxReclaimLocked_(hours, now) {
   var span = Math.max(1, Number(hours) || 24) * 3600 * 1000;
   var at = (now || new Date()).getTime();
   var rows = dbReadAll('outbox');
