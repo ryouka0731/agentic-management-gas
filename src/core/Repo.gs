@@ -117,6 +117,17 @@ function repoConfig() {
  * @returns {object} 登録された files 行
  */
 function repoRegisterFile(fileId, path) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return repoRegisterFileLocked_(fileId, path);
+  });
+}
+
+/**
+ * repoRegisterFile の本体。鍵を持った状態で呼ばれる。
+ */
+function repoRegisterFileLocked_(fileId, path) {
   if (!/^[^\\]{1,200}$/.test(String(path || ''))) {
     throw new Error('パスが不正です: ' + path);
   }

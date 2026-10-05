@@ -161,6 +161,17 @@ function branchBaseSha(name, mainFileId) {
  * @returns {object} 足した作業コピーの files 行
  */
 function branchAddFile(name, fileId) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return branchAddFileLocked_(name, fileId);
+  });
+}
+
+/**
+ * branchAddFile の本体。鍵を持った状態で呼ばれる。
+ */
+function branchAddFileLocked_(name, fileId) {
   var branch = dbFindOne('branches', 'name', name);
   if (!branch) throw new Error('改訂版が見つかりません: ' + name);
   if (String(branch.state) !== 'open') {
@@ -203,6 +214,17 @@ function branchAddFile(name, fileId) {
 }
 
 function branchCreate(name, fileId) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return branchCreateLocked_(name, fileId);
+  });
+}
+
+/**
+ * branchCreate の本体。鍵を持った状態で呼ばれる。
+ */
+function branchCreateLocked_(name, fileId) {
   if (!branchNameValid_(name)) {
     throw new Error(
       '名前に使えない文字が含まれています (/ と \\ は使えません): ' + name

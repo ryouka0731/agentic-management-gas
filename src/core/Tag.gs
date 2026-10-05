@@ -108,6 +108,17 @@ function tagSeed_() {
  * @returns {object} tags 行
  */
 function tagCreate(name, color) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return tagCreateLocked_(name, color);
+  });
+}
+
+/**
+ * tagCreate の本体。鍵を持った状態で呼ばれる。
+ */
+function tagCreateLocked_(name, color) {
   var clean = String(name || '').replace(/^\s+|\s+$/g, '');
   if (!tagNameValid_(clean)) {
     throw new Error('タグの名前が正しくありません: ' + name);

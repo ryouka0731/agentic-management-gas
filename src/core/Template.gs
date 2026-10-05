@@ -95,6 +95,17 @@ function templateSeed_() {
  * @returns {object} templates 行
  */
 function templateSave(name, body) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return templateSaveLocked_(name, body);
+  });
+}
+
+/**
+ * templateSave の本体。鍵を持った状態で呼ばれる。
+ */
+function templateSaveLocked_(name, body) {
   var clean = String(name || '').replace(/^\s+|\s+$/g, '');
   if (!templateNameValid_(clean)) {
     throw new Error('下書きの名前が正しくありません: ' + name);

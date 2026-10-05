@@ -13,6 +13,7 @@ const SOURCES = [
   'src/core/Plain.js', 'src/core/Outbox.gs', 'src/core/Archive.js', 'src/core/Staleness.js',
   'src/core/Tag.gs', 'src/core/Issue.gs', 'src/core/Project.gs',
   'src/core/Mention.js', 'src/core/Brand.js', 'src/core/Notifier.gs',
+  'src/core/Member.gs', 'src/core/Template.gs',
 ];
 
 /**
@@ -640,4 +641,61 @@ describe('確認依頼を作るときの検査', () => {
     expect(order.lastIndexOf('lock', look)).toBeGreaterThan(order.lastIndexOf('unlock', look));
     expect(order.indexOf('append')).toBeLessThan(order.indexOf('unlock', look));
   });
+});
+
+describe('あるか見てから書くものは、鍵の中で行う', () => {
+  /*
+   * 分けると、ほぼ同時の2件が「まだ無い」と読んで両方書く。同名の改訂版が
+   * 2つ並ぶと dbFindOne は先の1つしか返さず、もう1つは見えるのに触れない。
+   */
+  function watch(ctx, fake, table) {
+    let held = false;
+    const seen = { look: [], append: [] };
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => { held = true; return true; },
+      releaseLock: () => { held = false; },
+    });
+    const realFind = ctx.dbFindOne;
+    ctx.dbFindOne = (t, k, v) => {
+      if (t === table) seen.look.push(held);
+      return realFind(t, k, v);
+    };
+    const realAppend = ctx.dbAppend;
+    ctx.dbAppend = (t, r) => {
+      if (t === table) seen.append.push(held);
+      return realAppend(t, r);
+    };
+    return seen;
+  }
+
+  const CASES = [
+    ['branchCreate', 'branches', (ctx, s) => ctx.branchCreate('見直し', s.a)],
+    ['branchAddFile', 'files', (ctx, s) => {
+      ctx.branchCreate('見直し', s.a);
+      return () => ctx.branchAddFile('見直し', s.b);
+    }],
+    ['repoRegisterFile', 'files', (ctx, s) => {
+      const c = s.fake._createDoc('細則', '<p>c</p>\n', ctx.repoConfig().mainId);
+      return () => ctx.repoRegisterFile(c, '細則.doc');
+    }],
+    ['tagCreate', 'tags', (ctx) => ctx.tagCreate('棚卸し', 'ink')],
+    ['memberSet', 'members', (ctx) => ctx.memberSet('a@example.com', '', '')],
+    ['templateSave', 'templates', (ctx) => ctx.templateSave('段取り', '中身')],
+  ];
+
+  for (const [name, table, act] of CASES) {
+    it(name, () => {
+      const s = setup();
+      // 準備が要るものは、準備を済ませてから見張る
+      const later = name === 'branchAddFile' || name === 'repoRegisterFile'
+        ? act(s.ctx, s) : null;
+      const seen = watch(s.ctx, s.fake, table);
+
+      if (later) later(); else act(s.ctx, s);
+
+      expect(seen.look.length).toBeGreaterThan(0);
+      expect(seen.append.length).toBeGreaterThan(0);
+      expect(seen.look.concat(seen.append).every(Boolean)).toBe(true);
+    });
+  }
 });

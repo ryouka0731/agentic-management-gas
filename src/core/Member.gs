@@ -20,6 +20,17 @@
  * @returns {object} members 行
  */
 function memberSet(email, manager, name) {
+  // あるか見てから書くので、鍵の中で行う。分けると、ほぼ同時の2件が
+  // 「まだ無い」と読んで両方書き、先の1件しか引けない重なりができる
+  return dbWithLock_(30000, function () {
+    return memberSetLocked_(email, manager, name);
+  });
+}
+
+/**
+ * memberSet の本体。鍵を持った状態で呼ばれる。
+ */
+function memberSetLocked_(email, manager, name) {
   var who = String(email || '').replace(/^\s+|\s+$/g, '');
   var boss = String(manager || '').replace(/^\s+|\s+$/g, '');
 
