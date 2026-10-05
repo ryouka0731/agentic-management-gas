@@ -128,8 +128,8 @@ function tasksPayloadOf_(issue) {
   };
 
   if (issue.dueDate) {
-    var due = new Date(issue.dueDate);
-    if (!isNaN(due.getTime())) body.due = due.toISOString();
+    var day = tasksDueDay_(issue.dueDate);
+    if (day) body.due = day + 'T00:00:00.000Z';
   }
   return body;
 }
@@ -195,6 +195,28 @@ function tasksSyncMine() {
     pushed++;
   }
   return { pushed: pushed, closed: closed, listId: listId };
+}
+
+/**
+ * 期限を 'yyyy-MM-dd' にする。
+ *
+ * **ToDo は時刻を捨てて日だけを見る。** Sheets は期限の字を日付として
+ * 持ち、東京の0時の Date で返すので、`toISOString` にすると前日の15時に
+ * なって1日前の期限で届く。東京の暦日で組む。
+ *
+ * @param {*} v
+ * @returns {string} 読めなければ空
+ */
+function tasksDueDay_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
+  if (m) return m[1];
+
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? '' : Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
 }
 
 /**

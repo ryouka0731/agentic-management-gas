@@ -119,6 +119,25 @@ describe('同期', () => {
     expect(task.due).toContain('2026-09-30');
   });
 
+  it('日付で返ってきた期限も同じ日で送る', () => {
+    const { ctx, fake } = ready();
+    fake.Utilities.formatDate = (d, tz, fmt) => new Intl.DateTimeFormat('sv-SE', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(d);
+    const issue = ctx.issueCreate('期限あり', '', []);
+    // Sheets は期限の字を日付として持ち、東京の0時の Date で返す
+    ctx.issueUpdate(issue.number, {
+      assignee: 'tester@example.com',
+      dueDate: new Date('2026-09-30T00:00:00+09:00'),
+    });
+
+    ctx.tasksSyncMine();
+
+    // ToDo は時刻を捨てて日だけを見る。toISOString だと前日の15時になる
+    const task = [...fake.Tasks._items.values()][0];
+    expect(task.due.substring(0, 10)).toBe('2026-09-30');
+  });
+
   it('二度同期しても増えない', () => {
     const { ctx, fake } = ready();
     const issue = ctx.issueCreate('ひとつ', '', []);
