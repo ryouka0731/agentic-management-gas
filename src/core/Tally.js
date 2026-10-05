@@ -75,6 +75,10 @@ function TALLY_BASES() {
 function tallyDay(value) {
   if (value === null || value === undefined || value === '') return null;
 
+  // 'YYYY-MM-DD' はその土地の日として読む (ganttStartOfDay と同じ理由)
+  var ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+  if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+
   var d = new Date(value);
   if (isNaN(d.getTime())) return null;
 

@@ -6342,6 +6342,9 @@
 
     function startOfDay(value) {
       if (value === null || value === undefined || value === '') return null;
+      // src/core/Gantt.js の ganttStartOfDay と同じ。'YYYY-MM-DD' はその土地の日
+      var ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+      if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])).getTime();
       var d = new Date(value);
       if (isNaN(d.getTime())) return null;
       return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();

@@ -18,6 +18,11 @@ function GANTT_DAY_MS() {
 function ganttStartOfDay(value) {
   if (value === null || value === undefined || value === '') return null;
 
+  // 'YYYY-MM-DD' はその土地の日として読む。new Date('2026-09-30') は UTC の
+  // 0時なので、東京より西で開くと前日になる。画面側の startOfDay と同じ
+  var ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+  if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])).getTime();
+
   var d = new Date(value);
   var t = d.getTime();
   if (isNaN(t)) return null;

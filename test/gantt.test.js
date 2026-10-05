@@ -168,3 +168,15 @@ describe('予定工数と棒の長さ', () => {
     expect(gas.ganttEffortDiffers(2, 5)).toBe(true);
   });
 });
+
+describe('日付の字はその土地の日として読む', () => {
+  it("'YYYY-MM-DD' はその日の0時", async () => {
+    const { loadGas } = await import('./harness.js');
+    const g = loadGas('src/core/Gantt.js');
+    const t = loadGas('src/core/Tally.js');
+
+    // new Date('2026-09-30') は UTC の0時なので、東京より西では前日になる
+    expect(g.ganttStartOfDay('2026-09-30')).toBe(new Date(2026, 8, 30).getTime());
+    expect(t.tallyDay('2026-09-30').getTime()).toBe(new Date(2026, 8, 30).getTime());
+  });
+});
