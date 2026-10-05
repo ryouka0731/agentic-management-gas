@@ -214,6 +214,32 @@ describe('確認依頼は変更の集まり', () => {
     expect(ctx.prGet(pr.number).state).toBe('merged');
   });
 
+  it('片方しか直していなくても反映できる', () => {
+    const { ctx, fake, a, b } = setup();
+    ctx.branchCreate('見直し', a);
+    ctx.branchAddFile('見直し', b);
+
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'Aを直した', null);
+
+    const pr = ctx.prCreate('Aだけ直した', '', '見直し', [a, b]);
+    ctx.dbAppend('reviews', {
+      prNumber: pr.number, reviewer: 'r@x.com', state: 'approve',
+      body: '', at: new Date(), id: 1, editedAt: '',
+    });
+    const bHead = ctx.headCommit(b, 'main').sha;
+
+    // B は変わらないので記録が空になる。そこで落ちると A だけ書き戻した
+    // ところで止まり、やり直しても A で同じく落ちて二度と反映できない
+    ctx.prMerge(pr.number, {});
+
+    expect(fake._docs.get(a)).toContain('A2');
+    expect(ctx.prGet(pr.number).state).toBe('merged');
+    // 変わらない文書には空の記録を作らない
+    expect(ctx.headCommit(b, 'main').sha).toBe(bHead);
+  });
+
   it('その改訂版に入っていない文書は対象にできない', () => {
     const { ctx, a, b } = setup();
     ctx.branchCreate('見直し', a);

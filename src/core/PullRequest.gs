@@ -599,6 +599,10 @@ function prMerge(number, choices) {
 
           plan.push({
             fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
+            // 反映先と同じなら書き戻さない。変更セットには直していない文書も
+            // 入りうる。書き戻すと記録が空になって commitFile が断り、前の
+            // 文書だけ書き戻したところで止まる (やり直しても同じ所で落ちる)
+            same: mergedHtml === preview.oursHtml,
           });
         }
 
@@ -606,6 +610,7 @@ function prMerge(number, choices) {
 
         for (var k = 0; k < plan.length; k++) {
           var step = plan[k];
+          if (step.same) continue;
 
           // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
           // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
