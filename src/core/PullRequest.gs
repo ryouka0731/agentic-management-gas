@@ -303,6 +303,9 @@ function prReview(number, state, body) {
   }
   var pr = prGet(number);
   if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
+  // 下で状態を書き換えるため、取り下げたものに通すと open / approved に
+  // 生き返り、同じ組の依頼が2つ開く
+  if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
 
   var reviewer = Session.getActiveUser().getEmail();
   if (state === 'approve' && String(pr.author) === reviewer) {

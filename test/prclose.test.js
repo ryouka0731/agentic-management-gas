@@ -144,6 +144,18 @@ describe('確認依頼を取り下げる', () => {
     expect(() => ctx.prClose(pr.number)).toThrow('既に取り下げられています');
   });
 
+  it('取り下げたものに確認を書いても生き返らない', () => {
+    const { ctx, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+    ctx.prClose(pr.number);
+
+    // 開いたままの古い画面から送られてくることがある。通すと差し戻しで
+    // open、承認で approved に戻り、同じ組の依頼が2つ開いてしまう
+    expect(() => ctx.prReview(pr.number, 'request_changes', ''))
+      .toThrow('取り下げられています');
+    expect(ctx.prGet(pr.number).state).toBe('closed');
+  });
+
   it('頼まれた側は取り下げられない', () => {
     const { ctx, fake, mainFileId } = setup();
     const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
