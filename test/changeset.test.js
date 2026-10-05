@@ -604,3 +604,40 @@ describe('承認したら手元に取り込みを頼む', () => {
     expect(fake._docs.get(a)).toContain('A2');
   });
 });
+
+describe('確認依頼を作るときの検査', () => {
+  it('反映先の版に入っていない文書は対象にできない', () => {
+    const { ctx, a, b } = setup();
+    ctx.branchCreate('見直し', a);
+    ctx.branchCreate('土台', b);
+
+    // 通すと、開くたびに「反映先の版に作業コピーがありません」で落ちる
+    // 依頼ができ、取り下げる以外に道が無くなる
+    expect(() => ctx.prCreate('だめ', '', '見直し', a, '土台'))
+      .toThrow('「土台」に入っていません');
+    expect(ctx.dbReadAll('pulls')).toHaveLength(0);
+  });
+
+  it('同じ組の依頼があるかを見るところから書くまで、鍵を持つ', () => {
+    const { ctx, fake, a } = setup();
+    ctx.branchCreate('見直し', a);
+    const order = [];
+
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => { order.push('lock'); return true; },
+      releaseLock: () => { order.push('unlock'); },
+    });
+    const realRead = ctx.dbReadAll;
+    ctx.dbReadAll = (t) => { if (t === 'pulls') order.push('look'); return realRead(t); };
+    const realAppend = ctx.dbAppend;
+    ctx.dbAppend = (t, r) => { if (t === 'pulls') order.push('append'); return realAppend(t, r); };
+
+    ctx.prCreate('改訂', '', '見直し', a);
+
+    // 分けると、ほぼ同時の2件が「まだ無い」と読んで両方作る
+    const look = order.indexOf('look');
+    expect(look).toBeGreaterThan(-1);
+    expect(order.lastIndexOf('lock', look)).toBeGreaterThan(order.lastIndexOf('unlock', look));
+    expect(order.indexOf('append')).toBeLessThan(order.indexOf('unlock', look));
+  });
+});

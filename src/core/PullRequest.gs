@@ -111,34 +111,47 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
       throw new Error(
         'その文書は「' + sourceBranch + '」に入っていません: ' + targetRow.path);
     }
-  }
 
-  // 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる
-  var existing = dbReadAll('pulls');
-  for (var i = 0; i < existing.length; i++) {
-    if (String(existing[i].sourceBranch) !== String(sourceBranch)) continue;
-    if (String(existing[i].targetBranch || 'main') !== into) continue;
-
-    var st = String(existing[i].state);
-    if (st === 'open' || st === 'approved') {
-      throw new Error('この組み合わせには未クローズのPRがあります: #' + existing[i].number);
+    // 反映先が改訂版なら、そちらにも作業コピーが要る。無いまま作ると、
+    // 開くたびに「反映先の版に作業コピーがありません」で落ちる依頼になる
+    if (into !== 'main' && !branchWorkingFileId(into, wanted[t])) {
+      throw new Error(
+        'その文書は反映先の「' + into + '」に入っていません: ' + targetRow.path);
     }
   }
 
-  var row = {
-    title: title,
-    // 対象ファイルを本文の末尾に記録する。pulls シートに列を増やさずに
-    // 対象を辿れるようにするための最小限の措置
-    body: (body || '') + '\n\n[target-file:' + wanted[0] + ']',
-    targetFiles: wanted.join(','),
-    sourceBranch: sourceBranch,
-    targetBranch: into,
-    state: 'open',
-    author: Session.getActiveUser().getEmail(),
-    createdAt: new Date(),
-    mergedAt: '',
-  };
-  dbAppendNumbered('pulls', 'number', row);
+  /*
+   * **あるかを見るところから書くまでを、1つの鍵の中で行う。** 分けると、
+   * ほぼ同時の2件が「まだ無い」と読んで、同じ組の依頼が2つ開く。
+   */
+  var row = dbWithLock_(30000, function () {
+    // 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる
+    var existing = dbReadAll('pulls');
+    for (var i = 0; i < existing.length; i++) {
+      if (String(existing[i].sourceBranch) !== String(sourceBranch)) continue;
+      if (String(existing[i].targetBranch || 'main') !== into) continue;
+
+      var st = String(existing[i].state);
+      if (st === 'open' || st === 'approved') {
+        throw new Error('この組み合わせには未クローズのPRがあります: #' + existing[i].number);
+      }
+    }
+
+    var made = {
+      title: title,
+      // 対象ファイルを本文の末尾に記録する。pulls シートに列を増やさずに
+      // 対象を辿れるようにするための最小限の措置
+      body: (body || '') + '\n\n[target-file:' + wanted[0] + ']',
+      targetFiles: wanted.join(','),
+      sourceBranch: sourceBranch,
+      targetBranch: into,
+      state: 'open',
+      author: Session.getActiveUser().getEmail(),
+      createdAt: new Date(),
+      mergedAt: '',
+    };
+    return dbAppendNumbered('pulls', 'number', made);
+  });
 
   // PR本文の closes #N に対応するカードを In Review に動かす。
   // 人が動かさなくても文書の状態変化がボードに反映される (spec §6.2)
