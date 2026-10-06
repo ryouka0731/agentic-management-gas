@@ -1523,7 +1523,9 @@ function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
 
   if (patch && typeof patch === 'object') {
     var keys = ['assignee', 'startDate', 'dueDate', 'estimate',
-      'plannedHours', 'actualHours', 'parent', 'priority'];
+      'plannedHours', 'actualHours', 'parent', 'priority',
+      // エージェンティックスクラム (オンのときだけ通る)
+      'sprint', 'points', 'acceptance'];
 
     for (var k = 0; k < keys.length; k++) {
       if (!Object.prototype.hasOwnProperty.call(patch, keys[k])) continue;

@@ -524,6 +524,10 @@
     var paths = {
       'external-link': ['M15 3h6v6', 'M10 14L21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
       plus: ['M12 5v14', 'M5 12h14'],
+      settings: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+        'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
+      'alert-triangle': ['M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+        'M12 9v4', 'M12 17h.01'],
       inbox: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'],
       folder: ['M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2z'],
       'minus-circle': ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M8 12h8'],
@@ -580,6 +584,9 @@
     help: 'help-circle',
     report: 'inbox',
     usage: 'columns',
+    settings: 'settings',
+    sprint: 'clock',
+    impediments: 'alert-triangle',
   };
 
   /**
@@ -5467,7 +5474,7 @@
         { name: 'plannedHours', label: '予定工数 (人日。0.5 きざみで書けます)' },
         { name: 'actualHours', label: '実績工数 (人日)' },
         { name: 'parent', label: '親のやること (番号。空なら親なし)' },
-      ],
+      ].concat(scrumIssueFields(issue)),
       '保存する',
       function (v) {
         var patch = {
@@ -5478,6 +5485,7 @@
           actualHours: v.actualHours, parent: v.parent,
           priority: v.priority,
         };
+        scrumIssuePatch(v, patch);
 
         // 予定工数を書き換えたなら、棒の長さもそれに合わせる。
         // 片方だけ動くと、工程表と工数のどちらが本当か分からなくなる
@@ -5980,20 +5988,23 @@
         { name: 'dueDate', label: '期限 (任意)' },
         { name: 'estimate', label: '見積もり (規模。数値)' },
         { name: 'plannedHours', label: '予定工数 (人日)' },
-      ],
+      ].concat(scrumIssueFields(null)),
       '作る',
       function (v) {
         var linked = (linkBox && linkBox.checked && current.docFileId)
           ? [current.docFileId] : [];
 
-        call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', {
+        var extra = {
           assignee: people ? people.value() : '',
           startDate: v.startDate,
           dueDate: v.dueDate,
           estimate: v.estimate,
           plannedHours: v.plannedHours,
           priority: v.priority,
-        }], function () {
+        };
+        scrumIssuePatch(v, extra);
+
+        call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', extra], function () {
           showSnack('やることを作りました', { kind: 'ok' });
           // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
           if (panelIssues.hidden) switchTab('issues');
@@ -6065,8 +6076,17 @@
     box.appendChild(bodyHead);
     box.appendChild(makeMarkdown(issue.body));
 
+    if (scrumOn() && issue.acceptance) {
+      var acc = document.createElement('div');
+      acc.className = 'row-meta view-label';
+      acc.textContent = '受入基準';
+      box.appendChild(acc);
+      box.appendChild(makeMarkdown(issue.acceptance));
+    }
+
     box.appendChild(makeIssueActions(issue));
     box.appendChild(makeIssueTalk(issue));
+    box.appendChild(makeHistorySection('issue:' + issue.number));
   }
 
   /**
@@ -6139,6 +6159,14 @@
 
     var labels = makeLabels(issue.labels);
     if (labels) row('タグ', function (dd) { dd.appendChild(labels); });
+
+    // エージェンティックスクラム。オンのときだけ出す
+    if (scrumOn() && (issue.sprint || issue.points !== '')) {
+      row('スプリント', function (dd) {
+        dd.textContent = (issue.sprint || '未定') +
+          (issue.points !== '' && issue.points !== undefined ? ' ・ ' + issue.points + 'ポイント' : '');
+      });
+    }
 
     var rel = makeRelationChips(issue.number);
     if (rel.childNodes.length) {
@@ -9767,6 +9795,39 @@
     h.appendChild(document.createTextNode(text));
     if (term) h.appendChild(makeTermHelp(term));
     return h;
+  }
+
+  /**
+   * やることの入力欄に足すスクラムの欄。オフなら何も足さない。
+   *
+   * 既存の欄は位置で値を入れているので、末尾に足し、値は名前で入れる。
+   *
+   * @param {object|null} issue 直すときはそのやること
+   * @returns {object[]} openInlineForm の欄
+   */
+  function scrumIssueFields(issue) {
+    if (!scrumOn()) return [];
+    var sprints = [['', '(なし)']].concat(scrumSprints.map(function (sp) { return [sp.name, sp.name]; }));
+    return [
+      { name: 'sprint', label: 'スプリント', choices: sprints, value: issue ? issue.sprint : '' },
+      { name: 'points', label: 'ストーリーポイント (0以上の数)',
+        value: issue && issue.points !== '' && issue.points !== undefined ? issue.points : '' },
+      { name: 'acceptance', label: '受入基準 (1行に1つ)', multiline: true,
+        value: issue ? issue.acceptance : '' },
+    ];
+  }
+
+  /**
+   * スクラムの欄の値を、送る中身に足す。オフなら何もしない。
+   *
+   * @param {object} v 入力欄の値
+   * @param {object} patch 送る中身 (書き足す)
+   */
+  function scrumIssuePatch(v, patch) {
+    if (!scrumOn()) return;
+    patch.sprint = v.sprint || '';
+    patch.points = v.points;
+    patch.acceptance = v.acceptance || '';
   }
 
   // ----- 設定 -----

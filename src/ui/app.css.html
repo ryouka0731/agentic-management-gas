@@ -3925,4 +3925,29 @@ button.label-pill {
   fill: var(--ink);
   font-family: var(--mono);
 }
+
+/* ===== エージェンティックスクラム (既定はオフ) ===== */
+.scrum-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 16px 0 6px;
+}
+.term-help { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.term-help-text { flex-basis: 100%; font-weight: normal; }
+.scrum-summary { font-weight: 600; margin-bottom: 8px; }
+.scrum-goal { margin: 0 0 8px; }
+.burndown-chart { width: 100%; max-width: 640px; height: auto; }
+.burndown-axis { stroke: var(--line); }
+.burndown-ideal { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.burndown-remaining { stroke: var(--accent); stroke-width: 2; }
+.burndown-label { fill: var(--ink-2); font-size: 11px; }
+.roadmap-mark { background: var(--accent); color: var(--bg); text-align: center; }
+.roadmap-mark.done { background: var(--bg-2); color: var(--ink-2); }
+.settings-section { max-width: 760px; }
+.settings-field { margin-top: 16px; }
+.settings-field textarea { display: block; width: stretch; width: -webkit-fill-available; width: -moz-available; margin-bottom: 6px; }
+.change-history { margin-top: 16px; }
+.history-item { padding: 6px 0; }
 </style>

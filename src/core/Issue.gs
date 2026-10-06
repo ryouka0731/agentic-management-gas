@@ -308,6 +308,12 @@ function issuePatchCheck(patch) {
   if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
     issuePriorityAssert_(patch.priority);
   }
+  // 写しで確かめる (確かめるだけで、渡された値は書き換えない)
+  var copy = {};
+  for (var k in patch) {
+    if (Object.prototype.hasOwnProperty.call(patch, k)) copy[k] = patch[k];
+  }
+  issueScrumFieldsCheck_(copy);
 }
 
 /**

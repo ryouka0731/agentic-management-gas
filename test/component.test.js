@@ -5851,3 +5851,129 @@ describe('遅れて届いた返事で、別の文書を描かない', () => {
     expect(document.getElementById('editor').value).toBe('# 見直し版\n');
   });
 });
+
+describe('エージェンティックスクラム (既定はオフ)', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ON = {
+    scrumEnabled: true, canEdit: true, productGoal: '紙の稟議をなくす', definitionOfDone: '',
+    glossary: { 'ベロシティ': '1スプリントで終えたポイントの合計。' }, glossaryAliases: {},
+  };
+  const VIEW = {
+    sprint: 'sprint001',
+    sprints: [{ name: 'sprint001', goal: '申請の流れ', startDate: '2026-10-01', endDate: '2026-10-03', notes: '' }],
+    summary: { current: 'sprint001', goal: '申請の流れ', planned: 5, completed: 2, openImpediments: 1, average: '' },
+    velocity: [{ name: 'sprint001', goal: '申請の流れ', startDate: '2026-10-01', endDate: '2026-10-03',
+      planned: 5, completed: 2, carriedOver: '' }],
+    burndown: { days: ['2026-10-01', '2026-10-02', '2026-10-03'], remaining: [5, 3, null], ideal: [5, 2.5, 0], notice: '' },
+    roadmap: { sprints: ['sprint001'], rows: [{ number: 1, title: '申請画面', col: 0, state: 'open' }],
+      unknown: [], unplanned: 2, notice: '' },
+    texts: { productGoal: '紙の稟議をなくす', definitionOfDone: '' },
+  };
+
+  it('オフのときは、左にスクラムの節を出さない', () => {
+    mount();
+    expect(document.getElementById('nav-scrum').hidden).toBe(true);
+  });
+
+  it('オンなら、左にスプリントと障害物が出る', () => {
+    mount({ apiSettings: ON });
+    expect(document.getElementById('nav-scrum').hidden).toBe(false);
+  });
+
+  it('設定で、持ち主はオンにできる', () => {
+    const app = mount({ apiSetScrumEnabled: ON });
+    document.querySelector('[data-tab="settings"]').click();
+
+    const toggle = document.getElementById('scrum-toggle');
+    expect(toggle.textContent).toBe('オンにする');
+    app.respond('apiSettings', ON);
+    toggle.click();
+
+    expect(app.calls.filter((c) => c.name === 'apiSetScrumEnabled')[0].args).toEqual([true]);
+    expect(document.getElementById('nav-scrum').hidden).toBe(false);
+  });
+
+  it('持ち主でなければ、切り替えの入口は出さず、頼む先を書く', () => {
+    mount({ apiSettings: Object.assign({}, ON, { scrumEnabled: false, canEdit: false }) });
+    document.querySelector('[data-tab="settings"]').click();
+
+    expect(document.getElementById('scrum-toggle')).toBeNull();
+    expect(document.getElementById('settings').textContent).toContain('持ち主だけ');
+  });
+
+  it('設定には、手元の道具の案内を出す (オフでも)', () => {
+    mount();
+    document.querySelector('[data-tab="settings"]').click();
+    expect(document.getElementById('settings').textContent).toContain('node agent.mjs scrum');
+  });
+
+  it('スプリントのタブに、要約・バーンダウン・ベロシティ・ロードマップを描く', () => {
+    mount({ apiSettings: ON, apiScrumView: VIEW });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    const view = document.getElementById('sprint-view');
+    expect(view.textContent).toContain('今のスプリント: sprint001');
+    expect(view.textContent).toContain('申請の流れ');
+    expect(view.querySelector('svg.burndown-chart')).not.toBeNull();
+    expect(view.querySelector('.velocity-table').textContent).toContain('sprint001');
+    expect(view.querySelector('.roadmap-mark').textContent).toBe('予定');
+  });
+
+  it('用語の「?」を押すと、その下に説明が出る', () => {
+    mount({ apiSettings: ON, apiScrumView: VIEW });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    const btn = document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]');
+    const note = btn.parentNode.querySelector('.term-help-text');
+    expect(note.hidden).toBe(true);
+    btn.click();
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('終えたポイント');
+  });
+
+  it('スプリントを作れる', () => {
+    const app = mount({ apiSettings: ON, apiScrumView: VIEW, apiSprintCreate: { name: 'sprint002' } });
+    document.querySelector('[data-tab="sprint"]').click();
+    document.getElementById('sprint-create-btn').click();
+
+    const form = document.querySelector('#side-body form');
+    form.querySelector('input').value = 'sprint002';
+    form.querySelector('.btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiSprintCreate')[0].args[0].name).toBe('sprint002');
+  });
+
+  it('障害物を並べ、開いて解決できる', () => {
+    const imp = { number: 3, title: '承認者が不在', body: '', reportedBy: 'a@example.com',
+      reportedAt: '2026-10-02T00:00:00.000Z', state: 'open', resolvedAt: '', resolution: '',
+      sprint: '', updatedAt: '', commentCount: 1 };
+    const app = mount({ apiSettings: ON, apiImpedimentList: [imp],
+      apiImpedimentResolve: Object.assign({}, imp, { state: 'resolved', resolution: '代理が承認' }) });
+    document.querySelector('[data-tab="impediments"]').click();
+
+    expect(document.getElementById('impediments').textContent).toContain('承認者が不在');
+    expect(document.getElementById('count-impediments').textContent).toBe('1');
+
+    document.querySelector('.impediment-row').click();
+    [...document.querySelectorAll('#side-body button')].find((b) => b.textContent === '解決する').click();
+    const form = document.querySelector('#side-body form');
+    form.querySelector('textarea').value = '代理が承認';
+    form.querySelector('.btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiImpedimentResolve')[0].args).toEqual([3, '代理が承認']);
+  });
+
+  it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    expect(document.getElementById('side-body').textContent).not.toContain('ストーリーポイント');
+
+    mount({ apiSettings: ON });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    expect(document.getElementById('side-body').textContent).toContain('ストーリーポイント');
+    expect(document.getElementById('side-body').textContent).toContain('受入基準');
+  });
+});
