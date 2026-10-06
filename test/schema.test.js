@@ -29,11 +29,18 @@ const EXPECTED = {
     'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
   inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
   issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours',
-    'archivedAt', 'updatedAt', 'priority'],
+    'archivedAt', 'updatedAt', 'priority',
+    // エージェンティックスクラム (既定はオフ)。やることを PBI として扱うための列
+    'sprint', 'points', 'acceptance'],
   pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
   outbox: ['id', 'verb', 'args', 'note', 'state', 'prNumber',
     'createdAt', 'createdBy', 'takenAt', 'takenBy', 'doneAt', 'result'],
   project_items: ['issueNumber', 'column', 'order'],
+  sprints: ['name', 'goal', 'startDate', 'endDate', 'notes', 'createdAt', 'createdBy'],
+  impediments: ['number', 'title', 'body', 'reportedBy', 'reportedAt', 'state',
+    'resolvedAt', 'resolution', 'sprint', 'updatedAt'],
+  impediment_comments: ['id', 'impedimentNumber', 'body', 'by', 'at', 'editedAt'],
+  change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
 };
 
 describe('メタDBの列順', () => {

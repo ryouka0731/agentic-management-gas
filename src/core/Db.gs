@@ -27,7 +27,9 @@ function DB_SCHEMA() {
     inquiries: ['number', 'kind', 'body', 'by', 'at', 'state', 'context',
       'answer', 'answeredAt', 'title', 'closedBy', 'shots', 'issueNumber'],
     inquiry_replies: ['id', 'inquiryNumber', 'body', 'by', 'at', 'editedAt', 'shots'],
-    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt', 'priority'],
+    issues: ['number', 'title', 'body', 'state', 'assignee', 'labels', 'linkedFileIds', 'linkedPr', 'createdAt', 'closedAt', 'dueDate', 'startDate', 'parent', 'estimate', 'plannedHours', 'actualHours', 'archivedAt', 'updatedAt', 'priority',
+      // エージェンティックスクラム (既定はオフ)。やることを PBI として扱う
+      'sprint', 'points', 'acceptance'],
     // コードの変更を、確認依頼に添える証跡として持つ。版を持つ文書では
     // ないので files には入れない (コピーも編集も書き戻しも無い)
     pull_patches: ['prNumber', 'id', 'path', 'blobSha', 'added', 'removed', 'at', 'by'],
@@ -36,6 +38,14 @@ function DB_SCHEMA() {
     outbox: ['id', 'verb', 'args', 'note', 'state', 'prNumber',
       'createdAt', 'createdBy', 'takenAt', 'takenBy', 'doneAt', 'result'],
     project_items: ['issueNumber', 'column', 'order'],
+    // ここから下はエージェンティックスクラム (ai-scrum-gas から取り入れた)。
+    // 既定はオフで、オンのときだけ使う
+    sprints: ['name', 'goal', 'startDate', 'endDate', 'notes', 'createdAt', 'createdBy'],
+    impediments: ['number', 'title', 'body', 'reportedBy', 'reportedAt', 'state',
+      'resolvedAt', 'resolution', 'sprint', 'updatedAt'],
+    impediment_comments: ['id', 'impedimentNumber', 'body', 'by', 'at', 'editedAt'],
+    // 画面や命令からの変更の前と後。誰がいつ何を変えたかを辿るため
+    change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
   };
 }
 
@@ -253,7 +263,7 @@ function dbAppendNumbered(table, column, row) {
  * @returns {Object<string, boolean>}
  */
 function DB_TYPED_COLUMNS() {
-  return { dueDate: true, startDate: true, day: true };
+  return { dueDate: true, startDate: true, endDate: true, day: true };
 }
 
 /**

@@ -101,7 +101,61 @@ function issueCreate(title, body, linkedFileIds, labels) {
   };
   tagAdopt(row.labels);
   dbAppendNumbered('issues', 'number', row);
+  issueHistory_(row.number, 'create', []);
   return row;
+}
+
+/**
+ * やることの変更の履歴を残す。Scrum.gs を読まない構成でも動くように確かめる。
+ *
+ * @param {number} number
+ * @param {string} action
+ * @param {Array} changes
+ */
+function issueHistory_(number, action, changes) {
+  if (typeof historyRecord_ === 'function') historyRecord_('issue:' + number, action, changes);
+}
+
+/**
+ * スクラムの欄 (スプリント・ポイント・受入基準) を確かめて整える。
+ *
+ * エージェンティックスクラムがオフのあいだは直させない。オフの人に、意味の
+ * 分からない欄が増えるだけになる。
+ *
+ * @param {object} patch 直す値 (書き換える)
+ */
+function issueScrumFieldsCheck_(patch) {
+  var keys = ['sprint', 'points', 'acceptance'];
+  var any = false;
+  for (var k = 0; k < keys.length; k++) {
+    if (Object.prototype.hasOwnProperty.call(patch, keys[k])) any = true;
+  }
+  if (!any) return;
+
+  if (typeof scrumAssertEnabled_ !== 'function') {
+    throw new Error('エージェンティックスクラムはオフです');
+  }
+  scrumAssertEnabled_();
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'sprint')) {
+    patch.sprint = String(patch.sprint || '');
+    if (patch.sprint) sprintGet(patch.sprint);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'points')) {
+    var raw = patch.points;
+    if (raw === '' || raw === null || raw === undefined) {
+      patch.points = '';
+    } else {
+      var n = Number(raw);
+      if (!isFinite(n) || n < 0 || String(raw).replace(/^\s+|\s+$/g, '') === '') {
+        throw new Error('ポイントは0以上の数で入れてください: ' + raw);
+      }
+      patch.points = n;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'acceptance')) {
+    patch.acceptance = String(patch.acceptance || '').substring(0, 4000);
+  }
 }
 
 /**
@@ -198,6 +252,8 @@ function issueUpdate(number, patch) {
     patch.linkedFileIds = issueLinkedClean_(patch.linkedFileIds, before);
   }
 
+  issueScrumFieldsCheck_(patch);
+
   var allowed = {};
   // 知らない値は受け取らない。ここを通ると台帳に残り、読むたびに
   // 「ふつう」へ倒れるので、直したつもりが直っていない状態になる
@@ -206,7 +262,8 @@ function issueUpdate(number, patch) {
   }
 
   var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
-    'parent', 'estimate', 'plannedHours', 'actualHours', 'priority'];
+    'parent', 'estimate', 'plannedHours', 'actualHours', 'priority',
+    'sprint', 'points', 'acceptance'];
   allowed.updatedAt = new Date();
   for (var i = 0; i < keys.length; i++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[i])) {
@@ -215,6 +272,9 @@ function issueUpdate(number, patch) {
   }
 
   dbUpdate('issues', 'number', number, allowed);
+  if (typeof historyDiff_ === 'function') {
+    issueHistory_(number, 'update', historyDiff_(before, allowed));
+  }
   return issueGet(number);
 }
 
@@ -295,6 +355,7 @@ function issueClose(number, prNumber) {
     updatedAt: new Date(),
     linkedPr: prNumber === null || prNumber === undefined ? '' : prNumber,
   });
+  issueHistory_(number, 'close', []);
   return issueGet(number);
 }
 
@@ -320,6 +381,7 @@ function issueReopen(number) {
     closedAt: '',
     updatedAt: new Date(),
   });
+  issueHistory_(number, 'reopen', []);
 
   if (dbFindOne('project_items', 'issueNumber', number)) {
     projectMove(number, 'In Progress', 0);
