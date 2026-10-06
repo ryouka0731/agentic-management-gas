@@ -5924,7 +5924,11 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     document.querySelector('[data-tab="sprint"]').click();
 
     const view = document.getElementById('sprint-view');
-    expect(view.textContent).toContain('今のスプリント: sprint001');
+    // 結論のカードを先に置く (集計の画面と同じ順)
+    const cards = [...view.querySelectorAll('.scrum-summary .tally-card')].map((c) => c.textContent);
+    expect(cards[0]).toContain('今のスプリント');
+    expect(cards[0]).toContain('sprint001');
+    expect(cards[1]).toContain('2 / 5');
     expect(view.textContent).toContain('申請の流れ');
     expect(view.querySelector('svg.burndown-chart')).not.toBeNull();
     expect(view.querySelector('.velocity-table').textContent).toContain('sprint001');
@@ -5973,6 +5977,90 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     form.querySelector('.btn-primary').click();
 
     expect(app.calls.filter((c) => c.name === 'apiImpedimentResolve')[0].args).toEqual([3, '代理が承認']);
+    // ほかを開いていなければ、解決したあとの詳細に戻る
+    expect(document.getElementById('side-title').textContent).toBe('障害物 #3');
+    expect(document.getElementById('side-body').textContent).toContain('解決済み');
+  });
+
+  it('スプリントが無いときは、作る入口を真ん中に出す', () => {
+    mount({ apiSettings: ON, apiScrumView: { sprint: '', sprints: [], summary: {}, velocity: [],
+      burndown: { days: [] }, roadmap: { sprints: [], rows: [] }, texts: {} } });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    // 空の表と「?」だけ並べても、何をすればよいか分からない
+    const blank = document.querySelector('#sprint-view .blank-state');
+    expect(blank.textContent).toContain('スプリントがまだありません');
+    blank.querySelector('.btn-primary').click();
+    expect(document.getElementById('side-body').textContent).toContain('スプリントゴール');
+  });
+
+  it('スプリントを素早く切り替えても、前の返事で描き直さない', () => {
+    const pending = [];
+    const OTHER = Object.assign({}, VIEW, { sprint: 'sprint002',
+      sprints: VIEW.sprints.concat([{ name: 'sprint002', goal: '通知', startDate: '', endDate: '', notes: '' }]) });
+    // 選択肢に両方が無いと select.value を変えても切り替わらない
+    const app = mount({ apiSettings: ON, apiScrumView: Object.assign({}, OTHER, { sprint: 'sprint001' }) });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    app.respond('apiScrumView', (name) => ({ later: (ok, ng) => pending.push({ name, ok, ng }) }));
+    const select = document.getElementById('sprint-select');
+    select.value = 'sprint001';
+    select.dispatchEvent(new window.Event('change'));
+    select.value = 'sprint002';
+    select.dispatchEvent(new window.Event('change'));
+
+    expect(pending.map((p) => p.name)).toEqual(['sprint001', 'sprint002']);
+    // 後に頼んだぶんが先に、前に頼んだぶんが後から届く
+    pending[1].ok(OTHER);
+    pending[0].ok(Object.assign({}, OTHER, { sprint: 'sprint001' }));
+    expect(document.getElementById('sprint-select').value).toBe('sprint002');
+
+    // 前のぶんが失敗で返っても、描いたものを消さない
+    pending[0].ng(new Error('古い失敗'));
+    expect(document.querySelector('#sprint-view .scrum-summary')).not.toBeNull();
+  });
+
+  it('ロードマップの行から、そのやることを開ける', () => {
+    const app = mount({ apiSettings: ON, apiScrumView: VIEW,
+      apiIssueList: [Object.assign({}, DEFAULTS.apiIssueList[0], { number: 1, title: '申請画面' })] });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    document.querySelector('.roadmap-open').click();
+    expect(app.calls.some((c) => c.name === 'apiIssueList')).toBe(true);
+    expect(document.getElementById('side-title').textContent).toContain('#1');
+  });
+
+  it('一覧に無いスプリントに入っているやることを直しても、スプリントを外さない', () => {
+    // 画面を開いたあとに手元の Claude が作ったスプリントは、選択肢の一覧に無い
+    const issue = Object.assign({}, DEFAULTS.apiIssueList[0], { sprint: 'sprint009', points: 3, acceptance: '' });
+    const app = mount({ apiSettings: ON, apiSprintList: [], apiIssueList: [issue] });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-item .row-open').click();
+    document.getElementById('side-edit').click();
+    document.querySelector('#side-body form')
+      .dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    const call = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop();
+    expect(call.args[1].sprint).toBe('sprint009');
+  });
+
+  it('障害物の返事が届いたとき、別のものを開いていたら乗っ取らない', () => {
+    const imp = { number: 3, title: '承認者が不在', body: '', reportedBy: 'a@example.com',
+      reportedAt: '2026-10-02T00:00:00.000Z', state: 'resolved', resolvedAt: '2026-10-03T00:00:00.000Z',
+      resolution: '代理', sprint: '', updatedAt: '', commentCount: 0 };
+    let reply = null;
+    mount({ apiSettings: ON, apiImpedimentList: [imp],
+      apiImpedimentReopen: () => ({ later: (ok) => { reply = ok; } }) });
+    document.querySelector('[data-tab="impediments"]').click();
+    document.querySelector('.impediment-row').click();
+    [...document.querySelectorAll('#side-body button')].find((b) => b.textContent === '未解決に戻す').click();
+
+    // 返事を待つあいだに、やることを開く
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-item .row-open').click();
+    const title = document.getElementById('side-title').textContent;
+    reply(Object.assign({}, imp, { state: 'open' }));
+    expect(document.getElementById('side-title').textContent).toBe(title);
   });
 
   it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
