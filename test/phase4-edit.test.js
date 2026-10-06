@@ -28,6 +28,7 @@ const SOURCES = [
   'src/core/Tag.gs',
   'src/core/Template.gs',
   'src/core/Member.gs',
+  'src/core/Usage.gs',
   'src/core/Issue.gs',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
@@ -1041,5 +1042,113 @@ describe('確認依頼の記録の並び', () => {
     // 1つ目の文書しか見ていなかったため、B の記録が出なかった
     expect(messages).toContain('Aを直した');
     expect(messages).toContain('Bを直した');
+  });
+});
+
+describe('エディタ専用の関数は、持ち主以外には動かない', () => {
+  /*
+   * 末尾が _ でない関数は、画面の google.script.run から直に呼べる。今は
+   * 持ち主しか開けない設定だが、executeAs: ME で共有すると、利用者の誰もが
+   * 持ち主の権限で呼べる。自己承認の解禁やリポジトリの作り直しは塞ぐ。
+   */
+  const NAMES = [
+    'debugEnableSelfApprove', 'debugDisableSelfApprove', 'debugRegisterFile',
+    'debugRenderDoc', 'debugLiveHtml', 'debugInspectImages', 'debugEnsureMainBranch',
+    'debugWriteRoundTrip', 'debugCleanupLastVerify', 'debugVerifyPhase2',
+    'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
+    'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
+  ];
+
+  for (const name of NAMES) {
+    it(name, () => {
+      const { ctx, fake } = setup();
+      fake._setUser('someone@example.com');
+
+      expect(() => ctx[name]()).toThrow(/持ち主だけ/);
+    });
+  }
+
+  it('持ち主なら自己承認を切り替えられる', () => {
+    const { ctx } = setup();
+    ctx.debugEnableSelfApprove();
+    expect(ctx.PropertiesService.getScriptProperties().getProperty('ALLOW_SELF_APPROVE'))
+      .toBe('true');
+    ctx.debugDisableSelfApprove();
+  });
+
+  it('リポジトリを作り直さない', () => {
+    const { ctx } = setup();
+    const before = ctx.repoConfig().rootId;
+
+    // 作り直すと、道具が空のリポジトリを指し、これまでの記録が見えなくなる
+    expect(() => ctx.setupRepo()).toThrow(/既に/);
+    expect(ctx.repoConfig().rootId).toBe(before);
+  });
+});
+
+describe('改訂版を捨てられる人', () => {
+  it('作った本人は捨てられる', () => {
+    const { ctx, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    expect(() => ctx.apiBranchDelete('改訂')).not.toThrow();
+  });
+
+  it('ほかの人は捨てられない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    fake._setUser('someone@example.com');
+
+    // 作業コピーをゴミ箱に入れるので、取り下げと同じく本人か持ち主に絞る
+    expect(() => ctx.apiBranchDelete('改訂')).toThrow(/作った本人か/);
+    expect(ctx.dbFindOne('branches', 'name', '改訂').state).toBe('open');
+  });
+
+  it('持ち主は、ほかの人の改訂版も捨てられる', () => {
+    const { ctx, fake, fileId } = setup();
+    fake._setUser('someone@example.com');
+    ctx.branchCreate('改訂', fileId);
+    fake._setUser('tester@example.com');
+
+    expect(() => ctx.apiBranchDelete('改訂')).not.toThrow();
+  });
+});
+
+describe('使われ方で見えるもの', () => {
+  function used(ctx, fake) {
+    fake.Utilities.formatDate = (d) => {
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    };
+    for (const who of ['tester@example.com', 'boss@example.com', 'other@example.com']) {
+      fake._setUser(who);
+      ctx.usageRecord([{ kind: 'action', target: 'issue-create-btn', count: 2 }]);
+    }
+  }
+
+  it('人ごとの数は、本人と部下のぶんだけ', () => {
+    const { ctx, fake } = setup();
+    used(ctx, fake);
+    ctx.memberSet('tester@example.com', 'boss@example.com', '');
+
+    fake._setUser('boss@example.com');
+    const res = ctx.apiUsageSummary(30, '');
+    expect(res.byUser.map((u) => u.who).sort())
+      .toEqual(['boss@example.com', 'tester@example.com']);
+  });
+
+  it('見てはいけない人には絞り込めない', () => {
+    const { ctx, fake } = setup();
+    used(ctx, fake);
+    fake._setUser('tester@example.com');
+
+    expect(() => ctx.apiUsageSummary(30, 'other@example.com')).toThrow(/見られません/);
+  });
+
+  it('場所ごとの合計は、誰が見ても全員ぶん', () => {
+    const { ctx, fake } = setup();
+    used(ctx, fake);
+    fake._setUser('tester@example.com');
+
+    expect(ctx.apiUsageSummary(30, '').total).toBe(6);
   });
 });

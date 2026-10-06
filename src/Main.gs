@@ -31,7 +31,28 @@ function include(filename) {
  * @returns {object} 作成されたリポジトリ設定
  */
 function setupRepo() {
+  // 作り直すと、道具が空のリポジトリを指し、これまでの記録が見えなくなる。
+  // 画面からも呼べる関数なので、初期化済みなら断る
+  if (PropertiesService.getScriptProperties().getProperty(REPO_CONFIG_KEY())) {
+    throw new Error('リポジトリは既に初期化されています');
+  }
   return repoInit('agentic-management');
+}
+
+/**
+ * このアプリの持ち主かを確かめる。違えば断る。
+ *
+ * **末尾が _ でない関数は、画面の google.script.run から直に呼べる。**
+ * エディタで動かすつもりの関数 (debug* / setupCommandQueue) も例外ではない。
+ * 今は持ち主しか開けない設定だが、executeAs: ME で共有すると、利用者の誰もが
+ * 持ち主の権限で呼べる。自己承認の解禁などを塞ぐため、最初にこれを呼ぶ。
+ */
+function assertOwner_() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var owner = repoOwnerEmail();
+  if (!owner || !me || owner !== me) {
+    throw new Error('この操作は、このアプリの持ち主だけが行えます');
+  }
 }
 
 /**
@@ -196,6 +217,7 @@ function debugFileId_() {
  * @returns {object} 登録された files 行
  */
 function debugRegisterFile() {
+  assertOwner_();
   var fileId = debugFileId_();
   var path = PropertiesService.getScriptProperties().getProperty('DEBUG_FILE_PATH')
     || DriveApp.getFileById(fileId).getName();
@@ -212,6 +234,7 @@ function debugRegisterFile() {
  * @returns {string} 正規化HTML
  */
 function debugRenderDoc() {
+  assertOwner_();
   var html = renderDoc(debugFileId_());
   Logger.log(html);
   return html;
@@ -222,6 +245,7 @@ function debugRenderDoc() {
  * 所要時間を比較する。
  */
 function debugLiveHtml() {
+  assertOwner_();
   var fileId = debugFileId_();
 
   var t1 = new Date().getTime();
@@ -260,6 +284,7 @@ function probe_(label, fn) {
  * 判別する。
  */
 function debugInspectImages() {
+  assertOwner_();
   var body = DocumentApp.openById(debugFileId_()).getBody();
   var ET = DocumentApp.ElementType;
   var n = body.getNumChildren();
@@ -330,6 +355,7 @@ function debugInspectImages() {
  * @returns {string} 実行結果
  */
 function debugEnsureMainBranch() {
+  assertOwner_();
   if (dbFindOne('branches', 'name', 'main')) return 'main ブランチは既に存在します';
   dbAppend('branches', {
     name: 'main',
@@ -521,6 +547,15 @@ function apiBranchAddable(name) {
 }
 
 function apiBranchDelete(name) {
+  // 作業コピーをゴミ箱に入れる。確認依頼の取り下げと同じく、作った本人か
+  // 持ち主に絞る。頼まれた側が捨てられると、作った人の知らないうちに消える
+  var row = dbFindOne('branches', 'name', name);
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var owner = repoOwnerEmail();
+  if (row && String(row.createdBy) !== me && !(owner && owner === me)) {
+    throw new Error('改訂版を捨てられるのは、作った本人か、このアプリの持ち主だけです');
+  }
+
   branchDelete(name);
   return name;
 }
@@ -858,6 +893,7 @@ function apiPrMerge(number, choices, previewSha) {
  * DEBUG_WRITE_FILE_ID に対象を設定する。
  */
 function debugWriteRoundTrip() {
+  assertOwner_();
   var fileId = PropertiesService.getScriptProperties()
     .getProperty('DEBUG_WRITE_FILE_ID');
   if (!fileId) {
@@ -905,6 +941,7 @@ function debugWriteRoundTrip() {
  * @returns {string}
  */
 function debugEnableSelfApprove() {
+  assertOwner_();
   PropertiesService.getScriptProperties().setProperty('ALLOW_SELF_APPROVE', 'true');
   return '自己承認を許可しました (検証用)。検証後は debugDisableSelfApprove() で戻すこと';
 }
@@ -915,6 +952,7 @@ function debugEnableSelfApprove() {
  * @returns {string}
  */
 function debugDisableSelfApprove() {
+  assertOwner_();
   PropertiesService.getScriptProperties().deleteProperty('ALLOW_SELF_APPROVE');
   return '自己承認を禁止に戻しました';
 }
@@ -2018,7 +2056,21 @@ function apiUsageRecord(rows) {
  * @returns {object}
  */
 function apiUsageSummary(days, who) {
-  return usageSummary(days, null, who);
+  /*
+   * 人ごとの数は、本人と部下のぶんだけ (工数の集計と同じ)。誰が何をどれだけ
+   * 使ったかは個人の働き方そのものなので、上下関係の外には見せない。場所
+   * ごとの合計は個人が写らないので、誰が見ても全員ぶん。
+   */
+  var me = Session.getActiveUser().getEmail();
+  var allowed = memberVisibleTo(me);
+  var target = String(who || '');
+  if (target && allowed.indexOf(target) < 0) {
+    throw new Error('その人の使われ方は見られません');
+  }
+
+  var res = usageSummary(days, null, target);
+  res.byUser = res.byUser.filter(function (u) { return allowed.indexOf(u.who) >= 0; });
+  return res;
 }
 
 /**
@@ -2256,6 +2308,7 @@ function LAST_VERIFY_RUN_KEY() {
  * @returns {string}
  */
 function debugCleanupLastVerify() {
+  assertOwner_();
   var raw = PropertiesService.getScriptProperties().getProperty(LAST_VERIFY_RUN_KEY());
   if (!raw) return '片付ける検証物はありません';
 
@@ -2376,6 +2429,7 @@ function withSelfApprove_(fn) {
  * @returns {string} 判定サマリ
  */
 function debugVerifyPhase2() {
+  assertOwner_();
   var log = [];
   var failed = 0;
 
@@ -2538,6 +2592,7 @@ function debugVerifyPhase2() {
  * @returns {string} 判定サマリ
  */
 function debugVerifyPhase3b() {
+  assertOwner_();
   var log = [];
   var failed = 0;
 
@@ -2674,6 +2729,7 @@ function debugVerifyPhase3b() {
  * @returns {string} 判定結果
  */
 function debugMarkdownRoundTrip() {
+  assertOwner_();
   var fileId = debugFileId_();
   var before = liveHtml(fileId);
   var md = blocksToMd(parseBlocks(before));
@@ -2705,6 +2761,7 @@ function debugMarkdownRoundTrip() {
  * @returns {string}
  */
 function setupCommandQueue() {
+  assertOwner_();
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
 
@@ -2736,6 +2793,7 @@ function setupCommandQueue() {
  * @returns {string} 判定サマリ
  */
 function debugVerifyCommandQueue() {
+  assertOwner_();
   var log = [];
   var failed = 0;
 
@@ -2795,6 +2853,7 @@ function debugVerifyCommandQueue() {
  * @returns {string} 削除した件数
  */
 function debugCleanupVerifyIssues() {
+  assertOwner_();
   var rows = dbReadAll('issues');
   var removed = [];
 
@@ -2821,6 +2880,7 @@ function debugCleanupVerifyIssues() {
  * @returns {string} 判定サマリ
  */
 function debugDumpIssues() {
+  assertOwner_();
   var log = [];
 
   try {
