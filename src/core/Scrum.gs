@@ -251,18 +251,23 @@ function impedimentUpdate(number, patch) {
  * @returns {object}
  */
 function impedimentResolve(number, resolution) {
-  var before = impedimentGet(number);
   var text = String(resolution || '').replace(/^\s+|\s+$/g, '');
   if (!text) throw new Error('解決策を書いてください');
-  if (String(before.state) === 'resolved') throw new Error('この障害物は既に解決しています');
 
-  var patch = {
-    state: 'resolved', resolvedAt: new Date(), resolution: text.substring(0, 4000), updatedAt: new Date(),
-  };
-  dbUpdate('impediments', 'number', number, patch);
-  historyRecord_('impediment:' + number, 'resolve',
-    [{ field: 'resolution', before: String(before.resolution || ''), after: patch.resolution }]);
-  return impedimentGet(number);
+  // 状態を確かめてから書くまでを鍵の中で行う。分けると、ほぼ同時の2件が
+  // どちらも「未解決」と読み、後の解決策が先の解決策を黙って上書きする
+  return dbWithLock_(30000, function () {
+    var before = impedimentGet(number);
+    if (String(before.state) === 'resolved') throw new Error('この障害物は既に解決しています');
+
+    var patch = {
+      state: 'resolved', resolvedAt: new Date(), resolution: text.substring(0, 4000), updatedAt: new Date(),
+    };
+    dbUpdate('impediments', 'number', number, patch);
+    historyRecord_('impediment:' + number, 'resolve',
+      [{ field: 'resolution', before: String(before.resolution || ''), after: patch.resolution }]);
+    return impedimentGet(number);
+  });
 }
 
 /**
@@ -272,12 +277,14 @@ function impedimentResolve(number, resolution) {
  * @returns {object}
  */
 function impedimentReopen(number) {
-  var before = impedimentGet(number);
-  if (String(before.state) !== 'resolved') return before;
+  return dbWithLock_(30000, function () {
+    var before = impedimentGet(number);
+    if (String(before.state) !== 'resolved') return before;
 
-  dbUpdate('impediments', 'number', number, { state: 'open', resolvedAt: '', updatedAt: new Date() });
-  historyRecord_('impediment:' + number, 'reopen', []);
-  return impedimentGet(number);
+    dbUpdate('impediments', 'number', number, { state: 'open', resolvedAt: '', updatedAt: new Date() });
+    historyRecord_('impediment:' + number, 'reopen', []);
+    return impedimentGet(number);
+  });
 }
 
 /**
@@ -421,20 +428,24 @@ function historyRecord_(target, action, changes) {
   if (action === 'update' && !(changes && changes.length)) return;
 
   var actor = Session.getActiveUser().getEmail();
+  var at = new Date();
+  var rows = [];
   for (var i = 0; i < list.length; i++) {
-    try {
-      dbAppendNumbered('change_log', 'id', {
-        at: new Date(),
-        actor: actor,
-        target: target,
-        action: action,
-        field: list[i].field,
-        before: list[i].before,
-        after: list[i].after,
-      });
-    } catch (e) {
-      Logger.log('履歴を残せませんでした: ' + e.message);
-    }
+    rows.push({
+      at: at,
+      actor: actor,
+      target: target,
+      action: action,
+      field: list[i].field,
+      before: list[i].before,
+      after: list[i].after,
+    });
+  }
+  try {
+    // まとめて足す。1行ずつ番号を採ると、そのたびに表を丸ごと読む
+    dbAppendNumberedMany('change_log', 'id', rows);
+  } catch (e) {
+    Logger.log('履歴を残せませんでした: ' + e.message);
   }
 }
 
