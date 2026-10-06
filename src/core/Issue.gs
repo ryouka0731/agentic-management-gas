@@ -202,14 +202,7 @@ function issueUpdate(number, patch) {
   // 知らない値は受け取らない。ここを通ると台帳に残り、読むたびに
   // 「ふつう」へ倒れるので、直したつもりが直っていない状態になる
   if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
-    var want = String(patch.priority || '');
-    var known = ISSUE_PRIORITIES();
-    var ok = false;
-
-    for (var p = 0; p < known.length; p++) {
-      if (known[p][0] === want) ok = true;
-    }
-    if (!ok) throw new Error('知らない優先度です: ' + patch.priority);
+    issuePriorityAssert_(patch.priority);
   }
 
   var keys = ['title', 'body', 'assignee', 'labels', 'linkedFileIds', 'dueDate', 'startDate',
@@ -223,6 +216,38 @@ function issueUpdate(number, patch) {
 
   dbUpdate('issues', 'number', number, allowed);
   return issueGet(number);
+}
+
+/**
+ * 知っている優先度かを確かめる。
+ *
+ * @param {*} value
+ */
+function issuePriorityAssert_(value) {
+  var want = String(value || '');
+  var known = ISSUE_PRIORITIES();
+
+  for (var p = 0; p < known.length; p++) {
+    if (known[p][0] === want) return;
+  }
+  throw new Error('知らない優先度です: ' + value);
+}
+
+/**
+ * やることを直す前に、直せる値かだけを確かめる。書き込みはしない。
+ *
+ * 作るときに一緒に入れる値を、作る前に確かめるために使う。作ってから
+ * 断ると、作られているのに失敗と出て、人がもう一度作り、同じものが2つ並ぶ。
+ *
+ * @param {object} patch
+ */
+function issuePatchCheck(patch) {
+  if (Object.prototype.hasOwnProperty.call(patch, 'assignee')) {
+    issueAssigneeClean(patch.assignee);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
+    issuePriorityAssert_(patch.priority);
+  }
 }
 
 /**

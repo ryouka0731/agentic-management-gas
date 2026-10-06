@@ -955,3 +955,31 @@ describe('報告の一覧を1回で組む', () => {
     expect(replyReads).toBe(1);
   });
 });
+
+describe('やることを作るときに一緒に入れるもの', () => {
+  /*
+   * 先に作ってから担当や優先度を入れていたため、後半で断られると、作られて
+   * いるのに画面には失敗と出た。人はもう一度作るので、同じものが2つ並ぶ。
+   */
+  it('入れられないものがあれば、作らずに断る', () => {
+    const { ctx } = setup();
+    const before = ctx.dbReadAll('issues').length;
+
+    expect(() => ctx.apiIssueCreate('棚卸し', '', [], '', { assignee: '名前だけ' }))
+      .toThrow(/メールアドレス/);
+    expect(() => ctx.apiIssueCreate('棚卸し', '', [], '', { priority: '至急' }))
+      .toThrow(/知らない優先度/);
+
+    expect(ctx.dbReadAll('issues')).toHaveLength(before);
+    expect(ctx.dbReadAll('project_items')).toHaveLength(0);
+  });
+
+  it('入れられるものは、作った1件にそのまま入る', () => {
+    const { ctx } = setup();
+    const made = ctx.apiIssueCreate('棚卸し', '', [], '',
+      { assignee: 'a@example.com', priority: 'high' });
+
+    expect(made.assignee).toBe('a@example.com');
+    expect(made.priority).toBe('high');
+  });
+});

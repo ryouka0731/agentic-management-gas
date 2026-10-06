@@ -1351,16 +1351,14 @@ function apiIssueList(state) {
  * @returns {object}
  */
 function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
-  var issue = issueCreate(title, body, linkedFileIds || [], labels || '');
-  projectPlace(issue.number, 'Backlog');
-
   // 作ってすぐ直せばよい、では二度手間になる。作るときに入れられる
   // ものは、そのまま入れて1件にする
+  var want = {};
+  var any = false;
+
   if (patch && typeof patch === 'object') {
     var keys = ['assignee', 'startDate', 'dueDate', 'estimate',
       'plannedHours', 'actualHours', 'parent', 'priority'];
-    var want = {};
-    var any = false;
 
     for (var k = 0; k < keys.length; k++) {
       if (!Object.prototype.hasOwnProperty.call(patch, keys[k])) continue;
@@ -1369,8 +1367,16 @@ function apiIssueCreate(title, body, linkedFileIds, labels, patch) {
       want[keys[k]] = patch[keys[k]];
       any = true;
     }
-    if (any) issue = issueUpdate(issue.number, want);
   }
+
+  // **作る前に確かめる。** 作ってから断ると、作られているのに失敗と出て、
+  // 人がもう一度作り、同じものが2つ並ぶ
+  if (any) issuePatchCheck(want);
+
+  var issue = issueCreate(title, body, linkedFileIds || [], labels || '');
+  projectPlace(issue.number, 'Backlog');
+
+  if (any) issue = issueUpdate(issue.number, want);
   return issueToPlain_(issue);
 }
 
