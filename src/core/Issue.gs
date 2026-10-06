@@ -475,6 +475,9 @@ function issuePurge(number) {
     dbDelete('task_links', 'issueNumber', number);
     issueUnlinkInquiries_(number);
     issueDropNotices_(number);
+    // 変更の履歴には題名や補足の前と後が入っている。残すと、消したはずの中身が
+    // 履歴から読める (番号は使い回さないので、別のものに混ざりはしない)
+    dbDelete('change_log', 'target', 'issue:' + number);
     dbDelete('issues', 'number', number);
   });
 }

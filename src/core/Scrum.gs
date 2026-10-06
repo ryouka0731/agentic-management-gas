@@ -21,8 +21,21 @@
 function scrumDay_(v) {
   if (v === '' || v === null || v === undefined) return '';
   var day = plainDay(v);
-  if (!day) throw new Error('日付は YYYY-MM-DD の形で入れてください: ' + v);
+  // 形だけでなく暦にあるかも見る。'2026-13-01' を通すと、数えるときに日付を
+  // 作れずに投げ、スプリントのタブがずっと開けなくなる
+  if (!day || !scrumRealDay_(day)) throw new Error('日付は YYYY-MM-DD の形で入れてください: ' + v);
   return day;
+}
+
+/**
+ * 'YYYY-MM-DD' が暦にある日か。'2026-02-30' のように繰り上がるものも断る。
+ *
+ * @param {string} day
+ * @returns {boolean}
+ */
+function scrumRealDay_(day) {
+  var d = new Date(day + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().substring(0, 10) === day;
 }
 
 /**
@@ -346,6 +359,31 @@ function impedimentTitle_(raw) {
 }
 
 /**
+ * 時刻を持たない日付の欄。履歴では 'YYYY-MM-DD' で比べて残す。
+ *
+ * 台帳はこれらを Date で返す。ISO の字にして送られた 'YYYY-MM-DD' と比べると、
+ * 同じ日でも必ず食い違い、保存のたびに偽の行が増える。そのうえ東京の0時は
+ * 前日の15時Zになるので、1日ずれたように見えていた。
+ *
+ * @returns {Object<string, boolean>}
+ */
+function HISTORY_DAY_FIELDS_() {
+  return { dueDate: true, startDate: true, endDate: true };
+}
+
+/**
+ * 履歴に残す字。日付の欄は暦日、それ以外は historyText_。
+ *
+ * @param {string} key
+ * @param {*} v
+ * @returns {string}
+ */
+function historyValue_(key, v) {
+  if (HISTORY_DAY_FIELDS_()[key]) return plainDay(v);
+  return historyText_(v);
+}
+
+/**
  * 直す前の行と、直す値から、変わった欄だけを並べる。
  *
  * @param {object} before 直す前の行
@@ -358,8 +396,8 @@ function historyDiff_(before, patch) {
     if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
     if (key === 'updatedAt') continue;
 
-    var from = historyText_(before[key]);
-    var to = historyText_(patch[key]);
+    var from = historyValue_(key, before[key]);
+    var to = historyValue_(key, patch[key]);
     if (from === to) continue;
     out.push({ field: key, before: from, after: to });
   }
@@ -406,7 +444,7 @@ function historyRecord_(target, action, changes) {
  * @param {string} target 'issue:N' など
  * @returns {object[]}
  */
-function historyOf(target) {
+function historyOf_(target) {
   var rows = dbReadAll('change_log');
   var out = [];
   for (var i = 0; i < rows.length; i++) {
