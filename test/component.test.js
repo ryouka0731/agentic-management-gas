@@ -5977,6 +5977,9 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     form.querySelector('.btn-primary').click();
 
     expect(app.calls.filter((c) => c.name === 'apiImpedimentResolve')[0].args).toEqual([3, '代理が承認']);
+    // ほかを開いていなければ、解決したあとの詳細に戻る
+    expect(document.getElementById('side-title').textContent).toBe('障害物 #3');
+    expect(document.getElementById('side-body').textContent).toContain('解決済み');
   });
 
   it('スプリントが無いときは、作る入口を真ん中に出す', () => {
@@ -5995,20 +5998,26 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     const pending = [];
     const OTHER = Object.assign({}, VIEW, { sprint: 'sprint002',
       sprints: VIEW.sprints.concat([{ name: 'sprint002', goal: '通知', startDate: '', endDate: '', notes: '' }]) });
-    const app = mount({ apiSettings: ON, apiScrumView: VIEW });
+    // 選択肢に両方が無いと select.value を変えても切り替わらない
+    const app = mount({ apiSettings: ON, apiScrumView: Object.assign({}, OTHER, { sprint: 'sprint001' }) });
     document.querySelector('[data-tab="sprint"]').click();
 
-    app.respond('apiScrumView', (name) => ({ later: (ok) => pending.push({ name, ok }) }));
+    app.respond('apiScrumView', (name) => ({ later: (ok, ng) => pending.push({ name, ok, ng }) }));
     const select = document.getElementById('sprint-select');
     select.value = 'sprint001';
     select.dispatchEvent(new window.Event('change'));
     select.value = 'sprint002';
     select.dispatchEvent(new window.Event('change'));
 
+    expect(pending.map((p) => p.name)).toEqual(['sprint001', 'sprint002']);
     // 後に頼んだぶんが先に、前に頼んだぶんが後から届く
     pending[1].ok(OTHER);
-    pending[0].ok(VIEW);
+    pending[0].ok(Object.assign({}, OTHER, { sprint: 'sprint001' }));
     expect(document.getElementById('sprint-select').value).toBe('sprint002');
+
+    // 前のぶんが失敗で返っても、描いたものを消さない
+    pending[0].ng(new Error('古い失敗'));
+    expect(document.querySelector('#sprint-view .scrum-summary')).not.toBeNull();
   });
 
   it('ロードマップの行から、そのやることを開ける', () => {
