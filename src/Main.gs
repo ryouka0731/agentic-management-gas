@@ -406,7 +406,9 @@ function debugFindConvertedCells() {
  */
 function dbTextColumn_(name) {
   if (/At$|^at$|^day$|Date$|^timestamp$/.test(name)) return false;
-  if (/^(number|id|count|order|estimate|plannedHours|actualHours|linkedPr|parent|added|removed|staleReviewId|builtin)$|Number$/.test(name)) return false;
+  if (/^(number|id|count|order|estimate|plannedHours|actualHours|linkedPr|parent|added|removed|staleReviewId|builtin|points)$|Number$/.test(name)) return false;
+  // 変更の履歴の前と後は、数だけの字 ('5') が数として残る決まり。化けたのではない
+  if (name === 'before' || name === 'after') return false;
   return true;
 }
 
@@ -1485,6 +1487,10 @@ function issueToPlain_(row) {
     updatedAt: plainDate(row.updatedAt),
     staleDays: stalenessOf(row, new Date()).days,
     staleLevel: stalenessOf(row, new Date()).level,
+    // エージェンティックスクラム (既定はオフ)。オフのときは空のまま届く
+    sprint: plainText(row.sprint),
+    points: plainNumber(row.points),
+    acceptance: plainText(row.acceptance),
   };
 }
 
@@ -3074,4 +3080,269 @@ function housekeepArchiveDaily_() {
     Logger.log('消えた文書の確認依頼を取り下げられませんでした: ' + e.message);
   }
   return issueHousekeep(new Date());
+}
+
+// ===== 設定 =====
+
+/**
+ * アプリ全体の設定を返す (Web App API)。
+ *
+ * 変えられるのは持ち主だけ。画面は canEdit を見て、切り替えの入口を出すか決める。
+ *
+ * @returns {{scrumEnabled: boolean, canEdit: boolean, productGoal: string,
+ *   definitionOfDone: string}}
+ */
+function apiSettings() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var owner = repoOwnerEmail();
+  var texts = scrumTexts();
+  return {
+    scrumEnabled: scrumEnabled(),
+    canEdit: !!owner && owner === me,
+    productGoal: plainText(texts.productGoal),
+    definitionOfDone: plainText(texts.definitionOfDone),
+  };
+}
+
+/**
+ * エージェンティックスクラムを切り替える (Web App API)。持ち主だけ。
+ *
+ * @param {boolean} on
+ * @returns {object} 切り替えたあとの apiSettings()
+ */
+function apiSetScrumEnabled(on) {
+  assertOwner_();
+  scrumSetEnabled(!!on);
+  return apiSettings();
+}
+
+/**
+ * プロダクトゴールか完了の定義を書く (Web App API)。持ち主だけ。
+ *
+ * @param {string} kind 'productGoal' | 'definitionOfDone'
+ * @param {string} text
+ * @returns {object} 書いたあとの apiSettings()
+ */
+function apiSetScrumText(kind, text) {
+  assertOwner_();
+  scrumSetText(kind, text);
+  return apiSettings();
+}
+
+// ===== エージェンティックスクラム =====
+
+/**
+ * sprints 行を、画面に渡せる素の形にする。
+ *
+ * @param {object} row
+ * @returns {object}
+ */
+function sprintToPlain_(row) {
+  return {
+    name: plainText(row.name),
+    goal: plainText(row.goal),
+    startDate: plainDay(row.startDate),
+    endDate: plainDay(row.endDate),
+    notes: plainText(row.notes),
+  };
+}
+
+/**
+ * impediments 行を、画面に渡せる素の形にする。
+ *
+ * @param {object} row
+ * @param {Object<string, number>} [counts] 障害物の番号 → やりとりの数
+ * @returns {object}
+ */
+function impedimentToPlain_(row, counts) {
+  return {
+    number: plainId(row.number),
+    title: plainText(row.title),
+    body: plainText(row.body),
+    reportedBy: plainText(row.reportedBy),
+    reportedAt: plainDate(row.reportedAt),
+    state: plainText(row.state),
+    resolvedAt: plainDate(row.resolvedAt),
+    resolution: plainText(row.resolution),
+    sprint: plainText(row.sprint),
+    updatedAt: plainDate(row.updatedAt),
+    commentCount: counts ? (counts[String(plainId(row.number))] || 0) : 0,
+  };
+}
+
+/**
+ * スプリントの一覧を返す (Web App API)。
+ *
+ * @returns {object[]}
+ */
+function apiSprintList() {
+  return sprintList().map(sprintToPlain_);
+}
+
+/**
+ * スプリントを作る (Web App API)。
+ *
+ * @param {object} fields
+ * @returns {object}
+ */
+function apiSprintCreate(fields) {
+  return sprintToPlain_(sprintCreate(fields || {}));
+}
+
+/**
+ * スプリントのゴール・期間・備考を直す (Web App API)。
+ *
+ * @param {string} name
+ * @param {object} patch
+ * @returns {object}
+ */
+function apiSprintUpdate(name, patch) {
+  return sprintToPlain_(sprintUpdate(name, patch || {}));
+}
+
+/**
+ * スプリントのタブの中身を返す (Web App API)。
+ *
+ * 要約・ベロシティ・バーンダウン・ロードマップを1回でまとめて返す。タブを
+ * 開くたびに4回往復させない。
+ *
+ * @param {string} [sprintName] バーンダウンを見るスプリント。空なら今のもの、
+ *   無ければ最後のもの
+ * @returns {object}
+ */
+function apiScrumView(sprintName) {
+  var sprints = sprintList();
+  var issues = dbReadAll('issues');
+  var impediments = impedimentList();
+  var today = new Date();
+  var summary = scrumSummary(sprints, issues, impediments, today);
+
+  var name = String(sprintName || '') || summary.current ||
+    (sprints.length ? String(sprints[sprints.length - 1].name) : '');
+  var target = null;
+  for (var i = 0; i < sprints.length; i++) {
+    if (String(sprints[i].name) === name) target = sprints[i];
+  }
+
+  return {
+    sprint: target ? plainText(target.name) : '',
+    sprints: sprints.map(sprintToPlain_),
+    summary: summary,
+    velocity: scrumVelocity(sprints, issues, today),
+    burndown: target ? scrumBurndown(target, issues, today)
+      : { days: [], remaining: [], ideal: [], notice: 'スプリントがまだありません。' },
+    roadmap: scrumRoadmap(sprints, issues),
+    texts: scrumTexts(),
+  };
+}
+
+/**
+ * 障害物の一覧を返す (Web App API)。やりとりの数も添える。
+ *
+ * @returns {object[]}
+ */
+function apiImpedimentList() {
+  var rows = impedimentList();
+  var counts = {};
+  var talk = dbReadAll('impediment_comments');
+  for (var t = 0; t < talk.length; t++) {
+    var key = String(plainId(talk[t].impedimentNumber));
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return rows.map(function (row) { return impedimentToPlain_(row, counts); });
+}
+
+/**
+ * 障害物を記録する (Web App API)。
+ *
+ * @param {object} fields
+ * @returns {object}
+ */
+function apiImpedimentCreate(fields) {
+  return impedimentToPlain_(impedimentCreate(fields || {}));
+}
+
+/**
+ * 障害物を直す (Web App API)。
+ *
+ * @param {number} number
+ * @param {object} patch
+ * @returns {object}
+ */
+function apiImpedimentUpdate(number, patch) {
+  return impedimentToPlain_(impedimentUpdate(number, patch || {}));
+}
+
+/**
+ * 障害物を解決する (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} resolution
+ * @returns {object}
+ */
+function apiImpedimentResolve(number, resolution) {
+  return impedimentToPlain_(impedimentResolve(number, resolution));
+}
+
+/**
+ * 障害物の解決を取り消す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiImpedimentReopen(number) {
+  return impedimentToPlain_(impedimentReopen(number));
+}
+
+/**
+ * 障害物のやりとりを返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object[]}
+ */
+function apiImpedimentComments(number) {
+  var me = Session.getActiveUser().getEmail();
+  return impedimentComments(number).map(function (row) {
+    return plainTalk(row, me, 'impedimentNumber');
+  });
+}
+
+/**
+ * 障害物にやりとりを書く (Web App API)。
+ *
+ * @param {number} number
+ * @param {string} body
+ * @returns {object}
+ */
+function apiImpedimentComment(number, body) {
+  var me = Session.getActiveUser().getEmail();
+  return plainTalk(impedimentCommentAdd(number, body), me, 'impedimentNumber');
+}
+
+/**
+ * 変更の履歴を返す (Web App API)。
+ *
+ * やることの履歴はスクラムがオフでも見られる (誰がいつ何を変えたかは、
+ * スクラムに関係なく要る)。障害物とスプリントの履歴はオンのときだけ。
+ *
+ * @param {string} target 'issue:N' | 'impediment:N' | 'sprint:名前'
+ * @returns {object[]}
+ */
+function apiHistory(target) {
+  var key = String(target || '');
+  if (!/^(issue|impediment|sprint):.+$/.test(key)) throw new Error('履歴の対象が正しくありません: ' + key);
+  if (key.indexOf('issue:') !== 0) scrumAssertEnabled_();
+
+  return historyOf(key).slice(0, 200).map(function (row) {
+    return {
+      id: plainId(row.id),
+      at: plainDate(row.at),
+      actor: plainText(row.actor),
+      target: plainText(row.target),
+      action: plainText(row.action),
+      field: plainText(row.field),
+      before: plainText(row.before),
+      after: plainText(row.after),
+    };
+  });
 }

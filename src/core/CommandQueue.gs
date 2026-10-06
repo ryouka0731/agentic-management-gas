@@ -84,6 +84,35 @@ function COMMAND_OPS() {
     issueUpdate: function (a) { return apiIssueUpdate(a.number, a.patch || {}); },
     issueClose: function (a) { return apiIssueClose(a.number); },
     issueComment: function (a) { return apiIssueComment(a.number, a.body); },
+
+    /*
+     * エージェンティックスクラム (既定はオフ)。手元の Claude Code がスクラムチーム
+     * として動くときに使う。ai-scrum-gas では scrum/ の CSV を直に読み書きして
+     * いたが、この道具では台帳をここから触る。
+     *
+     * **切り替える命令は置かない。** オンにするかは持ち主が画面で決める。状態を
+     * 見る命令だけは、オフでも使える (オンにするよう案内するため)。
+     */
+    scrumState: function () {
+      var s = apiSettings();
+      return {
+        scrumEnabled: s.scrumEnabled,
+        productGoal: s.productGoal,
+        definitionOfDone: s.definitionOfDone,
+        howToEnable: s.scrumEnabled ? '' :
+          'エージェンティックスクラムはオフです。持ち主が画面の「設定」でオンにすると使えます',
+      };
+    },
+    sprintList: function () { return apiSprintList(); },
+    sprintCreate: function (a) { return apiSprintCreate(a.fields || {}); },
+    sprintUpdate: function (a) { return apiSprintUpdate(a.name, a.patch || {}); },
+    scrumView: function (a) { return apiScrumView(a.sprint || ''); },
+    impedimentList: function () { return apiImpedimentList(); },
+    impedimentCreate: function (a) { return apiImpedimentCreate(a.fields || {}); },
+    impedimentUpdate: function (a) { return apiImpedimentUpdate(a.number, a.patch || {}); },
+    impedimentResolve: function (a) { return apiImpedimentResolve(a.number, a.resolution); },
+    impedimentComment: function (a) { return apiImpedimentComment(a.number, a.body); },
+    history: function (a) { return apiHistory(a.target); },
   };
 }
 
