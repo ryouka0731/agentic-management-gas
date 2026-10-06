@@ -203,6 +203,18 @@ describe('実機確認の入口 (debugVerifyScrum)', () => {
     expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
   });
 
+  it('台帳が読めなくても、オン・オフは戻す', () => {
+    const { ctx } = setup();
+    const original = ctx.dbReadAll;
+    ctx.dbReadAll = (table) => {
+      if (table === 'impediments') throw new Error('読めない');
+      return original(table);
+    };
+
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
   it('作った直後に落ちても、作ったものを残さない', () => {
     const { ctx } = setup();
     const before = counts(ctx);

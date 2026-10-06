@@ -3338,21 +3338,26 @@ function debugVerifyScrum() {
       log.push('FAIL 片付け (' + label + '): ' + e.message);
     }
   }
-  dbReadAll('issues').forEach(function (row) {
-    if (String(row.body) !== mark) return;
-    var n = row.number;
-    tidy('やること #' + n, function () {
-      issuePurge(n);
-      dbDelete('change_log', 'target', 'issue:' + n);
+  // 読むところも tidy の中に置く。外で投げると、オン・オフを戻す前に止まる
+  tidy('やることを探す', function () {
+    dbReadAll('issues').forEach(function (row) {
+      if (String(row.body) !== mark) return;
+      var n = row.number;
+      tidy('やること #' + n, function () {
+        issuePurge(n);
+        dbDelete('change_log', 'target', 'issue:' + n);
+      });
     });
   });
-  dbReadAll('impediments').forEach(function (row) {
-    if (String(row.body) !== mark) return;
-    var n = row.number;
-    tidy('障害物 #' + n, function () {
-      dbDelete('impediment_comments', 'impedimentNumber', n);
-      dbDelete('impediments', 'number', n);
-      dbDelete('change_log', 'target', 'impediment:' + n);
+  tidy('障害物を探す', function () {
+    dbReadAll('impediments').forEach(function (row) {
+      if (String(row.body) !== mark) return;
+      var n = row.number;
+      tidy('障害物 #' + n, function () {
+        dbDelete('impediment_comments', 'impedimentNumber', n);
+        dbDelete('impediments', 'number', n);
+        dbDelete('change_log', 'target', 'impediment:' + n);
+      });
     });
   });
   tidy('スプリント ' + name, function () {
