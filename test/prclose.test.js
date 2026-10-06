@@ -28,6 +28,7 @@ const SOURCES = [
   'src/core/Notifier.gs',
   'src/core/Plain.js',
   'src/core/Member.gs',
+  'src/core/Mention.js',
   'src/Main.gs',
 ];
 
@@ -233,5 +234,69 @@ describe('取り下げられるかを誰が決めるか', () => {
     ctx.repoOwnerEmail = () => 'owner@example.com';
 
     expect(listed(ctx, pr.number).canClose).toBe(true);
+  });
+});
+
+describe('元の文書が消えた確認依頼は取り下げる', () => {
+  /*
+   * 改訂版の元の文書や作業コピーが Drive で消されても、確認依頼は開いたまま
+   * 残っていた。ゴミ箱に入った文書へ反映できてしまううえ、一覧には反映
+   * できない依頼が居座る。消えた時点で取り下げる。
+   */
+  it('正式版の文書がゴミ箱に入れば、取り下げる', () => {
+    const { ctx, fake, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+    ctx.prSetReviewers(pr.number, ['r@example.com']);
+
+    fake.DriveApp.getFileById(mainFileId).setTrashed(true);
+    const closed = ctx.prWithdrawOrphans();
+
+    expect(closed).toEqual([pr.number]);
+    expect(ctx.prGet(pr.number).state).toBe('closed');
+    // 頼まれた人には、なぜ取り下げたかを添えて知らせる
+    const mail = fake._sentMails().filter((m) => m.to === 'r@example.com').pop();
+    expect(mail.body).toContain('Drive');
+  });
+
+  it('作業コピーが完全に消えても、取り下げる', () => {
+    const { ctx, fake, mainFileId, workFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+
+    fake._purgeFile(workFileId);
+    ctx.prWithdrawOrphans();
+
+    expect(ctx.prGet(pr.number).state).toBe('closed');
+  });
+
+  it('文書が揃っていれば、取り下げない', () => {
+    const { ctx, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+
+    expect(ctx.prWithdrawOrphans()).toEqual([]);
+    expect(ctx.prGet(pr.number).state).toBe('open');
+  });
+
+  it('反映を押したときに消えていれば、反映せずに取り下げる', () => {
+    const { ctx, fake, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+    ctx.PropertiesService.getScriptProperties().setProperty('ALLOW_SELF_APPROVE', 'true');
+    ctx.prReview(pr.number, 'approve', '');
+
+    fake.DriveApp.getFileById(mainFileId).setTrashed(true);
+
+    // ゴミ箱の中の文書に書き戻さない
+    expect(() => ctx.prMerge(pr.number, [])).toThrow(/Drive/);
+    expect(ctx.prGet(pr.number).state).toBe('closed');
+  });
+
+  it('反映済みのものには触らない', () => {
+    const { ctx, fake, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+    ctx.dbUpdate('pulls', 'number', pr.number, { state: 'merged' });
+
+    fake.DriveApp.getFileById(mainFileId).setTrashed(true);
+    ctx.prWithdrawOrphans();
+
+    expect(ctx.prGet(pr.number).state).toBe('merged');
   });
 });

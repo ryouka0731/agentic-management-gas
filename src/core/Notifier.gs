@@ -184,7 +184,8 @@ function notifyPrMerged(pr) {
  *
  * @param {object} pr
  */
-function notifyPrClosed(pr) {
+function notifyPrClosed(pr, reason) {
+  var why = reason ? '\n\n' + reason : '';
   var list = String(pr.reviewers || '').split(',');
 
   for (var i = 0; i < list.length; i++) {
@@ -192,13 +193,13 @@ function notifyPrClosed(pr) {
     if (!to) continue;
 
     noticeAdd(to, 'review',
-      '確認依頼 #' + pr.number + ' は取り下げられました', pr.title,
+      '確認依頼 #' + pr.number + ' は取り下げられました', pr.title + why,
       'pull:' + pr.number);
 
     notify(
       to,
       notifySubject_('確認依頼', pr.number, 'は取り下げられました'),
-      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。'
+      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。' + why
     );
   }
 }

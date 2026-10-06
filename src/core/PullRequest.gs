@@ -631,8 +631,18 @@ function prClose(number) {
   if (state === 'closed') throw new Error('これは既に取り下げられています');
 
   prAssertCanClose_(pr);
+  return prCloseBecause_(pr, '');
+}
 
-  dbUpdate('pulls', 'number', number, { state: 'closed' });
+/**
+ * 取り下げる本体。誰が取り下げられるかは呼ぶ側で確かめておく。
+ *
+ * @param {object} pr pulls 行
+ * @param {string} reason 頼まれた人に添える理由 (人が取り下げたときは空)
+ * @returns {object} 取り下げた pulls 行
+ */
+function prCloseBecause_(pr, reason) {
+  dbUpdate('pulls', 'number', pr.number, { state: 'closed' });
 
   // 出すときに動かしたぶんを戻す。片方だけだと確認中に居座る
   var linked = prClosesIssues_(pr.body);
@@ -640,8 +650,89 @@ function prClose(number) {
     projectMoveIfExists_(linked[i], 'In Progress');
   }
 
-  notifyPrClosed(prGet(number));
-  return prGet(number);
+  notifyPrClosed(prGet(pr.number), reason);
+  return prGet(pr.number);
+}
+
+/**
+ * 確認依頼が扱う文書のうち、Drive で消されているものを返す。
+ *
+ * 正式版の文書・改訂版の作業コピー・(反映先が改訂版なら) その作業コピー。
+ * ゴミ箱に入っているものも、消えたものとして扱う。
+ *
+ * @param {object} pr pulls 行
+ * @param {Object<string, boolean>} [present] 先に調べた filesPresentInDrive_ の結果。
+ *   いくつもの依頼を見るときに、Drive を1回だけ読むため
+ * @returns {string[]} 消えている文書の道のり
+ */
+function prMissingFiles_(pr, present) {
+  var targets = prTargetFiles(pr);
+  var into = prTargetBranch(pr);
+  var wanted = [];
+
+  for (var t = 0; t < targets.length; t++) {
+    var mainRow = dbFindOne('files', 'fileId', targets[t]);
+    var path = mainRow ? branchSplitPath_(mainRow.path).path : targets[t];
+    var ids = [targets[t], branchWorkingFileId(pr.sourceBranch, targets[t])];
+    if (into !== 'main') ids.push(branchWorkingFileId(into, targets[t]));
+    wanted.push({ path: path, ids: ids });
+  }
+
+  if (!present) {
+    var rows = [];
+    for (var w = 0; w < wanted.length; w++) {
+      for (var k = 0; k < wanted[w].ids.length; k++) {
+        if (wanted[w].ids[k]) rows.push({ fileId: wanted[w].ids[k] });
+      }
+    }
+    present = filesPresentInDrive_(rows);
+  }
+
+  var missing = [];
+  for (var m = 0; m < wanted.length; m++) {
+    for (var n = 0; n < wanted[m].ids.length; n++) {
+      var id = wanted[m].ids[n];
+      if (!id || !present[String(id)]) {
+        missing.push(wanted[m].path);
+        break;
+      }
+    }
+  }
+  return missing;
+}
+
+/**
+ * 元の文書が Drive で消された確認依頼を取り下げる。
+ *
+ * **消えたら、すぐ取り下げる** (ゴミ箱に入れた時点で)。開いたままにすると、
+ * ゴミ箱の中の文書へ反映できてしまううえ、反映できない依頼が一覧に居座る。
+ * 間違えて消して戻した場合は、確認依頼を出し直す。
+ *
+ * 一覧を開いたとき・反映を押したとき・1日1回の片付けで呼ぶ。
+ *
+ * @returns {number[]} 取り下げた番号
+ */
+function prWithdrawOrphans() {
+  var pulls = dbReadAll('pulls');
+  var closed = [];
+  var open = pulls.filter(function (p) {
+    var st = String(p.state);
+    return st === 'open' || st === 'approved';
+  });
+  if (!open.length) return closed;
+
+  // Drive は1回だけ読む。依頼ごとに読むと、一覧を開くたびに依頼の数だけ待つ
+  var present = filesPresentInDrive_(dbReadAll('files'));
+
+  for (var i = 0; i < open.length; i++) {
+    var missing = prMissingFiles_(open[i], present);
+    if (!missing.length) continue;
+
+    prCloseBecause_(open[i],
+      '対象の文書が Drive で消されたため、自動で取り下げました: ' + missing.join('、'));
+    closed.push(Number(open[i].number));
+  }
+  return closed;
 }
 
 /**
@@ -749,6 +840,16 @@ function prMerge(number, choices, previewSha) {
          * 中身が違うと、選んだ「こちら/相手」が別の食い違いに当てはまり、
          * 見ていない結果で反映される。指紋を持たない呼び方は通す
          */
+        // 対象の文書が Drive で消されていたら、反映せずに取り下げる。
+        // ゴミ箱の中の文書に書き戻すことになる
+        var gone = prMissingFiles_(pr);
+        if (gone.length) {
+          prCloseBecause_(pr,
+            '対象の文書が Drive で消されたため、自動で取り下げました: ' + gone.join('、'));
+          throw new Error(
+            '対象の文書が Drive で消されているため、反映せずに取り下げました: ' + gone.join('、'));
+        }
+
         if (previewSha && prPreviewFingerprint(number) !== String(previewSha)) {
           throw new Error(
             '見比べたあとで、反映先か改訂版が進みました。見比べ直してから反映してください');

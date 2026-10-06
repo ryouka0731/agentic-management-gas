@@ -574,6 +574,14 @@ function apiBranchDelete(name) {
  * @returns {object[]}
  */
 function apiPrList() {
+  // 元の文書が Drive で消された依頼を先に取り下げる。取り下げに失敗しても
+  // 一覧は出す
+  try {
+    prWithdrawOrphans();
+  } catch (e) {
+    Logger.log('消えた文書の確認依頼を取り下げられませんでした: ' + e.message);
+  }
+
   var rows = prList();
   var out = [];
 
@@ -2958,5 +2966,12 @@ function housekeepArchiveDaily_() {
   if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') === today) return [];
 
   props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
+
+  // 誰も一覧を開かなくても、元の文書が消えた確認依頼は取り下げる
+  try {
+    prWithdrawOrphans();
+  } catch (e) {
+    Logger.log('消えた文書の確認依頼を取り下げられませんでした: ' + e.message);
+  }
   return issueHousekeep(new Date());
 }
