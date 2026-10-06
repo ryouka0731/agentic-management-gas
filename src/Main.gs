@@ -349,6 +349,68 @@ function debugInspectImages() {
 // ===== Phase 2: コミット・ブランチ・PR の API =====
 
 /**
+ * 以前に Sheets が字を日付や数に変えてしまった台帳のセルを、実行ログに出す。
+ *
+ * 字を ' 付きで書くようにする前 (dbCell_) は、題名や記録の文の '1/2' が日付に、
+ * '007' が 7 に変わって台帳に入った。**元の字は残っていないので戻せない。**
+ * どこにあるかを挙げるので、直すのは人が台帳を開いて行う。
+ *
+ * 字の欄かどうかは列の名前で見分ける (dbTextColumn_)。数字だけの題名のように、
+ * 元から数だった字も挙がるので、見て判断すること。
+ *
+ * @returns {string} 実行ログに出したもの
+ */
+function debugFindConvertedCells() {
+  assertOwner_();
+  var schema = DB_SCHEMA();
+  var lines = ['字の欄に入っている日付・数 (表 / 行 / 列 / いまの値)', ''];
+  var count = 0;
+
+  for (var table in schema) {
+    if (!Object.prototype.hasOwnProperty.call(schema, table)) continue;
+    var cols = schema[table];
+    var rows = dbReadAll(table);
+
+    for (var r = 0; r < rows.length; r++) {
+      var label = rows[r].number !== undefined && rows[r].number !== ''
+        ? '#' + rows[r].number
+        : (rows[r].id !== undefined && rows[r].id !== '' ? 'id ' + rows[r].id : (r + 1) + '件目');
+
+      for (var c = 0; c < cols.length; c++) {
+        if (!dbTextColumn_(cols[c])) continue;
+        var v = rows[r][cols[c]];
+        var kind = '';
+        if (Object.prototype.toString.call(v) === '[object Date]') kind = '日付になっています';
+        else if (typeof v === 'number') kind = '数になっています (元が数字だけの字なら問題ありません)';
+        else if (typeof v === 'boolean') kind = '真偽になっています';
+        if (!kind) continue;
+
+        lines.push(table + ' / ' + label + ' / ' + cols[c] + ' / ' +
+          (kind.charAt(0) === '日' ? plainDay(v) : String(v)) + '  — ' + kind);
+        count++;
+      }
+    }
+  }
+
+  if (!count) lines.push('見つかりませんでした');
+  var text = lines.join('\n');
+  Logger.log(text);
+  return text;
+}
+
+/**
+ * 台帳の列が「字の欄」か。日時・番号・量・真偽の列でなければ字の欄とする。
+ *
+ * @param {string} name 列の名前
+ * @returns {boolean}
+ */
+function dbTextColumn_(name) {
+  if (/At$|^at$|^day$|Date$|^timestamp$/.test(name)) return false;
+  if (/^(number|id|count|order|estimate|plannedHours|actualHours|linkedPr|parent|added|removed|staleReviewId|builtin)$|Number$/.test(name)) return false;
+  return true;
+}
+
+/**
  * 既存リポジトリに main ブランチ行が無い場合に補う (移行用)。
  * repoInit を実行済みの環境で1回だけ実行する。
  *
@@ -356,17 +418,8 @@ function debugInspectImages() {
  */
 function debugEnsureMainBranch() {
   assertOwner_();
-  if (dbFindOne('branches', 'name', 'main')) return 'main ブランチは既に存在します';
-  dbAppend('branches', {
-    name: 'main',
-    headSha: '',
-    baseSha: '',
-    state: 'open',
-    workingFolderId: repoConfig().mainId,
-    createdBy: Session.getActiveUser().getEmail(),
-    createdAt: new Date(),
-  });
-  return 'main ブランチを追加しました';
+  // 1日1回の片付けでも入るので、通常は実行しなくてよい
+  return repoEnsureMainBranch() ? 'main ブランチを追加しました' : 'main ブランチは既に存在します';
 }
 
 /**
@@ -3006,6 +3059,13 @@ function housekeepArchiveDaily_() {
   if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') === today) return [];
 
   props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
+
+  // 台帳に main の行が無い古いリポジトリなら入れる。人に実行させない
+  try {
+    repoEnsureMainBranch();
+  } catch (e0) {
+    Logger.log('main の行を入れられませんでした: ' + e0.message);
+  }
 
   // 誰も一覧を開かなくても、元の文書が消えた確認依頼は取り下げる
   try {

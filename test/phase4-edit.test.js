@@ -1057,7 +1057,7 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugWriteRoundTrip', 'debugCleanupLastVerify', 'debugVerifyPhase2',
     'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
     'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
-    'debugListWorkingCopies',
+    'debugListWorkingCopies', 'debugFindConvertedCells',
   ];
 
   for (const name of NAMES) {
@@ -1291,5 +1291,69 @@ describe('作業コピーの一覧 (実機確認の下ごしらえ)', () => {
     fake.DriveApp.getFileById(work).setTrashed(true);
 
     expect(ctx.debugListWorkingCopies()).toContain('Drive に無い');
+  });
+});
+
+describe('台帳の main の行を自分で入れる', () => {
+  /*
+   * main の行を台帳に入れるようになる前のリポジトリには、行が無い。無くても
+   * 動くように直したが、形が新しいリポジトリと食い違ったままになる。人に
+   * エディタで実行させずに、1日1回の片付けで入れる。
+   */
+  it('無ければ入れ、あれば何もしない', () => {
+    const { ctx } = setup();
+    ctx.dbDelete('branches', 'name', 'main');
+
+    expect(ctx.repoEnsureMainBranch()).toBe(true);
+    expect(ctx.dbFindOne('branches', 'name', 'main').state).toBe('open');
+
+    expect(ctx.repoEnsureMainBranch()).toBe(false);
+    expect(ctx.dbReadAll('branches').filter((b) => b.name === 'main')).toHaveLength(1);
+  });
+
+  it('1日1回の片付けで入る', () => {
+    const { ctx } = setup();
+    ctx.dbDelete('branches', 'name', 'main');
+
+    ctx.housekeepArchiveDaily_();
+    expect(ctx.dbFindOne('branches', 'name', 'main')).not.toBeNull();
+  });
+});
+
+describe('以前に化けた字を探す', () => {
+  /*
+   * 字を ' 付きで書くようにする前は、題名や記録の文の '1/2' が日付に、'007' が
+   * 7 に変わって台帳に入った。元の字は残っていないので戻せないが、どこに
+   * あるかは探せる。直すのは人。
+   */
+  it('字の欄に入った日付と数を挙げる', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('ふつうの題', '', []);
+    const cols = ctx.DB_SCHEMA().issues;
+    const sheet = ctx.dbSheet_('issues');
+    const row = ctx.dbReadAll('issues').findIndex((r) => r.number === made.number) + 2;
+    sheet.getRange(row, cols.indexOf('title') + 1, 1, 1).setValues([[new Date(2026, 0, 2)]]);
+    sheet.getRange(row, cols.indexOf('body') + 1, 1, 1).setValues([[7]]);
+
+    const text = ctx.debugFindConvertedCells();
+
+    expect(text).toContain('issues');
+    expect(text).toContain('#' + made.number);
+    expect(text).toContain('title');
+    expect(text).toContain('body');
+  });
+
+  it('日付や数を入れる欄は挙げない', () => {
+    const { ctx } = setup();
+    ctx.issueCreate('題', '', []);
+
+    // createdAt (日時) や number (番号) が日付・数なのは正しい
+    expect(ctx.debugFindConvertedCells()).toContain('見つかりませんでした');
+  });
+
+  it('持ち主だけが動かせる', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('someone@example.com');
+    expect(() => ctx.debugFindConvertedCells()).toThrow(/持ち主だけ/);
   });
 });

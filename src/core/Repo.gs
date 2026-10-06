@@ -283,3 +283,30 @@ function repoWorkspace() {
     return { name: '', path: '', url: '' };
   }
 }
+
+/**
+ * 台帳の改訂版の表に main の行が無ければ入れる。あれば何もしない。
+ *
+ * main の行を台帳に入れるようになる前のリポジトリには、行が無い。無くても
+ * 動くようにしてあるが (prCreate は正式版を探さない)、形が新しいリポジトリと
+ * 食い違ったままになる。人にエディタで実行させずに、1日1回の片付けで入れる。
+ *
+ * @returns {boolean} 入れたら true
+ */
+function repoEnsureMainBranch() {
+  // あるか見てから書くので鍵の中で行う。分けると main の行が2つ並ぶ
+  return dbWithLock_(30000, function () {
+    if (dbFindOne('branches', 'name', 'main')) return false;
+
+    dbAppend('branches', {
+      name: 'main',
+      headSha: '',
+      baseSha: '',
+      state: 'open',
+      workingFolderId: repoConfig().mainId,
+      createdBy: repoOwnerEmail(),
+      createdAt: new Date(),
+    });
+    return true;
+  });
+}
