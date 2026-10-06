@@ -6063,6 +6063,114 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(document.getElementById('side-title').textContent).toBe(title);
   });
 
+  const IMP = { number: 3, title: '承認者が不在', body: '', reportedBy: 'a@example.com',
+    reportedAt: '2026-10-06T23:30:00.000Z', state: 'resolved', resolvedAt: '2026-10-06T16:00:00.000Z',
+    resolution: '代理', sprint: '', updatedAt: '', commentCount: 0 };
+
+  it('返事を待つあいだに閉じたら、返事が届いても開き直さない', () => {
+    let reply = null;
+    mount({ apiSettings: ON, apiImpedimentList: [IMP],
+      apiImpedimentReopen: () => ({ later: (ok) => { reply = ok; } }) });
+    document.querySelector('[data-tab="impediments"]').click();
+    document.querySelector('.impediment-row').click();
+    [...document.querySelectorAll('#side-body button')].find((b) => b.textContent === '未解決に戻す').click();
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    reply(Object.assign({}, IMP, { state: 'open' }));
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+  });
+
+  it('別の障害物を開いたら、前の行の選んでいる印を外す', () => {
+    const other = Object.assign({}, IMP, { number: 5, title: '別のもの' });
+    mount({ apiSettings: ON, apiImpedimentList: [IMP, other] });
+    document.querySelector('[data-tab="impediments"]').click();
+    const rows = () => [...document.querySelectorAll('.impediment-row')];
+    rows()[0].click();
+    expect(rows()[0].getAttribute('aria-current')).toBe('true');
+
+    rows()[1].click();
+    expect(rows()[0].getAttribute('aria-current')).not.toBe('true');
+    expect(rows()[1].getAttribute('aria-current')).toBe('true');
+  });
+
+  it('日付と時刻は東京の暦で出す', () => {
+    // 08:30 JST に書いたものは UTC では前の日の 23:30。字のまま切ると1日前に見える
+    mount({ apiSettings: ON, apiImpedimentList: [IMP],
+      apiImpedimentComments: [{ id: 1, impedimentNumber: 3, body: 'x', by: 'a@example.com',
+        at: '2026-10-06T23:30:00.000Z', editedAt: '' }],
+      apiHistory: [{ id: 1, at: '2026-10-06T23:30:00.000Z', actor: 'a@example.com',
+        target: 'impediment:3', action: 'create', field: '', before: '', after: '' }] });
+    document.querySelector('[data-tab="impediments"]').click();
+    expect(document.querySelector('.impediment-row').textContent).toContain('2026-10-07');
+    document.querySelector('.impediment-row').click();
+
+    const side = document.getElementById('side-body');
+    expect(side.querySelector('.comment').textContent).toContain('2026-10-07');
+    const history = side.querySelector('.change-history');
+    history.open = true;
+    history.dispatchEvent(new window.Event('toggle'));
+    expect(history.textContent).toContain('2026-10-07 08:30');
+  });
+
+  it('暦に無い日付のスプリントでも、日数に NaN を出さない', () => {
+    const bad = Object.assign({}, VIEW, {
+      sprints: [{ name: 'sprint001', goal: '', startDate: '2026-02-30', endDate: '2026-03-05', notes: '' }],
+      burndown: { days: ['2026-10-01'], ideal: [5], notice: '' },
+    });
+    mount({ apiSettings: ON, apiScrumView: bad });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    const view = document.getElementById('sprint-view');
+    expect(view.textContent).not.toContain('NaN');
+    expect(view.textContent).toContain('期間が決まっていません');
+  });
+
+  it('見ているスプリントが無いとき、押せないボタンへ案内しない', () => {
+    mount({ apiSettings: ON, apiScrumView: Object.assign({}, VIEW, { sprint: '' }) });
+    document.querySelector('[data-tab="sprint"]').click();
+
+    expect(document.getElementById('sprint-edit-btn').disabled).toBe(true);
+    expect(document.getElementById('sprint-view').textContent).not.toContain('「このスプリントを直す」から');
+  });
+
+  it('ホバーで出る説明が、ほかの画面と同じ仕組みで付く', () => {
+    // 付いていないと、そこだけ押す前に何が起きるか分からない
+    const hinted = (el, what) => {
+      expect(el, what).not.toBeNull();
+      expect(el.classList.contains('has-hint'), what).toBe(true);
+      expect(el.dataset.hint.length, what).toBeGreaterThan(8);
+    };
+    const imp = { number: 3, title: '承認者が不在', body: '', reportedBy: 'a@example.com',
+      reportedAt: '2026-10-02T00:00:00.000Z', state: 'open', resolvedAt: '', resolution: '',
+      sprint: '', updatedAt: '', commentCount: 0 };
+    mount({ apiSettings: ON, apiScrumView: VIEW, apiImpedimentList: [imp] });
+
+    ['settings', 'sprint', 'impediments'].forEach((tab) => {
+      hinted(document.querySelector('.sidebar [data-tab="' + tab + '"]'), 'nav:' + tab);
+    });
+
+    document.querySelector('[data-tab="sprint"]').click();
+    hinted(document.getElementById('sprint-select').parentNode, 'sprint-select');
+    hinted(document.getElementById('sprint-edit-btn'), 'sprint-edit-btn');
+    hinted(document.getElementById('sprint-create-btn'), 'sprint-create-btn');
+    document.querySelectorAll('#sprint-view .scrum-summary .tally-card').forEach((c, i) => hinted(c, 'card ' + i));
+    hinted(document.querySelector('.roadmap-open'), 'roadmap-open');
+
+    // 用語の「?」は、ブラウザ既定の吹き出し (title) ではなく同じ仕組みで出す
+    const help = document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]');
+    hinted(help, 'term-help');
+    expect(help.getAttribute('title')).toBeNull();
+    expect(help.dataset.hint).toContain('終えたポイント');
+
+    document.querySelector('[data-tab="impediments"]').click();
+    hinted(document.getElementById('impediment-create-btn'), 'impediment-create-btn');
+    document.querySelector('.impediment-row').click();
+    hinted([...document.querySelectorAll('#side-body button')].find((b) => b.textContent === '解決する'), 'resolve');
+
+    document.querySelector('[data-tab="settings"]').click();
+    hinted(document.getElementById('scrum-toggle'), 'scrum-toggle');
+  });
+
   it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
     mount();
     document.querySelector('[data-tab="issues"]').click();

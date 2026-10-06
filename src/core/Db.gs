@@ -256,6 +256,33 @@ function dbAppendNumbered(table, column, row) {
 }
 
 /**
+ * 番号を振りながら、何行かをまとめて足す。番号は続き番号になる。
+ *
+ * 1行ずつ dbAppendNumbered を呼ぶと、そのたびに表を丸ごと読んで最大値を
+ * 探す。変更の履歴のように1回の操作で何行も足し、しかも増える一方の表では、
+ * 操作がだんだん重くなる。表を読むのは1回にする。
+ *
+ * @param {string} table
+ * @param {string} column
+ * @param {object[]} rows 番号を書き込む
+ * @returns {object[]} rows
+ */
+function dbAppendNumberedMany(table, column, rows) {
+  if (!rows.length) return rows;
+  return dbWithLock_(30000, function () {
+    var first = dbNextNumber_(table, column);
+    for (var i = 0; i < rows.length; i++) {
+      rows[i][column] = first + i;
+      dbAppend(table, rows[i]);
+    }
+    // 出した最後の番号を覚える。dbNextNumber_ が覚えたのは最初の番号だけ
+    PropertiesService.getScriptProperties()
+      .setProperty(dbHighKey_(table, column), String(first + rows.length - 1));
+    return rows;
+  });
+}
+
+/**
  * Sheets に字の解釈をさせてよい欄。
  *
  * 日付として書いている欄だけである。ここに無い欄の字は、書いたとおりに残す。
