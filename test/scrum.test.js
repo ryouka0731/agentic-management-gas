@@ -333,13 +333,16 @@ describe('見直しで見つけたもの', () => {
     const lock = ctx.dbWithLock_;
     ctx.dbWithLock_ = (ms, fn) => lock(ms, () => { depth++; try { return fn(); } finally { depth--; } });
     const get = ctx.impedimentGet;
+    const update = ctx.dbUpdate;
     const seen = [];
-    ctx.impedimentGet = (n) => { seen.push(depth); return get(n); };
+    ctx.impedimentGet = (n) => { seen.push(['get', depth]); return get(n); };
+    ctx.dbUpdate = (...args) => { if (args[0] === 'impediments') seen.push(['update', depth]); return update(...args); };
     ctx.impedimentResolve(a.number, '片付いた');
     ctx.impedimentReopen(a.number);
 
-    // 最初に読むところ (状態の確かめ) が鍵の中にある
-    expect(seen[0]).toBeGreaterThan(0);
+    // 解決と差し戻しの両方で、読むところ (状態の確かめ) も書くところも鍵の中にある
+    expect(seen.filter(([k]) => k === 'update')).toHaveLength(2);
+    seen.forEach(([what, d]) => expect(d, what).toBeGreaterThan(0));
   });
 
   it('オフにされたあとも、開いたままの画面からの保存を止めない', () => {
