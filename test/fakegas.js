@@ -483,6 +483,8 @@ export function createFakeGas() {
       return file.getId();
     },
     _parseLikeSheets: (on) => { parseLikeSheets = !!on; },
+    /** Drive から完全に消す (ゴミ箱も空にした状態)。getFileById が投げる */
+    _purgeFile: (id) => { files.delete(id); },
     _setUser: (email) => { activeUser = email; },
     _setEffectiveUser: (email) => { effectiveUser = email; },
     _getUser: () => activeUser,

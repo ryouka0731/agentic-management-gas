@@ -376,12 +376,84 @@ function branchDeletedNames() {
 function filesVisibleInWiki() {
   var deleted = branchDeletedNames();
   var rows = dbReadAll('files');
-  var out = [];
+  var kept = [];
 
   for (var i = 0; i < rows.length; i++) {
     var m = /^branches\/([^\/]+)\//.exec(String(rows[i].path || ''));
     if (m && deleted[m[1]]) continue;
-    out.push(rows[i]);
+    kept.push(rows[i]);
+  }
+
+  /*
+   * **Drive で消された文書は出さない。** 一覧は台帳だけから作っていて、Drive に
+   * 文書がまだあるかを見ていなかった。消した文書が残り続け、完全に消したものは
+   * 開くと「開けませんでした」になった。台帳の行と履歴は残すので、ゴミ箱から
+   * 戻せばまた出る。
+   *
+   * 作業コピーは、元の (正式版の) 文書が消えていれば出さない。反映先が無いので
+   * 扱えない。
+   */
+  var present = filesPresentInDrive_(kept);
+  var mainIdByPath = {};
+  for (var k = 0; k < kept.length; k++) {
+    var parts = branchSplitPath_(kept[k].path);
+    if (parts.branch === 'main') mainIdByPath[parts.path] = String(kept[k].fileId);
+  }
+
+  var out = [];
+  for (var j = 0; j < kept.length; j++) {
+    if (!present[String(kept[j].fileId)]) continue;
+
+    var where = branchSplitPath_(kept[j].path);
+    if (where.branch !== 'main') {
+      var origin = mainIdByPath[where.path];
+      if (!origin || !present[origin]) continue;
+    }
+    out.push(kept[j]);
   }
   return out;
+}
+
+/**
+ * Drive にまだある (ゴミ箱に入っておらず、消されてもいない) 文書を返す。
+ *
+ * 文書ごとに問い合わせると、文書の数だけ待つ。正式版のフォルダと各改訂版の
+ * フォルダを1回ずつ読み、そこに見当たらないものだけを1つずつ確かめる
+ * (フォルダの外へ移しただけの文書を、消えたと取り違えないため)。
+ *
+ * @param {object[]} rows files 行
+ * @returns {Object<string, boolean>} fileId → true
+ */
+function filesPresentInDrive_(rows) {
+  var present = {};
+  var folders = [repoConfig().mainId];
+  var branches = dbReadAll('branches');
+  for (var b = 0; b < branches.length; b++) {
+    if (String(branches[b].state) === 'deleted') continue;
+    if (String(branches[b].name) === 'main') continue;
+    if (branches[b].workingFolderId) folders.push(String(branches[b].workingFolderId));
+  }
+
+  for (var f = 0; f < folders.length; f++) {
+    try {
+      var it = DriveApp.getFolderById(folders[f]).getFiles();
+      while (it.hasNext()) {
+        var file = it.next();
+        if (!file.isTrashed()) present[String(file.getId())] = true;
+      }
+    } catch (e) {
+      // フォルダごと消されている。中の文書は下で1つずつ確かめる
+    }
+  }
+
+  for (var r = 0; r < rows.length; r++) {
+    var id = String(rows[r].fileId);
+    if (present[id]) continue;
+    try {
+      if (!DriveApp.getFileById(id).isTrashed()) present[id] = true;
+    } catch (e2) {
+      // 完全に消されている
+    }
+  }
+  return present;
 }

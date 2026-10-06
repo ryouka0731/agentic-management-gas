@@ -1173,3 +1173,92 @@ describe('実機確認の片付け', () => {
     expect(ctx.dbFindOne('pulls', 'number', pr.number)).toBeNull();
   });
 });
+
+describe('Drive で消された文書は一覧に出さない', () => {
+  /*
+   * 一覧は台帳だけから作っていて、Drive に文書がまだあるかを見ていなかった。
+   * 消した文書が残り続け、完全に消したものは開くと「開けませんでした」になる。
+   * 台帳の行と履歴は残す (ゴミ箱から戻せば、また出る)。
+   */
+  const paths = (ctx) => ctx.apiListFiles().map((f) => f.path);
+
+  it('ゴミ箱に入れた正式版の文書は出さない', () => {
+    const { ctx, fake, fileId } = setup();
+    fake.DriveApp.getFileById(fileId).setTrashed(true);
+
+    expect(paths(ctx)).not.toContain('就業規則.doc');
+    expect(ctx.apiOverview().docs).toBe(0);
+    // 台帳と履歴は残す
+    expect(ctx.dbFindOne('files', 'fileId', fileId)).not.toBeNull();
+    expect(ctx.headCommit(fileId, 'main')).not.toBeNull();
+  });
+
+  it('ゴミ箱から戻せば、また出る', () => {
+    const { ctx, fake, fileId } = setup();
+    fake.DriveApp.getFileById(fileId).setTrashed(true);
+    fake.DriveApp.getFileById(fileId).setTrashed(false);
+
+    expect(paths(ctx)).toContain('就業規則.doc');
+  });
+
+  it('完全に消した文書も出さない', () => {
+    const { ctx, fake, fileId } = setup();
+    fake._purgeFile(fileId);
+
+    expect(paths(ctx)).not.toContain('就業規則.doc');
+  });
+
+  it('ゴミ箱に入れた作業コピーも出さない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const work = ctx.branchWorkingFileId('改訂', fileId);
+    fake.DriveApp.getFileById(work).setTrashed(true);
+
+    expect(paths(ctx)).toContain('就業規則.doc');
+    expect(paths(ctx)).not.toContain('branches/改訂/就業規則.doc');
+  });
+
+  it('元の文書が消えていれば、その作業コピーも出さない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    fake.DriveApp.getFileById(fileId).setTrashed(true);
+
+    // 作業コピーは Drive に残っていても、反映先が無いので扱えない
+    expect(paths(ctx)).not.toContain('branches/改訂/就業規則.doc');
+  });
+
+  it('中の文書が全部見えなくなった改訂版は、改訂版の一覧に出さない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    expect(ctx.apiBranchList().map((b) => b.name)).toContain('改訂');
+
+    fake.DriveApp.getFileById(fileId).setTrashed(true);
+
+    expect(ctx.apiBranchList().map((b) => b.name)).not.toContain('改訂');
+    // 正式版は消えない
+    expect(ctx.apiBranchList().map((b) => b.name)).toContain('main');
+  });
+
+  it('文書が1つでも残っていれば、改訂版は出す', () => {
+    const { ctx, fake, fileId } = setup();
+    const other = fake._createDoc('賃金規程', '<p>B</p>\n', ctx.repoConfig().mainId);
+    ctx.repoRegisterFile(other, '賃金規程.doc');
+    ctx.commitFile(other, 'main', 'B', null);
+    ctx.branchCreate('改訂', fileId);
+    ctx.branchAddFile('改訂', other);
+
+    fake.DriveApp.getFileById(fileId).setTrashed(true);
+
+    expect(ctx.apiBranchList().map((b) => b.name)).toContain('改訂');
+    expect(paths(ctx)).toContain('branches/改訂/賃金規程.doc');
+  });
+
+  it('正式版のフォルダの外に移しただけなら出す', () => {
+    const { ctx, fake, fileId } = setup();
+    const elsewhere = fake.DriveApp.getRootFolder();
+    elsewhere.addFile(fake.DriveApp.getFileById(fileId));
+
+    // 消えたわけではない。見当たらないものは1つずつ確かめる
+    expect(paths(ctx)).toContain('就業規則.doc');
+  });
+});

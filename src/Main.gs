@@ -462,8 +462,16 @@ function apiCommitDiff(fromSha, toSha) {
 function apiBranchList() {
   var rows = branchList();
   var out = [];
+
+  // 中の文書が全部見えなくなった改訂版は出さない (Drive で元の文書か作業
+  // コピーが消された)。開いても扱える文書が無い
+  var alive = {};
+  var visible = filesVisibleInWiki();
+  for (var v = 0; v < visible.length; v++) alive[branchOfPath_(visible[v].path)] = true;
+
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].state) === 'deleted') continue;
+    if (String(rows[i].name) !== 'main' && !alive[String(rows[i].name)]) continue;
     out.push({
       name: plainText(rows[i].name),
       headSha: plainText(rows[i].headSha),
