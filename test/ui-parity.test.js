@@ -105,11 +105,13 @@ describe('画面とサーバで同じ答えになる', () => {
 
   it('wouldCycle と issueWouldCycle', () => {
     const core = loadGas('src/core/IssueTree.js');
+    // 箱は1回だけ作る。繰り返しのたびに作ると、機械が重いときに時間切れになる
+    const view = ui(['wouldCycle'], { lastIssues: [] });
     for (let t = 0; t < 2000; t++) {
       const issues = Array.from({ length: 1 + rnd(6) }, (_, i) => ({
         number: i + 1, parent: rnd(3) ? '' : 1 + rnd(6),
       }));
-      const view = ui(['wouldCycle'], { lastIssues: issues });
+      view.lastIssues = issues;
       const child = 1 + rnd(6);
       const parent = 1 + rnd(6);
       expect(view.wouldCycle(child, parent)).toBe(core.issueWouldCycle(issues, child, parent));
@@ -146,6 +148,8 @@ describe('画面とサーバで同じ答えになる', () => {
       const m = /^branches\/([^/]+)\/(.*)$/.exec(String(p || ''));
       return m ? { branch: m[1], path: m[2] } : { branch: 'main', path: String(p || '') };
     };
+    // 箱は1回だけ作る (wouldCycle と同じ理由)
+    const view = ui(['groupIssues'], { allFiles, splitPath });
     for (let t = 0; t < 2000; t++) {
       const issues = Array.from({ length: rnd(6) }, (_, i) => ({
         number: i + 1,
@@ -157,7 +161,6 @@ describe('画面とサーバで同じ答えになる', () => {
         dueDate: pick(['', '2026-09-30']),
       }));
       const by = pick(['assignee', 'label', 'doc', 'state', 'priority', 'none', 'due']);
-      const view = ui(['groupIssues'], { allFiles, splitPath });
       const a = view.groupIssues(issues, by);
       const b = core.groupIssues(issues, by, docNames);
       if (!same(a, b)) {
