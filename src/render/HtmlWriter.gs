@@ -67,12 +67,24 @@ function writeRuns_(text, runs) {
     var end = text.getText().length - 1;
     if (end < start) continue;
 
-    if (r.bold) text.setBold(start, end, true);
-    if (r.italic) text.setItalic(start, end, true);
-    if (r.underline) text.setUnderline(start, end, true);
-    if (r.strike) text.setStrikethrough(start, end, true);
-    if (r.link) text.setLinkUrl(start, end, r.link);
+    styleRun_(text, start, end, r);
   }
+}
+
+/**
+ * Text 要素の [start, end] に run の装飾を当てる。
+ *
+ * @param {GoogleAppsScript.Document.Text} text
+ * @param {number} start
+ * @param {number} end 閉区間の終わり
+ * @param {object} r run
+ */
+function styleRun_(text, start, end, r) {
+  if (r.bold) text.setBold(start, end, true);
+  if (r.italic) text.setItalic(start, end, true);
+  if (r.underline) text.setUnderline(start, end, true);
+  if (r.strike) text.setStrikethrough(start, end, true);
+  if (r.link) text.setLinkUrl(start, end, r.link);
 }
 
 /**
@@ -160,11 +172,23 @@ function writeBlocksToDoc(fileId, blocks) {
         for (var tc = 0; tc < b.rows[tr].length; tc++) {
           var runs = b.rows[tr][tc];
           if (!runs || runs.length === 0) continue;
-          // セル内の最初の段落に直接書く。cell.clear() は段落構造を
-          // 壊すことがあるため使わない
-          var cellPara = table.getRow(tr).getCell(tc).getChild(0).asParagraph();
-          cellPara.setText('');
-          writeRuns_(cellPara.editAsText(), runs);
+
+          /*
+           * 字は appendTable で既に入っている。その位置に装飾だけを当てる。
+           *
+           * **空にしてから書き直してはいけない。** 実機の Docs は空の字を入れる
+           * 操作を断る (setText('') が `Cannot insert an empty text element.`)。
+           * 以前はそうしていて、中身のあるセルを持つ表は、反映でも Markdown
+           * 保存でも毎回書き戻しに失敗していた。cell.clear() も段落構造を
+           * 壊すことがあるため使わない
+           */
+          var cellText = table.getRow(tr).getCell(tc).getChild(0).asParagraph().editAsText();
+          var at = 0;
+          for (var rr = 0; rr < runs.length; rr++) {
+            var len = String(runs[rr].text || '').length;
+            if (len) styleRun_(cellText, at, at + len - 1, runs[rr]);
+            at += len;
+          }
         }
       }
 

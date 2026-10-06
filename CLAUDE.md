@@ -509,6 +509,11 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 
 ## 落とし穴
 
+- **Docs に空の字を入れる操作は、実機では断られる** (`Cannot insert an empty text
+  element.`)。表のセルを `setText('')` で空にしてから書く作りだったため、中身の
+  あるセルを持つ表は、反映でも Markdown 保存でも書き戻しが毎回失敗していた。セルの
+  字は `appendTable` で入れ、装飾は位置で当てる。`test/htmlwriter.test.js` の疑似
+  DocumentApp がこれを断る (実機の debugWriteRoundTrip で見つかった)
 - **台帳に書いた 'yyyy-MM-dd' の字は Date で返ってくる。** Sheets が日付として
   持つためで、疑似GASは字のまま返すのでテストでは現れない。字のまま比べると
   `usage` の足し込み・間引き・集計が全部外れ、`toISOString` すると東京の0時が
