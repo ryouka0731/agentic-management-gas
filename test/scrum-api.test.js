@@ -169,3 +169,68 @@ describe('手元の道具から使う命令', () => {
     expect(() => ctx.runCommand_({ op: 'scrumSetEnabled', args: { on: true } })).toThrow(/実行できない/);
   });
 });
+
+describe('実機確認の入口 (debugVerifyScrum)', () => {
+  const TABLES = ['issues', 'project_items', 'sprints', 'impediments', 'impediment_comments', 'change_log'];
+
+  function counts(ctx) {
+    return Object.fromEntries(TABLES.map((t) => [t, ctx.dbReadAll(t).length]));
+  }
+
+  it('通しで PASS し、作ったものを残さず、オフに戻す', () => {
+    const { ctx } = setup();
+    const before = counts(ctx);
+
+    expect(ctx.debugVerifyScrum()).toMatch(/すべて PASS/);
+    expect(counts(ctx)).toEqual(before);
+    // 使っていないチームの設定を、確かめただけで変えない
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
+  it('もともとオンなら、オンのまま残す', () => {
+    const { ctx } = setup();
+    ctx.apiSetScrumEnabled(true);
+
+    expect(ctx.debugVerifyScrum()).toMatch(/すべて PASS/);
+    expect(ctx.scrumEnabled()).toBe(true);
+  });
+
+  it('片付けに失敗したら PASS と言わない', () => {
+    const { ctx } = setup();
+    ctx.issuePurge = () => { throw new Error('表に書けない'); };
+
+    // 検証物が残っているのに「すべて PASS」と出ると、残ったことに誰も気づかない
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+  });
+
+  it('台帳が読めなくても、オン・オフは戻す', () => {
+    const { ctx } = setup();
+    const original = ctx.dbReadAll;
+    ctx.dbReadAll = (table) => {
+      if (table === 'impediments') throw new Error('読めない');
+      return original(table);
+    };
+
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
+  it('作った直後に落ちても、作ったものを残さない', () => {
+    const { ctx } = setup();
+    const before = counts(ctx);
+    const original = ctx.apiIssueCreate;
+    // 台帳には書けたが、番号が呼び出し元に返る前に落ちた形
+    ctx.apiIssueCreate = (...args) => { original(...args); throw new Error('知らせで落ちた'); };
+
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+    expect(counts(ctx)).toEqual(before);
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
+  it('持ち主以外には動かない', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('someone@example.com');
+
+    expect(() => ctx.debugVerifyScrum()).toThrow(/持ち主だけ/);
+  });
+});
