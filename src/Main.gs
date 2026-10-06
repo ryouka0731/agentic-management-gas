@@ -623,6 +623,8 @@ function apiPrPreview(number) {
     files: files,
     // 証跡の数。中身は重いので、あるかどうかだけ先に渡す
     patchCount: prPatchRows(number).length,
+    // 反映のときに添えてもらう。見比べたあとで進んでいないかを見分ける
+    previewSha: prPreviewFingerprint(number),
   };
 }
 
@@ -841,8 +843,8 @@ function apiPrClose(number) {
  * @param {string[]} choices
  * @returns {object}
  */
-function apiPrMerge(number, choices) {
-  var row = prMerge(number, choices);
+function apiPrMerge(number, choices, previewSha) {
+  var row = prMerge(number, choices, previewSha || '');
   return { sha: row.sha, message: row.message };
 }
 

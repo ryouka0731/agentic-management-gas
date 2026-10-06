@@ -467,6 +467,50 @@ describe('Phase 2 統合: 空白の扱いを改める前の記録', () => {
   });
 });
 
+describe('Phase 2 統合: 見比べたものを反映する', () => {
+  /*
+   * 見比べてから反映を押すまでに正式版が進むと、食い違いが変わる。数が
+   * ずれれば断られるが、数が同じで中身が違うと、画面で選んだ「こちら/相手」
+   * が別の食い違いに当てはまり、見ていない結果で反映される。
+   */
+  function ready() {
+    const env = setup();
+    divergeBranch(env.ctx, env.fake, env.mainFileId,
+      html([P1, '<p>第2条 (改訂版)</p>', P3]), null);
+    env.pr = env.ctx.prCreate('第2条', '', '改訂', env.mainFileId);
+    env.fake._setUser('reviewer@example.com');
+    env.ctx.prReview(env.pr.number, 'approve', '');
+    env.fake._setUser('tester@example.com');
+    return env;
+  }
+
+  it('見比べたあとで正式版が進んでいたら、反映しない', () => {
+    const { ctx, fake, mainFileId, pr } = ready();
+    const seen = ctx.prPreviewFingerprint(pr.number);
+
+    fake._docs.set(mainFileId, html([P1, '<p>第2条 (正式版で先に直した)</p>', P3]));
+    ctx.commitFile(mainFileId, 'main', '正式版を直接直した分の退避', null);
+
+    expect(() => ctx.prMerge(pr.number, ['theirs'], seen))
+      .toThrow(/見比べたあとで/);
+    expect(fake._docs.get(mainFileId)).toContain('正式版で先に直した');
+  });
+
+  it('進んでいなければ、そのまま反映する', () => {
+    const { ctx, fake, mainFileId, pr } = ready();
+    const seen = ctx.prPreviewFingerprint(pr.number);
+
+    ctx.prMerge(pr.number, [], seen);
+    expect(fake._docs.get(mainFileId)).toContain('第2条 (改訂版)');
+  });
+
+  it('指紋を持たない呼び方は、これまでどおり通す', () => {
+    const { ctx, fake, mainFileId, pr } = ready();
+    ctx.prMerge(pr.number, []);
+    expect(fake._docs.get(mainFileId)).toContain('第2条 (改訂版)');
+  });
+});
+
 describe('Phase 2 統合: ブランチの後始末', () => {
   it('ブランチを削除すると作業コピーが一覧から消える', () => {
     const { ctx, fake, mainFileId } = setup();

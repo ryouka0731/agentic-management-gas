@@ -70,7 +70,9 @@ function COMMAND_OPS() {
     work: function (a) { return apiOutboxTake(a.limit || 5); },
     workDone: function (a) { return apiOutboxDone(a.id, a.result || ''); },
     workFail: function (a) { return apiOutboxFail(a.id, a.reason || ''); },
-    prMerge: function (a) { return apiPrMerge(a.number, a.choices || []); },
+    prMerge: function (a) {
+      return apiPrMerge(a.number, a.choices || [], a.previewSha || '');
+    },
 
     // 読むだけのものは足しても危なくない。手元から様子を見るために要る
     issueList: function (a) { return apiIssueList(a.state || ''); },

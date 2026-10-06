@@ -5729,3 +5729,26 @@ describe('Markdown で直して保存する', () => {
     expect(saves[1].args[2]).toBe('B');
   });
 });
+
+describe('見比べたものを反映する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('見比べたときの指紋を添えて反映を頼む', () => {
+    const app = mount({
+      apiPrPreview: { ...DEFAULTS.apiPrPreview, approvals: 1, previewSha: 'P1' },
+    });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    const merge = [...document.querySelectorAll('#pr-detail .pr-actions .btn')]
+      .filter((b) => /反映する/.test(b.textContent))[0];
+    merge.click();
+    const confirm = [...document.querySelectorAll('#pr-detail button')]
+      .filter((b) => b.textContent === '反映する')[0];
+    confirm.click();
+
+    // 添えないと、見比べたあとで正式版が進んでも気づけない
+    const calls = app.calls.filter((c) => c.name === 'apiPrMerge');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args[2]).toBe('P1');
+  });
+});

@@ -359,6 +359,37 @@ function prPreviewMerge(number, wantFileId) {
 }
 
 /**
+ * 見比べに使う中身の指紋を返す。
+ *
+ * 反映先と改訂版の、それぞれの最後の記録の中身から取る。中身は空白の扱いを
+ * そろえてから見るので、反映の直前に空白の扱いだけを記録し直しても変わらない。
+ *
+ * Main.gs の apiPrPreview からも呼ぶ。
+ *
+ * @param {number} number
+ * @returns {string}
+ */
+function prPreviewFingerprint(number) {
+  var pr = prGet(number);
+  var into = prTargetBranch(pr);
+  var targets = prTargetFiles(pr);
+  var parts = [];
+
+  function canon(head) {
+    if (!head) return '';
+    return sha256Hex(legacySpacingHtml(objectGet(head.blobSha) || ''));
+  }
+
+  for (var i = 0; i < targets.length; i++) {
+    var intoHead = headCommit(prTargetBranchFileId(pr, targets[i]), into);
+    var work = branchWorkingFileId(pr.sourceBranch, targets[i]);
+    var workHead = work ? headCommit(work, pr.sourceBranch) : null;
+    parts.push(targets[i] + ':' + canon(intoHead) + ':' + canon(workHead));
+  }
+  return sha256Hex(parts.join('\n'));
+}
+
+/**
  * 未記録の違いが空白の扱いだけなら、いまの形で記録し直す。
  *
  * @param {string|null} fileId
@@ -701,11 +732,22 @@ function prPreviewAll(number) {
  * @param {string[]} choices コンフリクトへの選択 ('ours'|'theirs'|'both')
  * @returns {object} マージコミット行
  */
-function prMerge(number, choices) {
+function prMerge(number, choices, previewSha) {
   return dbWithLock_(60000, function () {
         var pr = prGet(number);
         if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
         if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
+
+        /*
+         * **見比べたものを反映する。** 見比べてから押すまでに反映先か改訂版が
+         * 進むと、食い違いが変わる。数がずれれば下で断られるが、数が同じで
+         * 中身が違うと、選んだ「こちら/相手」が別の食い違いに当てはまり、
+         * 見ていない結果で反映される。指紋を持たない呼び方は通す
+         */
+        if (previewSha && prPreviewFingerprint(number) !== String(previewSha)) {
+          throw new Error(
+            '見比べたあとで、反映先か改訂版が進みました。見比べ直してから反映してください');
+        }
 
         var decisions = prDecisions_(number);
         if (prApprovalCount(number) < 1) {

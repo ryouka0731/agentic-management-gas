@@ -3982,7 +3982,8 @@
             docCount ? '反映する' : '記録する',
             function () {
               mergeBtn.disabled = true;
-              call('apiPrMerge', [pr.number, getChoices()], function () {
+              // 見比べたときの指紋を添える。進んでいたら断られる
+              call('apiPrMerge', [pr.number, getChoices(), preview.previewSha || ''], function () {
                 showSnack('#' + pr.number + ' を' + OFFICIAL + 'に反映しました',
                   { kind: 'ok' });
                 loadPulls();
