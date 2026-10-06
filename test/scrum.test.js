@@ -306,6 +306,57 @@ describe('見直しで見つけたもの', () => {
     expect(ctx.scrumSetText_('productGoal', 'ゴール\uD800').productGoal).toBe('ゴール\uD800');
   });
 
+  it('変わった欄がいくつあっても、履歴の表を読むのは1回にする', () => {
+    // 1行ごとに番号を採ると、そのたびに表を丸ごと読む。履歴の表は増える一方
+    // なので、保存がだんだん重くなる
+    const { ctx } = setup();
+    const made = ctx.issueCreate('題', '', []);
+    const original = ctx.dbReadAll;
+    let reads = 0;
+    ctx.dbReadAll = (table) => { if (table === 'change_log') reads++; return original(table); };
+    ctx.issueUpdate(made.number, { title: '題2', body: '中身', points: 3, acceptance: '基準' });
+    ctx.dbReadAll = original;
+
+    expect(reads).toBe(1);
+    const ids = ctx.historyOf_('issue:' + made.number).map((h) => Number(h.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    // 次に残す行は、まとめて出した番号の続きになる
+    ctx.issueUpdate(made.number, { title: '題3' });
+    const next = ctx.historyOf_('issue:' + made.number)[0];
+    expect(Number(next.id)).toBe(Math.max(...ids) + 1);
+  });
+
+  it('障害物の解決は、状態を確かめてから書くまでを鍵の中で行う', () => {
+    const { ctx } = setup();
+    const a = ctx.impedimentCreate({ title: 'x' });
+    let depth = 0;
+    const lock = ctx.dbWithLock_;
+    ctx.dbWithLock_ = (ms, fn) => lock(ms, () => { depth++; try { return fn(); } finally { depth--; } });
+    const get = ctx.impedimentGet;
+    const seen = [];
+    ctx.impedimentGet = (n) => { seen.push(depth); return get(n); };
+    ctx.impedimentResolve(a.number, '片付いた');
+    ctx.impedimentReopen(a.number);
+
+    // 最初に読むところ (状態の確かめ) が鍵の中にある
+    expect(seen[0]).toBeGreaterThan(0);
+  });
+
+  it('オフにされたあとも、開いたままの画面からの保存を止めない', () => {
+    // オンのときに開いた画面は、変えていないスクラムの欄も一緒に送ってくる。
+    // それまで断ると、読み込み直すまで誰もやることを直せなくなる
+    const { ctx } = setup();
+    ctx.sprintCreate({ name: 's1' });
+    const made = ctx.issueCreate('題', '', []);
+    ctx.issueUpdate(made.number, { sprint: 's1', points: 3 });
+    ctx.scrumSetEnabled_(false);
+
+    const after = ctx.issueUpdate(made.number, { title: '直した', sprint: 's1', points: '3', acceptance: '' });
+    expect(after.title).toBe('直した');
+    // 実際に変えようとしたら、これまでどおり断る
+    expect(() => ctx.issueUpdate(made.number, { points: 5 })).toThrow(/オフ/);
+  });
+
   it('設定を書き換える関数は、画面から直に呼べない名前にする', () => {
     // 末尾が _ でない関数は google.script.run から誰でも呼べる。持ち主かを
     // 確かめているのは api 側だけなので、素の関数は隠す
