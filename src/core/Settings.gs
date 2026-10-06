@@ -122,5 +122,19 @@ function SCRUM_TEXT_MAX_BYTES_() {
  * @returns {number}
  */
 function scrumByteLength_(text) {
-  return unescape(encodeURIComponent(text)).length;
+  // encodeURIComponent は使わない。対になっていないサロゲートで投げ、理由の
+  // 分からない「保存できませんでした」になる。そうした字は置き換え文字
+  // (3バイト) として数える
+  var bytes = 0;
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < text.length &&
+      text.charCodeAt(i + 1) >= 0xDC00 && text.charCodeAt(i + 1) <= 0xDFFF) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
 }
