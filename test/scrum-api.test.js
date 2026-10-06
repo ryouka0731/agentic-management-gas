@@ -169,3 +169,36 @@ describe('手元の道具から使う命令', () => {
     expect(() => ctx.runCommand_({ op: 'scrumSetEnabled', args: { on: true } })).toThrow(/実行できない/);
   });
 });
+
+describe('実機確認の入口 (debugVerifyScrum)', () => {
+  const TABLES = ['issues', 'project_items', 'sprints', 'impediments', 'impediment_comments', 'change_log'];
+
+  function counts(ctx) {
+    return Object.fromEntries(TABLES.map((t) => [t, ctx.dbReadAll(t).length]));
+  }
+
+  it('通しで PASS し、作ったものを残さず、オフに戻す', () => {
+    const { ctx } = setup();
+    const before = counts(ctx);
+
+    expect(ctx.debugVerifyScrum()).toMatch(/すべて PASS/);
+    expect(counts(ctx)).toEqual(before);
+    // 使っていないチームの設定を、確かめただけで変えない
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
+  it('もともとオンなら、オンのまま残す', () => {
+    const { ctx } = setup();
+    ctx.apiSetScrumEnabled(true);
+
+    expect(ctx.debugVerifyScrum()).toMatch(/すべて PASS/);
+    expect(ctx.scrumEnabled()).toBe(true);
+  });
+
+  it('持ち主以外には動かない', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('someone@example.com');
+
+    expect(() => ctx.debugVerifyScrum()).toThrow(/持ち主だけ/);
+  });
+});

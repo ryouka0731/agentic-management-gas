@@ -3242,6 +3242,126 @@ function apiScrumView(sprintName) {
 }
 
 /**
+ * エージェンティックスクラムを実機で通しで確かめる。エディタから引数なしで実行する。
+ *
+ * 疑似GASでは出ないもの (台帳に書いた日付が Date で返る、数の字が数で返る) が
+ * 数え方を狂わせていないかを見る。スプリントを作り、やることにポイントを付けて
+ * 1つ完了にし、ベロシティ・バーンダウン・要約の数と、障害物の解決と履歴を確かめる。
+ *
+ * **作ったものは成否にかかわらず片付け、オン・オフも元に戻す。** 台帳の行だけで
+ * Drive には何も作らないので、残して調べる意味が薄い。使っていないチームの
+ * 設定を、確かめただけで変えてはならない。やることの番号は2つ進む
+ * (一度出した番号は二度出さないため)。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifyScrum() {
+  assertOwner_();
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail !== undefined ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  function day(offset) {
+    return Utilities.formatDate(
+      new Date(Date.now() + offset * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+
+  var wasOn = scrumEnabled();
+  var name = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  var issues = [];
+  var impediment = null;
+  var sprintMade = false;
+
+  try {
+    scrumSetEnabled(true);
+
+    var sprint = apiSprintCreate({ name: name, goal: '自動検証', startDate: day(-1), endDate: day(5) });
+    sprintMade = true;
+    check('スプリントの日付が字のまま返る',
+      sprint.startDate === day(-1) && sprint.endDate === day(5),
+      sprint.startDate + ' 〜 ' + sprint.endDate);
+
+    var done = apiIssueCreate('スクラム検証 (終える)', '自動検証', []);
+    issues.push(done.number);
+    var left = apiIssueCreate('スクラム検証 (残す)', '自動検証', []);
+    issues.push(left.number);
+
+    apiIssueUpdate(done.number, { sprint: name, points: 3, acceptance: '検証が通る' });
+    apiIssueUpdate(left.number, { sprint: name, points: 2 });
+    var got = issueToPlain_(issueGet(done.number));
+    check('やることにスプリントとポイントが残る',
+      got.sprint === name && Number(got.points) === 3, got.sprint + ' / ' + got.points);
+
+    apiIssueClose(done.number);
+
+    var view = apiScrumView(name);
+    var v = null;
+    for (var i = 0; i < view.velocity.length; i++) {
+      if (view.velocity[i].name === name) v = view.velocity[i];
+    }
+    check('ベロシティの計画が 5', !!v && v.planned === 5, v && v.planned);
+    check('ベロシティの終えたが 3', !!v && v.completed === 3, v && v.completed);
+    check('要約の今のスプリントになる', view.summary.current === name, view.summary.current);
+
+    var at = view.burndown.days.indexOf(day(0));
+    check('バーンダウンに今日がある', at >= 0, view.burndown.days.join(','));
+    check('今日の残りが 2', at >= 0 && view.burndown.remaining[at] === 2,
+      at >= 0 ? view.burndown.remaining[at] : '');
+
+    var history = apiHistory('issue:' + done.number);
+    var pointsLogged = history.some(function (h) {
+      return h.field === 'points' && String(h.after) === '3';
+    });
+    check('ポイントの変更が履歴に残る', pointsLogged, history.length + '件');
+
+    impediment = apiImpedimentCreate({ title: 'スクラム検証の障害物', body: '自動検証' }).number;
+    apiImpedimentComment(impediment, '自動検証のやりとり');
+    var solved = apiImpedimentResolve(impediment, '自動検証で解決');
+    check('障害物を解決できる', solved.state === 'resolved', solved.state);
+    check('障害物のやりとりが読める', apiImpedimentComments(impediment).length === 1);
+  } catch (e) {
+    failed++;
+    log.push('EXCEPTION ' + e.message);
+    log.push(String(e.stack || ''));
+  }
+
+  // 片付け。1つ落ちても残りは続ける
+  function tidy(label, fn) {
+    try { fn(); } catch (e) { log.push('片付けに失敗 (' + label + '): ' + e.message); }
+  }
+  issues.forEach(function (n) {
+    tidy('やること #' + n, function () {
+      issuePurge(n);
+      dbDelete('change_log', 'target', 'issue:' + n);
+    });
+  });
+  if (impediment) {
+    tidy('障害物 #' + impediment, function () {
+      dbDelete('impediment_comments', 'impedimentNumber', impediment);
+      dbDelete('impediments', 'number', impediment);
+      dbDelete('change_log', 'target', 'impediment:' + impediment);
+    });
+  }
+  if (sprintMade) {
+    tidy('スプリント ' + name, function () {
+      dbDelete('sprints', 'name', name);
+      dbDelete('change_log', 'target', 'sprint:' + name);
+    });
+  }
+  tidy('オン・オフ', function () { scrumSetEnabled(wasOn); });
+  log.push('検証物を片付け、エージェンティックスクラムを' + (wasOn ? 'オン' : 'オフ') + 'に戻しました');
+
+  var summary = (failed === 0) ? 'すべて PASS (' + log.length + '行)' : failed + ' 件 FAIL';
+  Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
+  return summary;
+}
+
+/**
  * 障害物の一覧を返す (Web App API)。やりとりの数も添える。
  *
  * @returns {object[]}
