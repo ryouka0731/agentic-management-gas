@@ -65,6 +65,20 @@ describe('画面とサーバで同じ答えになる', () => {
     }
   });
 
+  it('tokyoDay (東京の暦日)', () => {
+    // 画面は ISO の字で受け取り、サーバは台帳の Date で数える。同じ瞬間が
+    // 同じ暦日にならないと、今日の線や残り日数がバーンダウンとずれる
+    const core = loadGas('src/core/ScrumView.js');
+    const view = ui(['tokyoDay']);
+    for (let t = 0; t < 2000; t++) {
+      const d = new Date(Date.UTC(2026, rnd(12), 1 + rnd(28), rnd(24), rnd(60)));
+      expect(view.tokyoDay(d.toISOString())).toBe(core.scrumDayOf_(d));
+    }
+    for (const day of ['2026-10-07', '2026-02-30', '2026-13-01', '', 'x']) {
+      expect(view.tokyoDay(day)).toBe(core.scrumDayOf_(day));
+    }
+  });
+
   it('diffPairs', () => {
     const core = loadGas('src/core/Diff.js');
     const view = ui(['diffPairs']);

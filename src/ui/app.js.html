@@ -259,6 +259,23 @@
     'nav:help': 'この道具の言葉と進め方をまとめています',
     'nav:usage': 'どこがよく使われているかの記録です。みんなの合計でも、人ごとでも見られます',
     'nav:report': '不具合・要望・使い方の質問を伝える場所です。みんなで読んで話せて、開発者のやることにも積まれます',
+    'nav:settings': 'この道具の設定です。エージェンティックスクラムのオン・オフはここで切り替えます (持ち主だけ)',
+    'nav:sprint': 'いまのスプリントの進み具合です。バーンダウン・ベロシティ・ロードマップを、やることのポイントと完了日から数えて出します',
+    'nav:impediments': 'チームの進みを妨げているものの一覧です。気づいた人が書き出し、片付いたら解決策を書いて閉じます',
+
+    // スクラム
+    'select:sprint': '見るスプリントを切り替えます。はじめは今日を含むスプリントが出ます',
+    'act:sprint-edit': 'いま見ているスプリントのゴール・期間・備考を直します。名前は変えられません',
+    'act:sprint-create': '新しいスプリントを作ります。名前・ゴール・始まりと終わりの日を決めます',
+    'act:impediment-create': '進みを妨げているものを書き出します。返事待ち・足りない道具・決まっていないことなど',
+    'act:resolve': '片付いたことにします。何をして片付けたか (解決策) を必ず残します',
+    'act:impediment-reopen': '解決を取り消して、未解決に戻します。書いた解決策は残ります',
+    'act:scrum-toggle': 'エージェンティックスクラムを切り替えます。オフにしても、書いたスプリントや障害物は消えません',
+    'act:roadmap-open': 'このやることを開きます',
+    'card:sprint': '見ているスプリントの名前と期間、残りの日数です',
+    'card:points': 'このスプリントに積んだポイントのうち、終えたぶんです。やることを完了にすると増えます',
+    'card:impediments': 'まだ片付いていない障害物の数です。左の「障害物」から開けます',
+    'card:velocity': '終えたスプリントの直近3つで、終えたポイントの平均です。次のスプリントに積む量の目安になります',
 
     // 版まわり
     'chip:official': 'いま効力を持つ版です。全員が見るもので、直接は書き換えられません',
@@ -1675,7 +1692,13 @@
   function setSideOpen(open) {
     sidePanel.hidden = !open;
     sideResizer.hidden = !open;
+    // 開け閉めのたびに進める。返事を待つあいだに人が右を触ったかを、
+    // 返事のハンドラが見分けるため (impedimentMayReopen)
+    sideGeneration++;
   }
+
+  /** 右のペインを開け閉めした回数 */
+  var sideGeneration = 0;
 
   /**
    * 右のパネルを閉じる。
@@ -1888,6 +1911,41 @@
       wrap.appendChild(btn);
     }
     return wrap;
+  }
+
+  /**
+   * 日時を東京の暦日 'YYYY-MM-DD' にする。サーバの scrumDayOf_ と同じ答えを返す
+   * (test/ui-parity.test.js)。
+   *
+   * サーバからは ISO の字 (UTC) で届く。先頭10字をそのまま切ると、朝0〜9時の
+   * ものが前の日に見える。'YYYY-MM-DD' だけの字は暦日なのでそのまま返し、
+   * 暦に無い日 ('2026-02-30') は読めないものとして空にする。
+   *
+   * @param {*} v
+   * @returns {string} 読めなければ ''
+   */
+  function tokyoDay(v) {
+    var s = String(v == null ? '' : v);
+    var day = /^(\d{4}-\d{2}-\d{2})$/.exec(s);
+    if (day) {
+      var d = new Date(day[1] + 'T00:00:00Z');
+      return !isNaN(d.getTime()) && d.toISOString().substring(0, 10) === day[1] ? day[1] : '';
+    }
+    var t = Date.parse(s);
+    if (!s || isNaN(t)) return '';
+    return new Date(t + 9 * 3600 * 1000).toISOString().substring(0, 10);
+  }
+
+  /**
+   * 日時を東京の 'YYYY-MM-DD HH:MM' にする。読めなければ元の字を返す。
+   *
+   * @param {*} v
+   * @returns {string}
+   */
+  function tokyoTime(v) {
+    var t = Date.parse(String(v == null ? '' : v));
+    if (isNaN(t)) return String(v == null ? '' : v);
+    return new Date(t + 9 * 3600 * 1000).toISOString().substring(0, 16).replace('T', ' ');
   }
 
   /**
@@ -3275,7 +3333,7 @@
         var who = document.createElement('span');
         who.className = 'row-meta';
         who.textContent = personName(one.by) +
-          (one.at ? ' · ' + String(one.at).substring(0, 10) : '');
+          (one.at ? ' · ' + tokyoDay(one.at) : '');
         head.appendChild(who);
 
         host.appendChild(head);
@@ -5969,7 +6027,7 @@
 
         var meta = document.createElement('div');
         meta.className = 'row-meta';
-        meta.textContent = '捨てた日 ' + String(issue.archivedAt).substring(0, 10) +
+        meta.textContent = '捨てた日 ' + tokyoDay(issue.archivedAt) +
           ' · あと' + issue.daysLeft + '日で消えます';
         main.appendChild(meta);
 
@@ -6326,7 +6384,7 @@
         var el = document.createElement('div');
         el.className = 'comment';
 
-        var h = makeCommentHead(row.by, String(row.at).substring(0, 10) +
+        var h = makeCommentHead(row.by, tokyoDay(row.at) +
           (row.editedAt ? ' · 直しました' : ''));
         if (row.canEdit) h.appendChild(makeTalkTools(issue, row, el));
         el.appendChild(h);
@@ -8116,7 +8174,7 @@
         var meta = document.createElement('div');
         meta.className = 'row-meta';
         meta.textContent = r.kindLabel + ' · ' + personName(r.by) + ' · ' +
-          String(r.at).substring(0, 10) +
+          tokyoDay(r.at) +
           (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
         main.appendChild(meta);
 
@@ -8202,7 +8260,7 @@
     var meta = document.createElement('div');
     meta.className = 'row-meta';
     meta.textContent = q.kindLabel + ' · ' + personName(q.by) + ' · ' +
-      String(q.at).substring(0, 10) +
+      tokyoDay(q.at) +
       (q.state === 'done'
         ? ' · 解決' + (q.closedBy ? ' (' + personName(q.closedBy) + ')' : '') : '');
     reportDetail.appendChild(meta);
@@ -8278,7 +8336,7 @@
       var el = document.createElement('div');
       el.className = 'comment';
 
-      var h = makeCommentHead(r.by, String(r.at).substring(0, 10) +
+      var h = makeCommentHead(r.by, tokyoDay(r.at) +
         (r.editedAt ? ' · 直しました' : ''));
       if (r.canEdit) h.appendChild(makeReplyTools(r, el));
       el.appendChild(h);
@@ -9324,7 +9382,7 @@
       var head = document.createElement('div');
       head.className = 'row-meta';
       head.textContent = (labels[n.kind] || n.kind) + ' · ' +
-        String(n.at).substring(0, 10);
+        tokyoDay(n.at);
       row.appendChild(head);
 
       var title = document.createElement('div');
@@ -9410,7 +9468,8 @@
     var byNav = {
       docs: 'nav:docs', issues: 'nav:issues', branches: 'nav:branches',
       pulls: 'nav:pulls', help: 'nav:help', report: 'nav:report',
-      usage: 'nav:usage',
+      usage: 'nav:usage', settings: 'nav:settings', sprint: 'nav:sprint',
+      impediments: 'nav:impediments',
     };
 
     var targets = document.querySelectorAll('[data-tab]');
@@ -9444,6 +9503,11 @@
     hint(document.querySelector('.graph-col-graph'), 'col:graph');
     hint(document.querySelector('.graph-col-desc'), 'col:desc');
     hint(document.querySelector('.graph-col-sha'), 'col:sha');
+
+    hint(document.getElementById('sprint-select').parentNode, 'select:sprint');
+    hint(document.getElementById('sprint-edit-btn'), 'act:sprint-edit');
+    hint(document.getElementById('sprint-create-btn'), 'act:sprint-create');
+    hint(document.getElementById('impediment-create-btn'), 'act:impediment-create');
   }
 
   attachHint(bulkCommitBtn,
@@ -9827,8 +9891,9 @@
     btn.type = 'button';
     btn.className = 'icon-btn term-help-btn';
     btn.textContent = '?';
-    btn.title = text;
     btn.setAttribute('aria-label', term + ' とは');
+    // ホバーでも出す。押すと下に開いたまま読める
+    attachHint(btn, text);
     btn.setAttribute('aria-expanded', 'false');
     wrap.appendChild(btn);
 
@@ -9939,6 +10004,7 @@
       toggle.id = 'scrum-toggle';
       toggle.className = 'btn' + (scrumOn() ? '' : ' btn-primary');
       toggle.textContent = scrumOn() ? 'オフにする' : 'オンにする';
+      hint(toggle, 'act:scrum-toggle');
       toggle.addEventListener('click', function () {
         toggle.disabled = true;
         call('apiSetScrumEnabled', [!scrumOn()], function (res) {
@@ -10105,7 +10171,7 @@
   function scrumToday() {
     // サーバ (ScrumView.js の scrumDayOf_) と同じく東京の暦日で見る。端末の
     // 時刻帯で見ると、海外から開いた人だけ残り日数や「今日」の線がずれる
-    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().substring(0, 10);
+    return tokyoDay(new Date().toISOString());
   }
 
   /**
@@ -10126,11 +10192,15 @@
    * @returns {string}
    */
   function sprintPhaseText(sp) {
-    if (!sp.startDate || !sp.endDate) return '期間が決まっていません';
+    // 台帳は手で書き換えられる。暦に無い日は、決まっていないものとして扱う
+    // (サーバのバーンダウンも同じ扱い。そのまま引くと「残りNaN日」になる)
+    var start = tokyoDay(sp.startDate);
+    var end = tokyoDay(sp.endDate);
+    if (!start || !end) return '期間が決まっていません';
     var today = scrumToday();
-    if (today < sp.startDate) return 'あと' + scrumDaysBetween(today, sp.startDate) + '日で始まります';
-    if (today > sp.endDate) return '終わりました';
-    var left = scrumDaysBetween(today, sp.endDate);
+    if (today < start) return 'あと' + scrumDaysBetween(today, start) + '日で始まります';
+    if (today > end) return '終わりました';
+    var left = scrumDaysBetween(today, end);
     return left ? '残り' + left + '日' : '今日が最終日';
   }
 
@@ -10166,7 +10236,7 @@
     sprintViewEl.appendChild(makeScrumBlock('バーンダウン', 'バーンダウン',
       makeBurndown(v.burndown || {})));
     sprintViewEl.appendChild(makeScrumBlock('ベロシティ', 'ベロシティ',
-      makeVelocityTable(v.velocity || [], v.sprint, v.summary || {})));
+      makeVelocityTable(v.velocity || [], v.sprint)));
     sprintViewEl.appendChild(makeScrumBlock('ロードマップ', 'ロードマップ',
       makeRoadmap(v.roadmap || {})));
   }
@@ -10200,9 +10270,10 @@
     var wrap = document.createElement('div');
     wrap.className = 'tally-summary scrum-summary';
 
-    function card(label, term, value, sub, kind) {
+    function card(label, term, value, sub, kind, hintKey) {
       var box = document.createElement('div');
       box.className = 'tally-card scrum-card' + (kind ? ' ' + kind : '');
+      hint(box, hintKey);
 
       var head = document.createElement('div');
       head.className = 'row-meta scrum-card-label';
@@ -10231,7 +10302,8 @@
 
     var isCurrent = s.current === sp.name;
     card(isCurrent ? '今のスプリント' : '見ているスプリント', '',
-      sp.name, (sp.startDate ? sp.startDate + ' 〜 ' + (sp.endDate || '') + ' ・ ' : '') + sprintPhaseText(sp));
+      sp.name, (sp.startDate ? sp.startDate + ' 〜 ' + (sp.endDate || '') + ' ・ ' : '') + sprintPhaseText(sp),
+      '', 'card:sprint');
 
     var planned = row ? row.planned : 0;
     var done = row ? row.completed : 0;
@@ -10246,15 +10318,17 @@
     var fill = document.createElement('span');
     fill.style.width = pct + '%';
     bar.appendChild(fill);
-    card('終えたポイント', 'ストーリーポイント', done + ' / ' + planned, bar);
+    card('終えたポイント', 'ストーリーポイント', done + ' / ' + planned, bar, '', 'card:points');
 
     var open = s.openImpediments || 0;
     card('未解決の障害物', '障害物', open + '件',
-      open ? '左の「障害物」から片付けられます' : 'いまはありません', open ? 'scrum-card-warn' : '');
+      open ? '左の「障害物」から片付けられます' : 'いまはありません', open ? 'scrum-card-warn' : '',
+      'card:impediments');
 
     card('平均ベロシティ', 'ベロシティ',
       s.average === '' || s.average === undefined ? '—' : String(s.average),
-      s.average === '' || s.average === undefined ? '終えたスプリントができると出ます' : '直近3スプリントの平均。次に積める量の目安');
+      s.average === '' || s.average === undefined ? '終えたスプリントができると出ます' : '直近3スプリントの平均。次に積める量の目安',
+      '', 'card:velocity');
     return wrap;
   }
 
@@ -10291,7 +10365,8 @@
     }
 
     goal('スプリントゴール', sp ? sp.goal : '',
-      'まだ書かれていません。「このスプリントを直す」から書けます。', false);
+      sp ? 'まだ書かれていません。「このスプリントを直す」から書けます。'
+        : '上の「スプリント」で選ぶと、そのゴールが出ます。', false);
     goal('プロダクトゴール', texts.productGoal,
       settings.canEdit ? 'まだ書かれていません。左の「設定」から書けます。'
         : 'まだ書かれていません。書けるのはこのアプリの持ち主です。', true);
@@ -10337,8 +10412,9 @@
     var title = document.createElementNS(NS, 'title');
     title.textContent = 'バーンダウン';
     svg.appendChild(title);
+    var remaining = b.remaining || [];
     var desc = document.createElementNS(NS, 'desc');
-    desc.textContent = '残りのポイント: ' + b.remaining.map(function (n, i) {
+    desc.textContent = '残りのポイント: ' + remaining.map(function (n, i) {
       return b.days[i] + ' ' + (n === null ? '—' : n);
     }).join('、');
     svg.appendChild(desc);
@@ -10368,13 +10444,13 @@
       if (!pts.length) return;
       svg.appendChild(el('polyline', { points: pts.join(' '), 'class': cls, fill: 'none' }));
     }
-    line(b.ideal, 'burndown-ideal');
-    line(b.remaining, 'burndown-remaining');
+    line(b.ideal || [], 'burndown-ideal');
+    line(remaining, 'burndown-remaining');
 
     // 最後に分かっている残りに点を打つ。線の終わりがどこかを読みやすくする
-    for (var k = b.remaining.length - 1; k >= 0; k--) {
-      if (b.remaining[k] === null || b.remaining[k] === undefined) continue;
-      svg.appendChild(el('circle', { cx: x(k), cy: y(b.remaining[k]), r: 4, 'class': 'burndown-dot' }));
+    for (var k = remaining.length - 1; k >= 0; k--) {
+      if (remaining[k] === null || remaining[k] === undefined) continue;
+      svg.appendChild(el('circle', { cx: x(k), cy: y(remaining[k]), r: 4, 'class': 'burndown-dot' }));
       break;
     }
 
@@ -10407,14 +10483,13 @@
   }
 
   /**
-   * ベロシティの表。見ているスプリントの行を目立たせ、平均を最後に添える。
+   * ベロシティの表。見ているスプリントの行を目立たせる。平均は結論のカードに出す。
    *
    * @param {object[]} rows scrumVelocity の返り
    * @param {string} selected 見ているスプリント
-   * @param {object} summary
    * @returns {HTMLElement}
    */
-  function makeVelocityTable(rows, selected, summary) {
+  function makeVelocityTable(rows, selected) {
     var wrap = document.createElement('div');
     wrap.className = 'tally-scroll';
 
@@ -10500,6 +10575,7 @@
         open.className = 'roadmap-open';
         open.textContent = '#' + row.number + ' ' + row.title;
         open.addEventListener('click', function () { openIssueByNumber(row.number, open); });
+        hint(open, 'act:roadmap-open');
         th.appendChild(open);
         tr.appendChild(th);
         r.sprints.forEach(function (name, col) {
@@ -10592,6 +10668,18 @@
   }
 
   /**
+   * 入力欄を送った直後の右の状態。送ると入力欄は返事を待たずに閉じるので、
+   * そのときの sideGeneration を控え、返事の時点でも変わっていなければ (人が
+   * 何も開け閉めしていなければ) 詳細に戻してよい。
+   */
+  var impedimentReturn = { number: null, generation: -1 };
+
+  /** 入力欄を送った直後に呼ぶ。返事が届いたとき詳細に戻す目印にする */
+  function impedimentMarkReturn(number) {
+    impedimentReturn = { number: Number(number), generation: sideGeneration };
+  }
+
+  /**
    * いま右に開いている障害物の番号。開いていなければ null。
    *
    * 返事が届いた時点で別のものを開いていたら、開き直さない。押したあとに
@@ -10622,7 +10710,7 @@
    */
   function impedimentMayReopen(number) {
     return impedimentShowing(number) ||
-      (impedimentOpenNumber === Number(number) && !sideTitle.textContent);
+      (impedimentReturn.number === Number(number) && impedimentReturn.generation === sideGeneration);
   }
 
   /**
@@ -10669,9 +10757,9 @@
       var meta = document.createElement('div');
       meta.className = 'row-meta';
       var bits = [personName(imp.reportedBy) || imp.reportedBy];
-      if (imp.reportedAt) bits.push(String(imp.reportedAt).substring(0, 10));
+      if (imp.reportedAt) bits.push(tokyoDay(imp.reportedAt));
       if (imp.sprint) bits.push(imp.sprint);
-      if (imp.state !== 'open' && imp.resolvedAt) bits.push('解決 ' + String(imp.resolvedAt).substring(0, 10));
+      if (imp.state !== 'open' && imp.resolvedAt) bits.push('解決 ' + tokyoDay(imp.resolvedAt));
       meta.textContent = bits.join(' ・ ');
       main.appendChild(meta);
       row.appendChild(main);
@@ -10680,7 +10768,14 @@
         row.appendChild(makePill('やりとり ' + imp.commentCount, 'chip'));
       }
 
-      row.addEventListener('click', function () { openImpedimentDetail(imp, row); });
+      row.addEventListener('click', function () {
+        // 選んでいる印は1つだけにする。前に開いていた行に残ると、2つ選んで
+        // いるように見える
+        impedimentsEl.querySelectorAll('.impediment-row').forEach(function (other) {
+          other.setAttribute('aria-current', String(other === row));
+        });
+        openImpedimentDetail(imp, row);
+      });
       impedimentsEl.appendChild(row);
     });
   }
@@ -10721,6 +10816,7 @@
     ], imp ? '保存する' : '記録する', function (v) {
       var fields = { title: v.title, body: v.body, sprint: v.sprint };
       if (imp) {
+        impedimentMarkReturn(imp.number);
         call('apiImpedimentUpdate', [imp.number, fields], function (after) {
           showSnack('障害物を直しました', { kind: 'ok' });
           if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
@@ -10766,11 +10862,11 @@
       dd.appendChild(makePill(imp.state === 'open' ? '未解決' : '解決済み',
         imp.state === 'open' ? 'state state-open' : 'state state-merged'));
       if (imp.state !== 'open' && imp.resolvedAt) {
-        dd.appendChild(document.createTextNode(String(imp.resolvedAt).substring(0, 10)));
+        dd.appendChild(document.createTextNode(tokyoDay(imp.resolvedAt)));
       }
     });
     fact('報告', function (dd) {
-      dd.textContent = (personName(imp.reportedBy) || imp.reportedBy) + ' ・ ' + String(imp.reportedAt).substring(0, 10);
+      dd.textContent = (personName(imp.reportedBy) || imp.reportedBy) + ' ・ ' + tokyoDay(imp.reportedAt);
     });
     if (imp.sprint) fact('スプリント', function (dd) { dd.textContent = imp.sprint; });
     box.appendChild(facts);
@@ -10792,10 +10888,12 @@
       resolve.className = 'btn btn-primary';
       resolve.appendChild(makeIcon('check'));
       resolve.appendChild(document.createTextNode('解決する'));
+      hint(resolve, 'act:resolve');
       resolve.addEventListener('click', function () {
         openInlineForm('障害物 #' + imp.number + ' を解決する', [
           { name: 'resolution', label: '何をして片付けたか (解決策)', multiline: true, required: true },
         ], '解決を確定する', function (v) {
+          impedimentMarkReturn(imp.number);
           call('apiImpedimentResolve', [imp.number, v.resolution], function (after) {
             showSnack('#' + imp.number + ' を解決済みにしました', { kind: 'ok' });
             if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
@@ -10810,6 +10908,7 @@
       reopen.className = 'btn';
       reopen.appendChild(makeIcon('back'));
       reopen.appendChild(document.createTextNode('未解決に戻す'));
+      hint(reopen, 'act:impediment-reopen');
       reopen.addEventListener('click', function () {
         reopen.disabled = true;
         call('apiImpedimentReopen', [imp.number], function (after) {
@@ -10859,7 +10958,7 @@
         rows.forEach(function (c) {
           var item = document.createElement('div');
           item.className = 'comment';
-          item.appendChild(makeCommentHead(c.by, String(c.at).substring(0, 10)));
+          item.appendChild(makeCommentHead(c.by, tokyoDay(c.at)));
           item.appendChild(makeMarkdown(c.body));
           list.appendChild(item);
         });
@@ -10928,7 +11027,7 @@
           item.className = 'history-item';
           var meta = document.createElement('div');
           meta.className = 'row-meta';
-          meta.textContent = String(h.at).substring(0, 16).replace('T', ' ') + ' ・ ' +
+          meta.textContent = tokyoTime(h.at) + ' ・ ' +
             (personName(h.actor) || h.actor || '不明');
           item.appendChild(meta);
 

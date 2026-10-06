@@ -123,9 +123,28 @@ function issueHistory_(number, action, changes) {
  * 分からない欄が増えるだけになる。
  *
  * @param {object} patch 直す値 (書き換える)
+ * @param {object} [before] 直す前の行。あれば、オフのとき変えていない欄を落とす
  */
-function issueScrumFieldsCheck_(patch) {
+function issueScrumFieldsCheck_(patch, before) {
   var keys = ['sprint', 'points', 'acceptance'];
+  var on = typeof scrumEnabled === 'function' && scrumEnabled();
+
+  /*
+   * オフのときは、変えていない欄を黙って落とす。
+   *
+   * オンのときに開いた画面は、オフにされたあとも変えていないスクラムの欄を
+   * 一緒に送ってくる。それまで断ると、読み込み直すまで誰もやることを直せ
+   * なくなる。実際に値を変えようとしたときだけ断る。
+   */
+  if (!on && before) {
+    for (var d = 0; d < keys.length; d++) {
+      if (!Object.prototype.hasOwnProperty.call(patch, keys[d])) continue;
+      var was = before[keys[d]] == null ? '' : String(before[keys[d]]);
+      var now = patch[keys[d]] == null ? '' : String(patch[keys[d]]);
+      if (was === now) delete patch[keys[d]];
+    }
+  }
+
   var any = false;
   for (var k = 0; k < keys.length; k++) {
     if (Object.prototype.hasOwnProperty.call(patch, keys[k])) any = true;
@@ -252,7 +271,7 @@ function issueUpdate(number, patch) {
     patch.linkedFileIds = issueLinkedClean_(patch.linkedFileIds, before);
   }
 
-  issueScrumFieldsCheck_(patch);
+  issueScrumFieldsCheck_(patch, before);
 
   var allowed = {};
   // 知らない値は受け取らない。ここを通ると台帳に残り、読むたびに
