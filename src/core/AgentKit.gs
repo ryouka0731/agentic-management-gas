@@ -18,6 +18,21 @@ function AGENT_KIT_VERSION() {
 }
 
 /**
+ * 配る zip の名前。
+ *
+ * **中身の指紋を名前に入れる。** 版だけで名前を決めていたため、kit/ を直して
+ * AGENT_KIT_VERSION() を上げ忘れると、同じ名前の前の zip がそのまま配られ
+ * 続けた。指紋が入っていれば、上げ忘れても中身が変われば作り直される。
+ * 版は人が読むために残す。
+ *
+ * @returns {string}
+ */
+function agentKitName_() {
+  var print = sha256Hex(JSON.stringify(KIT_FILES())).substring(0, 8);
+  return 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '-' + print + '.zip';
+}
+
+/**
  * zip の置き場を返す。無ければ作る。
  *
  * @returns {GoogleAppsScript.Drive.Folder}
@@ -47,7 +62,7 @@ function agentKitBuild_() {
       Utilities.base64Decode(files[name0]), 'text/plain', name0));
   }
 
-  var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
+  var name = agentKitName_();
   var zip = Utilities.zip(blobs, name);
   var folder = agentKitFolder_();
 
@@ -78,7 +93,7 @@ function agentKitBuild_() {
  * @returns {{name:string, url:string, version:string}}
  */
 function agentKitFile() {
-  var name = 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '.zip';
+  var name = agentKitName_();
   var found = agentKitFolder_().getFilesByName(name);
   var file = found.hasNext() ? found.next() : agentKitBuild_();
   var queue = commandQueueFolder_();

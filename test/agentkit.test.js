@@ -74,6 +74,29 @@ describe('手元から動かす道具を配る', () => {
   });
 });
 
+describe('版を上げ忘れても、古い中身を配らない', () => {
+  /*
+   * zip の名前が版だけで決まっていて、同じ名前があれば作り直さなかった。
+   * kit/ を直して AGENT_KIT_VERSION() を上げ忘れると、前の zip が配られ続けた。
+   */
+  it('中身が変われば、版が同じでも別の zip になる', () => {
+    const { ctx } = setup();
+    const first = ctx.agentKitFile();
+
+    const real = ctx.KIT_FILES;
+    ctx.KIT_FILES = () => Object.assign({}, real(), { 'README.md': 'Y2hhbmdlZA==' });
+    const second = ctx.agentKitFile();
+
+    expect(second.version).toBe(first.version);
+    expect(second.url).not.toBe(first.url);
+  });
+
+  it('中身が同じなら作り直さない', () => {
+    const { ctx } = setup();
+    expect(ctx.agentKitFile().url).toBe(ctx.agentKitFile().url);
+  });
+});
+
 describe('中身が壊れずに運ばれるか', () => {
   it('焼き直したものを戻すと元の字に一致する', () => {
     const { ctx } = setup();
@@ -239,7 +262,9 @@ describe('古い zip の片付け', () => {
     const it = folder.getFiles();
     while (it.hasNext()) left.push(it.next().getName());
 
-    expect(left).toEqual(['softbanto-agent-kit-' + ctx.AGENT_KIT_VERSION() + '.zip']);
+    // 版と中身の指紋で名前が決まる (版を上げ忘れても古い中身を配らないため)
+    expect(left).toEqual([ctx.agentKitName_()]);
+    expect(left[0]).toContain('softbanto-agent-kit-' + ctx.AGENT_KIT_VERSION() + '-');
   });
 
   it('zip でないものは片付けない', () => {
