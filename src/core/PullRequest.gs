@@ -82,10 +82,15 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     throw new Error('同じ版には反映できません: ' + into);
   }
 
-  var intoRow = dbFindOne('branches', 'name', into);
-  if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
-  if (String(intoRow.state) !== 'open') {
-    throw new Error('反映先の版は既に閉じられています: ' + into);
+  // 正式版は台帳の行が無くても必ずある。main の行を台帳に入れるようになった
+  // のは途中からで、それ以前のリポジトリには行が無い。探すと、正式版への
+  // 確認依頼が「反映先の版が見つかりません: main」で出せなくなる
+  if (into !== 'main') {
+    var intoRow = dbFindOne('branches', 'name', into);
+    if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
+    if (String(intoRow.state) !== 'open') {
+      throw new Error('反映先の版は既に閉じられています: ' + into);
+    }
   }
 
   for (var t = 0; t < wanted.length; t++) {

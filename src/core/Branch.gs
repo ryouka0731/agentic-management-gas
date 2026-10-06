@@ -8,6 +8,11 @@
  * @returns {boolean}
  */
 function branchNameValid_(name) {
+  // main は正式版の名前なので使わせない。台帳に main の行が無い古いリポジトリ
+  // では、同名の確かめをすり抜けて作れてしまい、作業コピーが branches/main/…
+  // になって正式版と見分けが付かなくなる
+  if (String(name) === 'main') return false;
+
   // 区切り文字と制御文字だけを断る。空白や括弧まで断ると、人が普通に
   // 付けたい名前 (「第7条の見直し (法務確認あり)」など) が通らない
   return /^[^\/\\\n\r\t]{1,80}$/.test(String(name || ''));
@@ -225,6 +230,9 @@ function branchCreate(name, fileId) {
  * branchCreate の本体。鍵を持った状態で呼ばれる。
  */
 function branchCreateLocked_(name, fileId) {
+  if (String(name) === 'main') {
+    throw new Error('main は正式版の名前なので、改訂版の名前には使えません');
+  }
   if (!branchNameValid_(name)) {
     throw new Error(
       '名前に使えない文字が含まれています (/ と \\ は使えません): ' + name

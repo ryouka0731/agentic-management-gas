@@ -699,3 +699,36 @@ describe('あるか見てから書くものは、鍵の中で行う', () => {
     });
   }
 });
+
+describe('台帳に main の行が無いリポジトリ', () => {
+  /*
+   * main の行を台帳に入れるようになったのは途中からで、それ以前のリポジトリには
+   * 行が無い。prCreate が反映先の行を必ず探すようになってから、そういう
+   * リポジトリでは正式版への確認依頼が「反映先の版が見つかりません: main」で
+   * 出せなくなっていた (実機の debugVerifyPhase2 で見つかった)。
+   */
+  function withoutMainRow() {
+    const env = setup();
+    env.ctx.dbDelete('branches', 'name', 'main');
+    return env;
+  }
+
+  it('正式版への確認依頼を出せる', () => {
+    const { ctx, fake, a } = withoutMainRow();
+    ctx.branchCreate('見直し', a);
+    const wa = ctx.branchWorkingFileId('見直し', a);
+    fake._docs.set(wa, '<p>A1</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '見直し', 'A2', null);
+
+    const pr = ctx.prCreate('A2を足す', '', '見直し', a);
+    expect(pr.targetBranch).toBe('main');
+  });
+
+  it('main という名前の改訂版は作らせない', () => {
+    const { ctx, a } = withoutMainRow();
+
+    // 作業コピーが branches/main/… になり、正式版と見分けが付かなくなる
+    expect(() => ctx.branchCreate('main', a)).toThrow('正式版の名前');
+    expect(ctx.dbFindOne('branches', 'name', 'main')).toBeNull();
+  });
+});
