@@ -4100,6 +4100,16 @@ describe('はじめての設定の案内', () => {
     expect(openHelp()).toContain('実行数');
   });
 
+  it('スクラムは既定でオフで、どこでオンにするかを書く', () => {
+    const text = openHelp();
+
+    // 使わない人が多い。オンにする場所が書いていないと、使いたい人が辿り着けない
+    expect(text).toContain('既定ではオフ');
+    expect(text).toContain('「設定」でエージェンティックスクラムをオンに');
+    expect(text).toContain('node agent.mjs scrum');
+    expect(text).toContain('SCRUM.md');
+  });
+
   it('手元から動かす手順も具体に書く', () => {
     const text = openHelp();
 
@@ -5527,6 +5537,7 @@ describe('使い方の図', () => {
     'はじめての設定（最初の一人だけ）',
     '手元から動かすときの往復',
     '同じ場所が両方で変わったとき',
+    'スクラムの1巡り（使う人だけ）',
   ];
 
   it('どの節にも図がある', () => {
