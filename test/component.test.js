@@ -5803,3 +5803,51 @@ describe('送れなかった入力は消さない', () => {
     expect(document.getElementById('side-panel').hidden).toBe(true);
   });
 });
+
+describe('遅れて届いた返事で、別の文書を描かない', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /*
+   * 返事が届いた時点で「いま開いている文書か」を見ていなかった。A を開いた
+   * 直後に B へ切り替えると、遅れて届いた A の本文が B の題名の下に出た。
+   */
+  it('前に開いた版の本文は、あとから届いても描かない', () => {
+    let lateDoc1 = null;
+    mount({
+      apiGetFileHtml: (fileId) => (fileId === 'DOC1'
+        ? { later: (ok) => { lateDoc1 = ok; } }
+        : { html: '<p>見直し版の本文</p>\n', url: 'https://e.test/W1', path: fileId }),
+    });
+
+    document.querySelector('.doc-open').click();
+    const sel = document.getElementById('branch-select');
+    sel.value = 'W1';
+    sel.dispatchEvent(new window.Event('change'));
+    expect(document.getElementById('viewer').srcdoc).toContain('見直し版の本文');
+
+    lateDoc1({ html: '<p>正式版の本文</p>\n', url: 'https://e.test/DOC1', path: 'DOC1' });
+
+    expect(document.getElementById('viewer').srcdoc).toContain('見直し版の本文');
+    expect(document.getElementById('viewer').srcdoc).not.toContain('正式版の本文');
+  });
+
+  it('前に開いた版の Markdown は、あとから届いても入れない', () => {
+    let lateDoc1 = null;
+    mount({
+      apiGetMarkdown: (fileId) => (fileId === 'DOC1'
+        ? { later: (ok) => { lateDoc1 = ok; } }
+        : { markdown: '# 見直し版\n', branch: '見直し', editable: true, baseSha: 'W' }),
+    });
+
+    document.querySelector('.doc-open').click();
+    document.getElementById('mode-edit').click();
+    const sel = document.getElementById('branch-select');
+    sel.value = 'W1';
+    sel.dispatchEvent(new window.Event('change'));
+    document.getElementById('mode-edit').click();
+
+    lateDoc1({ markdown: '# 正式版\n', branch: 'main', editable: false, baseSha: 'M' });
+
+    expect(document.getElementById('editor').value).toBe('# 見直し版\n');
+  });
+});

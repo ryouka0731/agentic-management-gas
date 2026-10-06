@@ -53,6 +53,12 @@ export function mountApp(responses) {
           if (onFailure) onFailure(value);
           return;
         }
+        // 返事を遅らせる。{ later: (ok, ng) => ... } を返すと、ハンドラを
+        // 受け取って好きな時に返せる。返事が届く順を入れ替えるのに使う
+        if (value && typeof value.later === 'function') {
+          value.later(onSuccess || (() => {}), onFailure || (() => {}));
+          return;
+        }
         if (onSuccess) onSuccess(value === undefined ? null : value);
       };
     });

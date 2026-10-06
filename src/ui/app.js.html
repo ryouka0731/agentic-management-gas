@@ -2507,6 +2507,9 @@
     renderVersionSelect();
 
     call('apiGetFileHtml', [fileId], function (res) {
+      // 返事が届くまでに別の版へ移っていたら描かない。描くと、別の文書の本文が
+      // いまの題名の下に出る
+      if (current.fileId !== fileId) return;
       openLink.href = res.url;
       renderIntoViewer(res.html);
       loadLinkedIssues(fileId);
@@ -2541,7 +2544,11 @@
   }
 
   function refreshStatus() {
-    call('apiFileStatus', [current.fileId], function (st) {
+    var asked = current.fileId;
+    call('apiFileStatus', [asked], function (st) {
+      // 別の版へ移っていたら捨てる。古い headSha を持つと、記録が「HEADが
+      // 進んでいます」で断られ、版の表示も前の文書のものになる
+      if (current.fileId !== asked) return;
       current.headSha = st.headSha;
       current.branch = st.branch;
 
@@ -2605,9 +2612,12 @@
     editorEl.disabled = true;
     editSaveBtn.disabled = true;
     showEditorSkeleton(true);
+    var asked = current.fileId;
 
     google.script.run
       .withSuccessHandler(function (res) {
+        // 別の版へ移っていたら入れない。入れると、別の文書の中身を直すことになる
+        if (current.fileId !== asked) return;
         showEditorSkeleton(false);
         editorEl.value = res.markdown;
         // 保存のときに添える。開いたあとで Docs で直された分を上書きしないため
@@ -2685,6 +2695,7 @@
     linkedIssuesEl.hidden = true;
 
     call('apiIssuesForFile', [fileId], function (list) {
+      if (current.fileId !== fileId) return;
       var issues = list || [];
       if (!issues.length) return;
       issues.forEach(function (issue) {
@@ -2783,7 +2794,9 @@
     showSkeleton(historyList, 'graph', 6);
     diffView.textContent = '';
 
-    call('apiCommitGraph', [current.fileId], function (result) {
+    var asked = current.fileId;
+    call('apiCommitGraph', [asked], function (result) {
+      if (current.fileId !== asked) return;
       var graph = result || { rows: [], laneCount: 1 };
       historyList.textContent = '';
 
