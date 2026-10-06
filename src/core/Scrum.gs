@@ -153,9 +153,7 @@ function sprintUpdate(name, patch) {
 function impedimentCreate(fields) {
   scrumAssertEnabled_();
   var f = fields || {};
-  var title = String(f.title || '').replace(/^\s+|\s+$/g, '');
-  if (!title) throw new Error('題名を入れてください');
-  if (title.length > 200) throw new Error('題名は200字までにしてください');
+  var title = impedimentTitle_(f.title);
 
   var sprint = String(f.sprint || '');
   if (sprint) sprintGet(sprint);
@@ -218,12 +216,7 @@ function impedimentUpdate(number, patch) {
   var p = patch || {};
   var allowed = {};
 
-  if (Object.prototype.hasOwnProperty.call(p, 'title')) {
-    var title = String(p.title || '').replace(/^\s+|\s+$/g, '');
-    if (!title) throw new Error('題名を入れてください');
-    if (title.length > 200) throw new Error('題名は200字までにしてください');
-    allowed.title = title;
-  }
+  if (Object.prototype.hasOwnProperty.call(p, 'title')) allowed.title = impedimentTitle_(p.title);
   if (Object.prototype.hasOwnProperty.call(p, 'body')) allowed.body = String(p.body || '').substring(0, 4000);
   if (Object.prototype.hasOwnProperty.call(p, 'reportedBy')) allowed.reportedBy = String(p.reportedBy || '');
   if (Object.prototype.hasOwnProperty.call(p, 'sprint')) {
@@ -326,7 +319,30 @@ function historyText_(v) {
   if (Object.prototype.toString.call(v) === '[object Date]') {
     return isNaN(v.getTime()) ? '' : v.toISOString();
   }
-  return String(v).substring(0, 2000);
+  // ai-scrum-gas とそろえる: 値1つにつき4000字 (コードポイント) まで。黙って
+  // 切ると、どこまでが元の字か分からなくなるので、省いたことと全体の字数を添える
+  var chars = Array.from(String(v));
+  if (chars.length <= 4000) return chars.join('');
+  return chars.slice(0, 4000).join('') + '…（以下省略・全 ' + chars.length + ' 字）';
+}
+
+/**
+ * 障害物の題名を確かめて整える。
+ *
+ * 全体を全角の（…）だけで囲んだものは、ひな形の行 (「（障害物タイトル）」など)
+ * がそのまま入ったものとして断る (ai-scrum-gas と同じ規則)。
+ *
+ * @param {*} raw
+ * @returns {string}
+ */
+function impedimentTitle_(raw) {
+  var title = String(raw || '').replace(/^\s+|\s+$/g, '');
+  if (!title) throw new Error('題名を入れてください');
+  if (title.length > 200) throw new Error('題名は200字までにしてください');
+  if (/^（[^（）]*）$/.test(title)) {
+    throw new Error('全体を（）で囲んだ題名は、ひな形の行と見分けが付かないので使えません: ' + title);
+  }
+  return title;
 }
 
 /**
@@ -395,9 +411,10 @@ function historyOf(target) {
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].target) !== String(target)) continue;
-    // 前と後は字として読む。数だけの字 ('5') は台帳で数として返ってくる
-    rows[i].before = historyText_(rows[i].before);
-    rows[i].after = historyText_(rows[i].after);
+    // 前と後は字として読む。数だけの字 ('5') は台帳で数として返ってくる。
+    // 切るのは書くときだけ (読むときに切ると、省略の印まで数えて二重に切る)
+    rows[i].before = rows[i].before == null ? '' : String(rows[i].before);
+    rows[i].after = rows[i].after == null ? '' : String(rows[i].after);
     out.push(rows[i]);
   }
   out.sort(function (a, b) { return Number(b.id) - Number(a.id); });

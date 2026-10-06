@@ -240,3 +240,26 @@ describe('変更の履歴', () => {
     expect(titles).toEqual(['c', 'b']);
   });
 });
+
+describe('ai-scrum-gas とそろえた規則', () => {
+  /*
+   * ai-scrum-gas (fix/bughunt2) で決めた規則を、こちらでも同じにする。
+   */
+  it('履歴の前と後は4000字まで。超えたら省いたことと全体の字数を添える', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('題', '', []);
+    const long = '😀'.repeat(4100);
+    ctx.issueUpdate(made.number, { body: long });
+
+    const after = ctx.historyOf('issue:' + made.number).find((h) => h.field === 'body').after;
+    expect(Array.from(after).slice(0, 4000).join('')).toBe('😀'.repeat(4000));
+    expect(after).toContain('…（以下省略・全 4100 字）');
+  });
+
+  it('全体を全角の（…）だけで囲んだ障害物の題名は、ひな形の行として断る', () => {
+    const { ctx } = setup();
+    expect(() => ctx.impedimentCreate({ title: '（障害物タイトル）' })).toThrow(/ひな形/);
+    const a = ctx.impedimentCreate({ title: '承認者（部長）が不在' });
+    expect(() => ctx.impedimentUpdate(a.number, { title: '（なにか）' })).toThrow(/ひな形/);
+  });
+});
