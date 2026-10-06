@@ -44,9 +44,9 @@ function apiListFiles() {
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     out.push({
-      fileId: rows[i].fileId,
-      path: rows[i].path,
-      type: rows[i].type,
+      fileId: plainText(rows[i].fileId),
+      path: plainText(rows[i].path),
+      type: plainText(rows[i].type),
     });
   }
   out.sort(function (a, b) { return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0); });
@@ -68,7 +68,7 @@ function apiGetFileHtml(fileId) {
     html: liveHtml(fileId),
     name: file.getName(),
     url: file.getUrl(),
-    path: row.path,
+    path: plainText(row.path),
   };
 }
 
@@ -403,10 +403,10 @@ function apiCommitHistory(fileId) {
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     out.push({
-      sha: rows[i].sha,
-      parentSha: rows[i].parentSha,
-      author: rows[i].author,
-      message: rows[i].message,
+      sha: plainText(rows[i].sha),
+      parentSha: plainText(rows[i].parentSha),
+      author: plainText(rows[i].author),
+      message: plainText(rows[i].message),
       timestamp: plainDate(rows[i].timestamp),
     });
   }
@@ -439,11 +439,11 @@ function apiBranchList() {
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].state) === 'deleted') continue;
     out.push({
-      name: rows[i].name,
-      headSha: rows[i].headSha,
-      baseSha: rows[i].baseSha,
-      state: rows[i].state,
-      createdBy: rows[i].createdBy,
+      name: plainText(rows[i].name),
+      headSha: plainText(rows[i].headSha),
+      baseSha: plainText(rows[i].baseSha),
+      state: plainText(rows[i].state),
+      createdBy: plainText(rows[i].createdBy),
       createdAt: plainDate(rows[i].createdAt),
     });
   }
@@ -543,11 +543,11 @@ function apiPrList() {
   for (var i = 0; i < rows.length; i++) {
     out.push({
       number: plainId(rows[i].number),
-      title: rows[i].title,
-      sourceBranch: rows[i].sourceBranch,
-      targetBranch: rows[i].targetBranch,
-      state: rows[i].state,
-      author: rows[i].author,
+      title: plainText(rows[i].title),
+      sourceBranch: plainText(rows[i].sourceBranch),
+      targetBranch: plainText(rows[i].targetBranch),
+      state: plainText(rows[i].state),
+      author: plainText(rows[i].author),
       createdAt: plainDate(rows[i].createdAt),
       body: plainText(rows[i].body),
       reviewers: prReviewers(rows[i]),
@@ -990,7 +990,7 @@ function apiCommitGraph(fileId) {
 
     chains.push({
       name: name,
-      baseSha: branches[i].baseSha,
+      baseSha: plainText(branches[i].baseSha),
       commits: commits,
     });
   }

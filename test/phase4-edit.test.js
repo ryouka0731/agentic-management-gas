@@ -549,6 +549,41 @@ describe('画面に渡せる形か', () => {
     });
   });
 
+  /*
+   * 台帳の字の欄が日付に化けていても運べるか。
+   *
+   * 字を ' 付きで書くようにする前は、'10/1' のような題名や記録の文を Sheets が
+   * 日付として持っていた。そういう古い行が1つあるだけで、素の値を返している
+   * 一覧は画面に null が届き、まるごと出なくなる。
+   */
+  function corrupted() {
+    const env = prepared();
+    const cols = env.ctx.DB_SCHEMA();
+    const spoil = [
+      ['pulls', 'title'], ['pulls', 'author'], ['pulls', 'sourceBranch'],
+      ['commits', 'message'], ['commits', 'author'],
+      ['branches', 'createdBy'], ['issues', 'title'], ['reviews', 'body'],
+      ['inquiries', 'title'], ['issue_comments', 'body'],
+    ];
+    for (const [table, col] of spoil) {
+      const sheet = env.ctx.dbSheet_(table);
+      const c = cols[table].indexOf(col) + 1;
+      for (let r = 2; r <= sheet.getLastRow(); r++) {
+        // 改訂版の名前は引くのに使うので、化けた形では入れない
+        if (table === 'pulls' && col === 'sourceBranch') continue;
+        sheet.getRange(r, c, 1, 1).setValues([[new Date(2026, 9, 1)]]);
+      }
+    }
+    return env;
+  }
+
+  CASES.forEach(([name, call]) => {
+    it(name + ' は、化けた行があっても Date を含まない', () => {
+      const env = corrupted();
+      expect(unserializable(call(env.ctx, env), name)).toEqual([]);
+    });
+  });
+
   it('やることは中身も正しく運べる', () => {
     const env = prepared();
     // 報告からも1件作られるので、下ごしらえで作ったほうを名指しする
