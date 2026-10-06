@@ -3273,23 +3273,20 @@ function debugVerifyScrum() {
 
   var wasOn = scrumEnabled();
   var name = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
-  var issues = [];
-  var impediment = null;
-  var sprintMade = false;
+  // 片付けは番号ではなくこの印で探す。作った直後に落ちると番号が手元に返らず、
+  // 番号で控える形だと台帳に書けたぶんが残る
+  var mark = '自動検証 ' + name;
 
   try {
     scrumSetEnabled(true);
 
     var sprint = apiSprintCreate({ name: name, goal: '自動検証', startDate: day(-1), endDate: day(5) });
-    sprintMade = true;
     check('スプリントの日付が字のまま返る',
       sprint.startDate === day(-1) && sprint.endDate === day(5),
       sprint.startDate + ' 〜 ' + sprint.endDate);
 
-    var done = apiIssueCreate('スクラム検証 (終える)', '自動検証', []);
-    issues.push(done.number);
-    var left = apiIssueCreate('スクラム検証 (残す)', '自動検証', []);
-    issues.push(left.number);
+    var done = apiIssueCreate('スクラム検証 (終える)', mark, []);
+    var left = apiIssueCreate('スクラム検証 (残す)', mark, []);
 
     apiIssueUpdate(done.number, { sprint: name, points: 3, acceptance: '検証が通る' });
     apiIssueUpdate(left.number, { sprint: name, points: 2 });
@@ -3319,7 +3316,7 @@ function debugVerifyScrum() {
     });
     check('ポイントの変更が履歴に残る', pointsLogged, history.length + '件');
 
-    impediment = apiImpedimentCreate({ title: 'スクラム検証の障害物', body: '自動検証' }).number;
+    var impediment = apiImpedimentCreate({ title: 'スクラム検証の障害物', body: mark }).number;
     apiImpedimentComment(impediment, '自動検証のやりとり');
     var solved = apiImpedimentResolve(impediment, '自動検証で解決');
     check('障害物を解決できる', solved.state === 'resolved', solved.state);
@@ -3330,31 +3327,42 @@ function debugVerifyScrum() {
     log.push(String(e.stack || ''));
   }
 
-  // 片付け。1つ落ちても残りは続ける
+  // 片付け。1つ落ちても残りは続ける。落ちたら FAIL に数える (残ったまま
+  // 「すべて PASS」と出ると、残ったことに誰も気づかない)
+  var tidyFailed = failed;
   function tidy(label, fn) {
-    try { fn(); } catch (e) { log.push('片付けに失敗 (' + label + '): ' + e.message); }
+    try {
+      fn();
+    } catch (e) {
+      failed++;
+      log.push('FAIL 片付け (' + label + '): ' + e.message);
+    }
   }
-  issues.forEach(function (n) {
+  dbReadAll('issues').forEach(function (row) {
+    if (String(row.body) !== mark) return;
+    var n = row.number;
     tidy('やること #' + n, function () {
       issuePurge(n);
       dbDelete('change_log', 'target', 'issue:' + n);
     });
   });
-  if (impediment) {
-    tidy('障害物 #' + impediment, function () {
-      dbDelete('impediment_comments', 'impedimentNumber', impediment);
-      dbDelete('impediments', 'number', impediment);
-      dbDelete('change_log', 'target', 'impediment:' + impediment);
+  dbReadAll('impediments').forEach(function (row) {
+    if (String(row.body) !== mark) return;
+    var n = row.number;
+    tidy('障害物 #' + n, function () {
+      dbDelete('impediment_comments', 'impedimentNumber', n);
+      dbDelete('impediments', 'number', n);
+      dbDelete('change_log', 'target', 'impediment:' + n);
     });
-  }
-  if (sprintMade) {
-    tidy('スプリント ' + name, function () {
-      dbDelete('sprints', 'name', name);
-      dbDelete('change_log', 'target', 'sprint:' + name);
-    });
-  }
+  });
+  tidy('スプリント ' + name, function () {
+    dbDelete('sprints', 'name', name);
+    dbDelete('change_log', 'target', 'sprint:' + name);
+  });
   tidy('オン・オフ', function () { scrumSetEnabled(wasOn); });
-  log.push('検証物を片付け、エージェンティックスクラムを' + (wasOn ? 'オン' : 'オフ') + 'に戻しました');
+  log.push(failed === tidyFailed
+    ? '検証物を片付け、エージェンティックスクラムを' + (wasOn ? 'オン' : 'オフ') + 'に戻しました'
+    : '片付けきれませんでした。本文が「' + mark + '」のものを台帳から消してください');
 
   var summary = (failed === 0) ? 'すべて PASS (' + log.length + '行)' : failed + ' 件 FAIL';
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');

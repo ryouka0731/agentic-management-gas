@@ -195,6 +195,26 @@ describe('実機確認の入口 (debugVerifyScrum)', () => {
     expect(ctx.scrumEnabled()).toBe(true);
   });
 
+  it('片付けに失敗したら PASS と言わない', () => {
+    const { ctx } = setup();
+    ctx.issuePurge = () => { throw new Error('表に書けない'); };
+
+    // 検証物が残っているのに「すべて PASS」と出ると、残ったことに誰も気づかない
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+  });
+
+  it('作った直後に落ちても、作ったものを残さない', () => {
+    const { ctx } = setup();
+    const before = counts(ctx);
+    const original = ctx.apiIssueCreate;
+    // 台帳には書けたが、番号が呼び出し元に返る前に落ちた形
+    ctx.apiIssueCreate = (...args) => { original(...args); throw new Error('知らせで落ちた'); };
+
+    expect(ctx.debugVerifyScrum()).toMatch(/FAIL/);
+    expect(counts(ctx)).toEqual(before);
+    expect(ctx.scrumEnabled()).toBe(false);
+  });
+
   it('持ち主以外には動かない', () => {
     const { ctx, fake } = setup();
     fake._setUser('someone@example.com');
