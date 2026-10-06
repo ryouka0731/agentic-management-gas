@@ -77,6 +77,9 @@ function ganttLayout(issues, today) {
       assignee: issue.assignee,
       hasDue: due !== null,
       hasStart: planned !== null,
+      // 画面側の ganttLayout と同じ欄を持つ。欄がずれていると、両者が同じ
+      // 答えを返すかを test/ui-parity.test.js で確かめられない
+      planned: issue.plannedHours, parent: issue.parent,
       overdue: due !== null && String(issue.state) === 'open' && due < now,
       _start: start,
       _end: end,

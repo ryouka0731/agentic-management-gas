@@ -6381,6 +6381,7 @@
       rows.push({
         number: Number(issue.number), title: issue.title, state: issue.state,
         assignee: issue.assignee, hasDue: due !== null,
+        hasStart: planned !== null,
         planned: issue.plannedHours, parent: issue.parent,
         overdue: due !== null && String(issue.state) === 'open' && due < now,
         _start: start, _end: end,
