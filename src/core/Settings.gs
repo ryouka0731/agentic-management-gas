@@ -35,7 +35,7 @@ function scrumEnabled() {
  * @param {boolean} on
  * @returns {boolean} 切り替えたあとの状態
  */
-function scrumSetEnabled(on) {
+function scrumSetEnabled_(on) {
   var props = PropertiesService.getScriptProperties();
   if (on) props.setProperty(SCRUM_ENABLED_KEY(), 'true');
   else props.deleteProperty(SCRUM_ENABLED_KEY());
@@ -81,23 +81,60 @@ function scrumTexts() {
 /**
  * プロダクトゴールか完了の定義を書く。
  *
- * スクリプトプロパティは1つにつき9KBまでなので、字数で5000字に絞る
- * (日本語は1字3バイトになりうる)。
+ * スクリプトプロパティは1つにつき9KBまで。**字数ではなくバイトで見る。**
+ * 字数で区切ると、日本語 (1字3バイト) で上限を超えて書けないまま「5000字まで」
+ * と案内することになる。
  *
  * @param {string} kind 'productGoal' | 'definitionOfDone'
  * @param {string} text
  * @returns {Object} 書いたあとの scrumTexts()
  */
-function scrumSetText(kind, text) {
+function scrumSetText_(kind, text) {
   scrumAssertEnabled_();
   var key = SCRUM_TEXT_KEYS()[kind];
   if (!key) throw new Error('知らない種類です: ' + kind);
 
   var value = String(text == null ? '' : text);
-  if (value.length > 5000) throw new Error('5000字までにしてください');
+  if (scrumByteLength_(value) > SCRUM_TEXT_MAX_BYTES_()) {
+    throw new Error('長すぎます。保存できるのは日本語でおよそ2600字 (英数字なら8000字) までです');
+  }
 
   var props = PropertiesService.getScriptProperties();
   if (value) props.setProperty(key, value);
   else props.deleteProperty(key);
   return scrumTexts();
+}
+
+/**
+ * プロダクトゴールと完了の定義の上限 (バイト)。スクリプトプロパティの9KBに
+ * 余裕を持たせる。
+ *
+ * @returns {number}
+ */
+function SCRUM_TEXT_MAX_BYTES_() {
+  return 8000;
+}
+
+/**
+ * UTF-8 にしたときのバイト数。
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function scrumByteLength_(text) {
+  // encodeURIComponent は使わない。対になっていないサロゲートで投げ、理由の
+  // 分からない「保存できませんでした」になる。そうした字は置き換え文字
+  // (3バイト) として数える
+  var bytes = 0;
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < text.length &&
+      text.charCodeAt(i + 1) >= 0xDC00 && text.charCodeAt(i + 1) <= 0xDFFF) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
 }

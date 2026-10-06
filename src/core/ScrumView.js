@@ -21,7 +21,11 @@ function scrumDayOf_(v) {
     return new Date(v.getTime() + 9 * 3600 * 1000).toISOString().substring(0, 10);
   }
   var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
-  return m ? m[1] : '';
+  if (!m) return '';
+  // 台帳は人が手で書き換えられる。暦に無い日 ('2026-13-01') は読めないものと
+  // して扱う。通すと次の日を作るところで投げ、タブ全体が開けなくなる
+  var d = new Date(m[1] + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().substring(0, 10) === m[1] ? m[1] : '';
 }
 
 /**
