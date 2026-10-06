@@ -80,6 +80,9 @@ function outboxArgValid_(value) {
 
   if (text.length > 200) return false;
   if (/(^|\/)\.\.(\/|$)/.test(text)) return false;
+  // '-' で始まると、手元で git に渡したときオプションとして読まれる
+  // (git diff --output=<ファイル> で手元のファイルを書き換えられた)
+  if (text.charAt(0) === '-') return false;
 
   // 空白と制御文字、そしてシェルで意味を持つ記号
   return !/[\s\u0000-\u001f;&|`$<>(){}[\]'"\\!*?~#]/.test(text);

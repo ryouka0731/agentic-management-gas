@@ -368,3 +368,56 @@ describe('置いた命令を片付ける', () => {
     expect(body).not.toContain('throw');
   });
 });
+
+describe('手元の道具が受け取る引数', () => {
+  const AGENT = path.resolve('kit/agent.mjs');
+
+  /*
+   * 比べる先は頼みごと (outbox の against) から渡りうる。'-' で始まると
+   * git のオプションとして読まれ、--output=<ファイル> で手元の好きなファイルに
+   * 書き出せた。Drive に書ける人が、手元のファイルを書き換えられることになる。
+   */
+  it("比べる先が '-' で始まれば、git を呼ばずに断る", () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-git-'));
+    const git = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+    git('init', '-q');
+    fs.writeFileSync(path.join(repo, 'f.txt'), 'a\n');
+    git('add', 'f.txt');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+    fs.writeFileSync(path.join(repo, 'f.txt'), 'a\nb\n');
+
+    const target = path.join(repo, 'OVERWRITTEN');
+    let err = '';
+    try {
+      execFileSync(process.execPath,
+        [AGENT, 'patch', '3', 'f.txt', '--output=' + target, '--queue', path.join(repo, 'no-queue')],
+        { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) {
+      err = String(e.stderr || '');
+    }
+
+    expect(fs.existsSync(target)).toBe(false);
+    expect(err).toContain('比べる先');
+  });
+
+  it('--queue の値を、ほかの引数に混ぜない', async () => {
+    const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, [AGENT, 'status', '--queue', queue, 'FILE1']);
+
+    // 置かれた命令を読み、結果を書き返す (向こう側の代わり)
+    let cmd = null;
+    for (let i = 0; i < 100 && !cmd; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const name = fs.readdirSync(queue).find((n) => n.endsWith('.cmd.json'));
+      if (name) {
+        cmd = JSON.parse(fs.readFileSync(path.join(queue, name), 'utf8'));
+        fs.writeFileSync(path.join(queue, name.replace('.cmd.json', '.result.json')),
+          JSON.stringify({ ok: true }));
+      }
+    }
+    await new Promise((r) => child.on('exit', r));
+
+    expect(cmd.args.fileId).toBe('FILE1');
+  }, 20000);
+});

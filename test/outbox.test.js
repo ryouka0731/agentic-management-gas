@@ -99,6 +99,18 @@ describe('頼めることを列挙する', () => {
   });
 });
 
+describe("'-' で始まる引数", () => {
+  it('git のオプションに見えるものは置かせない', () => {
+    const { ctx } = setup();
+
+    // 手元で git diff に渡ると --output=<ファイル> で手元のファイルを書き換えられた
+    expect(() => ctx.outboxAdd('diff', { branch: '見直し', against: '--output=/Users/a/.zshrc' }))
+      .toThrow('引数に使えない字');
+    expect(() => ctx.outboxAdd('review', { branch: '-x' })).toThrow('引数に使えない字');
+    expect(ctx.outboxAdd('diff', { branch: '見直し', against: 'main' }).verb).toBe('diff');
+  });
+});
+
 describe('取りに来る形', () => {
   it('取ると印が付く', () => {
     const { ctx } = setup();

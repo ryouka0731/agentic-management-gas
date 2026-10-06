@@ -342,6 +342,13 @@ function setupGuide() {
 function gitDiff(path, against) {
   if (!path) throw new Error('どのファイルの差分か渡してください');
 
+  // 比べる先は頼みごと (outbox の against) から渡りうる。'-' で始まると git の
+  // オプションとして読まれ、--output=<ファイル> で手元のファイルに書き出せて
+  // しまう。Drive に書ける人が、手元のファイルを書き換えられることになる
+  if (against && String(against).charAt(0) === '-') {
+    throw new Error("比べる先に '-' で始まるものは渡せません: " + against);
+  }
+
   const args = ['diff', '--no-color'];
   if (against) args.push(against);
   args.push('--', path);
@@ -418,7 +425,13 @@ async function main() {
     return;
   }
 
-  const rest = process.argv.slice(3).filter((one) => one !== '--queue');
+  // --queue とその値を除く。値を残すと、ほかの引数に混ざって別のものを指す
+  const rest = [];
+  const given = process.argv.slice(3);
+  for (let i = 0; i < given.length; i++) {
+    if (given[i] === '--queue') { i++; continue; }
+    rest.push(given[i]);
+  }
   const config = loadConfig();
   const res = await send(config.queueDir, entry.op, entry.args(rest));
 
