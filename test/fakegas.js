@@ -155,10 +155,11 @@ export function createFakeGas() {
    * ときと同じように読む。'=' 始まりは数式に、'1/2' は日付に、'007' は 7 になる。
    * 先頭の ' はその解釈を止め、' 自体は残らない。
    *
-   * 既定では字をそのまま持つ (これまでのテストのため)。`_parseLikeSheets(true)`
-   * で実機と同じ読み方にする。先頭の ' はどちらでも外す
+   * 既定で実機と同じ読み方をする。字のまま持っていたころは、台帳の字が化ける
+   * 類の不具合がテストに一度も現れなかった。`_parseLikeSheets(false)` で字の
+   * まま持つ形に戻せる。先頭の ' はどちらでも外す
    */
-  let parseLikeSheets = false;
+  let parseLikeSheets = true;
   function asTyped(v) {
     if (typeof v !== 'string') return v;
     if (v.charAt(0) === "'") return v.substring(1);
@@ -210,12 +211,15 @@ export function createFakeGas() {
           }
           return out;
         };
+        // 数式のセルは、実機では計算した値が返る。疑似GASは計算できないので空にする
+        const isFormula = (v) => v && typeof v === 'object' && typeof v.formula === 'string';
+        const formulaOf = (v) => (isFormula(v) ? v.formula
+          : (typeof v === 'string' && v.indexOf('=') === 0 ? v : ''));
         return {
-          getValues: box,
-          getDisplayValues: () => box().map((r) => r.map((v) => (
-            sheet._format ? sheet._format(v) : String(v)))),
-          getFormulas: () => box().map((r) => r.map(
-            (v) => (String(v).indexOf('=') === 0 ? String(v) : ''))),
+          getValues: () => box().map((r) => r.map((v) => (isFormula(v) ? '' : v))),
+          getDisplayValues: () => box().map((r) => r.map((v) => (isFormula(v) ? ''
+            : sheet._format ? sheet._format(v) : String(v)))),
+          getFormulas: () => box().map((r) => r.map(formulaOf)),
         };
       },
       /** 表示の書式ごと消す。実機の clear() と同じく `_format` も落ちる */
@@ -310,7 +314,19 @@ export function createFakeGas() {
       // GAS は符号付き byte の配列を返す
       return Array.from(buf).map((b) => (b > 127 ? b - 256 : b));
     },
-    formatDate: (d, _tz, _fmt) => String(d.getTime()),
+    // 実機と同じく、時刻帯と書式に従って返す。以前はミリ秒の字を返していて、
+    // 日の区切りを使うテストはそれぞれ差し替える必要があった
+    formatDate: (d, tz, fmt) => {
+      const parts = {};
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: tz || 'Asia/Tokyo', hourCycle: 'h23',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+      return String(fmt || 'yyyy-MM-dd')
+        .replace('yyyy', parts.year).replace('MM', parts.month).replace('dd', parts.day)
+        .replace('HH', parts.hour).replace('mm', parts.minute).replace('ss', parts.second);
+    },
     base64Decode: (text) => Array.from(Buffer.from(String(text), 'base64'))
       .map((b) => (b > 127 ? b - 256 : b)),
     zip: (blobs, name) => ({

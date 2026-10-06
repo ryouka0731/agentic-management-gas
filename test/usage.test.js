@@ -361,6 +361,8 @@ describe('日付に変えられた日を読む', () => {
     const last = sheet.getLastRow();
     const v = sheet.getRange(2, 1, last - 1, 5).getValues();
     for (const row of v) {
+      // 疑似GASも既定で実機と同じく日付に変える。既に Date ならそのまま
+      if (row[0] instanceof Date) continue;
       const [y, m, d] = String(row[0]).split('-').map(Number);
       row[0] = new Date(y, m - 1, d);
     }
