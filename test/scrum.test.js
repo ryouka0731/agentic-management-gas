@@ -287,6 +287,25 @@ describe('見直しで見つけたもの', () => {
     expect(ctx.historyOf_('issue:' + made.number)).toEqual([]);
   });
 
+  it('直しているあいだに消されたやることには、履歴を書き足さない', () => {
+    // 読んだあと・書く前に完全に消された形。書き込みと履歴を1つの鍵の中で
+    // 行わないと、消したあとに履歴だけが残り、消した中身が読める
+    const { ctx } = setup();
+    const made = ctx.issueCreate('題', '', []);
+    const row = ctx.issueGet(made.number);
+    ctx.dbDelete('issues', 'number', made.number);
+    ctx.issueGet = () => row;
+
+    expect(() => ctx.issueUpdate(made.number, { body: '消したはずの中身' })).toThrow(/見つかりません/);
+    expect(ctx.historyOf_('issue:' + made.number).filter((h) => h.field === 'body')).toEqual([]);
+  });
+
+  it('壊れた字 (対になっていないサロゲート) でも、理由の分かる形で断るか保存する', () => {
+    const { ctx } = setup();
+    // encodeURIComponent は投げる。投げると「保存できませんでした」としか出ない
+    expect(ctx.scrumSetText_('productGoal', 'ゴール\uD800').productGoal).toBe('ゴール\uD800');
+  });
+
   it('設定を書き換える関数は、画面から直に呼べない名前にする', () => {
     // 末尾が _ でない関数は google.script.run から誰でも呼べる。持ち主かを
     // 確かめているのは api 側だけなので、素の関数は隠す
