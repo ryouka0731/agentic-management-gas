@@ -900,6 +900,45 @@ function apiPrMerge(number, choices, previewSha) {
 }
 
 /**
+ * 改訂版の作業コピーを、fileId と一緒に実行ログへ出す。
+ *
+ * debugWriteRoundTrip は、書き換えてよい作業コピーの fileId をスクリプト
+ * プロパティ DEBUG_WRITE_FILE_ID に要る。画面から URL を写す手順は手間が
+ * かかるので、エディタから一覧を出せるようにした。**書き換える対象は人が
+ * 選ぶ。** 勝手に選ぶと、使っている改訂版を書き換えかねない。
+ *
+ * @returns {string} 実行ログに出したもの
+ */
+function debugListWorkingCopies() {
+  assertOwner_();
+  var rows = dbReadAll('files');
+  var present = filesPresentInDrive_(rows);
+  var deleted = branchDeletedNames();
+  var lines = ['改訂版の作業コピー (改訂版 / 文書 / fileId)', ''];
+  var count = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var parts = branchSplitPath_(rows[i].path);
+    if (parts.branch === 'main' || deleted[parts.branch]) continue;
+
+    var id = String(rows[i].fileId);
+    lines.push(parts.branch + ' / ' + parts.path + ' / ' + id +
+      (present[id] ? '' : '  (Drive に無い)'));
+    count++;
+  }
+
+  if (!count) lines.push('作業コピーがありません。画面で改訂版を1つ作ってください');
+  lines.push('');
+  lines.push('書き換えてよいものを1つ選び、プロジェクトの設定 → スクリプト プロパティに');
+  lines.push('DEBUG_WRITE_FILE_ID という名前で fileId を入れてから、debugWriteRoundTrip() を');
+  lines.push('実行してください。選んだ文書は本当に書き換わります。');
+
+  var text = lines.join('\n');
+  Logger.log(text);
+  return text;
+}
+
+/**
  * 書き戻しの往復検証。Phase 2 で最も重要な検証。
  *
  * Doc → HTML → Doc → HTML と往復させ、2つのHTMLが一致すれば
@@ -915,7 +954,8 @@ function debugWriteRoundTrip() {
   if (!fileId) {
     throw new Error(
       'スクリプトプロパティ DEBUG_WRITE_FILE_ID に、' +
-      '書き戻してよい作業コピーのfileIdを設定してください'
+      '書き戻してよい作業コピーのfileIdを設定してください。' +
+      '候補は debugListWorkingCopies() で出せます'
     );
   }
 

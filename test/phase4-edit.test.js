@@ -1057,6 +1057,7 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugWriteRoundTrip', 'debugCleanupLastVerify', 'debugVerifyPhase2',
     'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
     'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
+    'debugListWorkingCopies',
   ];
 
   for (const name of NAMES) {
@@ -1260,5 +1261,35 @@ describe('Drive で消された文書は一覧に出さない', () => {
 
     // 消えたわけではない。見当たらないものは1つずつ確かめる
     expect(paths(ctx)).toContain('就業規則.doc');
+  });
+});
+
+describe('作業コピーの一覧 (実機確認の下ごしらえ)', () => {
+  /*
+   * debugWriteRoundTrip は、書き換えてよい作業コピーの fileId を要る。画面から
+   * URL を写す手順は手間がかかるので、エディタから一覧を出せるようにする。
+   * 書き換える対象は人が選ぶ。勝手に選ばない。
+   */
+  it('改訂版ごとの作業コピーと fileId を出す', () => {
+    const { ctx, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const work = ctx.branchWorkingFileId('改訂', fileId);
+
+    const text = ctx.debugListWorkingCopies();
+
+    expect(text).toContain('改訂');
+    expect(text).toContain('就業規則.doc');
+    expect(text).toContain(work);
+    // 書き換える関数の入れ方も添える
+    expect(text).toContain('DEBUG_WRITE_FILE_ID');
+  });
+
+  it('Drive で消えた作業コピーには、そう書く', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const work = ctx.branchWorkingFileId('改訂', fileId);
+    fake.DriveApp.getFileById(work).setTrashed(true);
+
+    expect(ctx.debugListWorkingCopies()).toContain('Drive に無い');
   });
 });
