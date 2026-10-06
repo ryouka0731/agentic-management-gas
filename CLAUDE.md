@@ -738,6 +738,7 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 | `debugVerifyCommandQueue()` | コマンドキューの実行経路 |
 | `debugMarkdownRoundTrip()` | 実文書で HTML → Markdown → HTML がバイト一致するか |
 | `debugWriteRoundTrip()` | 実文書で書き戻しが情報を落としていないか |
+| `debugVerifyScrum()` | スプリント → ポイント → 完了 → ベロシティ・バーンダウン・障害物・履歴。成否にかかわらず片付け、オン・オフも戻す |
 | `debugCleanupLastVerify()` | 失敗して残った検証物の片付け |
 
 検証ハーネスは `ALLOW_SELF_APPROVE` を自分で立てて元に戻すため、事前準備は要らない。
