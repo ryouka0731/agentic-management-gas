@@ -3869,6 +3869,10 @@
         return;
       }
 
+      var paths = {};
+      commits.forEach(function (c) { if (c.path) paths[c.path] = true; });
+      var multi = Object.keys(paths).length > 1;
+
       commits.forEach(function (c) {
         var row = document.createElement('div');
         row.className = 'row-item';
@@ -3880,7 +3884,9 @@
 
         var meta = document.createElement('div');
         meta.className = 'row-meta';
-        meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author;
+        // 変更セットでは、どの文書の記録かも出す
+        meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author +
+          (multi && c.path ? ' · ' + c.path : '');
         row.appendChild(meta);
 
         container.appendChild(row);

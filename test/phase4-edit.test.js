@@ -1018,3 +1018,28 @@ describe('やることを作るときに一緒に入れるもの', () => {
     expect(made.priority).toBe('high');
   });
 });
+
+describe('確認依頼の記録の並び', () => {
+  it('変更セットの全部の文書の記録を出す', () => {
+    const { ctx, fake, fileId } = setup();
+    const other = fake._createDoc('賃金規程', '<p>B1</p>\n', ctx.repoConfig().mainId);
+    ctx.repoRegisterFile(other, '賃金規程.doc');
+    ctx.commitFile(other, 'main', 'Bの初期', null);
+
+    ctx.branchCreate('改訂', fileId);
+    ctx.branchAddFile('改訂', other);
+    const wa = ctx.branchWorkingFileId('改訂', fileId);
+    const wb = ctx.branchWorkingFileId('改訂', other);
+    fake._docs.set(wa, '<p>第1条</p>\n<p>A2</p>\n');
+    ctx.commitFile(wa, '改訂', 'Aを直した', null);
+    fake._docs.set(wb, '<p>B1</p>\n<p>B2</p>\n');
+    ctx.commitFile(wb, '改訂', 'Bを直した', null);
+
+    const pr = ctx.apiPrCreate('両方', '', '改訂', [fileId, other]);
+    const messages = ctx.apiPrCommits(pr.number).map((c) => c.message);
+
+    // 1つ目の文書しか見ていなかったため、B の記録が出なかった
+    expect(messages).toContain('Aを直した');
+    expect(messages).toContain('Bを直した');
+  });
+});

@@ -1268,21 +1268,33 @@ function apiPrReviews(number) {
  */
 function apiPrCommits(number) {
   var pr = prGet(number);
-  var mainFileId = prTargetFileId_(pr.body);
-  if (!mainFileId) return [];
-
-  var workFileId = branchWorkingFileId(pr.sourceBranch, mainFileId);
-  if (!workFileId) return [];
-
-  var commits = commitHistory(workFileId, pr.sourceBranch);
+  // 変更セットの全部の文書を見る。本文の [target-file] だけを見ていたため、
+  // 2つ目以降の文書の記録が出なかった
+  var targets = prTargetFiles(pr);
   var out = [];
-  for (var i = 0; i < commits.length; i++) {
-    out.push({
-      sha: String(commits[i].sha),
-      message: plainText(commits[i].message),
-      author: plainText(commits[i].author),
-      timestamp: plainDate(commits[i].timestamp),
-    });
+
+  for (var t = 0; t < targets.length; t++) {
+    var workFileId = branchWorkingFileId(pr.sourceBranch, targets[t]);
+    if (!workFileId) continue;
+
+    var mainRow = dbFindOne('files', 'fileId', targets[t]);
+    var path = mainRow ? branchSplitPath_(mainRow.path).path : '';
+    var commits = commitHistory(workFileId, pr.sourceBranch);
+
+    for (var i = 0; i < commits.length; i++) {
+      out.push({
+        sha: plainText(commits[i].sha),
+        message: plainText(commits[i].message),
+        author: plainText(commits[i].author),
+        timestamp: plainDate(commits[i].timestamp),
+        path: plainText(path),
+      });
+    }
+  }
+
+  // 文書をまたいで新しい順。同じ時刻なら文書ごとの並び (親をたどった順) を保つ
+  if (targets.length > 1) {
+    out.sort(function (a, b) { return a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0; });
   }
   return out;
 }
