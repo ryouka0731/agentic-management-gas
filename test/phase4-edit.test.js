@@ -104,6 +104,44 @@ describe('Markdown編集', () => {
     expect(fake._docs.get(workFileId)).toBe(before);
   });
 
+  /*
+   * 開いたあとで同じ文書が Docs で直されても、保存すると body.clear() で
+   * 丸ごと上書きし、その人の編集が黙って消えていた。記録 (apiCommit) には
+   * 「開いたあとで進んでいないか」の検査があるのに、ここには無かった。
+   */
+  it('開いたあとで文書が直されていたら、上書きしない', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+
+    const opened = ctx.apiGetMarkdown(workFileId);
+    fake._docs.set(workFileId, '<p>Docs で直接足した段落</p>\n');
+
+    expect(() => ctx.apiSaveMarkdown(workFileId, '# 上書き\n', opened.baseSha))
+      .toThrow(/開いたあとで/);
+    expect(fake._docs.get(workFileId)).toBe('<p>Docs で直接足した段落</p>\n');
+  });
+
+  it('続けて保存できる', () => {
+    const { ctx, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+
+    const opened = ctx.apiGetMarkdown(workFileId);
+    const first = ctx.apiSaveMarkdown(workFileId, '# 1回目\n', opened.baseSha);
+    expect(() => ctx.apiSaveMarkdown(workFileId, '# 2回目\n', first.baseSha)).not.toThrow();
+  });
+
+  it('指紋を持たない呼び方は、これまでどおり通す', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('改訂', fileId);
+    const workFileId = ctx.branchWorkingFileId('改訂', fileId);
+
+    // コマンドキューの writeMarkdown など
+    ctx.apiSaveMarkdown(workFileId, '# 手元から\n');
+    expect(fake._docs.get(workFileId)).toBe('<h1>手元から</h1>\n');
+  });
+
   it('編集せずに保存しても内容が変わらない', () => {
     const { ctx, fake, fileId } = setup();
     ctx.branchCreate('改訂', fileId);

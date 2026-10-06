@@ -26,7 +26,9 @@ function COMMAND_OPS() {
     listFiles: function () { return apiListFiles(); },
     status: function (a) { return apiFileStatus(a.fileId); },
     readMarkdown: function (a) { return apiGetMarkdown(a.fileId); },
-    writeMarkdown: function (a) { return apiSaveMarkdown(a.fileId, a.markdown); },
+    writeMarkdown: function (a) {
+      return apiSaveMarkdown(a.fileId, a.markdown, a.baseSha || '');
+    },
     commit: function (a) {
       return apiCommit(a.fileId, a.message, a.expectedHeadSha || null);
     },

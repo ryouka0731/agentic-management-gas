@@ -1156,10 +1156,13 @@ function apiGetMarkdown(fileId) {
   if (!row) throw new Error('管理対象に登録されていません');
 
   var branch = branchOfPath_(row.path);
+  var html = liveHtml(fileId);
   return {
-    markdown: blocksToMd(parseBlocks(liveHtml(fileId))),
+    markdown: blocksToMd(parseBlocks(html)),
     branch: branch,
     editable: branch !== 'main',
+    // 保存のときに添えてもらう。開いたあとで文書が直されたかを見分ける
+    baseSha: sha256Hex(html),
   };
 }
 
@@ -1172,8 +1175,21 @@ function apiGetMarkdown(fileId) {
  * @param {string} markdown
  * @returns {{ok:boolean}}
  */
-function apiSaveMarkdown(fileId, markdown) {
+function apiSaveMarkdown(fileId, markdown, baseSha) {
   assertNotProtected_(fileId);
+
+  /*
+   * **開いたあとで文書が直されていたら、上書きしない。**
+   *
+   * 書き戻しは body.clear() で丸ごと置き換える。開いている間に同じ文書が
+   * Docs で直されると、その人の編集が黙って消えていた。指紋を持たない
+   * 呼び方 (コマンドキューの writeMarkdown など) はこれまでどおり通す。
+   */
+  if (baseSha && sha256Hex(liveHtml(fileId)) !== String(baseSha)) {
+    throw new Error(
+      '開いたあとで、この文書が直されています。いまの中身を読み込み直してから直してください');
+  }
+
 
   var blocks = mdToBlocks(markdown);
   var problems = htmlWriterValidate(blocks);
@@ -1183,7 +1199,8 @@ function apiSaveMarkdown(fileId, markdown) {
 
   writeHtmlToDoc(fileId, serializeBlocks(blocks));
   liveCacheInvalidate(fileId);
-  return { ok: true };
+  // 続けて保存するときの指紋。書いた字ではなく、読み直した中身から取る
+  return { ok: true, baseSha: sha256Hex(liveHtml(fileId)) };
 }
 
 /**

@@ -90,6 +90,8 @@
   var viewer = document.getElementById('viewer');
   var editorEl = document.getElementById('editor');
   var editSaveBtn = document.getElementById('edit-save-btn');
+  // いま開いている Markdown の元になった中身の指紋 (apiGetMarkdown の baseSha)
+  var editorBaseSha = '';
   var editHint = document.getElementById('mode-hint');
   var modeViewBtn = document.getElementById('mode-view');
   var modeEditBtn = document.getElementById('mode-edit');
@@ -2566,6 +2568,8 @@
       .withSuccessHandler(function (res) {
         showEditorSkeleton(false);
         editorEl.value = res.markdown;
+        // 保存のときに添える。開いたあとで Docs で直された分を上書きしないため
+        editorBaseSha = res.baseSha || '';
         editorEl.disabled = !res.editable;
         editSaveBtn.disabled = !res.editable;
         editHint.textContent = res.editable
@@ -2585,7 +2589,8 @@
     editHint.textContent = '保存中…';
 
     google.script.run
-      .withSuccessHandler(function () {
+      .withSuccessHandler(function (res) {
+        if (res && res.baseSha) editorBaseSha = res.baseSha;
         editSaveBtn.disabled = false;
         editHint.textContent = '保存しました';
         refreshStatus();
@@ -2595,7 +2600,7 @@
         editHint.textContent = '';
         showSnack(err.message, { kind: 'ng' });
       })
-      .apiSaveMarkdown(current.fileId, editorEl.value);
+      .apiSaveMarkdown(current.fileId, editorEl.value, editorBaseSha);
   }
 
   function doCommit() {

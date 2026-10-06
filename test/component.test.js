@@ -5707,3 +5707,25 @@ describe('承認のあとに中身が変わった依頼', () => {
     expect(mergeButton().title).toBe('反映には1件以上の承認が必要です');
   });
 });
+
+describe('Markdown で直して保存する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('開いたときの指紋を添えて保存し、保存のあとは新しい指紋に替える', () => {
+    const app = mount({
+      apiGetMarkdown: { markdown: '# 第1条\n', branch: '改訂', editable: true, baseSha: 'A' },
+      apiSaveMarkdown: { ok: true, baseSha: 'B' },
+    });
+    document.querySelector('.doc-open').click();
+    document.getElementById('mode-edit').click();
+
+    document.getElementById('edit-save-btn').click();
+    document.getElementById('edit-save-btn').click();
+
+    // 指紋を添えないと、開いたあとで Docs で直された分を上書きして消す
+    const saves = app.calls.filter((c) => c.name === 'apiSaveMarkdown');
+    expect(saves).toHaveLength(2);
+    expect(saves[0].args[2]).toBe('A');
+    expect(saves[1].args[2]).toBe('B');
+  });
+});
