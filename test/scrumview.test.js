@@ -88,6 +88,14 @@ describe('バーンダウン', () => {
   });
 });
 
+describe('台帳に暦に無い日付が手で書かれていても', () => {
+  it('バーンダウンは投げずに「期間が決まっていない」として返す', () => {
+    const b = v.scrumBurndown({ name: 's', startDate: '2026-13-01', endDate: '2026-13-05' }, [], '2026-10-07');
+    expect(b.days).toEqual([]);
+    expect(b.notice).toContain('期間');
+  });
+});
+
 describe('ロードマップ', () => {
   it('どのやることがどのスプリントに入っているか', () => {
     const issues = [issue(1, 'sprint002', 3, ''), issue(2, 'sprint001', 2, ''), issue(3, '', 1, '')];

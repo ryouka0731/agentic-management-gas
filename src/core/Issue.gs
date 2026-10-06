@@ -271,10 +271,17 @@ function issueUpdate(number, patch) {
     }
   }
 
-  dbUpdate('issues', 'number', number, allowed);
-  if (typeof historyDiff_ === 'function') {
-    issueHistory_(number, 'update', historyDiff_(before, allowed));
-  }
+  // 書き込みと履歴は1つの鍵の中で行う。分けると、ほぼ同時に完全に消された
+  // とき (issuePurge も同じ鍵を取る)、消したあとに履歴だけが書き足され、
+  // 消した中身が履歴から読めるようになる
+  dbWithLock_(30000, function () {
+    var current = dbFindOne('issues', 'number', number);
+    if (!current) throw new Error('やることが見つかりません: #' + number);
+    dbUpdate('issues', 'number', number, allowed);
+    if (typeof historyDiff_ === 'function') {
+      issueHistory_(number, 'update', historyDiff_(current, allowed));
+    }
+  });
   return issueGet(number);
 }
 
@@ -475,6 +482,9 @@ function issuePurge(number) {
     dbDelete('task_links', 'issueNumber', number);
     issueUnlinkInquiries_(number);
     issueDropNotices_(number);
+    // 変更の履歴には題名や補足の前と後が入っている。残すと、消したはずの中身が
+    // 履歴から読める (番号は使い回さないので、別のものに混ざりはしない)
+    dbDelete('change_log', 'target', 'issue:' + number);
     dbDelete('issues', 'number', number);
   });
 }

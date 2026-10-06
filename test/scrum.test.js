@@ -21,7 +21,7 @@ export function setup(on) {
   const fake = createFakeGas();
   const ctx = loadGasWith(fake, ...SCRUM_SOURCES);
   ctx.repoInit('agentic-management');
-  if (on !== false) ctx.scrumSetEnabled(true);
+  if (on !== false) ctx.scrumSetEnabled_(true);
   return { ctx, fake };
 }
 
@@ -40,19 +40,19 @@ describe('既定はオフ', () => {
 
   it('オンにすると使え、オフに戻せる', () => {
     const { ctx } = setup(false);
-    ctx.scrumSetEnabled(true);
+    ctx.scrumSetEnabled_(true);
     expect(ctx.scrumEnabled()).toBe(true);
     expect(ctx.sprintList()).toEqual([]);
 
-    ctx.scrumSetEnabled(false);
+    ctx.scrumSetEnabled_(false);
     expect(ctx.scrumEnabled()).toBe(false);
   });
 
   it('オフに戻しても、書いたものは消さない', () => {
     const { ctx } = setup();
     ctx.sprintCreate({ name: 'sprint001' });
-    ctx.scrumSetEnabled(false);
-    ctx.scrumSetEnabled(true);
+    ctx.scrumSetEnabled_(false);
+    ctx.scrumSetEnabled_(true);
     expect(ctx.sprintList().map((s) => s.name)).toEqual(['sprint001']);
   });
 });
@@ -60,8 +60,8 @@ describe('既定はオフ', () => {
 describe('プロダクトゴールと完了の定義', () => {
   it('書いて読める', () => {
     const { ctx } = setup();
-    ctx.scrumSetText('productGoal', '紙の稟議をなくす');
-    ctx.scrumSetText('definitionOfDone', '- 受入基準を満たす\n- レビュー済み');
+    ctx.scrumSetText_('productGoal', '紙の稟議をなくす');
+    ctx.scrumSetText_('definitionOfDone', '- 受入基準を満たす\n- レビュー済み');
 
     expect(ctx.scrumTexts()).toEqual({
       productGoal: '紙の稟議をなくす',
@@ -71,8 +71,11 @@ describe('プロダクトゴールと完了の定義', () => {
 
   it('知らない種類と長すぎるものは断る', () => {
     const { ctx } = setup();
-    expect(() => ctx.scrumSetText('other', 'x')).toThrow(/知らない/);
-    expect(() => ctx.scrumSetText('productGoal', 'あ'.repeat(5001))).toThrow(/5000/);
+    expect(() => ctx.scrumSetText_('other', 'x')).toThrow(/知らない/);
+    // スクリプトプロパティは1つ9KBまで。字数ではなくバイトで見る (日本語は1字3バイト)
+    expect(() => ctx.scrumSetText_('productGoal', 'あ'.repeat(3000))).toThrow(/長すぎ/);
+    expect(ctx.scrumSetText_('productGoal', 'あ'.repeat(2600)).productGoal).toHaveLength(2600);
+    expect(ctx.scrumSetText_('productGoal', 'a'.repeat(5000)).productGoal).toHaveLength(5000);
   });
 });
 
@@ -193,7 +196,7 @@ describe('変更の履歴', () => {
     const made = ctx.issueCreate('はじめの題', '', []);
     ctx.issueUpdate(made.number, { title: '直した題', points: 5 });
 
-    const log = ctx.historyOf('issue:' + made.number);
+    const log = ctx.historyOf_('issue:' + made.number);
     const title = log.find((h) => h.field === 'title');
     expect(title.before).toBe('はじめの題');
     expect(title.after).toBe('直した題');
@@ -206,7 +209,7 @@ describe('変更の履歴', () => {
     const made = ctx.issueCreate('題', '', []);
     ctx.issueUpdate(made.number, { title: '題' });
 
-    expect(ctx.historyOf('issue:' + made.number).filter((h) => h.field === 'title')).toEqual([]);
+    expect(ctx.historyOf_('issue:' + made.number).filter((h) => h.field === 'title')).toEqual([]);
   });
 
   it('完了・差し戻し・作成も残る', () => {
@@ -215,7 +218,7 @@ describe('変更の履歴', () => {
     ctx.issueClose(made.number, null);
     ctx.issueReopen(made.number);
 
-    const actions = ctx.historyOf('issue:' + made.number).map((h) => h.action);
+    const actions = ctx.historyOf_('issue:' + made.number).map((h) => h.action);
     expect(actions).toContain('create');
     expect(actions).toContain('close');
     expect(actions).toContain('reopen');
@@ -226,7 +229,7 @@ describe('変更の履歴', () => {
     const a = ctx.impedimentCreate({ title: 'x' });
     ctx.impedimentResolve(a.number, '片付いた');
 
-    expect(ctx.historyOf('impediment:' + a.number).map((h) => h.action)).toContain('resolve');
+    expect(ctx.historyOf_('impediment:' + a.number).map((h) => h.action)).toContain('resolve');
   });
 
   it('新しい順に並ぶ', () => {
@@ -235,9 +238,81 @@ describe('変更の履歴', () => {
     ctx.issueUpdate(made.number, { title: 'b' });
     ctx.issueUpdate(made.number, { title: 'c' });
 
-    const titles = ctx.historyOf('issue:' + made.number)
+    const titles = ctx.historyOf_('issue:' + made.number)
       .filter((h) => h.field === 'title').map((h) => h.after);
     expect(titles).toEqual(['c', 'b']);
+  });
+});
+
+describe('見直しで見つけたもの', () => {
+  it('同じ日付で直しても、日付の履歴は増えない', () => {
+    // 台帳の日付は Date で返る。字の 'YYYY-MM-DD' とそのまま比べると、毎回
+    // 「変わった」と残り、前の値も前日の15時Zで出ていた
+    const { ctx } = setup();
+    const made = ctx.issueCreate('題', '', []);
+    ctx.issueUpdate(made.number, { dueDate: '2026-10-07', startDate: '2026-10-01' });
+    ctx.issueUpdate(made.number, { dueDate: '2026-10-07', startDate: '2026-10-01' });
+
+    const days = ctx.historyOf_('issue:' + made.number).filter((h) => /Date$/.test(h.field));
+    expect(days.map((h) => [h.field, h.before, h.after]).sort()).toEqual([
+      ['dueDate', '', '2026-10-07'], ['startDate', '', '2026-10-01'],
+    ]);
+  });
+
+  it('スプリントの期間を変えたときの履歴も日付で残す', () => {
+    const { ctx } = setup();
+    ctx.sprintCreate({ name: 's1', startDate: '2026-10-01', endDate: '2026-10-14' });
+    ctx.sprintUpdate('s1', { startDate: '2026-10-01', endDate: '2026-10-15' });
+
+    const log = ctx.historyOf_('sprint:s1').filter((h) => h.action === 'update');
+    expect(log.map((h) => [h.field, h.before, h.after])).toEqual([['endDate', '2026-10-14', '2026-10-15']]);
+  });
+
+  it('暦に無い日付のスプリントは作らせない', () => {
+    // 作れてしまうと、そのあとスプリントのタブがずっと開けなくなる
+    const { ctx } = setup();
+    expect(() => ctx.sprintCreate({ name: 's1', startDate: '2026-13-01', endDate: '2026-13-05' }))
+      .toThrow(/日付/);
+    expect(() => ctx.sprintCreate({ name: 's2', startDate: '2026-02-30' })).toThrow(/日付/);
+  });
+
+  it('やることを完全に消すと、その変更の履歴も消える', () => {
+    // 残ると、消したはずの題名や補足が履歴から読める
+    const { ctx } = setup();
+    const made = ctx.issueCreate('消す題', '', []);
+    ctx.issueUpdate(made.number, { body: '人に見せたくない中身' });
+    ctx.issueArchive(made.number);
+    ctx.issuePurge(made.number);
+
+    expect(ctx.historyOf_('issue:' + made.number)).toEqual([]);
+  });
+
+  it('直しているあいだに消されたやることには、履歴を書き足さない', () => {
+    // 読んだあと・書く前に完全に消された形。書き込みと履歴を1つの鍵の中で
+    // 行わないと、消したあとに履歴だけが残り、消した中身が読める
+    const { ctx } = setup();
+    const made = ctx.issueCreate('題', '', []);
+    const row = ctx.issueGet(made.number);
+    ctx.dbDelete('issues', 'number', made.number);
+    ctx.issueGet = () => row;
+
+    expect(() => ctx.issueUpdate(made.number, { body: '消したはずの中身' })).toThrow(/見つかりません/);
+    expect(ctx.historyOf_('issue:' + made.number).filter((h) => h.field === 'body')).toEqual([]);
+  });
+
+  it('壊れた字 (対になっていないサロゲート) でも、理由の分かる形で断るか保存する', () => {
+    const { ctx } = setup();
+    // encodeURIComponent は投げる。投げると「保存できませんでした」としか出ない
+    expect(ctx.scrumSetText_('productGoal', 'ゴール\uD800').productGoal).toBe('ゴール\uD800');
+  });
+
+  it('設定を書き換える関数は、画面から直に呼べない名前にする', () => {
+    // 末尾が _ でない関数は google.script.run から誰でも呼べる。持ち主かを
+    // 確かめているのは api 側だけなので、素の関数は隠す
+    const { ctx } = setup();
+    expect(ctx.scrumSetEnabled).toBeUndefined();
+    expect(ctx.scrumSetText).toBeUndefined();
+    expect(ctx.historyOf).toBeUndefined();
   });
 });
 
@@ -251,7 +326,7 @@ describe('ai-scrum-gas とそろえた規則', () => {
     const long = '😀'.repeat(4100);
     ctx.issueUpdate(made.number, { body: long });
 
-    const after = ctx.historyOf('issue:' + made.number).find((h) => h.field === 'body').after;
+    const after = ctx.historyOf_('issue:' + made.number).find((h) => h.field === 'body').after;
     expect(Array.from(after).slice(0, 4000).join('')).toBe('😀'.repeat(4000));
     expect(after).toContain('…（以下省略・全 4100 字）');
   });
