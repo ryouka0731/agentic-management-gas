@@ -3101,6 +3101,9 @@ function apiSettings() {
     canEdit: !!owner && owner === me,
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
+    // 用語の説明は画面に写しを持たせず、ここから渡す (食い違わないように)
+    glossary: SCRUM_GLOSSARY(),
+    glossaryAliases: SCRUM_GLOSSARY_ALIASES(),
   };
 }
 

@@ -92,6 +92,10 @@ const API_NAMES = [
   'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiOutboxList', 'apiOutboxVerbs', 'apiOutboxAdd', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
+  'apiSettings', 'apiSetScrumEnabled', 'apiSetScrumText', 'apiSprintList', 'apiSprintCreate',
+  'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
+  'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
+  'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
   'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssuePriorities', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
@@ -216,6 +220,11 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
+  apiSettings: { scrumEnabled: false, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiSprintList: [],
+  apiImpedimentList: [],
+  apiImpedimentComments: [],
+  apiHistory: [],
   apiCommitGraph: {
     rows: [
       {
