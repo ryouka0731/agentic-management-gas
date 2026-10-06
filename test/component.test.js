@@ -5752,3 +5752,54 @@ describe('見比べたものを反映する', () => {
     expect(calls[0].args[2]).toBe('P1');
   });
 });
+
+describe('送れなかった入力は消さない', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  /*
+   * 入力欄は送った直後に閉じる。サーバの返事を待たずに閉じるので、失敗すると
+   * (混み合っているときなど) 書いた本文ごと消え、最初から書き直すことになった。
+   */
+  function form() { return document.querySelector('#side-body form'); }
+
+  it('失敗したら、書いたまま開き直す', () => {
+    const app = mount({ apiIssueCreate: new Error('混み合っています') });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+
+    form().querySelector('input').value = '棚卸しの段取り';
+    form().querySelector('textarea').value = '長い補足。\n書き直したくない。';
+    form().querySelector('.btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate')).toHaveLength(1);
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    expect(form().querySelector('input').value).toBe('棚卸しの段取り');
+    expect(form().querySelector('textarea').value).toBe('長い補足。\n書き直したくない。');
+  });
+
+  it('開き直した入力から、もう一度送れる', () => {
+    const app = mount({ apiIssueCreate: new Error('混み合っています') });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    form().querySelector('input').value = '棚卸し';
+    form().querySelector('.btn-primary').click();
+
+    app.respond('apiIssueCreate', { number: 9, title: '棚卸し' });
+    form().querySelector('.btn-primary').click();
+
+    const sent = app.calls.filter((c) => c.name === 'apiIssueCreate');
+    expect(sent).toHaveLength(2);
+    expect(sent[1].args[0]).toBe('棚卸し');
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+  });
+
+  it('うまく送れたら、開き直さない', () => {
+    mount();
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    form().querySelector('input').value = '棚卸し';
+    form().querySelector('.btn-primary').click();
+
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+  });
+});

@@ -1469,11 +1469,43 @@
    * @param {function} [onFail] 省略すると、短い帯で知らせる
    */
   function call(name, args, onOk, onFail) {
+    // 入力欄から送ったものなら、失敗したときに書いたまま開き直す
+    var draft = formDraftForCall;
+    formDraftForCall = null;
+
+    var failed = onFail || failSnack();
     var run = google.script.run
       .withSuccessHandler(onOk || function () {})
-      .withFailureHandler(onFail || failSnack());
+      .withFailureHandler(function (err) {
+        failed(err);
+        if (draft) reopenDraft(draft);
+      });
 
     run[name].apply(run, args || []);
+  }
+
+  /**
+   * 入力欄から送った直後の、いちばん初めの call() に渡す控え。
+   *
+   * 入力欄はサーバの返事を待たずに閉じる。失敗すると (混み合っているとき
+   * など) 書いた本文ごと消え、最初から書き直すことになっていた。送った内容を
+   * 控えておき、失敗したら書いたまま開き直す。成功すれば控えは捨てる。
+   */
+  var formDraftForCall = null;
+
+  /**
+   * 控えた入力欄を、書いた内容のまま開き直す。
+   *
+   * @param {object} draft openInlineForm が控えたもの
+   */
+  function reopenDraft(draft) {
+    var fields = draft.fields.map(function (f) {
+      var copy = {};
+      Object.keys(f).forEach(function (k) { copy[k] = f[k]; });
+      copy.value = draft.values[f.name];
+      return copy;
+    });
+    openInlineForm(draft.title, fields, draft.submitLabel, draft.onSubmit, draft.sourceEl);
   }
 
   /**
@@ -1706,7 +1738,17 @@
         return;
       }
       closeSide();
-      onSubmit(values);
+
+      // 送ったものを控える。ここから呼ぶ call() が失敗したら書いたまま開き直す
+      formDraftForCall = {
+        title: title, fields: fields, submitLabel: submitLabel,
+        onSubmit: onSubmit, sourceEl: sourceEl, values: values,
+      };
+      try {
+        onSubmit(values);
+      } finally {
+        formDraftForCall = null;
+      }
     });
 
     // 閉じ道を必ず用意する
