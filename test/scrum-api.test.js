@@ -102,10 +102,26 @@ describe('スクラムの入口', () => {
     ['apiHistory (sprint)', (ctx) => ctx.apiHistory('sprint:sprint001')],
   ];
 
+  // 書く側は、画面が読む欄が入っているかも見る。{} を返しても Date が無いので
+  // 上の検査は通ってしまう
+  const SHAPES = {
+    apiSetScrumEnabled: { scrumEnabled: true },
+    apiSetScrumText: { productGoal: '紙をなくす' },
+    apiSprintCreate: { name: 'sprint002', startDate: '2026-10-15', endDate: '2026-10-28' },
+    apiSprintUpdate: { name: 'sprint001', goal: '申請と承認', endDate: '2026-10-15' },
+    apiImpedimentCreate: { title: '名簿が古い', sprint: 'sprint001', state: 'open' },
+    apiImpedimentUpdate: { body: '詳しく', state: 'open' },
+    apiImpedimentComment: { body: '頼みました' },
+    apiImpedimentResolve: { state: 'resolved', resolution: '代理が承認' },
+    apiImpedimentReopen: { state: 'open' },
+  };
+
   CASES.forEach(([name, call]) => {
     it(name + ' は画面に渡せる形', () => {
       const env = prepared();
-      expect(unserializable(call(env.ctx, env), name)).toEqual([]);
+      const value = call(env.ctx, env);
+      expect(unserializable(value, name)).toEqual([]);
+      if (SHAPES[name]) expect(value).toMatchObject(SHAPES[name]);
     });
   });
 
