@@ -446,3 +446,87 @@ describe('手元の道具が受け取る引数', () => {
     expect(cmd.args.fileId).toBe('FILE1');
   }, 20000);
 });
+
+describe('エージェンティックスクラム (手元の道具)', () => {
+  /*
+   * ai-scrum-gas から取り入れた。手元の Claude Code がスクラムチームとして
+   * 動く。既定はオフなので、初回の案内と AGENTS.md でオンにする道を示す。
+   */
+  const AGENT = path.resolve('kit/agent.mjs');
+
+  function setupOut() {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
+    return execFileSync(process.execPath, [AGENT, 'setup'],
+      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+  }
+
+  /** 命令を送らせ、置かれた命令の中身を返す (向こう側の代わりに結果を書く) */
+  async function sent(args) {
+    const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue]);
+    let cmd = null;
+    for (let i = 0; i < 100 && !cmd; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const name = fs.readdirSync(queue).find((n) => n.endsWith('.cmd.json'));
+      if (name) {
+        cmd = JSON.parse(fs.readFileSync(path.join(queue, name), 'utf8'));
+        fs.writeFileSync(path.join(queue, name.replace('.cmd.json', '.result.json')),
+          JSON.stringify({ ok: true, result: {} }));
+      }
+    }
+    await new Promise((r) => child.on('exit', r));
+    return cmd;
+  }
+
+  it('初回の案内に、既定はオフで、使うなら設定でオンにすることを出す', () => {
+    const out = setupOut();
+    expect(out).toContain('エージェンティックスクラム');
+    expect(out).toContain('既定ではオフ');
+    expect(out).toContain('「設定」');
+    expect(out).toContain('node agent.mjs scrum');
+    // 次にすることは1つのまま
+    expect((out.match(/次にすること/g) || [])).toHaveLength(1);
+  });
+
+  it('AGENTS.md に、まずオンかを確かめ、オフなら進めないと書いてある', () => {
+    const text = kitText('AGENTS.md');
+    expect(text).toContain('## エージェンティックスクラム');
+    expect(text).toContain('既定ではオフ');
+    expect(text).toContain('node agent.mjs scrum');
+    expect(text).toContain('SCRUM.md');
+  });
+
+  it('スクラムの命令を送れる', async () => {
+    expect((await sent(['scrum'])).op).toBe('scrumState');
+    expect((await sent(['sprints'])).op).toBe('sprintList');
+    expect(await sent(['sprint-add', 'sprint001', '申請の流れ', '2026-10-01', '2026-10-14']))
+      .toEqual({ op: 'sprintCreate', args: { fields: {
+        name: 'sprint001', goal: '申請の流れ', startDate: '2026-10-01', endDate: '2026-10-14' } } });
+    expect(await sent(['impediment-resolve', '3', '代理が承認']))
+      .toEqual({ op: 'impedimentResolve', args: { number: 3, resolution: '代理が承認' } });
+    expect(await sent(['board', '5', 'In Progress']))
+      .toEqual({ op: 'boardMove', args: { number: 5, column: 'In Progress' } });
+  }, 30000);
+
+  it('スキルとエージェントと読み替えの表を同梱する', () => {
+    const { ctx } = setup();
+    const names = Object.keys(ctx.KIT_FILES());
+    expect(names).toContain('SCRUM.md');
+    expect(names).toContain('.claude/skills/sprint-planning/SKILL.md');
+    expect(names).toContain('.claude/skills/sprint-retrospective/SKILL.md');
+    expect(names).toContain('.claude/agents/product-owner-shuri.md');
+    expect(names).toContain('.claude/agents/scrum-master-kenji.md');
+    // スクラムと関係の無いもの (監査・ブラウザ操作) は入れない
+    expect(names.some((n) => /security|playwright|threat/.test(n))).toBe(false);
+  });
+
+  it('スキルは CSV を直に読み書きせず、まずオンかを確かめる', () => {
+    const dir = 'kit/.claude/skills';
+    for (const name of fs.readdirSync(dir)) {
+      const text = fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8');
+      expect(text, name).toContain('node agent.mjs scrum');
+      expect(text, name).not.toMatch(/scrum\/(product_backlog|velocity|impediment_log|comments)[._]/);
+    }
+  });
+});

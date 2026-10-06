@@ -497,6 +497,29 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   読まれ、`git diff --output=<ファイル>` で手元のファイルを書き換えられた。手元
   (`agent.mjs` の `gitDiff`) とサーバ (`outboxArgValid_`) の両方で断っている
 
+## エージェンティックスクラムは既定でオフ
+
+`ai-scrum-gas` から取り入れた (`docs/superpowers/plans/2026-10-07-agentic-scrum.md`)。
+**使わない人が多いので既定はオフ。** スクリプトプロパティ `SCRUM_ENABLED` が
+`'true'` のときだけオンで、切り替えるのは持ち主だけ (画面の「設定」)。
+
+- オフのあいだ、スクラムの API と命令は `scrumAssertEnabled_()` で断り、画面には
+  行き先も欄も出さない。**状態を見る `scrumState` だけはオフでも通す** (オンに
+  するよう案内するため)。切り替える命令は置かない
+- **データは台帳に置く。** PBI はやること (`issues` の末尾に sprint / points /
+  acceptance)、ほかに sprints / impediments / impediment_comments / change_log。
+  ai-scrum-gas の CSV は持たない
+- **数は台帳から数える** (`ScrumView.js`)。ベロシティやバーンダウンを手で書く
+  場所を作らない。手で書いた数は必ずずれる
+- 文章の成果物 (スプリントの記録・振り返り・依頼書・仕様) は手元の `scrum/` に
+  書く。台帳に入れると人が読む場所が増える
+- 履歴 (`historyRecord_`) は通知と同じく、失敗しても本処理を巻き戻さない
+- 手元の道具の `kit/.claude/` (スキル・エージェント)、`kit/SCRUM.md` (読み替え)、
+  `kit/scrum-templates/` (ひな形) は `build-kit.mjs` がフォルダごと拾う。
+  **ひな形を `scrum/` という名前で配らない。** zip を落とし直して展開したとき、
+  チームが書き足した `scrum/` を上書きする
+- スクラムと関係の無いもの (セキュリティ監査・ブラウザ操作) は取り入れない
+
 ## 図はその場で描く
 
 説明の図に Mermaid や draw.io を持ち込まない。読み込みが1つ増えるうえ、

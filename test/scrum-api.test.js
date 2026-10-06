@@ -153,6 +153,17 @@ describe('手元の道具から使う命令', () => {
     expect(ctx.runCommand_({ op: 'scrumView', args: { sprint: 'sprint001' } }).sprint).toBe('sprint001');
   });
 
+  it('進捗ボードの列を命令で動かせる (PBI のステータスに当たる)', () => {
+    const { ctx } = setup();
+    ctx.apiSetScrumEnabled(true);
+    const made = ctx.apiIssueCreate('申請画面', '', [], '', {});
+    ctx.runCommand_({ op: 'boardMove', args: { number: made.number, column: 'In Progress' } });
+
+    expect(ctx.apiProjectBoard()['In Progress'].map((c) => c.issueNumber)).toEqual([made.number]);
+    expect(() => ctx.runCommand_({ op: 'boardMove', args: { number: made.number, column: 'Ready' } }))
+      .toThrow(/列/);
+  });
+
   it('切り替える命令は無い (人が画面で決める)', () => {
     const { ctx } = setup();
     expect(() => ctx.runCommand_({ op: 'scrumSetEnabled', args: { on: true } })).toThrow(/実行できない/);

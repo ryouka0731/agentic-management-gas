@@ -227,6 +227,11 @@ const OPS = {
     op: 'issueComment',
     args: (a) => ({ number: Number(a[0]), body: readInput(a[1]) }),
   },
+  // 進捗ボードの列を動かす (Backlog / In Progress / In Review / Done)
+  'board': {
+    op: 'boardMove',
+    args: (a) => ({ number: Number(a[0]), column: a[1] }),
+  },
   'issue-branch': {
     op: 'issueCreateBranch',
     args: (a) => ({ number: Number(a[0]), fileId: a[1] }),
@@ -249,6 +254,44 @@ const OPS = {
     op: 'commitDiff',
     args: (a) => ({ fromSha: a[0] || '', toSha: a[1] }),
   },
+
+  /*
+   * エージェンティックスクラム (既定はオフ)。読み替えは SCRUM.md にある。
+   *
+   * オフのあいだは `scrum` 以外を向こうが断る。切り替える命令は置かない
+   * (持ち主が画面の「設定」で決める)。
+   */
+  'scrum': { op: 'scrumState', args: () => ({}) },
+  'sprints': { op: 'sprintList', args: () => ({}) },
+  'sprint-add': {
+    op: 'sprintCreate',
+    args: (a) => ({ fields: {
+      name: a[0], goal: a[1] || '', startDate: a[2] || '', endDate: a[3] || '' } }),
+  },
+  'sprint-edit': {
+    op: 'sprintUpdate',
+    args: (a) => ({ name: a[0], patch: JSON.parse(a[1] || '{}') }),
+  },
+  'scrum-view': { op: 'scrumView', args: (a) => ({ sprint: a[0] || '' }) },
+  'impediments': { op: 'impedimentList', args: () => ({}) },
+  'impediment': {
+    op: 'impedimentCreate',
+    args: (a) => ({ fields: { title: a[0], body: readInput(a[1]) } }),
+  },
+  'impediment-edit': {
+    op: 'impedimentUpdate',
+    args: (a) => ({ number: Number(a[0]), patch: JSON.parse(a[1] || '{}') }),
+  },
+  'impediment-resolve': {
+    op: 'impedimentResolve',
+    args: (a) => ({ number: Number(a[0]), resolution: readInput(a[1]) }),
+  },
+  'impediment-say': {
+    op: 'impedimentComment',
+    args: (a) => ({ number: Number(a[0]), body: readInput(a[1]) }),
+  },
+  // 文書の記録 (history) とは別。やることや障害物の欄がどう変わったか
+  'changes': { op: 'history', args: (a) => ({ target: a[0] }) },
 };
 
 /**
@@ -310,6 +353,12 @@ function setupGuide() {
     : '未設定 (人に決めてもらう操作を頼むときに要る)'));
   lines.push('  Apps Script: ' + (config && config.scriptUrl ? config.scriptUrl
     : '未設定 (最初の一人の下ごしらえが済んでいれば要らない)'));
+  lines.push('');
+  lines.push('エージェンティックスクラム (使う人だけ):');
+  lines.push('  AI のチームメンバーとスクラムで進める機能です。既定ではオフです。');
+  lines.push('  使うなら、持ち主が画面の「設定」でオンにしてください。');
+  lines.push('  状態は node agent.mjs scrum で見られます。スキルとエージェントは');
+  lines.push('  .claude/ に、読み替えは SCRUM.md にあります。');
   lines.push('');
 
   if (!config) {
@@ -396,6 +445,10 @@ function usage() {
   lines.push('  agent work                             # 頼まれたことを取る');
   lines.push('  agent work-done 5 "取り込みました"      # 終わったと返す');
   lines.push('  agent pr "第3条の改訂" "" 見直し <mainFileId>');
+  lines.push('  agent board 5 "In Progress"             # 進捗ボードの列を動かす');
+  lines.push('  agent scrum                            # スクラムがオンか (既定はオフ)');
+  lines.push('  agent sprint-add sprint001 "申請の流れ" 2026-10-01 2026-10-14');
+  lines.push('  agent impediment-resolve 3 "代理が承認"');
   lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');
   lines.push('はじめてなら、まず agent setup を実行する');

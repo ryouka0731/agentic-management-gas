@@ -84,6 +84,10 @@ function COMMAND_OPS() {
     issueUpdate: function (a) { return apiIssueUpdate(a.number, a.patch || {}); },
     issueClose: function (a) { return apiIssueClose(a.number); },
     issueComment: function (a) { return apiIssueComment(a.number, a.body); },
+    // 進捗ボードの列を動かす。列は projectMove が確かめる。順番は渡されなければ先頭
+    boardMove: function (a) {
+      return apiProjectMove(a.number, a.column, a.order === undefined ? 0 : a.order);
+    },
 
     /*
      * エージェンティックスクラム (既定はオフ)。手元の Claude Code がスクラムチーム

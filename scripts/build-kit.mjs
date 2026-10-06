@@ -27,7 +27,35 @@ export const FILES = [
   ['AGENTS.md', 'AGENTS.md'],
   // Claude も Codex も、同じ内容を別の名前で読みに行く
   ['AGENTS.md', 'CLAUDE.md'],
+  // エージェンティックスクラム (既定はオフ)。ai-scrum-gas から取り入れた
+  ['SCRUM.md', 'SCRUM.md'],
+  ...walk('.claude'),
+  ...walk('scrum-templates'),
 ];
+
+/**
+ * kit/ の下のフォルダを丸ごと拾う。zip の中でも同じ道のりにする。
+ *
+ * スキルやエージェントを足すたびに一覧を書き足すと、書き忘れたものだけが
+ * 配られない。並びは名前順にして、焼き直すたびに同じ中身にする。
+ *
+ * @param {string} dir kit/ からの道のり
+ * @returns {Array<[string, string]>}
+ */
+function walk(dir) {
+  const root = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'kit'), dir);
+  if (!fs.existsSync(root)) return [];
+  const out = [];
+  (function visit(rel) {
+    const here = path.join(root, rel);
+    for (const name of fs.readdirSync(here).sort()) {
+      const next = rel ? rel + '/' + name : name;
+      if (fs.statSync(path.join(here, name)).isDirectory()) visit(next);
+      else out.push([dir + '/' + next, dir + '/' + next]);
+    }
+  })('');
+  return out;
+}
 
 /**
  * 焼き直した中身を返す。
