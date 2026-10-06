@@ -2357,6 +2357,13 @@ function debugEditParagraph_(fileId, prefix, newText) {
  * @param {number|null} [issueNumber]
  */
 function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber, issueNumber) {
+  // 確認依頼を先に消す。開いた依頼が残っていると branchDelete が断り、作業
+  // コピーがゴミ箱に入らないまま、下で台帳の行だけ消えて Drive に置き去りになる
+  if (prNumber) {
+    dbDelete('pulls', 'number', prNumber);
+    dbDelete('reviews', 'prNumber', prNumber);
+  }
+
   // branchDelete は files 行を prefix で辿って作業コピーをゴミ箱に入れる。
   // workFileId が解決できなかった場合こそ呼ぶ必要があるため、
   // workFileId の有無で条件分岐してはいけない
@@ -2372,11 +2379,6 @@ function debugCleanupVerify_(tag, mainFileId, workFileId, prNumber, issueNumber)
     dbDelete('commits', 'fileId', workFileId);
   }
   if (tag) dbDelete('branches', 'name', tag);
-
-  if (prNumber) {
-    dbDelete('pulls', 'number', prNumber);
-    dbDelete('reviews', 'prNumber', prNumber);
-  }
 
   if (issueNumber) {
     dbDelete('issues', 'number', issueNumber);

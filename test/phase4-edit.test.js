@@ -1152,3 +1152,24 @@ describe('使われ方で見えるもの', () => {
     expect(ctx.apiUsageSummary(30, '').total).toBe(6);
   });
 });
+
+describe('実機確認の片付け', () => {
+  /*
+   * 開いた確認依頼がある改訂版は捨てられない (branchDelete が断る)。片付けが
+   * 改訂版を先に捨てようとすると、検証が途中で落ちて依頼が開いたまま残った
+   * ときに作業コピーがゴミ箱に入らず、台帳の行だけ消えて Drive に置き去りになる。
+   */
+  it('確認依頼が開いたままでも、作業コピーをゴミ箱に入れる', () => {
+    const { ctx, fake, fileId } = setup();
+    ctx.branchCreate('verify-x', fileId);
+    const work = ctx.branchWorkingFileId('verify-x', fileId);
+    fake._docs.set(work, '<p>第1条</p>\n<p>足した</p>\n');
+    ctx.commitFile(work, 'verify-x', '足した', null);
+    const pr = ctx.prCreate('検証', '', 'verify-x', fileId);
+
+    ctx.debugCleanupVerify_('verify-x', null, work, pr.number);
+
+    expect(fake.DriveApp.getFileById(work).isTrashed()).toBe(true);
+    expect(ctx.dbFindOne('pulls', 'number', pr.number)).toBeNull();
+  });
+});
