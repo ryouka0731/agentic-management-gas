@@ -10071,7 +10071,10 @@
       scrumSprint = v.sprint || '';
       fillSprintSelect();
       renderSprint(v);
-    }, failInto(sprintViewEl));
+    }, function (err) {
+      // 失敗の返事も、最後に頼んだぶんでなければ描かない
+      if (seq === sprintLoadSeq) failInto(sprintViewEl)(err);
+    });
   }
 
   /** スプリントの選択肢を詰める */
@@ -10095,14 +10098,14 @@
   }
 
   /**
-   * 今日 (この端末の暦日) を 'YYYY-MM-DD' で返す。
+   * 今日 (東京の暦日) を 'YYYY-MM-DD' で返す。
    *
    * @returns {string}
    */
   function scrumToday() {
-    var d = new Date();
-    function two(n) { return (n < 10 ? '0' : '') + n; }
-    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+    // サーバ (ScrumView.js の scrumDayOf_) と同じく東京の暦日で見る。端末の
+    // 時刻帯で見ると、海外から開いた人だけ残り日数や「今日」の線がずれる
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().substring(0, 10);
   }
 
   /**
@@ -10608,6 +10611,21 @@
   }
 
   /**
+   * 返事が届いたとき、その障害物の詳細を開き直してよいか。
+   *
+   * 詳細から入力欄を開いて送ると、入力欄は返事を待たずに閉じる。そのあと
+   * 何も開いていなければ、直した結果を見せるために詳細へ戻す。別のものを
+   * 開いていたら、その人の画面を乗っ取らない。
+   *
+   * @param {number} number
+   * @returns {boolean}
+   */
+  function impedimentMayReopen(number) {
+    return impedimentShowing(number) ||
+      (impedimentOpenNumber === Number(number) && !sideTitle.textContent);
+  }
+
+  /**
    * 障害物の一覧を描く。未解決を先に、解決済みは一段沈めて後ろに置く。
    *
    * @param {object[]} list
@@ -10705,7 +10723,7 @@
       if (imp) {
         call('apiImpedimentUpdate', [imp.number, fields], function (after) {
           showSnack('障害物を直しました', { kind: 'ok' });
-          if (after && impedimentShowing(imp.number)) openImpedimentDetail(after, sideSource);
+          if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
           loadImpediments();
         });
         return;
@@ -10780,7 +10798,7 @@
         ], '解決を確定する', function (v) {
           call('apiImpedimentResolve', [imp.number, v.resolution], function (after) {
             showSnack('#' + imp.number + ' を解決済みにしました', { kind: 'ok' });
-            if (after && impedimentShowing(imp.number)) openImpedimentDetail(after, sideSource);
+            if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
             loadImpediments();
           });
         }, resolve);
@@ -10796,7 +10814,7 @@
         reopen.disabled = true;
         call('apiImpedimentReopen', [imp.number], function (after) {
           showSnack('#' + imp.number + ' を未解決に戻しました', { kind: 'ok' });
-          if (after && impedimentShowing(imp.number)) openImpedimentDetail(after, sideSource);
+          if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
           loadImpediments();
         }, failEnable(reopen, '戻せませんでした: '));
       });
