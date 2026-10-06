@@ -3927,27 +3927,153 @@ button.label-pill {
 }
 
 /* ===== エージェンティックスクラム (既定はオフ) ===== */
+/*
+ * 形は集計の画面 (.tally-*) に寄せてある。結論のカード → 区切りごとの
+ * 見出しと表、の順。新しい形を足すのは、集計に無いもの (線・進み具合) だけ。
+ */
 .scrum-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
   flex-wrap: wrap;
-  margin: 16px 0 6px;
+  gap: var(--sp-1) var(--sp-2);
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: 13px;
+  color: var(--ink-2);
 }
-.term-help { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.term-help-text { flex-basis: 100%; font-weight: normal; }
-.scrum-summary { font-weight: 600; margin-bottom: 8px; }
-.scrum-goal { margin: 0 0 8px; }
-.burndown-chart { width: 100%; max-width: 640px; height: auto; }
-.burndown-axis { stroke: var(--line); }
-.burndown-ideal { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 4 4; }
-.burndown-remaining { stroke: var(--accent); stroke-width: 2; }
+
+/* 用語の「?」。どの見出しの脇でも同じ大きさにする */
+.term-help { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); }
+.term-help-btn {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.term-help-btn:hover,
+.term-help-btn[aria-expanded="true"] { background: var(--accent-bg); color: var(--accent); }
+.term-help-text {
+  flex-basis: 100%;
+  max-width: 560px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* 結論のカード。器 (.list-area) が一段沈んでいるので、カードは浮かせる */
+.scrum-summary .tally-card {
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+}
+.scrum-card-label { display: flex; align-items: center; gap: var(--sp-1); }
+.scrum-card-warn .tally-value { color: var(--warn); }
+
+.scrum-progress {
+  height: 6px;
+  margin-top: var(--sp-2);
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.scrum-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.scrum-goals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4);
+}
+.scrum-goal-card {
+  display: flow-root;
+  padding: 0 var(--sp-3) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+}
+.scrum-goal-card .scrum-heading { margin-top: var(--sp-3); }
+.scrum-goal { margin: 0; color: var(--ink); line-height: 1.7; }
+.scrum-goal.row-meta { color: var(--ink-2); }
+
+.scrum-block .scrum-heading { margin-top: var(--sp-5); }
+
+/* 表の字の列は左に寄せる (集計の表は数の列が主なので既定が右寄せ) */
+.tally-table .cell-text { text-align: left; }
+.tally-table .cell-center { text-align: center; }
+.tally-table .cell-wrap { white-space: normal; min-width: 160px; }
+.tally-table tbody tr.is-selected th,
+.tally-table tbody tr.is-selected td { background: var(--accent-bg); }
+
+.burndown { padding: var(--sp-3); }
+.burndown-chart { display: block; width: 100%; max-width: 760px; min-width: 480px; height: auto; }
+.burndown-axis { stroke: var(--line-strong); }
+.burndown-grid { stroke: var(--line); stroke-dasharray: 2 4; }
+.burndown-today { stroke: var(--warn); stroke-dasharray: 3 3; }
+.burndown-ideal { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 5 5; }
+.burndown-remaining { stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+.burndown-dot { fill: var(--accent); }
 .burndown-label { fill: var(--ink-2); font-size: 11px; }
-.roadmap-mark { background: var(--accent); color: var(--bg); text-align: center; }
-.roadmap-mark.done { background: var(--bg-2); color: var(--ink-2); }
-.settings-section { max-width: 760px; }
-.settings-field { margin-top: 16px; }
-.settings-field textarea { display: block; width: stretch; width: -webkit-fill-available; width: -moz-available; margin-bottom: 6px; }
-.change-history { margin-top: 16px; }
-.history-item { padding: 6px 0; }
+.burndown-legend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-2); }
+.burndown-legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.burndown-key { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--accent); }
+.burndown-key-ideal { border-top: 1.5px dashed var(--ink-2); }
+
+.roadmap-mark { margin: 0; }
+.roadmap-open {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.roadmap-open:hover { color: var(--accent); text-decoration: underline; }
+.tally-scroll > .tally-note { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+
+.impediment-row .row-main { display: flex; flex-direction: column; gap: 2px; }
+
+.settings-section { max-width: 760px; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+.settings-field {
+  /* 見出しの余白がカードの外へ抜けないようにする */
+  display: flow-root;
+  margin-top: var(--sp-3);
+  padding: 0 var(--sp-4) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+}
+.settings-field textarea {
+  display: block;
+  width: stretch;
+  width: -webkit-fill-available;
+  width: -moz-available;
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--hairline);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.7;
+}
+.settings-field textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.settings-field ol { margin: 0 0 var(--sp-2); padding-left: var(--sp-5); line-height: 1.8; }
+.settings-field code { font-family: var(--mono); font-size: 12px; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--bg-3); }
+/* 狭い画面では操作の帯を折り返す。詰めると「スプリント」の字が縦に割れる */
+.scrum-actions { flex-wrap: wrap; }
+.scrum-actions .tally-switch .row-meta,
+.scrum-actions .btn { white-space: nowrap; }
+.change-history { margin-top: var(--sp-4); }
+.change-history summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+.history-item { padding: var(--sp-2) 0; font-size: 12px; }
 </style>

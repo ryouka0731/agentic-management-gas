@@ -9870,9 +9870,9 @@
    */
   function scrumIssueFields(issue) {
     if (!scrumOn()) return [];
-    var sprints = [['', '(なし)']].concat(scrumSprints.map(function (sp) { return [sp.name, sp.name]; }));
+    var current = issue ? issue.sprint : '';
     return [
-      { name: 'sprint', label: 'スプリント', choices: sprints, value: issue ? issue.sprint : '' },
+      { name: 'sprint', label: 'スプリント', choices: sprintChoices(current), value: current },
       { name: 'points', label: 'ストーリーポイント (0以上の数)',
         value: issue && issue.points !== '' && issue.points !== undefined ? issue.points : '' },
       { name: 'acceptance', label: '受入基準 (1行に1つ)', multiline: true,
@@ -10018,14 +10018,24 @@
     wrap.appendChild(makeScrumHeading('手元の Claude Code をチームに加える'));
 
     var steps = document.createElement('ol');
+    // `…` で囲んだところは打ち込む字なので、それと分かる形にする
     [
       '右上の自分の顔 →「手元から動かす道具を落とす」で道具を受け取り、案内どおりに置く',
-      'node agent.mjs scrum で、この設定がオンになっているかを確かめる',
+      '`node agent.mjs scrum` で、この設定がオンになっているかを確かめる',
       'Claude Code に「スプリントプランニングをして」などと頼む。道具に入っている' +
-        ' scrum/skills のイベントと scrum/agents の役割に沿って進めます',
+        ' `.claude/skills` のイベントと `.claude/agents` の役割に沿って進めます (読み替えは `SCRUM.md`)',
     ].forEach(function (text) {
       var li = document.createElement('li');
-      li.textContent = text;
+      text.split('`').forEach(function (part, i) {
+        if (!part) return;
+        if (i % 2) {
+          var code = document.createElement('code');
+          code.textContent = part;
+          li.appendChild(code);
+        } else {
+          li.appendChild(document.createTextNode(part));
+        }
+      });
       steps.appendChild(li);
     });
     wrap.appendChild(steps);
@@ -10041,17 +10051,30 @@
   // ----- スプリント -----
 
   /**
+   * 返事の取り違えを防ぐ番号。
+   *
+   * スプリントを素早く切り替えると、前に頼んだぶんの返事があとから届いて
+   * 選び直したものを上書きする。最後に頼んだぶんの返事だけを描く。
+   */
+  var sprintLoadSeq = 0;
+
+  /**
    * スプリントの画面を描く。
    */
   function loadSprint() {
+    var seq = ++sprintLoadSeq;
     showSkeleton(sprintViewEl, 'list', 3);
     call('apiScrumView', [scrumSprint], function (view) {
+      if (seq !== sprintLoadSeq) return;
       var v = view || {};
       scrumSprints = v.sprints || [];
       scrumSprint = v.sprint || '';
       fillSprintSelect();
       renderSprint(v);
-    }, failInto(sprintViewEl));
+    }, function (err) {
+      // 失敗の返事も、最後に頼んだぶんでなければ描かない
+      if (seq === sprintLoadSeq) failInto(sprintViewEl)(err);
+    });
   }
 
   /** スプリントの選択肢を詰める */
@@ -10066,86 +10089,251 @@
     scrumSprints.forEach(function (sp) {
       var opt = document.createElement('option');
       opt.value = sp.name;
-      opt.textContent = sp.name + (sp.startDate ? ' (' + sp.startDate + ' 〜 ' + (sp.endDate || '') + ')' : '');
+      opt.textContent = sp.name;
       sprintSelect.appendChild(opt);
     });
     sprintSelect.value = scrumSprint;
+    sprintSelect.disabled = !scrumSprints.length;
     sprintEditBtn.disabled = !scrumSprint;
+  }
+
+  /**
+   * 今日 (東京の暦日) を 'YYYY-MM-DD' で返す。
+   *
+   * @returns {string}
+   */
+  function scrumToday() {
+    // サーバ (ScrumView.js の scrumDayOf_) と同じく東京の暦日で見る。端末の
+    // 時刻帯で見ると、海外から開いた人だけ残り日数や「今日」の線がずれる
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().substring(0, 10);
+  }
+
+  /**
+   * 2つの 'YYYY-MM-DD' の差 (日)。
+   *
+   * @param {string} from
+   * @param {string} to
+   * @returns {number}
+   */
+  function scrumDaysBetween(from, to) {
+    return Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000);
+  }
+
+  /**
+   * スプリントがいまどこにいるかを、人が読める字にする。
+   *
+   * @param {object} sp
+   * @returns {string}
+   */
+  function sprintPhaseText(sp) {
+    if (!sp.startDate || !sp.endDate) return '期間が決まっていません';
+    var today = scrumToday();
+    if (today < sp.startDate) return 'あと' + scrumDaysBetween(today, sp.startDate) + '日で始まります';
+    if (today > sp.endDate) return '終わりました';
+    var left = scrumDaysBetween(today, sp.endDate);
+    return left ? '残り' + left + '日' : '今日が最終日';
   }
 
   /**
    * スプリントの中身を描く。
    *
+   * 結論 (どこまで進んだか) を先に置き、その下に経過と並びを置く。集計の
+   * 画面と同じ順にしてある。
+   *
    * @param {object} v apiScrumView の返り
    */
   function renderSprint(v) {
     sprintViewEl.textContent = '';
-    var s = v.summary || {};
+    var sprints = v.sprints || [];
 
-    var summary = document.createElement('div');
-    summary.className = 'scrum-summary';
-    var bits = [];
-    bits.push(s.current ? '今のスプリント: ' + s.current : '今のスプリントはありません');
-    if (s.current) bits.push('ポイント ' + s.completed + ' / ' + s.planned);
-    bits.push('未解決の障害物 ' + (s.openImpediments || 0) + '件');
-    if (s.average !== '' && s.average !== undefined) bits.push('平均ベロシティ ' + s.average);
-    summary.textContent = bits.join(' ・ ');
-    sprintViewEl.appendChild(summary);
+    if (!sprints.length) {
+      sprintViewEl.appendChild(makeBlankState(
+        'スプリントがまだありません',
+        '区切った作業の期間を作り、やることをそこへ積みます。' +
+          'バーンダウンとベロシティは、やることのポイントと完了日から自動で数えます。',
+        { label: 'スプリントを作る', onClick: function (btn) { openSprintForm(null, btn); } }
+      ));
+      return;
+    }
 
     var target = null;
-    (v.sprints || []).forEach(function (sp) { if (sp.name === v.sprint) target = sp; });
-    if (target && target.goal) {
-      sprintViewEl.appendChild(makeScrumHeading('スプリントゴール', 'スプリントゴール'));
-      var goal = document.createElement('p');
-      goal.className = 'scrum-goal';
-      goal.textContent = target.goal;
-      sprintViewEl.appendChild(goal);
-    }
-    if (v.texts && v.texts.productGoal) {
-      sprintViewEl.appendChild(makeScrumHeading('プロダクトゴール', 'プロダクトゴール'));
-      sprintViewEl.appendChild(makeMarkdown(v.texts.productGoal));
-    }
+    sprints.forEach(function (sp) { if (sp.name === v.sprint) target = sp; });
+    var row = null;
+    (v.velocity || []).forEach(function (r) { if (r.name === v.sprint) row = r; });
 
-    sprintViewEl.appendChild(makeScrumHeading('バーンダウン', 'バーンダウン'));
-    sprintViewEl.appendChild(makeBurndown(v.burndown || {}));
-
-    sprintViewEl.appendChild(makeScrumHeading('ベロシティ', 'ベロシティ'));
-    sprintViewEl.appendChild(makeVelocityTable(v.velocity || []));
-
-    sprintViewEl.appendChild(makeScrumHeading('ロードマップ', 'ロードマップ'));
-    sprintViewEl.appendChild(makeRoadmap(v.roadmap || {}));
+    if (target) sprintViewEl.appendChild(makeSprintSummary(v, target, row));
+    sprintViewEl.appendChild(makeSprintGoals(target, v.texts || {}));
+    sprintViewEl.appendChild(makeScrumBlock('バーンダウン', 'バーンダウン',
+      makeBurndown(v.burndown || {})));
+    sprintViewEl.appendChild(makeScrumBlock('ベロシティ', 'ベロシティ',
+      makeVelocityTable(v.velocity || [], v.sprint, v.summary || {})));
+    sprintViewEl.appendChild(makeScrumBlock('ロードマップ', 'ロードマップ',
+      makeRoadmap(v.roadmap || {})));
   }
 
   /**
-   * バーンダウンの線を描く。残り (実線) と理想 (点線)。
+   * 見出しと中身をひとまとまりにする。集計の画面の区切りと同じ形。
+   *
+   * @param {string} text
+   * @param {string} term 用語の説明を添えるなら、その語
+   * @param {HTMLElement} body
+   * @returns {HTMLElement}
+   */
+  function makeScrumBlock(text, term, body) {
+    var block = document.createElement('section');
+    block.className = 'tally-block scrum-block';
+    block.appendChild(makeScrumHeading(text, term));
+    block.appendChild(body);
+    return block;
+  }
+
+  /**
+   * まず結論。見ているスプリントの進み具合・障害物・次に積める量の目安。
+   *
+   * @param {object} v
+   * @param {object} sp 見ているスプリント
+   * @param {object|null} row そのスプリントのベロシティの行
+   * @returns {HTMLElement}
+   */
+  function makeSprintSummary(v, sp, row) {
+    var s = v.summary || {};
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-summary scrum-summary';
+
+    function card(label, term, value, sub, kind) {
+      var box = document.createElement('div');
+      box.className = 'tally-card scrum-card' + (kind ? ' ' + kind : '');
+
+      var head = document.createElement('div');
+      head.className = 'row-meta scrum-card-label';
+      head.appendChild(document.createTextNode(label));
+      if (term) head.appendChild(makeTermHelp(term));
+      box.appendChild(head);
+
+      var val = document.createElement('div');
+      val.className = 'tally-value';
+      val.textContent = value;
+      box.appendChild(val);
+
+      if (sub) {
+        if (typeof sub === 'string') {
+          var note = document.createElement('div');
+          note.className = 'row-meta';
+          note.textContent = sub;
+          box.appendChild(note);
+        } else {
+          box.appendChild(sub);
+        }
+      }
+      wrap.appendChild(box);
+      return box;
+    }
+
+    var isCurrent = s.current === sp.name;
+    card(isCurrent ? '今のスプリント' : '見ているスプリント', '',
+      sp.name, (sp.startDate ? sp.startDate + ' 〜 ' + (sp.endDate || '') + ' ・ ' : '') + sprintPhaseText(sp));
+
+    var planned = row ? row.planned : 0;
+    var done = row ? row.completed : 0;
+    var pct = planned ? Math.round(done * 100 / planned) : 0;
+    var bar = document.createElement('div');
+    bar.className = 'scrum-progress';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(planned));
+    bar.setAttribute('aria-valuenow', String(done));
+    bar.setAttribute('aria-label', '終えたポイント');
+    var fill = document.createElement('span');
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+    card('終えたポイント', 'ストーリーポイント', done + ' / ' + planned, bar);
+
+    var open = s.openImpediments || 0;
+    card('未解決の障害物', '障害物', open + '件',
+      open ? '左の「障害物」から片付けられます' : 'いまはありません', open ? 'scrum-card-warn' : '');
+
+    card('平均ベロシティ', 'ベロシティ',
+      s.average === '' || s.average === undefined ? '—' : String(s.average),
+      s.average === '' || s.average === undefined ? '終えたスプリントができると出ます' : '直近3スプリントの平均。次に積める量の目安');
+    return wrap;
+  }
+
+  /**
+   * スプリントゴールとプロダクトゴールを並べる。どちらも、何のために積むかの拠り所。
+   *
+   * @param {object|null} sp
+   * @param {object} texts
+   * @returns {HTMLElement}
+   */
+  function makeSprintGoals(sp, texts) {
+    var wrap = document.createElement('div');
+    wrap.className = 'scrum-goals';
+
+    function goal(label, text, hint, md) {
+      var box = document.createElement('div');
+      box.className = 'scrum-goal-card';
+      box.appendChild(makeScrumHeading(label, label));
+      if (text) {
+        if (md) box.appendChild(makeMarkdown(text));
+        else {
+          var p = document.createElement('p');
+          p.className = 'scrum-goal';
+          p.textContent = text;
+          box.appendChild(p);
+        }
+      } else {
+        var none = document.createElement('p');
+        none.className = 'row-meta scrum-goal';
+        none.textContent = hint;
+        box.appendChild(none);
+      }
+      wrap.appendChild(box);
+    }
+
+    goal('スプリントゴール', sp ? sp.goal : '',
+      'まだ書かれていません。「このスプリントを直す」から書けます。', false);
+    goal('プロダクトゴール', texts.productGoal,
+      settings.canEdit ? 'まだ書かれていません。左の「設定」から書けます。'
+        : 'まだ書かれていません。書けるのはこのアプリの持ち主です。', true);
+    return wrap;
+  }
+
+  /**
+   * バーンダウンの線を描く。残り (実線) と理想 (点線)、今日の位置。
    *
    * @param {object} b scrumBurndown の返り
    * @returns {HTMLElement}
    */
   function makeBurndown(b) {
     var wrap = document.createElement('div');
-    wrap.className = 'burndown';
+    wrap.className = 'tally-scroll burndown';
     if (!b.days || !b.days.length) {
-      wrap.appendChild(makePill(b.notice || 'まだありません', 'chip'));
+      wrap.appendChild(makeBlankState('まだ描けません', b.notice || 'スプリントの期間を決めると、ここに線が出ます。'));
       return wrap;
     }
 
     var NS = 'http://www.w3.org/2000/svg';
-    var W = 640;
-    var H = 220;
-    var pad = 32;
+    var W = 720;
+    var H = 240;
+    var left = 40;
+    var right = 16;
+    var top = 16;
+    var bottom = 32;
     var max = 0;
     (b.ideal || []).concat(b.remaining || []).forEach(function (n) { if (n > max) max = n; });
     if (!max) max = 1;
 
-    function x(i) { return pad + (b.days.length > 1 ? i * (W - pad * 2) / (b.days.length - 1) : 0); }
-    function y(n) { return H - pad - n * (H - pad * 2) / max; }
+    function x(i) {
+      return left + (b.days.length > 1 ? i * (W - left - right) / (b.days.length - 1) : 0);
+    }
+    function y(n) { return H - bottom - n * (H - top - bottom) / max; }
+    function el(name, attrs) {
+      var e = document.createElementNS(NS, name);
+      Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+      return e;
+    }
 
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('class', 'burndown-chart');
-
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'class': 'burndown-chart' });
     var title = document.createElementNS(NS, 'title');
     title.textContent = 'バーンダウン';
     svg.appendChild(title);
@@ -10155,66 +10343,89 @@
     }).join('、');
     svg.appendChild(desc);
 
-    var axis = document.createElementNS(NS, 'line');
-    axis.setAttribute('x1', pad); axis.setAttribute('x2', W - pad);
-    axis.setAttribute('y1', H - pad); axis.setAttribute('y2', H - pad);
-    axis.setAttribute('class', 'burndown-axis');
-    svg.appendChild(axis);
+    // 目盛り。0・半分・最大の3本にとどめる (多いと線が読めなくなる)
+    [0, max / 2, max].forEach(function (n) {
+      svg.appendChild(el('line', { x1: left, x2: W - right, y1: y(n), y2: y(n),
+        'class': n ? 'burndown-grid' : 'burndown-axis' }));
+      var t = el('text', { x: left - 8, y: y(n) + 4, 'text-anchor': 'end', 'class': 'burndown-label' });
+      t.textContent = String(Math.round(n * 10) / 10);
+      svg.appendChild(t);
+    });
+
+    var today = scrumToday();
+    var at = b.days.indexOf(today);
+    if (at >= 0) {
+      svg.appendChild(el('line', { x1: x(at), x2: x(at), y1: top, y2: H - bottom, 'class': 'burndown-today' }));
+      var tt = el('text', { x: x(at), y: top - 4 + 12, 'text-anchor': at > b.days.length / 2 ? 'end' : 'start',
+        dx: at > b.days.length / 2 ? -4 : 4, 'class': 'burndown-label' });
+      tt.textContent = '今日';
+      svg.appendChild(tt);
+    }
 
     function line(values, cls) {
       var pts = [];
       values.forEach(function (n, i) { if (n !== null && n !== undefined) pts.push(x(i) + ',' + y(n)); });
       if (!pts.length) return;
-      var pl = document.createElementNS(NS, 'polyline');
-      pl.setAttribute('points', pts.join(' '));
-      pl.setAttribute('class', cls);
-      pl.setAttribute('fill', 'none');
-      svg.appendChild(pl);
+      svg.appendChild(el('polyline', { points: pts.join(' '), 'class': cls, fill: 'none' }));
     }
     line(b.ideal, 'burndown-ideal');
     line(b.remaining, 'burndown-remaining');
 
-    [0, b.days.length - 1].forEach(function (i) {
-      var t = document.createElementNS(NS, 'text');
-      t.setAttribute('x', x(i));
-      t.setAttribute('y', H - 8);
-      t.setAttribute('text-anchor', i ? 'end' : 'start');
-      t.setAttribute('class', 'burndown-label');
-      t.textContent = b.days[i];
-      svg.appendChild(t);
-    });
-    var top = document.createElementNS(NS, 'text');
-    top.setAttribute('x', 4);
-    top.setAttribute('y', pad);
-    top.setAttribute('class', 'burndown-label');
-    top.textContent = String(max);
-    svg.appendChild(top);
+    // 最後に分かっている残りに点を打つ。線の終わりがどこかを読みやすくする
+    for (var k = b.remaining.length - 1; k >= 0; k--) {
+      if (b.remaining[k] === null || b.remaining[k] === undefined) continue;
+      svg.appendChild(el('circle', { cx: x(k), cy: y(b.remaining[k]), r: 4, 'class': 'burndown-dot' }));
+      break;
+    }
+
+    var mid = Math.floor((b.days.length - 1) / 2);
+    [0, mid, b.days.length - 1].filter(function (i, n, all) { return all.indexOf(i) === n; })
+      .forEach(function (i, n, all) {
+        var t = el('text', { x: x(i), y: H - 10,
+          'text-anchor': n === 0 ? 'start' : (n === all.length - 1 ? 'end' : 'middle'),
+          'class': 'burndown-label' });
+        t.textContent = b.days[i].substring(5).replace('-', '/');
+        svg.appendChild(t);
+      });
 
     wrap.appendChild(svg);
 
     var legend = document.createElement('div');
-    legend.className = 'row-meta';
-    legend.textContent = '実線: 毎日の終わりに残っていたポイント ・ 点線: 理想の減り方';
+    legend.className = 'burndown-legend row-meta';
+    [['burndown-key-remaining', '毎日の終わりに残っていたポイント'],
+     ['burndown-key-ideal', '理想の減り方']].forEach(function (pair) {
+      var item = document.createElement('span');
+      var key = document.createElement('span');
+      key.className = 'burndown-key ' + pair[0];
+      key.setAttribute('aria-hidden', 'true');
+      item.appendChild(key);
+      item.appendChild(document.createTextNode(pair[1]));
+      legend.appendChild(item);
+    });
     wrap.appendChild(legend);
     return wrap;
   }
 
   /**
-   * ベロシティの表。
+   * ベロシティの表。見ているスプリントの行を目立たせ、平均を最後に添える。
    *
    * @param {object[]} rows scrumVelocity の返り
+   * @param {string} selected 見ているスプリント
+   * @param {object} summary
    * @returns {HTMLElement}
    */
-  function makeVelocityTable(rows) {
-    if (!rows.length) return makePill('スプリントがまだありません', 'chip');
+  function makeVelocityTable(rows, selected, summary) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-scroll';
 
     var table = document.createElement('table');
     table.className = 'tally-table velocity-table';
     var thead = document.createElement('thead');
     var hr = document.createElement('tr');
-    ['スプリント', 'ゴール', '期間', '計画', '終えた', '持ち越し'].forEach(function (h) {
+    ['スプリント', 'ゴール', '期間', '計画', '終えた', '持ち越し'].forEach(function (h, i) {
       var th = document.createElement('th');
       th.textContent = h;
+      if (i < 3) th.className = 'cell-text';
       hr.appendChild(th);
     });
     thead.appendChild(hr);
@@ -10223,40 +10434,55 @@
     var tbody = document.createElement('tbody');
     rows.forEach(function (r) {
       var tr = document.createElement('tr');
-      [r.name, r.goal,
+      if (r.name === selected) tr.className = 'is-selected';
+      [r.name, r.goal || '—',
         r.startDate ? r.startDate + ' 〜 ' + (r.endDate || '') : '未定',
         r.planned, r.completed, r.carriedOver === '' ? '—' : r.carriedOver,
       ].forEach(function (val, i) {
         var td = document.createElement(i ? 'td' : 'th');
         td.textContent = String(val);
+        if (i < 3) td.className = 'cell-text';
+        if (i === 1) td.classList.add('cell-wrap');
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
-    return table;
+    wrap.appendChild(table);
+
+    var note = document.createElement('div');
+    note.className = 'tally-note row-meta';
+    note.textContent = '持ち越しは、終わったスプリントにだけ出ます。数は、やることのポイントと完了日から数えています。';
+    wrap.appendChild(note);
+    return wrap;
   }
 
   /**
-   * ロードマップの表。行がやること、列がスプリント。入っているところに帯を出す。
+   * ロードマップの表。行がやること、列がスプリント。入っているところに札を出す。
    *
    * @param {object} r scrumRoadmap の返り
    * @returns {HTMLElement}
    */
   function makeRoadmap(r) {
     var wrap = document.createElement('div');
-    if (r.notice) wrap.appendChild(makePill(r.notice, 'chip'));
-    if (!r.sprints || !r.sprints.length) return wrap;
+    if (!r.sprints || !r.sprints.length) {
+      wrap.appendChild(makeBlankState('まだ描けません', r.notice || 'スプリントを作ると、ここに並びます。'));
+      return wrap;
+    }
 
     if (!r.rows.length) {
-      wrap.appendChild(makePill('スプリントに入っているやることはまだありません', 'chip'));
+      wrap.appendChild(makeBlankState('スプリントに入っているやることはまだありません',
+        'やることを開いて「直す」から、スプリントとポイントを入れられます。'));
     } else {
+      var scroll = document.createElement('div');
+      scroll.className = 'tally-scroll';
       var table = document.createElement('table');
       table.className = 'tally-table roadmap-table';
       var hr = document.createElement('tr');
-      ['やること'].concat(r.sprints).forEach(function (h) {
+      ['やること'].concat(r.sprints).forEach(function (h, i) {
         var th = document.createElement('th');
         th.textContent = h;
+        th.className = i ? 'cell-center' : 'cell-text';
         hr.appendChild(th);
       });
       var thead = document.createElement('thead');
@@ -10267,33 +10493,44 @@
       r.rows.forEach(function (row) {
         var tr = document.createElement('tr');
         var th = document.createElement('th');
-        th.textContent = '#' + row.number + ' ' + row.title;
+        th.className = 'cell-text';
+        // 表から直接そのやることを開けるようにする。番号を覚えて一覧へ移る手間を省く
+        var open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'roadmap-open';
+        open.textContent = '#' + row.number + ' ' + row.title;
+        open.addEventListener('click', function () { openIssueByNumber(row.number, open); });
+        th.appendChild(open);
         tr.appendChild(th);
         r.sprints.forEach(function (name, col) {
           var td = document.createElement('td');
+          td.className = 'cell-center';
           if (col === row.col) {
-            td.className = 'roadmap-mark' + (row.state === 'closed' ? ' done' : '');
-            td.textContent = row.state === 'closed' ? '完了' : '予定';
+            var done = row.state === 'closed';
+            var mark = makePill(done ? '完了' : '予定', done ? 'state state-merged' : 'state state-open');
+            mark.classList.add('roadmap-mark');
+            td.appendChild(mark);
           }
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
-      wrap.appendChild(table);
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
     }
 
     if (r.unknown && r.unknown.length) {
-      var unknown = document.createElement('p');
-      unknown.className = 'row-meta';
+      var unknown = document.createElement('div');
+      unknown.className = 'tally-note row-meta';
       unknown.textContent = '無いスプリントを指しているやること: ' + r.unknown.map(function (u) {
         return '#' + u.number + ' (' + u.sprint + ')';
       }).join('、');
       wrap.appendChild(unknown);
     }
     if (r.unplanned) {
-      var later = document.createElement('p');
-      later.className = 'row-meta';
+      var later = document.createElement('div');
+      later.className = 'tally-note row-meta';
       later.textContent = 'スプリントに入っていないやること: ' + r.unplanned + '件';
       wrap.appendChild(later);
     }
@@ -10304,11 +10541,13 @@
    * スプリントを作る・直す入力欄。
    *
    * @param {object|null} sp 直すときはそのスプリント
+   * @param {HTMLElement} [sourceEl] 押されたもの
    */
-  function openSprintForm(sp) {
+  function openSprintForm(sp, sourceEl) {
     var fields = [];
     if (!sp) fields.push({ name: 'name', label: '名前 (例: sprint001)', required: true });
-    fields.push({ name: 'goal', label: 'スプリントゴール', multiline: true, value: sp ? sp.goal : '' });
+    fields.push({ name: 'goal', label: 'スプリントゴール (このスプリントで目指すこと)', multiline: true,
+      value: sp ? sp.goal : '' });
     fields.push({ name: 'startDate', label: '始まりの日', value: sp ? sp.startDate : '' });
     fields.push({ name: 'endDate', label: '終わりの日', value: sp ? sp.endDate : '' });
     fields.push({ name: 'notes', label: '備考', multiline: true, value: sp ? sp.notes : '' });
@@ -10332,7 +10571,7 @@
           loadSettings();
           loadSprint();
         });
-      }, sprintCreateBtn);
+      }, sourceEl || sprintCreateBtn);
 
     form.querySelectorAll('input').forEach(function (input) {
       var label = input.parentNode.textContent;
@@ -10353,49 +10592,118 @@
   }
 
   /**
-   * 障害物の一覧を描く。未解決が先。
+   * いま右に開いている障害物の番号。開いていなければ null。
+   *
+   * 返事が届いた時点で別のものを開いていたら、開き直さない。押したあとに
+   * 別のやることを開いた人の画面を乗っ取らないため。
+   */
+  var impedimentOpenNumber = null;
+
+  /**
+   * 右に開いているのがその障害物か。
+   *
+   * @param {number} number
+   * @returns {boolean}
+   */
+  function impedimentShowing(number) {
+    return impedimentOpenNumber === Number(number) &&
+      sideTitle.textContent === '障害物 #' + number;
+  }
+
+  /**
+   * 返事が届いたとき、その障害物の詳細を開き直してよいか。
+   *
+   * 詳細から入力欄を開いて送ると、入力欄は返事を待たずに閉じる。そのあと
+   * 何も開いていなければ、直した結果を見せるために詳細へ戻す。別のものを
+   * 開いていたら、その人の画面を乗っ取らない。
+   *
+   * @param {number} number
+   * @returns {boolean}
+   */
+  function impedimentMayReopen(number) {
+    return impedimentShowing(number) ||
+      (impedimentOpenNumber === Number(number) && !sideTitle.textContent);
+  }
+
+  /**
+   * 障害物の一覧を描く。未解決を先に、解決済みは一段沈めて後ろに置く。
    *
    * @param {object[]} list
    */
   function renderImpediments(list) {
     impedimentsEl.textContent = '';
-    var open = list.filter(function (i) { return i.state === 'open'; }).length;
-    impedimentSummaryEl.textContent = '未解決 ' + open + '件 ・ 解決済み ' + (list.length - open) + '件';
-    impedimentCountEl.textContent = open ? String(open) : '';
-    impedimentCountEl.hidden = !open;
+    var open = list.filter(function (i) { return i.state === 'open'; });
+    var closed = list.filter(function (i) { return i.state !== 'open'; });
 
-    var head = makeScrumHeading('障害物', '障害物');
-    impedimentsEl.appendChild(head);
+    impedimentSummaryEl.textContent = '';
+    impedimentSummaryEl.appendChild(document.createTextNode('未解決 ' + open.length + '件 ・ 解決済み ' + closed.length + '件'));
+    impedimentSummaryEl.appendChild(makeTermHelp('障害物'));
+    impedimentCountEl.textContent = open.length ? String(open.length) : '';
+    impedimentCountEl.hidden = !open.length;
 
     if (!list.length) {
-      impedimentsEl.appendChild(makePill('記録された障害物はありません', 'chip'));
+      impedimentsEl.appendChild(makeBlankState(
+        '記録された障害物はありません',
+        '進みを妨げているもの (返事待ち・足りない道具・決まっていないこと) に気づいたら、ここに書き出します。',
+        { label: '障害物を記録する', onClick: function (btn) { openImpedimentForm(null, btn); } }
+      ));
       return;
     }
 
-    list.forEach(function (imp) {
+    open.concat(closed).forEach(function (imp) {
       var row = document.createElement('button');
       row.type = 'button';
-      row.className = 'row-item row-open impediment-row';
+      row.className = 'row-item impediment-row' + (imp.state === 'open' ? '' : ' resolved');
+      if (impedimentShowing(imp.number)) row.setAttribute('aria-current', 'true');
 
+      row.appendChild(makePill(imp.state === 'open' ? '未解決' : '解決済み',
+        imp.state === 'open' ? 'state state-open' : 'state state-merged'));
+
+      var main = document.createElement('div');
+      main.className = 'row-main';
       var title = document.createElement('div');
       title.className = 'row-title';
-      title.appendChild(makePill(imp.state === 'open' ? '未解決' : '解決済み',
-        imp.state === 'open' ? 'state state-open' : 'state state-merged'));
-      title.appendChild(document.createTextNode(' #' + imp.number + ' ' + imp.title));
-      row.appendChild(title);
+      title.textContent = '#' + imp.number + ' ' + imp.title;
+      main.appendChild(title);
 
       var meta = document.createElement('div');
       meta.className = 'row-meta';
       var bits = [personName(imp.reportedBy) || imp.reportedBy];
       if (imp.reportedAt) bits.push(String(imp.reportedAt).substring(0, 10));
       if (imp.sprint) bits.push(imp.sprint);
-      if (imp.commentCount) bits.push('やりとり ' + imp.commentCount);
+      if (imp.state !== 'open' && imp.resolvedAt) bits.push('解決 ' + String(imp.resolvedAt).substring(0, 10));
       meta.textContent = bits.join(' ・ ');
-      row.appendChild(meta);
+      main.appendChild(meta);
+      row.appendChild(main);
+
+      if (imp.commentCount) {
+        row.appendChild(makePill('やりとり ' + imp.commentCount, 'chip'));
+      }
 
       row.addEventListener('click', function () { openImpedimentDetail(imp, row); });
       impedimentsEl.appendChild(row);
     });
+  }
+
+  /**
+   * スプリントの選択肢。いま入っているものが一覧に無くても、選択肢に残す。
+   *
+   * 残さないと選べる値に無いので空になり、そのまま保存すると題名だけ直した
+   * つもりでスプリントが外れる (一覧を読んだあとに手元の Claude が作った
+   * スプリントや、一覧が読めなかったとき)。
+   *
+   * @param {string} current
+   * @returns {Array<[string, string]>}
+   */
+  function sprintChoices(current) {
+    var pairs = [['', '(なし)']];
+    var seen = false;
+    scrumSprints.forEach(function (sp) {
+      pairs.push([sp.name, sp.name]);
+      if (sp.name === current) seen = true;
+    });
+    if (current && !seen) pairs.push([current, current]);
+    return pairs;
   }
 
   /**
@@ -10405,17 +10713,17 @@
    * @param {HTMLElement} sourceEl
    */
   function openImpedimentForm(imp, sourceEl) {
-    var sprints = [['', '(なし)']].concat(scrumSprints.map(function (sp) { return [sp.name, sp.name]; }));
+    var current = imp ? imp.sprint : scrumSprint;
     openInlineForm(imp ? '障害物 #' + imp.number + ' を直す' : '障害物を記録する', [
-      { name: 'title', label: '題名', required: true, value: imp ? imp.title : '' },
+      { name: 'title', label: '題名 (何が進みを妨げているか)', required: true, value: imp ? imp.title : '' },
       { name: 'body', label: '詳しく (Markdown で書けます)', multiline: true, value: imp ? imp.body : '' },
-      { name: 'sprint', label: 'スプリント', choices: sprints, value: imp ? imp.sprint : scrumSprint },
+      { name: 'sprint', label: 'スプリント', choices: sprintChoices(current), value: current },
     ], imp ? '保存する' : '記録する', function (v) {
       var fields = { title: v.title, body: v.body, sprint: v.sprint };
       if (imp) {
         call('apiImpedimentUpdate', [imp.number, fields], function (after) {
           showSnack('障害物を直しました', { kind: 'ok' });
-          if (after) openImpedimentDetail(after, sideSource);
+          if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
           loadImpediments();
         });
         return;
@@ -10437,6 +10745,7 @@
     var box = openSideView('障害物 #' + imp.number, sourceEl, function () {
       openImpedimentForm(imp, sideSource);
     });
+    impedimentOpenNumber = Number(imp.number);
 
     var title = document.createElement('h3');
     title.className = 'view-title';
@@ -10445,17 +10754,25 @@
 
     var facts = document.createElement('dl');
     facts.className = 'view-facts';
-    function fact(label, text) {
+    function fact(label, fill) {
       var dt = document.createElement('dt');
       dt.textContent = label;
       facts.appendChild(dt);
       var dd = document.createElement('dd');
-      dd.textContent = text;
+      fill(dd);
       facts.appendChild(dd);
     }
-    fact('状態', imp.state === 'open' ? '未解決' : '解決済み (' + String(imp.resolvedAt).substring(0, 10) + ')');
-    fact('報告', (personName(imp.reportedBy) || imp.reportedBy) + ' ・ ' + String(imp.reportedAt).substring(0, 10));
-    if (imp.sprint) fact('スプリント', imp.sprint);
+    fact('状態', function (dd) {
+      dd.appendChild(makePill(imp.state === 'open' ? '未解決' : '解決済み',
+        imp.state === 'open' ? 'state state-open' : 'state state-merged'));
+      if (imp.state !== 'open' && imp.resolvedAt) {
+        dd.appendChild(document.createTextNode(String(imp.resolvedAt).substring(0, 10)));
+      }
+    });
+    fact('報告', function (dd) {
+      dd.textContent = (personName(imp.reportedBy) || imp.reportedBy) + ' ・ ' + String(imp.reportedAt).substring(0, 10);
+    });
+    if (imp.sprint) fact('スプリント', function (dd) { dd.textContent = imp.sprint; });
     box.appendChild(facts);
 
     if (imp.body) box.appendChild(makeMarkdown(imp.body));
@@ -10468,19 +10785,20 @@
     }
 
     var actions = document.createElement('div');
-    actions.className = 'view-actions';
+    actions.className = 'inline-form-actions';
     if (imp.state === 'open') {
       var resolve = document.createElement('button');
       resolve.type = 'button';
       resolve.className = 'btn btn-primary';
-      resolve.textContent = '解決する';
+      resolve.appendChild(makeIcon('check'));
+      resolve.appendChild(document.createTextNode('解決する'));
       resolve.addEventListener('click', function () {
         openInlineForm('障害物 #' + imp.number + ' を解決する', [
           { name: 'resolution', label: '何をして片付けたか (解決策)', multiline: true, required: true },
         ], '解決を確定する', function (v) {
           call('apiImpedimentResolve', [imp.number, v.resolution], function (after) {
             showSnack('#' + imp.number + ' を解決済みにしました', { kind: 'ok' });
-            if (after) openImpedimentDetail(after, sideSource);
+            if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
             loadImpediments();
           });
         }, resolve);
@@ -10490,12 +10808,13 @@
       var reopen = document.createElement('button');
       reopen.type = 'button';
       reopen.className = 'btn';
-      reopen.textContent = '未解決に戻す';
+      reopen.appendChild(makeIcon('back'));
+      reopen.appendChild(document.createTextNode('未解決に戻す'));
       reopen.addEventListener('click', function () {
         reopen.disabled = true;
         call('apiImpedimentReopen', [imp.number], function (after) {
           showSnack('#' + imp.number + ' を未解決に戻しました', { kind: 'ok' });
-          if (after) openImpedimentDetail(after, sideSource);
+          if (after && impedimentMayReopen(imp.number)) openImpedimentDetail(after, sideSource);
           loadImpediments();
         }, failEnable(reopen, '戻せませんでした: '));
       });
@@ -10508,32 +10827,39 @@
   }
 
   /**
-   * 障害物のやりとり。
+   * 障害物のやりとり。やることのやりとりと同じ形にする (同じ道具の中で
+   * 書き込み欄の形が2通りあると、どちらが正しいのか迷う)。
    *
    * @param {object} imp
    * @returns {HTMLElement}
    */
   function makeImpedimentTalk(imp) {
     var wrap = document.createElement('div');
-    wrap.className = 'talk';
+    wrap.className = 'issue-talk';
+
     var head = document.createElement('div');
     head.className = 'row-meta view-label';
     head.textContent = 'やりとり';
     wrap.appendChild(head);
 
     var list = document.createElement('div');
+    list.className = 'issue-talk-list';
     wrap.appendChild(list);
 
     function draw() {
       call('apiImpedimentComments', [imp.number], function (rows) {
         list.textContent = '';
-        (rows || []).forEach(function (c) {
+        if (!rows || !rows.length) {
+          var none = document.createElement('div');
+          none.className = 'row-meta';
+          none.textContent = 'まだ何も話していません。誰に頼んだか、いつ片付きそうかをここに残せます。';
+          list.appendChild(none);
+          return;
+        }
+        rows.forEach(function (c) {
           var item = document.createElement('div');
-          item.className = 'talk-item';
-          var who = document.createElement('div');
-          who.className = 'row-meta';
-          who.textContent = (personName(c.by) || c.by) + ' ・ ' + String(c.at).substring(0, 16).replace('T', ' ');
-          item.appendChild(who);
+          item.className = 'comment';
+          item.appendChild(makeCommentHead(c.by, String(c.at).substring(0, 10)));
           item.appendChild(makeMarkdown(c.body));
           list.appendChild(item);
         });
@@ -10541,14 +10867,16 @@
     }
     draw();
 
+    var form = document.createElement('div');
+    form.className = 'comment-form';
     var area = document.createElement('textarea');
-    area.rows = 2;
+    area.placeholder = '誰に頼んだか、いつ片付きそうか';
     area.setAttribute('aria-label', 'やりとりを書く');
-    wrap.appendChild(area);
+    form.appendChild(area);
 
     var send = document.createElement('button');
     send.type = 'button';
-    send.className = 'btn';
+    send.className = 'btn btn-primary';
     send.textContent = '書き込む';
     send.addEventListener('click', function () {
       if (!area.value.replace(/^\s+|\s+$/g, '')) return;
@@ -10556,11 +10884,13 @@
       call('apiImpedimentComment', [imp.number, area.value], function () {
         area.value = '';
         send.disabled = false;
+        showSnack('書き込みました', { kind: 'ok' });
         draw();
         loadImpediments();
       }, failEnable(send, '書き込めませんでした: '));
     });
-    wrap.appendChild(send);
+    form.appendChild(send);
+    wrap.appendChild(form);
     return wrap;
   }
 
@@ -10643,7 +10973,7 @@
   sprintEditBtn.addEventListener('click', function () {
     var sp = null;
     scrumSprints.forEach(function (one) { if (one.name === scrumSprint) sp = one; });
-    if (sp) openSprintForm(sp);
+    if (sp) openSprintForm(sp, sprintEditBtn);
   });
   impedimentCreateBtn.addEventListener('click', function () {
     openImpedimentForm(null, impedimentCreateBtn);
