@@ -3117,7 +3117,7 @@ function apiSettings() {
  */
 function apiSetScrumEnabled(on) {
   assertOwner_();
-  scrumSetEnabled(!!on);
+  scrumSetEnabled_(!!on);
   return apiSettings();
 }
 
@@ -3130,7 +3130,7 @@ function apiSetScrumEnabled(on) {
  */
 function apiSetScrumText(kind, text) {
   assertOwner_();
-  scrumSetText(kind, text);
+  scrumSetText_(kind, text);
   return apiSettings();
 }
 
@@ -3278,7 +3278,7 @@ function debugVerifyScrum() {
   var mark = '自動検証 ' + name;
 
   try {
-    scrumSetEnabled(true);
+    scrumSetEnabled_(true);
 
     var sprint = apiSprintCreate({ name: name, goal: '自動検証', startDate: day(-1), endDate: day(5) });
     check('スプリントの日付が字のまま返る',
@@ -3364,7 +3364,7 @@ function debugVerifyScrum() {
     dbDelete('sprints', 'name', name);
     dbDelete('change_log', 'target', 'sprint:' + name);
   });
-  tidy('オン・オフ', function () { scrumSetEnabled(wasOn); });
+  tidy('オン・オフ', function () { scrumSetEnabled_(wasOn); });
   log.push(failed === tidyFailed
     ? '検証物を片付け、エージェンティックスクラムを' + (wasOn ? 'オン' : 'オフ') + 'に戻しました'
     : '片付けきれませんでした。本文が「' + mark + '」のものを台帳から消してください');
@@ -3471,7 +3471,7 @@ function apiHistory(target) {
   if (!/^(issue|impediment|sprint):.+$/.test(key)) throw new Error('履歴の対象が正しくありません: ' + key);
   if (key.indexOf('issue:') !== 0) scrumAssertEnabled_();
 
-  return historyOf(key).slice(0, 200).map(function (row) {
+  return historyOf_(key).slice(0, 200).map(function (row) {
     return {
       id: plainId(row.id),
       at: plainDate(row.at),
