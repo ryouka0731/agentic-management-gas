@@ -6715,7 +6715,7 @@
     });
 
     var order = [];
-    var buckets = {};
+    var buckets = Object.create(null);  // '__proto__' のような名前も、ただの鍵として持つ
 
     function put(key, label, issue) {
       // 'constructor' のような名前が Object の持ち物と重なる (src/core/Grouping.js と同じ)
