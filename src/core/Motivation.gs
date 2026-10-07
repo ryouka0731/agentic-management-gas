@@ -67,7 +67,9 @@ function motivationProgress(now) {
 
   var issues = dbReadAll('issues');
   for (var i = 0; i < issues.length; i++) {
-    if (String(issues[i].state) !== 'closed' || issues[i].archivedAt) continue;
+    // 捨てたものも数える。終えたあとに置き場へ移しただけで前進が減って見えると、
+    // 目標の進み具合が後ろへ戻る
+    if (String(issues[i].state) !== 'closed') continue;
     var day = motivationDay_(issues[i].closedAt);
     if (!day) continue;
     if (day >= span.weekStart && day <= span.today) out.weekClosed++;
@@ -114,10 +116,14 @@ function teamGoalSet_(n) {
  * はじめの5歩。本人がそれぞれを一度でもしたか。**本人にだけ見せる**
  * (人に見せると、数を集めさせる印になる)。
  *
+ * **画面から直に呼べない名前にする (末尾 _)。** アドレスを受け取るので、呼べると
+ * ほかの人のアドレスを渡してその人の行いを覗ける。apiMyMilestones が開いている
+ * 本人のアドレスだけを渡す。
+ *
  * @param {string} email
  * @returns {Array<{key: string, label: string, hint: string, tab: string, done: boolean}>}
  */
-function motivationMilestones(email) {
+function motivationMilestones_(email) {
   var me = String(email || '');
   function any(table, test) {
     var rows = dbReadAll(table);

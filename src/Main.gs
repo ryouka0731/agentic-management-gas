@@ -3130,7 +3130,7 @@ function apiSetTeamGoal(n) {
  * @returns {object[]}
  */
 function apiMyMilestones() {
-  return motivationMilestones(String(Session.getActiveUser().getEmail() || '')).map(function (m) {
+  return motivationMilestones_(String(Session.getActiveUser().getEmail() || '')).map(function (m) {
     return { key: m.key, label: m.label, hint: m.hint, tab: m.tab, done: !!m.done };
   });
 }

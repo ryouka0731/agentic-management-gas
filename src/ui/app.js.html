@@ -7768,8 +7768,14 @@
 
   var homeCardsEl = document.getElementById('home-cards');
 
-  /** 前進の知らせを出すか (本人が決める。この端末に覚える) */
+  /**
+   * 前進の知らせを出すか (本人が決める)。この端末のこのブラウザに覚える。
+   * 覚えられないブラウザでも、開いているあいだは止めたことを守る (見た目だけ
+   * 変わって知らせが出続けると、止めたのに止まらない)。
+   */
+  var progressNotesMemory = null;
   function progressNotesOn() {
+    if (progressNotesMemory !== null) return progressNotesMemory;
     try { return window.localStorage.getItem('progressNotes') !== 'off'; } catch (e) { return true; }
   }
 
@@ -7788,6 +7794,11 @@
       return;
     }
     call('apiProgress', [], function (p) {
+      // 返事を待つあいだに止められていたら、素の知らせにする
+      if (!progressNotesOn()) {
+        showSnack(text, { kind: 'ok' });
+        return;
+      }
       var more = '';
       if (p && kind === 'close' && p.weekClosed) more = '。今週チームで ' + p.weekClosed + ' 件目です';
       if (p && kind === 'merge' && p.weekMerged) more = '。今週チームで ' + p.weekMerged + ' 件を正式版にしました';
@@ -7808,10 +7819,12 @@
     btn.className = 'btn toggle-btn';
     btn.textContent = '前進の知らせを出す';
     setToggle(btn, progressNotesOn());
-    attachHint(btn, '完了や反映のときに「今週チームで何件目か」を添えます。ホームのチームの前進とはじめの5歩もここで出し入れします');
+    attachHint(btn, '完了や反映のときに「今週チームで何件目か」を添えます。ホームのチームの前進とはじめの5歩もここで出し入れします。' +
+      'この端末のこのブラウザにだけ覚えます');
     btn.addEventListener('click', function () {
       var on = !progressNotesOn();
-      try { window.localStorage.setItem('progressNotes', on ? 'on' : 'off'); } catch (e) { /* 覚えられなくても今は切り替わる */ }
+      progressNotesMemory = on;
+      try { window.localStorage.setItem('progressNotes', on ? 'on' : 'off'); } catch (e) { /* 覚えられなくても、開いているあいだは守る */ }
       setToggle(btn, on);
       loadHomeCards();
     });
@@ -7827,6 +7840,8 @@
     }
     call('apiProgress', [], function (p) {
       call('apiMyMilestones', [], function (steps) {
+        // 返事を待つあいだに止められていたら描かない
+        if (!progressNotesOn()) return;
         renderHomeCards(p || {}, steps || []);
       }, failQuiet('はじめの5歩が出なくても使える'));
     }, failQuiet('前進が出なくても使える'));
