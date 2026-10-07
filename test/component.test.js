@@ -6651,3 +6651,80 @@ describe('スマホ', () => {
     expect(css).not.toMatch(/\n\s*\.row-item \.btn-danger \{ display: none; \}/);
   });
 });
+
+describe('進捗ボードの使い勝手', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const BOARD = {
+    Backlog: [
+      { issueNumber: 1, order: 0, title: 'a', state: 'open', assignee: '', labels: '', dueDate: '' },
+      { issueNumber: 2, order: 1, title: 'b', state: 'open', assignee: '', labels: '', dueDate: '' },
+    ],
+    'In Progress': [], 'In Review': [], Done: [],
+  };
+  function openBoard(over) {
+    const app = mount(Object.assign({ apiProjectBoard: BOARD }, over || {}));
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+    return app;
+  }
+
+  it('列の「＋」から題名だけ打って、その列に足せる', () => {
+    const app = openBoard({ apiIssueCreate: { number: 9, title: '思い付き' } });
+    const col = document.querySelectorAll('.board-column')[1];
+    col.querySelector('.board-add').click();
+
+    const form = col.querySelector('.board-composer');
+    const input = form.querySelector('input');
+    expect(form.querySelector('.btn-primary').disabled).toBe(true);
+    input.value = '思い付き';
+    input.dispatchEvent(new window.Event('input'));
+    form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    expect(app.calls.find((c) => c.name === 'apiIssueCreate').args[0]).toBe('思い付き');
+    // 作ると「これから」に入るので、足した列 (作業中) へ移す
+    expect(app.calls.find((c) => c.name === 'apiProjectMove').args.slice(0, 2)).toEqual([9, 'In Progress']);
+  });
+
+  it('Esc で足す欄を閉じる', () => {
+    openBoard();
+    const col = document.querySelector('.board-column');
+    col.querySelector('.board-add').click();
+    col.querySelector('.board-composer input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(col.querySelector('.board-composer')).toBeNull();
+  });
+
+  it('落とした位置に入れる (末尾にしか入らなかった)', () => {
+    const app = openBoard();
+    const col = document.querySelector('.board-column');
+    const cards = col.querySelectorAll('.board-card');
+    // 2枚目の上半分に落とす → 2番目 (位置1) に入る
+    cards[1].getBoundingClientRect = () => ({ top: 100, height: 40 });
+    cards[0].getBoundingClientRect = () => ({ top: 40, height: 40 });
+    const drop = new window.Event('drop', { cancelable: true });
+    drop.clientY = 105;
+    drop.dataTransfer = { getData: () => '5' };
+    col.dispatchEvent(drop);
+
+    expect(app.calls.find((c) => c.name === 'apiProjectMove').args).toEqual([5, 'Backlog', 1]);
+  });
+
+  it('キーボード: ? で操作の一覧、N で作る、/ で絞り込み。入力中は効かない', () => {
+    mount();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '?' }));
+    expect(document.getElementById('side-title').textContent).toBe('キーボードで使える操作');
+    expect(document.querySelector('#side-body .shortcut-list').textContent).toContain('やることを作る');
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '/' }));
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.activeElement).toBe(document.getElementById('issue-filter'));
+
+    // 絞り込みの欄で字を打っているあいだは、N で作り始めない
+    const title = document.getElementById('side-title').textContent;
+    document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+    expect(document.getElementById('side-title').textContent).toBe(title);
+
+    document.activeElement.blur();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'N' }));
+    expect(document.getElementById('side-body').querySelector('form')).not.toBeNull();
+  });
+});
