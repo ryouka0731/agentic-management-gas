@@ -6219,6 +6219,8 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       const add = h.querySelector('.history-add');
       expect(del.tagName).toBe('DEL');
       expect(del.textContent).toBe('−b');
+      // 取り消し線は字だけに引く (印は読めるまま)
+      expect(del.querySelector('.history-text').textContent).toBe('b');
       expect(add.textContent).toBe('＋c');
     });
 
@@ -6259,6 +6261,16 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       expect(heads[0]).toContain('3pt');
       expect(heads[1]).toContain('sprint002');
       expect(heads[2]).toContain('スプリント未定');
+    });
+
+    it('設定が一覧より遅れて届いても、届いたら札を付けて描き直す', () => {
+      let reply = null;
+      mount({ apiSettings: { later: (ok) => { reply = ok; } }, apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+      expect(document.querySelector('#issue-list .scrum-chips')).toBeNull();
+
+      reply(ON);
+      expect(document.querySelector('#issue-list .scrum-chips')).not.toBeNull();
     });
 
     it('オフなら、スプリントの札も束ね方も出さない', () => {

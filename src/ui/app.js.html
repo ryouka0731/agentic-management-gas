@@ -6718,7 +6718,8 @@
     var buckets = {};
 
     function put(key, label, issue) {
-      if (!buckets[key]) {
+      // 'constructor' のような名前が Object の持ち物と重なる (src/core/Grouping.js と同じ)
+      if (!Object.prototype.hasOwnProperty.call(buckets, key)) {
         buckets[key] = { key: key, label: label, issues: [] };
         order.push(key);
       }
@@ -6751,8 +6752,9 @@
       }
 
       if (by === 'sprint') {
+        // 未定の鍵は空 ('(未定)' という名前のスプリントと混ざらない)
         var sprint = String(issue.sprint || '');
-        put(sprint || '(未定)', sprint || 'スプリント未定', issue);
+        put(sprint, sprint || 'スプリント未定', issue);
         return;
       }
 
@@ -6782,8 +6784,8 @@
     if (by === 'sprint') {
       order.sort(function (a, b) {
         if (a === b) return 0;
-        if (a === '(未定)') return 1;
-        if (b === '(未定)') return -1;
+        if (a === '') return 1;
+        if (b === '') return -1;
         return a < b ? -1 : 1;
       });
     }
@@ -9922,6 +9924,9 @@
       settings = res || settings;
       navScrum.hidden = !scrumOn();
       syncSprintGrouping();
+      // 一覧やボードを先に描いていたら描き直す。設定が遅れて届くと、スプリントの
+      // 札や合計が付かないまま残る
+      if (!panelIssues.hidden) reloadIssueView();
       if (!scrumOn()) {
         scrumSprints = [];
         if (then) then();
@@ -11552,7 +11557,11 @@
       mark.textContent = line.op === 'del' ? '−' : (line.op === 'add' ? '＋' : ' ');
       mark.setAttribute('aria-hidden', 'true');
       row.appendChild(mark);
-      row.appendChild(document.createTextNode(line.text || ' '));
+      // 取り消し線は字だけに引く。印にまで引くと「−」が読めない
+      var text = document.createElement('span');
+      text.className = 'history-text';
+      text.textContent = line.text || ' ';
+      row.appendChild(text);
       diff.appendChild(row);
     });
     box.appendChild(diff);

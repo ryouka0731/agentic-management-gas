@@ -213,6 +213,14 @@ describe('変更の履歴の差分', () => {
       { op: 'add', text: '三行目' },
     ]);
   });
+
+  it('改行を足しただけの変更も差分に出る', () => {
+    const { ctx } = setup();
+    const made = ctx.apiIssueCreate('題', '一行目', [], '', {});
+    ctx.apiIssueUpdate(made.number, { body: '一行目\n' });
+    const body = ctx.apiHistory('issue:' + made.number).find((r) => r.field === 'body');
+    expect(body.lines).toEqual([{ op: 'same', text: '一行目' }, { op: 'add', text: '' }]);
+  });
 });
 
 describe('持ち越し', () => {

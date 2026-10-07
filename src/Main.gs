@@ -3513,8 +3513,10 @@ function HISTORY_MAX_ROWS() {
  */
 function historyLineDiff_(before, after) {
   if (before.indexOf('\n') < 0 && after.indexOf('\n') < 0) return null;
-  var a = splitLines(before);
-  var b = splitLines(after);
+  // 末尾の空の行も残す (splitLines は落とす)。落とすと、改行を足しただけの
+  // 変更が差分に出ない
+  var a = before === '' ? [] : before.split('\n');
+  var b = after === '' ? [] : after.split('\n');
   if (a.length > 500 || b.length > 500) return null;
 
   var names = { equal: 'same', 'delete': 'del', insert: 'add' };

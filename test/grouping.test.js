@@ -72,3 +72,15 @@ describe('groupIssues', () => {
     expect(gas.groupIssues([], 'doc', names)).toEqual([]);
   });
 });
+
+describe('スプリントごとに束ねる', () => {
+  it('名前の順に並べ、未定は最後。名前が Object の持ち物や未定の印と重なっても混ざらない', () => {
+    const issues = [
+      { number: 1, sprint: 'sprint002' }, { number: 2, sprint: '' },
+      { number: 3, sprint: 'constructor' }, { number: 4, sprint: '(未定)' }, { number: 5, sprint: 'sprint001' },
+    ];
+    const groups = gas.groupIssues(issues, 'sprint', {});
+    expect(groups.map((g) => g.label)).toEqual(['(未定)', 'constructor', 'sprint001', 'sprint002', 'スプリント未定']);
+    expect(groups.map((g) => g.issues.map((i) => i.number))).toEqual([[4], [3], [5], [1], [2]]);
+  });
+});
