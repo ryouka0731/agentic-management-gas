@@ -3473,7 +3473,9 @@ function apiHistory(target) {
   if (!/^(issue|impediment|sprint):.+$/.test(key)) throw new Error('履歴の対象が正しくありません: ' + key);
   if (key.indexOf('issue:') !== 0) scrumAssertEnabled_();
 
-  return historyOf_(key).slice(0, 200).map(function (row) {
+  return historyOf_(key).slice(0, HISTORY_MAX_ROWS()).map(function (row) {
+    var before = plainText(row.before);
+    var after = plainText(row.after);
     return {
       id: plainId(row.id),
       at: plainDate(row.at),
@@ -3481,8 +3483,44 @@ function apiHistory(target) {
       target: plainText(row.target),
       action: plainText(row.action),
       field: plainText(row.field),
-      before: plainText(row.before),
-      after: plainText(row.after),
+      before: before,
+      after: after,
+      // 複数行の値 (補足・受入基準・解決策) は行ごとの差分で見せる。前と後を丸ごと
+      // 並べると、長い補足のどこが変わったのかが読めない
+      lines: historyLineDiff_(before, after),
     };
+  });
+}
+
+/**
+ * 変更の履歴を画面へ渡す上限 (行)。これより前は省略したと画面が書く。
+ *
+ * @returns {number}
+ */
+function HISTORY_MAX_ROWS() {
+  return 500;
+}
+
+/**
+ * 前と後の行ごとの差分。どちらも1行なら null (「前 → 後」で足りる)。
+ *
+ * 行が多すぎると差分の計算が重くなるので、どちらかが 500 行を超えたら null を
+ * 返し、画面は前と後を丸ごと並べる。
+ *
+ * @param {string} before
+ * @param {string} after
+ * @returns {Array<{op: string, text: string}>|null} op は 'same' | 'del' | 'add'
+ */
+function historyLineDiff_(before, after) {
+  if (before.indexOf('\n') < 0 && after.indexOf('\n') < 0) return null;
+  // 末尾の空の行も残す (splitLines は落とす)。落とすと、改行を足しただけの
+  // 変更が差分に出ない
+  var a = before === '' ? [] : before.split('\n');
+  var b = after === '' ? [] : after.split('\n');
+  if (a.length > 500 || b.length > 500) return null;
+
+  var names = { equal: 'same', 'delete': 'del', insert: 'add' };
+  return diffLines(a, b).map(function (op) {
+    return { op: names[op.type], text: String(op.line) };
   });
 }

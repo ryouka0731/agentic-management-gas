@@ -91,6 +91,7 @@ describe('スクラムの入口', () => {
       return ctx.apiImpedimentReopen(env.imp.number);
     }],
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],
+    ['apiProjectBoard', (ctx) => ctx.apiProjectBoard()],
     // 作る・直す・書く側も見る。返す形を間違えても操作は成功するので気づかれない
     ['apiSetScrumEnabled', (ctx) => ctx.apiSetScrumEnabled(true)],
     ['apiSetScrumText', (ctx) => ctx.apiSetScrumText('productGoal', '紙をなくす')],
@@ -114,6 +115,8 @@ describe('スクラムの入口', () => {
     apiImpedimentComment: { body: '頼みました' },
     apiImpedimentResolve: { state: 'resolved', resolution: '代理が承認' },
     apiImpedimentReopen: { state: 'open' },
+    // ボードのカードにもスプリントとポイントを渡す (一覧で積んだ量を見比べる)
+    apiProjectBoard: { Backlog: [{ sprint: 'sprint001', points: 3 }] },
   };
 
   CASES.forEach(([name, call]) => {
@@ -192,6 +195,31 @@ describe('手元の道具から使う命令', () => {
   it('切り替える命令は無い (人が画面で決める)', () => {
     const { ctx } = setup();
     expect(() => ctx.runCommand_({ op: 'scrumSetEnabled', args: { on: true } })).toThrow(/実行できない/);
+  });
+});
+
+describe('変更の履歴の差分', () => {
+  it('複数行の値には行ごとの差分を添え、1行の値には添えない', () => {
+    const { ctx } = setup();
+    const made = ctx.apiIssueCreate('題', '一行目\n二行目', [], '', {});
+    ctx.apiIssueUpdate(made.number, { title: '題2', body: '一行目\n直した二行目\n三行目' });
+
+    const rows = ctx.apiHistory('issue:' + made.number);
+    expect(rows.find((r) => r.field === 'title').lines).toBeNull();
+    expect(rows.find((r) => r.field === 'body').lines).toEqual([
+      { op: 'same', text: '一行目' },
+      { op: 'del', text: '二行目' },
+      { op: 'add', text: '直した二行目' },
+      { op: 'add', text: '三行目' },
+    ]);
+  });
+
+  it('改行を足しただけの変更も差分に出る', () => {
+    const { ctx } = setup();
+    const made = ctx.apiIssueCreate('題', '一行目', [], '', {});
+    ctx.apiIssueUpdate(made.number, { body: '一行目\n' });
+    const body = ctx.apiHistory('issue:' + made.number).find((r) => r.field === 'body');
+    expect(body.lines).toEqual([{ op: 'same', text: '一行目' }, { op: 'add', text: '' }]);
   });
 });
 

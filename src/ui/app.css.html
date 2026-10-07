@@ -4152,6 +4152,9 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .scrum-next-text { flex: 1 1 280px; display: flex; flex-direction: column; gap: 2px; }
 .scrum-next-text strong { font-size: 15px; }
 
+.scrum-chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+.group-points { margin-left: var(--sp-1); }
+
 /* 狭い画面では操作の帯を折り返す。詰めると「スプリント」の字が縦に割れる */
 .scrum-actions { flex-wrap: wrap; }
 .scrum-actions .tally-switch .row-meta,
@@ -4159,4 +4162,22 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .change-history { margin-top: var(--sp-4); }
 .change-history summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
 .history-item { padding: var(--sp-2) 0; font-size: 12px; }
+.history-head { margin-bottom: var(--sp-1); }
+.history-change { margin: var(--sp-1) 0 0; }
+.history-diff {
+  margin-top: var(--sp-1);
+  padding: var(--sp-1) 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.history-line { display: block; padding: 0 var(--sp-2); text-decoration: none; }
+.history-mark { display: inline-block; width: 1.5em; color: var(--ink-2); }
+/* 色だけに頼らない。消えた行は取り消し線と「−」、足した行は「＋」 */
+.history-del { color: var(--danger); background: var(--danger-bg); }
+.history-del .history-text { text-decoration: line-through; }
+.history-add { color: var(--accent); background: var(--accent-bg); }
+.history-more { margin-top: var(--sp-2); }
 </style>
