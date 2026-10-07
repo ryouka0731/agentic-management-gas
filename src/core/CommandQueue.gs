@@ -141,11 +141,24 @@ function queueFolder_(key, name) {
     }
   }
 
-  var folder = DriveApp.getFolderById(config.gitId).createFolder(name);
-  config[key] = folder.getId();
-  PropertiesService.getScriptProperties()
-    .setProperty(REPO_CONFIG_KEY(), JSON.stringify(config));
-  return folder;
+  // **作るのは鍵の中で、確かめ直してから。** 1分ごとのキューはフォルダを鍵の外で
+  // 引くので、重なった初回の起動が別々のフォルダを作ると、処理済みの印が分かれて
+  // 同じ命令が2回走る
+  return dbWithLock_(30000, function () {
+    var again = repoConfig();
+    if (again[key]) {
+      try {
+        return DriveApp.getFolderById(again[key]);
+      } catch (e2) {
+        // 手で消された場合は作り直す
+      }
+    }
+    var folder = DriveApp.getFolderById(again.gitId).createFolder(name);
+    again[key] = folder.getId();
+    PropertiesService.getScriptProperties()
+      .setProperty(REPO_CONFIG_KEY(), JSON.stringify(again));
+    return folder;
+  });
 }
 
 /**
@@ -185,13 +198,16 @@ function runCommand_(cmd) {
 /**
  * 命令ファイルを1つ処理し、結果を書き出して queue-done に移す。
  *
+ * **鍵を持って呼ぶ** (processCommandQueue が1件ごとに取る)。処理済みか見てから
+ * 走らせて片付けるまでを、ほかの起動に割り込ませないため。
+ *
  * 1件の失敗でキュー全体を止めないため、例外は握って ok:false にする。
  *
  * @param {GoogleAppsScript.Drive.File} file
  * @param {GoogleAppsScript.Drive.Folder} queue
  * @param {GoogleAppsScript.Drive.Folder} done
  */
-function runCommandFile_(file, queue, done) {
+function runCommandFileLocked_(file, queue, done) {
   var id = file.getName().replace(/\.cmd\.json$/, '');
 
   /*
@@ -271,27 +287,51 @@ function commandAlreadyRan_(done, name) {
  * @returns {string} 処理件数の要約
  */
 function processCommandQueue() {
-  // 1分ごとに呼ばれるので、取れなければ次の回に回せばよい
-  return dbWithLock_(10000, function () {
-        var queue = commandQueueFolder_();
-        var done = commandDoneFolder_();
+  /*
+   * **鍵は命令1件ごとに取る。命令が無いときは取らない。**
+   *
+   * 以前は、命令が無くても鍵を取り、鍵を持ったまま Drive のフォルダを覗き、
+   * 命令をまとめて1つの鍵で走らせ、1日1回の片付けまで相乗りさせていた。画面
+   * からの登録は鍵を30秒まで待つので、そのあいだ「混み合っています」になり、
+   * スプリントを作れなかった (実機で報告があった)。
+   *
+   * 二度実行しないこと (処理済みか見る → 走らせる → 片付ける) は、1件ごとの
+   * 鍵の中で守る。重なった2回の起動が同じ命令を数えても、後から鍵を取った
+   * ほうは処理済みと見て走らせない。
+   */
+  var queue = commandQueueFolder_();
+  var done = commandDoneFolder_();
 
-        // イテレータを回しながらファイルを移動すると取りこぼす。
-        // 先に対象を集めてから処理する
-        var targets = [];
-        var it = queue.getFiles();
-        while (it.hasNext() && targets.length < COMMAND_QUEUE_BATCH()) {
-          var f = it.next();
-          if (/\.cmd\.json$/.test(f.getName())) targets.push(f);
-        }
+  // イテレータを回しながらファイルを移動すると取りこぼす。
+  // 先に対象を集めてから処理する
+  var targets = [];
+  var it = queue.getFiles();
+  while (it.hasNext() && targets.length < COMMAND_QUEUE_BATCH()) {
+    var f = it.next();
+    if (/\.cmd\.json$/.test(f.getName())) targets.push(f);
+  }
 
-        for (var i = 0; i < targets.length; i++) {
-          runCommandFile_(targets[i], queue, done);
-        }
+  var ran = 0;
+  for (var i = 0; i < targets.length; i++) {
+    var file = targets[i];
+    // 1分ごとに呼ばれるので、取れなければ残りは次の回に回せばよい
+    var got = dbWithLock_(10000, function () {
+      runCommandFileLocked_(file, queue, done);
+      return true;
+    }, function () { return false; });
+    if (!got) break;
+    ran++;
+  }
 
-        // 置き場の片付けもここに相乗りさせる (1日1回で自分でせき止める)
-        if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
+  // 置き場の片付けもここに相乗りさせる (1日1回で自分でせき止める)。
+  // **鍵の外で走らせる。** Drive を何度も見に行くので長く、中で書くところは
+  // それぞれが鍵を取る
+  try {
+    if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
+  } catch (e) {
+    Logger.log('片付けに失敗しました: ' + e.message);
+  }
 
-        return targets.length + '件処理しました';
-  }, function () { return '他の処理が実行中です'; });
+  if (ran < targets.length) return ran + '件処理しました (残りは他の処理が実行中のため次の回に)';
+  return ran + '件処理しました';
 }

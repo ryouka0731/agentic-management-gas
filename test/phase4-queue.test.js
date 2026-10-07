@@ -248,3 +248,127 @@ describe('同じ命令を二度実行しない', () => {
     expect(movedFirst).toBe(true);
   });
 });
+
+describe('鍵を長く持たない (画面からの登録を「混み合っています」で止めない)', () => {
+  /*
+   * 1分ごとの処理が、命令が無くても鍵を取り、鍵を持ったまま Drive のフォルダを
+   * 覗き、命令をまとめて1つの鍵で走らせ、1日1回の片付けまで相乗りさせていた。
+   * 画面からの登録は鍵を30秒まで待つので、そのあいだ「混み合っています」になり、
+   * スプリントを作れなかった (実機で報告があった)。
+   */
+  function watchLocks(ctx) {
+    // 置き場のフォルダは先に用意しておく (無いときに作る鍵は、ここで見たいものではない)
+    ctx.commandQueueFolder_();
+    ctx.commandDoneFolder_();
+    const seen = { top: 0, housekeepDepth: null };
+    const lock = ctx.dbWithLock_;
+    ctx.dbWithLock_ = (ms, fn, busy) => {
+      if (ctx.dbLockDepth_ === 0) seen.top++;
+      return lock(ms, fn, busy);
+    };
+    const hk = ctx.housekeepArchiveDaily_;
+    ctx.housekeepArchiveDaily_ = () => { seen.housekeepDepth = ctx.dbLockDepth_; return hk(); };
+    return seen;
+  }
+
+  it('命令が無いときは鍵を取らない', () => {
+    const { ctx } = setup();
+    ctx.PropertiesService.getScriptProperties().setProperty('ARCHIVE_HOUSEKEPT_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    const seen = watchLocks(ctx);
+    ctx.processCommandQueue();
+    expect(seen.top).toBe(0);
+  });
+
+  it('命令は1件ずつ鍵を取る (まとめて持たない)', () => {
+    const { ctx } = setup();
+    // 片付けの鍵を数えないよう、今日の分は済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('ARCHIVE_HOUSEKEPT_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    enqueue(ctx, 'a', { op: 'listFiles', args: {} });
+    enqueue(ctx, 'b', { op: 'listFiles', args: {} });
+    const seen = watchLocks(ctx);
+    ctx.processCommandQueue();
+    expect(seen.top).toBe(2);
+    expect(readResult(ctx, 'a').ok).toBe(true);
+    expect(readResult(ctx, 'b').ok).toBe(true);
+  });
+
+  it('1日1回の片付けは鍵の外で走らせる', () => {
+    const { ctx } = setup();
+    const seen = watchLocks(ctx);
+    ctx.processCommandQueue();
+    expect(seen.housekeepDepth).toBe(0);
+  });
+
+  it('同じ命令を、重なった2回の起動が両方走らせることはない', () => {
+    const { ctx } = setup();
+    enqueue(ctx, 'once', { op: 'issueCreate', args: { title: '一度だけ', body: '' } });
+    // 1回目の起動が命令を数えたあと、走らせる前に2回目の起動が割り込む形
+    const files = [];
+    const it = ctx.commandQueueFolder_().getFiles();
+    while (it.hasNext()) files.push(it.next());
+    ctx.processCommandQueue();
+    ctx.runCommandFileLocked_(files[0], ctx.commandQueueFolder_(), ctx.commandDoneFolder_());
+    expect(ctx.issueList(null).filter((i) => i.title === '一度だけ')).toHaveLength(1);
+  });
+});
+
+describe('鍵の外に出した処理の重なり', () => {
+  it('置き場のフォルダを作るのは鍵の中で、確かめ直してから', () => {
+    const { ctx } = setup();
+    const config = ctx.repoConfig();
+    delete config.queueDoneId;
+    ctx.PropertiesService.getScriptProperties().setProperty(ctx.REPO_CONFIG_KEY(), JSON.stringify(config));
+    const git = ctx.DriveApp.getFolderById(config.gitId);
+    const create = git.createFolder;
+    const depths = [];
+    git.createFolder = (n) => { depths.push(ctx.dbLockDepth_); return create(n); };
+
+    const a = ctx.commandDoneFolder_();
+    const b = ctx.commandDoneFolder_();
+    expect(depths).toEqual([1]);
+    expect(a.getId()).toBe(b.getId());
+  });
+
+  it('期限切れの捨てたものは、消す直前に戻されていたら消さない', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('戻すもの', '', []);
+    ctx.issueArchive(made.number);
+    ctx.dbUpdate('issues', 'number', made.number, { archivedAt: new Date(Date.now() - 400 * 864e5) });
+    const list = ctx.issueListArchived;
+    // 期限切れを選んだあと、消す前に人が戻した形
+    ctx.issueListArchived = () => { const rows = list(); ctx.issueRestore(made.number); return rows; };
+
+    ctx.issueHousekeep(new Date());
+    expect(ctx.issueGet(made.number).title).toBe('戻すもの');
+  });
+
+  it('1日1回の片付けは、ほかの起動が受け持っている間は走らせない', () => {
+    const { ctx } = setup();
+    const props = ctx.PropertiesService.getScriptProperties();
+    const today = ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+    props.setProperty('ARCHIVE_HOUSEKEPT_RUNNING', today + '|' + Date.now());
+    let ran = 0;
+    const orig = ctx.prWithdrawOrphans;
+    ctx.prWithdrawOrphans = () => { ran++; return orig(); };
+
+    ctx.housekeepArchiveDaily_();
+    expect(ran).toBe(0);
+  });
+
+  it('片付けが途中で落ちたら、その日の済みの印を付けず、次の回にやり直す', () => {
+    const { ctx } = setup();
+    const props = ctx.PropertiesService.getScriptProperties();
+    const orig = ctx.issueHousekeep;
+    ctx.issueHousekeep = () => { throw new Error('混み合っています'); };
+    expect(() => ctx.housekeepArchiveDaily_()).toThrow();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBeNull();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_RUNNING')).toBeNull();
+
+    ctx.issueHousekeep = orig;
+    ctx.housekeepArchiveDaily_();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBe(
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+  });
+});
