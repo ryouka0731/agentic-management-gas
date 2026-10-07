@@ -6460,3 +6460,71 @@ describe('上の見出し', () => {
     });
   });
 });
+
+describe('スマホ', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('主な行き先を下の帯に並べ、押すとその画面を開いて現在地にする', () => {
+    mount();
+    const items = [...document.querySelectorAll('#mobile-nav .mobile-nav-item')];
+    expect(items.map((b) => b.textContent)).toEqual(['文書', 'やること', '改訂中の版', '確認依頼', 'メニュー']);
+
+    items[1].click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(items[1].getAttribute('aria-current')).toBe('true');
+    expect(items[0].getAttribute('aria-current')).toBe('false');
+  });
+
+  it('「メニュー」で行き先の引き出しを開き、選ぶか外側を押すと閉じる', () => {
+    mount();
+    const sidebar = document.getElementById('sidebar');
+    const menu = document.getElementById('mobile-nav-menu');
+    const scrim = document.querySelector('.nav-scrim');
+
+    menu.click();
+    expect(sidebar.classList.contains('drawer-open')).toBe(true);
+    expect(menu.getAttribute('aria-expanded')).toBe('true');
+    expect(scrim.hidden).toBe(false);
+
+    // 下の帯に無い行き先を選ぶと閉じ、「メニュー」を現在地にする
+    sidebar.querySelector('[data-tab="help"]').click();
+    expect(sidebar.classList.contains('drawer-open')).toBe(false);
+    expect(scrim.hidden).toBe(true);
+    expect(menu.classList.contains('is-here')).toBe(true);
+    // 現在地は読み上げにも伝える
+    expect(menu.getAttribute('aria-current')).toBe('true');
+
+    menu.click();
+    scrim.click();
+    expect(sidebar.classList.contains('drawer-open')).toBe(false);
+
+    menu.click();
+    // 開いているあいだ、後ろの画面には焦点を行かせない
+    expect(document.querySelector('.main').hasAttribute('inert')).toBe(true);
+    expect(document.getElementById('mobile-nav').hasAttribute('inert')).toBe(true);
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(sidebar.classList.contains('drawer-open')).toBe(false);
+    expect(document.querySelector('.main').hasAttribute('inert')).toBe(false);
+    // 閉じたら「メニュー」へ焦点を戻す
+    expect(document.activeElement).toBe(menu);
+  });
+
+  it('下の帯にも件数を出す (左の行き先は引き出しの中で見えない)', async () => {
+    mount();
+    const issues = document.querySelector('#mobile-nav [data-go="issues"]');
+    const count = issues.querySelector('.mobile-nav-count');
+    const src = document.getElementById('count-todos');
+    src.textContent = '7';
+    src.hidden = false;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(count.hidden).toBe(false);
+    expect(count.textContent).toBe('7');
+    expect(issues.getAttribute('aria-label')).toBe('やること (7)');
+  });
+
+  it('改訂版の一覧では、行の捨てるボタンを畳まない (そこが唯一の入口)', () => {
+    const css = document.querySelector('style').textContent;
+    expect(css).toMatch(/#issue-list \.row-item \.btn-danger \{ display: none; \}/);
+    expect(css).not.toMatch(/\n\s*\.row-item \.btn-danger \{ display: none; \}/);
+  });
+});
