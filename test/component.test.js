@@ -6251,6 +6251,8 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       document.querySelector('[data-tab="sprint"]').click();
 
       expect(current()).toEqual(['見せる', 'ふりかえる']);
+      // 読み上げの「いまの段」は1つ
+      expect(document.querySelectorAll('.scrum-cycle-step[aria-current="step"]')).toHaveLength(1);
       expect(nextTitle()).toContain('終わりました');
       expect(document.querySelector('.scrum-next .btn-primary').textContent).toBe('次のスプリントを作る');
     });
@@ -6275,6 +6277,10 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       const btn = document.getElementById('sprint-edit-btn');
       expect(btn.disabled).toBe(true);
       expect(btn.dataset.hint).toContain('まずスプリントを作る');
+      // 押せないボタンには焦点が当たらない。理由は見える字でも隣に出す
+      const reason = document.getElementById('sprint-edit-reason');
+      expect(reason.hidden).toBe(false);
+      expect(reason.textContent).toContain('まずスプリントを作る');
     });
 
     it('スプリントの入力欄は、必須・見本・決まりを入れる前に見せる', () => {
