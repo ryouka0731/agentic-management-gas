@@ -2191,6 +2191,19 @@ button.gantt-name:hover { color: var(--accent); }
   border-radius: var(--radius);
 }
 
+/*
+ * 主ボタンが「いま開いているのはこれ」の印を受けたとき。上の .editing は面を
+ * 白にするので、そのままだと白い面に白い字が乗って消える (スプリントを作る・
+ * やることを作るで実際に見えなくなった)。塗りは残し、輪郭を一段外に出す
+ */
+.btn-primary.editing,
+.btn-primary.editing:hover:not(:disabled),
+.btn-primary.editing:active {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
 .board-card.editing {
   /* 塗りを変えると載っている面と近くなる。輪郭で示す */
   background: var(--surface-raised);
@@ -4069,6 +4082,76 @@ button.label-pill {
 .settings-field textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
 .settings-field ol { margin: 0 0 var(--sp-2); padding-left: var(--sp-5); line-height: 1.8; }
 .settings-field code { font-family: var(--mono); font-size: 12px; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--bg-3); }
+/* はじめての人への案内。説明 → 1巡りのいまの位置 → 次の一手 */
+.scrum-intro {
+  margin: var(--sp-4) var(--sp-4) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--accent-bg);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.scrum-intro summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.scrum-intro p { max-width: 760px; margin: var(--sp-2) 0 0; }
+
+.scrum-cycle {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-4) 0;
+  padding: 0;
+  list-style: none;
+}
+.scrum-cycle-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+  color: var(--ink-2);
+}
+.scrum-cycle-step.is-current { box-shadow: 0 0 0 2px var(--accent); color: var(--ink); }
+.scrum-cycle-num {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+.scrum-cycle-step.is-current .scrum-cycle-num { background: var(--accent); color: var(--on-accent); }
+.scrum-cycle-step.is-done .scrum-cycle-num { background: var(--success-bg); color: var(--success); }
+
+/* 入力欄の決まりと必須の印 (どの入力欄でも同じ形) */
+.field-note { display: block; margin-top: var(--sp-1); font-weight: 400; }
+/* 入力例は入れた値と見分けが付くよう淡い字で出す (濃いと入力済みに見える)。
+   透かすと読めなくなるので、色だけで差を付ける */
+input::placeholder,
+textarea::placeholder { color: var(--ink-2); opacity: 1; }
+.field-label { display: flex; align-items: center; gap: var(--sp-2); }
+.field-required { flex: 0 0 auto; }
+.scrum-cycle-body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+
+.scrum-next {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: var(--sp-3) var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+}
+.scrum-next-text { flex: 1 1 280px; display: flex; flex-direction: column; gap: 2px; }
+.scrum-next-text strong { font-size: 15px; }
+
 /* 狭い画面では操作の帯を折り返す。詰めると「スプリント」の字が縦に割れる */
 .scrum-actions { flex-wrap: wrap; }
 .scrum-actions .tally-switch .row-meta,
