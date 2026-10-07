@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
@@ -13,7 +14,7 @@ import { createFakeGas } from './fakegas.js';
  * まま。GAS エディタで持ち主が動かす前提のもので、広げる理由が無い。
  */
 const SOURCES = (() => {
-  const src = require('node:fs').readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
   return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
 })();
 

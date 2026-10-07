@@ -1991,7 +1991,7 @@ function apiPeopleNames() {
 /**
  * 名前を覚えさせる (Web App API)。
  *
- * 自分の名前は自分で決められる。他人の名前は持ち主だけが変えられる。
+ * 自分の名前は自分で決められる。他人の名前は管理者だけが変えられる。
  *
  * @param {string} email
  * @param {string} name
@@ -2013,7 +2013,7 @@ function apiPeopleSetName(email, name) {
  * 上下関係を登録する (Web App API)。
  *
  * 誰でも書き換えられると、自分を上長にして他人の数字を覗ける。
- * このアプリの持ち主だけが触れる。
+ * このアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人) だけが触れる。
  *
  * @param {string} email
  * @param {string} manager
@@ -3082,7 +3082,7 @@ function housekeepArchiveDaily_() {
 /**
  * アプリ全体の設定を返す (Web App API)。
  *
- * 変えられるのは持ち主だけ。画面は canEdit を見て、切り替えの入口を出すか決める。
+ * 変えられるのは管理者だけ。画面は canEdit を見て、切り替えの入口を出すか決める。
  *
  * @returns {{scrumEnabled: boolean, canEdit: boolean, productGoal: string,
  *   definitionOfDone: string}}
@@ -3102,7 +3102,7 @@ function apiSettings() {
 }
 
 /**
- * エージェンティックスクラムを切り替える (Web App API)。持ち主だけ。
+ * エージェンティックスクラムを切り替える (Web App API)。管理者だけ。
  *
  * @param {boolean} on
  * @returns {object} 切り替えたあとの apiSettings()
