@@ -5,7 +5,7 @@
  * 文書・担当者・状態・ラベルのいずれかで束ねて見出しを付ける。
  *
  * @param {object[]} issues
- * @param {string} by 'doc' | 'assignee' | 'state' | 'label' | 'none'
+ * @param {string} by 'doc' | 'assignee' | 'state' | 'label' | 'sprint' | 'none'
  * @param {Object<string,string>} docNames fileId → 表示名
  * @returns {Array<{key:string, label:string, issues:object[]}>}
  */
@@ -31,8 +31,22 @@ function groupIssues(issues, by, docNames) {
     }
 
     if (by === 'assignee') {
-      var who = String(issue.assignee || '');
-      put(who || '(未割当)', who || '担当なし', issue);
+      // 2人で持つ仕事は、両方の束に出す。画面 (app.js.html) と同じ。以前はここだけ
+      // 'a,b' を1つの束にしていた (乱数が偏っていてテストが見落とした)
+      var who = issue.assignees || String(issue.assignee || '').split(',')
+        .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+        .filter(function (x) { return !!x; });
+      if (!who.length) {
+        put('(未割当)', '担当なし', issue);
+        continue;
+      }
+      for (var w = 0; w < who.length; w++) put(who[w], who[w], issue);
+      continue;
+    }
+
+    if (by === 'sprint') {
+      var sprint = String(issue.sprint || '');
+      put(sprint || '(未定)', sprint || 'スプリント未定', issue);
       continue;
     }
 
@@ -69,7 +83,25 @@ function groupIssues(issues, by, docNames) {
     if (!linked) put('(未紐付け)', '文書に紐づいていない', issue);
   }
 
+  // スプリントは名前の順 (sprint001, sprint002 …) に並べ、未定は最後に置く。
+  // 出てきた順だと、優先度で並んだ一覧に引きずられて前後する
+  if (by === 'sprint') order.sort(groupSprintOrder_);
+
   var out = [];
   for (var k = 0; k < order.length; k++) out.push(buckets[order[k]]);
   return out;
+}
+
+/**
+ * スプリントの束の並べ方。未定は最後。
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function groupSprintOrder_(a, b) {
+  if (a === b) return 0;
+  if (a === '(未定)') return 1;
+  if (b === '(未定)') return -1;
+  return a < b ? -1 : 1;
 }

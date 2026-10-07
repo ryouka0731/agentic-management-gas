@@ -72,6 +72,9 @@ function projectBoard() {
       priority: issuePriority(issue),
       // 時刻を持たない値。ISO にすると、東京の0時が前日になる
       dueDate: plainDay(issue.dueDate),
+      // エージェンティックスクラム。オフなら画面は使わない
+      sprint: String(issue.sprint == null ? '' : issue.sprint),
+      points: plainNumber(issue.points),
       staleDays: stale.days,
       staleLevel: stale.level,
     });

@@ -4734,7 +4734,7 @@
    * @param {number} count
    * @returns {HTMLElement}
    */
-  function makeGroupHead(label, count, key) {
+  function makeGroupHead(label, count, key, points) {
     var head = document.createElement('button');
     head.className = 'group-head';
     head.setAttribute('aria-expanded', String(!collapsed[key]));
@@ -4752,6 +4752,14 @@
     n.className = 'group-count';
     n.textContent = count;
     head.appendChild(n);
+
+    // スクラムがオンなら、そのまとまりに積んだポイントの合計も出す。
+    // スプリントごとに束ねたとき、積みすぎていないかを一覧で見比べられる
+    if (points !== undefined && points !== null) {
+      var pt = makePill(points + 'pt', 'chip group-points');
+      pt.setAttribute('aria-label', 'ポイントの合計 ' + points);
+      head.appendChild(pt);
+    }
 
     head.addEventListener('click', function () {
       collapsed[key] = !collapsed[key];
@@ -5081,7 +5089,8 @@
 
       groupIssues(shown, issueGroupSel.value).forEach(function (group) {
         issueListEl.appendChild(
-          makeGroupHead(group.label, group.issues.length, group.key));
+          makeGroupHead(group.label, group.issues.length, group.key,
+            scrumOn() ? scrumPointsSum(group.issues) : null));
         if (collapsed[group.key]) return;
 
         // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
@@ -5131,6 +5140,9 @@
         // 優先度は先に出す。後ろに付けると他の印に埋もれて拾えない
         var pri = makePriorityChip(issue);
         if (pri) meta.appendChild(pri);
+
+        var scrumChips = makeScrumChips(issue);
+        if (scrumChips) meta.appendChild(scrumChips);
 
         meta.appendChild(makeRelationChips(issue.number));
 
@@ -6738,6 +6750,12 @@
         return;
       }
 
+      if (by === 'sprint') {
+        var sprint = String(issue.sprint || '');
+        put(sprint || '(未定)', sprint || 'スプリント未定', issue);
+        return;
+      }
+
       if (by === 'label') {
         var added = false;
         String(issue.labels || '').split(',').forEach(function (raw) {
@@ -6760,6 +6778,15 @@
       if (!linked) put('(未紐付け)', '文書に紐づいていない', issue);
     });
 
+    // スプリントは名前の順に並べ、未定は最後に置く (src/core/Grouping.js と同じ)
+    if (by === 'sprint') {
+      order.sort(function (a, b) {
+        if (a === b) return 0;
+        if (a === '(未定)') return 1;
+        if (b === '(未定)') return -1;
+        return a < b ? -1 : 1;
+      });
+    }
     return order.map(function (k) { return buckets[k]; });
   }
 
@@ -7399,6 +7426,12 @@
 
         var head = document.createElement('h3');
         head.textContent = pair[1] + ' (' + board[column].length + ')';
+        if (scrumOn()) {
+          var colPoints = makePill(scrumPointsSum(board[column]) + 'pt', 'chip group-points');
+          colPoints.setAttribute('aria-label', 'ポイントの合計 ' + scrumPointsSum(board[column]));
+          head.appendChild(document.createTextNode(' '));
+          head.appendChild(colPoints);
+        }
         hint(head, 'board:' + column);
         col.appendChild(head);
 
@@ -7444,6 +7477,9 @@
             relBox.appendChild(rel);
             el.appendChild(relBox);
           }
+
+          var cardScrum = makeScrumChips(card);
+          if (cardScrum) el.appendChild(cardScrum);
 
           var labelEls = makeLabels(card.labels);
           if (labelEls) el.appendChild(labelEls);
@@ -9871,7 +9907,9 @@
    * @returns {boolean}
    */
   function scrumOn() {
-    return !!settings.scrumEnabled;
+    // 起動のはじめ (この節の変数がまだ用意されていないうち) に一覧を描くことが
+    // ある。そのあいだはオフとして扱う
+    return !!(settings && settings.scrumEnabled);
   }
 
   /**
@@ -9883,6 +9921,7 @@
     call('apiSettings', [], function (res) {
       settings = res || settings;
       navScrum.hidden = !scrumOn();
+      syncSprintGrouping();
       if (!scrumOn()) {
         scrumSprints = [];
         if (then) then();
@@ -10538,6 +10577,67 @@
       } catch (e) { /* 覚えられなくても開閉はできる */ }
     });
     return details;
+  }
+
+  /**
+   * やることのポイントを足し上げる。空や読めないものは数えない。
+   *
+   * @param {object[]} list やること (または進捗ボードのカード)
+   * @returns {number}
+   */
+  function scrumPointsSum(list) {
+    var sum = 0;
+    (list || []).forEach(function (one) {
+      var n = Number(one.points);
+      if (one.points !== '' && one.points !== null && one.points !== undefined && isFinite(n)) sum += n;
+    });
+    return sum;
+  }
+
+  /**
+   * 一覧の行とボードのカードに添える、スプリントとポイントの札。オフなら出さない。
+   *
+   * 中を開かないと分からなかったため、積んだ量を一覧で見比べられなかった。
+   *
+   * @param {object} issue やること (またはカード)
+   * @returns {HTMLElement|null}
+   */
+  function makeScrumChips(issue) {
+    if (!scrumOn()) return null;
+    var hasPoints = issue.points !== '' && issue.points !== null && issue.points !== undefined;
+    if (!issue.sprint && !hasPoints) return null;
+
+    var wrap = document.createElement('span');
+    wrap.className = 'scrum-chips';
+    if (issue.sprint) {
+      var sp = makePill(issue.sprint, 'chip', 'clock');
+      sp.setAttribute('aria-label', 'スプリント ' + issue.sprint);
+      wrap.appendChild(sp);
+    }
+    if (hasPoints) {
+      var pt = makePill(issue.points + 'pt', 'chip');
+      pt.setAttribute('aria-label', 'ポイント ' + issue.points);
+      wrap.appendChild(pt);
+    }
+    return wrap;
+  }
+
+  /**
+   * 「まとめ方」の「スプリントごと」はオンのときだけ出す。オフに戻したときに
+   * 選ばれていたら、既定の文書ごとに戻す (空の束だけが並ぶのを避ける)。
+   */
+  function syncSprintGrouping() {
+    var opt = issueGroupSel.querySelector('option[value="sprint"]');
+    if (scrumOn() && !opt) {
+      opt = document.createElement('option');
+      opt.value = 'sprint';
+      opt.textContent = 'スプリントごと';
+      issueGroupSel.insertBefore(opt, issueGroupSel.querySelector('option[value="none"]'));
+    }
+    if (!scrumOn() && opt) {
+      if (issueGroupSel.value === 'sprint') issueGroupSel.value = 'doc';
+      opt.remove();
+    }
   }
 
   /**

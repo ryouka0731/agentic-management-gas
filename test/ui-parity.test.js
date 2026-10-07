@@ -49,8 +49,18 @@ function ui(names, globals) {
   return ctx;
 }
 
+/*
+ * 乱数は Math.imul で32ビットのまま回す。
+ *
+ * 以前は (seed * 1103515245 + 12345) % 2^31 と書いていた。掛け算が 2^53 を超えて
+ * 下の桁が落ち、並びが偏っていた。groupIssues を担当者で束ねる場合が 302 回あって、
+ * 担当者の入ったやることが1件も作られず、画面とサーバの食い違いを見落としていた
+ */
 let seed = 17;
-const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+const rnd = (n) => {
+  seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+  return (seed >>> 8) % n;
+};
 const pick = (list) => list[rnd(list.length)];
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -163,7 +173,8 @@ describe('画面とサーバで同じ答えになる', () => {
       return m ? { branch: m[1], path: m[2] } : { branch: 'main', path: String(p || '') };
     };
     // 箱は1回だけ作る (wouldCycle と同じ理由)
-    const view = ui(['groupIssues'], { allFiles, splitPath });
+    // 束の見出しの人の名前は、画面では表示名に直す。比べるのは束ね方なので、そのまま返す
+    const view = ui(['groupIssues'], { allFiles, splitPath, personName: (x) => x });
     for (let t = 0; t < 2000; t++) {
       const issues = Array.from({ length: rnd(6) }, (_, i) => ({
         number: i + 1,
@@ -173,8 +184,9 @@ describe('画面とサーバで同じ答えになる', () => {
         state: pick(['open', 'closed']),
         priority: pick(['', 'high', 'low', 'normal']),
         dueDate: pick(['', '2026-09-30']),
+        sprint: pick(['', 'sprint001', 'sprint002', 'sprint010']),
       }));
-      const by = pick(['assignee', 'label', 'doc', 'state', 'priority', 'none', 'due']);
+      const by = pick(['assignee', 'label', 'doc', 'state', 'sprint', 'priority', 'none', 'due']);
       const a = view.groupIssues(issues, by);
       const b = core.groupIssues(issues, by, docNames);
       if (!same(a, b)) {
