@@ -5898,12 +5898,29 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     document.querySelector('[data-tab="settings"]').click();
 
     const toggle = document.getElementById('scrum-toggle');
-    expect(toggle.textContent).toBe('オンにする');
+    // 名前は状態で変えない。状態はトグルの形 (role=switch / aria-checked) で示す
+    expect(toggle.getAttribute('role')).toBe('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.textContent).toBe('エージェンティックスクラムを使う');
     app.respond('apiSettings', ON);
     toggle.click();
 
     expect(app.calls.filter((c) => c.name === 'apiSetScrumEnabled')[0].args).toEqual([true]);
     expect(document.getElementById('nav-scrum').hidden).toBe(false);
+    const after = document.getElementById('scrum-toggle');
+    expect(after.getAttribute('aria-checked')).toBe('true');
+    expect(after.textContent).toBe('エージェンティックスクラムを使う');
+  });
+
+  it('切り替えに失敗したら、トグルの形を元に戻す', () => {
+    mount({ apiSetScrumEnabled: new Error('混み合っています') });
+    document.querySelector('[data-tab="settings"]').click();
+    const toggle = document.getElementById('scrum-toggle');
+    toggle.click();
+
+    // 押した結果をすぐ形で返すが、届かなければ嘘にならないよう戻す
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.disabled).toBe(false);
   });
 
   it('持ち主でなければ、切り替えの入口は出さず、頼む先を書く', () => {

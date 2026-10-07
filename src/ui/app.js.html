@@ -10039,21 +10039,32 @@
     box.appendChild(off);
 
     if (settings.canEdit) {
+      /*
+       * 切り替えはトグルにする。「オフにする」と書いたボタンは、いまの状態を
+       * 言っているのか押した結果を言っているのかが読めない (フリップフロップ
+       * 問題)。名前は変えず、つまみの位置と aria-checked で状態を示す
+       */
       var toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.id = 'scrum-toggle';
-      toggle.className = 'btn' + (scrumOn() ? '' : ' btn-primary');
-      toggle.textContent = scrumOn() ? 'オフにする' : 'オンにする';
+      toggle.className = 'btn toggle-btn';
+      toggle.textContent = 'エージェンティックスクラムを使う';
+      setToggle(toggle, scrumOn());
       hint(toggle, 'act:scrum-toggle');
       toggle.addEventListener('click', function () {
         toggle.disabled = true;
+        // 押した結果をすぐ形で返す。届かなければ元に戻す
+        setToggle(toggle, !scrumOn());
         call('apiSetScrumEnabled', [!scrumOn()], function (res) {
           settings = res || settings;
           showSnack(scrumOn()
             ? 'エージェンティックスクラムをオンにしました。左に「スクラム」が出ます'
             : 'エージェンティックスクラムをオフにしました', { kind: 'ok' });
           loadSettingsPanel();
-        }, failEnable(toggle, '切り替えられませんでした: '));
+        }, function (err) {
+          setToggle(toggle, scrumOn());
+          failEnable(toggle, '切り替えられませんでした: ')(err);
+        });
       });
       box.appendChild(toggle);
     } else {
