@@ -2412,6 +2412,9 @@ button.gantt-name:hover { color: var(--accent); }
 
 .card-foot {
   display: flex;
+  /* それでも入りきらない狭さでは、担当者と捨てるボタンを次の行へ落とす。
+     札 (動きなし) は形を変えない決まりなので、段ごと折り返す */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
   margin-top: var(--sp-2);
