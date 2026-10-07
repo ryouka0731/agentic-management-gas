@@ -4294,9 +4294,25 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   /* 入力の字は 16px 以上にする。小さいと iPhone が勝手に拡大する */
   input, select, textarea { font-size: 16px; }
 
-  /* 一覧の行は、題名を広く取る。直す・捨てるは開いた詳細にもあるので畳む */
-  .row-item .icon-btn[aria-label$="を直す"],
-  .row-item .btn-danger { display: none; }
+  /* やることの一覧の行は、題名を広く取る。直す・捨てるは開いた詳細にもあるので畳む。
+     ほかの一覧 (改訂版など) では行のボタンが唯一の入口なので畳まない */
+  #issue-list .row-item .icon-btn[aria-label$="を直す"],
+  #issue-list .row-item .btn-danger { display: none; }
+
+  .mobile-nav-item { position: relative; }
+  .mobile-nav-count {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 8px);
+    min-width: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+  }
 
   /* 押せる大きさを指に合わせる */
   .icon-btn { min-width: 40px; min-height: 40px; }

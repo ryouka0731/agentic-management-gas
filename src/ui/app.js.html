@@ -11651,13 +11651,27 @@
    * @param {boolean} open
    */
   function setNavDrawer(open) {
+    var was = sidebarEl.classList.contains('drawer-open');
     sidebarEl.classList.toggle('drawer-open', open);
     navScrim.hidden = !open;
     var btn = document.getElementById('mobile-nav-menu');
     if (btn) btn.setAttribute('aria-expanded', String(open));
+
+    // 開いているあいだ、後ろの画面には焦点も読み上げも行かせない。行かせると
+    // Tab で見えない後ろのボタンへ抜ける
+    var main = document.querySelector('.main');
+    [main, mobileNav].forEach(function (el) {
+      if (!el) return;
+      if (open) el.setAttribute('inert', '');
+      else el.removeAttribute('inert');
+    });
+
     // 開いたら引き出しそのものへ焦点を移す。キーボードや読み上げで開いたことが
     // 分かる。行き先のボタンに移すと、その説明の吹き出しまで出て指の操作の邪魔になる
     if (open) sidebarEl.focus();
+    // 閉じたら「メニュー」へ戻す (焦点が消えた場所に取り残されない)。行き先を
+    // 選んで閉じたときは、開いた画面のほうを読ませたいので戻さない
+    else if (was && btn && sidebarEl.contains(document.activeElement)) btn.focus();
   }
 
   /** 下の帯を組む。名前と印は左の行き先から写す (同じものを2か所に書かない) */
@@ -11673,6 +11687,26 @@
       var label = document.createElement('span');
       label.textContent = src.querySelector('.nav-label').textContent.trim();
       btn.appendChild(label);
+
+      // 件数 (やること・改訂中・確認依頼) も写す。左の行き先は引き出しの中なので、
+      // 写さないと開くまで見えない。数え直しは左の印に入るので、それを見張る
+      var srcCount = src.querySelector('.nav-count');
+      if (srcCount && typeof MutationObserver === 'function') {
+        var count = document.createElement('span');
+        count.className = 'mobile-nav-count';
+        count.setAttribute('aria-hidden', 'true');
+        var copy = function () {
+          count.textContent = srcCount.textContent;
+          count.hidden = srcCount.hidden || !srcCount.textContent;
+          btn.setAttribute('aria-label', label.textContent +
+            (count.hidden ? '' : ' (' + srcCount.textContent + ')'));
+        };
+        copy();
+        new MutationObserver(copy).observe(srcCount,
+          { childList: true, characterData: true, subtree: true, attributes: true });
+        btn.appendChild(count);
+      }
+
       btn.addEventListener('click', function () { src.click(); });
       mobileNav.appendChild(btn);
     });
@@ -11706,8 +11740,13 @@
       btn.setAttribute('aria-current', String(btn.dataset.go === navName));
     });
     var menu = document.getElementById('mobile-nav-menu');
-    // 下の帯に無い行き先にいるときは「メニュー」を現在地にする
-    if (menu) menu.classList.toggle('is-here', MOBILE_NAV.indexOf(navName) < 0);
+    // 下の帯に無い行き先にいるときは「メニュー」を現在地にする。見た目だけで
+    // なく読み上げにも伝える
+    if (menu) {
+      var here = MOBILE_NAV.indexOf(navName) < 0;
+      menu.classList.toggle('is-here', here);
+      menu.setAttribute('aria-current', String(here));
+    }
     setNavDrawer(false);
   }
 
