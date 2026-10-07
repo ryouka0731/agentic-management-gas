@@ -6708,6 +6708,55 @@ describe('進捗ボードの使い勝手', () => {
     expect(app.calls.find((c) => c.name === 'apiProjectMove').args).toEqual([5, 'Backlog', 1]);
   });
 
+  it('カードが1枚も無くても列を描き、「＋」から足せる', () => {
+    openBoard({ apiProjectBoard: { Backlog: [], 'In Progress': [], 'In Review': [], Done: [] } });
+    expect(document.querySelector('#issue-board .blank-state, .blank-state')).not.toBeNull();
+    expect(document.querySelectorAll('.board-column .board-add')).toHaveLength(4);
+  });
+
+  it('足したあと列へ移せなかったら、欄を閉じて板を描き直す (押せないまま残さない)', () => {
+    const app = openBoard({ apiIssueCreate: { number: 9, title: 'x' }, apiProjectMove: new Error('混み合っています') });
+    const col = document.querySelectorAll('.board-column')[1];
+    col.querySelector('.board-add').click();
+    const form = col.querySelector('.board-composer');
+    form.querySelector('input').value = 'x';
+    form.querySelector('input').dispatchEvent(new window.Event('input'));
+    form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+
+    expect(document.getElementById('snackbar').textContent).toContain('#9 は作りましたが');
+    expect(document.querySelector('.board-composer')).toBeNull();
+    expect(app.calls.filter((c) => c.name === 'apiProjectBoard').length).toBeGreaterThan(1);
+  });
+
+  it('絞り込んでいても、保存されている並びの位置に入れる', () => {
+    const board = {
+      Backlog: [
+        { issueNumber: 1, order: 0, title: '見えない', state: 'open', assignee: '', labels: '', dueDate: '' },
+        { issueNumber: 2, order: 1, title: '会議の準備', state: 'open', assignee: '', labels: '', dueDate: '' },
+      ],
+      'In Progress': [], 'In Review': [], Done: [],
+    };
+    const issues = [
+      Object.assign({}, DEFAULTS.apiIssueList[0], { number: 1, title: '見えない' }),
+      Object.assign({}, DEFAULTS.apiIssueList[0], { number: 2, title: '会議の準備' }),
+    ];
+    const app = openBoard({ apiProjectBoard: board, apiIssueList: issues });
+    const filter = document.getElementById('issue-filter');
+    filter.value = '会議';
+    filter.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    const col = document.querySelector('.board-column');
+    const cards = col.querySelectorAll('.board-card');
+    expect(cards).toHaveLength(1);
+    cards[0].getBoundingClientRect = () => ({ top: 100, height: 40 });
+    const drop = new window.Event('drop', { cancelable: true });
+    drop.clientY = 101;
+    drop.dataTransfer = { getData: () => '7' };
+    col.dispatchEvent(drop);
+    // 見えている1番目は、保存されている並びでは2番目 (位置1)
+    expect(app.calls.filter((c) => c.name === 'apiProjectMove').pop().args).toEqual([7, 'Backlog', 1]);
+  });
+
   it('キーボード: ? で操作の一覧、N で作る、/ で絞り込み。入力中は効かない', () => {
     mount();
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '?' }));

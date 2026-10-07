@@ -261,6 +261,14 @@ describe('カンバンボード', () => {
     expect(ctx.projectBoard()['In Progress']).toEqual([]);
   });
 
+  it('別の列へ移したら、元の列の番号も詰める (穴が空くと次の追加と重なる)', () => {
+    const { ctx } = setup();
+    const [a, b, c] = ['A', 'B', 'C'].map((t) => ctx.issueCreate(t, '', []));
+    [a, b, c].forEach((i) => ctx.projectPlace(i.number, 'Backlog'));
+    ctx.projectMove(a.number, 'Done', 0);
+    expect(ctx.projectBoard()['Backlog'].map((x) => x.order)).toEqual([0, 1]);
+  });
+
   it('定義されていない列には置けない', () => {
     const { ctx } = setup();
     const issue = ctx.issueCreate('改訂', '', []);

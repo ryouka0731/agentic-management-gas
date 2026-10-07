@@ -141,6 +141,20 @@ function projectMove(issueNumber, column, order) {
       projectPlace(issueNumber, column);
     }
 
+    // 別の列から来たなら、元の列の番号も詰める。詰めないと穴が空き、次に末尾へ
+    // 足すときに既にある番号と重なる
+    var from = dbFindOne('project_items', 'issueNumber', issueNumber);
+    var fromColumn = from ? String(from.column) : '';
+    if (fromColumn && fromColumn !== String(column)) {
+      var rest = dbReadAll('project_items').filter(function (r) {
+        return String(r.column) === fromColumn && Number(r.issueNumber) !== Number(issueNumber);
+      });
+      rest.sort(function (a, b) { return Number(a.order) - Number(b.order); });
+      for (var j = 0; j < rest.length; j++) {
+        if (Number(rest[j].order) !== j) dbUpdate('project_items', 'issueNumber', rest[j].issueNumber, { order: j });
+      }
+    }
+
     var rows = dbReadAll('project_items').filter(function (r) {
       return String(r.column) === String(column) && Number(r.issueNumber) !== Number(issueNumber);
     });

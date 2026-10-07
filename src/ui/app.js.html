@@ -7441,6 +7441,10 @@
       COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
       boardEl.textContent = '';
 
+      // 絞り込む前の列の長さ。末尾に足す位置は、見えている枚数ではなくこちらで数える
+      var fullLen = {};
+      COLUMNS.forEach(function (c) { fullLen[c[0]] = board[c[0]].length; });
+
       // 絞り込みは番号で当てる。カードは中身を全部持っていない
       var keep = null;
       if (String(issueFilterEl.value || '')) {
@@ -7463,10 +7467,10 @@
         boardEl.appendChild(makeBlankState(
           'カードがありません',
           'カードは「やること」です。作ると「これから」に並び、' +
-          '改訂版や確認依頼に応じて自動で右に動きます。',
+          '改訂版や確認依頼に応じて自動で右に動きます。列の「＋」からも足せます。',
           { label: 'やることを作る', onClick: createIssue }
         ));
-        return;
+        // 空でも列は描く。列の「＋」から足せないと、最初の1枚の入口が減る
       }
 
       COLUMNS.forEach(function (pair) {
@@ -7493,7 +7497,7 @@
         addBtn.appendChild(makeIcon('plus'));
         addBtn.setAttribute('aria-label', pair[1] + ' にやることを足す');
         addBtn.title = pair[1] + ' にやることを足す';
-        addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], board[column].length); });
+        addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], fullLen[column]); });
         var headRow = document.createElement('div');
         headRow.className = 'board-column-head';
         headRow.appendChild(head);
@@ -7520,8 +7524,10 @@
           var issueNumber = Number(e.dataTransfer.getData('text/plain'));
           if (!issueNumber) return;
 
-          // 落とした位置に入れる (以前は列の末尾にしか入らなかった)
-          call('apiProjectMove', [issueNumber, column, index],
+          // 落とした位置に入れる (以前は列の末尾にしか入らなかった)。絞り込んで
+          // いるときは見えている枚数と保存されている並びが食い違うので、
+          // 保存されている並びの位置に直してから送る
+          call('apiProjectMove', [issueNumber, column, boardSavedIndex(col, index, column, issueNumber, fullLen)],
             function () { loadBoard(); });
         });
 
@@ -7541,6 +7547,8 @@
           el.appendChild(title);
 
           el.dataset.number = card.issueNumber;
+          el.dataset.order = card.order;
+          el.dataset.column = column;
 
           var rel = makeRelationChips(card.issueNumber);
           if (rel.childNodes.length) {
@@ -7629,6 +7637,33 @@
     return cards.length;
   }
 
+  /**
+   * 見えている中での位置を、保存されている並びの位置に直す。
+   *
+   * 絞り込んでいると見えないカードがあるので、見えている何番目かをそのまま送ると
+   * ずれる。落とした先のカードの保存されている番号を使い、末尾なら絞り込む前の
+   * 長さを使う。同じ列の中で後ろへ動かすときは、サーバが先に自分を抜くぶん1つ詰める。
+   *
+   * @param {HTMLElement} col
+   * @param {number} index 見えている中での位置
+   * @param {string} column
+   * @param {number} issueNumber 動かすカード
+   * @param {Object<string, number>} fullLen 絞り込む前の列の長さ
+   * @returns {number}
+   */
+  function boardSavedIndex(col, index, column, issueNumber, fullLen) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    var dragged = document.querySelector('.board-card[data-number="' + issueNumber + '"]');
+    var fromSame = dragged && dragged.dataset.column === column;
+    var fromOrder = dragged ? Number(dragged.dataset.order) : -1;
+    if (index < cards.length) {
+      var target = Number(cards[index].dataset.order);
+      return fromSame && fromOrder < target ? target - 1 : target;
+    }
+    var len = fullLen[column] || 0;
+    return fromSame ? len - 1 : len;
+  }
+
   /** 落とす位置の線。1本だけ出す */
   var dropIndicator = document.createElement('div');
   dropIndicator.className = 'drop-indicator';
@@ -7703,7 +7738,13 @@
         }
         // 作ると「これから」に入る。ほかの列で足したなら、その列の末尾へ移す
         if (column === 'Backlog' || !made) done();
-        else call('apiProjectMove', [made.number, column, at], done);
+        else call('apiProjectMove', [made.number, column, at], done, function (err) {
+          // 作れてはいる。押せないまま残すと、もう一度作られて2つ並ぶ。閉じて板を描き直す
+          close();
+          showSnack('#' + made.number + ' は作りましたが、' + label + ' へ移せませんでした (これから に入っています): ' +
+            err.message, { kind: 'ng' });
+          loadBoard();
+        });
       }, failEnable(add, '足せませんでした: '));
     });
 
