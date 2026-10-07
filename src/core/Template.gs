@@ -137,7 +137,7 @@ function templateSaveLocked_(name, body) {
 }
 
 /**
- * 下書きを消す。作った本人か、このアプリの持ち主だけ。
+ * 下書きを消す。作った本人か、このアプリの管理者だけ。
  *
  * @param {string} name
  */
