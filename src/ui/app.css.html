@@ -755,6 +755,68 @@ body {
   padding: 0 var(--sp-1) var(--sp-1);
 }
 
+/* 列の見出しと「＋」。見出しは送っても上に残す */
+.board-column-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  background: var(--bg-3);
+}
+.board-add { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+
+/* 落とす位置の線 */
+.drop-indicator {
+  height: 3px;
+  margin: -2px var(--sp-1);
+  border-radius: 999px;
+  background: var(--accent);
+}
+.board-card.dragging { opacity: 0.45; }
+
+/* 列の中で題名だけ打って足す欄 */
+.board-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--hairline), var(--elev-1);
+}
+.board-composer input {
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--hairline);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+.board-composer input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.board-composer-actions { display: flex; justify-content: flex-end; gap: var(--sp-1); }
+
+/* キーボードの操作の一覧 */
+.shortcut-list { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-3); margin: 0; }
+.shortcut-list dt { margin: 0; }
+.shortcut-list dd { margin: 0; align-self: center; color: var(--ink); }
+.shortcut-list kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--hairline);
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .board-card {
   background: var(--surface-raised);
   /* 枠ではなく影で持ち上げる。触れる対象であることを形で示す */
@@ -958,7 +1020,17 @@ button:disabled {
 
   .toolbar { flex-wrap: wrap; gap: var(--sp-2); }
 
-  .board { grid-template-columns: 1fr; }
+  /* 列は縦に積まず、横に1列ずつ指で送る。積むと別の列を見るのに長く送る */
+  .board {
+    display: flex;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .board-column {
+    flex: 0 0 85vw;
+    max-width: 340px;
+    scroll-snap-align: start;
+  }
 
   .diff-cell { font-size: 11px; }
 }

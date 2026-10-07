@@ -122,19 +122,42 @@ function projectPlace(issueNumber, column) {
 /**
  * カードを別の列・別の位置に移す。未配置なら先に置く。
  *
+ * **order は列の中の位置 (0 から)。** その位置に差し込み、列のほかのカードの
+ * 番号を振り直す。以前は渡した数をその1枚に書くだけで、ほかの番号をずらさな
+ * かったため、同じ番号が並ぶと前後が決まらず、「この間に入れる」ができなかった。
+ * 数でないものや列より大きい数は末尾に付ける。
+ *
+ * 読んでから書き直すので、鍵の中で行う。
+ *
  * @param {number} issueNumber
  * @param {string} column
- * @param {number} order
+ * @param {number} order 列の中の位置
  * @returns {object} 更新後の行
  */
 function projectMove(issueNumber, column, order) {
   projectAssertColumn_(column);
-  if (!dbFindOne('project_items', 'issueNumber', issueNumber)) {
-    projectPlace(issueNumber, column);
-  }
-  dbUpdate('project_items', 'issueNumber', issueNumber, {
-    column: column,
-    order: Number(order),
+  return dbWithLock_(30000, function () {
+    if (!dbFindOne('project_items', 'issueNumber', issueNumber)) {
+      projectPlace(issueNumber, column);
+    }
+
+    var rows = dbReadAll('project_items').filter(function (r) {
+      return String(r.column) === String(column) && Number(r.issueNumber) !== Number(issueNumber);
+    });
+    rows.sort(function (a, b) { return Number(a.order) - Number(b.order); });
+
+    var n = Number(order);
+    var at = isFinite(n) ? Math.max(0, Math.min(rows.length, Math.floor(n))) : rows.length;
+    rows.splice(at, 0, { issueNumber: issueNumber, moved: true });
+
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].moved) {
+        dbUpdate('project_items', 'issueNumber', issueNumber, { column: column, order: i });
+      } else if (Number(rows[i].order) !== i) {
+        // 番号が変わるものだけ書く (1枚ごとに表を読むので、書かずに済むものは書かない)
+        dbUpdate('project_items', 'issueNumber', rows[i].issueNumber, { order: i });
+      }
+    }
+    return dbFindOne('project_items', 'issueNumber', issueNumber);
   });
-  return dbFindOne('project_items', 'issueNumber', issueNumber);
 }
