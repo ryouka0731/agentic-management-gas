@@ -6189,6 +6189,52 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     hinted(document.getElementById('scrum-toggle'), 'scrum-toggle');
   });
 
+  describe('変更の履歴', () => {
+    const at = '2026-10-06T23:30:00.000Z';
+    function openHistory(rows) {
+      const imp = { number: 3, title: 'x', body: '', reportedBy: 'a@example.com',
+        reportedAt: at, state: 'open', resolvedAt: '', resolution: '', sprint: '', updatedAt: '', commentCount: 0 };
+      mount({ apiSettings: ON, apiImpedimentList: [imp], apiHistory: rows });
+      document.querySelector('[data-tab="impediments"]').click();
+      document.querySelector('.impediment-row').click();
+      const h = document.querySelector('#side-body .change-history');
+      h.open = true;
+      h.dispatchEvent(new window.Event('toggle'));
+      return h;
+    }
+    const row = (id, field, before, after, extra) => Object.assign({ id, at, actor: 'a@example.com',
+      target: 'impediment:3', action: 'update', field, before, after, lines: null }, extra || {});
+
+    it('1回の書き込みを1つのまとまりにする', () => {
+      const h = openHistory([row(2, 'title', 'a', 'b'), row(1, 'sprint', '', 's1')]);
+      expect(h.querySelectorAll('.history-item')).toHaveLength(1);
+      expect(h.querySelectorAll('.history-change')).toHaveLength(2);
+      expect(h.querySelector('.history-head').textContent).toContain('直しました');
+    });
+
+    it('複数行の値は行ごとの差分で、色だけに頼らず印を付ける', () => {
+      const h = openHistory([row(1, 'body', 'a\nb', 'a\nc', { lines: [
+        { op: 'same', text: 'a' }, { op: 'del', text: 'b' }, { op: 'add', text: 'c' }] })]);
+      const del = h.querySelector('.history-del');
+      const add = h.querySelector('.history-add');
+      expect(del.tagName).toBe('DEL');
+      expect(del.textContent).toBe('−b');
+      expect(add.textContent).toBe('＋c');
+    });
+
+    it('多いときは 50 件ずつ出し、さらに表示で足す', () => {
+      const rows = Array.from({ length: 120 }, (_, i) =>
+        row(120 - i, 'title', 'a', 'b', { at: new Date(Date.UTC(2026, 9, 1, 0, 120 - i)).toISOString() }));
+      const h = openHistory(rows);
+      expect(h.querySelectorAll('.history-item')).toHaveLength(50);
+      const more = h.querySelector('.history-more');
+      expect(more.textContent).toContain('残り 70 件');
+      more.click();
+      expect(h.querySelectorAll('.history-item')).toHaveLength(100);
+      expect(h.querySelector('.history-more').textContent).toContain('残り 20 件');
+    });
+  });
+
   describe('やることの一覧とボードで、積んだ量を見比べる', () => {
     const ISSUES = [
       Object.assign({}, DEFAULTS.apiIssueList[0], { number: 2, sprint: 'sprint002', points: 5 }),
