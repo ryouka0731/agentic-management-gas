@@ -320,17 +320,16 @@ function inquiryOwner_() {
 /**
  * 話を閉じられる人かを確かめる。
  *
- * 出した本人と、このアプリを持っている人だけが閉じられる。誰でも
- * 閉じられると、まだ困っている人の話が横から畳まれてしまう。
+ * 出した本人と、このアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人)
+ * だけが閉じられる。誰でも閉じられると、まだ困っている人の話が横から畳まれてしまう。
  *
  * @param {object} row inquiries 行
  */
 function inquiryAssertCanClose_(row) {
   var me = Session.getActiveUser().getEmail();
-  var owner = inquiryOwner_();
 
-  if (String(row.by) !== String(me) && (!owner || String(owner) !== String(me))) {
-    throw new Error('出した本人か、このアプリの持ち主だけが閉じられます');
+  if (String(row.by) !== String(me) && !repoIsAdmin_(me)) {
+    throw new Error('出した本人か、このアプリの管理者だけが閉じられます');
   }
 }
 

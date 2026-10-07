@@ -229,6 +229,54 @@ function repoOwnerEmail() {
 }
 
 /**
+ * その人がこのアプリの管理者か。
+ *
+ * **管理者 = 持ち主 + 入れ物のフォルダを編集できる人。** 以前は持ち主1人だけが
+ * 設定や他人の依頼の取り下げを行えたため、持ち主が休むと誰も直せなかった。
+ * フォルダを編集できる人は台帳も直接書き換えられるので、画面の操作でも同じ
+ * 扱いにする。
+ *
+ * 持ち主1人に宛てるもの (報告の知らせ・報告から作るやることの担当) と、
+ * エディタ専用の関数 (assertOwner_) は、これまでどおり持ち主だけを見る。
+ *
+ * Drive の getEditors は、編集権限の無い人が呼ぶと空を返す。分からないときは
+ * 投げずに「管理者ではない」と答える (画面が開けなくなるより安全側に倒す)。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function repoIsAdmin_(email) {
+  var who = String(email || '');
+  if (!who) return false;
+
+  var owner = repoOwnerEmail();
+  if (owner && owner === who) return true;
+
+  try {
+    var editors = DriveApp.getFolderById(repoConfig().rootId).getEditors();
+    for (var i = 0; i < editors.length; i++) {
+      if (String(editors[i].getEmail() || '') === who) return true;
+    }
+  } catch (e) {
+    Logger.log('編集者が分かりませんでした: ' + e.message);
+  }
+  return false;
+}
+
+/**
+ * 管理者でなければ断る。
+ *
+ * @param {string} [what] 何ができないのか (断るときの言葉に入れる)
+ */
+function repoAssertAdmin_(what) {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  if (!repoIsAdmin_(me)) {
+    throw new Error((what || 'この操作') + 'は、このアプリの管理者 (持ち主と、入れ物のフォルダを' +
+      '編集できる人) だけが行えます');
+  }
+}
+
+/**
  * フォルダの場所を「上から下へ」の字で言い表す。
  *
  * Drive はフォルダ ID で物を指すが、人に伝えるには名前の連なりが要る。

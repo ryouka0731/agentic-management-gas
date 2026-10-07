@@ -4772,7 +4772,7 @@ describe('確認依頼を取り下げる', () => {
     openPulls();
 
     expect(offButton().disabled).toBe(true);
-    expect(offButton().title).toContain('出した本人か、このアプリの持ち主だけ');
+    expect(offButton().title).toContain('出した本人か、このアプリの管理者だけ');
   });
 
   it('反映済みと取り下げ済みには操作の欄を出さない', () => {
@@ -5928,7 +5928,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     document.querySelector('[data-tab="settings"]').click();
 
     expect(document.getElementById('scrum-toggle')).toBeNull();
-    expect(document.getElementById('settings').textContent).toContain('持ち主だけ');
+    expect(document.getElementById('settings').textContent).toContain('管理者');
   });
 
   it('設定には、手元の道具の案内を出す (オフでも)', () => {
