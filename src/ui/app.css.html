@@ -2412,12 +2412,30 @@ button.gantt-name:hover { color: var(--accent); }
 
 .card-foot {
   display: flex;
+  /* それでも入りきらない狭さでは、担当者と捨てるボタンを次の行へ落とす。
+     札 (動きなし) は形を変えない決まりなので、段ごと折り返す */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
   margin-top: var(--sp-2);
 }
 
-.card-foot .row-meta { flex: 1; }
+/*
+ * 左 (期限・優先度・動きなし) は縮めて折り返す。flex の既定 (min-width: auto) の
+ * ままだと中身より狭くなれず、担当者と捨てるボタンがカードの外へ押し出された
+ * (幅の狭い列で「◯日動きなし」が付くと実際にはみ出した)
+ */
+.card-foot .row-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  margin-top: 0;
+}
+.card-foot .avatars,
+.card-foot .btn-danger { flex: 0 0 auto; }
 
 /* 板の上では小さく置く。カードの主役は題名で、捨てるは脇役 */
 .card-foot .btn-danger { width: 26px; min-height: 26px; }
