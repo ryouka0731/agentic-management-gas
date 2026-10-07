@@ -3059,22 +3059,44 @@ function housekeepArchiveDaily_() {
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') === today) return [];
 
-  props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
+  /*
+   * **今日の分を受け持つ印を、短い鍵の中で付ける。** 片付けそのものは鍵の外で
+   * 走らせる (Drive を何度も見に行くので長い)。印を付けずに走らせると、重なった
+   * 2回の起動が両方走り、取り下げの知らせが2通届く。受け持ったまま落ちた起動が
+   * あっても、30分たてば次の起動が受け持ち直す
+   */
+  var claimed = dbWithLock_(5000, function () {
+    if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') === today) return false;
+    var running = String(props.getProperty('ARCHIVE_HOUSEKEPT_RUNNING') || '').split('|');
+    if (running[0] === today && Date.now() - Number(running[1]) < 30 * 60 * 1000) return false;
+    props.setProperty('ARCHIVE_HOUSEKEPT_RUNNING', today + '|' + Date.now());
+    return true;
+  }, function () { return false; });
+  if (!claimed) return [];
 
-  // 台帳に main の行が無い古いリポジトリなら入れる。人に実行させない
   try {
-    repoEnsureMainBranch();
-  } catch (e0) {
-    Logger.log('main の行を入れられませんでした: ' + e0.message);
-  }
+    // 台帳に main の行が無い古いリポジトリなら入れる。人に実行させない
+    try {
+      repoEnsureMainBranch();
+    } catch (e0) {
+      Logger.log('main の行を入れられませんでした: ' + e0.message);
+    }
 
-  // 誰も一覧を開かなくても、元の文書が消えた確認依頼は取り下げる
-  try {
-    prWithdrawOrphans();
-  } catch (e) {
-    Logger.log('消えた文書の確認依頼を取り下げられませんでした: ' + e.message);
+    // 誰も一覧を開かなくても、元の文書が消えた確認依頼は取り下げる
+    try {
+      prWithdrawOrphans();
+    } catch (e) {
+      Logger.log('消えた文書の確認依頼を取り下げられませんでした: ' + e.message);
+    }
+    var gone = issueHousekeep(new Date());
+
+    // 済みの印は、終わってから付ける。先に付けると、途中で落ちた日は
+    // やり直されないまま次の日になる
+    props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
+    return gone;
+  } finally {
+    props.deleteProperty('ARCHIVE_HOUSEKEPT_RUNNING');
   }
-  return issueHousekeep(new Date());
 }
 
 // ===== 設定 =====
