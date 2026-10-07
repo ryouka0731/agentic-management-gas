@@ -7441,6 +7441,10 @@
       COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
       boardEl.textContent = '';
 
+      // 絞り込む前の列の長さ。末尾に足す位置は、見えている枚数ではなくこちらで数える
+      var fullLen = {};
+      COLUMNS.forEach(function (c) { fullLen[c[0]] = board[c[0]].length; });
+
       // 絞り込みは番号で当てる。カードは中身を全部持っていない
       var keep = null;
       if (String(issueFilterEl.value || '')) {
@@ -7463,10 +7467,10 @@
         boardEl.appendChild(makeBlankState(
           'カードがありません',
           'カードは「やること」です。作ると「これから」に並び、' +
-          '改訂版や確認依頼に応じて自動で右に動きます。',
+          '改訂版や確認依頼に応じて自動で右に動きます。列の「＋」からも足せます。',
           { label: 'やることを作る', onClick: createIssue }
         ));
-        return;
+        // 空でも列は描く。列の「＋」から足せないと、最初の1枚の入口が減る
       }
 
       COLUMNS.forEach(function (pair) {
@@ -7485,23 +7489,45 @@
           head.appendChild(colPoints);
         }
         hint(head, 'board:' + column);
-        col.appendChild(head);
+
+        // 列ごとに、その場でやることを足す。題名だけ打てばその列に入る
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'icon-btn board-add';
+        addBtn.appendChild(makeIcon('plus'));
+        addBtn.setAttribute('aria-label', pair[1] + ' にやることを足す');
+        addBtn.title = pair[1] + ' にやることを足す';
+        addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], fullLen[column]); });
+        var headRow = document.createElement('div');
+        headRow.className = 'board-column-head';
+        headRow.appendChild(head);
+        headRow.appendChild(addBtn);
+        col.appendChild(headRow);
 
         col.addEventListener('dragover', function (e) {
           e.preventDefault();
           col.classList.add('drop-target');
+          // どこに入るかを線で見せる。入る前に分かれば、落とし直さずに済む
+          showDropIndicator(col, boardDropIndex(col, e.clientY));
         });
-        col.addEventListener('dragleave', function () {
+        col.addEventListener('dragleave', function (e) {
+          if (e.relatedTarget && col.contains(e.relatedTarget)) return;
           col.classList.remove('drop-target');
+          clearDropIndicator();
         });
         col.addEventListener('drop', function (e) {
           e.preventDefault();
           col.classList.remove('drop-target');
+          var index = boardDropIndex(col, e.clientY);
+          clearDropIndicator();
 
           var issueNumber = Number(e.dataTransfer.getData('text/plain'));
           if (!issueNumber) return;
 
-          call('apiProjectMove', [issueNumber, column, board[column].length],
+          // 落とした位置に入れる (以前は列の末尾にしか入らなかった)。絞り込んで
+          // いるときは見えている枚数と保存されている並びが食い違うので、
+          // 保存されている並びの位置に直してから送る
+          call('apiProjectMove', [issueNumber, column, boardSavedIndex(col, index, column, issueNumber, fullLen)],
             function () { loadBoard(); });
         });
 
@@ -7521,6 +7547,8 @@
           el.appendChild(title);
 
           el.dataset.number = card.issueNumber;
+          el.dataset.order = card.order;
+          el.dataset.column = column;
 
           var rel = makeRelationChips(card.issueNumber);
           if (rel.childNodes.length) {
@@ -7539,6 +7567,12 @@
 
           el.addEventListener('dragstart', function (e) {
             e.dataTransfer.setData('text/plain', String(card.issueNumber));
+            // 掴んだカードは位置の数え方から外す (自分の前後に落としても動かない)
+            el.classList.add('dragging');
+          });
+          el.addEventListener('dragend', function () {
+            el.classList.remove('dragging');
+            clearDropIndicator();
           });
 
           // 掴んで動かすだけでなく、押して中身を直せるようにする
@@ -7586,6 +7620,186 @@
       });
     }, failInto(boardEl));
   }
+
+  /**
+   * 列の中で、その高さに落としたら何番目に入るか。掴んでいるカードは数えない。
+   *
+   * @param {HTMLElement} col
+   * @param {number} y 画面の縦の位置
+   * @returns {number}
+   */
+  function boardDropIndex(col, y) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    for (var i = 0; i < cards.length; i++) {
+      var r = cards[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return i;
+    }
+    return cards.length;
+  }
+
+  /**
+   * 見えている中での位置を、保存されている並びの位置に直す。
+   *
+   * 絞り込んでいると見えないカードがあるので、見えている何番目かをそのまま送ると
+   * ずれる。落とした先のカードの保存されている番号を使い、末尾なら絞り込む前の
+   * 長さを使う。同じ列の中で後ろへ動かすときは、サーバが先に自分を抜くぶん1つ詰める。
+   *
+   * @param {HTMLElement} col
+   * @param {number} index 見えている中での位置
+   * @param {string} column
+   * @param {number} issueNumber 動かすカード
+   * @param {Object<string, number>} fullLen 絞り込む前の列の長さ
+   * @returns {number}
+   */
+  function boardSavedIndex(col, index, column, issueNumber, fullLen) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    var dragged = document.querySelector('.board-card[data-number="' + issueNumber + '"]');
+    var fromSame = dragged && dragged.dataset.column === column;
+    var fromOrder = dragged ? Number(dragged.dataset.order) : -1;
+    if (index < cards.length) {
+      var target = Number(cards[index].dataset.order);
+      return fromSame && fromOrder < target ? target - 1 : target;
+    }
+    var len = fullLen[column] || 0;
+    return fromSame ? len - 1 : len;
+  }
+
+  /** 落とす位置の線。1本だけ出す */
+  var dropIndicator = document.createElement('div');
+  dropIndicator.className = 'drop-indicator';
+  dropIndicator.setAttribute('aria-hidden', 'true');
+
+  function showDropIndicator(col, index) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    var before = cards[index] || null;
+    if (before) col.insertBefore(dropIndicator, before);
+    else col.appendChild(dropIndicator);
+  }
+
+  function clearDropIndicator() {
+    if (dropIndicator.parentNode) dropIndicator.parentNode.removeChild(dropIndicator);
+  }
+
+  /**
+   * 列の中で、題名だけ打ってやることを足す欄。
+   *
+   * 右の入力欄を開くまでもない思い付きを、その場で書き留められるようにする。
+   * 担当や期限は、足したあとにカードを開いて直す。Enter で足し、Esc でやめる。
+   *
+   * @param {HTMLElement} col
+   * @param {string} column 列の名前 (Backlog など)
+   * @param {string} label 列の見出し
+   * @param {number} at 列の末尾の位置
+   */
+  function openBoardComposer(col, column, label, at) {
+    var open = col.querySelector('.board-composer');
+    if (open) { open.querySelector('input').focus(); return; }
+
+    var form = document.createElement('form');
+    form.className = 'board-composer';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'やることの題名';
+    input.setAttribute('aria-label', label + ' に足すやることの題名');
+    form.appendChild(input);
+
+    var actions = document.createElement('div');
+    actions.className = 'board-composer-actions';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'やめる';
+    var add = document.createElement('button');
+    add.type = 'submit';
+    add.className = 'btn btn-primary';
+    add.textContent = '足す';
+    add.disabled = true;
+    actions.appendChild(cancel);
+    actions.appendChild(add);
+    form.appendChild(actions);
+
+    function close() { form.remove(); }
+    input.addEventListener('input', function () {
+      add.disabled = !input.value.replace(/^\s+|\s+$/g, '');
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    });
+    cancel.addEventListener('click', close);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var title = input.value.replace(/^\s+|\s+$/g, '');
+      if (!title) return;
+      add.disabled = true;
+      call('apiIssueCreate', [title, '', [], '', {}], function (made) {
+        function done() {
+          showSnack('#' + made.number + ' を ' + label + ' に足しました', { kind: 'ok' });
+          loadBoard();
+        }
+        // 作ると「これから」に入る。ほかの列で足したなら、その列の末尾へ移す
+        if (column === 'Backlog' || !made) done();
+        else call('apiProjectMove', [made.number, column, at], done, function (err) {
+          // 作れてはいる。押せないまま残すと、もう一度作られて2つ並ぶ。閉じて板を描き直す
+          close();
+          showSnack('#' + made.number + ' は作りましたが、' + label + ' へ移せませんでした (これから に入っています): ' +
+            err.message, { kind: 'ng' });
+          loadBoard();
+        });
+      }, failEnable(add, '足せませんでした: '));
+    });
+
+    col.insertBefore(form, col.querySelector('.board-column-head').nextSibling);
+    input.focus();
+  }
+
+  // ===== キーボード =====
+  //
+  // よく使う操作は、マウスに手を伸ばさずにできるようにする。字を打っている
+  // ところ (入力欄) では効かせない。何が使えるかは「?」で出す。
+
+  var SHORTCUTS = [
+    ['/', '絞り込みの欄に移る (やることの一覧・ボード)'],
+    ['N', 'やることを作る'],
+    ['?', 'キーボードで使える操作を出す'],
+    ['Esc', '右の欄や小窓を閉じる'],
+  ];
+
+  /** キーボードで使える操作の一覧を、右の欄に出す */
+  function openShortcutHelp() {
+    var box = openSideView('キーボードで使える操作', null);
+    var list = document.createElement('dl');
+    list.className = 'shortcut-list';
+    SHORTCUTS.forEach(function (pair) {
+      var dt = document.createElement('dt');
+      var kbd = document.createElement('kbd');
+      kbd.textContent = pair[0];
+      dt.appendChild(kbd);
+      list.appendChild(dt);
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      list.appendChild(dd);
+    });
+    box.appendChild(list);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    var typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if (typing) return;
+
+    if (e.key === '?') {
+      e.preventDefault();
+      openShortcutHelp();
+    } else if (e.key === '/') {
+      e.preventDefault();
+      if (panelIssues.hidden) switchTab('issues');
+      issueFilterEl.focus();
+    } else if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      createIssue();
+    }
+  });
 
   // ===== 使い方 =====
 
@@ -7648,6 +7862,7 @@
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'Google ToDo との同期は追加の設定が要るため、使えるときだけ「やること」に入口が出ます。自分が担当で、まだ終わっていないぶんだけを送ります。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
+      'キーボードでも動かせます。「?」で使える操作の一覧が出ます (「/」で絞り込み、「N」でやることを作る)。進捗ボードでは列の「＋」から題名だけ打って足せ、掴んだカードは線の出た位置に入ります。',
       'うまく動かないとき、こうしてほしいことがあるとき、使い方が分からないときは、左の「要望・不具合」から送ってください。見ている画面と使っている環境も一緒に届きます。',
       '送られたものは、開発者のやることに自動で積まれます。種類に応じて「不具合」「要望」のタグが付き、進捗ボードの「これから」に並びます。',
       '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',

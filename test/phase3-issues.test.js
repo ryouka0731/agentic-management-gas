@@ -238,6 +238,37 @@ describe('カンバンボード', () => {
       .toEqual([b.number, a.number]);
   });
 
+  it('渡した数は列の中の位置になり、ほかのカードは後ろへずれる', () => {
+    // 以前は渡した数をその1枚に書くだけで、ほかの番号をずらさなかった。
+    // 同じ番号が並ぶと前後が決まらず、「この間に入れる」ができなかった
+    const { ctx } = setup();
+    const [a, b, c, d] = ['A', 'B', 'C', 'D'].map((t) => ctx.issueCreate(t, '', []));
+    [a, b, c].forEach((i) => ctx.projectPlace(i.number, 'Backlog'));
+    ctx.projectPlace(d.number, 'In Progress');
+    const col = () => ctx.projectBoard()['Backlog'].map((x) => x.issueNumber);
+
+    ctx.projectMove(d.number, 'Backlog', 1);
+    expect(col()).toEqual([a.number, d.number, b.number, c.number]);
+    expect(ctx.projectBoard()['Backlog'].map((x) => x.order)).toEqual([0, 1, 2, 3]);
+
+    // 同じ列の中で後ろへ動かす
+    ctx.projectMove(a.number, 'Backlog', 3);
+    expect(col()).toEqual([d.number, b.number, c.number, a.number]);
+
+    // 数でなければ末尾に付ける
+    ctx.projectMove(d.number, 'Backlog', NaN);
+    expect(col()).toEqual([b.number, c.number, a.number, d.number]);
+    expect(ctx.projectBoard()['In Progress']).toEqual([]);
+  });
+
+  it('別の列へ移したら、元の列の番号も詰める (穴が空くと次の追加と重なる)', () => {
+    const { ctx } = setup();
+    const [a, b, c] = ['A', 'B', 'C'].map((t) => ctx.issueCreate(t, '', []));
+    [a, b, c].forEach((i) => ctx.projectPlace(i.number, 'Backlog'));
+    ctx.projectMove(a.number, 'Done', 0);
+    expect(ctx.projectBoard()['Backlog'].map((x) => x.order)).toEqual([0, 1]);
+  });
+
   it('定義されていない列には置けない', () => {
     const { ctx } = setup();
     const issue = ctx.issueCreate('改訂', '', []);
