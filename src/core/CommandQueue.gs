@@ -141,11 +141,24 @@ function queueFolder_(key, name) {
     }
   }
 
-  var folder = DriveApp.getFolderById(config.gitId).createFolder(name);
-  config[key] = folder.getId();
-  PropertiesService.getScriptProperties()
-    .setProperty(REPO_CONFIG_KEY(), JSON.stringify(config));
-  return folder;
+  // **作るのは鍵の中で、確かめ直してから。** 1分ごとのキューはフォルダを鍵の外で
+  // 引くので、重なった初回の起動が別々のフォルダを作ると、処理済みの印が分かれて
+  // 同じ命令が2回走る
+  return dbWithLock_(30000, function () {
+    var again = repoConfig();
+    if (again[key]) {
+      try {
+        return DriveApp.getFolderById(again[key]);
+      } catch (e2) {
+        // 手で消された場合は作り直す
+      }
+    }
+    var folder = DriveApp.getFolderById(again.gitId).createFolder(name);
+    again[key] = folder.getId();
+    PropertiesService.getScriptProperties()
+      .setProperty(REPO_CONFIG_KEY(), JSON.stringify(again));
+    return folder;
+  });
 }
 
 /**
