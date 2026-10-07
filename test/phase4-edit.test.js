@@ -7,6 +7,7 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
+  'src/core/Motivation.gs',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
   'src/core/Db.gs',
@@ -517,6 +518,9 @@ describe('画面に渡せる形か', () => {
     ['apiPrList', (ctx) => ctx.apiPrList()],
     ['apiListFiles', (ctx) => ctx.apiListFiles()],
     ['apiOverview', (ctx) => ctx.apiOverview()],
+    ['apiProgress', (ctx) => ctx.apiProgress()],
+    ['apiSetTeamGoal', (ctx) => ctx.apiSetTeamGoal(10)],
+    ['apiMyMilestones', (ctx) => ctx.apiMyMilestones()],
     ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
     ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],
