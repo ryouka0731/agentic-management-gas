@@ -88,6 +88,88 @@ describe('バーンダウン', () => {
   });
 });
 
+describe('終わったスプリントは、終わりの日の時点の中身で数える', () => {
+  /*
+   * 終わらなかったやることは次のスプリントへ移すのが普通である。いまの所属で
+   * 数えると、移した時点で前のスプリントの計画から消え、持ち越しが常に0になる。
+   * 移したことは変更の履歴 (field: sprint) に前と後で残っているので、そこから
+   * 終わりの日にどこに入っていたかを求める。
+   */
+  const moves = (list) => ({ 2: list });
+  const S = [
+    { name: 'sprint001', startDate: '2026-10-01', endDate: '2026-10-05' },
+    { name: 'sprint002', startDate: '2026-10-06', endDate: '2026-10-10' },
+  ];
+
+  it('終わったあとに次へ移したものは、前のスプリントの計画と持ち越しに残る', () => {
+    const issues = [issue(1, 'sprint001', 5, '2026-10-03'), issue(2, 'sprint002', 3)];
+    const m = moves([{ at: '2026-10-06T01:00:00.000Z', before: 'sprint001', after: 'sprint002' }]);
+    const vel = v.scrumVelocity(S, issues, '2026-10-08', m);
+
+    expect(vel[0]).toMatchObject({ name: 'sprint001', planned: 8, completed: 5, carriedOver: 3 });
+    // 移した先でも計画に入る (いまのスプリントは、いまの中身で数える)
+    expect(vel[1]).toMatchObject({ name: 'sprint002', planned: 3 });
+  });
+
+  it('期間の途中で外したものは、終わりの日には入っていない', () => {
+    const issues = [issue(1, 'sprint001', 5, '2026-10-03'), issue(2, '', 3)];
+    const m = moves([{ at: '2026-10-02T01:00:00.000Z', before: 'sprint001', after: '' }]);
+    expect(v.scrumVelocity(S, issues, '2026-10-08', m)[0]).toMatchObject({ planned: 5, carriedOver: 0 });
+  });
+
+  it('終わったスプリントのバーンダウンも、終わりの日の中身で描く', () => {
+    const issues = [issue(1, 'sprint001', 5, '2026-10-03'), issue(2, 'sprint002', 3)];
+    const m = moves([{ at: '2026-10-06T01:00:00.000Z', before: 'sprint001', after: 'sprint002' }]);
+    const b = v.scrumBurndown(S[0], issues, '2026-10-08', m);
+    expect(b.remaining[0]).toBe(8);
+    expect(b.remaining[b.remaining.length - 1]).toBe(3);
+  });
+
+  it('期間の途中で足したやることは、足した日からバーンダウンに入る', () => {
+    // 初日から残っていたように描くと、計画が甘かったのか途中で増えたのかが見分けられない
+    const issues = [issue(1, 'sprint001', 5), issue(2, 'sprint001', 3)];
+    const m = moves([{ at: '2026-10-03T01:00:00.000Z', before: '', after: 'sprint001' }]);
+    const b = v.scrumBurndown(S[0], issues, '2026-10-04', m);
+    expect(b.remaining.slice(0, 4)).toEqual([5, 5, 8, 8]);
+    // 理想の線は、初日に積んであった量から引く
+    expect(b.ideal[0]).toBe(5);
+  });
+
+  it('初日にまだ積んでいなければ、理想の線はいまの量から引く', () => {
+    const issues = [issue(1, 'sprint001', 5)];
+    const m = { 1: [{ at: '2026-10-02T01:00:00.000Z', before: '', after: 'sprint001' }] };
+    const b = v.scrumBurndown(S[0], issues, '2026-10-04', m);
+    expect(b.ideal[0]).toBe(5);
+    expect(b.remaining[0]).toBe(0);
+  });
+
+  it('終わったスプリントへ後から入れた記録は、始まりから入っていたものとして読む', () => {
+    // ai-scrum-gas から移ってきたときなど、過去のスプリントを後から書き入れる
+    const rows = [{ id: 1, target: 'issue:1', field: 'sprint', at: '2026-10-20T01:00:00.000Z',
+      before: '', after: 'sprint001' }];
+    const m = v.scrumSprintMoves(rows, S);
+    const issues = [issue(1, 'sprint001', 5, '2026-10-03')];
+    expect(v.scrumVelocity(S, issues, '2026-10-21', m)[0]).toMatchObject({ planned: 5, completed: 5 });
+  });
+
+  it('移した記録が無ければ、いまの所属で数える (記録を残す前のやること)', () => {
+    const issues = [issue(1, 'sprint001', 5, '2026-10-03'), issue(2, 'sprint001', 3)];
+    expect(v.scrumVelocity(S, issues, '2026-10-08', {})[0]).toMatchObject({ planned: 8, carriedOver: 3 });
+  });
+
+  it('変更の履歴の行から、やることごとの移動を拾う', () => {
+    const rows = [
+      { id: 3, target: 'issue:2', field: 'sprint', at: '2026-10-06T01:00:00.000Z', before: 'sprint001', after: 'sprint002' },
+      { id: 1, target: 'issue:2', field: 'sprint', at: '2026-10-01T01:00:00.000Z', before: '', after: 'sprint001' },
+      { id: 2, target: 'issue:2', field: 'title', at: '2026-10-02T01:00:00.000Z', before: 'a', after: 'b' },
+      { id: 4, target: 'impediment:2', field: 'sprint', at: '2026-10-02T01:00:00.000Z', before: '', after: 'x' },
+    ];
+    const m = v.scrumSprintMoves(rows);
+    expect(Object.keys(m)).toEqual(['2']);
+    expect(m[2].map((x) => x.after)).toEqual(['sprint001', 'sprint002']);
+  });
+});
+
 describe('台帳に暦に無い日付が手で書かれていても', () => {
   it('バーンダウンは投げずに「期間が決まっていない」として返す', () => {
     const b = v.scrumBurndown({ name: 's', startDate: '2026-13-01', endDate: '2026-13-05' }, [], '2026-10-07');

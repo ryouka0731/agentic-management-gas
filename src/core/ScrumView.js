@@ -42,17 +42,99 @@ function scrumPointsOf_(issue) {
 }
 
 /**
+ * 変更の履歴から、やることごとのスプリントの移動を拾う。古い順。
+ *
+ * 終わったスプリントを数えるのに使う。終わらなかったやることは次のスプリントへ
+ * 移すのが普通で、いまの所属で数えると、移した時点で前のスプリントの計画から
+ * 消え、持ち越しが常に0になる (過去の記録があとの操作で書き換わる)。
+ *
+ * **既に終わったスプリントへ入れた記録は、後から記録したものとして扱う。**
+ * ai-scrum-gas から移ってきたときなど、過去のスプリントを後から書き入れる
+ * ことがある。そのまま「その日に入れた」と読むと、終わりの日には入って
+ * いなかったことになり、過去のベロシティが全部0になる。そのスプリントの
+ * 始まりの日に入っていたものとして読む。
+ *
+ * @param {object[]} rows change_log の行
+ * @param {object[]} [sprints] sprints 行 (後から記録したものを見分けるのに使う)
+ * @returns {Object<string, Array<{at: *, before: string, after: string}>>} やることの番号 → 移動
+ */
+function scrumSprintMoves(rows, sprints) {
+  var span = {};
+  for (var s = 0; s < (sprints || []).length; s++) {
+    span[String(sprints[s].name)] = {
+      start: scrumDayOf_(sprints[s].startDate), end: scrumDayOf_(sprints[s].endDate),
+    };
+  }
+  var out = {};
+  var list = (rows || []).slice().sort(function (a, b) { return Number(a.id) - Number(b.id); });
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i];
+    if (String(r.field) !== 'sprint') continue;
+    var m = /^issue:(\d+)$/.exec(String(r.target));
+    if (!m) continue;
+    if (!out[m[1]]) out[m[1]] = [];
+    var after = r.after == null ? '' : String(r.after);
+    var at = r.at;
+    var into = span[after];
+    var when = scrumDayOf_(r.at);
+    if (into && into.start && into.end && when && when > into.end) at = into.start;
+    out[m[1]].push({
+      at: at,
+      before: r.before == null ? '' : String(r.before),
+      after: after,
+    });
+  }
+  // 後から記録したものは日付を前へずらしたので、日付の順に並べ直す (同じ日は記録の順)
+  for (var key in out) {
+    if (!Object.prototype.hasOwnProperty.call(out, key)) continue;
+    out[key] = out[key].map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
+      var p = scrumDayOf_(a.x.at);
+      var q = scrumDayOf_(b.x.at);
+      return p === q ? a.i - b.i : (p < q ? -1 : 1);
+    }).map(function (o) { return o.x; });
+  }
+  return out;
+}
+
+/**
+ * その日の終わりに、やることがどのスプリントに入っていたか。
+ *
+ * 移した記録が無ければいまの所属 (記録を残す前のやることもある)。その日までの
+ * 最後の移動があればその後の値、その日より後の移動しか無ければ最初の移動の前の値。
+ *
+ * @param {object} issue
+ * @param {Object<string, object[]>} moves scrumSprintMoves の返り
+ * @param {string} day 'YYYY-MM-DD'
+ * @returns {string}
+ */
+function scrumSprintOn_(issue, moves, day) {
+  var list = moves && moves[String(issue.number)];
+  if (!list || !list.length) return String(issue.sprint || '');
+  var value = null;
+  for (var i = 0; i < list.length; i++) {
+    var at = scrumDayOf_(list[i].at);
+    if (at && at <= day) value = list[i].after;
+  }
+  return value === null ? list[0].before : value;
+}
+
+/**
  * そのスプリントに入っている、数える対象のやること。捨てたものは除く。
+ *
+ * day を渡すと、その日の終わりの中身で選ぶ (終わったスプリント用)。
  *
  * @param {string} name
  * @param {object[]} issues
+ * @param {Object<string, object[]>} [moves]
+ * @param {string} [day]
  * @returns {object[]}
  */
-function scrumIssuesIn_(name, issues) {
+function scrumIssuesIn_(name, issues, moves, day) {
   var out = [];
   for (var i = 0; i < (issues || []).length; i++) {
     var it = issues[i];
-    if (String(it.sprint || '') !== String(name)) continue;
+    var sprint = moves && day ? scrumSprintOn_(it, moves, day) : String(it.sprint || '');
+    if (sprint !== String(name)) continue;
     if (it.archivedAt) continue;
     if (scrumPointsOf_(it) === null) continue;
     out.push(it);
@@ -77,20 +159,24 @@ function scrumDoneBy_(issue, end) {
 /**
  * スプリントごとの計画・終えた・持ち越しのポイント。
  *
+ * 終わったスプリントは、終わりの日の中身で数える (moves があれば)。
+ *
  * @param {object[]} sprints sprints 行 (並べたい順)
  * @param {object[]} issues issues 行
  * @param {string|Date} today
+ * @param {Object<string, object[]>} [moves] scrumSprintMoves の返り
  * @returns {Array<{name, goal, startDate, endDate, planned, completed, carriedOver}>}
  *   carriedOver はスプリントが終わっていなければ ''
  */
-function scrumVelocity(sprints, issues, today) {
+function scrumVelocity(sprints, issues, today, moves) {
   var now = scrumDayOf_(today);
   var out = [];
 
   for (var s = 0; s < (sprints || []).length; s++) {
     var sp = sprints[s];
     var end = scrumDayOf_(sp.endDate);
-    var members = scrumIssuesIn_(sp.name, issues);
+    var ended = !!end && !!now && now > end;
+    var members = scrumIssuesIn_(sp.name, issues, moves, ended ? end : '');
     var planned = 0;
     var completed = 0;
 
@@ -100,7 +186,6 @@ function scrumVelocity(sprints, issues, today) {
       if (scrumDoneBy_(members[i], end)) completed += p;
     }
 
-    var ended = !!end && !!now && now > end;
     out.push({
       name: String(sp.name),
       goal: String(sp.goal || ''),
@@ -150,10 +235,11 @@ function scrumNextDay_(day) {
  * @param {object} sprint sprints 行
  * @param {object[]} issues issues 行
  * @param {string|Date} today
+ * @param {Object<string, object[]>} [moves] 終わったスプリントを終わりの日の中身で描く
  * @returns {{days: string[], remaining: Array<number|null>, ideal: number[], notice: string}}
  *   まだ来ていない日の remaining は null
  */
-function scrumBurndown(sprint, issues, today) {
+function scrumBurndown(sprint, issues, today, moves) {
   var start = scrumDayOf_(sprint && sprint.startDate);
   var end = scrumDayOf_(sprint && sprint.endDate);
   if (!start || !end || end < start) {
@@ -163,11 +249,30 @@ function scrumBurndown(sprint, issues, today) {
   var days = [];
   for (var d = start; d <= end && days.length < 400; d = scrumNextDay_(d)) days.push(d);
 
-  var members = scrumIssuesIn_(sprint.name, issues);
-  var total = 0;
-  for (var i = 0; i < members.length; i++) total += scrumPointsOf_(members[i]);
-
   var now = scrumDayOf_(today);
+
+  /*
+   * 移した記録 (moves) があれば、その日ごとの中身で数える。期間の途中で足した
+   * やることは足した日から、外したものは外した日から数えない。初日から残って
+   * いたように描くと、計画が甘かったのか途中で増えたのかが見分けられない。
+   * 理想の線は、初日に積んであった量から引く。
+   */
+  function membersOn(day) {
+    return moves ? scrumIssuesIn_(sprint.name, issues, moves, day) : scrumIssuesIn_(sprint.name, issues);
+  }
+  function pointsOf(list) {
+    var sum = 0;
+    for (var i = 0; i < list.length; i++) sum += scrumPointsOf_(list[i]);
+    return sum;
+  }
+  var total = pointsOf(membersOn(days[0]));
+  // 初日にまだ積んでいなかった (計画が2日目にずれた等) なら、いまの量から引く。
+  // 0 から引くと理想の線が床に張り付き、何とも比べられない
+  if (!total) {
+    var last = now && now < end ? now : end;
+    total = pointsOf(membersOn(last < start ? start : last));
+  }
+
   var remaining = [];
   var ideal = [];
   for (var k = 0; k < days.length; k++) {
@@ -176,6 +281,7 @@ function scrumBurndown(sprint, issues, today) {
       remaining.push(null);
       continue;
     }
+    var members = membersOn(days[k]);
     var left = 0;
     for (var m = 0; m < members.length; m++) {
       if (!scrumDoneBy_(members[m], days[k])) left += scrumPointsOf_(members[m]);
@@ -253,11 +359,12 @@ function scrumCurrentSprint_(sprints, now) {
  * @param {object[]} issues
  * @param {object[]} impediments
  * @param {string|Date} today
+ * @param {Object<string, object[]>} [moves] scrumSprintMoves の返り (平均を終わりの日の中身で数える)
  * @returns {{current, goal, planned, completed, openImpediments, average}}
  */
-function scrumSummary(sprints, issues, impediments, today) {
+function scrumSummary(sprints, issues, impediments, today, moves) {
   var now = scrumDayOf_(today);
-  var velocity = scrumVelocity(sprints, issues, today);
+  var velocity = scrumVelocity(sprints, issues, today, moves);
   var cur = scrumCurrentSprint_(sprints, now);
   var open = 0;
   for (var i = 0; i < (impediments || []).length; i++) {

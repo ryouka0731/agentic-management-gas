@@ -465,8 +465,11 @@ describe('エージェンティックスクラム (手元の道具)', () => {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue]);
+    // 送らずに断ったときは、道具が先に終わる。そこで待つのをやめる
+    let exited = false;
+    const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
     let cmd = null;
-    for (let i = 0; i < 100 && !cmd; i++) {
+    for (let i = 0; i < 100 && !cmd && !exited; i++) {
       await new Promise((r) => setTimeout(r, 50));
       const name = fs.readdirSync(queue).find((n) => n.endsWith('.cmd.json'));
       if (name) {
@@ -475,7 +478,7 @@ describe('エージェンティックスクラム (手元の道具)', () => {
           JSON.stringify({ ok: true, result: {} }));
       }
     }
-    await new Promise((r) => child.on('exit', r));
+    await done;
     return cmd;
   }
 
@@ -497,7 +500,7 @@ describe('エージェンティックスクラム (手元の道具)', () => {
     expect(text).toContain('SCRUM.md');
   });
 
-  it('スクラムの命令を送れる', async () => {
+  it('スクラムの命令を送れる', { timeout: 30000 }, async () => {
     expect((await sent(['scrum'])).op).toBe('scrumState');
     expect((await sent(['sprints'])).op).toBe('sprintList');
     expect(await sent(['sprint-add', 'sprint001', '申請の流れ', '2026-10-01', '2026-10-14']))
@@ -507,6 +510,13 @@ describe('エージェンティックスクラム (手元の道具)', () => {
       .toEqual({ op: 'impedimentResolve', args: { number: 3, resolution: '代理が承認' } });
     expect(await sent(['board', '5', 'In Progress']))
       .toEqual({ op: 'boardMove', args: { number: 5, column: 'In Progress' } });
+  });
+
+  it('番号が数でなければ、送らずにその場で断る', { timeout: 30000 }, async () => {
+    // 送ると1分待ったあとに「#null が見つかりません」と返るだけになる
+    expect(await sent(['board', 'abc', 'In Progress'])).toBeNull();
+    expect(await sent(['impediment-resolve', '', '片付いた'])).toBeNull();
+    expect(await sent(['issue-close', '3'])).toEqual({ op: 'issueClose', args: { number: 3 } });
   }, 30000);
 
   it('スキルとエージェントと読み替えの表を同梱する', () => {
