@@ -275,7 +275,7 @@ describe('話を閉じる', () => {
 
     // まだ困っている人の話を横から畳ませない
     ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)._setOwner('owner@example.com');
-    expect(() => ctx.inquiryClose(row.number)).toThrow(/持ち主だけ/);
+    expect(() => ctx.inquiryClose(row.number)).toThrow(/管理者だけ/);
   });
 
   it('持ち主は他人の話も閉じられる', () => {

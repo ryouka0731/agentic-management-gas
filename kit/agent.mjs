@@ -373,7 +373,7 @@ function setupGuide() {
   lines.push('');
   lines.push('エージェンティックスクラム (使う人だけ):');
   lines.push('  AI のチームメンバーとスクラムで進める機能です。既定ではオフです。');
-  lines.push('  使うなら、持ち主が画面の「設定」でオンにしてください。');
+  lines.push('  使うなら、管理者 (持ち主かフォルダの編集者) が画面の「設定」でオンにしてください。');
   lines.push('  状態は node agent.mjs scrum で見られます。スキルとエージェントは');
   lines.push('  .claude/ に、読み替えは SCRUM.md にあります。');
   lines.push('');

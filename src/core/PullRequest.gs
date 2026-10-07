@@ -738,19 +738,19 @@ function prWithdrawOrphans() {
 /**
  * 取り下げられる人かを確かめる。
  *
- * 出した本人と、このアプリを持っている人だけが取り下げられる。確認を
- * 頼まれた側が取り下げられると、頼んだ人の知らないうちに話が消える。
+ * 出した本人と、このアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人)
+ * だけが取り下げられる。確認を頼まれた側が取り下げられると、頼んだ人の知らない
+ * うちに話が消える。
  *
  * @param {object} pr
  */
 function prAssertCanClose_(pr) {
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
 
   if (String(pr.author) === me) return;
-  if (owner && String(owner) === me) return;
+  if (repoIsAdmin_(me)) return;
 
-  throw new Error('出した本人か、このアプリの持ち主だけが取り下げられます');
+  throw new Error('出した本人か、このアプリの管理者だけが取り下げられます');
 }
 
 /**
