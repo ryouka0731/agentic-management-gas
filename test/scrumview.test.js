@@ -152,6 +152,16 @@ describe('終わったスプリントは、終わりの日の時点の中身で�
     expect(v.scrumVelocity(S, issues, '2026-10-21', m)[0]).toMatchObject({ planned: 5, completed: 5 });
   });
 
+  it('日付の読めない移動の行は使わない', () => {
+    // 台帳を手で直した行。いつの移動か分からないので、始まりの所属の手がかりにしない
+    const issues = [issue(2, 'sprint002', 3)];
+    const m = moves([
+      { at: '', before: 'sprint009', after: 'sprint001' },
+      { at: '2026-10-06T01:00:00.000Z', before: 'sprint001', after: 'sprint002' },
+    ]);
+    expect(v.scrumVelocity(S, issues, '2026-10-08', m)[0]).toMatchObject({ planned: 3 });
+  });
+
   it('移した記録が無ければ、いまの所属で数える (記録を残す前のやること)', () => {
     const issues = [issue(1, 'sprint001', 5, '2026-10-03'), issue(2, 'sprint001', 3)];
     expect(v.scrumVelocity(S, issues, '2026-10-08', {})[0]).toMatchObject({ planned: 8, carriedOver: 3 });

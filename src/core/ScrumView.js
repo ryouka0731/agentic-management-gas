@@ -46,7 +46,7 @@ function scrumPointsOf_(issue) {
  *
  * 終わったスプリントを数えるのに使う。終わらなかったやることは次のスプリントへ
  * 移すのが普通で、いまの所属で数えると、移した時点で前のスプリントの計画から
- * 消え、持ち越しが常に0になる (過去の記録があとの操作で書き換わる)。
+ * 消え、移したぶんが持ち越しとして数えられない (過去の記録があとの操作で書き換わる)。
  *
  * **既に終わったスプリントへ入れた記録は、後から記録したものとして扱う。**
  * ai-scrum-gas から移ってきたときなど、過去のスプリントを後から書き入れる
@@ -66,10 +66,12 @@ function scrumSprintMoves(rows, sprints) {
     };
   }
   var out = {};
-  var list = (rows || []).slice().sort(function (a, b) { return Number(a.id) - Number(b.id); });
+  // 先にスプリントの移動だけに絞ってから並べる。履歴の表は増える一方で、
+  // ほかの欄の変更まで並べ替えると、そのぶん待たされる
+  var list = (rows || []).filter(function (r) { return String(r.field) === 'sprint'; })
+    .sort(function (a, b) { return Number(a.id) - Number(b.id); });
   for (var i = 0; i < list.length; i++) {
     var r = list[i];
-    if (String(r.field) !== 'sprint') continue;
     var m = /^issue:(\d+)$/.exec(String(r.target));
     if (!m) continue;
     if (!out[m[1]]) out[m[1]] = [];
@@ -111,11 +113,16 @@ function scrumSprintOn_(issue, moves, day) {
   var list = moves && moves[String(issue.number)];
   if (!list || !list.length) return String(issue.sprint || '');
   var value = null;
+  var firstDated = null;
   for (var i = 0; i < list.length; i++) {
+    // 日付の読めない行 (台帳を手で直したもの) は、いつの移動か分からないので使わない
     var at = scrumDayOf_(list[i].at);
-    if (at && at <= day) value = list[i].after;
+    if (!at) continue;
+    if (!firstDated) firstDated = list[i];
+    if (at <= day) value = list[i].after;
   }
-  return value === null ? list[0].before : value;
+  if (value !== null) return value;
+  return firstDated ? firstDated.before : String(issue.sprint || '');
 }
 
 /**
