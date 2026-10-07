@@ -186,13 +186,13 @@ const OPS = {
    */
   'patch': {
     op: 'patchAdd',
-    args: (a) => ({ number: Number(a[0]), path: a[1], text: gitDiff(a[1], a[2]) }),
+    args: (a) => ({ number: num(a[0]), path: a[1], text: gitDiff(a[1], a[2]) }),
   },
   'patch-rm': {
     op: 'patchRemove',
-    args: (a) => ({ number: Number(a[0]), id: Number(a[1]) }),
+    args: (a) => ({ number: num(a[0]), id: num(a[1]) }),
   },
-  'patches': { op: 'patches', args: (a) => ({ number: Number(a[0]) }) },
+  'patches': { op: 'patches', args: (a) => ({ number: num(a[0]) }) },
 
   /*
    * 向こうから頼まれたことを取りに来る。
@@ -206,11 +206,11 @@ const OPS = {
   'work': { op: 'work', args: (a) => ({ limit: Number(a[0]) || 5 }) },
   'work-done': {
     op: 'workDone',
-    args: (a) => ({ id: Number(a[0]), result: a[1] || '' }),
+    args: (a) => ({ id: num(a[0]), result: a[1] || '' }),
   },
   'work-fail': {
     op: 'workFail',
-    args: (a) => ({ id: Number(a[0]), reason: a[1] || '' }),
+    args: (a) => ({ id: num(a[0]), reason: a[1] || '' }),
   },
   'branch': { op: 'branchCreate', args: (a) => ({ name: a[0], fileId: a[1] }) },
   'issues': { op: 'issueList', args: (a) => ({ state: a[0] || '' }) },
@@ -220,21 +220,21 @@ const OPS = {
   },
   'issue-update': {
     op: 'issueUpdate',
-    args: (a) => ({ number: Number(a[0]), patch: JSON.parse(a[1] || '{}') }),
+    args: (a) => ({ number: num(a[0]), patch: JSON.parse(a[1] || '{}') }),
   },
-  'issue-close': { op: 'issueClose', args: (a) => ({ number: Number(a[0]) }) },
+  'issue-close': { op: 'issueClose', args: (a) => ({ number: num(a[0]) }) },
   'issue-say': {
     op: 'issueComment',
-    args: (a) => ({ number: Number(a[0]), body: readInput(a[1]) }),
+    args: (a) => ({ number: num(a[0]), body: readInput(a[1]) }),
   },
   // 進捗ボードの列を動かす (Backlog / In Progress / In Review / Done)
   'board': {
     op: 'boardMove',
-    args: (a) => ({ number: Number(a[0]), column: a[1] }),
+    args: (a) => ({ number: num(a[0]), column: a[1] }),
   },
   'issue-branch': {
     op: 'issueCreateBranch',
-    args: (a) => ({ number: Number(a[0]), fileId: a[1] }),
+    args: (a) => ({ number: num(a[0]), fileId: a[1] }),
   },
   'prs': { op: 'prList', args: () => ({}) },
   'pr': {
@@ -244,10 +244,10 @@ const OPS = {
       targetBranch: a[4] || 'main',
     }),
   },
-  'pr-preview': { op: 'prPreview', args: (a) => ({ number: Number(a[0]) }) },
+  'pr-preview': { op: 'prPreview', args: (a) => ({ number: num(a[0]) }) },
   'pr-merge': {
     op: 'prMerge',
-    args: (a) => ({ number: Number(a[0]), choices: a[1] ? JSON.parse(a[1]) : [] }),
+    args: (a) => ({ number: num(a[0]), choices: a[1] ? JSON.parse(a[1]) : [] }),
   },
   'history': { op: 'commitHistory', args: (a) => ({ fileId: a[0] }) },
   'diff': {
@@ -280,19 +280,36 @@ const OPS = {
   },
   'impediment-edit': {
     op: 'impedimentUpdate',
-    args: (a) => ({ number: Number(a[0]), patch: JSON.parse(a[1] || '{}') }),
+    args: (a) => ({ number: num(a[0]), patch: JSON.parse(a[1] || '{}') }),
   },
   'impediment-resolve': {
     op: 'impedimentResolve',
-    args: (a) => ({ number: Number(a[0]), resolution: readInput(a[1]) }),
+    args: (a) => ({ number: num(a[0]), resolution: readInput(a[1]) }),
   },
   'impediment-say': {
     op: 'impedimentComment',
-    args: (a) => ({ number: Number(a[0]), body: readInput(a[1]) }),
+    args: (a) => ({ number: num(a[0]), body: readInput(a[1]) }),
   },
   // 文書の記録 (history) とは別。やることや障害物の欄がどう変わったか
   'changes': { op: 'history', args: (a) => ({ target: a[0] }) },
 };
+
+/**
+ * 番号の引数を数にする。読めなければ、送る前にここで断る。
+ *
+ * 数にできない字 ('abc') をそのまま Number にすると null として送られ、
+ * 1分待ったあとに「#null が見つかりません」と返るだけになる。
+ *
+ * @param {string} value
+ * @returns {number}
+ */
+function num(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('番号は 1 以上の整数で渡してください: ' + (value === undefined ? '(なし)' : value));
+  }
+  return n;
+}
 
 /**
  * 引数が「-」なら標準入力から読む。長い本文を渡すため。
