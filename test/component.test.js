@@ -6189,6 +6189,58 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     hinted(document.getElementById('scrum-toggle'), 'scrum-toggle');
   });
 
+  describe('やることの一覧とボードで、積んだ量を見比べる', () => {
+    const ISSUES = [
+      Object.assign({}, DEFAULTS.apiIssueList[0], { number: 2, sprint: 'sprint002', points: 5 }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 1, parent: '', sprint: 'sprint001', points: 3 }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 3, parent: '', title: '未定のもの', sprint: '', points: '' }),
+    ];
+
+    it('オンなら、行にスプリントとポイントを出し、スプリントごとに束ねられる', () => {
+      mount({ apiSettings: ON, apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+
+      const row = document.querySelector('#issue-list .row-item[data-number="2"]');
+      expect(row.querySelector('.scrum-chips').textContent).toContain('sprint002');
+      expect(row.querySelector('.scrum-chips').textContent).toContain('5pt');
+
+      const sel = document.getElementById('issue-group');
+      sel.value = 'sprint';
+      sel.dispatchEvent(new window.Event('change'));
+      // スプリントは名前の順、未定は最後。見出しに積んだポイントの合計
+      const heads = [...document.querySelectorAll('#issue-list .group-head')].map((h) => h.textContent);
+      expect(heads[0]).toContain('sprint001');
+      expect(heads[0]).toContain('3pt');
+      expect(heads[1]).toContain('sprint002');
+      expect(heads[2]).toContain('スプリント未定');
+    });
+
+    it('オフなら、スプリントの札も束ね方も出さない', () => {
+      mount({ apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+
+      expect(document.querySelector('#issue-list .scrum-chips')).toBeNull();
+      expect(document.querySelector('#issue-group option[value="sprint"]')).toBeNull();
+    });
+
+    it('ボードの列にポイントの合計を、カードにスプリントとポイントを出す', () => {
+      const board = {
+        Backlog: [{ issueNumber: 2, order: 0, title: 'a', state: 'open', assignee: '', labels: '',
+          dueDate: '', sprint: 'sprint001', points: 5 },
+        { issueNumber: 3, order: 1, title: 'b', state: 'open', assignee: '', labels: '',
+          dueDate: '', sprint: '', points: 2 }],
+        'In Progress': [], 'In Review': [], Done: [],
+      };
+      mount({ apiSettings: ON, apiProjectBoard: board });
+      document.querySelector('[data-tab="issues"]').click();
+      document.getElementById('view-board').click();
+
+      const col = document.querySelector('.board-column h3');
+      expect(col.textContent).toContain('7pt');
+      expect(document.querySelector('.board-card .scrum-chips').textContent).toContain('sprint001');
+    });
+  });
+
   describe('はじめての人のための案内', () => {
     const day = (offset) => new Date(Date.now() + 9 * 3600 * 1000 + offset * 86400000).toISOString().substring(0, 10);
     const running = (over) => Object.assign({}, VIEW, {

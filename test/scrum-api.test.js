@@ -91,6 +91,7 @@ describe('スクラムの入口', () => {
       return ctx.apiImpedimentReopen(env.imp.number);
     }],
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],
+    ['apiProjectBoard', (ctx) => ctx.apiProjectBoard()],
     // 作る・直す・書く側も見る。返す形を間違えても操作は成功するので気づかれない
     ['apiSetScrumEnabled', (ctx) => ctx.apiSetScrumEnabled(true)],
     ['apiSetScrumText', (ctx) => ctx.apiSetScrumText('productGoal', '紙をなくす')],
@@ -114,6 +115,8 @@ describe('スクラムの入口', () => {
     apiImpedimentComment: { body: '頼みました' },
     apiImpedimentResolve: { state: 'resolved', resolution: '代理が承認' },
     apiImpedimentReopen: { state: 'open' },
+    // ボードのカードにもスプリントとポイントを渡す (一覧で積んだ量を見比べる)
+    apiProjectBoard: { Backlog: [{ sprint: 'sprint001', points: 3 }] },
   };
 
   CASES.forEach(([name, call]) => {
