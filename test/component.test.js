@@ -6872,6 +6872,15 @@ describe('前進を見せる (意欲づけ)', () => {
     }
   });
 
+  it('別のタブで止めたら、このタブのカードも消える', () => {
+    mount({ apiProgress: { weekClosed: 2, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false } });
+    expect(document.getElementById('home-cards').textContent).toContain('今週');
+    // 別のタブが止めた形 (このタブでは押していない)
+    window.localStorage.setItem('progressNotes', 'off');
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'progressNotes', newValue: 'off' }));
+    expect(document.getElementById('home-cards').textContent).toBe('');
+  });
+
   it('工数の集計に、誰に何が見えるかを書く', () => {
     mount({ apiTallyEffort: { periods: [{ key: '2026-10', label: '10月', planned: 1, actual: 1, diff: 0, count: 1, cumPlanned: 1, cumActual: 1 }],
       people: [], total: { planned: 1, actual: 1, diff: 0, count: 1 }, skipped: 0, hidden: 0 } });
