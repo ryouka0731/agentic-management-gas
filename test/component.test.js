@@ -3674,8 +3674,9 @@ describe('起票のときに入れられるもの', () => {
     openCreate();
 
     // 作ってすぐ直せばよい、では二度手間になる
+    // ラベルの字だけを読む (必須の札は字の隣に並ぶ)
     expect([...document.querySelectorAll('#side-body label')]
-      .map((l) => l.firstChild.textContent))
+      .map((l) => (l.querySelector('.field-label') || l).firstChild.textContent))
       .toEqual([
         'やること', '補足 (Markdown で書けます)',
         '担当者 (「@」で選びます。何人でも)', '優先度',
@@ -6169,6 +6170,136 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
     document.querySelector('[data-tab="settings"]').click();
     hinted(document.getElementById('scrum-toggle'), 'scrum-toggle');
+  });
+
+  describe('はじめての人のための案内', () => {
+    const day = (offset) => new Date(Date.now() + 9 * 3600 * 1000 + offset * 86400000).toISOString().substring(0, 10);
+    const running = (over) => Object.assign({}, VIEW, {
+      sprints: [{ name: 'sprint001', goal: '申請の流れ', startDate: day(-3), endDate: day(3), notes: '' }],
+      velocity: [{ name: 'sprint001', goal: '申請の流れ', startDate: day(-3), endDate: day(3),
+        planned: 5, completed: 2, carriedOver: '' }],
+      summary: { current: 'sprint001', planned: 5, completed: 2, openImpediments: 0, average: '' },
+    }, over || {});
+    const nextTitle = () => document.querySelector('.scrum-next strong').textContent;
+    const current = () => [...document.querySelectorAll('.scrum-cycle-step.is-current strong')].map((e) => e.textContent);
+
+    it('スプリントが無ければ、計画するの段で作る入口だけを出す', () => {
+      mount({ apiSettings: ON, apiScrumView: { sprint: '', sprints: [], summary: {}, velocity: [],
+        burndown: { days: [] }, roadmap: { sprints: [], rows: [] }, texts: {} } });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      expect(current()).toEqual(['計画する']);
+      expect(document.querySelector('.scrum-intro').open).toBe(true);
+      // 入口は空の案内のボタンが兼ねる。同じボタンを2つ並べない
+      expect(document.querySelector('.scrum-next')).toBeNull();
+    });
+
+    it('期間の途中なら進めるの段で、残りのポイントとボードへの入口を出す', () => {
+      mount({ apiSettings: ON, apiScrumView: running() });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      expect(current()).toEqual(['進める']);
+      expect(nextTitle()).toContain('残り 3ポイント');
+      document.querySelector('.scrum-next .btn-primary').click();
+      expect(document.getElementById('panel-issues').hidden).toBe(false);
+      expect(document.getElementById('view-board').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('障害物があれば、それを先に片付けるよう出す', () => {
+      mount({ apiSettings: ON, apiScrumView: running({ summary: { current: 'sprint001', planned: 5,
+        completed: 2, openImpediments: 2, average: '' } }) });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      expect(nextTitle()).toContain('障害物が 2件');
+      document.querySelector('.scrum-next .btn-primary').click();
+      expect(document.getElementById('panel-impediments').hidden).toBe(false);
+    });
+
+    it('ゴールが空なら、まずゴールを書くよう出す', () => {
+      const v = running();
+      v.sprints = [Object.assign({}, v.sprints[0], { goal: '' })];
+      mount({ apiSettings: ON, apiScrumView: v });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      expect(current()).toEqual(['計画する']);
+      expect(nextTitle()).toContain('ゴール');
+      document.querySelector('.scrum-next .btn-primary').click();
+      expect(document.getElementById('side-title').textContent).toContain('sprint001 を直す');
+    });
+
+    it('終わったら、見せてふりかえり、次を作るよう出す', () => {
+      const v = running();
+      v.sprints = [Object.assign({}, v.sprints[0], { startDate: day(-10), endDate: day(-1) })];
+      mount({ apiSettings: ON, apiScrumView: v });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      expect(current()).toEqual(['見せる', 'ふりかえる']);
+      expect(nextTitle()).toContain('終わりました');
+      expect(document.querySelector('.scrum-next .btn-primary').textContent).toBe('次のスプリントを作る');
+    });
+
+    it('済んだ段には印を付ける (色だけに頼らない)', () => {
+      const v = running();
+      v.sprints = [Object.assign({}, v.sprints[0], { startDate: day(-10), endDate: day(-1) })];
+      mount({ apiSettings: ON, apiScrumView: v });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      const done = [...document.querySelectorAll('.scrum-cycle-step.is-done')];
+      expect(done.map((li) => li.querySelector('strong').textContent)).toEqual(['計画する', '進める']);
+      expect(done[0].querySelector('.scrum-cycle-num').textContent).toBe('✓');
+      expect(done[0].textContent).toContain('済み');
+    });
+
+    it('押せないボタンには、押せない理由を出す', () => {
+      mount({ apiSettings: ON, apiScrumView: { sprint: '', sprints: [], summary: {}, velocity: [],
+        burndown: { days: [] }, roadmap: { sprints: [], rows: [] }, texts: {} } });
+      document.querySelector('[data-tab="sprint"]').click();
+
+      const btn = document.getElementById('sprint-edit-btn');
+      expect(btn.disabled).toBe(true);
+      expect(btn.dataset.hint).toContain('まずスプリントを作る');
+    });
+
+    it('スプリントの入力欄は、必須・見本・決まりを入れる前に見せる', () => {
+      mount({ apiSettings: ON, apiScrumView: running() });
+      document.querySelector('[data-tab="sprint"]').click();
+      document.getElementById('sprint-create-btn').click();
+
+      const form = document.querySelector('#side-body form');
+      const name = form.querySelector('input');
+      expect(name.placeholder).toBe('sprint001');
+      expect(name.parentNode.querySelector('.field-required').textContent).toBe('必須');
+      const note = document.getElementById(name.getAttribute('aria-describedby'));
+      expect(note.textContent).toContain('あとから変えられません');
+    });
+
+    it('説明は閉じたら閉じたまま覚えておく', () => {
+      mount({ apiSettings: ON, apiScrumView: running() });
+      document.querySelector('[data-tab="sprint"]').click();
+      const intro = document.querySelector('.scrum-intro');
+      intro.open = false;
+      intro.dispatchEvent(new window.Event('toggle'));
+
+      mount({ apiSettings: ON, apiScrumView: running() });
+      document.querySelector('[data-tab="sprint"]').click();
+      expect(document.querySelector('.scrum-intro').open).toBe(false);
+    });
+
+    it('ポイントは数を打たせず、言葉の付いた段階から選ばせる', () => {
+      const issue = Object.assign({}, DEFAULTS.apiIssueList[0], { sprint: '', points: 4, acceptance: '' });
+      const app = mount({ apiSettings: ON, apiIssueList: [issue] });
+      document.querySelector('[data-tab="issues"]').click();
+      document.querySelector('#issue-list .row-item .row-open').click();
+      document.getElementById('side-edit').click();
+
+      const select = [...document.querySelectorAll('#side-body select')]
+        .find((el) => [...el.options].some((o) => o.textContent.includes('大きすぎる')));
+      // 段階に無い値 (4) も選択肢に残し、選び直さない限り変えない
+      expect(select.value).toBe('4');
+      select.value = '8';
+      document.querySelector('#side-body form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+      expect(app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1].points).toBe('8');
+    });
   });
 
   it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
