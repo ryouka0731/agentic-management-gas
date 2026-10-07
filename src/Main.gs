@@ -3099,6 +3099,42 @@ function housekeepArchiveDaily_() {
   }
 }
 
+// ===== 前進を見せる (意欲づけ) =====
+
+/**
+ * チームの前進を返す (Web App API)。人ごとには数えない。
+ *
+ * @returns {{weekClosed: number, weekMerged: number, monthClosed: number, goal: number, canEditGoal: boolean}}
+ */
+function apiProgress() {
+  var p = motivationProgress(new Date());
+  p.canEditGoal = repoIsAdmin_(String(Session.getActiveUser().getEmail() || ''));
+  return p;
+}
+
+/**
+ * チームの毎月の目標を決める (Web App API)。管理者だけ。0 で消す。
+ *
+ * @param {number} n
+ * @returns {object} 決めたあとの apiProgress()
+ */
+function apiSetTeamGoal(n) {
+  repoAssertAdmin_('チームの目標を決めること');
+  teamGoalSet_(n);
+  return apiProgress();
+}
+
+/**
+ * はじめの5歩を返す (Web App API)。開いている本人のぶんだけ。
+ *
+ * @returns {object[]}
+ */
+function apiMyMilestones() {
+  return motivationMilestones_(String(Session.getActiveUser().getEmail() || '')).map(function (m) {
+    return { key: m.key, label: m.label, hint: m.hint, tab: m.tab, done: !!m.done };
+  });
+}
+
 // ===== 設定 =====
 
 /**
