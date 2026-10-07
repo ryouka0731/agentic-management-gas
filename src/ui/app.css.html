@@ -4198,4 +4198,115 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .history-del .history-text { text-decoration: line-through; }
 .history-add { color: var(--accent); background: var(--accent-bg); }
 .history-more { margin-top: var(--sp-2); }
+
+/* =====================================================================
+ * スマホ
+ *
+ * Material Design 3 の「ナビゲーションバー」と「モーダルのナビゲーション
+ * ドロワー」に倣う。主な行き先は親指の届く下の帯に、残りは「メニュー」から
+ * 引き出す。広い画面では下の帯も幕も出さない。
+ * ===================================================================== */
+.mobile-nav,
+.nav-scrim { display: none; }
+
+@media (max-width: 767px) {
+  /* 左の行き先は常に出さず、引き出しにする (上に積むと画面の4割を占めていた) */
+  .layout { height: 100dvh; min-height: 0; }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 210;
+    width: min(85vw, 320px);
+    max-height: none;
+    overflow-y: auto;
+    border: 0;
+    background: var(--bg);
+    box-shadow: var(--elev-2);
+    transform: translateX(-105%);
+    transition: transform var(--motion) ease-out;
+    visibility: hidden;
+  }
+  .sidebar.drawer-open { transform: translateX(0); visibility: visible; }
+
+  .nav-scrim:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(31, 35, 40, 0.4);
+  }
+
+  .main {
+    min-height: 0;
+    /* 下の帯のぶん空ける。iPhone の下の帯 (ホームバー) も避ける */
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 140;
+    padding: var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));
+    background: var(--bg);
+    box-shadow: 0 -1px 0 var(--line), var(--elev-1);
+  }
+
+  .mobile-nav-item {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    /* 押せる大きさは 48px を下回らせない (Material Design 3) */
+    min-height: 52px;
+    padding: var(--sp-1) 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 11px;
+  }
+  .mobile-nav-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .mobile-nav-item .icon { width: 20px; height: 20px; }
+  .mobile-nav-item[aria-current="true"],
+  .mobile-nav-item.is-here { color: var(--accent); font-weight: 600; }
+  .mobile-nav-item[aria-current="true"] .icon,
+  .mobile-nav-item.is-here .icon {
+    padding: 2px 14px;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    box-sizing: content-box;
+  }
+
+  /* 右から出る入力や詳細は、狭い画面では全面に出す。9割だと右に半端な隙間が残る */
+  .side-panel { width: 100vw; }
+
+  /* 切り替えのボタンは1行のまま横に流す。詰めると「一/覧」と縦に割れていた */
+  .segmented { max-width: 100%; overflow-x: auto; }
+  .seg { flex: 0 0 auto; white-space: nowrap; }
+
+  /* 入力の字は 16px 以上にする。小さいと iPhone が勝手に拡大する */
+  input, select, textarea { font-size: 16px; }
+
+  /* 一覧の行は、題名を広く取る。直す・捨てるは開いた詳細にもあるので畳む */
+  .row-item .icon-btn[aria-label$="を直す"],
+  .row-item .btn-danger { display: none; }
+
+  /* 押せる大きさを指に合わせる */
+  .icon-btn { min-width: 40px; min-height: 40px; }
+
+  /* 上の操作の帯は折り返す。ボタンの字は割らない (「文書を登録/する」と割れていた) */
+  .panel-actions { flex-wrap: wrap; }
+  .panel-actions .btn { white-space: nowrap; }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
+}
 </style>
