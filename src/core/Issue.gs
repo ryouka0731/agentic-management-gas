@@ -571,9 +571,22 @@ function issueListArchived() {
  */
 function issueHousekeep(now) {
   var when = now || new Date();
-  var gone = archiveExpired(issueListArchived(), when);
+  var expired = archiveExpired(issueListArchived(), when);
+  var gone = [];
 
-  for (var i = 0; i < gone.length; i++) issuePurge(gone[i]);
+  for (var i = 0; i < expired.length; i++) {
+    var number = expired[i];
+    // **消す直前に、鍵の中で確かめ直す。** 選んでから消すまでのあいだに人が
+    // 戻していたら (archivedAt が空になる)、戻したものまで消えてしまう
+    var purged = dbWithLock_(30000, function () {
+      var row = dbFindOne('issues', 'number', number);
+      if (!row || !row.archivedAt) return false;
+      if (archiveDaysLeft(row.archivedAt, when) !== 0) return false;
+      issuePurge(number);
+      return true;
+    });
+    if (purged) gone.push(number);
+  }
   return gone;
 }
 

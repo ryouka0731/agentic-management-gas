@@ -257,6 +257,9 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
    * スプリントを作れなかった (実機で報告があった)。
    */
   function watchLocks(ctx) {
+    // 置き場のフォルダは先に用意しておく (無いときに作る鍵は、ここで見たいものではない)
+    ctx.commandQueueFolder_();
+    ctx.commandDoneFolder_();
     const seen = { top: 0, housekeepDepth: null };
     const lock = ctx.dbWithLock_;
     ctx.dbWithLock_ = (ms, fn, busy) => {
@@ -279,11 +282,14 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
 
   it('命令は1件ずつ鍵を取る (まとめて持たない)', () => {
     const { ctx } = setup();
+    // 片付けの鍵を数えないよう、今日の分は済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('ARCHIVE_HOUSEKEPT_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     enqueue(ctx, 'a', { op: 'listFiles', args: {} });
     enqueue(ctx, 'b', { op: 'listFiles', args: {} });
     const seen = watchLocks(ctx);
     ctx.processCommandQueue();
-    expect(seen.top).toBeGreaterThanOrEqual(2);
+    expect(seen.top).toBe(2);
     expect(readResult(ctx, 'a').ok).toBe(true);
     expect(readResult(ctx, 'b').ok).toBe(true);
   });
@@ -305,5 +311,64 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
     ctx.processCommandQueue();
     ctx.runCommandFileLocked_(files[0], ctx.commandQueueFolder_(), ctx.commandDoneFolder_());
     expect(ctx.issueList(null).filter((i) => i.title === '一度だけ')).toHaveLength(1);
+  });
+});
+
+describe('鍵の外に出した処理の重なり', () => {
+  it('置き場のフォルダを作るのは鍵の中で、確かめ直してから', () => {
+    const { ctx } = setup();
+    const config = ctx.repoConfig();
+    delete config.queueDoneId;
+    ctx.PropertiesService.getScriptProperties().setProperty(ctx.REPO_CONFIG_KEY(), JSON.stringify(config));
+    const git = ctx.DriveApp.getFolderById(config.gitId);
+    const create = git.createFolder;
+    const depths = [];
+    git.createFolder = (n) => { depths.push(ctx.dbLockDepth_); return create(n); };
+
+    const a = ctx.commandDoneFolder_();
+    const b = ctx.commandDoneFolder_();
+    expect(depths).toEqual([1]);
+    expect(a.getId()).toBe(b.getId());
+  });
+
+  it('期限切れの捨てたものは、消す直前に戻されていたら消さない', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('戻すもの', '', []);
+    ctx.issueArchive(made.number);
+    ctx.dbUpdate('issues', 'number', made.number, { archivedAt: new Date(Date.now() - 400 * 864e5) });
+    const list = ctx.issueListArchived;
+    // 期限切れを選んだあと、消す前に人が戻した形
+    ctx.issueListArchived = () => { const rows = list(); ctx.issueRestore(made.number); return rows; };
+
+    ctx.issueHousekeep(new Date());
+    expect(ctx.issueGet(made.number).title).toBe('戻すもの');
+  });
+
+  it('1日1回の片付けは、ほかの起動が受け持っている間は走らせない', () => {
+    const { ctx } = setup();
+    const props = ctx.PropertiesService.getScriptProperties();
+    const today = ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+    props.setProperty('ARCHIVE_HOUSEKEPT_RUNNING', today + '|' + Date.now());
+    let ran = 0;
+    const orig = ctx.prWithdrawOrphans;
+    ctx.prWithdrawOrphans = () => { ran++; return orig(); };
+
+    ctx.housekeepArchiveDaily_();
+    expect(ran).toBe(0);
+  });
+
+  it('片付けが途中で落ちたら、その日の済みの印を付けず、次の回にやり直す', () => {
+    const { ctx } = setup();
+    const props = ctx.PropertiesService.getScriptProperties();
+    const orig = ctx.issueHousekeep;
+    ctx.issueHousekeep = () => { throw new Error('混み合っています'); };
+    expect(() => ctx.housekeepArchiveDaily_()).toThrow();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBeNull();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_RUNNING')).toBeNull();
+
+    ctx.issueHousekeep = orig;
+    ctx.housekeepArchiveDaily_();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBe(
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
   });
 });
