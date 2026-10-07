@@ -4153,6 +4153,14 @@ button.label-pill {
 input::placeholder,
 textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .field-label { display: flex; align-items: center; gap: var(--sp-2); }
+/* 入力時の確かめ。エラーは送るのを止め、注意は止めない。色だけに頼らず頭に字を付ける */
+.field-msg { display: block; margin-top: var(--sp-1); font-size: 12px; font-weight: 600; }
+.field-error { color: var(--danger); }
+.field-warn { color: var(--warn); }
+.inline-form [aria-invalid="true"] { box-shadow: 0 0 0 2px var(--danger); }
+.sprint-quick { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+.sprint-quick-btn { cursor: pointer; }
+.sprint-quick-btn:hover { background: var(--accent-bg); color: var(--accent); }
 .field-required { flex: 0 0 auto; }
 .scrum-cycle-body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 
