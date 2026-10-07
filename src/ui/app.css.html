@@ -2196,7 +2196,9 @@ button.gantt-name:hover { color: var(--accent); }
  * 白にするので、そのままだと白い面に白い字が乗って消える (スプリントを作る・
  * やることを作るで実際に見えなくなった)。塗りは残し、輪郭を一段外に出す
  */
-.btn-primary.editing {
+.btn-primary.editing,
+.btn-primary.editing:hover:not(:disabled),
+.btn-primary.editing:active {
   background: var(--accent);
   color: var(--on-accent);
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
@@ -4128,9 +4130,10 @@ button.label-pill {
 
 /* 入力欄の決まりと必須の印 (どの入力欄でも同じ形) */
 .field-note { display: block; margin-top: var(--sp-1); font-weight: 400; }
-/* 入力例は入れた値と見分けが付くよう薄く出す (濃いと入力済みに見える) */
+/* 入力例は入れた値と見分けが付くよう淡い字で出す (濃いと入力済みに見える)。
+   透かすと読めなくなるので、色だけで差を付ける */
 input::placeholder,
-textarea::placeholder { color: var(--ink-2); opacity: 0.7; }
+textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .field-label { display: flex; align-items: center; gap: var(--sp-2); }
 .field-required { flex: 0 0 auto; }
 .scrum-cycle-body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }

@@ -10212,9 +10212,15 @@
     sprintSelect.value = scrumSprint;
     sprintSelect.disabled = !scrumSprints.length;
     sprintEditBtn.disabled = !scrumSprint;
-    // 押せないときは、押せない理由を出す。黙って灰色にすると、壊れていると思われる
-    setHintText(sprintEditBtn, scrumSprint ? HINTS['act:sprint-edit']
-      : (scrumSprints.length ? '上の「スプリント」で選ぶと直せます' : 'まずスプリントを作ると直せます'));
+    // 押せないときは、押せない理由を隣に字で出す。黙って灰色にすると壊れて
+    // いると思われる。押せないボタンには焦点が当たらず、ホバーの補足だけでは
+    // キーボードの人に届かないので、見える字にする
+    var reason = scrumSprint ? ''
+      : (scrumSprints.length ? '上の「スプリント」で選ぶと直せます' : 'まずスプリントを作ると直せます');
+    var reasonEl = document.getElementById('sprint-edit-reason');
+    reasonEl.textContent = reason;
+    reasonEl.hidden = !reason;
+    setHintText(sprintEditBtn, reason || HINTS['act:sprint-edit']);
   }
 
   /**
@@ -10421,10 +10427,9 @@
       var here = step.key === phase || (phase === 'review' && step.key === 'retro');
       // 済んだ段には印を付ける。いまどこまで来たかが、色だけでなく形でも分かる
       var done = !here && i < at;
-      if (here) {
-        li.classList.add('is-current');
-        li.setAttribute('aria-current', 'step');
-      }
+      if (here) li.classList.add('is-current');
+      // 読み上げに伝える「いまの段」は1つだけにする (見た目は両方光らせる)
+      if (step.key === phase) li.setAttribute('aria-current', 'step');
       if (done) li.classList.add('is-done');
 
       var num = document.createElement('span');
