@@ -11454,23 +11454,130 @@
           list.textContent = '記録はまだありません';
           return;
         }
-        rows.forEach(function (h) {
-          var item = document.createElement('div');
-          item.className = 'history-item';
-          var meta = document.createElement('div');
-          meta.className = 'row-meta';
-          meta.textContent = tokyoTime(h.at) + ' ・ ' +
-            (personName(h.actor) || h.actor || '不明');
-          item.appendChild(meta);
-
-          var what = document.createElement('div');
-          what.textContent = historyLine(h);
-          item.appendChild(what);
-          list.appendChild(item);
-        });
+        drawHistory(list, rows);
       }, failInto(list));
     });
     return details;
+  }
+
+  /** 変更の履歴を一度に描く件数。多いと画面が固まる (長い補足を何度も直した記録) */
+  var HISTORY_PAGE = 50;
+
+  /**
+   * 変更の履歴を描く。1回の書き込み (同じ時刻・同じ人・同じ操作) を1つのまとまり
+   * にし、新しい順に並べる。はじめは HISTORY_PAGE 件だけ描き、残りは
+   * 「さらに表示」で足す。ページの境目でまとまりが分かれても見出しは1つにする。
+   *
+   * @param {HTMLElement} list
+   * @param {object[]} rows apiHistory の返り (新しい順)
+   */
+  function drawHistory(list, rows) {
+    var shown = 0;
+    var group = null;
+    var groupKey = '';
+    var more = null;
+
+    function keyOf(h) { return h.at + '|' + h.actor + '|' + h.action; }
+
+    function page() {
+      var end = Math.min(rows.length, shown + HISTORY_PAGE);
+      for (; shown < end; shown++) {
+        var h = rows[shown];
+        if (!group || keyOf(h) !== groupKey) {
+          groupKey = keyOf(h);
+          group = document.createElement('div');
+          group.className = 'history-item';
+          var meta = document.createElement('div');
+          meta.className = 'row-meta history-head';
+          meta.textContent = tokyoTime(h.at) + ' ・ ' +
+            (personName(h.actor) || h.actor || '不明') + ' ・ ' + historyActionText(h.action);
+          group.appendChild(meta);
+          list.insertBefore(group, more);
+        }
+        if (h.field) group.appendChild(makeHistoryChange(h));
+      }
+
+      if (more) more.remove();
+      more = null;
+      if (shown < rows.length) {
+        more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'btn history-more';
+        more.textContent = 'さらに表示 (残り ' + (rows.length - shown) + ' 件)';
+        more.addEventListener('click', page);
+        list.appendChild(more);
+      } else if (rows.length >= HISTORY_MAX_SHOWN) {
+        var cut = document.createElement('div');
+        cut.className = 'row-meta';
+        cut.textContent = 'これより前の履歴は省略しています';
+        list.appendChild(cut);
+      }
+    }
+    page();
+  }
+
+  /** サーバが一度に渡す上限 (Main.gs の HISTORY_MAX_ROWS と同じ) */
+  var HISTORY_MAX_SHOWN = 500;
+
+  /**
+   * 1つの項目の変わり方。1行の値は「前 → 後」、複数行の値は行ごとの差分。
+   *
+   * 差分は色だけに頼らない。消えた行は「−」と取り消し線、足した行は「＋」を付ける。
+   *
+   * @param {object} h
+   * @returns {HTMLElement}
+   */
+  function makeHistoryChange(h) {
+    var box = document.createElement('div');
+    box.className = 'history-change';
+    var name = historyFieldName(h.field);
+
+    if (!h.lines) {
+      box.textContent = historyLine(h);
+      return box;
+    }
+
+    var head = document.createElement('div');
+    head.textContent = name + ':';
+    box.appendChild(head);
+
+    var diff = document.createElement('div');
+    diff.className = 'history-diff';
+    h.lines.forEach(function (line) {
+      if (line.op === 'same' && !line.text) return;
+      var row = document.createElement(line.op === 'del' ? 'del' : (line.op === 'add' ? 'ins' : 'div'));
+      row.className = 'history-line history-' + line.op;
+      var mark = document.createElement('span');
+      mark.className = 'history-mark';
+      mark.textContent = line.op === 'del' ? '−' : (line.op === 'add' ? '＋' : ' ');
+      mark.setAttribute('aria-hidden', 'true');
+      row.appendChild(mark);
+      row.appendChild(document.createTextNode(line.text || ' '));
+      diff.appendChild(row);
+    });
+    box.appendChild(diff);
+    return box;
+  }
+
+  /** 項目の名前を画面の言葉にする */
+  function historyFieldName(field) {
+    var fields = {
+      title: '題名', body: '補足', assignee: '担当', labels: 'タグ', priority: '優先度',
+      dueDate: '期限', startDate: '開始日', parent: '親', estimate: '見積もり',
+      plannedHours: '予定工数', actualHours: '実績工数', linkedFileIds: '結び付く文書',
+      sprint: 'スプリント', points: 'ポイント', acceptance: '受入基準',
+      resolution: '解決策', reportedBy: '報告者', goal: 'ゴール', endDate: '終わりの日', notes: '備考',
+    };
+    return fields[field] || field;
+  }
+
+  /** 操作の名前を画面の言葉にする */
+  function historyActionText(action) {
+    var actions = {
+      create: '作りました', close: '完了にしました', reopen: '戻しました',
+      resolve: '解決しました', update: '直しました',
+    };
+    return actions[action] || action;
   }
 
   /**
@@ -11480,20 +11587,9 @@
    * @returns {string}
    */
   function historyLine(h) {
-    var actions = {
-      create: '作りました', close: '完了にしました', reopen: '戻しました',
-      resolve: '解決しました', update: '直しました',
-    };
-    var fields = {
-      title: '題名', body: '補足', assignee: '担当', labels: 'タグ', priority: '優先度',
-      dueDate: '期限', startDate: '開始日', parent: '親', estimate: '見積もり',
-      plannedHours: '予定工数', actualHours: '実績工数', linkedFileIds: '結び付く文書',
-      sprint: 'スプリント', points: 'ポイント', acceptance: '受入基準',
-      resolution: '解決策', reportedBy: '報告者', goal: 'ゴール', endDate: '終わりの日', notes: '備考',
-    };
-    if (!h.field) return actions[h.action] || h.action;
+    if (!h.field) return historyActionText(h.action);
     var cut = function (v) { return v === '' ? '(空)' : (v.length > 60 ? v.substring(0, 60) + '…' : v); };
-    return (fields[h.field] || h.field) + ': ' + cut(h.before) + ' → ' + cut(h.after);
+    return historyFieldName(h.field) + ': ' + cut(h.before) + ' → ' + cut(h.after);
   }
 
   sprintSelect.addEventListener('change', function () {

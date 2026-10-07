@@ -198,6 +198,23 @@ describe('手元の道具から使う命令', () => {
   });
 });
 
+describe('変更の履歴の差分', () => {
+  it('複数行の値には行ごとの差分を添え、1行の値には添えない', () => {
+    const { ctx } = setup();
+    const made = ctx.apiIssueCreate('題', '一行目\n二行目', [], '', {});
+    ctx.apiIssueUpdate(made.number, { title: '題2', body: '一行目\n直した二行目\n三行目' });
+
+    const rows = ctx.apiHistory('issue:' + made.number);
+    expect(rows.find((r) => r.field === 'title').lines).toBeNull();
+    expect(rows.find((r) => r.field === 'body').lines).toEqual([
+      { op: 'same', text: '一行目' },
+      { op: 'del', text: '二行目' },
+      { op: 'add', text: '直した二行目' },
+      { op: 'add', text: '三行目' },
+    ]);
+  });
+});
+
 describe('持ち越し', () => {
   it('終わらなかったやることを次へ移しても、前のスプリントの持ち越しに残る', () => {
     const { ctx } = setup();
