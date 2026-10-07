@@ -1072,3 +1072,26 @@ describe('ボードのカードの下の段', () => {
     expect(/\.card-foot \{([^}]*)\}/.exec(css)[1]).toMatch(/flex-wrap:\s*wrap/);
   });
 });
+
+describe('スマホの形', () => {
+  const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+  const mobile = [...css.matchAll(/@media \(max-width: 767px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join('\n');
+
+  it('左の行き先は常に出さず、引き出しにする (上に積むと画面の4割を占めた)', () => {
+    expect(mobile).toMatch(/\.sidebar \{[^}]*position: fixed[^}]*transform: translateX\(-105%\)/);
+    expect(mobile).toMatch(/\.sidebar\.drawer-open \{[^}]*translateX\(0\)/);
+  });
+
+  it('入力の字は 16px 以上 (小さいと iPhone が拡大する)', () => {
+    expect(mobile).toMatch(/input, select, textarea \{ font-size: 16px; \}/);
+  });
+
+  it('切り替えのボタンは字を割らずに横へ流す', () => {
+    expect(mobile).toMatch(/\.seg \{[^}]*white-space: nowrap/);
+    expect(mobile).toMatch(/\.segmented \{[^}]*overflow-x: auto/);
+  });
+
+  it('下の帯のぶん本文の下を空ける', () => {
+    expect(mobile).toMatch(/\.main \{[^}]*padding-bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
+  });
+});
