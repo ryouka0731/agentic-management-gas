@@ -6402,8 +6402,131 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       const name = form.querySelector('input');
       expect(name.placeholder).toBe('sprint001');
       expect(name.parentNode.querySelector('.field-required').textContent).toBe('必須');
-      const note = document.getElementById(name.getAttribute('aria-describedby'));
+      // 補足と入力時の知らせの両方を結ぶ。補足が先
+      const note = document.getElementById(name.getAttribute('aria-describedby').split(' ')[0]);
       expect(note.textContent).toContain('あとから変えられません');
+    });
+
+    describe('スプリントの日付の入力', () => {
+      const S = [
+        { name: 'sprint001', goal: '', startDate: '2026-10-01', endDate: '2026-10-07', notes: '' },
+        { name: 'sprint002', goal: '', startDate: '2026-10-08', endDate: '2026-10-14', notes: '' },
+      ];
+      const V = () => Object.assign({}, VIEW, { sprint: 'sprint002', sprints: S, velocity: [] });
+      function openCreate(app) {
+        document.querySelector('[data-tab="sprint"]').click();
+        document.getElementById('sprint-create-btn').click();
+        const form = document.querySelector('#side-body form');
+        const get = (n) => form.querySelector('[name="' + n + '"]');
+        const set = (n, value, ev) => {
+          get(n).value = value;
+          get(n).dispatchEvent(new window.Event(ev || 'change', { bubbles: true }));
+        };
+        const msg = (n) => get(n).parentNode.querySelector('.field-msg');
+        return { form, get, set, msg, submit: form.querySelector('button[type="submit"]'), app };
+      }
+
+      it('名前と期間を前のスプリントから補い、日付は選ばせる', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        expect(f.get('name').value).toBe('sprint003');
+        expect(f.get('startDate').type).toBe('date');
+        // 前の終わりの翌日から、前と同じ7日間
+        expect(f.get('startDate').value).toBe('2026-10-15');
+        expect(f.get('endDate').value).toBe('2026-10-21');
+        expect(f.get('endDate').min).toBe('2026-10-15');
+      });
+
+      it('始まりの日を変えると終わりもついてくる。自分で直した終わりは動かさない', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        f.set('startDate', '2026-10-20');
+        expect(f.get('endDate').value).toBe('2026-10-26');
+
+        f.set('endDate', '2026-10-31');
+        f.set('startDate', '2026-10-22');
+        expect(f.get('endDate').value).toBe('2026-10-31');
+      });
+
+      it('番号で終わらない名前しか無くても、空いている sprintNNN を補う', () => {
+        mount({ apiSettings: ON, apiScrumView: Object.assign(V(), {
+          sprints: [{ name: '申請の入口', goal: '', startDate: '2026-10-01', endDate: '2026-10-07', notes: '' }] }) });
+        const f = openCreate();
+        expect(f.get('name').value).toBe('sprint001');
+        expect(f.submit.disabled).toBe(false);
+      });
+
+      it('名前の「入れてください」は、触るまで出さない', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        f.get('name').value = '';
+        f.set('startDate', '2026-10-20');
+        expect(f.msg('name') ? f.msg('name').hidden : true).toBe(true);
+        f.set('name', '', 'input');
+        expect(f.msg('name').textContent).toContain('名前を入れてください');
+      });
+
+      it('直すときも、始まりの日を変えると終わりの日が同じ長さでついてくる', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        document.querySelector('[data-tab="sprint"]').click();
+        document.getElementById('sprint-edit-btn').click();
+        const form = document.querySelector('#side-body form');
+        const start = form.querySelector('[name="startDate"]');
+        start.value = '2026-10-10';
+        start.dispatchEvent(new window.Event('change', { bubbles: true }));
+        // sprint002 は 10/08〜10/14 の7日間
+        expect(form.querySelector('[name="endDate"]').value).toBe('2026-10-16');
+      });
+
+      it('期間の1押しはラベルの外に置く (欄の名前に混ざらない)', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        expect(f.get('endDate').parentNode.querySelector('.sprint-quick')).toBeNull();
+        expect(f.form.querySelector('.sprint-quick')).not.toBeNull();
+      });
+
+      it('「2週間」で終わりの日を1押しで決める', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        [...f.form.querySelectorAll('.sprint-quick-btn')].find((b) => b.textContent === '2週間').click();
+        expect(f.get('endDate').value).toBe('2026-10-28');
+      });
+
+      it('終わりが始まりより前なら、欄のすぐ下に理由を出し、送らせない', () => {
+        const app = mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        f.set('endDate', '2026-10-10');
+
+        expect(f.msg('endDate').hidden).toBe(false);
+        expect(f.msg('endDate').textContent).toContain('エラー');
+        expect(f.msg('endDate').getAttribute('role')).toBe('alert');
+        expect(f.get('endDate').getAttribute('aria-invalid')).toBe('true');
+        expect(f.submit.disabled).toBe(true);
+        f.form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+        expect(app.calls.some((c) => c.name === 'apiSprintCreate')).toBe(false);
+
+        f.set('endDate', '2026-10-21');
+        expect(f.msg('endDate').hidden).toBe(true);
+        expect(f.submit.disabled).toBe(false);
+      });
+
+      it('同じ名前は打ったその場で止める', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        f.set('name', 'sprint001', 'input');
+        expect(f.msg('name').textContent).toContain('既にあります');
+        expect(f.submit.disabled).toBe(true);
+      });
+
+      it('ほかのスプリントと期間が重なれば注意を出す (送るのは止めない)', () => {
+        mount({ apiSettings: ON, apiScrumView: V() });
+        const f = openCreate();
+        f.set('startDate', '2026-10-12');
+        f.set('endDate', '2026-10-18');
+        expect(f.msg('endDate').textContent).toContain('注意');
+        expect(f.msg('endDate').textContent).toContain('sprint002');
+        expect(f.submit.disabled).toBe(false);
+      });
     });
 
     it('説明は閉じたら閉じたまま覚えておく', () => {
