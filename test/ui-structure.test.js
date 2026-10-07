@@ -1091,6 +1091,11 @@ describe('スマホの形', () => {
     expect(mobile).toMatch(/\.segmented \{[^}]*overflow-x: auto/);
   });
 
+  it('進捗ボードの列は縦に積まず、横に1列ずつ送る', () => {
+    expect(mobile).toMatch(/\.board \{[^}]*scroll-snap-type: x mandatory/);
+    expect(mobile).toMatch(/\.board-column \{[^}]*scroll-snap-align: start/);
+  });
+
   it('下の帯のぶん本文の下を空ける', () => {
     expect(mobile).toMatch(/\.main \{[^}]*padding-bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
   });
