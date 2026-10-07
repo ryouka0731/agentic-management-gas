@@ -11140,8 +11140,17 @@
         while (digits.length < m[2].length) digits = '0' + digits;
         name = m[1] + digits;
       } while (taken[name]);
-    } else if (!(sprints || []).length) {
-      name = 'sprint001';
+    }
+    // 番号で終わらない名前しか無いとき (または1つも無いとき) は sprintNNN の空きを使う。
+    // 空のまま開くと、必須の欄が空でいきなりエラーになる
+    if (!name) {
+      var k = 1;
+      do {
+        var three = String(k);
+        while (three.length < 3) three = '0' + three;
+        name = 'sprint' + three;
+        k++;
+      } while (taken[name]);
     }
 
     var days = 14;
@@ -11272,7 +11281,11 @@
     var startEl = form.querySelector('[name="startDate"]');
     var endEl = form.querySelector('[name="endDate"]');
     var editing = sp ? sp.name : '';
-    var endTouched = !!sp;
+    // 終わりの日を自分で直したか。直すまでは、始まりを動かすと同じ長さでついてくる
+    // (作るときも直すときも同じ。直すときに既に入っている終わりは、直したうちに入らない)
+    var endTouched = false;
+    // 名前の「入れてください」は触ってから出す。開いた途端に赤くすると驚かせる
+    var nameTouched = false;
     var span = startEl.value && endEl.value ? scrumDaysBetween(startEl.value, endEl.value) : 13;
 
     // 期間を1押しで決める
@@ -11297,13 +11310,15 @@
       });
       quick.appendChild(b);
     });
-    endEl.parentNode.insertBefore(quick, endEl.nextSibling);
+    // ラベルの外に置く。ラベルの中に押せるものを入れると、欄の名前に混ざって読み上げられる
+    var endLabel = endEl.parentNode;
+    endLabel.parentNode.insertBefore(quick, endLabel.nextSibling);
 
     function check() {
       var p = sprintFormProblems({
         name: nameEl ? nameEl.value : '', startDate: startEl.value, endDate: endEl.value,
       }, scrumSprints, editing);
-      if (nameEl) setFieldMessage(nameEl, p.name);
+      if (nameEl) setFieldMessage(nameEl, nameTouched || nameEl.value ? p.name : '');
       setFieldMessage(startEl, p.startDate);
       if (p.endDate) setFieldMessage(endEl, p.endDate);
       else setFieldMessage(endEl, p.overlap, 'warn');
@@ -11321,7 +11336,10 @@
       check();
     });
     [nameEl, startEl, endEl].forEach(function (el) {
-      if (el) el.addEventListener('input', check);
+      if (el) el.addEventListener('input', function () {
+        if (el === nameEl) nameTouched = true;
+        check();
+      });
     });
     check();
   }
