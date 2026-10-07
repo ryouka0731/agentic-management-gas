@@ -65,6 +65,22 @@ describe('はじめの5歩 (本人にだけ見える)', () => {
     expect(ctx.apiMyMilestones().filter((s) => s.done).map((s) => s.key)).toEqual(['review']);
   });
 
+  it('はじめの5歩を調べる関数は画面から直に呼べない (ほかの人の行いを覗けない)', () => {
+    const { ctx } = setup();
+    expect(ctx.motivationMilestones).toBeUndefined();
+    expect(typeof ctx.motivationMilestones_).toBe('function');
+  });
+
+  it('終えたあとに捨てたものも前進に数える (目標の進み具合が後ろへ戻らない)', () => {
+    const { ctx } = setup();
+    const now = new Date('2026-10-07T03:00:00Z');
+    const i = ctx.issueCreate('終えて捨てた', '', []);
+    ctx.issueClose(i.number, null);
+    ctx.dbUpdate('issues', 'number', i.number, { closedAt: new Date('2026-10-06T01:00:00Z'),
+      archivedAt: new Date('2026-10-06T02:00:00Z') });
+    expect(ctx.motivationProgress(now).weekClosed).toBe(1);
+  });
+
   it('人ごとの数や順位を返す入口は無い', () => {
     const { ctx } = setup();
     const p = ctx.apiProgress();

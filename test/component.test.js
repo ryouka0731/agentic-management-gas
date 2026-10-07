@@ -6842,6 +6842,36 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(snack).toContain('今月の目標に届きました');
   });
 
+  it('止めた直後に届いた返事では、カードも前進の数も出さない', () => {
+    let replyProgress = null;
+    mount({ apiProgress: { later: (ok) => { replyProgress = ok; } } });
+    document.getElementById('me-btn').click();
+    document.getElementById('progress-toggle').click();
+    replyProgress({ weekClosed: 2, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false });
+    expect(document.getElementById('home-cards').textContent).toBe('');
+  });
+
+  it('ブラウザに覚えられなくても、止めたことは開いているあいだ守る', () => {
+    // 覚えられないブラウザ (保存しようとすると投げる) を作る
+    const real = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: { getItem: () => null, setItem: () => { throw new Error('保存できない'); },
+        removeItem: () => {}, clear: () => {} },
+    });
+    try {
+      mount({ apiProgress: { weekClosed: 4, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false } });
+      document.getElementById('me-btn').click();
+      document.getElementById('progress-toggle').click();
+      document.querySelector('[data-tab="issues"]').click();
+      document.querySelector('#issue-list .row-item .icon-btn.ok').click();
+      expect(document.getElementById('snackbar').textContent).not.toContain('今週チームで');
+    } finally {
+      if (real) Object.defineProperty(window, 'localStorage', real);
+      else delete window.localStorage;
+    }
+  });
+
   it('工数の集計に、誰に何が見えるかを書く', () => {
     mount({ apiTallyEffort: { periods: [{ key: '2026-10', label: '10月', planned: 1, actual: 1, diff: 0, count: 1, cumPlanned: 1, cumActual: 1 }],
       people: [], total: { planned: 1, actual: 1, diff: 0, count: 1 }, skipped: 0, hidden: 0 } });
