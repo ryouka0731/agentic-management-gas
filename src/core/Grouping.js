@@ -12,7 +12,7 @@
 function groupIssues(issues, by, docNames) {
   var names = docNames || {};
   var order = [];
-  var buckets = {};
+  var buckets = Object.create(null);  // '__proto__' のような名前も、ただの鍵として持つ
 
   function put(key, label, issue) {
     // 名前は人が付ける (スプリント・タグ)。'constructor' のような名前が
