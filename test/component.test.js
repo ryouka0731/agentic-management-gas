@@ -6710,7 +6710,7 @@ describe('進捗ボードの使い勝手', () => {
 
   it('カードが1枚も無くても列を描き、「＋」から足せる', () => {
     openBoard({ apiProjectBoard: { Backlog: [], 'In Progress': [], 'In Review': [], Done: [] } });
-    expect(document.querySelector('#issue-board .blank-state, .blank-state')).not.toBeNull();
+    expect(document.querySelector('#board .blank-state')).not.toBeNull();
     expect(document.querySelectorAll('.board-column .board-add')).toHaveLength(4);
   });
 
