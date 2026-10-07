@@ -104,7 +104,7 @@ function COMMAND_OPS() {
         productGoal: s.productGoal,
         definitionOfDone: s.definitionOfDone,
         howToEnable: s.scrumEnabled ? '' :
-          'エージェンティックスクラムはオフです。持ち主が画面の「設定」でオンにすると使えます',
+          'エージェンティックスクラムはオフです。管理者が画面の「設定」でオンにすると使えます',
       };
     },
     sprintList: function () { return apiSprintList(); },

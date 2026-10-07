@@ -611,12 +611,11 @@ function apiBranchAddable(name) {
 
 function apiBranchDelete(name) {
   // 作業コピーをゴミ箱に入れる。確認依頼の取り下げと同じく、作った本人か
-  // 持ち主に絞る。頼まれた側が捨てられると、作った人の知らないうちに消える
+  // 管理者に絞る。頼まれた側が捨てられると、作った人の知らないうちに消える
   var row = dbFindOne('branches', 'name', name);
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
-  if (row && String(row.createdBy) !== me && !(owner && owner === me)) {
-    throw new Error('改訂版を捨てられるのは、作った本人か、このアプリの持ち主だけです');
+  if (row && String(row.createdBy) !== me && !repoIsAdmin_(me)) {
+    throw new Error('改訂版を捨てられるのは、作った本人か、このアプリの管理者だけです');
   }
 
   branchDelete(name);
@@ -643,8 +642,8 @@ function apiPrList() {
   // 取り下げられるかはサーバが決める。画面で決めると、他人の依頼を
   // 自分のものだと名乗って取り下げられる
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
-  var isOwner = !!owner && String(owner) === me;
+  // 一覧の1件ごとに Drive へ問い合わせない。先に1回だけ求める
+  var isAdmin = repoIsAdmin_(me);
 
   for (var i = 0; i < rows.length; i++) {
     out.push({
@@ -657,7 +656,7 @@ function apiPrList() {
       createdAt: plainDate(rows[i].createdAt),
       body: plainText(rows[i].body),
       reviewers: prReviewers(rows[i]),
-      canClose: (isOwner || String(rows[i].author) === me) &&
+      canClose: (isAdmin || String(rows[i].author) === me) &&
         String(rows[i].state) !== 'merged' &&
         String(rows[i].state) !== 'closed',
     });
@@ -1590,10 +1589,10 @@ function apiIssueClose(number) {
  * @returns {object}
  */
 function inquiryToPlain_(row, shared) {
-  // 一覧では持ち主と返信の数を先に1回だけ求めて渡す。1件ごとに求めると
+  // 一覧では管理者かどうかと返信の数を先に1回だけ求めて渡す。1件ごとに求めると
   // 件数のぶん Drive と返信の表を読みに行き、報告が増えるほど遅くなる
   var me = shared ? shared.me : Session.getActiveUser().getEmail();
-  var owner = shared ? shared.owner : inquiryOwner_();
+  var admin = shared ? shared.admin : repoIsAdmin_(me);
 
   return {
     number: Number(row.number),
@@ -1613,8 +1612,7 @@ function inquiryToPlain_(row, shared) {
       ? '' : Number(row.issueNumber),
     mine: String(row.by) === String(me),
     // 閉じられるかは画面では決められない。ここで決めて渡す
-    canClose: String(row.by) === String(me) ||
-      (!!owner && String(owner) === String(me)),
+    canClose: String(row.by) === String(me) || admin,
     replyCount: shared
       ? (shared.replies[String(Number(row.number))] || 0)
       : inquiryReplies(row.number).length,
@@ -1684,9 +1682,10 @@ function apiInquiryList() {
   var rows = inquiryList(null);
   var out = [];
 
+  var me = Session.getActiveUser().getEmail();
   var shared = {
-    me: Session.getActiveUser().getEmail(),
-    owner: inquiryOwner_(),
+    me: me,
+    admin: repoIsAdmin_(me),
     replies: {},
   };
   var replies = dbReadAll('inquiry_replies');
@@ -1957,7 +1956,7 @@ function apiTallyScope() {
     me: me,
     canSee: allowed,
     isManager: allowed.length > 1,
-    canEdit: !!repoOwnerEmail() && repoOwnerEmail() === me,
+    canEdit: repoIsAdmin_(me),
   };
 }
 
@@ -2000,11 +1999,10 @@ function apiPeopleNames() {
  */
 function apiPeopleSetName(email, name) {
   var me = Session.getActiveUser().getEmail();
-  var owner = repoOwnerEmail();
   var who = String(email || '');
 
-  if (who !== me && (!owner || owner !== me)) {
-    throw new Error('他人の名前を変えられるのは、このアプリの持ち主だけです');
+  if (who !== me && !repoIsAdmin_(me)) {
+    throw new Error('他人の名前を変えられるのは、このアプリの管理者だけです');
   }
 
   var row = memberSetName(who, name);
@@ -2022,12 +2020,7 @@ function apiPeopleSetName(email, name) {
  * @returns {object}
  */
 function apiMemberSet(email, manager, name) {
-  var me = Session.getActiveUser().getEmail();
-  var owner = repoOwnerEmail();
-
-  if (!owner || owner !== me) {
-    throw new Error('上下関係を変えられるのは、このアプリの持ち主だけです');
-  }
+  repoAssertAdmin_('上下関係を変えること');
 
   var row = memberSet(email, manager, name);
   return {
@@ -3096,11 +3089,10 @@ function housekeepArchiveDaily_() {
  */
 function apiSettings() {
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
   var texts = scrumTexts();
   return {
     scrumEnabled: scrumEnabled(),
-    canEdit: !!owner && owner === me,
+    canEdit: repoIsAdmin_(me),
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
     // 用語の説明は画面に写しを持たせず、ここから渡す (食い違わないように)
@@ -3116,20 +3108,20 @@ function apiSettings() {
  * @returns {object} 切り替えたあとの apiSettings()
  */
 function apiSetScrumEnabled(on) {
-  assertOwner_();
+  repoAssertAdmin_('エージェンティックスクラムの切り替え');
   scrumSetEnabled_(!!on);
   return apiSettings();
 }
 
 /**
- * プロダクトゴールか完了の定義を書く (Web App API)。持ち主だけ。
+ * プロダクトゴールか完了の定義を書く (Web App API)。管理者だけ。
  *
  * @param {string} kind 'productGoal' | 'definitionOfDone'
  * @param {string} text
  * @returns {object} 書いたあとの apiSettings()
  */
 function apiSetScrumText(kind, text) {
-  assertOwner_();
+  repoAssertAdmin_('プロダクトゴールと完了の定義を書くこと');
   scrumSetText_(kind, text);
   return apiSettings();
 }

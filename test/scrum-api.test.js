@@ -42,24 +42,24 @@ describe('設定の入口', () => {
     expect(ctx.apiSettings()).toMatchObject({ scrumEnabled: false, canEdit: true });
   });
 
-  it('持ち主だけが切り替えられる', () => {
+  it('管理者だけが切り替えられる', () => {
     const { ctx, fake } = setup();
     fake._setUser('someone@example.com');
     expect(ctx.apiSettings().canEdit).toBe(false);
-    expect(() => ctx.apiSetScrumEnabled(true)).toThrow(/持ち主だけ/);
+    expect(() => ctx.apiSetScrumEnabled(true)).toThrow(/管理者/);
 
     fake._setUser('tester@example.com');
     expect(ctx.apiSetScrumEnabled(true).scrumEnabled).toBe(true);
   });
 
-  it('プロダクトゴールと完了の定義を、持ち主が書ける', () => {
+  it('プロダクトゴールと完了の定義を、管理者が書ける', () => {
     const { ctx, fake } = setup();
     ctx.apiSetScrumEnabled(true);
     ctx.apiSetScrumText('productGoal', '紙の稟議をなくす');
     expect(ctx.apiSettings().productGoal).toBe('紙の稟議をなくす');
 
     fake._setUser('someone@example.com');
-    expect(() => ctx.apiSetScrumText('productGoal', 'x')).toThrow(/持ち主だけ/);
+    expect(() => ctx.apiSetScrumText('productGoal', 'x')).toThrow(/管理者/);
   });
 });
 

@@ -150,9 +150,8 @@ function templateDelete(name) {
   }
 
   var me = Session.getActiveUser().getEmail();
-  var owner = repoOwnerEmail();
 
-  if (String(row.createdBy) !== String(me) && (!owner || owner !== me)) {
+  if (String(row.createdBy) !== String(me) && !repoIsAdmin_(me)) {
     throw new Error('自分が作った下書きだけ消せます');
   }
   dbDelete('templates', 'name', name);

@@ -840,14 +840,14 @@ describe('工数の集計で見えるもの', () => {
     expect(scope.canSee).toContain('buka@example.com');
   });
 
-  it('上下関係を変えられるのは持ち主だけ', () => {
+  it('上下関係を変えられるのは管理者だけ', () => {
     const { ctx } = withEffort();
     ctx.DriveApp.getFolderById(ctx.repoConfig().rootId)
       ._setOwner('owner@example.com');
 
     // 誰でも書き換えられると、自分を上長にして他人の数字を覗ける
     expect(() => ctx.apiMemberSet('a@example.com', 'tester@example.com'))
-      .toThrow(/持ち主だけ/);
+      .toThrow(/管理者/);
   });
 });
 

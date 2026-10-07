@@ -48,7 +48,7 @@ function scrumSetEnabled_(on) {
 function scrumAssertEnabled_() {
   if (!scrumEnabled()) {
     throw new Error(
-      'エージェンティックスクラムはオフです。使うときは、画面の「設定」で持ち主がオンにしてください');
+      'エージェンティックスクラムはオフです。使うときは、画面の「設定」で管理者がオンにしてください');
   }
 }
 
