@@ -3953,7 +3953,7 @@ describe('自分まわりの操作', () => {
     expect(document.getElementById('me-panel').hidden).toBe(false);
     expect(actions()).toEqual([
       '手元から動かす道具を落とす', '表示する名前を決める',
-      'はじめの案内をもう一度出す',
+      'はじめの案内をもう一度出す', '前進の知らせを出す',
     ]);
   });
 
@@ -6775,5 +6775,92 @@ describe('進捗ボードの使い勝手', () => {
     document.activeElement.blur();
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'N' }));
     expect(document.getElementById('side-body').querySelector('form')).not.toBeNull();
+  });
+});
+
+describe('前進を見せる (意欲づけ)', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const STEPS = [
+    { key: 'branch', label: '改訂版を作る', hint: 'h1', tab: 'docs', done: true },
+    { key: 'commit', label: '変更を記録する', hint: '直したら「変更を記録」', tab: 'branches', done: false },
+    { key: 'pull', label: '確認を依頼する', hint: 'h3', tab: 'branches', done: false },
+    { key: 'review', label: 'ほかの人の依頼を確かめる', hint: 'h4', tab: 'pulls', done: false },
+    { key: 'merge', label: '正式版に反映する', hint: 'h5', tab: 'pulls', done: false },
+  ];
+
+  it('ホームにチームの前進と、今月の目標までの進み具合を出す (人ごとには出さない)', () => {
+    mount({ apiProgress: { weekClosed: 3, weekMerged: 1, monthClosed: 7, goal: 10, canEditGoal: true } });
+    const card = document.querySelector('#home-cards .team-progress');
+    expect(card.textContent).toContain('今週 3 件のやることを終え、1 件を正式版にしました');
+    expect(card.textContent).toContain('今月の目標 7 / 10 件');
+    expect(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('7');
+    expect(card.querySelector('.team-goal-edit').textContent).toBe('目標を直す');
+  });
+
+  it('今週まだ何も無いときは「0 件」と並べず、これからだと伝える', () => {
+    mount();
+    const line = document.querySelector('#home-cards .team-progress-line').textContent;
+    expect(line).toContain('今週はこれからです');
+    expect(line).not.toContain('0 件');
+  });
+
+  it('管理者でなければ目標を直す入口は出さない', () => {
+    mount({ apiProgress: { weekClosed: 0, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false } });
+    expect(document.querySelector('#home-cards .team-goal-edit')).toBeNull();
+  });
+
+  it('はじめの5歩は、できたことに印を付け、次の一歩だけ入口を出す。閉じたら覚える', () => {
+    mount({ apiMyMilestones: STEPS });
+    const card = document.querySelector('#home-cards .first-steps');
+    expect(card.textContent).toContain('はじめの5歩 (1 / 5)');
+    expect(card.textContent).toContain('あなたにだけ見えます');
+    expect(card.querySelectorAll('.first-step.is-done')).toHaveLength(1);
+    const next = card.querySelector('.first-step.is-next');
+    expect(next.textContent).toContain('変更を記録する');
+    expect(card.querySelectorAll('.first-step .btn')).toHaveLength(1);
+    next.querySelector('.btn').click();
+    expect(document.getElementById('panel-branches').hidden).toBe(false);
+
+    document.querySelector('.mobile-nav-item[data-go="docs"]').click();
+    document.querySelector('#home-cards .first-steps .side-close').click();
+    expect(document.querySelector('#home-cards .first-steps')).toBeNull();
+    mount({ apiMyMilestones: STEPS });
+    expect(document.querySelector('#home-cards .first-steps')).toBeNull();
+  });
+
+  it('全部できたら、はじめの5歩は出さない', () => {
+    mount({ apiMyMilestones: STEPS.map((x) => Object.assign({}, x, { done: true })) });
+    expect(document.querySelector('#home-cards .first-steps')).toBeNull();
+  });
+
+  it('完了にしたとき、今週チームで何件目かを添えて知らせる', () => {
+    mount({ apiProgress: { weekClosed: 4, weekMerged: 0, monthClosed: 10, goal: 10, canEditGoal: false } });
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-item .icon-btn.ok').click();
+    const snack = document.getElementById('snackbar').textContent;
+    expect(snack).toContain('を完了にしました。今週チームで 4 件目です');
+    expect(snack).toContain('今月の目標に届きました');
+  });
+
+  it('工数の集計に、誰に何が見えるかを書く', () => {
+    mount({ apiTallyEffort: { periods: [{ key: '2026-10', label: '10月', planned: 1, actual: 1, diff: 0, count: 1, cumPlanned: 1, cumActual: 1 }],
+      people: [], total: { planned: 1, actual: 1, diff: 0, count: 1 }, skipped: 0, hidden: 0 } });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-tally').click();
+    expect(document.querySelector('.tally-visibility').textContent).toContain('順位は作っていません');
+  });
+
+  it('自分で止められる。止めたら知らせは素のまま、ホームのカードも出さない', () => {
+    mount({ apiProgress: { weekClosed: 4, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false } });
+    document.getElementById('me-btn').click();
+    const toggle = document.getElementById('progress-toggle');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    toggle.click();
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(document.getElementById('home-cards').textContent).toBe('');
+
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list .row-item .icon-btn.ok').click();
+    expect(document.getElementById('snackbar').textContent).not.toContain('今週チームで');
   });
 });
