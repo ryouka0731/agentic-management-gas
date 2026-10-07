@@ -2668,6 +2668,7 @@
       renderDocs();
     }
     loadOverview();
+    loadHomeCards();
   }
 
   /**
@@ -4254,8 +4255,7 @@
               mergeBtn.disabled = true;
               // 見比べたときの指紋を添える。進んでいたら断られる
               call('apiPrMerge', [pr.number, getChoices(), preview.previewSha || ''], function () {
-                showSnack('#' + pr.number + ' を' + OFFICIAL + 'に反映しました',
-                  { kind: 'ok' });
+                celebrateProgress('merge', '#' + pr.number + ' を' + OFFICIAL + 'に反映しました');
                 loadPulls();
                 loadOverview();
               }, failEnable(mergeBtn, '反映できませんでした: '));
@@ -5229,7 +5229,7 @@
           hint(done, 'act:done');
           done.addEventListener('click', function () {
             call('apiIssueClose', [issue.number], function () {
-              showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+              celebrateProgress('close', '#' + issue.number + ' を完了にしました');
               refreshIssueViews();
             });
           });
@@ -5774,7 +5774,7 @@
       done.appendChild(document.createTextNode('完了にする'));
       done.addEventListener('click', function () {
         call('apiIssueClose', [issue.number], function () {
-          showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました');
           form.remove();
           refreshIssueViews();
         });
@@ -6403,7 +6403,7 @@
 
       done.addEventListener('click', function () {
         call('apiIssueClose', [issue.number], function () {
-          showSnack('#' + issue.number + ' を完了にしました', { kind: 'ok' });
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました');
           closeSide();
           refreshIssueViews();
         });
@@ -7194,6 +7194,13 @@
         return;
       }
 
+      // 誰に何が見えるかを先に書く。見えている範囲が分からないと、見張られて
+      // いるように感じて工数を入れなくなる (透明で控えめな記録ほど受け入れられる)
+      var scopeNote = document.createElement('div');
+      scopeNote.className = 'tally-visibility row-meta';
+      scopeNote.textContent = '見える範囲: チーム全体の合計は誰でも見られます。人ごとの内訳は本人と、' +
+        'その人の上長として登録されている人だけが見られます。順位は作っていません。';
+      tallyEl.appendChild(scopeNote);
       tallyEl.appendChild(makeTallySummary(res));
       tallyEl.appendChild(makeTallyTable(res));
       tallyEl.appendChild(makePeopleTable(res));
@@ -7750,6 +7757,230 @@
 
     col.insertBefore(form, col.querySelector('.board-column-head').nextSibling);
     input.focus();
+  }
+
+  // ===== 前進を見せる (意欲づけ) =====
+  //
+  // 文献 (docs/superpowers/plans/2026-10-07-motivation.md) に沿う。小さな前進を
+  // 日々実感できることがいちばん効く。点数や人ごとの順位は配らない (予告された
+  // 報酬は内発的動機を下げ、職場のランキングは晒しと受け取られる)。見せるのは
+  // チームの前進と、本人にだけ見える最初の一歩。どれも自分で止められる。
+
+  var homeCardsEl = document.getElementById('home-cards');
+
+  /** 前進の知らせを出すか (本人が決める。この端末に覚える) */
+  function progressNotesOn() {
+    try { return window.localStorage.getItem('progressNotes') !== 'off'; } catch (e) { return true; }
+  }
+
+  /**
+   * 終えたとき・反映したときに、チームの前進を添えて知らせる。
+   *
+   * 「今週チームで何件目か」を添える。自分だけの数ではなくチームの数にする
+   * (人と比べる物差しにしない)。今月の目標に届いたら、そのことも添える。
+   *
+   * @param {string} kind 'close' | 'merge'
+   * @param {string} text 基本の知らせ
+   */
+  function celebrateProgress(kind, text) {
+    if (!progressNotesOn()) {
+      showSnack(text, { kind: 'ok' });
+      return;
+    }
+    call('apiProgress', [], function (p) {
+      var more = '';
+      if (p && kind === 'close' && p.weekClosed) more = '。今週チームで ' + p.weekClosed + ' 件目です';
+      if (p && kind === 'merge' && p.weekMerged) more = '。今週チームで ' + p.weekMerged + ' 件を正式版にしました';
+      if (p && kind === 'close' && p.goal && p.monthClosed === p.goal) more += '。今月の目標に届きました';
+      showSnack(text + more, { kind: 'ok' });
+      loadHomeCards();
+    }, function () {
+      // 前進が数えられなくても、終えたこと自体は伝える
+      showSnack(text, { kind: 'ok' });
+    });
+  }
+
+  /** 自分まわりに置く、前進の知らせの切り替え */
+  function makeProgressToggle() {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'progress-toggle';
+    btn.className = 'btn toggle-btn';
+    btn.textContent = '前進の知らせを出す';
+    setToggle(btn, progressNotesOn());
+    attachHint(btn, '完了や反映のときに「今週チームで何件目か」を添えます。ホームのチームの前進とはじめの5歩もここで出し入れします');
+    btn.addEventListener('click', function () {
+      var on = !progressNotesOn();
+      try { window.localStorage.setItem('progressNotes', on ? 'on' : 'off'); } catch (e) { /* 覚えられなくても今は切り替わる */ }
+      setToggle(btn, on);
+      loadHomeCards();
+    });
+    return btn;
+  }
+
+  /** ホームの「チームの前進」と「はじめの5歩」 */
+  function loadHomeCards() {
+    if (!homeCardsEl) return;
+    if (!progressNotesOn()) {
+      homeCardsEl.textContent = '';
+      return;
+    }
+    call('apiProgress', [], function (p) {
+      call('apiMyMilestones', [], function (steps) {
+        renderHomeCards(p || {}, steps || []);
+      }, failQuiet('はじめの5歩が出なくても使える'));
+    }, failQuiet('前進が出なくても使える'));
+  }
+
+  function renderHomeCards(p, steps) {
+    homeCardsEl.textContent = '';
+    homeCardsEl.appendChild(makeTeamProgressCard(p));
+    var first = makeFirstStepsCard(steps);
+    if (first) homeCardsEl.appendChild(first);
+  }
+
+  /**
+   * チームの前進。今週の数と、今月の目標までの進み具合。人ごとには出さない。
+   *
+   * @param {object} p apiProgress の返り
+   * @returns {HTMLElement}
+   */
+  function makeTeamProgressCard(p) {
+    var card = document.createElement('section');
+    card.className = 'home-card team-progress';
+    card.setAttribute('aria-label', 'チームの前進');
+
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = 'チームの前進';
+    card.appendChild(head);
+
+    var line = document.createElement('div');
+    line.className = 'team-progress-line';
+    // 0 件のときに「0 件」と並べると責めているように読める。これからだと伝える
+    line.textContent = (p.weekClosed || p.weekMerged)
+      ? '今週 ' + (p.weekClosed || 0) + ' 件のやることを終え、' + (p.weekMerged || 0) + ' 件を正式版にしました'
+      : '今週はこれからです。終えたやることや正式版にした文書が、ここで数えられます';
+    card.appendChild(line);
+
+    if (p.goal) {
+      var done = p.monthClosed || 0;
+      var pct = Math.min(100, Math.round(done * 100 / p.goal));
+      var goal = document.createElement('div');
+      goal.className = 'team-goal';
+      var label = document.createElement('span');
+      label.className = 'row-meta';
+      label.textContent = '今月の目標 ' + done + ' / ' + p.goal + ' 件';
+      goal.appendChild(label);
+      if (done >= p.goal) goal.appendChild(makePill('届きました', 'state state-open', 'check'));
+      var bar = document.createElement('div');
+      bar.className = 'scrum-progress';
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', String(p.goal));
+      bar.setAttribute('aria-valuenow', String(done));
+      bar.setAttribute('aria-label', '今月の目標までの進み具合');
+      var fill = document.createElement('span');
+      fill.style.width = pct + '%';
+      bar.appendChild(fill);
+      goal.appendChild(bar);
+      card.appendChild(goal);
+    }
+
+    if (p.canEditGoal) {
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn team-goal-edit';
+      edit.textContent = p.goal ? '目標を直す' : '今月の目標を決める';
+      attachHint(edit, 'チームで毎月終えたいやることの件数です。人ごとには割り振りません');
+      edit.addEventListener('click', function () {
+        openInlineForm('チームの毎月の目標', [
+          { name: 'goal', label: '毎月終えたいやることの件数', value: p.goal || '',
+            placeholder: '例: 10', note: 'チームに1つだけの目標です。人ごとには割り振りません。0 で消します' },
+        ], '決める', function (v) {
+          call('apiSetTeamGoal', [Number(v.goal || 0)], function () {
+            showSnack('チームの目標を決めました', { kind: 'ok' });
+            loadHomeCards();
+          });
+        }, edit);
+      });
+      card.appendChild(edit);
+    }
+    return card;
+  }
+
+  /**
+   * はじめの5歩。本人にだけ見える。全部できたら出さない。閉じたら覚える。
+   *
+   * 数を集めさせる印にはしない (予告された報酬は内発的動機を下げる)。できたことに
+   * ✓ を付け、次の一歩の入口を出すだけにする。
+   *
+   * @param {object[]} steps apiMyMilestones の返り
+   * @returns {HTMLElement|null}
+   */
+  function makeFirstStepsCard(steps) {
+    if (!steps.length || steps.every(function (s) { return s.done; })) return null;
+    try { if (window.localStorage.getItem('firstStepsHidden') === '1') return null; } catch (e) { /* 覚えていなければ出す */ }
+
+    var card = document.createElement('section');
+    card.className = 'home-card first-steps';
+    card.setAttribute('aria-label', 'はじめの5歩');
+
+    var headRow = document.createElement('div');
+    headRow.className = 'first-steps-head';
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    var doneCount = steps.filter(function (s) { return s.done; }).length;
+    head.textContent = 'はじめの5歩 (' + doneCount + ' / ' + steps.length + ')。あなたにだけ見えます';
+    headRow.appendChild(head);
+    var hide = document.createElement('button');
+    hide.type = 'button';
+    hide.className = 'side-close';
+    hide.textContent = '×';
+    hide.setAttribute('aria-label', 'はじめの5歩を閉じる');
+    hide.addEventListener('click', function () {
+      try { window.localStorage.setItem('firstStepsHidden', '1'); } catch (e) { /* 覚えられなくても今は閉じる */ }
+      card.remove();
+    });
+    headRow.appendChild(hide);
+    card.appendChild(headRow);
+
+    var list = document.createElement('ol');
+    list.className = 'first-steps-list';
+    var nextShown = false;
+    steps.forEach(function (step, i) {
+      var li = document.createElement('li');
+      li.className = 'first-step' + (step.done ? ' is-done' : '');
+      var mark = document.createElement('span');
+      mark.className = 'scrum-cycle-num';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = step.done ? '✓' : String(i + 1);
+      li.appendChild(mark);
+      var body = document.createElement('span');
+      body.className = 'first-step-body';
+      var title = document.createElement('strong');
+      title.textContent = (step.done ? '済み: ' : '') + step.label;
+      body.appendChild(title);
+      // 次の一歩だけ、やり方と入口を出す (全部並べると、どれからやるか迷う)
+      if (!step.done && !nextShown) {
+        nextShown = true;
+        li.classList.add('is-next');
+        var hint = document.createElement('span');
+        hint.className = 'row-meta';
+        hint.textContent = step.hint;
+        body.appendChild(hint);
+        var go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'btn';
+        go.textContent = 'やってみる';
+        go.addEventListener('click', function () { switchTab(step.tab); });
+        body.appendChild(go);
+      }
+      li.appendChild(body);
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+    return card;
   }
 
   // ===== キーボード =====
@@ -9079,6 +9310,7 @@
       showSnack('文書の画面に案内を出しました', { kind: 'ok' });
     });
     out.push(again);
+    out.push(makeProgressToggle());
 
     return out;
   }

@@ -96,6 +96,7 @@ const API_NAMES = [
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
+  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
   'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssuePriorities', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
@@ -225,6 +226,8 @@ export const DEFAULTS = {
   apiImpedimentList: [],
   apiImpedimentComments: [],
   apiHistory: [],
+  apiProgress: { weekClosed: 0, weekMerged: 0, monthClosed: 0, goal: 0, canEditGoal: false },
+  apiMyMilestones: [],
   apiCommitGraph: {
     rows: [
       {
