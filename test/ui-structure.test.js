@@ -1059,3 +1059,14 @@ describe('ペインの幅の縮み方', () => {
     });
   });
 });
+
+describe('ボードのカードの下の段', () => {
+  it('左は縮めて折り返し、担当者と捨てるボタンをカードの外へ押し出さない', () => {
+    const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+    const rule = /\.card-foot \.row-meta \{([^}]*)\}/.exec(css);
+    expect(rule, '.card-foot .row-meta').not.toBeNull();
+    // min-width: auto (既定) のままだと中身より狭くなれず、右がはみ出す
+    expect(rule[1]).toMatch(/min-width:\s*0/);
+    expect(rule[1]).toMatch(/flex-wrap:\s*wrap/);
+  });
+});

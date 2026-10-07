@@ -6448,3 +6448,15 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(document.getElementById('side-body').textContent).toContain('受入基準');
   });
 });
+
+describe('上の見出し', () => {
+  it('左の行き先を開くと、その名前が見出しに出る (どれも「文書」に倒れない)', () => {
+    mount({ apiSettings: { scrumEnabled: true, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} } });
+    // 名前の表に足し忘れると、既定の「文書」が出る (使われ方・要望で実際にそうなっていた)
+    [...document.querySelectorAll('.sidebar .nav-item[data-tab]')].forEach((btn) => {
+      btn.click();
+      const label = btn.querySelector('.nav-label').textContent.trim();
+      expect(document.getElementById('doc-title').textContent, btn.dataset.tab).toBe(label);
+    });
+  });
+});
