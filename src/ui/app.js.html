@@ -2479,6 +2479,7 @@
         docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
         issues: 'やること', board: '進捗ボード', help: '使い方',
         settings: '設定', sprint: 'スプリント', impediments: '障害物',
+        usage: '使われ方', report: '要望・不具合',
       };
       titleEl.textContent = names[currentTab] || '文書';
       branchChip.hidden = true;
@@ -7428,7 +7429,8 @@
 
         var head = document.createElement('h3');
         head.textContent = pair[1] + ' (' + board[column].length + ')';
-        if (scrumOn()) {
+        // 0 のときは出さない。ポイントを使っていない列に「0pt」が並ぶと、ただの雑音になる
+        if (scrumOn() && scrumPointsSum(board[column])) {
           var colPoints = makePill(scrumPointsSum(board[column]) + 'pt', 'chip group-points');
           colPoints.setAttribute('aria-label', 'ポイントの合計 ' + scrumPointsSum(board[column]));
           head.appendChild(document.createTextNode(' '));
@@ -7507,8 +7509,12 @@
 
           var when = document.createElement('span');
           when.className = 'row-meta';
-          when.textContent = card.dueDate
-            ? '期限 ' + String(card.dueDate).substring(0, 10) : '';
+          if (card.dueDate) {
+            // 字は札と並べて折り返すので、包んで1つの塊にする
+            var due = document.createElement('span');
+            due.textContent = '期限 ' + String(card.dueDate).substring(0, 10);
+            when.appendChild(due);
+          }
 
           var cardPri = makePriorityChip(card);
           if (cardPri) when.appendChild(cardPri);
