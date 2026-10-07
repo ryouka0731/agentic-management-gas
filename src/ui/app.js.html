@@ -1795,8 +1795,11 @@
         });
       } else {
         input = document.createElement(f.multiline ? 'textarea' : 'input');
-        if (!f.multiline) input.type = 'text';
+        // 日付は打たせずに選ばせる (date)。字で打つと形が割れる
+        if (!f.multiline) input.type = f.type || 'text';
       }
+      // 呼ぶ側が欄を名前で引けるようにする (補完や入力時の確かめに使う)
+      input.name = f.name;
 
       if (f.required) {
         input.required = true;
@@ -1844,6 +1847,16 @@
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+
+      // 入力時の確かめで止めているものがあれば送らない。理由は欄のすぐ下に出ている
+      var blocking = form.querySelector('.field-error:not([hidden])');
+      if (blocking) {
+        showSnack('入力を直してください: ' + blocking.textContent, { kind: 'ng' });
+        var bad = blocking.parentNode.querySelector('input, select, textarea');
+        if (bad) bad.focus();
+        return;
+      }
+
       var values = {};
       var missing = false;
 
@@ -1878,6 +1891,39 @@
     sideBody.appendChild(form);
     inputs[fields[0].name].focus();
     return form;
+  }
+
+  /**
+   * 入力欄のすぐ下に、エラーか注意を出す (空なら消す)。
+   *
+   * エラーは送るのを止め、注意は止めない。色だけに頼らず、頭に「エラー:」
+   * 「注意:」を付ける。エラーは読み上げにもすぐ届くよう role="alert" にする。
+   *
+   * @param {HTMLElement} input
+   * @param {string} text
+   * @param {string} [kind] 'error' (既定) | 'warn'
+   */
+  function setFieldMessage(input, text, kind) {
+    var label = input.parentNode;
+    var msg = label.querySelector('.field-msg');
+    if (!msg) {
+      msg = document.createElement('span');
+      msg.id = 'field-msg-' + (++hintSeq);
+      label.appendChild(msg);
+      var described = input.getAttribute('aria-describedby');
+      input.setAttribute('aria-describedby', (described ? described + ' ' : '') + msg.id);
+    }
+    var isError = (kind || 'error') === 'error';
+    msg.className = 'field-msg ' + (isError ? 'field-error' : 'field-warn');
+    msg.setAttribute('role', isError ? 'alert' : 'status');
+    msg.textContent = text ? (isError ? 'エラー: ' : '注意: ') + text : '';
+    msg.hidden = !text;
+    input.setAttribute('aria-invalid', String(!!text && isError));
+
+    // 送るボタンは、止めているエラーがある間は押せなくする
+    var form = input.form;
+    var submit = form && form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = !!form.querySelector('.field-error:not([hidden])');
   }
 
   /**
@@ -11051,6 +11097,124 @@
   }
 
   /**
+   * 'YYYY-MM-DD' に日数を足す。
+   *
+   * @param {string} day
+   * @param {number} n
+   * @returns {string}
+   */
+  function scrumAddDays(day, n) {
+    var d = new Date(day + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().substring(0, 10);
+  }
+
+  /**
+   * 次のスプリントの名前・期間を補う。
+   *
+   * 名前は前のスプリントの続き番号 (sprint003 の次は sprint004。桁はそろえる)。
+   * 始まりは、いちばん遅く終わるスプリントの翌日 (無ければ今日)。長さは前の
+   * スプリントと同じ (読めなければ2週間)。毎回同じことを打たせない。
+   *
+   * @param {object[]} sprints
+   * @param {string} today 'YYYY-MM-DD'
+   * @returns {{name: string, startDate: string, endDate: string, days: number, basis: string}}
+   */
+  function scrumSuggestSprint(sprints, today) {
+    var last = null;
+    (sprints || []).forEach(function (sp) {
+      if (!tokyoDay(sp.endDate)) return;
+      if (!last || tokyoDay(sp.endDate) > tokyoDay(last.endDate)) last = sp;
+    });
+
+    var name = '';
+    var taken = {};
+    (sprints || []).forEach(function (sp) { taken[sp.name] = true; });
+    var base = last || (sprints && sprints.length ? sprints[sprints.length - 1] : null);
+    var m = base ? /^(.*?)(\d+)$/.exec(String(base.name)) : null;
+    if (m) {
+      var n = Number(m[2]);
+      do {
+        n++;
+        var digits = String(n);
+        while (digits.length < m[2].length) digits = '0' + digits;
+        name = m[1] + digits;
+      } while (taken[name]);
+    }
+    // 番号で終わらない名前しか無いとき (または1つも無いとき) は sprintNNN の空きを使う。
+    // 空のまま開くと、必須の欄が空でいきなりエラーになる
+    if (!name) {
+      var k = 1;
+      do {
+        var three = String(k);
+        while (three.length < 3) three = '0' + three;
+        name = 'sprint' + three;
+        k++;
+      } while (taken[name]);
+    }
+
+    var days = 14;
+    var basis = 'はじめは2週間を入れてあります';
+    if (last && tokyoDay(last.startDate)) {
+      var len = scrumDaysBetween(tokyoDay(last.startDate), tokyoDay(last.endDate)) + 1;
+      if (len >= 1 && len <= 60) {
+        days = len;
+        basis = last.name + ' と同じ ' + len + '日間を入れてあります';
+      }
+    }
+    var start = last ? scrumAddDays(tokyoDay(last.endDate), 1) : today;
+    // 前のスプリントがずっと前に終わっていたら、今日から始める
+    if (start < today && last && scrumDaysBetween(start, today) > 7) start = today;
+    return { name: name, startDate: start, endDate: scrumAddDays(start, days - 1), days: days, basis: basis };
+  }
+
+  /**
+   * スプリントの入力を確かめる。画面の部品に触らない。
+   *
+   * @param {{name: string, startDate: string, endDate: string}} v
+   * @param {object[]} sprints いまあるスプリント
+   * @param {string} editing 直しているスプリントの名前 (作るときは '')
+   * @returns {{name: string, startDate: string, endDate: string, overlap: string}}
+   *   それぞれエラーの言葉 (無ければ '')。overlap は注意 (送るのは止めない)
+   */
+  function sprintFormProblems(v, sprints, editing) {
+    var out = { name: '', startDate: '', endDate: '', overlap: '' };
+    if (!editing) {
+      var name = String(v.name || '').replace(/^\s+|\s+$/g, '');
+      if (!name) out.name = '名前を入れてください';
+      else if (name.length > 40) out.name = '名前は40字までにしてください';
+      else if (/[\/\\,\n\r\t]/.test(name)) out.name = '/ \\ , は名前に使えません';
+      else if ((sprints || []).some(function (sp) { return sp.name === name; })) {
+        out.name = '「' + name + '」は既にあります。別の名前にしてください';
+      }
+    }
+
+    var start = String(v.startDate || '');
+    var end = String(v.endDate || '');
+    if (start && !tokyoDay(start)) out.startDate = '暦にある日を選んでください';
+    if (end && !tokyoDay(end)) out.endDate = '暦にある日を選んでください';
+    if (!start && end) out.startDate = '終わりの日を入れるなら、始まりの日も入れてください';
+    if (start && end && !out.startDate && !out.endDate && end < start) {
+      out.endDate = '終わりの日は、始まりの日 (' + start + ') と同じか後にしてください';
+    }
+
+    if (start && end && !out.startDate && !out.endDate) {
+      var hits = (sprints || []).filter(function (sp) {
+        if (sp.name === editing) return false;
+        var s2 = tokyoDay(sp.startDate);
+        var e2 = tokyoDay(sp.endDate);
+        return s2 && e2 && start <= e2 && s2 <= end;
+      });
+      if (hits.length) {
+        out.overlap = hits.map(function (sp) {
+          return sp.name + ' (' + sp.startDate + ' 〜 ' + sp.endDate + ')';
+        }).join('、') + ' と期間が重なっています。同じやることを2つに積まないよう気を付けてください';
+      }
+    }
+    return out;
+  }
+
+  /**
    * スプリントを作る・直す入力欄。
    *
    * @param {object|null} sp 直すときはそのスプリント
@@ -11058,17 +11222,23 @@
    */
   function openSprintForm(sp, sourceEl) {
     var fields = [];
+    // 作るときは、名前と期間を前のスプリントから補っておく (毎回同じことを打たせない)
+    var hint = sp ? null : scrumSuggestSprint(scrumSprints, scrumToday());
     if (!sp) {
       fields.push({ name: 'name', label: '名前', required: true, placeholder: 'sprint001',
+        value: hint.name,
         note: '40字まで。/ \\ , は使えません。あとから変えられません (やることが名前で指すため)' });
     }
     fields.push({ name: 'goal', label: 'スプリントゴール', multiline: true,
       placeholder: '例: 申請から承認までを、画面だけで通せるようにする',
       note: 'このスプリントで目指すことを一言で。積むやることを選ぶときの拠り所になります',
       value: sp ? sp.goal : '' });
-    fields.push({ name: 'startDate', label: '始まりの日', value: sp ? sp.startDate : '' });
-    fields.push({ name: 'endDate', label: '終わりの日', value: sp ? sp.endDate : '',
-      note: '始まりの日と同じか後にします。はじめは2週間くらいがおすすめです' });
+    fields.push({ name: 'startDate', label: '始まりの日', type: 'date',
+      value: sp ? sp.startDate : hint.startDate,
+      note: sp ? '' : '前のスプリントの次の日を入れてあります。変えると終わりの日も同じ長さでついてきます' });
+    fields.push({ name: 'endDate', label: '終わりの日', type: 'date',
+      value: sp ? sp.endDate : hint.endDate,
+      note: sp ? '始まりの日と同じか後にします' : '始まりの日と同じか後にします。' + hint.basis });
     fields.push({ name: 'notes', label: '備考', multiline: true, value: sp ? sp.notes : '' });
 
     var form = openInlineForm(sp ? 'スプリント ' + sp.name + ' を直す' : 'スプリントを作る', fields,
@@ -11092,10 +11262,86 @@
         });
       }, sourceEl || sprintCreateBtn);
 
-    form.querySelectorAll('input').forEach(function (input) {
-      var label = input.parentNode.textContent;
-      if (/の日/.test(label)) input.type = 'date';
+    wireSprintForm(form, sp);
+  }
+
+  /**
+   * スプリントの入力欄に、補完と入力時の確かめを付ける。
+   *
+   * - 始まりの日を変えたら、終わりの日も同じ長さでついてくる。終わりの日を
+   *   自分で直したら、それ以上は動かさない (直した値を勝手に変えない)
+   * - 「1週間」「2週間」「4週間」で終わりの日を1押しで決める
+   * - 打つたびに確かめ、欄のすぐ下に理由を出す。エラーの間は送らせない
+   *
+   * @param {HTMLFormElement} form
+   * @param {object|null} sp 直すときはそのスプリント
+   */
+  function wireSprintForm(form, sp) {
+    var nameEl = form.querySelector('[name="name"]');
+    var startEl = form.querySelector('[name="startDate"]');
+    var endEl = form.querySelector('[name="endDate"]');
+    var editing = sp ? sp.name : '';
+    // 終わりの日を自分で直したか。直すまでは、始まりを動かすと同じ長さでついてくる
+    // (作るときも直すときも同じ。直すときに既に入っている終わりは、直したうちに入らない)
+    var endTouched = false;
+    // 名前の「入れてください」は触ってから出す。開いた途端に赤くすると驚かせる
+    var nameTouched = false;
+    var span = startEl.value && endEl.value ? scrumDaysBetween(startEl.value, endEl.value) : 13;
+
+    // 期間を1押しで決める
+    var quick = document.createElement('span');
+    quick.className = 'sprint-quick';
+    [['1週間', 7], ['2週間', 14], ['4週間', 28]].forEach(function (pair) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip sprint-quick-btn';
+      b.textContent = pair[0];
+      b.setAttribute('aria-label', '終わりの日を始まりから' + pair[0] + 'にする');
+      b.addEventListener('click', function () {
+        if (!tokyoDay(startEl.value)) {
+          setFieldMessage(startEl, '先に始まりの日を選んでください');
+          startEl.focus();
+          return;
+        }
+        endEl.value = scrumAddDays(startEl.value, pair[1] - 1);
+        span = pair[1] - 1;
+        endTouched = true;
+        check();
+      });
+      quick.appendChild(b);
     });
+    // ラベルの外に置く。ラベルの中に押せるものを入れると、欄の名前に混ざって読み上げられる
+    var endLabel = endEl.parentNode;
+    endLabel.parentNode.insertBefore(quick, endLabel.nextSibling);
+
+    function check() {
+      var p = sprintFormProblems({
+        name: nameEl ? nameEl.value : '', startDate: startEl.value, endDate: endEl.value,
+      }, scrumSprints, editing);
+      if (nameEl) setFieldMessage(nameEl, nameTouched || nameEl.value ? p.name : '');
+      setFieldMessage(startEl, p.startDate);
+      if (p.endDate) setFieldMessage(endEl, p.endDate);
+      else setFieldMessage(endEl, p.overlap, 'warn');
+      // 終わりの日は始まりより前を選べないようにする (カレンダーで灰色になる)
+      endEl.min = tokyoDay(startEl.value) || '';
+    }
+
+    startEl.addEventListener('change', function () {
+      if (!endTouched && tokyoDay(startEl.value)) endEl.value = scrumAddDays(startEl.value, span);
+      check();
+    });
+    endEl.addEventListener('change', function () {
+      endTouched = true;
+      if (tokyoDay(startEl.value) && tokyoDay(endEl.value)) span = scrumDaysBetween(startEl.value, endEl.value);
+      check();
+    });
+    [nameEl, startEl, endEl].forEach(function (el) {
+      if (el) el.addEventListener('input', function () {
+        if (el === nameEl) nameTouched = true;
+        check();
+      });
+    });
+    check();
   }
 
   // ----- 障害物 -----
