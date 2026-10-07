@@ -7823,13 +7823,24 @@
       'この端末のこのブラウザにだけ覚えます');
     btn.addEventListener('click', function () {
       var on = !progressNotesOn();
-      progressNotesMemory = on;
-      try { window.localStorage.setItem('progressNotes', on ? 'on' : 'off'); } catch (e) { /* 覚えられなくても、開いているあいだは守る */ }
+      // 覚えられたらブラウザの値に従う (別のタブで切り替えても揃う)。覚えられない
+      // ブラウザでだけ、開いているあいだのメモで守る
+      try {
+        window.localStorage.setItem('progressNotes', on ? 'on' : 'off');
+        progressNotesMemory = null;
+      } catch (e) {
+        progressNotesMemory = on;
+      }
       setToggle(btn, on);
       loadHomeCards();
     });
     return btn;
   }
+
+  // 別のタブで切り替えたら、このタブのカードも揃える
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'progressNotes') loadHomeCards();
+  });
 
   /** ホームの「チームの前進」と「はじめの5歩」 */
   function loadHomeCards() {
