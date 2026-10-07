@@ -111,6 +111,13 @@ export function createFakeGas() {
       getFoldersByName_unused: null,
       getOwner: () => ({ getEmail: () => fo._owner }),
       _setOwner: (email) => { fo._owner = email; return fo; },
+      // 実機と同じく、編集権限の無い人が呼ぶと空を返す。持ち主は入れない
+      _editors: [],
+      getEditors: () => {
+        if (activeUser !== fo._owner && fo._editors.indexOf(activeUser) < 0) return [];
+        return fo._editors.map((e) => ({ getEmail: () => e }));
+      },
+      _addEditor: (email) => { fo._editors.push(email); return fo; },
     };
     folders.set(id, fo);
     return fo;

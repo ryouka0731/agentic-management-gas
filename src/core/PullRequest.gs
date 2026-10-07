@@ -745,12 +745,11 @@ function prWithdrawOrphans() {
  */
 function prAssertCanClose_(pr) {
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
 
   if (String(pr.author) === me) return;
-  if (owner && String(owner) === me) return;
+  if (repoIsAdmin_(me)) return;
 
-  throw new Error('出した本人か、このアプリの持ち主だけが取り下げられます');
+  throw new Error('出した本人か、このアプリの管理者だけが取り下げられます');
 }
 
 /**

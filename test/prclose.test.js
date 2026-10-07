@@ -164,7 +164,7 @@ describe('確認依頼を取り下げる', () => {
     // 確認を頼まれた側が取り下げられると、頼んだ人の知らないうちに消える
     fake._setUser('reviewer@example.com');
     expect(() => ctx.prClose(pr.number))
-      .toThrow('出した本人か、このアプリの持ち主だけ');
+      .toThrow('出した本人か、このアプリの管理者だけ');
     expect(ctx.prGet(pr.number).state).toBe('open');
   });
 

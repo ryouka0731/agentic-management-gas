@@ -327,10 +327,9 @@ function inquiryOwner_() {
  */
 function inquiryAssertCanClose_(row) {
   var me = Session.getActiveUser().getEmail();
-  var owner = inquiryOwner_();
 
-  if (String(row.by) !== String(me) && (!owner || String(owner) !== String(me))) {
-    throw new Error('出した本人か、このアプリの持ち主だけが閉じられます');
+  if (String(row.by) !== String(me) && !repoIsAdmin_(me)) {
+    throw new Error('出した本人か、このアプリの管理者だけが閉じられます');
   }
 }
 

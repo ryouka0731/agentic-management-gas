@@ -9,7 +9,7 @@ AI のチームメンバー (この手元の Claude Code) と一緒に、スク�
 node agent.mjs scrum
 ```
 
-- `scrumEnabled: false` なら **進めない**。利用者に「持ち主が画面の『設定』で
+- `scrumEnabled: false` なら **進めない**。利用者に「管理者 (持ち主かフォルダの編集者) が画面の『設定』で
   エージェンティックスクラムをオンにすると使えます」と伝える。手元からは切り替えられない
 - `true` なら、プロダクトゴールと完了の定義も一緒に返る
 
@@ -47,7 +47,7 @@ node agent.mjs scrum
 | 障害物を解決 (`_resolved.csv` へ移す) | 解決する | `node agent.mjs impediment-resolve <番号> "解決策"` |
 | `comments.csv` | やりとり | `node agent.mjs issue-say <番号> "…"` / `impediment-say <番号> "…"` |
 | `change_log.csv` | 変更の履歴 (自動で残る) | `node agent.mjs changes issue:<番号>` |
-| `product_goal.md` / `definition_of_done.md` | 設定 (持ち主が画面で直す) | `node agent.mjs scrum` (読むだけ) |
+| `product_goal.md` / `definition_of_done.md` | 設定 (管理者が画面で直す) | `node agent.mjs scrum` (読むだけ) |
 | `sprint_backlog.md` の残作業 | バーンダウン (自動で数える) | `node agent.mjs scrum-view [名前]` |
 
 **数を手で書かない。** ベロシティもバーンダウンも、やることのポイントと完了日から
@@ -63,5 +63,5 @@ node agent.mjs scrum
 ## 人にしかできないこと
 
 - エージェンティックスクラムのオン・オフ、プロダクトゴールと完了の定義を直すこと
-  (持ち主が画面の「設定」で)
+  (管理者が画面の「設定」で)
 - 確認依頼の承認 (画面で)
