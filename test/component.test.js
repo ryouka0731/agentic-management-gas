@@ -6189,6 +6189,116 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     hinted(document.getElementById('scrum-toggle'), 'scrum-toggle');
   });
 
+  describe('変更の履歴', () => {
+    const at = '2026-10-06T23:30:00.000Z';
+    function openHistory(rows) {
+      const imp = { number: 3, title: 'x', body: '', reportedBy: 'a@example.com',
+        reportedAt: at, state: 'open', resolvedAt: '', resolution: '', sprint: '', updatedAt: '', commentCount: 0 };
+      mount({ apiSettings: ON, apiImpedimentList: [imp], apiHistory: rows });
+      document.querySelector('[data-tab="impediments"]').click();
+      document.querySelector('.impediment-row').click();
+      const h = document.querySelector('#side-body .change-history');
+      h.open = true;
+      h.dispatchEvent(new window.Event('toggle'));
+      return h;
+    }
+    const row = (id, field, before, after, extra) => Object.assign({ id, at, actor: 'a@example.com',
+      target: 'impediment:3', action: 'update', field, before, after, lines: null }, extra || {});
+
+    it('1回の書き込みを1つのまとまりにする', () => {
+      const h = openHistory([row(2, 'title', 'a', 'b'), row(1, 'sprint', '', 's1')]);
+      expect(h.querySelectorAll('.history-item')).toHaveLength(1);
+      expect(h.querySelectorAll('.history-change')).toHaveLength(2);
+      expect(h.querySelector('.history-head').textContent).toContain('直しました');
+    });
+
+    it('複数行の値は行ごとの差分で、色だけに頼らず印を付ける', () => {
+      const h = openHistory([row(1, 'body', 'a\nb', 'a\nc', { lines: [
+        { op: 'same', text: 'a' }, { op: 'del', text: 'b' }, { op: 'add', text: 'c' }] })]);
+      const del = h.querySelector('.history-del');
+      const add = h.querySelector('.history-add');
+      expect(del.tagName).toBe('DEL');
+      expect(del.textContent).toBe('−b');
+      // 取り消し線は字だけに引く (印は読めるまま)
+      expect(del.querySelector('.history-text').textContent).toBe('b');
+      expect(add.textContent).toBe('＋c');
+    });
+
+    it('多いときは 50 件ずつ出し、さらに表示で足す', () => {
+      const rows = Array.from({ length: 120 }, (_, i) =>
+        row(120 - i, 'title', 'a', 'b', { at: new Date(Date.UTC(2026, 9, 1, 0, 120 - i)).toISOString() }));
+      const h = openHistory(rows);
+      expect(h.querySelectorAll('.history-item')).toHaveLength(50);
+      const more = h.querySelector('.history-more');
+      expect(more.textContent).toContain('残り 70 件');
+      more.click();
+      expect(h.querySelectorAll('.history-item')).toHaveLength(100);
+      expect(h.querySelector('.history-more').textContent).toContain('残り 20 件');
+    });
+  });
+
+  describe('やることの一覧とボードで、積んだ量を見比べる', () => {
+    const ISSUES = [
+      Object.assign({}, DEFAULTS.apiIssueList[0], { number: 2, sprint: 'sprint002', points: 5 }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 1, parent: '', sprint: 'sprint001', points: 3 }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 3, parent: '', title: '未定のもの', sprint: '', points: '' }),
+    ];
+
+    it('オンなら、行にスプリントとポイントを出し、スプリントごとに束ねられる', () => {
+      mount({ apiSettings: ON, apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+
+      const row = document.querySelector('#issue-list .row-item[data-number="2"]');
+      expect(row.querySelector('.scrum-chips').textContent).toContain('sprint002');
+      expect(row.querySelector('.scrum-chips').textContent).toContain('5pt');
+
+      const sel = document.getElementById('issue-group');
+      sel.value = 'sprint';
+      sel.dispatchEvent(new window.Event('change'));
+      // スプリントは名前の順、未定は最後。見出しに積んだポイントの合計
+      const heads = [...document.querySelectorAll('#issue-list .group-head')].map((h) => h.textContent);
+      expect(heads[0]).toContain('sprint001');
+      expect(heads[0]).toContain('3pt');
+      expect(heads[1]).toContain('sprint002');
+      expect(heads[2]).toContain('スプリント未定');
+    });
+
+    it('設定が一覧より遅れて届いても、届いたら札を付けて描き直す', () => {
+      let reply = null;
+      mount({ apiSettings: { later: (ok) => { reply = ok; } }, apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+      expect(document.querySelector('#issue-list .scrum-chips')).toBeNull();
+
+      reply(ON);
+      expect(document.querySelector('#issue-list .scrum-chips')).not.toBeNull();
+    });
+
+    it('オフなら、スプリントの札も束ね方も出さない', () => {
+      mount({ apiIssueList: ISSUES });
+      document.querySelector('[data-tab="issues"]').click();
+
+      expect(document.querySelector('#issue-list .scrum-chips')).toBeNull();
+      expect(document.querySelector('#issue-group option[value="sprint"]')).toBeNull();
+    });
+
+    it('ボードの列にポイントの合計を、カードにスプリントとポイントを出す', () => {
+      const board = {
+        Backlog: [{ issueNumber: 2, order: 0, title: 'a', state: 'open', assignee: '', labels: '',
+          dueDate: '', sprint: 'sprint001', points: 5 },
+        { issueNumber: 3, order: 1, title: 'b', state: 'open', assignee: '', labels: '',
+          dueDate: '', sprint: '', points: 2 }],
+        'In Progress': [], 'In Review': [], Done: [],
+      };
+      mount({ apiSettings: ON, apiProjectBoard: board });
+      document.querySelector('[data-tab="issues"]').click();
+      document.getElementById('view-board').click();
+
+      const col = document.querySelector('.board-column h3');
+      expect(col.textContent).toContain('7pt');
+      expect(document.querySelector('.board-card .scrum-chips').textContent).toContain('sprint001');
+    });
+  });
+
   describe('はじめての人のための案内', () => {
     const day = (offset) => new Date(Date.now() + 9 * 3600 * 1000 + offset * 86400000).toISOString().substring(0, 10);
     const running = (over) => Object.assign({}, VIEW, {
