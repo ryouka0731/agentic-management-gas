@@ -3220,7 +3220,9 @@ function apiScrumView(sprintName) {
   var issues = dbReadAll('issues');
   var impediments = impedimentList();
   var today = new Date();
-  var summary = scrumSummary(sprints, issues, impediments, today);
+  // 終わったスプリントは、終わりの日の中身で数える。移したことは履歴にある
+  var moves = scrumSprintMoves(dbReadAll('change_log'), sprints);
+  var summary = scrumSummary(sprints, issues, impediments, today, moves);
 
   var name = String(sprintName || '') || summary.current ||
     (sprints.length ? String(sprints[sprints.length - 1].name) : '');
@@ -3233,8 +3235,8 @@ function apiScrumView(sprintName) {
     sprint: target ? plainText(target.name) : '',
     sprints: sprints.map(sprintToPlain_),
     summary: summary,
-    velocity: scrumVelocity(sprints, issues, today),
-    burndown: target ? scrumBurndown(target, issues, today)
+    velocity: scrumVelocity(sprints, issues, today, moves),
+    burndown: target ? scrumBurndown(target, issues, today, moves)
       : { days: [], remaining: [], ideal: [], notice: 'スプリントがまだありません。' },
     roadmap: scrumRoadmap(sprints, issues),
     texts: scrumTexts(),

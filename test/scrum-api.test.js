@@ -195,6 +195,29 @@ describe('手元の道具から使う命令', () => {
   });
 });
 
+describe('持ち越し', () => {
+  it('終わらなかったやることを次へ移しても、前のスプリントの持ち越しに残る', () => {
+    const { ctx } = setup();
+    ctx.apiSetScrumEnabled(true);
+    const day = (o) => new Date(Date.now() + 9 * 3600e3 + o * 864e5).toISOString().substring(0, 10);
+    ctx.apiSprintCreate({ name: 's1', goal: 'g', startDate: day(-20), endDate: day(-7) });
+    ctx.apiSprintCreate({ name: 's2', goal: 'g', startDate: day(-6), endDate: day(7) });
+    const a = ctx.apiIssueCreate('終えた', '', [], '', { sprint: 's1', points: 5 });
+    const b = ctx.apiIssueCreate('終わらなかった', '', [], '', { sprint: 's1', points: 3 });
+    ctx.apiIssueClose(a.number);
+    ctx.dbUpdate('issues', 'number', a.number, { closedAt: new Date(Date.now() - 10 * 864e5) });
+    // 変更の履歴は「いま」で残るので、作った時点を期間の前へずらす
+    ctx.dbReadAll('change_log').forEach((row) => {
+      if (row.field === 'sprint') ctx.dbUpdate('change_log', 'id', row.id, { at: new Date(Date.now() - 21 * 864e5) });
+    });
+
+    ctx.apiIssueUpdate(b.number, { sprint: 's2' });
+    const vel = ctx.apiScrumView('s1').velocity;
+    expect(vel.find((x) => x.name === 's1')).toMatchObject({ planned: 8, completed: 5, carriedOver: 3 });
+    expect(vel.find((x) => x.name === 's2')).toMatchObject({ planned: 3 });
+  });
+});
+
 describe('実機確認の入口 (debugVerifyScrum)', () => {
   const TABLES = ['issues', 'project_items', 'sprints', 'impediments', 'impediment_comments', 'change_log'];
 
