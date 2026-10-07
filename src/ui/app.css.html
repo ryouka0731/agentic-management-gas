@@ -4176,8 +4176,8 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .history-line { display: block; padding: 0 var(--sp-2); text-decoration: none; }
 .history-mark { display: inline-block; width: 1.5em; color: var(--ink-2); }
 /* 色だけに頼らない。消えた行は取り消し線と「−」、足した行は「＋」 */
-.history-del { color: var(--danger); background: var(--danger-bg); text-decoration: line-through; }
-.history-del .history-mark { text-decoration: none; }
+.history-del { color: var(--danger); background: var(--danger-bg); }
+.history-del .history-text { text-decoration: line-through; }
 .history-add { color: var(--accent); background: var(--accent-bg); }
 .history-more { margin-top: var(--sp-2); }
 </style>

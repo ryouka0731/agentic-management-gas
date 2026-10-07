@@ -184,7 +184,8 @@ describe('画面とサーバで同じ答えになる', () => {
         state: pick(['open', 'closed']),
         priority: pick(['', 'high', 'low', 'normal']),
         dueDate: pick(['', '2026-09-30']),
-        sprint: pick(['', 'sprint001', 'sprint002', 'sprint010']),
+        // 人が付ける名前は Object の持ち物や未定の印と重なりうる
+        sprint: pick(['', 'sprint001', 'sprint002', 'sprint010', 'constructor', '(未定)']),
       }));
       const by = pick(['assignee', 'label', 'doc', 'state', 'sprint', 'priority', 'none', 'due']);
       const a = view.groupIssues(issues, by);

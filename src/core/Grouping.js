@@ -15,7 +15,9 @@ function groupIssues(issues, by, docNames) {
   var buckets = {};
 
   function put(key, label, issue) {
-    if (!buckets[key]) {
+    // 名前は人が付ける (スプリント・タグ)。'constructor' のような名前が
+    // Object の持ち物と重なるので、自分の持ち物かで見る
+    if (!Object.prototype.hasOwnProperty.call(buckets, key)) {
       buckets[key] = { key: key, label: label, issues: [] };
       order.push(key);
     }
@@ -45,8 +47,10 @@ function groupIssues(issues, by, docNames) {
     }
 
     if (by === 'sprint') {
+      // 未定の束の鍵は空にする。'(未定)' という名前のスプリントも作れるので、
+      // 名前と重なる鍵にすると混ざる
       var sprint = String(issue.sprint || '');
-      put(sprint || '(未定)', sprint || 'スプリント未定', issue);
+      put(sprint, sprint || 'スプリント未定', issue);
       continue;
     }
 
@@ -101,7 +105,7 @@ function groupIssues(issues, by, docNames) {
  */
 function groupSprintOrder_(a, b) {
   if (a === b) return 0;
-  if (a === '(未定)') return 1;
-  if (b === '(未定)') return -1;
+  if (a === '') return 1;
+  if (b === '') return -1;
   return a < b ? -1 : 1;
 }
