@@ -1068,5 +1068,7 @@ describe('ボードのカードの下の段', () => {
     // min-width: auto (既定) のままだと中身より狭くなれず、右がはみ出す
     expect(rule[1]).toMatch(/min-width:\s*0/);
     expect(rule[1]).toMatch(/flex-wrap:\s*wrap/);
+    // 札1つが左より広くなる狭さでも、段ごと折り返して重ならない
+    expect(/\.card-foot \{([^}]*)\}/.exec(css)[1]).toMatch(/flex-wrap:\s*wrap/);
   });
 });
