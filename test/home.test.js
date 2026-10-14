@@ -103,3 +103,88 @@ describe('草', () => {
     expect(Object.keys(act).sort()).toEqual(['meTotal', 'weeks']);
   });
 });
+
+describe('あなたの番', () => {
+  function pr(ctx, number, patch) {
+    ctx.dbAppend('pulls', Object.assign({ number, title: '依頼' + number, state: 'open',
+      author: 'b@example.com', reviewers: ME, createdAt: new Date('2026-10-10T01:00:00Z') }, patch || {}));
+  }
+
+  it('確かめてほしい依頼: 自分が確認者で、判断が無いか古い。判断済み・閉じた依頼は出ない', () => {
+    const { ctx } = setup();
+    pr(ctx, 1);
+    pr(ctx, 2, { staleReviewId: 1 });
+    ctx.dbAppend('reviews', { prNumber: 2, reviewer: ME, state: 'approve', at: new Date(), id: 1 }); // 古くなった
+    pr(ctx, 3);
+    ctx.dbAppend('reviews', { prNumber: 3, reviewer: ME, state: 'approve', at: new Date(), id: 2 }); // 済み
+    pr(ctx, 4, { state: 'merged' });
+    pr(ctx, 5, { reviewers: 'c@example.com' });
+    const t = ctx.homeMyTurn_(ME, NOW);
+    expect(t.reviews.items.map((x) => x.number)).toEqual([1, 2]);
+    expect(t.reviews.total).toBe(2);
+  });
+
+  it('戻ってきた依頼: 自分が出したもので、差し戻しが残っている', () => {
+    const { ctx } = setup();
+    pr(ctx, 1, { author: ME, reviewers: 'b@example.com' });
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: 'b@example.com', state: 'request_changes', at: new Date(), id: 1 });
+    pr(ctx, 2, { author: ME, reviewers: 'b@example.com' });
+    ctx.dbAppend('reviews', { prNumber: 2, reviewer: 'b@example.com', state: 'request_changes', at: new Date(), id: 2 });
+    ctx.dbAppend('reviews', { prNumber: 2, reviewer: 'b@example.com', state: 'approve', at: new Date(), id: 3 });
+    expect(ctx.homeMyTurn_(ME, NOW).returned.items.map((x) => x.number)).toEqual([1]);
+  });
+
+  it('期限のやること: 自分の担当の未完了で、期限切れか3日以内。期限の早い順。今日は期限切れではない', () => {
+    const { ctx } = setup();
+    const mk = (title, due, patch) => {
+      const n = ctx.issueCreate(title, '', []).number;
+      ctx.dbUpdate('issues', 'number', n, Object.assign({ assignee: ME, dueDate: due }, patch || {}));
+      return n;
+    };
+    const late = mk('遅れ', new Date('2026-10-10T15:00:00Z'));   // 東京 10/11
+    const today = mk('今日', new Date('2026-10-13T15:00:00Z'));  // 東京 10/14
+    const soon = mk('3日後', new Date('2026-10-16T15:00:00Z'));  // 東京 10/17
+    mk('4日後', new Date('2026-10-17T15:00:00Z'));
+    mk('期限なし', '');
+    mk('ほかの人', new Date('2026-10-10T15:00:00Z'), { assignee: 'b@example.com' });
+    mk('捨てた', new Date('2026-10-10T15:00:00Z'), { archivedAt: new Date() });
+    const done = mk('済み', new Date('2026-10-10T15:00:00Z'));
+    ctx.issueClose(done, null);
+
+    const due = ctx.homeMyTurn_(ME, NOW).due;
+    expect(due.items.map((x) => x.number)).toEqual([late, today, soon]);
+    expect(due.items[0]).toMatchObject({ due: '2026-10-11', overdue: true });
+    expect(due.items[1]).toMatchObject({ due: '2026-10-14', overdue: false });
+  });
+
+  it('種類ごとに5件まで。総数は別に返す', () => {
+    const { ctx } = setup();
+    for (let n = 1; n <= 7; n++) pr(ctx, n);
+    const t = ctx.homeMyTurn_(ME, NOW);
+    expect(t.reviews.items).toHaveLength(5);
+    expect(t.reviews.total).toBe(7);
+  });
+});
+
+describe('最近の動き', () => {
+  it('反映・完了・依頼・登録を新しい順に10件。名前もアドレスも入らない', () => {
+    const { ctx } = setup();
+    for (let k = 0; k < 12; k++) {
+      closed(ctx, '完了' + k, { assignee: ME, closedAt: new Date(Date.UTC(2026, 9, 1 + k)) });
+    }
+    ctx.dbAppend('pulls', { number: 1, title: '反映した', author: ME, state: 'merged',
+      createdAt: new Date('2026-10-13T00:00:00Z'), mergedAt: new Date('2026-10-14T00:00:00Z') });
+    const recent = ctx.homeRecent_(NOW);
+    expect(recent).toHaveLength(10);
+    expect(recent[0]).toMatchObject({ kind: 'merged', number: 1, title: '反映した' });
+    expect(recent[1]).toMatchObject({ kind: 'pull', number: 1 });
+    expect(JSON.stringify(recent)).not.toMatch(/@/);
+  });
+
+  it('捨てたやることと、日付の読めない行は出さない', () => {
+    const { ctx } = setup();
+    closed(ctx, '捨てた', { archivedAt: new Date() });
+    closed(ctx, '読めない', { closedAt: 'きのう' });
+    expect(ctx.homeRecent_(NOW)).toEqual([]);
+  });
+});
