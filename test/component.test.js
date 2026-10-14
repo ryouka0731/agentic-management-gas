@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mountApp, DEFAULTS } from './dom.js';
 
 /**
@@ -6780,6 +6780,41 @@ describe('進捗ボードの使い勝手', () => {
 
 describe('前進を見せる (意欲づけ)', () => {
   beforeEach(() => { window.localStorage.clear(); });
+  // 写し先を差し替えたテストが、後のテストに残らないようにする
+  afterEach(() => { delete window.navigator.clipboard; });
+
+  it('今日片づけたものを本人にだけ出し、日報の形で写せる', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    mount({ apiMyToday: [
+      { kind: 'issue', number: 12, title: '規程の改定' },
+      { kind: 'pull', number: 7, title: '細則の見直し' },
+    ] });
+    const card = document.querySelector('#home-cards .my-today');
+    expect(card.textContent).toContain('今日片づけたもの');
+    expect(card.textContent).toContain('あなたにだけ見えます');
+    expect(card.querySelectorAll('li')).toHaveLength(2);
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied[0]).toBe('✅今日\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映');
+  });
+
+  it('今日まだ何も無いときは「これから」と書く', () => {
+    mount();
+    const card = document.querySelector('#home-cards .my-today');
+    expect(card.textContent).toContain('今日はこれから');
+    expect(card.querySelector('button')).toBeNull();
+  });
+
+  it('写せないブラウザでは、選んで写せる欄を出す', async () => {
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined });
+    mount({ apiMyToday: [{ kind: 'issue', number: 12, title: '規程の改定' }] });
+    const card = document.querySelector('#home-cards .my-today');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(card.querySelector('textarea').value).toContain('- #12 規程の改定');
+  });
   const STEPS = [
     { key: 'branch', label: '改訂版を作る', hint: 'h1', tab: 'docs', done: true },
     { key: 'commit', label: '変更を記録する', hint: '直したら「変更を記録」', tab: 'branches', done: false },

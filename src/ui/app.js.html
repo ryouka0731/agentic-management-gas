@@ -7969,18 +7969,95 @@
     }
     call('apiProgress', [], function (p) {
       call('apiMyMilestones', [], function (steps) {
-        // 返事を待つあいだに止められていたら描かない
-        if (!progressNotesOn()) return;
-        renderHomeCards(p || {}, steps || []);
+        call('apiMyToday', [], function (today) {
+          // 返事を待つあいだに止められていたら描かない
+          if (!progressNotesOn()) return;
+          renderHomeCards(p || {}, steps || [], today || []);
+        }, failQuiet('今日の一覧が出なくても使える'));
       }, failQuiet('はじめの5歩が出なくても使える'));
     }, failQuiet('前進が出なくても使える'));
   }
 
-  function renderHomeCards(p, steps) {
+  function renderHomeCards(p, steps, today) {
     homeCardsEl.textContent = '';
+    homeCardsEl.appendChild(makeTodayCard(today || []));
     homeCardsEl.appendChild(makeTeamProgressCard(p));
     var first = makeFirstStepsCard(steps);
     if (first) homeCardsEl.appendChild(first);
+  }
+
+  /**
+   * 日報の「✅今日」の節の形にする。
+   *
+   * @param {Array<{kind: string, number: number, title: string}>} items
+   * @returns {string}
+   */
+  function todayReportText(items) {
+    return ['✅今日'].concat(items.map(function (x) {
+      return x.kind === 'pull'
+        ? '- 確認依頼 #' + x.number + ' ' + x.title + ' を' + OFFICIAL + 'に反映'
+        : '- #' + x.number + ' ' + x.title;
+    })).join('\n');
+  }
+
+  /**
+   * 今日片づけたもの。**本人にだけ見える。** 件数は大きく出さず、題名を並べる
+   * (件数を追わせると簡単なものから手を付ける)。
+   *
+   * @param {Array<{kind: string, number: number, title: string}>} items
+   * @returns {HTMLElement}
+   */
+  function makeTodayCard(items) {
+    var card = document.createElement('section');
+    card.className = 'home-card my-today';
+    card.setAttribute('aria-label', '今日片づけたもの');
+
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '今日片づけたもの (あなたにだけ見えます)';
+    card.appendChild(head);
+
+    if (!items.length) {
+      var none = document.createElement('p');
+      none.className = 'my-today-none';
+      none.textContent = '今日はこれから。片づけたものがここに並びます';
+      card.appendChild(none);
+      return card;
+    }
+
+    var list = document.createElement('ul');
+    list.className = 'my-today-list';
+    items.forEach(function (x) {
+      var li = document.createElement('li');
+      li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn';
+    copy.textContent = '日報にコピー';
+    copy.addEventListener('click', function () {
+      var text = todayReportText(items);
+      // 埋め込みの枠では写せないことがある。そのときは選んで写せる欄を出す
+      function fallback() {
+        var area = card.querySelector('textarea') || document.createElement('textarea');
+        area.readOnly = true;
+        area.className = 'my-today-copy';
+        area.value = text;
+        area.setAttribute('aria-label', '日報に貼る文');
+        if (!area.parentNode) card.appendChild(area);
+        area.select();
+      }
+      var clip = window.navigator.clipboard;
+      if (!clip || !clip.writeText) { fallback(); return; }
+      clip.writeText(text).then(function () {
+        showSnack('日報の「✅今日」の形で写しました', { kind: 'ok' });
+      }, fallback);
+    });
+    card.appendChild(copy);
+    return card;
   }
 
   /**
