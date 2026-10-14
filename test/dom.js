@@ -96,7 +96,7 @@ const API_NAMES = [
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
-  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity',
+  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary',
   'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
@@ -235,6 +235,18 @@ export const DEFAULTS = {
     day: '2026-' + String(1 + (w % 12)).padStart(2, '0') + '-' + String(1 + d).padStart(2, '0'),
     me: (w + d) % 3, team: (w + d) % 5, future: w === 52 && d > 2,
   }))), meTotal: 120 },
+  apiHomeSummary: {
+    myTurn: {
+      reviews: { items: [{ number: 1, title: '就業規則 第3条の改定' }], total: 1 },
+      returned: { items: [], total: 0 },
+      due: { items: [{ number: 7, title: '附則の施行日を決める', due: '2026-10-13', overdue: true }], total: 1 },
+    },
+    recent: [
+      { kind: 'merged', number: 1, fileId: '', title: '就業規則 第3条の改定', at: '2026-10-14T01:00:00.000Z' },
+      { kind: 'closed', number: 3, fileId: '', title: '第7条に在宅勤務を足す', at: '2026-10-13T01:00:00.000Z' },
+      { kind: 'file', number: 0, fileId: 'DOC1', title: '就業規則.doc', at: '2026-10-12T01:00:00.000Z' },
+    ],
+  },
   apiGameState: { enabled: false },
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),

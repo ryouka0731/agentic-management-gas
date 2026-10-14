@@ -549,6 +549,12 @@ describe('画面に渡せる形か', () => {
       if (!out.meTotal) throw new Error('草が空のまま検査されている');
       return out;
     }],
+    ['apiHomeSummary', (ctx, env) => {
+      closedToday(ctx);
+      const out = ctx.apiHomeSummary();
+      if (!out.recent.length) throw new Error('最近の動きが空のまま検査されている');
+      return out;
+    }],
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],

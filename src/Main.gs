@@ -3201,6 +3201,38 @@ function apiHomeActivity() {
   };
 }
 
+/**
+ * あなたの番と最近の動き (Web App API)。最近の動きに名前は入らない。
+ *
+ * @returns {{myTurn: object, recent: object[]}}
+ */
+function apiHomeSummary() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var now = new Date();
+  var turn = homeMyTurn_(me, now);
+  function part(x, extra) {
+    return {
+      total: plainNumber(x.total),
+      items: x.items.map(function (it) {
+        var o = { number: plainId(it.number), title: plainText(it.title) };
+        if (extra) extra(o, it);
+        return o;
+      }),
+    };
+  }
+  return {
+    myTurn: {
+      reviews: part(turn.reviews),
+      returned: part(turn.returned),
+      due: part(turn.due, function (o, it) { o.due = plainText(it.due); o.overdue = !!it.overdue; }),
+    },
+    recent: homeRecent_(now).map(function (x) {
+      return { kind: plainText(x.kind), number: plainId(x.number), fileId: plainText(x.fileId),
+        title: plainText(x.title), at: plainDate(x.at) };
+    }),
+  };
+}
+
 // ===== 設定 =====
 
 /**
