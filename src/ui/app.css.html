@@ -1135,6 +1135,15 @@ button:disabled {
   .snack-check path { animation: none; stroke-dashoffset: 0; }
   .snack-progress-fill { transition: none; }
 }
+/*
+ * 狭い画面では、文を印の横の1行に取り、ボタンは次の行の右に回す。並べたままだと
+ * 印と棒とボタンに押されて、文が 60px ほどに潰れる。棒は隠す (残りは文が言っている)
+ */
+@media (max-width: 420px) {
+  .snackbar { flex-wrap: wrap; justify-content: flex-end; }
+  .snackbar-text { flex: 1 1 calc(100% - 18px - var(--sp-3)); }
+  .snack-progress { display: none; }
+}
 
 .snackbar button {
   flex: 0 0 auto;

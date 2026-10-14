@@ -259,7 +259,7 @@
     'nav:help': 'この道具の言葉と進め方をまとめています',
     'nav:usage': 'どこがよく使われているかの記録です。みんなの合計でも、人ごとでも見られます',
     'nav:report': '不具合・要望・使い方の質問を伝える場所です。みんなで読んで話せて、開発者のやることにも積まれます',
-    'nav:settings': 'この道具の設定です。エージェンティックスクラムのオン・オフはここで切り替えます (管理者だけ)',
+    'nav:settings': 'この道具の設定です。エージェンティックスクラムと、ポイントとレベルのオン・オフはここで切り替えます (管理者だけ)',
     'nav:sprint': 'いまのスプリントの進み具合です。バーンダウン・ベロシティ・ロードマップを、やることのポイントと完了日から数えて出します',
     'nav:impediments': 'チームの進みを妨げているものの一覧です。気づいた人が書き出し、片付いたら解決策を書いて閉じます',
 
@@ -1581,6 +1581,7 @@
       var track = document.createElement('span');
       track.className = 'snack-progress';
       track.setAttribute('role', 'progressbar');
+      track.setAttribute('aria-label', '小分けの進み具合');
       track.setAttribute('aria-valuemin', '0');
       track.setAttribute('aria-valuemax', String(mark.total));
       track.setAttribute('aria-valuenow', String(mark.done));
@@ -1590,8 +1591,12 @@
       fill.style.width = Math.round(Math.max(mark.done - 1, 0) / mark.total * 100) + '%';
       track.appendChild(fill);
       box.appendChild(track);
+      // 2つ先の描画で伸ばす。1つ先だと、始めの幅が描かれる前に終わりの幅へ
+      // 置き換わり、transition が走らずに飛ぶ
       window.requestAnimationFrame(function () {
-        fill.style.width = Math.round(mark.done / mark.total * 100) + '%';
+        window.requestAnimationFrame(function () {
+          fill.style.width = Math.round(mark.done / mark.total * 100) + '%';
+        });
       });
     }
     return box;
@@ -7837,10 +7842,14 @@
   }
 
   /**
-   * 終えたとき・反映したときに、チームの前進を添えて知らせる。
+   * 終えたとき・反映したときに、何が起きたかを添えて知らせる。
    *
-   * 「今週チームで何件目か」を添える。自分だけの数ではなくチームの数にする
-   * (人と比べる物差しにしない)。今月の目標に届いたら、そのことも添える。
+   * 完了では、先に印だけの帯を出し、apiCloseFeedback の返事で「小分けの残り」
+   * 「◯週間越し」「大きいもの」「今週チームで何件目か」のどれか1つに差し替える
+   * (closeFeedbackText)。ポイントとレベルはオンのときだけ添える。反映では、今週
+   * チームで何件を正式版にしたかを添える。人と比べる物差しにはしない。
+   *
+   * ホームのカードの描き直しは、ホームを開いているときだけ (reloadHomeIfShown)。
    *
    * @param {string} kind 'close' | 'merge'
    * @param {string} text 基本の知らせ
@@ -7872,7 +7881,12 @@
           } };
         }
         showSnack(closeFeedbackText(text, fb), opts);
-        loadHomeCards();
+        // 帯に出したときだけ「見せた」と伝える。捨てた返事のぶんは次の完了でまた知らせる
+        if (fb.levelUp) {
+          call('apiGameLevelSeen', [fb.levelUp], null,
+            failQuiet('覚えられなくても、次の完了でもう一度知らせるだけ'));
+        }
+        reloadHomeIfShown();
       }, failQuiet('前進の知らせが出なくても、終えたことは伝わっている'));
       return;
     }
@@ -7885,11 +7899,29 @@
       var more = '';
       if (p && kind === 'merge' && p.weekMerged) more = '。今週チームで ' + p.weekMerged + ' 件を正式版にしました';
       showSnack(text + more, { kind: 'ok' });
-      loadHomeCards();
+      reloadHomeIfShown();
     }, function () {
       // 前進が数えられなくても、終えたこと自体は伝える
       showSnack(text, { kind: 'ok' });
     });
+  }
+
+  /**
+   * ホームを開いているときだけ、カードを描き直す。ほかの画面で完了にするたびに
+   * 5つの api を呼ぶことになる。ホームへ戻ったときは loadDocs が描き直す。
+   */
+  function reloadHomeIfShown() {
+    if (!panelDocs.hidden) loadHomeCards();
+  }
+
+  /**
+   * ポイントを見せる形にする。小数は1桁まで (割り算の端数を 0.9000000000000004 と出さない)。
+   *
+   * @param {number} x
+   * @returns {number}
+   */
+  function pointWords(x) {
+    return Math.round(Number(x || 0) * 10) / 10;
   }
 
   /**
@@ -7924,7 +7956,7 @@
       more = '。今週チームで ' + fb.weekClosed + ' 件目です';
       if (fb.goal && fb.monthClosed === fb.goal) more += '。今月の目標に届きました';
     }
-    if (fb.points) more += ' (+' + fb.points + ')';
+    if (fb.points) more += ' (+' + pointWords(fb.points) + ')';
     if (fb.levelUp) more += '。レベル ' + fb.levelUp + ' になりました';
     return base + more;
   }
@@ -7997,7 +8029,14 @@
     homeCardsEl.textContent = '';
     homeCardsEl.appendChild(makeTodayCard(today || []));
     var g = makeGameCard(game || {}, top || []);
-    if (g) homeCardsEl.appendChild(g);
+    if (g) {
+      homeCardsEl.appendChild(g);
+      // 見せたレベルを覚える。覚えないと、次の完了で同じレベルに「なりました」と言う
+      if (game.level > 0) {
+        call('apiGameLevelSeen', [game.level], null,
+          failQuiet('覚えられなくても、次の完了で一度多く知らせるだけ'));
+      }
+    }
     homeCardsEl.appendChild(makeTeamProgressCard(p));
     var first = makeFirstStepsCard(steps);
     if (first) homeCardsEl.appendChild(first);
@@ -8026,18 +8065,24 @@
 
     var level = document.createElement('div');
     level.className = 'game-level';
-    level.textContent = 'レベル ' + game.level + ' ・ 今週 ' + game.week + ' ・ 次のレベルまで ' +
-      Math.max(game.nextAt - game.total, 0);
+    level.textContent = 'レベル ' + game.level + ' ・ 今週 ' + pointWords(game.week) + ' ・ 次のレベルまで ' +
+      pointWords(Math.max(game.nextAt - game.total, 0));
     card.appendChild(level);
 
+    // いまのレベルの中での進み具合を描く。合計 / 次の境目にすると、レベル2で
+    // 16/30 = 53% と出て、あと少しに見える (実際は 15 から 30 のうち 1)
+    var from = Number(game.levelFrom || 0);
+    var span = game.nextAt - from;
     var bar = document.createElement('div');
     bar.className = 'game-level-bar';
     bar.setAttribute('role', 'progressbar');
-    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-label', '次のレベルまでの進み具合');
+    bar.setAttribute('aria-valuemin', String(from));
     bar.setAttribute('aria-valuemax', String(game.nextAt));
-    bar.setAttribute('aria-valuenow', String(game.total));
+    bar.setAttribute('aria-valuenow', String(pointWords(Math.max(game.total, from))));
     var fill = document.createElement('span');
-    fill.style.width = Math.min(100, Math.round(game.total / game.nextAt * 100)) + '%';
+    fill.style.width = (span > 0
+      ? Math.min(100, Math.max(0, Math.round((game.total - from) / span * 100))) : 0) + '%';
     bar.appendChild(fill);
     card.appendChild(bar);
 
@@ -8051,7 +8096,7 @@
       top.forEach(function (r) {
         var li = document.createElement('li');
         if (r.me) li.className = 'is-me';
-        li.textContent = r.rank + '. ' + r.name + ' ' + r.points;
+        li.textContent = r.rank + '. ' + r.name + ' ' + pointWords(r.points);
         list.appendChild(li);
       });
       card.appendChild(list);
@@ -8083,8 +8128,9 @@
       setToggle(btn, want);
       call('apiGameJoin', [want], function (res) {
         btn.disabled = false;
-        setToggle(btn, !!(res && res.playing));
-        loadHomeCards();
+        // 空の返事ではオフに倒さない。押したとおりに見せておく
+        setToggle(btn, res ? !!res.playing : want);
+        reloadHomeIfShown();
       }, function (err) {
         setToggle(btn, !want);
         failEnable(btn, '切り替えられませんでした: ')(err);
@@ -9639,12 +9685,19 @@
     });
     out.push(again);
     out.push(makeProgressToggle());
-    // ゲームがオンのときだけ、参加の切り替えを足す
-    var gameJoinHost = document.createElement('div');
-    out.push(gameJoinHost);
-    call('apiGameState', [], function (state) {
-      if (state && state.enabled) gameJoinHost.appendChild(makeGameJoinToggle(state));
-    }, failQuiet('参加の切り替えが出なくても使える'));
+    // ゲームがオンのときだけ、参加の切り替えを出す。設定でオフと分かっていれば
+    // 尋ねない (設定より先に描かれるときは settings がまだ無い)。切り替えは隠して
+    // 並びに直に置き、返事で出す (包む箱に入れると、並びのボタンと幅が揃わない)
+    if (!settings || settings.gameEnabled !== false) {
+      var join = makeGameJoinToggle({ playing: false });
+      join.hidden = true;
+      out.push(join);
+      call('apiGameState', [], function (state) {
+        if (!state || !state.enabled) return;
+        setToggle(join, !!state.playing);
+        join.hidden = false;
+      }, failQuiet('参加の切り替えが出なくても使える'));
+    }
 
     return out;
   }
@@ -10975,7 +11028,9 @@
 
     var head = document.createElement('h2');
     head.className = 'view-title';
-    head.textContent = 'ポイントとレベル';
+    head.appendChild(document.createTextNode('ポイントとレベル '));
+    head.appendChild(makePill(settings.gameEnabled ? 'オン' : 'オフ',
+      settings.gameEnabled ? 'state state-open' : 'state'));
     box.appendChild(head);
 
     var about = document.createElement('p');
