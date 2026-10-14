@@ -1498,6 +1498,7 @@
    *
    * @param {string} text
    * @param {{kind?: string, undo?: function, ms?: number}} [opts]
+   * @returns {HTMLElement} 出した帯。遅れて届く返事が、まだ同じ帯か確かめるのに使う
    */
   function showSnack(text, opts) {
     var options = opts || {};
@@ -1553,6 +1554,7 @@
     // 押す間が要るものは長めに出す
     var ms = options.ms || (options.undo || options.action ? 10000 : 5000);
     snackTimer = window.setTimeout(function () { bar.remove(); }, ms);
+    return bar;
   }
 
   /**
@@ -7851,10 +7853,12 @@
     }
     if (kind === 'close' && number) {
       // 先に印だけの帯を出す。返事を待つあいだも、終えたことはすぐ伝わる
-      showSnack(text, { kind: 'ok', mark: {} });
+      var firstBar = showSnack(text, { kind: 'ok', mark: {} });
       call('apiCloseFeedback', [number], function (fb) {
         // 返事を待つあいだに止められていたら、素の帯のまま
         if (!progressNotesOn() || !fb) return;
+        // 閉じられたか、別の帯に替わっていたら、新しいほうを上書きしない
+        if (document.getElementById('snackbar') !== firstBar) return;
         var opts = { kind: 'ok', mark: {} };
         if (fb.parent && (fb.kind === 'parentStep' || fb.kind === 'parentDone')) {
           opts.mark = { done: fb.parent.done, total: fb.parent.total };
