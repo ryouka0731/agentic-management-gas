@@ -241,8 +241,8 @@ describe('日報', () => {
 
   it('選んだ形と自分の形を人ごとに覚える。知らない形と2000字超は断る', () => {
     const { ctx } = setup();
-    ctx.reportSetKind_(ME, 'today');
     ctx.reportSetCustom_(ME, '【本日】{今日}');
+    ctx.reportSetKind_(ME, 'today');
     expect(ctx.reportKind_(ME)).toBe('today');
     expect(ctx.reportKind_('b@example.com')).toBe('three');
     expect(ctx.reportCustom_(ME)).toBe('【本日】{今日}');
@@ -250,6 +250,16 @@ describe('日報', () => {
     expect(() => ctx.reportSetCustom_(ME, 'あ'.repeat(2001))).toThrow(/2000/);
     ctx.reportSetKind_(ME, 'custom');
     expect(ctx.reportKind_(ME)).toBe('custom');
+  });
+
+  it('自分の形を書くと、1回で「自分の形」を選んだことにもなる。空なら選ばない', () => {
+    const { ctx } = setup();
+    ctx.reportSetKind_(ME, 'today');
+    ctx.reportSetCustom_(ME, '');
+    expect(ctx.reportKind_(ME)).toBe('today');
+    ctx.reportSetCustom_(ME, '【本日】{今日}');
+    expect(ctx.reportKind_(ME)).toBe('custom');
+    expect(ctx.apiSetReportCustom('{今日}')).toEqual({ custom: '{今日}', kind: 'custom' });
   });
 
   it('明日: 自分の担当の未完了で、期限か開始日が明日以前。困りごと: 自分の未解決の障害物 (スクラムがオンのときだけ)', () => {
@@ -278,8 +288,8 @@ describe('日報', () => {
 
   it('API は本人のぶんだけを読み書きする', () => {
     const { ctx } = setup();
-    ctx.apiSetReportKind('plain');
     ctx.apiSetReportCustom('{今日}');
+    ctx.apiSetReportKind('plain');
     const out = ctx.apiReportParts();
     expect(out.kind).toBe('plain');
     expect(out.custom).toBe('{今日}');

@@ -314,7 +314,8 @@ export const DEFAULTS = {
     custom: '',
   },
   apiSetReportKind: (kind) => ({ kind }),
-  apiSetReportCustom: (text) => ({ custom: text }),
+  // 中身があれば、同じ1回で「自分の形」を選んだことにもなる
+  apiSetReportCustom: (text) => ({ custom: text, kind: text ? 'custom' : 'three' }),
   apiGameState: { enabled: false },
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),

@@ -301,6 +301,8 @@ function reportCustom_(email) {
 }
 
 /**
+ * 自分の形を書く。中身があれば、選んだ形も「自分の形」にする (1回で両方)。
+ *
  * @param {string} email
  * @param {string} text
  * @returns {string}
@@ -308,7 +310,11 @@ function reportCustom_(email) {
 function reportSetCustom_(email, text) {
   var t = String(text || '');
   if (t.length > REPORT_CUSTOM_MAX()) throw new Error('日報の形は' + REPORT_CUSTOM_MAX() + '字までです');
-  PropertiesService.getUserProperties().setProperty('REPORT_CUSTOM:' + email, t);
+  var props = PropertiesService.getUserProperties();
+  props.setProperty('REPORT_CUSTOM:' + email, t);
+  // 書いたら自分の形を選んだことにする。画面から2回に分けて送ると、2回目だけ
+  // 落ちたとき書いた形と選んだ形が食い違う。空なら選ばない (空の形は 3節 で写る)
+  if (t) props.setProperty('REPORT_KIND:' + email, 'custom');
   return t;
 }
 
