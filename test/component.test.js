@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-import fs from 'node:fs';
-import vm from 'node:vm';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mountApp, DEFAULTS } from './dom.js';
+import { ui } from './ui-source.js';
 
 /**
  * 画面を実際に動かして確かめる。
@@ -7283,42 +7282,6 @@ describe('ポイント・レベル・週の上位', () => {
   });
 });
 
-/*
- * 画面の純関数は app.js.html から原文のまま切り出して動かす
- * (test/ui-parity.test.js と同じ方法)。テストのために window へ出す口は作らない。
- */
-const APP_SRC = fs.readFileSync('src/ui/app.js.html', 'utf8');
-
-function extractUi(name) {
-  const start = APP_SRC.indexOf('  function ' + name + '(');
-  if (start < 0) throw new Error('画面に ' + name + ' がありません');
-  let i = APP_SRC.indexOf('{', start);
-  let depth = 0;
-  let quote = null;
-  for (; i < APP_SRC.length; i++) {
-    const ch = APP_SRC[i];
-    const next = APP_SRC[i + 1];
-    if (quote) {
-      if (ch === '\\') { i++; continue; }
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '/' && next === '/') { i = APP_SRC.indexOf('\n', i); continue; }
-    if (ch === '/' && next === '*') { i = APP_SRC.indexOf('*/', i) + 1; continue; }
-    if (ch === "'" || ch === '"') { quote = ch; continue; }
-    if (ch === '{') depth++;
-    if (ch === '}') { depth--; if (depth === 0) break; }
-  }
-  return APP_SRC.substring(start, i + 1);
-}
-
-function uiFns(names) {
-  const ctx = {};
-  vm.createContext(ctx);
-  vm.runInContext(names.map(extractUi).join('\n'), ctx);
-  return ctx;
-}
-
 describe('ホームの区画', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
@@ -7371,7 +7334,7 @@ describe('ホームの区画', () => {
   });
 
   it('草: 色の段は0件が0、ほかは分布で1〜4', () => {
-    const { activityCuts, activityLevel } = uiFns(['activityCuts', 'activityLevel']);
+    const { activityCuts, activityLevel } = ui(['activityCuts', 'activityLevel']);
     const cuts = activityCuts([0, 0, 1, 1, 2, 3, 4, 8]);
     expect(activityLevel(0, cuts)).toBe(0);
     expect(activityLevel(1, cuts)).toBeGreaterThanOrEqual(1);
