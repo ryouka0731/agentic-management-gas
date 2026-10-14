@@ -591,6 +591,7 @@
       user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
       bell: ['M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
       expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
+      search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.35-4.35'],
       shrink: ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'],
     };
 
@@ -2959,6 +2960,202 @@
     });
     return out;
   }
+
+  // ===== 横断検索 (ヘッダーの欄) =====
+
+  var searchBox = document.getElementById('search-box');
+  var searchInput = document.getElementById('search-input');
+  var searchResults = document.getElementById('search-results');
+  var searchIndexRows = null;
+  var searchIndexAt = 0;
+  var searchActive = -1;
+  var searchSeq = 0;
+  var searchLoading = false;
+  var searchError = '';
+  var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '障害物' };
+  var SEARCH_STATES = {
+    issue: { open: '作業中', closed: '完了' },
+    pull: { open: '確認中', approved: '承認済み', merged: '反映済み', closed: '取り下げ' },
+    inquiry: { open: '受付', done: '済み' },
+    impediment: { open: '未解決', resolved: '解決' },
+  };
+
+  // Mac では ⌘K、ほかは Ctrl+K と案内する
+  var searchMac = /Mac|iPhone|iPad/.test(window.navigator.platform || '');
+  searchInput.placeholder = '探す (' + (searchMac ? '⌘K' : 'Ctrl+K') + ')';
+  document.getElementById('search-open').appendChild(makeIcon('search'));
+
+  /**
+   * 一覧を取る。60秒以内に取ったものがあれば取り直さない。
+   * **返事で画面を切り替えない。** 届いたとき欄が開いていれば今の字で絞り直す。
+   */
+  function loadSearchIndex() {
+    if (searchIndexRows && Date.now() - searchIndexAt < 60000) return;
+    if (searchLoading) return;
+    searchLoading = true;
+    var seq = ++searchSeq;
+    call('apiSearchIndex', [], function (rows) {
+      searchLoading = false;
+      if (seq !== searchSeq) return;
+      searchIndexRows = rows || [];
+      searchIndexAt = Date.now();
+      searchError = '';
+      if (document.activeElement === searchInput || searchBox.classList.contains('is-open')) renderSearch();
+    }, function (err) {
+      searchLoading = false;
+      if (seq !== searchSeq) return;
+      searchError = '探せませんでした: ' + ((err && err.message) || err);
+      if (document.activeElement !== searchInput && !searchBox.classList.contains('is-open')) return;
+      if (searchInput.value.replace(/\s+/g, '')) showSearchMessage(searchError);
+    });
+  }
+
+  /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
+  function hideSearchResults() {
+    searchResults.hidden = true;
+    searchResults.textContent = '';
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    searchActive = -1;
+  }
+
+  /** 候補を畳み、狭い画面で開いた欄も閉じる */
+  function closeSearch() {
+    hideSearchResults();
+    searchBox.classList.remove('is-open');
+  }
+
+  function showSearchMessage(text) {
+    searchResults.textContent = '';
+    var p = document.createElement('p');
+    p.className = 'search-empty row-meta';
+    p.textContent = text;
+    searchResults.appendChild(p);
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  /** 題名を字のまま並べ、合った部分だけ mark で囲む */
+  function searchTitle(item) {
+    var span = document.createElement('span');
+    span.className = 'search-title';
+    var t = String(item.title);
+    if (!item.hit) { span.textContent = t; return span; }
+    span.appendChild(document.createTextNode(t.substring(0, item.hit[0])));
+    var mark = document.createElement('mark');
+    mark.textContent = t.substring(item.hit[0], item.hit[1]);
+    span.appendChild(mark);
+    span.appendChild(document.createTextNode(t.substring(item.hit[1])));
+    return span;
+  }
+
+  function renderSearch() {
+    var q = searchInput.value;
+    if (!q.replace(/\s+/g, '')) { hideSearchResults(); return; }
+    if (!searchIndexRows) {
+      // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
+      showSearchMessage(searchLoading || !searchError ? '探しています…' : searchError);
+      return;
+    }
+    var groups = searchFilter(searchIndexRows, q);
+    if (!groups.length) { showSearchMessage('見つかりませんでした'); return; }
+
+    searchResults.textContent = '';
+    searchActive = -1;
+    var n = 0;
+    groups.forEach(function (g) {
+      var head = document.createElement('div');
+      head.className = 'search-group-head row-meta';
+      head.setAttribute('role', 'presentation');
+      head.textContent = SEARCH_LABELS[g.kind];
+      searchResults.appendChild(head);
+      g.items.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'search-row';
+        row.id = 'search-opt-' + (n++);
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', 'false');
+        row.dataset.kind = item.kind;
+        if (item.number) {
+          var num = document.createElement('span');
+          num.className = 'search-num row-meta';
+          num.textContent = '#' + item.number;
+          row.appendChild(num);
+        }
+        row.appendChild(searchTitle(item));
+        var label = item.archived ? '置き場' : ((SEARCH_STATES[item.kind] || {})[item.state] || '');
+        if (label) row.appendChild(makePill(label));
+        row.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        row.addEventListener('click', function () { openSearchItem(item); });
+        searchResults.appendChild(row);
+      });
+    });
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function moveSearch(step) {
+    var rows = searchResults.querySelectorAll('.search-row');
+    if (!rows.length) return;
+    searchActive = Math.max(0, Math.min(rows.length - 1, searchActive + step));
+    for (var i = 0; i < rows.length; i++) rows[i].setAttribute('aria-selected', String(i === searchActive));
+    searchInput.setAttribute('aria-activedescendant', rows[searchActive].id);
+    if (rows[searchActive].scrollIntoView) rows[searchActive].scrollIntoView({ block: 'nearest' });
+  }
+
+  /** 選んだものを開く。開いたら欄を空にして閉じる */
+  function openSearchItem(item) {
+    searchInput.value = '';
+    closeSearch();
+    searchInput.blur();
+    if (item.kind === 'doc') openDocById(item.key, item.title);
+    else if (item.kind === 'issue') openIssueByNumber(item.number);
+    else if (item.kind === 'pull') switchTab('pulls', { pr: item.number });
+    else if (item.kind === 'branch') switchTab('branches');
+    else if (item.kind === 'inquiry') { reportShown = item.number; switchTab('report'); }
+    else if (item.kind === 'impediment') switchTab('impediments');
+  }
+
+  searchInput.addEventListener('focus', loadSearchIndex);
+  searchInput.addEventListener('input', renderSearch);
+  searchInput.addEventListener('blur', function () {
+    // 候補を押したときは mousedown で blur を止めてある
+    if (!searchBox.classList.contains('is-open')) closeSearch();
+  });
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    else if (e.key === 'Enter') {
+      var rows = searchResults.querySelectorAll('.search-row');
+      var pick = rows[searchActive >= 0 ? searchActive : 0];
+      if (pick) { e.preventDefault(); pick.click(); }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSearch();
+      searchInput.blur();
+    }
+  });
+
+  document.getElementById('search-open').addEventListener('click', function () {
+    searchBox.classList.add('is-open');
+    searchInput.focus();
+    loadSearchIndex();
+  });
+  document.getElementById('search-close').addEventListener('click', function () {
+    searchInput.value = '';
+    closeSearch();
+  });
+
+  // Ctrl+K / ⌘K でどこからでも欄へ (入力欄の中でも効く)
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) searchBox.classList.add('is-open');
+      searchInput.focus();
+      loadSearchIndex();
+    }
+  });
 
   /**
    * 何分前・何時間前。1週間を超えたら月/日で出す。
@@ -9166,6 +9363,7 @@
   // ところ (入力欄) では効かせない。何が使えるかは「?」で出す。
 
   var SHORTCUTS = [
+    ['Ctrl+K / ⌘K', '文書・やること・確認依頼を探す'],
     ['/', '絞り込みの欄に移る (やることの一覧・ボード)'],
     ['N', 'やることを作る'],
     ['?', 'キーボードで使える操作を出す'],
