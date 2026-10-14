@@ -1,7 +1,6 @@
-import fs from 'node:fs';
-import vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
+import { APP, ui } from './ui-source.js';
 
 /*
  * サーバと画面の両方にある関数が、同じ入力に同じ答えを返すか。
@@ -13,41 +12,6 @@ import { loadGas } from './harness.js';
  * 画面の関数は app.js.html の中から原文のまま切り出して動かす。写しを
  * テストに書くと、写しどうしを比べることになって意味が無い。
  */
-
-const APP = fs.readFileSync('src/ui/app.js.html', 'utf8');
-
-/** app.js.html から function name(...) { ... } を原文のまま切り出す */
-function extract(name) {
-  const start = APP.indexOf('  function ' + name + '(');
-  if (start < 0) throw new Error('画面に ' + name + ' がありません');
-
-  let i = APP.indexOf('{', start);
-  let depth = 0;
-  let quote = null;
-  for (; i < APP.length; i++) {
-    const ch = APP[i];
-    const next = APP[i + 1];
-    if (quote) {
-      if (ch === '\\') { i++; continue; }
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '/' && next === '/') { i = APP.indexOf('\n', i); continue; }
-    if (ch === '/' && next === '*') { i = APP.indexOf('*/', i) + 1; continue; }
-    if (ch === "'" || ch === '"') { quote = ch; continue; }
-    if (ch === '{') depth++;
-    if (ch === '}') { depth--; if (depth === 0) break; }
-  }
-  return APP.substring(start, i + 1);
-}
-
-/** 画面の関数を、外側の変数を差し込んだ箱の中で動かす */
-function ui(names, globals) {
-  const ctx = Object.assign({}, globals || {});
-  vm.createContext(ctx);
-  vm.runInContext(names.map(extract).join('\n'), ctx);
-  return ctx;
-}
 
 /*
  * 乱数は Math.imul で32ビットのまま回す。

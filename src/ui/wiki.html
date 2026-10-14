@@ -10,6 +10,13 @@
     <nav class="sidebar" aria-label="対象の切り替え">
       <div class="brand" id="brand"></div>
 
+      <div class="nav-section nav-home">
+        <button class="nav-item" data-tab="home">
+          <span class="nav-label">ホーム</span>
+          <span class="nav-desc">あなたの番と前進</span>
+        </button>
+      </div>
+
       <div class="nav-section">
         <h2>管理するもの</h2>
         <button class="nav-item" data-tab="docs">
@@ -113,70 +120,83 @@
         <button class="tab" data-tab="drafts">この文書の改訂版</button>
       </div>
 
-      <div class="panel panel-col" id="panel-docs">
+      <div class="panel panel-col" id="panel-home">
+        <div class="list-area home-scroll">
+          <p class="home-summary" id="home-summary"></p>
+          <aside class="guideline" id="guideline">
+            <button class="guideline-head" id="guideline-toggle" aria-expanded="true">
+              <span class="guideline-tag">はじめに</span>
+              <span class="guideline-lead">
+                直すたびに「誰がいつ何を変えたか」が残り、いつでも前の状態と見比べられます
+              </span>
+              <span class="guideline-mark" aria-hidden="true">▾</span>
+            </button>
+            <button class="side-close" id="guideline-hide" type="button"
+                    aria-label="この案内を閉じる">×</button>
+
+            <div class="guideline-body" id="guideline-body">
+              <div class="guideline-extra" id="guideline-extra"></div>
+            </div>
+          </aside>
+          <!-- 主 (あなたの番・草・最近の動き) と従 (前進・全体の数) の2列。狭いと主を先に1列。
+               最近の動きを従に置くと従だけが長く、主の下が大きく空いた -->
+          <div class="home-grid">
+            <div class="home-main">
+              <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
+              <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
+              <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
+            </div>
+            <div class="home-side">
+              <div class="home-cards" id="home-cards"></div>
+              <section class="home-block" id="home-counts" aria-label="全体の数">
+                <div class="home-head"><h2 class="home-section-head">全体の数</h2></div>
+                <ol class="flow-steps">
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="issues">
+                      <span class="flow-name">やること</span>
+                      <span class="flow-count" id="flow-issues">—</span>
+                    </button>
+                    <span class="flow-desc">何をするか決める</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="branches">
+                      <span class="flow-name">改訂版</span>
+                      <span class="flow-count" id="flow-branches">—</span>
+                    </button>
+                    <span class="flow-desc">文書を直す</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="pulls">
+                      <span class="flow-name">確認依頼</span>
+                      <span class="flow-count" id="flow-prs">—</span>
+                    </button>
+                    <span class="flow-desc">見てもらう</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="docs">
+                      <span class="flow-name">正式版</span>
+                      <span class="flow-count" id="flow-docs">—</span>
+                    </button>
+                    <span class="flow-desc">反映される</span>
+                  </li>
+                </ol>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-col" id="panel-docs" hidden>
         <div class="panel-actions">
           <button id="doc-add-btn" class="btn btn-primary">文書を登録する</button>
           <span class="row-meta">
             正式版の入れ物に入れた文書を、この道具で管理できるようにします
           </span>
         </div>
-        <!-- 文書を先に、前進は見出しを付けて後ろに置く。前進が上に同じ形で並ぶと、
-             どこからが文書の一覧なのか分からなかった。両方を1つの送りの中に置く -->
-        <div class="list-area home-scroll">
-          <h2 class="home-section-head">文書</h2>
-          <div id="doc-list"></div>
-          <div class="home-cards" id="home-cards"></div>
-        </div>
-
-        <aside class="guideline" id="guideline">
-          <button class="guideline-head" id="guideline-toggle" aria-expanded="true">
-            <span class="guideline-tag">はじめに</span>
-            <span class="guideline-lead">
-              直すたびに「誰がいつ何を変えたか」が残り、いつでも前の状態と見比べられます
-            </span>
-            <span class="guideline-mark" aria-hidden="true">▾</span>
-          </button>
-          <button class="side-close" id="guideline-hide" type="button"
-                  aria-label="この案内を閉じる">×</button>
-
-          <div class="guideline-body" id="guideline-body">
-            <ol class="flow-steps">
-              <li class="flow-step">
-                <button class="flow-btn" data-tab="issues">
-                  <span class="flow-name">やること</span>
-                  <span class="flow-count" id="flow-issues">—</span>
-                </button>
-                <span class="flow-desc">何をするか決める</span>
-              </li>
-              <li class="flow-arrow" aria-hidden="true">→</li>
-              <li class="flow-step">
-                <button class="flow-btn" data-tab="branches">
-                  <span class="flow-name">改訂版</span>
-                  <span class="flow-count" id="flow-branches">—</span>
-                </button>
-                <span class="flow-desc">文書を直す</span>
-              </li>
-              <li class="flow-arrow" aria-hidden="true">→</li>
-              <li class="flow-step">
-                <button class="flow-btn" data-tab="pulls">
-                  <span class="flow-name">確認依頼</span>
-                  <span class="flow-count" id="flow-prs">—</span>
-                </button>
-                <span class="flow-desc">見てもらう</span>
-              </li>
-              <li class="flow-arrow" aria-hidden="true">→</li>
-              <li class="flow-step">
-                <button class="flow-btn" data-tab="docs">
-                  <span class="flow-name">正式版</span>
-                  <span class="flow-count" id="flow-docs">—</span>
-                </button>
-                <span class="flow-desc">反映される</span>
-              </li>
-            </ol>
-
-            <div class="guideline-extra" id="guideline-extra"></div>
-          </div>
-        </aside>
+        <div class="list-area" id="doc-list"></div>
       </div>
 
       <div class="panel panel-col" id="panel-content" hidden>

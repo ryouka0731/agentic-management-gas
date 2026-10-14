@@ -52,6 +52,7 @@
   var openLink = document.getElementById('open-in-docs');
 
   var tabsEl = document.getElementById('tabs');
+  var panelHome = document.getElementById('panel-home');
   var panelDocs = document.getElementById('panel-docs');
   var panelContent = document.getElementById('panel-content');
   var panelHistory = document.getElementById('panel-history');
@@ -577,6 +578,7 @@
       menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
       'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
       columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
+      home: ['M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'],
       'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
       save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
       archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
@@ -607,6 +609,7 @@
   }
 
   var TAB_ICONS = {
+    home: 'home',
     docs: 'file-text',
     content: 'file-text',
     history: 'git-commit',
@@ -2518,8 +2521,9 @@
    * タブは開いている文書のビューなので、文書を選んでいないときは出さない。
    *
    * @param {string} name
+   * @param {{pr: number}} [opts] 確認依頼の画面で、先頭の代わりに開く依頼の番号
    */
-  function switchTab(name) {
+  function switchTab(name, opts) {
     if (DOC_TABS[name] && !current.fileId) name = 'docs';
     currentTab = name;
 
@@ -2538,6 +2542,7 @@
     // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
     if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
 
+    panelHome.hidden = name !== 'home';
     panelDocs.hidden = name !== 'docs';
     panelContent.hidden = name !== 'content';
     panelHistory.hidden = name !== 'history';
@@ -2559,11 +2564,12 @@
 
     usageCount('view', name);
 
-    if (name === 'docs') loadDocs();
+    if (name === 'home') loadHome();
+    else if (name === 'docs') loadDocs();
     else if (name === 'history') loadHistory();
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
-    else if (name === 'pulls') loadPulls();
+    else if (name === 'pulls') loadPulls(opts && opts.pr);
     else if (name === 'issues') reloadIssueView();
     else if (name === 'help') loadHelp();
     else if (name === 'report') loadReports();
@@ -2586,7 +2592,7 @@
 
     if (!inDoc) {
       var names = {
-        docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
+        home: 'ホーム', docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
         issues: 'やること', board: '進捗ボード', help: '使い方',
         settings: '設定', sprint: 'スプリント', impediments: '障害物',
         usage: '使われ方', report: '要望・不具合',
@@ -2601,7 +2607,7 @@
     titleEl.textContent = current.docPath || '';
   }
 
-  // ===== 文書の一覧 (ホーム) =====
+  // ===== 文書の一覧 =====
 
   function loadFiles(then) {
     call('apiListFiles', [], function (list) {
@@ -2729,8 +2735,530 @@
     } else {
       renderDocs();
     }
+  }
+
+  var homeTurnEl = document.getElementById('home-turn');
+  var homeActivityEl = document.getElementById('home-activity');
+  var homeRecentEl = document.getElementById('home-recent');
+  var homeSummaryEl = document.getElementById('home-summary');
+
+  /**
+   * 上の1行に出す数。届いていないもの (null) は出さない ("undefined" と出さない)。
+   * turn はあなたの番の合計、today は今日片づけたものの数
+   */
+  var homeLine = { turn: null, today: null };
+
+  /**
+   * ホーム。各区画を並べて呼び、1つが取れなくてもほかは出す。
+   * あなたの番・草・最近の動きは、返事を描く前にまだホームを開いているかを見る
+   * (前の返事で別の画面の上に描かない)。全体の数は左の数字も兼ねるので、
+   * 開いていなくても入れる。
+   */
+  function loadHome() {
+    homeLine = { turn: null, today: null };
+    renderHomeLine();
     loadOverview();
     loadHomeCards();
+    loadHomeSummary();
+    call('apiHomeActivity', [], function (act) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));
+    }, function (err) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, homeFailBlock('アクティビティ', err));
+    });
+  }
+
+  /** あなたの番と最近の動き。ホームから何かを片づけたあとにも取り直す */
+  function loadHomeSummary() {
+    call('apiHomeSummary', [], function (s) {
+      if (panelHome.hidden) return;
+      s = s || {};
+      var turn = s.myTurn || {};
+      fillBlock(homeTurnEl, makeTurnBlock(turn));
+      fillBlock(homeRecentEl, makeRecentBlock(s.recent || []));
+      homeLine.turn = ['reviews', 'returned', 'due'].reduce(function (n, k) {
+        return n + (Number(turn[k] && turn[k].total) || 0);
+      }, 0);
+      renderHomeLine();
+    }, function (err) {
+      if (panelHome.hidden) return;
+      fillBlock(homeTurnEl, homeFailBlock('あなたの番', err));
+      fillBlock(homeRecentEl, homeFailBlock('最近の動き', err));
+      homeLine.turn = null;
+      renderHomeLine();
+    });
+  }
+
+  /**
+   * 今日の日付 (東京)。端末の時計から求める。東京は夏時間が無いので9時間足すだけでよい。
+   *
+   * @param {Date} now
+   * @returns {string} 「10月14日 (水)」
+   */
+  function homeDateText(now) {
+    var t = new Date(now.getTime() + 9 * 3600000);
+    return (t.getUTCMonth() + 1) + '月' + t.getUTCDate() + '日 (' + '日月火水木金土'.charAt(t.getUTCDay()) + ')';
+  }
+
+  /** 上の1行。日付・あなたの番・今日片づけた。届いていない数は出さない */
+  function renderHomeLine() {
+    if (!homeSummaryEl) return;
+    homeSummaryEl.textContent = '';
+    var date = document.createElement('strong');
+    date.textContent = homeDateText(new Date());
+    homeSummaryEl.appendChild(date);
+    var parts = [];
+    if (homeLine.turn !== null) parts.push('あなたの番 ' + homeLine.turn + '件');
+    if (homeLine.today !== null) parts.push('今日片づけた ' + homeLine.today + '件');
+    if (parts.length) {
+      var rest = document.createElement('span');
+      rest.textContent = parts.join(' ・ ');
+      homeSummaryEl.appendChild(rest);
+    }
+  }
+
+  function fillBlock(host, el) {
+    host.textContent = '';
+    host.appendChild(el);
+  }
+
+  /**
+   * 区画の見出しの行。題は左、数や切り替えは右。**見出しの形はここだけで決める**
+   * (区画ごとに見出しを作ると、字の大きさや余白が少しずつずれる)。
+   *
+   * @param {string} text
+   * @param {Array<?HTMLElement>} [right] 右に置くもの
+   * @returns {HTMLElement}
+   */
+  function homeHead(text, right) {
+    var row = document.createElement('div');
+    row.className = 'home-head';
+    var h = document.createElement('h2');
+    h.className = 'home-section-head';
+    h.textContent = text;
+    row.appendChild(h);
+    (right || []).forEach(function (el) { if (el) row.appendChild(el); });
+    return row;
+  }
+
+  /** 本人にだけ見える区画の札。区画ごとに「あなたにだけ見えます」と書き並べない */
+  function privatePill() {
+    var pill = makePill('自分だけ', 'chip chip-accent');
+    pill.title = 'あなたにだけ見えます';
+    return pill;
+  }
+
+  /**
+   * 取れなかった区画。**見出しは残す** (消すと、何が出ていないのか分からない)。
+   *
+   * @param {string} title
+   * @param {Error} err
+   * @returns {HTMLElement}
+   */
+  function homeFailBlock(title, err) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead(title));
+    var p = document.createElement('p');
+    p.className = 'home-empty';
+    p.textContent = '出せませんでした: ' + String(err && err.message || '');
+    box.appendChild(p);
+    return box;
+  }
+
+  /**
+   * 区画の中の1行。押すと開く。題名は1行で切り、右に札や時刻を置く。
+   *
+   * @param {string} title
+   * @param {string} extraClass
+   * @returns {HTMLButtonElement}
+   */
+  function homeRow(title, extraClass) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'home-row' + (extraClass ? ' ' + extraClass : '');
+    var t = document.createElement('span');
+    t.className = 'home-row-title';
+    t.textContent = title;
+    row.appendChild(t);
+    return row;
+  }
+
+  /**
+   * 何分前・何時間前。1週間を超えたら月/日で出す。
+   *
+   * @param {string} iso
+   * @returns {string}
+   */
+  function relativeTime(iso) {
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 1) return 'いま';
+    if (min < 60) return min + '分前';
+    var hours = Math.floor(min / 60);
+    if (hours < 24) return hours + '時間前';
+    var days = Math.floor(hours / 24);
+    if (days < 7) return days + '日前';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  /** あなたの番。種類ごとに5件まで、見出しに総数。押すとそのものを開く */
+  function makeTurnBlock(turn) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('あなたの番'));
+    var groups = [
+      ['reviews', '確かめてほしい', 'pulls'],
+      ['returned', '戻ってきた', 'pulls'],
+      ['due', '期限が近い', 'issues'],
+    ];
+    var any = false;
+    groups.forEach(function (g) {
+      var part = turn[g[0]] || { items: [], total: 0 };
+      var items = part.items || [];
+      if (!items.length) return;
+      any = true;
+      var sec = document.createElement('div');
+      sec.className = 'home-turn-group';
+      var name = document.createElement('h3');
+      name.className = 'home-sub';
+      name.appendChild(document.createTextNode(g[1]));
+      name.appendChild(makePill(String(part.total || items.length)));
+      sec.appendChild(name);
+      items.forEach(function (it) {
+        var row = homeRow((g[2] === 'pulls' ? '確認依頼 #' : '#') + it.number + ' ' + it.title, 'home-turn-row');
+        if (g[0] === 'due') {
+          row.dataset.issue = String(it.number);
+          var due = String(it.due || '');
+          if (it.overdue) row.appendChild(makePill('期限切れ', 'chip chip-pri-high'));
+          else if (due) row.appendChild(makePill('期限 ' + Number(due.substring(5, 7)) + '/' + Number(due.substring(8, 10))));
+          row.addEventListener('click', function () { openIssueByNumber(it.number, row); });
+        } else {
+          row.dataset.pr = String(it.number);
+          row.addEventListener('click', function () { openPrByNumber(it.number); });
+        }
+        sec.appendChild(row);
+      });
+      if (part.total > items.length) {
+        var more = homeRow('ほか ' + (part.total - items.length) + ' 件', 'home-more');
+        more.addEventListener('click', function () { switchTab(g[2]); });
+        sec.appendChild(more);
+      }
+      box.appendChild(sec);
+    });
+    if (!any) {
+      var none = document.createElement('p');
+      none.className = 'home-empty';
+      none.textContent = 'いまあなたを待っているものはありません';
+      box.appendChild(none);
+    }
+    return box;
+  }
+
+  /**
+   * 確認依頼を番号で開く。画面はすぐ移り、一覧が届いたらその依頼を選ぶ
+   * (返事を待ってから移ると、待つあいだに別の画面へ移った人を引き戻す)。
+   */
+  function openPrByNumber(number) {
+    switchTab('pulls', { pr: number });
+  }
+
+  /**
+   * 文書を fileId で開く。文書の一覧がまだ届いていなければ取ってから開く
+   * (openDoc は allFiles から正式版を引く)。
+   *
+   * @param {string} fileId
+   * @param {string} title 一覧に見当たらないときの題名
+   */
+  function openDocById(fileId, title) {
+    function go() {
+      var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
+      openDoc(fileId, f ? f.path : title);
+    }
+    if (allFiles.length) go();
+    else loadFiles(go);
+  }
+
+  /**
+   * 草の色の段の切れ目。1件以上の日の分布の 1/4・2/4・3/4 (GitHub と同じ考え方) と、
+   * いちばん多い日・少ない日。
+   *
+   * @param {number[]} counts
+   * @returns {number[]} [1/4, 2/4, 3/4, 最多, 最少]
+   */
+  function activityCuts(counts) {
+    var on = counts.filter(function (n) { return n > 0; }).sort(function (a, b) { return a - b; });
+    if (!on.length) return [1, 1, 1, 1, 1];
+    function q(f) { return on[Math.min(on.length - 1, Math.floor(on.length * f))]; }
+    return [q(0.25), q(0.5), q(0.75), on[on.length - 1], on[0]];
+  }
+
+  /**
+   * いちばん多い日は必ず4段目。どの日も同じ数なら、全部を真ん中の段にする
+   * (全部を1段目にすると、いちばん動いた日まで薄く見える)。
+   *
+   * @param {number} n
+   * @param {number[]} cuts activityCuts
+   * @returns {number} 0〜4
+   */
+  function activityLevel(n, cuts) {
+    if (!n) return 0;
+    if (cuts[3] === cuts[4]) return 2;
+    if (n >= cuts[3]) return 4;
+    if (n <= cuts[0]) return 1;
+    if (n <= cuts[1]) return 2;
+    if (n <= cuts[2]) return 3;
+    return 4;
+  }
+
+  var WEEKDAYS = '月火水木金土日';
+
+  /** 「10月14日 (火) 3件」 */
+  function activityDayText(day, d, n) {
+    return Number(day.substring(5, 7)) + '月' + Number(day.substring(8, 10)) + '日 (' +
+      WEEKDAYS.charAt(d) + ') ' + n + '件';
+  }
+
+  /**
+   * 月の名を置く列。その月の1日を含む週に置き、近すぎる名は落とす (重なって読めない)。
+   * 左端の週は、すぐ右に名が来ないときだけ名を持つ。
+   *
+   * @param {Array<Array<{day: string}>>} weeks
+   * @returns {string[]} 週ごとの名 (無ければ '')
+   */
+  function activityMonths(weeks) {
+    var firsts = weeks.map(function (w) {
+      var hit = w.filter(function (c) { return String(c.day || '').substring(8, 10) === '01'; })[0];
+      return hit ? String(hit.day) : '';
+    });
+    var out = weeks.map(function () { return ''; });
+    var last = -99;
+    weeks.forEach(function (w, i) {
+      var day = firsts[i];
+      if (!day && i === 0 && !firsts.slice(1, 3).some(Boolean) && w.length) day = String(w[0].day || '');
+      if (!day || i - last < 3) return;
+      out[i] = Number(day.substring(5, 7)) + '月';
+      last = i;
+    });
+    return out;
+  }
+
+  /**
+   * 草。あなたとチームを切り替えて1つだけ描く。**日が続いた数・その最高は出さない。**
+   *
+   * マスは role="img" の中に置いて押せる形にはしない (img の中身は読み上げに出ない
+   * ので、中に押せるものを置くと「見えないのに押せる」になる)。代わりに外側の
+   * スクロールの枠に1つだけフォーカスを置き、矢印キーで日を選ぶ。選んだ日は下の
+   * 1行 (aria-live) に字で出す。指で押したマスも同じ行に出す。
+   * マスは列の幅いっぱいに広がる (CSS の --cell)。8px でも収まらない狭い画面でだけ
+   * 横に流し、右端 (今週) を見せる。
+   */
+  function makeActivityBlock(act) {
+    var box = document.createElement('div');
+    var weeks = act.weeks || [];
+    var view = 'me';
+    try { if (window.localStorage.getItem('activityView') === 'team') view = 'team'; } catch (e) { /* 既定はあなた */ }
+
+    var mine = privatePill();
+    var seg = document.createElement('div');
+    seg.className = 'segmented';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', '草に出す数');
+    var segs = [['me', 'あなた'], ['team', 'チーム']].map(function (pair) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg';
+      b.dataset.view = pair[0];
+      b.textContent = pair[1];
+      b.addEventListener('click', function () {
+        view = pair[0];
+        try { window.localStorage.setItem('activityView', view); } catch (e) { /* 覚えられなくても切り替わる */ }
+        draw();
+      });
+      seg.appendChild(b);
+      return b;
+    });
+    box.appendChild(homeHead('アクティビティ', [mine, seg]));
+
+    var body = document.createElement('div');
+    body.className = 'activity-body';
+    box.appendChild(body);
+
+    function draw() {
+      segs.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === view)); });
+      mine.hidden = view !== 'me';
+      body.textContent = '';
+      var key = view;
+      var name = view === 'me' ? 'あなた' : 'チーム (全員の合計)';
+
+      var days = [];
+      var counts = [];
+      weeks.forEach(function (w) { w.forEach(function (c) { if (!c.future) counts.push(Number(c[key]) || 0); }); });
+      var cuts = activityCuts(counts);
+      var total = view === 'me' && act.meTotal !== undefined ? Number(act.meTotal) || 0
+        : counts.reduce(function (s, n) { return s + n; }, 0);
+
+      var frame = document.createElement('div');
+      frame.className = 'activity-frame';
+      // マスの大きさは枠の幅を週の数で割って決まる (CSS の --cell)。既定は 53週
+      if (weeks.length) frame.style.setProperty('--weeks', String(weeks.length));
+
+      var dayNames = document.createElement('div');
+      dayNames.className = 'activity-days';
+      dayNames.setAttribute('aria-hidden', 'true');
+      ['月', '', '水', '', '金', '', ''].forEach(function (t) {
+        var s = document.createElement('span');
+        s.textContent = t;
+        dayNames.appendChild(s);
+      });
+      frame.appendChild(dayNames);
+
+      var scroll = document.createElement('div');
+      scroll.className = 'activity-scroll';
+      scroll.tabIndex = 0;
+      scroll.setAttribute('role', 'group');
+      scroll.setAttribute('aria-label', name + 'の日ごとの数。左右の矢印で週、上下の矢印で日を動かします');
+
+      var months = document.createElement('div');
+      months.className = 'activity-months';
+      months.setAttribute('aria-hidden', 'true');
+      activityMonths(weeks).forEach(function (m) {
+        var s = document.createElement('span');
+        s.className = 'activity-month';
+        s.textContent = m;
+        months.appendChild(s);
+      });
+      scroll.appendChild(months);
+
+      var grid = document.createElement('div');
+      grid.className = 'activity-grid';
+      grid.setAttribute('role', 'img');
+      grid.setAttribute('aria-label', name + 'の行い。直近1年で ' + total + ' 件');
+      weeks.forEach(function (w) {
+        var col = document.createElement('div');
+        col.className = 'activity-week';
+        w.forEach(function (c, d) {
+          var cell = document.createElement('span');
+          var n = Number(c[key]) || 0;
+          cell.className = 'activity-cell lv' + (c.future ? '-none' : activityLevel(n, cuts));
+          if (!c.future) {
+            var day = String(c.day || '');
+            cell.dataset.day = day;
+            cell.dataset.at = String(days.length);
+            cell.title = activityDayText(day, d, n);
+            days.push(cell);
+          }
+          col.appendChild(cell);
+        });
+        grid.appendChild(col);
+      });
+      scroll.appendChild(grid);
+      frame.appendChild(scroll);
+      body.appendChild(frame);
+
+      var live = document.createElement('p');
+      live.className = 'activity-live';
+      live.setAttribute('aria-live', 'polite');
+      body.appendChild(live);
+
+      var picked = days.length - 1;
+      function pick(i, mark) {
+        if (!days.length) return;
+        picked = Math.max(0, Math.min(days.length - 1, i));
+        days.forEach(function (c) { c.classList.remove('is-picked'); });
+        var cell = days[picked];
+        if (mark) {
+          cell.classList.add('is-picked');
+          if (cell.scrollIntoView) cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+        live.textContent = cell.title;
+      }
+      pick(picked, false);
+
+      // 日は週ごとに7つ並ぶので、上下は1日、左右は7日
+      var STEP = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 };
+      scroll.addEventListener('keydown', function (e) {
+        if (STEP[e.key]) pick(picked + STEP[e.key], true);
+        else if (e.key === 'Home') pick(0, true);
+        else if (e.key === 'End') pick(days.length - 1, true);
+        else return;
+        e.preventDefault();
+      });
+      grid.addEventListener('click', function (e) {
+        var at = e.target && e.target.dataset ? e.target.dataset.at : undefined;
+        if (at !== undefined) pick(Number(at), true);
+      });
+
+      var foot = document.createElement('div');
+      foot.className = 'activity-foot';
+      var sum = document.createElement('p');
+      sum.className = 'row-meta';
+      sum.textContent = '直近1年で ' + total + ' 件';
+      foot.appendChild(sum);
+      var legend = document.createElement('div');
+      legend.className = 'activity-legend';
+      legend.setAttribute('aria-hidden', 'true');
+      legend.appendChild(document.createTextNode('少'));
+      [0, 1, 2, 3, 4].forEach(function (lv) {
+        var c = document.createElement('span');
+        c.className = 'activity-cell lv' + lv;
+        legend.appendChild(c);
+      });
+      legend.appendChild(document.createTextNode('多'));
+      foot.appendChild(legend);
+      body.appendChild(foot);
+
+      // 開いたら右端 (今週) を見せる
+      window.requestAnimationFrame(function () { scroll.scrollLeft = scroll.scrollWidth; });
+    }
+    draw();
+    return box;
+  }
+
+  /** 最近の動きの種類の札。字と色の種類 */
+  var RECENT_KINDS = {
+    merged: ['反映', 'state state-merged'],
+    closed: ['完了', 'state state-open'],
+    pull: ['依頼', 'chip chip-accent'],
+    file: ['登録', 'chip'],
+  };
+
+  /** 最近の動き。種類の札・題・いつ。**名前を出さない。** 押すと開く */
+  function makeRecentBlock(list) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('最近の動き'));
+    if (!list.length) {
+      var none = document.createElement('p');
+      none.className = 'home-empty';
+      none.textContent = 'まだ動きはありません';
+      box.appendChild(none);
+      return box;
+    }
+    list.forEach(function (x) {
+      var kind = RECENT_KINDS[x.kind] || ['', 'chip'];
+      var what = x.kind === 'file' ? x.title : (x.kind === 'closed' ? '#' : '確認依頼 #') + x.number + ' ' + x.title;
+      var row = homeRow(what, 'home-recent-row');
+      if (kind[0]) row.insertBefore(makePill(kind[0], kind[1]), row.firstChild);
+      var when = document.createElement('span');
+      when.className = 'home-row-when';
+      when.textContent = relativeTime(x.at);
+      row.appendChild(when);
+      row.setAttribute('aria-label', (kind[0] ? kind[0] + ' ' : '') + what + (when.textContent ? ' (' + when.textContent + ')' : ''));
+      // 文書の行は番号を持たない (0) ので fileId で名指す
+      if (x.kind === 'file') {
+        row.dataset.file = x.fileId;
+        row.addEventListener('click', function () { openDocById(x.fileId, x.title); });
+      } else if (x.kind === 'closed') {
+        row.dataset.issue = String(x.number);
+        row.addEventListener('click', function () { openIssueByNumber(x.number, row); });
+      } else {
+        row.dataset.pr = String(x.number);
+        row.addEventListener('click', function () { openPrByNumber(x.number); });
+      }
+      box.appendChild(row);
+    });
+    return box;
   }
 
   /**
@@ -3831,12 +4359,25 @@
     }[state] || state;
   }
 
-  function loadPulls() {
+  var pullsSeq = 0;
+
+  /**
+   * 確認依頼の一覧を出し、1件を開く。
+   *
+   * **返事の時点で、最後に頼んだ一覧か・まだこの画面かを見る。** 見ないと、
+   * ホームから #3 を開いたあとに届いた一覧の返事が先頭の #1 を開き直していた。
+   *
+   * @param {number} [selectNumber] 先頭の代わりに開く依頼の番号
+   */
+  function loadPulls(selectNumber) {
+    var mine = ++pullsSeq;
     showSkeleton(prListEl, 'list', 4);
     prDetail.textContent = '';
 
     call('apiPrList', [], function (list) {
+      if (mine !== pullsSeq || panelPulls.hidden) return;
       var prs = list || [];
+      var pick = null;
       prListEl.textContent = '';
 
       if (!prs.length) {
@@ -3890,11 +4431,16 @@
           showPrDetail(pr);
         });
 
+        if (selectNumber && Number(pr.number) === Number(selectNumber)) pick = btn;
         prListEl.appendChild(btn);
       });
 
-      prListEl.firstChild.click();
-    }, failInto(prListEl));
+      if (selectNumber && !pick) showSnack('確認依頼 #' + selectNumber + ' が見つかりません', { kind: 'ng' });
+      (pick || prListEl.firstChild).click();
+    }, function (err) {
+      if (mine !== pullsSeq) return;
+      failInto(prListEl)(err);
+    });
   }
 
   /**
@@ -4221,10 +4767,15 @@
     }, failInto(container));
   }
 
+  var prDetailSeq = 0;
+
   function showPrDetail(pr) {
+    // 続けて押したとき、前の依頼の返事で後の依頼の中身を上書きしない
+    var mine = ++prDetailSeq;
     showSkeleton(prDetail, 'block');
 
     call('apiPrPreview', [pr.number], function (preview) {
+      if (mine !== prDetailSeq) return;
       prDetail.textContent = '';
 
       var head = document.createElement('div');
@@ -4402,7 +4953,10 @@
       prDetail.appendChild(prTabs);
       prDetail.appendChild(prBody);
       views.conversation();
-    }, failInto(prDetail));
+    }, function (err) {
+      if (mine !== prDetailSeq) return;
+      failInto(prDetail)(err);
+    });
   }
 
   // ===== やること =====
@@ -7859,12 +8413,15 @@
   function celebrateProgress(kind, text, number) {
     if (!progressNotesOn()) {
       showSnack(text, { kind: 'ok' });
+      reloadHomeIfShown();
       return;
     }
     if (kind === 'close' && number) {
       // 先に印だけの帯を出す。返事を待つあいだも、終えたことはすぐ伝わる
       var firstBar = showSnack(text, { kind: 'ok', mark: {} });
       call('apiCloseFeedback', [number], function (fb) {
+        // 帯を差し替えないときも、ホームのあなたの番からは外す
+        reloadHomeIfShown();
         // 返事を待つあいだに止められていたら、素の帯のまま
         if (!progressNotesOn() || !fb) return;
         // 閉じられたか、別の帯に替わっていたら、新しいほうを上書きしない
@@ -7887,8 +8444,10 @@
           call('apiGameLevelSeen', [fb.levelUp], null,
             failQuiet('覚えられなくても、次の完了でもう一度知らせるだけ'));
         }
+      }, function (err) {
+        failQuiet('前進の知らせが出なくても、終えたことは伝わっている')(err);
         reloadHomeIfShown();
-      }, failQuiet('前進の知らせが出なくても、終えたことは伝わっている'));
+      });
       return;
     }
     call('apiProgress', [], function (p) {
@@ -7908,11 +8467,14 @@
   }
 
   /**
-   * ホームを開いているときだけ、カードを描き直す。ほかの画面で完了にするたびに
-   * 5つの api を呼ぶことになる。ホームへ戻ったときは loadDocs が描き直す。
+   * ホームを開いているときだけ、カードとあなたの番を描き直す。ほかの画面で完了に
+   * するたびに api を呼ぶことになる。ホームへ戻ったときは loadHome が描き直す。
+   * あなたの番も取り直す (取り直さないと、片づけたものが残って見える)。
    */
   function reloadHomeIfShown() {
-    if (!panelDocs.hidden) loadHomeCards();
+    if (panelHome.hidden) return;
+    loadHomeCards();
+    loadHomeSummary();
   }
 
   /**
@@ -7998,6 +8560,8 @@
     if (!homeCardsEl) return;
     if (!progressNotesOn()) {
       homeCardsEl.textContent = '';
+      homeLine.today = null;
+      renderHomeLine();
       return;
     }
     // 前進が取れなければ描かない。ほかの4つは、どれが取れなくても空で補って描く
@@ -8008,7 +8572,9 @@
         ['apiMyMilestones', 'steps', [], 'はじめの5歩が出なくても使える'],
         ['apiMyToday', 'today', [], '今日の一覧が出なくても使える'],
         ['apiGameState', 'game', { enabled: false }, 'ポイントが出なくても使える'],
-        ['apiGameTop', 'top', [], '週の上位が出なくても使える']
+        ['apiGameTop', 'top', [], '週の上位が出なくても使える'],
+        // 取れなかったときは null のまま渡す。控えのひな形は使わず、今の形 (✅今日) で写す
+        ['apiReportParts', 'report', null, '日報の形が取れなくても今の形で写せる']
       ];
       var left = names.length;
       names.forEach(function (n) {
@@ -8018,22 +8584,24 @@
           if (left > 0) return;
           // 返事を待つあいだに止められていたら描かない
           if (!progressNotesOn()) return;
-          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top);
+          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top, got.report);
         }
         var quiet = failQuiet(n[3]);
         call(n[0], [], done, function (err) { quiet(err); done(null); });
       });
-    }, failQuiet('前進が出なくても使える'));
+    }, function (err) {
+      failQuiet('前進が出なくても使える')(err);
+      homeLine.today = null;
+      renderHomeLine();
+    });
   }
 
-  function renderHomeCards(p, steps, today, game, top) {
+  function renderHomeCards(p, steps, today, game, top, report) {
     homeCardsEl.textContent = '';
-    // 文書の一覧と取り違えないよう、ここからは文書ではないと見出しで分ける
-    var head = document.createElement('h2');
-    head.className = 'home-section-head';
-    head.textContent = 'あなたとチームの前進';
-    homeCardsEl.appendChild(head);
-    homeCardsEl.appendChild(makeTodayCard(today || []));
+    // カードはそれぞれ見出しを持つ。まとめの見出しは置かない (同じ形の見出しが重なる)
+    homeCardsEl.appendChild(makeTodayCard(today || [], report || null));
+    homeLine.today = todayItemsOf(today || [], report || null).length;
+    renderHomeLine();
     var g = makeGameCard(game || {}, top || []);
     if (g) {
       homeCardsEl.appendChild(g);
@@ -8063,11 +8631,7 @@
     var card = document.createElement('section');
     card.className = 'home-card game-card';
     card.setAttribute('aria-label', 'ポイントとレベル');
-
-    var head = document.createElement('div');
-    head.className = 'row-meta';
-    head.textContent = 'ポイントとレベル';
-    card.appendChild(head);
+    card.appendChild(homeHead('ポイントとレベル'));
 
     var level = document.createElement('div');
     level.className = 'game-level';
@@ -8159,46 +8723,164 @@
     })).join('\n');
   }
 
+  /** 日報のひな形の控え。**本体はサーバの REPORT_TEMPLATES()**。取れなかったときだけ使う */
+  var REPORT_FALLBACK = [
+    { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
+    { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
+    { key: 'plain', name: '見出し無し', body: '{今日}' },
+  ];
+
+  /**
+   * 箇条を1行ずつ `- ` で並べる。無ければ `- 特になし`。
+   *
+   * @param {Array} items
+   * @param {function(object): string} fmt
+   * @returns {string}
+   */
+  function reportLines(items, fmt) {
+    return items && items.length ? items.map(fmt).join('\n') : '- 特になし';
+  }
+
+  /**
+   * 日報の形に中身を当てはめる。**知らない差し込みはそのまま残す** (消すと書いたものが黙って消える)。
+   *
+   * @param {string} template
+   * @param {{today: object[], tomorrow: object[], troubles: object[], date: string, name: string}} parts
+   * @returns {string}
+   */
+  function reportFill(template, parts) {
+    var map = {
+      '今日': reportLines(parts.today, function (x) {
+        return x.kind === 'pull'
+          ? '- 確認依頼 #' + x.number + ' ' + x.title + ' を' + OFFICIAL + 'に反映'
+          : '- #' + x.number + ' ' + x.title;
+      }),
+      '明日': reportLines(parts.tomorrow, function (x) {
+        return '- #' + x.number + ' ' + x.title +
+          (x.due ? ' (期限 ' + Number(x.due.substring(5, 7)) + '/' + Number(x.due.substring(8, 10)) + ')' : '');
+      }),
+      '困りごと': reportLines(parts.troubles, function (x) { return '- ' + x.title; }),
+      '日付': parts.date || '',
+      '名前': parts.name || '',
+    };
+    return String(template).replace(/\{(今日|明日|困りごと|日付|名前)\}/g, function (m, k) { return map[k]; });
+  }
+
+  /**
+   * いま選んでいる形の本文。自分の形が空なら 3節。
+   *
+   * @param {{templates: object[], kind: string, custom: string}} report
+   * @returns {string}
+   */
+  function reportTemplateOf(report) {
+    if (report.kind === 'custom' && report.custom) return report.custom;
+    var list = report.templates && report.templates.length ? report.templates : REPORT_FALLBACK;
+    var hit = list.filter(function (t) { return t.key === report.kind; })[0];
+    return (hit || list[0]).body;
+  }
+
+  /**
+   * 今日片づけたものとして並べる一覧。日報の中身が取れたらそちら (並べたものと
+   * 写すものを揃える)、取れなければ apiMyToday。上の1行の数もここから数える。
+   *
+   * @param {Array} items apiMyToday
+   * @param {?object} report apiReportParts
+   * @returns {Array}
+   */
+  function todayItemsOf(items, report) {
+    return report && report.parts && Array.isArray(report.parts.today) ? report.parts.today : items;
+  }
+
   /**
    * 今日片づけたもの。**本人にだけ見える。** 件数は大きく出さず、題名を並べる
    * (件数を追わせると簡単なものから手を付ける)。
    *
+   * 「日報にコピー」は件数に関わらず出す (3節は明日と困りごとだけでも使う)。
+   * 日報の中身が取れなかったとき (`report` が null) は、今の形 (✅今日) で写す。
+   * 中身が取れたときは、並べるのも `report.parts.today` から (並べたものと写すものを揃える)。
+   *
    * @param {Array<{kind: string, number: number, title: string}>} items
+   * @param {?{parts: object, templates: object[], kind: string, custom: string}} report apiReportParts
    * @returns {HTMLElement}
    */
-  function makeTodayCard(items) {
+  function makeTodayCard(items, report) {
+    items = todayItemsOf(items, report);
     var card = document.createElement('section');
     card.className = 'home-card my-today';
     card.setAttribute('aria-label', '今日片づけたもの');
-
-    var head = document.createElement('div');
-    head.className = 'row-meta';
-    head.textContent = '今日片づけたもの (あなたにだけ見えます)';
-    card.appendChild(head);
+    card.appendChild(homeHead('今日片づけたもの', [privatePill()]));
 
     if (!items.length) {
       var none = document.createElement('p');
       none.className = 'my-today-none';
       none.textContent = '今日はこれから。片づけたものがここに並びます';
       card.appendChild(none);
-      return card;
+    } else {
+      var list = document.createElement('ul');
+      list.className = 'my-today-list';
+      items.forEach(function (x) {
+        var li = document.createElement('li');
+        li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
+        list.appendChild(li);
+      });
+      card.appendChild(list);
     }
 
-    var list = document.createElement('ul');
-    list.className = 'my-today-list';
-    items.forEach(function (x) {
-      var li = document.createElement('li');
-      li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
-      list.appendChild(li);
-    });
-    card.appendChild(list);
+    var actions = document.createElement('div');
+    actions.className = 'my-today-actions';
+    card.appendChild(actions);
 
     var copy = document.createElement('button');
     copy.type = 'button';
     copy.className = 'btn';
     copy.textContent = '日報にコピー';
+    actions.appendChild(copy);
+
+    var pick = null;
+    if (report) {
+      // 選んだ形と自分の形はこのカードの中で書き換える。返事そのものは触らない
+      report = { parts: report.parts || {}, templates: report.templates || [],
+        kind: String(report.kind || ''), custom: String(report.custom || '') };
+      var choices = (report.templates && report.templates.length ? report.templates : REPORT_FALLBACK)
+        .map(function (t) { return [t.key, t.name]; })
+        .concat([['custom', '自分の形']]);
+      pick = document.createElement('select');
+      pick.className = 'report-kind';
+      pick.setAttribute('aria-label', '日報の形');
+      choices.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c[0];
+        opt.textContent = c[1];
+        pick.appendChild(opt);
+      });
+      // 写すのと同じ形を見せる。知らない形と、空の自分の形は 3節 で写るので 3節 を選んでおく
+      var known = choices.some(function (c) { return c[0] === report.kind; });
+      if (!known || (report.kind === 'custom' && !report.custom)) report.kind = choices[0][0];
+      pick.value = report.kind;
+
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn';
+      edit.textContent = '自分の形を直す';
+      edit.addEventListener('click', function () { openReportCustomForm(report, pick, edit); });
+
+      pick.addEventListener('change', function () {
+        // まだ書いていない自分の形を選んだら、書く欄を開く。選んだだけにすると、
+        // 欄は「自分の形」なのに 3節 で写る
+        if (pick.value === 'custom' && !report.custom) {
+          pick.value = report.kind;
+          openReportCustomForm(report, pick, edit);
+          return;
+        }
+        report.kind = pick.value;
+        call('apiSetReportKind', [pick.value], null, failSnack('日報の形を覚えられませんでした: '));
+      });
+      actions.appendChild(pick);
+      actions.appendChild(edit);
+    }
+
     copy.addEventListener('click', function () {
-      var text = todayReportText(items);
+      var text = report ? reportFill(reportTemplateOf(report), report.parts) : todayReportText(items);
       // 埋め込みの枠では写せないことがある。そのときは選んで写せる欄を出す
       function fallback() {
         var area = card.querySelector('textarea') || document.createElement('textarea');
@@ -8212,11 +8894,61 @@
       var clip = window.navigator.clipboard;
       if (!clip || !clip.writeText) { fallback(); return; }
       clip.writeText(text).then(function () {
-        showSnack('日報の「✅今日」の形で写しました', { kind: 'ok' });
+        showSnack('日報の形で写しました', { kind: 'ok' });
       }, fallback);
     });
-    card.appendChild(copy);
     return card;
+  }
+
+  /**
+   * 自分の形を書く欄。書くたびに、今日の中身を当てはめた見本を下に出す。
+   * 保存すると「自分の形」を選んだことにする (書いたのに使われないと迷う)。
+   * 選んだことはサーバが同じ1回で覚える (2回に分けると、2回目だけ落ちたとき食い違う)。
+   *
+   * @param {object} report apiReportParts (書き換える)
+   * @param {HTMLSelectElement} pick 形を選ぶ欄
+   * @param {HTMLElement} btn 開いたボタン
+   */
+  function openReportCustomForm(report, pick, btn) {
+    var form = openInlineForm('日報の形', [{
+      name: 'body',
+      label: '形 (使える差し込み: {今日} {明日} {困りごと} {日付} {名前})',
+      multiline: true,
+      value: report.custom || reportTemplateOf(report),
+      note: '2000字まで。知らない {…} はそのまま残ります',
+    }], '保存する', function (v) {
+      var body = String(v.body || '');
+      if (body.length > 2000) {
+        showSnack('日報の形は2000字までです (いま ' + body.length + ' 字)', { kind: 'ng' });
+        return;
+      }
+      call('apiSetReportCustom', [body], function (res) {
+        report.custom = body;
+        // 空の形は選ばれない。自分の形を選んだまま空にしたら先頭の形 (3節) に戻す
+        // (サーバも同じ1回でそう覚える)。戻さないと、欄は「自分の形」なのに 3節 で写る
+        if (body) report.kind = (res && res.kind) || 'custom';
+        else if (report.kind === 'custom') report.kind = pick.options[0].value;
+        pick.value = report.kind;
+      }, failSnack('日報の形を保存できませんでした: '));
+    }, btn);
+
+    var area = form.querySelector('textarea');
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '見本 (今日の中身で)';
+    var preview = document.createElement('pre');
+    preview.className = 'report-preview';
+    function show() {
+      preview.textContent = reportFill(area.value, report.parts);
+      // 送る前に止める。送ってから断ると、欄はもう閉じていて書いたものが消える
+      setFieldMessage(area, area.value.length > 2000
+        ? '2000字までです (いま ' + area.value.length + ' 字)' : '', 'error');
+    }
+    area.addEventListener('input', show);
+    show();
+    var actions = form.querySelector('.inline-form-actions');
+    form.insertBefore(head, actions);
+    form.insertBefore(preview, actions);
   }
 
   /**
@@ -8229,11 +8961,7 @@
     var card = document.createElement('section');
     card.className = 'home-card team-progress';
     card.setAttribute('aria-label', 'チームの前進');
-
-    var head = document.createElement('div');
-    head.className = 'row-meta';
-    head.textContent = 'チームの前進';
-    card.appendChild(head);
+    card.appendChild(homeHead('チームの前進'));
 
     var line = document.createElement('div');
     line.className = 'team-progress-line';
@@ -8306,13 +9034,7 @@
     card.className = 'home-card first-steps';
     card.setAttribute('aria-label', 'はじめの5歩');
 
-    var headRow = document.createElement('div');
-    headRow.className = 'first-steps-head';
-    var head = document.createElement('div');
-    head.className = 'row-meta';
     var doneCount = steps.filter(function (s) { return s.done; }).length;
-    head.textContent = 'はじめの5歩 (' + doneCount + ' / ' + steps.length + ')。あなたにだけ見えます';
-    headRow.appendChild(head);
     var hide = document.createElement('button');
     hide.type = 'button';
     hide.className = 'side-close';
@@ -8322,8 +9044,7 @@
       try { window.localStorage.setItem('firstStepsHidden', '1'); } catch (e) { /* 覚えられなくても今は閉じる */ }
       card.remove();
     });
-    headRow.appendChild(hide);
-    card.appendChild(headRow);
+    card.appendChild(homeHead('はじめの5歩 (' + doneCount + ' / ' + steps.length + ')', [privatePill(), hide]));
 
     var list = document.createElement('ol');
     list.className = 'first-steps-list';
@@ -9686,8 +10407,8 @@
     again.addEventListener('click', function () {
       closeMe();
       setGuideline(true);
-      switchTab('docs');
-      showSnack('文書の画面に案内を出しました', { kind: 'ok' });
+      switchTab('home');
+      showSnack('ホームに案内を出しました', { kind: 'ok' });
     });
     out.push(again);
     out.push(makeProgressToggle());
@@ -10528,8 +11249,7 @@
    * はじめの案内に、始めるための入口を置く。
    *
    * 文書を登録するのと、手元から動かす道具を取るのは、どちらも最初に
-   * 一度やること。流れの図の中に混ぜると手順と読めてしまうので、
-   * 下に分けて置く。
+   * 一度やること。
    */
   (function fillGuidelineExtra() {
     var host = document.getElementById('guideline-extra');
@@ -12772,7 +13492,7 @@
   // 残りは「メニュー」から引き出す。広い画面では何も変えない (CSS で出し分ける)。
 
   /** 下の帯に並べる行き先。多いと1つずつが狭くなるので4つに絞る */
-  var MOBILE_NAV = ['docs', 'issues', 'branches', 'pulls'];
+  var MOBILE_NAV = ['home', 'docs', 'issues', 'pulls'];
 
   var sidebarEl = document.querySelector('.sidebar');
   var navScrim = document.createElement('div');
@@ -12903,8 +13623,12 @@
   applyHints();
   // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
   loadSettings();
-  // 一覧の返事を待たずにホームを出す (loadDocs が読み込み中の形を出して自分で取りに行く)。
+  // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
+  // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
+  // 返事では画面を切り替えない
+  loadFiles();
+  // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
   // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
-  switchTab('docs');
+  switchTab('home');
 })();
 </script>

@@ -17,6 +17,12 @@ function read(rel) {
  * CSS や JS がページ本文としてそのまま表示される。実際に踏んだ。
  */
 describe('UI 部分HTMLの構造', () => {
+  it('日報のひな形はサーバが本体で、画面は控えを1か所だけ持つ', () => {
+    const js = read('src/ui/app.js.html');
+    expect(js.split('📅明日やること').length - 1).toBe(1);
+    expect(read('src/core/Home.gs')).toContain('function REPORT_TEMPLATES()');
+  });
+
   const cases = [
     ['src/ui/app.css.html', 'style'],
     ['src/ui/app.js.html', 'script'],
@@ -689,9 +695,13 @@ describe('やることの中身と操作', () => {
     expect(html).toContain('class="guideline"');
     expect(html).toContain('はじめに');
 
-    const docList = html.indexOf('id="doc-list"');
-    const guide = html.indexOf('class="guideline"');
-    expect(docList).toBeLessThan(guide);
+    // 案内はホームに置き、文書タブには置かない
+    const docs = html.slice(html.indexOf('id="panel-docs"'),
+      html.indexOf('id="panel-content"'));
+    expect(docs).toContain('id="doc-list"');
+    expect(docs).not.toContain('class="guideline"');
+    const home = html.slice(html.indexOf('id="panel-home"'), html.indexOf('id="panel-docs"'));
+    expect(home).toContain('class="guideline"');
   });
 
   it('案内はしまえて、出し直せる', () => {
@@ -722,10 +732,12 @@ describe('やることの中身と操作', () => {
     expect(js).toContain("rows.className = 'gantt-rows'");
   });
 
-  it('左のメニューはすべて見出しの下にある', () => {
+  it('左のメニューはすべて見出しの下にある (先頭のホームだけは見出しを持たない)', () => {
     const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
     const sections = (sidebar.match(/<h2>/g) || []).length;
-    expect(sections).toBe((sidebar.match(/nav-section/g) || []).length);
+    const home = (sidebar.match(/nav-section nav-home/g) || []).length;
+    expect(home).toBe(1);
+    expect(sections).toBe((sidebar.match(/nav-section/g) || []).length - home);
   });
 });
 
@@ -1119,5 +1131,78 @@ describe('スマホの形', () => {
 
   it('下の帯のぶん本文の下を空ける', () => {
     expect(mobile).toMatch(/\.main \{[^}]*padding-bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
+  });
+});
+
+describe('ホームの並び', () => {
+  const css = read('src/ui/app.css.html');
+
+  /** 選択子そのものの規則 (`sel {`) の中身。@media の中は at で探し始める */
+  function body(sel, from) {
+    const at = css.indexOf(sel + ' {', from || 0);
+    expect(at, sel + ' の規則が無い').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  }
+
+  it('広い画面 (1024px 以上) では主と従の2列。狭いと1列', () => {
+    expect(body('.home-grid')).toContain('grid-template-columns: minmax(0, 1fr)');
+    const media = css.indexOf('@media (min-width: 1024px)');
+    expect(media).toBeGreaterThan(-1);
+    expect(body('.home-grid', media)).toContain('grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr)');
+  });
+
+  it('ホームの器は縮む並べ方にしない (はじめに が高さ0に潰れた)', () => {
+    // 高さの限られた器を flex の縦並びにすると、overflow: hidden の はじめに が縮んで消える
+    const scroll = body('.home-scroll');
+    expect(scroll).toContain('display: block');
+    expect(scroll).not.toMatch(/flex/);
+    // 2列の中も grid で積む (flex の縦並びは中身が縮む)
+    expect(body('.home-cards:empty', 0)).toContain('display: none');
+    const cols = css.slice(css.indexOf('.home-main,'), css.indexOf('}', css.indexOf('.home-main,')));
+    expect(cols).toContain('.home-side');
+    expect(cols).toContain('display: grid');
+  });
+
+  it('最近の動きは主の列 (草の下) に置く。従だけが長くなり、主の下が空いた', () => {
+    const html = read('src/ui/wiki.html');
+    const main = html.slice(html.indexOf('<div class="home-main">'), html.indexOf('<div class="home-side">'));
+    expect(main).toContain('id="home-activity"');
+    expect(main).toContain('id="home-recent"');
+    expect(main.indexOf('id="home-activity"')).toBeLessThan(main.indexOf('id="home-recent"'));
+    expect(html.split('id="home-recent"')).toHaveLength(2);
+  });
+
+  it('草のマスは枠の幅いっぱいに広がる正方形。8px を割る狭い画面でだけ流す', () => {
+    // 11px 固定だと、1280px の主の列に 53週が入らず、古い週が流した先に隠れた
+    expect(body('.activity-frame')).toContain('container-type: inline-size');
+    const size = body('.activity-days,\n.activity-scroll');
+    expect(size).toMatch(/--cell: clamp\(8px, calc\(\(100cqi [^;]*\/ var\(--weeks\)\), 16px\)/);
+    // マス・週の行・月の名・曜日の名が同じ大きさを使う (列と名がずれない)
+    expect(body('.activity-scroll .activity-cell')).toContain('width: var(--cell); height: var(--cell)');
+    expect(body('.activity-week')).toContain('grid-template-rows: repeat(7, var(--cell))');
+    expect(body('.activity-days')).toContain('grid-template-rows: repeat(7, var(--cell))');
+    expect(body('.activity-month')).toContain('flex: 0 0 var(--cell)');
+    // 間も週の行・月の名・曜日の名で揃える。計算の間と同じ
+    expect(size).toContain('(var(--weeks) - 1) * 2px');
+    ['.activity-week', '.activity-days', '.activity-months', '.activity-grid'].forEach((sel) => {
+      expect(body(sel), sel).toContain('gap: 2px');
+    });
+    // 収まらないときだけ横に流す
+    expect(body('.activity-scroll', css.indexOf('.activity-scroll { flex'))).toContain('overflow-x: auto');
+  });
+
+  it('はじめに の × と ▾ が重ならない。見出しの右に × のぶんを空ける', () => {
+    const close = body('.guideline .side-close');
+    expect(close).toContain('position: absolute');
+    expect(close).toContain('width: 32px');
+    expect(close).toContain('height: 32px');
+    expect(body('.guideline .guideline-head')).toContain('padding-right: calc(var(--sp-2) + 32px + var(--sp-2))');
+  });
+
+  it('区画の行は1行ずつ影を持たない。button の一覧は width: stretch', () => {
+    const row = body('.home-row');
+    expect(row).not.toContain('elev');
+    expect(row).toContain('width: stretch');
+    expect(row).not.toContain('width: 100%');
   });
 });

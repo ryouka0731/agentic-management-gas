@@ -7,7 +7,7 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
@@ -543,6 +543,33 @@ describe('画面に渡せる形か', () => {
       if (!out.length) throw new Error('今日の一覧が空');
       return out;
     }],
+    ['apiHomeActivity', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiHomeActivity();
+      if (!out.meTotal) throw new Error('草が空のまま検査されている');
+      return out;
+    }],
+    ['apiHomeSummary', (ctx, env) => {
+      closedToday(ctx);
+      // あなたの番の行も型を検査する。確認を頼まれた依頼と、期限の来たやること
+      ctx.dbAppend('pulls', { number: 90, title: '頼まれた', state: 'open', author: 'b@example.com',
+        reviewers: 'tester@example.com', createdAt: new Date() });
+      const due = ctx.apiIssueCreate('期限が来た', '', []).number;
+      ctx.dbUpdate('issues', 'number', due, { assignee: 'tester@example.com', dueDate: new Date() });
+      const out = ctx.apiHomeSummary();
+      if (!out.recent.length) throw new Error('最近の動きが空のまま検査されている');
+      if (!out.myTurn.reviews.items.length) throw new Error('確かめてほしいが空のまま検査されている');
+      if (!out.myTurn.due.items.length) throw new Error('期限のやることが空のまま検査されている');
+      return out;
+    }],
+    ['apiReportParts', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiReportParts();
+      if (!out.parts.today.length) throw new Error('今日の中身が空のまま検査されている');
+      return out;
+    }],
+    ['apiSetReportKind', (ctx) => ctx.apiSetReportKind('today')],
+    ['apiSetReportCustom', (ctx) => ctx.apiSetReportCustom('【本日】{今日}')],
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
