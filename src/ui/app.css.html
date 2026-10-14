@@ -4655,8 +4655,8 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 /* 横断検索。広い画面ではヘッダーの欄、狭い画面では虫めがねから開く */
 .search-box { position: relative; }
 .search-open { display: none; }
-.search-field { display: flex; align-items: center; }
-.search-input { width: 240px; max-width: 32vw; }
+/* 欄の見た目は絞り込みの欄 (.filter-box input) と同じ。ここでは幅だけ決める */
+.search-field { align-items: center; width: 240px; max-width: 32vw; }
 .search-close { display: none; }
 .search-results {
   position: absolute; right: 0; top: calc(100% + var(--sp-1)); z-index: 30;
@@ -4673,12 +4673,12 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 
 @media (max-width: 767px) {
   .search-open { display: inline-flex; }
-  .search-field { display: none; }
+  .search-box .search-field { display: none; }
   .search-box.is-open .search-field {
-    display: flex; position: fixed; left: 0; right: 0; top: 0; z-index: 40;
+    display: flex; position: fixed; left: 0; right: 0; top: 0; z-index: 40; width: auto; max-width: none;
     padding: var(--sp-2) var(--sp-4); background: var(--bg); box-shadow: var(--hairline); gap: var(--sp-2);
   }
-  .search-box.is-open .search-input { flex: 1 1 auto; width: auto; max-width: none; }
+  .search-box.is-open .search-input { flex: 1 1 auto; width: auto; }
   .search-box.is-open .search-close { display: inline-flex; }
   .search-box.is-open .search-results { position: fixed; left: var(--sp-4); right: var(--sp-4); top: 56px; width: auto; }
 }

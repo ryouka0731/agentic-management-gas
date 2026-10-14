@@ -7746,6 +7746,31 @@ describe('横断検索', () => {
     expect(document.getElementById('search-results').hidden).toBe(true);
   });
 
+  it('かなの変換中の Enter と Esc は、候補を開かず欄も閉じない', () => {
+    mount();
+    const input = type('就業');
+    key(input, 'Enter', { isComposing: true });
+    expect(document.getElementById('search-results').hidden).toBe(false);
+    expect(document.getElementById('panel-content').hidden).toBe(true);
+    expect(input.value).toBe('就業');
+    key(input, 'Escape', { isComposing: true });
+    expect(document.getElementById('search-results').hidden).toBe(false);
+    key(input, 'Enter', { keyCode: 229 });
+    expect(document.getElementById('search-results').hidden).toBe(false);
+    expect(input.value).toBe('就業');
+  });
+
+  it('右の欄が開いていても、欄の中の Esc は探すのだけを閉じる', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    key(document.body, '?');
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    const input = type('就業');
+    key(input, 'Escape');
+    expect(document.getElementById('search-results').hidden).toBe(true);
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+  });
+
   it('Ctrl+K と ⌘K でどの画面からでも欄へ移る', () => {
     mount();
     document.querySelector('.nav-item[data-tab="issues"]').click();
