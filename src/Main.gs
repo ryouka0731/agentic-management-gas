@@ -3276,13 +3276,15 @@ function apiSetReportKind(kind) {
 
 /**
  * 自分の日報の形を書く (Web App API)。本人のぶんだけ。2000字まで。
+ * 中身があれば選んだ形も「自分の形」にし、いま選んでいる形を返す。
  *
  * @param {string} text
- * @returns {{custom: string}}
+ * @returns {{custom: string, kind: string}}
  */
 function apiSetReportCustom(text) {
   var me = String(Session.getActiveUser().getEmail() || '');
-  return { custom: plainText(reportSetCustom_(me, text)) };
+  var custom = reportSetCustom_(me, text);
+  return { custom: plainText(custom), kind: plainText(reportKind_(me)) };
 }
 
 // ===== 設定 =====

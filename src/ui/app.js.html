@@ -8523,12 +8523,14 @@
    *
    * 「日報にコピー」は件数に関わらず出す (3節は明日と困りごとだけでも使う)。
    * 日報の中身が取れなかったとき (`report` が null) は、今の形 (✅今日) で写す。
+   * 中身が取れたときは、並べるのも `report.parts.today` から (並べたものと写すものを揃える)。
    *
    * @param {Array<{kind: string, number: number, title: string}>} items
    * @param {?{parts: object, templates: object[], kind: string, custom: string}} report apiReportParts
    * @returns {HTMLElement}
    */
   function makeTodayCard(items, report) {
+    if (report && report.parts && Array.isArray(report.parts.today)) items = report.parts.today;
     var card = document.createElement('section');
     card.className = 'home-card my-today';
     card.setAttribute('aria-label', '今日片づけたもの');
@@ -8581,18 +8583,29 @@
         opt.textContent = c[1];
         pick.appendChild(opt);
       });
-      pick.value = report.kind || choices[0][0];
-      pick.addEventListener('change', function () {
-        report.kind = pick.value;
-        call('apiSetReportKind', [pick.value], null, failSnack('日報の形を覚えられませんでした: '));
-      });
-      actions.appendChild(pick);
+      // 写すのと同じ形を見せる。知らない形と、空の自分の形は 3節 で写るので 3節 を選んでおく
+      var known = choices.some(function (c) { return c[0] === report.kind; });
+      if (!known || (report.kind === 'custom' && !report.custom)) report.kind = choices[0][0];
+      pick.value = report.kind;
 
       var edit = document.createElement('button');
       edit.type = 'button';
       edit.className = 'btn';
       edit.textContent = '自分の形を直す';
       edit.addEventListener('click', function () { openReportCustomForm(report, pick, edit); });
+
+      pick.addEventListener('change', function () {
+        // まだ書いていない自分の形を選んだら、書く欄を開く。選んだだけにすると、
+        // 欄は「自分の形」なのに 3節 で写る
+        if (pick.value === 'custom' && !report.custom) {
+          pick.value = report.kind;
+          openReportCustomForm(report, pick, edit);
+          return;
+        }
+        report.kind = pick.value;
+        call('apiSetReportKind', [pick.value], null, failSnack('日報の形を覚えられませんでした: '));
+      });
+      actions.appendChild(pick);
       actions.appendChild(edit);
     }
 
@@ -8620,6 +8633,7 @@
   /**
    * 自分の形を書く欄。書くたびに、今日の中身を当てはめた見本を下に出す。
    * 保存すると「自分の形」を選んだことにする (書いたのに使われないと迷う)。
+   * 選んだことはサーバが同じ1回で覚える (2回に分けると、2回目だけ落ちたとき食い違う)。
    *
    * @param {object} report apiReportParts (書き換える)
    * @param {HTMLSelectElement} pick 形を選ぶ欄
@@ -8638,11 +8652,11 @@
         showSnack('日報の形は2000字までです (いま ' + body.length + ' 字)', { kind: 'ng' });
         return;
       }
-      call('apiSetReportCustom', [body], function () {
+      call('apiSetReportCustom', [body], function (res) {
         report.custom = body;
-        report.kind = 'custom';
-        pick.value = 'custom';
-        call('apiSetReportKind', ['custom'], null, failSnack('日報の形を覚えられませんでした: '));
+        // 空の形は選ばれない (サーバも選んだ形を変えない)
+        if (body) report.kind = (res && res.kind) || 'custom';
+        pick.value = report.kind;
       }, failSnack('日報の形を保存できませんでした: '));
     }, btn);
 

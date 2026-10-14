@@ -6944,8 +6944,35 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(form.querySelector('.report-preview').textContent).toBe('【本日】- 特になし');
     form.dispatchEvent(new window.Event('submit', { cancelable: true }));
     expect(app.calls.filter((c) => c.name === 'apiSetReportCustom').pop().args).toEqual(['【本日】{今日}']);
-    expect(app.calls.filter((c) => c.name === 'apiSetReportKind').pop().args).toEqual(['custom']);
+    // 選んだことはサーバが同じ1回で覚える。2回に分けると、2回目だけ落ちたとき食い違う
+    expect(app.calls.some((c) => c.name === 'apiSetReportKind')).toBe(false);
     expect(card.querySelector('select.report-kind').value).toBe('custom');
+  });
+
+  it('自分の形がまだ空なのに選んだら、選ばずに書く欄を開く (見せる形と写す形を揃える)', () => {
+    const app = mount();
+    const card = document.querySelector('#home-cards .my-today');
+    const pick = card.querySelector('select.report-kind');
+    pick.value = 'custom';
+    pick.dispatchEvent(new window.Event('change'));
+    expect(pick.value).toBe('three');
+    expect(app.calls.some((c) => c.name === 'apiSetReportKind')).toBe(false);
+    expect(document.querySelector('.inline-form textarea')).not.toBeNull();
+  });
+
+  it('覚えている形が知らないものか空の自分の形なら、写す形と同じ 3節 を選んで見せる', () => {
+    ['weekly', 'custom'].forEach((kind) => {
+      mount({ apiReportParts: { ...DEFAULTS.apiReportParts, kind, custom: '' } });
+      expect(document.querySelector('#home-cards .my-today select.report-kind').value).toBe('three');
+    });
+  });
+
+  it('並べる「今日片づけたもの」は日報に写す中身と同じものから作る', () => {
+    mount({ apiMyToday: [{ kind: 'issue', number: 1, title: '古い一覧' }],
+      apiReportParts: { ...DEFAULTS.apiReportParts, parts: { ...DEFAULTS.apiReportParts.parts,
+        today: [{ kind: 'issue', number: 12, title: '規程の改定' }] } } });
+    const items = Array.from(document.querySelectorAll('#home-cards .my-today li')).map((li) => li.textContent);
+    expect(items).toEqual(['#12 規程の改定']);
   });
 
   it('自分の形が2000字を超えたら送らない', () => {
