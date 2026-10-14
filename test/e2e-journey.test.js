@@ -34,7 +34,7 @@ const SOURCES = [
   'src/core/Notifier.gs',
   'src/core/Tally.js',
   'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/Main.gs',
 ];
 
 /** 何も仕込まない。リポジトリを作るだけ */

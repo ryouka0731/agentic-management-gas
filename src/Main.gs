@@ -3181,6 +3181,26 @@ function apiMyToday() {
   });
 }
 
+// ===== ホーム =====
+
+/**
+ * 草 (Web App API)。本人のぶんとチームの合計だけ。
+ *
+ * @returns {{weeks: Array<Array<{day: string, me: number, team: number, future: boolean}>>, meTotal: number}}
+ */
+function apiHomeActivity() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var act = homeActivity_(me, new Date());
+  return {
+    weeks: act.weeks.map(function (w) {
+      return w.map(function (c) {
+        return { day: plainText(c.day), me: plainNumber(c.me), team: plainNumber(c.team), future: !!c.future };
+      });
+    }),
+    meTotal: plainNumber(act.meTotal),
+  };
+}
+
 // ===== 設定 =====
 
 /**
