@@ -11,11 +11,8 @@ import { ui } from './ui-source.js';
  * 起きた不具合はそこでは捕まらなかった。ここでは本当に走らせる。
  */
 
-function mount(over, opts) {
-  const app = mountApp(Object.assign({}, DEFAULTS, over || {}));
-  // 開くとホームが出る。文書の一覧を触るテストは先に文書タブを開く
-  if (opts && opts.docs) document.querySelector('.nav-item[data-tab="docs"]').click();
-  return app;
+function mount(over) {
+  return mountApp(Object.assign({}, DEFAULTS, over || {}));
 }
 
 describe('起動', () => {
@@ -6879,8 +6876,12 @@ describe('前進を見せる (意欲づけ)', () => {
       apiReportParts: Object.assign({}, DEFAULTS.apiReportParts, { parts: Object.assign({},
         DEFAULTS.apiReportParts.parts, { today }) }) });
     const card = document.querySelector('#home-cards .my-today');
-    expect(card.textContent).toContain('今日片づけたもの');
-    expect(card.textContent).toContain('あなたにだけ見えます');
+    expect(card.querySelector('.home-head h2').textContent).toBe('今日片づけたもの');
+    // 「あなたにだけ見えます」を区画ごとに書き並べず、見出しの札1つで示す
+    const pill = card.querySelector('.home-head .chip');
+    expect(pill.textContent).toBe('自分だけ');
+    expect(pill.title).toBe('あなたにだけ見えます');
+    expect(card.textContent).not.toContain('あなたにだけ見えます');
     expect(card.querySelectorAll('li')).toHaveLength(2);
     Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
     await Promise.resolve();
@@ -6888,16 +6889,16 @@ describe('前進を見せる (意欲づけ)', () => {
       '📅明日やること\n- 特になし\n\n⛔️困っていること\n- 特になし');
   });
 
-  it('前進はホームに見出しを付けて置き、文書の一覧とは別の画面にする (文書と取り違えない)', () => {
+  it('前進はホームの従の列に、カードごとに見出しを付けて置き、文書の一覧とは別の画面にする', () => {
     // 前進のカードが文書の上に同じ形で並び、どこからが文書なのか分からなかった
     mount();
     const cards = document.getElementById('home-cards');
-    expect(cards.closest('#panel-home')).not.toBeNull();
+    expect(cards.closest('#panel-home .home-side')).not.toBeNull();
     expect(document.getElementById('doc-list').closest('#panel-home')).toBeNull();
 
-    const head = cards.firstElementChild;
-    expect(head.tagName).toBe('H2');
-    expect(head.textContent).toBe('あなたとチームの前進');
+    // まとめの見出しは置かず (同じ形の見出しが重なる)、カードがそれぞれ見出しを持つ
+    const heads = Array.from(cards.children).map((c) => c.querySelector(':scope > .home-head > h2').textContent);
+    expect(heads).toEqual(['今日片づけたもの', 'チームの前進']);
   });
 
   it('今日まだ何も無いときは「これから」と書く', () => {
@@ -7049,8 +7050,8 @@ describe('前進を見せる (意欲づけ)', () => {
   it('はじめの5歩は、できたことに印を付け、次の一歩だけ入口を出す。閉じたら覚える', () => {
     mount({ apiMyMilestones: STEPS });
     const card = document.querySelector('#home-cards .first-steps');
-    expect(card.textContent).toContain('はじめの5歩 (1 / 5)');
-    expect(card.textContent).toContain('あなたにだけ見えます');
+    expect(card.querySelector('.home-head h2').textContent).toBe('はじめの5歩 (1 / 5)');
+    expect(card.querySelector('.home-head .chip').textContent).toBe('自分だけ');
     expect(card.querySelectorAll('.first-step.is-done')).toHaveLength(1);
     const next = card.querySelector('.first-step.is-next');
     expect(next.textContent).toContain('変更を記録する');
@@ -7396,8 +7397,11 @@ describe('ホームの区画', () => {
     mount({ apiIssueList: [...DEFAULTS.apiIssueList,
       { ...DEFAULTS.apiIssueList[0], number: 7, title: '附則の施行日を決める' }] });
     const turn = document.getElementById('home-turn');
-    expect(turn.textContent).toContain('確かめてほしい確認依頼');
-    expect(turn.textContent).toContain('就業規則 第3条の改定');
+    // 種類の見出しは短くし、数を札で添える
+    const subs = Array.from(turn.querySelectorAll('.home-sub')).map((h) => h.textContent);
+    expect(subs).toEqual(['確かめてほしい1', '期限が近い1']);
+    expect(turn.querySelector('.home-sub .chip').textContent).toBe('1');
+    expect(turn.textContent).toContain('確認依頼 #1 就業規則 第3条の改定');
     expect(turn.textContent).toContain('期限切れ');
     turn.querySelector('[data-issue="7"]').click();
     expect(document.getElementById('side-panel').hidden).toBe(false);
@@ -7467,20 +7471,99 @@ describe('ホームの区画', () => {
     expect(document.getElementById('home-turn').textContent).toContain('ほか 3 件');
   });
 
-  it('草: 自分とチームの2段で 371 マスずつ。読み上げの字があり、連続日数の字は無い', () => {
+  // 2段 (あなた・チーム) を縦に並べていたのを、1つの草と「あなた | チーム」の切り替えに改めた
+  it('草: 1つの草を「あなた | チーム」で切り替える。371 マス・読み上げの字があり、連続日数の字は無い', () => {
     mount();
     const box = document.getElementById('home-activity');
-    const grids = box.querySelectorAll('.activity-grid');
-    expect(grids).toHaveLength(2);
-    grids.forEach((g) => {
-      expect(g.querySelectorAll('.activity-cell')).toHaveLength(371);
-      expect(g.getAttribute('role')).toBe('img');
-      expect(g.getAttribute('aria-label')).toMatch(/直近1年/);
-    });
+    const grids = () => box.querySelectorAll('.activity-grid');
+    expect(grids()).toHaveLength(1);
+    expect(grids()[0].querySelectorAll('.activity-cell')).toHaveLength(371);
+    expect(grids()[0].getAttribute('role')).toBe('img');
+    expect(grids()[0].getAttribute('aria-label')).toBe('あなたの行い。直近1年で 120 件');
     expect(box.textContent).toContain('直近1年で 120 件');
-    expect(box.textContent).not.toMatch(/連続|最長/);
-    const one = grids[0].querySelector('.activity-cell[data-day]');
+    const one = grids()[0].querySelector('.activity-cell[data-day]');
     expect(one.title).toMatch(/\d+月\d+日 \(.\) \d+件/);
+
+    const [me, team] = box.querySelectorAll('.segmented .seg');
+    expect(me.textContent).toBe('あなた');
+    expect(me.getAttribute('aria-pressed')).toBe('true');
+    expect(team.getAttribute('aria-pressed')).toBe('false');
+    // 自分だけの札は あなた のときだけ
+    expect(box.querySelector('.home-head .chip').hidden).toBe(false);
+
+    team.click();
+    let teamTotal = 0;
+    DEFAULTS.apiHomeActivity.weeks.forEach((w) => w.forEach((c) => { if (!c.future) teamTotal += c.team; }));
+    expect(team.getAttribute('aria-pressed')).toBe('true');
+    expect(me.getAttribute('aria-pressed')).toBe('false');
+    expect(grids()).toHaveLength(1);
+    expect(grids()[0].getAttribute('aria-label')).toBe('チーム (全員の合計)の行い。直近1年で ' + teamTotal + ' 件');
+    expect(box.textContent).toContain('直近1年で ' + teamTotal + ' 件');
+    expect(box.querySelector('.home-head .chip').hidden).toBe(true);
+    expect(box.textContent).not.toMatch(/連続|最長/);
+
+    // 選んだほうを覚える
+    mount();
+    expect(document.querySelector('#home-activity .seg[aria-pressed="true"]').textContent).toBe('チーム');
+  });
+
+  it('草: 列の上に月の名、左に 月・水・金、右下に 少〜多 の見本を置く', () => {
+    mount();
+    const box = document.getElementById('home-activity');
+    const months = Array.from(box.querySelectorAll('.activity-month')).map((m) => m.textContent).filter(Boolean);
+    expect(months.length).toBeGreaterThanOrEqual(12);
+    months.forEach((m) => expect(m).toMatch(/^\d{1,2}月$/));
+    // 月の名は週の列と同じ数だけ並び、列に揃う
+    expect(box.querySelectorAll('.activity-month')).toHaveLength(53);
+    expect(Array.from(box.querySelectorAll('.activity-days span')).map((d) => d.textContent))
+      .toEqual(['月', '', '水', '', '金', '', '']);
+    const legend = box.querySelector('.activity-legend');
+    expect(legend.textContent).toBe('少多');
+    expect(Array.from(legend.querySelectorAll('.activity-cell')).map((c) => c.className))
+      .toEqual([0, 1, 2, 3, 4].map((lv) => 'activity-cell lv' + lv));
+  });
+
+  it('草: 月の名はその月の1日を含む週に置き、近すぎる名は落とす', () => {
+    const { activityMonths } = ui(['activityMonths']);
+    // 2025-10-13 (月) から 53 週
+    const start = Date.UTC(2025, 9, 13);
+    const weeks = Array.from({ length: 53 }, (_, w) => Array.from({ length: 7 }, (_, d) => ({
+      day: new Date(start + (w * 7 + d) * 86400000).toISOString().substring(0, 10),
+    })));
+    const out = activityMonths(weeks);
+    expect(out.filter(Boolean)).toEqual(['11月', '12月', '1月', '2月', '3月', '4月', '5月', '6月',
+      '7月', '8月', '9月', '10月']);
+    // 11/1 は 10/27 の週 (3列目)
+    expect(out[2]).toBe('11月');
+    expect(out[0]).toBe('');
+  });
+
+  it('草: マスには入らず、枠1つで矢印キーを使って日を選び、下の1行に字で出す', () => {
+    mount();
+    const box = document.getElementById('home-activity');
+    const scroll = box.querySelector('.activity-scroll');
+    const live = box.querySelector('.activity-live');
+    expect(scroll.tabIndex).toBe(0);
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    // マスは押せる形にしない (role="img" の中身は読み上げに出ない)
+    expect(box.querySelectorAll('.activity-cell[tabindex]')).toHaveLength(0);
+    const days = box.querySelectorAll('.activity-grid .activity-cell[data-day]');
+    const last = days[days.length - 1];
+    // はじめは今日 (右端) の数
+    expect(live.textContent).toBe(last.title);
+
+    scroll.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(live.textContent).toBe(days[days.length - 2].title);
+    expect(days[days.length - 2].classList.contains('is-picked')).toBe(true);
+    scroll.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(live.textContent).toBe(days[days.length - 9].title);
+    scroll.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(live.textContent).toBe(days[0].title);
+    expect(live.textContent).toMatch(/^\d+月\d+日 \(.\) \d+件$/);
+
+    // 指で押したマスも同じ行に出す
+    days[10].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(live.textContent).toBe(days[10].title);
   });
 
   it('草: 色の段は0件が0、ほかは分布で1〜4', () => {
@@ -7493,11 +7576,28 @@ describe('ホームの区画', () => {
     expect(activityLevel(0, activityCuts([0, 0]))).toBe(0);
   });
 
+  it('草: いちばん多い日は4段目。どの日も同じ数なら全部を1段目にせず真ん中にする', () => {
+    const { activityCuts, activityLevel } = ui(['activityCuts', 'activityLevel']);
+    // 上から4分の1の切れ目が最多と同じでも、最多は4段目
+    const few = activityCuts([1, 1, 1, 2]);
+    expect(activityLevel(2, few)).toBe(4);
+    expect(activityLevel(1, few)).toBe(1);
+    const same = activityCuts([0, 3, 3, 3]);
+    expect(activityLevel(3, same)).toBe(2);
+    expect(activityLevel(0, same)).toBe(0);
+  });
+
   it('最近の動き: 名前を出さず、押すと開く', () => {
     mount();
     const recent = document.getElementById('home-recent');
-    expect(recent.textContent).toContain('正式版に反映');
-    expect(recent.textContent).toContain('完了');
+    // 種類の札 + 題 + いつ。「〜が確認依頼が出た」のような文にしない
+    const rows = Array.from(recent.querySelectorAll('.home-row'));
+    expect(rows.map((r) => [r.firstElementChild.textContent, r.querySelector('.home-row-title').textContent]))
+      .toEqual([['反映', '確認依頼 #1 就業規則 第3条の改定'], ['完了', '#3 第7条に在宅勤務を足す'],
+        ['登録', '就業規則.doc']]);
+    expect(rows[0].getAttribute('aria-label')).toMatch(/^反映 確認依頼 #1 就業規則 第3条の改定 \(.+\)$/);
+    rows.forEach((r) => expect(r.querySelector('.home-row-when').textContent).not.toBe(''));
+    expect(recent.textContent).not.toMatch(/が確認依頼が出た|が文書を登録|が正式版に反映/);
     expect(recent.textContent).not.toMatch(/@|中井|佐藤/);
     recent.querySelector('[data-file="DOC1"]').click();
     expect(document.getElementById('panel-content').hidden).toBe(false);
@@ -7517,8 +7617,40 @@ describe('ホームの区画', () => {
 
   it('1つの区画が取れなくても、ほかは出す。取れない区画にはその場で知らせる', () => {
     mount({ apiHomeActivity: () => new Error('混み合っています') });
-    expect(document.getElementById('home-activity').textContent).toMatch(/出せませんでした|混み合っています/);
+    const act = document.getElementById('home-activity');
+    // 見出しは残し、その下に知らせる (見出しまで消すと、何が出ていないのか分からない)
+    expect(act.querySelector('.home-head h2').textContent).toBe('アクティビティ');
+    expect(act.querySelector('.home-empty').textContent).toBe('出せませんでした: 混み合っています');
     expect(document.getElementById('home-turn').textContent).toContain('就業規則 第3条の改定');
+
+    mount({ apiHomeSummary: () => new Error('混み合っています') });
+    ['home-turn', 'home-recent'].forEach((id) => {
+      const el = document.getElementById(id);
+      expect(el.querySelector('.home-head h2')).not.toBeNull();
+      expect(el.textContent).toContain('出せませんでした: 混み合っています');
+    });
+  });
+
+  it('上の1行: 日付と、あなたの番・今日片づけたの数。取れなかった数は出さない', () => {
+    mount();
+    const line = document.getElementById('home-summary');
+    expect(line.querySelector('strong').textContent).toMatch(/^\d{1,2}月\d{1,2}日 \(.\)$/);
+    // 確かめてほしい 1 + 期限が近い 1
+    expect(line.textContent).toContain('あなたの番 2件');
+    expect(line.textContent).toContain('今日片づけた 0件');
+
+    mount({ apiHomeSummary: () => new Error('混み合っています'), apiProgress: () => new Error('混み合っています') });
+    const failed = document.getElementById('home-summary').textContent;
+    expect(failed).toMatch(/^\d{1,2}月\d{1,2}日 \(.\)$/);
+    expect(failed).not.toMatch(/あなたの番|今日片づけた|undefined|null/);
+  });
+
+  it('上の1行の日付は東京の日付', () => {
+    const { homeDateText } = ui(['homeDateText']);
+    expect(homeDateText(new Date('2026-10-14T03:00:00Z'))).toBe('10月14日 (水)');
+    // 東京ではもう翌日
+    expect(homeDateText(new Date('2026-10-13T16:00:00Z'))).toBe('10月14日 (水)');
+    expect(homeDateText(new Date('2026-12-31T15:00:00Z'))).toBe('1月1日 (金)');
   });
 
   it('返事を待つあいだに別の画面へ移ったら、届いても描かず、戻しもしない', () => {

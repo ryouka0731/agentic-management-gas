@@ -122,6 +122,7 @@
 
       <div class="panel panel-col" id="panel-home">
         <div class="list-area home-scroll">
+          <p class="home-summary" id="home-summary"></p>
           <aside class="guideline" id="guideline">
             <button class="guideline-head" id="guideline-toggle" aria-expanded="true">
               <span class="guideline-tag">はじめに</span>
@@ -137,47 +138,52 @@
               <div class="guideline-extra" id="guideline-extra"></div>
             </div>
           </aside>
-          <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
-          <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
-          <div class="home-cards" id="home-cards"></div>
-          <div class="home-pair">
-            <section class="home-block" id="home-counts" aria-label="全体の数">
-              <h2 class="home-section-head">全体の数</h2>
-              <ol class="flow-steps">
-                <li class="flow-step">
-                  <button class="flow-btn" data-tab="issues">
-                    <span class="flow-name">やること</span>
-                    <span class="flow-count" id="flow-issues">—</span>
-                  </button>
-                  <span class="flow-desc">何をするか決める</span>
-                </li>
-                <li class="flow-arrow" aria-hidden="true">→</li>
-                <li class="flow-step">
-                  <button class="flow-btn" data-tab="branches">
-                    <span class="flow-name">改訂版</span>
-                    <span class="flow-count" id="flow-branches">—</span>
-                  </button>
-                  <span class="flow-desc">文書を直す</span>
-                </li>
-                <li class="flow-arrow" aria-hidden="true">→</li>
-                <li class="flow-step">
-                  <button class="flow-btn" data-tab="pulls">
-                    <span class="flow-name">確認依頼</span>
-                    <span class="flow-count" id="flow-prs">—</span>
-                  </button>
-                  <span class="flow-desc">見てもらう</span>
-                </li>
-                <li class="flow-arrow" aria-hidden="true">→</li>
-                <li class="flow-step">
-                  <button class="flow-btn" data-tab="docs">
-                    <span class="flow-name">正式版</span>
-                    <span class="flow-count" id="flow-docs">—</span>
-                  </button>
-                  <span class="flow-desc">反映される</span>
-                </li>
-              </ol>
-            </section>
-            <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
+          <!-- 主 (あなたの番・草) と従 (前進・全体の数・最近の動き) の2列。狭いと主を先に1列 -->
+          <div class="home-grid">
+            <div class="home-main">
+              <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
+              <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
+            </div>
+            <div class="home-side">
+              <div class="home-cards" id="home-cards"></div>
+              <section class="home-block" id="home-counts" aria-label="全体の数">
+                <div class="home-head"><h2 class="home-section-head">全体の数</h2></div>
+                <ol class="flow-steps">
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="issues">
+                      <span class="flow-name">やること</span>
+                      <span class="flow-count" id="flow-issues">—</span>
+                    </button>
+                    <span class="flow-desc">何をするか決める</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="branches">
+                      <span class="flow-name">改訂版</span>
+                      <span class="flow-count" id="flow-branches">—</span>
+                    </button>
+                    <span class="flow-desc">文書を直す</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="pulls">
+                      <span class="flow-name">確認依頼</span>
+                      <span class="flow-count" id="flow-prs">—</span>
+                    </button>
+                    <span class="flow-desc">見てもらう</span>
+                  </li>
+                  <li class="flow-arrow" aria-hidden="true">→</li>
+                  <li class="flow-step">
+                    <button class="flow-btn" data-tab="docs">
+                      <span class="flow-name">正式版</span>
+                      <span class="flow-count" id="flow-docs">—</span>
+                    </button>
+                    <span class="flow-desc">反映される</span>
+                  </li>
+                </ol>
+              </section>
+              <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
+            </div>
           </div>
         </div>
       </div>

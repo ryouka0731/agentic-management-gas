@@ -2614,7 +2614,7 @@ button.gantt-name:hover { color: var(--accent); }
  * ===================================================================== */
 
 .guideline {
-  margin: 0 var(--sp-4) var(--sp-4);
+  margin: 0 0 var(--sp-4);
   border-radius: 10px;
   background: var(--accent-bg);
   overflow: hidden;
@@ -3833,19 +3833,12 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
   white-space: nowrap;
 }
 
-/*
- * はじめの案内の、始めるための入口。
- *
- * 流れの図とは分けて置く。図の中に混ぜると手順と読めてしまう
- */
+/* はじめの案内の、始めるための入口。見出しのすぐ下に並べる (区切りの線は置かない) */
 .guideline-extra {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  box-shadow: inset 0 1px 0 var(--line);
 }
 
 /*
@@ -4288,45 +4281,142 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .scrum-chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
 .group-points { margin-left: var(--sp-1); }
 
-/* ホームの「チームの前進」と「はじめの5歩」 */
 /*
- * ホームの区画の見出し。前進は線で区切って置く (同じ形で並べると区画の
- * 境目が分からない)
+ * ホーム。主 (あなたの番・草) と従 (前進・全体の数・最近の動き) の2列。
+ *
+ * 区画は1枚の面にし、中の行は線で区切るだけにする。1行ずつを影つきの
+ * カードにすると、どれも同じ重さに見えて何から見ればよいか分からない。
  */
-.home-section-head {
-  margin: 0;
-  padding: var(--sp-2) var(--sp-4);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+/* 器は flex の縦並びにしない。高さの限られた器の中で縮み、はじめに (overflow: hidden) が高さ0に潰れた */
+.home-scroll { display: block; padding-left: var(--sp-4); padding-right: var(--sp-4); }
+.home-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  font-size: 13px;
   color: var(--ink-2);
 }
-.home-cards {
+.home-summary strong { font-size: 15px; color: var(--ink); }
+.home-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
-  gap: var(--sp-3);
-  margin-top: var(--sp-5);
-  padding: var(--sp-3) var(--sp-4) 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
   align-items: start;
-  box-shadow: inset 0 1px 0 var(--line);
 }
-.home-cards > .home-section-head { grid-column: 1 / -1; padding: 0; }
+@media (min-width: 1024px) {
+  .home-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+}
+.home-main,
+.home-side,
+.home-cards { display: grid; gap: var(--sp-4); align-content: start; min-width: 0; }
 .home-cards:empty { display: none; }
-
-/* ホーム。区画を縦に積み、全体の数と最近の動きだけ横に並べる */
-.home-scroll { display: flex; flex-direction: column; gap: var(--sp-4); }
-.home-scroll > .guideline { margin: var(--sp-3) var(--sp-4) 0; }
-.home-block { padding: 0 var(--sp-4); }
-.home-block:empty { display: none; }
-.home-block > .home-section-head { padding-left: 0; padding-right: 0; }
-.home-pair {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-  gap: var(--sp-3);
+.home-block,
+.home-card {
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+  overflow: hidden;
 }
-.home-pair > .home-block { padding: 0 var(--sp-4); }
+.home-block:empty { display: none; }
+/* 区画の見出しの行。題は左、数や切り替えは右。見出しの形はここだけ */
+.home-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  box-sizing: border-box;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.home-section-head {
+  margin: 0 auto 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.home-head .side-close { position: static; }
+.home-turn-group + .home-turn-group { box-shadow: inset 0 1px 0 var(--line); }
+.home-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+/* 区画の中の行。button の一覧は width: 100% を使わない (CLAUDE.md) */
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: -moz-available;
+  width: -webkit-fill-available;
+  width: stretch;
+  min-height: 40px;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  box-shadow: inset 0 -1px 0 var(--line);
+  cursor: pointer;
+}
+.home-row:last-child { box-shadow: none; }
+.home-row:hover { background: var(--bg-2); }
+/* 面の端で切れないよう、枠は内側に描く */
+.home-row:focus-visible { outline-offset: -2px; }
+.home-row-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-row-when { flex: 0 0 auto; font-size: 12px; color: var(--ink-2); }
+.home-more { color: var(--accent); }
+.home-empty { margin: 0; padding: var(--sp-3); font-size: 13px; color: var(--ink-2); }
+/* カードは中に余白を持つ。見出しの行だけ面の端まで広げる */
+.home-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); }
+.home-card > .home-head { margin: calc(var(--sp-3) * -1) calc(var(--sp-3) * -1) 0; }
+/* 全体の数は、狭い従の列に 2×2 の札で並べる。流れの矢印は横に並ばないので出さない */
+#home-counts .flow-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+}
+#home-counts .flow-arrow { display: none; }
+#home-counts .flow-step { min-width: 0; align-items: stretch; }
+#home-counts .flow-btn { box-shadow: var(--hairline); }
+#home-counts .flow-btn:hover { box-shadow: var(--hairline); transform: none; background: var(--bg-2); }
+#home-counts .flow-desc { text-align: center; }
 /* 草。53週 × 7日。マスの色は既存トークンだけで5段 */
-.activity-scroll { overflow-x: auto; padding-bottom: var(--sp-1); }
+.activity-body { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+.activity-frame { display: flex; gap: var(--sp-1); }
+/* 曜日の名は流さない。上の余白は月の名の行 (枠の余白 4 + 高さ 15 + 間 3) のぶん */
+.activity-days {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-rows: repeat(7, 11px);
+  gap: 3px;
+  padding-top: 22px;
+  font-size: 10px;
+  line-height: 11px;
+  color: var(--ink-2);
+}
+/* 選んだマスの枠が切れないよう、流す枠に少し余白を持たせる */
+.activity-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; padding: 4px; }
+.activity-months {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+  height: 15px;
+  margin-bottom: 3px;
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--ink-2);
+}
+.activity-month { flex: 0 0 11px; width: 11px; white-space: nowrap; overflow: visible; }
 .activity-grid { display: inline-flex; gap: 3px; }
 .activity-week { display: grid; grid-template-rows: repeat(7, 11px); gap: 3px; }
 .activity-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--line); }
@@ -4335,17 +4425,18 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .activity-cell.lv2 { background: var(--accent); opacity: 0.5; }
 .activity-cell.lv3 { background: var(--accent); opacity: 0.75; }
 .activity-cell.lv4 { background: var(--accent); }
-.home-turn-group { display: flex; flex-direction: column; gap: var(--sp-1); margin-bottom: var(--sp-3); }
-/* button の一覧は width: 100% を使わない (CLAUDE.md)。区画が余白を持つので行の左右は詰める */
-.home-turn-row, .home-recent-row {
-  width: -moz-available;
-  width: -webkit-fill-available;
-  width: stretch;
-  margin-left: 0;
-  margin-right: 0;
-  text-align: left;
+.activity-cell.is-picked { outline: 2px solid var(--ink); outline-offset: 1px; }
+.activity-live { min-height: 1.5em; margin: var(--sp-2) 0 0; font-size: 12px; color: var(--ink); }
+.activity-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
 }
-.home-cards { margin-top: 0; }
+.activity-foot .row-meta { margin: 0; }
+.activity-legend { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-2); }
+.activity-legend .activity-cell { display: inline-block; }
 .game-level { margin: var(--sp-1) 0; }
 .game-level-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .game-level-bar span { display: block; height: 100%; background: var(--accent); }
@@ -4355,15 +4446,6 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .report-kind { max-width: 100%; }
 .report-preview { white-space: pre-wrap; margin: 0; padding: var(--sp-2); background: var(--bg-2); border-radius: var(--radius-sm); font-size: 12px; }
 .my-today-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.home-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: var(--hairline);
-}
 .my-today-list { margin: var(--sp-1) 0 var(--sp-2); padding-left: 18px; }
 .my-today-none { margin: var(--sp-1) 0 0; color: var(--ink-2); }
 .my-today-copy { display: block; width: 100%; min-height: 72px; margin-top: var(--sp-2); box-sizing: border-box; }
@@ -4371,7 +4453,6 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .team-goal { display: flex; flex-direction: column; gap: var(--sp-1); }
 .team-goal .state { align-self: flex-start; }
 .team-goal-edit { align-self: flex-start; }
-.first-steps-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 .first-steps-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .first-step { display: flex; align-items: flex-start; gap: var(--sp-2); color: var(--ink-2); font-size: 13px; }
 .first-step.is-done .scrum-cycle-num { background: var(--success-bg); color: var(--success); }
