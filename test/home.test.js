@@ -214,3 +214,60 @@ describe('最近の動き', () => {
     });
   });
 });
+
+describe('日報', () => {
+  it('ひな形は3つ。既定は3節', () => {
+    const { ctx } = setup();
+    expect(ctx.REPORT_TEMPLATES().map((t) => t.key)).toEqual(['three', 'today', 'plain']);
+    expect(ctx.REPORT_TEMPLATES()[0].body).toBe('✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}');
+    expect(ctx.reportKind_(ME)).toBe('three');
+  });
+
+  it('選んだ形と自分の形を人ごとに覚える。知らない形と2000字超は断る', () => {
+    const { ctx } = setup();
+    ctx.reportSetKind_(ME, 'today');
+    ctx.reportSetCustom_(ME, '【本日】{今日}');
+    expect(ctx.reportKind_(ME)).toBe('today');
+    expect(ctx.reportKind_('b@example.com')).toBe('three');
+    expect(ctx.reportCustom_(ME)).toBe('【本日】{今日}');
+    expect(() => ctx.reportSetKind_(ME, 'weekly')).toThrow(/形/);
+    expect(() => ctx.reportSetCustom_(ME, 'あ'.repeat(2001))).toThrow(/2000/);
+    ctx.reportSetKind_(ME, 'custom');
+    expect(ctx.reportKind_(ME)).toBe('custom');
+  });
+
+  it('明日: 自分の担当の未完了で、期限か開始日が明日以前。困りごと: 自分の未解決の障害物 (スクラムがオンのときだけ)', () => {
+    const { ctx } = setup();
+    const mk = (title, patch) => {
+      const n = ctx.issueCreate(title, '', []).number;
+      ctx.dbUpdate('issues', 'number', n, Object.assign({ assignee: ME }, patch));
+      return n;
+    };
+    const a = mk('期限が明日', { dueDate: new Date('2026-10-14T15:00:00Z') });
+    const b = mk('明日から', { startDate: new Date('2026-10-14T15:00:00Z') });
+    mk('明後日', { dueDate: new Date('2026-10-15T15:00:00Z') });
+    mk('日付なし', {});
+    ctx.dbAppend('impediments', { number: 1, title: '仕様が決まらない', reportedBy: ME, state: 'open' });
+    ctx.dbAppend('impediments', { number: 2, title: '解決済み', reportedBy: ME, state: 'resolved' });
+
+    let parts = ctx.reportParts_(ME, NOW);
+    expect(parts.tomorrow.map((x) => x.number)).toEqual([a, b]);
+    expect(parts.troubles).toEqual([]);
+    expect(parts.date).toBe('10/14 (水)');
+
+    ctx.scrumSetEnabled_(true);
+    parts = ctx.reportParts_(ME, NOW);
+    expect(parts.troubles.map((x) => x.title)).toEqual(['仕様が決まらない']);
+  });
+
+  it('API は本人のぶんだけを読み書きする', () => {
+    const { ctx } = setup();
+    ctx.apiSetReportKind('plain');
+    ctx.apiSetReportCustom('{今日}');
+    const out = ctx.apiReportParts();
+    expect(out.kind).toBe('plain');
+    expect(out.custom).toBe('{今日}');
+    expect(out.templates).toHaveLength(3);
+    expect(Object.keys(out.parts).sort()).toEqual(['date', 'name', 'today', 'tomorrow', 'troubles']);
+  });
+});

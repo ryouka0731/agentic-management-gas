@@ -555,6 +555,14 @@ describe('画面に渡せる形か', () => {
       if (!out.recent.length) throw new Error('最近の動きが空のまま検査されている');
       return out;
     }],
+    ['apiReportParts', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiReportParts();
+      if (!out.parts.today.length) throw new Error('今日の中身が空のまま検査されている');
+      return out;
+    }],
+    ['apiSetReportKind', (ctx) => ctx.apiSetReportKind('today')],
+    ['apiSetReportCustom', (ctx) => ctx.apiSetReportCustom('【本日】{今日}')],
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],

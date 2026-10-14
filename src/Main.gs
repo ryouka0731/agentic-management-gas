@@ -3233,6 +3233,58 @@ function apiHomeSummary() {
   };
 }
 
+/**
+ * 日報の中身・ひな形・選んでいる形・自分の形 (Web App API)。本人のぶんだけ。
+ *
+ * @returns {{parts: object, templates: object[], kind: string, custom: string}}
+ */
+function apiReportParts() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var p = reportParts_(me, new Date());
+  return {
+    parts: {
+      today: p.today.map(function (x) {
+        return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
+      }),
+      tomorrow: p.tomorrow.map(function (x) {
+        return { number: plainId(x.number), title: plainText(x.title), due: plainText(x.due) };
+      }),
+      troubles: p.troubles.map(function (x) {
+        return { number: plainId(x.number), title: plainText(x.title) };
+      }),
+      date: plainText(p.date),
+      name: plainText(p.name),
+    },
+    templates: REPORT_TEMPLATES().map(function (t) {
+      return { key: plainText(t.key), name: plainText(t.name), body: plainText(t.body) };
+    }),
+    kind: plainText(reportKind_(me)),
+    custom: plainText(reportCustom_(me)),
+  };
+}
+
+/**
+ * 日報の形を選ぶ (Web App API)。本人のぶんだけ。
+ *
+ * @param {string} kind
+ * @returns {{kind: string}}
+ */
+function apiSetReportKind(kind) {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return { kind: plainText(reportSetKind_(me, kind)) };
+}
+
+/**
+ * 自分の日報の形を書く (Web App API)。本人のぶんだけ。2000字まで。
+ *
+ * @param {string} text
+ * @returns {{custom: string}}
+ */
+function apiSetReportCustom(text) {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return { custom: plainText(reportSetCustom_(me, text)) };
+}
+
 // ===== 設定 =====
 
 /**
