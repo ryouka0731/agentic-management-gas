@@ -551,8 +551,15 @@ describe('画面に渡せる形か', () => {
     }],
     ['apiHomeSummary', (ctx, env) => {
       closedToday(ctx);
+      // あなたの番の行も型を検査する。確認を頼まれた依頼と、期限の来たやること
+      ctx.dbAppend('pulls', { number: 90, title: '頼まれた', state: 'open', author: 'b@example.com',
+        reviewers: 'tester@example.com', createdAt: new Date() });
+      const due = ctx.apiIssueCreate('期限が来た', '', []).number;
+      ctx.dbUpdate('issues', 'number', due, { assignee: 'tester@example.com', dueDate: new Date() });
       const out = ctx.apiHomeSummary();
       if (!out.recent.length) throw new Error('最近の動きが空のまま検査されている');
+      if (!out.myTurn.reviews.items.length) throw new Error('確かめてほしいが空のまま検査されている');
+      if (!out.myTurn.due.items.length) throw new Error('期限のやることが空のまま検査されている');
       return out;
     }],
     ['apiReportParts', (ctx) => {
