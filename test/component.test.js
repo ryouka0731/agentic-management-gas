@@ -7383,6 +7383,37 @@ describe('ホームの区画', () => {
     expect(app.calls.filter((c) => c.name === 'apiPrPreview').map((c) => c.args[0])).toContain(1);
   });
 
+  it('あなたの番: 先頭でない確認依頼を押すと、返事が遅れてもその依頼を開く (先頭に戻されない)', () => {
+    const lists = [];
+    const previews = [];
+    const two = [DEFAULTS.apiPrList[0], { ...DEFAULTS.apiPrList[0], number: 3, title: '育児休業の見直し' }];
+    mount({
+      apiHomeSummary: { ...DEFAULTS.apiHomeSummary, myTurn: { ...DEFAULTS.apiHomeSummary.myTurn,
+        reviews: { items: [{ number: 3, title: '育児休業の見直し' }], total: 1 } } },
+      apiPrList: () => ({ later: (ok) => { lists.push(ok); } }),
+      apiPrPreview: (n) => ({ later: (ok) => { previews.push([n, ok]); } }),
+    });
+    document.querySelector('#home-turn [data-pr="3"]').click();
+    // 返事を待たずに画面は移る
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    while (lists.length) lists.shift()(two);
+    while (previews.length) { const [, ok] = previews.shift(); ok(DEFAULTS.apiPrPreview); }
+    expect(document.querySelector('#pr-detail .pr-title').textContent).toBe('#3 育児休業の見直し');
+    const current = document.querySelectorAll('#pr-list .row-item[aria-current="true"]');
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toContain('#3 育児休業の見直し');
+  });
+
+  it('あなたの番: 確認依頼を押してから返事の前に別の画面へ移ったら、届いても引き戻さない', () => {
+    let late = null;
+    mount({ apiPrList: () => ({ later: (ok) => { late = ok; } }) });
+    document.querySelector('#home-turn [data-pr="1"]').click();
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    late(DEFAULTS.apiPrList);
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-pulls').hidden).toBe(true);
+  });
+
   it('あなたの番: 何も無ければそう書く。5件を超えたら一覧へ送る', () => {
     mount({ apiHomeSummary: { myTurn: {
       reviews: { items: [], total: 0 }, returned: { items: [], total: 0 }, due: { items: [], total: 0 },

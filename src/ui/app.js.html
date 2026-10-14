@@ -2521,8 +2521,9 @@
    * タブは開いている文書のビューなので、文書を選んでいないときは出さない。
    *
    * @param {string} name
+   * @param {{pr: number}} [opts] 確認依頼の画面で、先頭の代わりに開く依頼の番号
    */
-  function switchTab(name) {
+  function switchTab(name, opts) {
     if (DOC_TABS[name] && !current.fileId) name = 'docs';
     currentTab = name;
 
@@ -2568,7 +2569,7 @@
     else if (name === 'history') loadHistory();
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
-    else if (name === 'pulls') loadPulls();
+    else if (name === 'pulls') loadPulls(opts && opts.pr);
     else if (name === 'issues') reloadIssueView();
     else if (name === 'help') loadHelp();
     else if (name === 'report') loadReports();
@@ -2857,17 +2858,12 @@
     return box;
   }
 
-  /** 確認依頼を番号で開く。一覧を取り直してから中身を出す */
+  /**
+   * 確認依頼を番号で開く。画面はすぐ移り、一覧が届いたらその依頼を選ぶ
+   * (返事を待ってから移ると、待つあいだに別の画面へ移った人を引き戻す)。
+   */
   function openPrByNumber(number) {
-    call('apiPrList', [], function (list) {
-      var pr = (list || []).filter(function (p) { return Number(p.number) === Number(number); })[0];
-      if (!pr) {
-        showSnack('確認依頼 #' + number + ' が見つかりません', { kind: 'ng' });
-        return;
-      }
-      switchTab('pulls');
-      showPrDetail(pr);
-    });
+    switchTab('pulls', { pr: number });
   }
 
   /**
@@ -4109,12 +4105,25 @@
     }[state] || state;
   }
 
-  function loadPulls() {
+  var pullsSeq = 0;
+
+  /**
+   * 確認依頼の一覧を出し、1件を開く。
+   *
+   * **返事の時点で、最後に頼んだ一覧か・まだこの画面かを見る。** 見ないと、
+   * ホームから #3 を開いたあとに届いた一覧の返事が先頭の #1 を開き直していた。
+   *
+   * @param {number} [selectNumber] 先頭の代わりに開く依頼の番号
+   */
+  function loadPulls(selectNumber) {
+    var mine = ++pullsSeq;
     showSkeleton(prListEl, 'list', 4);
     prDetail.textContent = '';
 
     call('apiPrList', [], function (list) {
+      if (mine !== pullsSeq || panelPulls.hidden) return;
       var prs = list || [];
+      var pick = null;
       prListEl.textContent = '';
 
       if (!prs.length) {
@@ -4168,11 +4177,16 @@
           showPrDetail(pr);
         });
 
+        if (selectNumber && Number(pr.number) === Number(selectNumber)) pick = btn;
         prListEl.appendChild(btn);
       });
 
-      prListEl.firstChild.click();
-    }, failInto(prListEl));
+      if (selectNumber && !pick) showSnack('確認依頼 #' + selectNumber + ' が見つかりません', { kind: 'ng' });
+      (pick || prListEl.firstChild).click();
+    }, function (err) {
+      if (mine !== pullsSeq) return;
+      failInto(prListEl)(err);
+    });
   }
 
   /**
@@ -4499,10 +4513,15 @@
     }, failInto(container));
   }
 
+  var prDetailSeq = 0;
+
   function showPrDetail(pr) {
+    // 続けて押したとき、前の依頼の返事で後の依頼の中身を上書きしない
+    var mine = ++prDetailSeq;
     showSkeleton(prDetail, 'block');
 
     call('apiPrPreview', [pr.number], function (preview) {
+      if (mine !== prDetailSeq) return;
       prDetail.textContent = '';
 
       var head = document.createElement('div');
@@ -4680,7 +4699,10 @@
       prDetail.appendChild(prTabs);
       prDetail.appendChild(prBody);
       views.conversation();
-    }, failInto(prDetail));
+    }, function (err) {
+      if (mine !== prDetailSeq) return;
+      failInto(prDetail)(err);
+    });
   }
 
   // ===== やること =====
