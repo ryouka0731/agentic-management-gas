@@ -236,3 +236,31 @@ function gameTop_(now) {
   }
   return out;
 }
+
+/**
+ * 完了したやることの、本人の取りぶんと、レベルが上がったか。
+ * 上がったと言うのは一度だけ (見せた最高を覚える)。
+ *
+ * @param {string} email
+ * @param {number} number
+ * @returns {{points: number, levelUp: number}} levelUp は上がっていなければ 0
+ */
+function gameAfterClose_(email, number) {
+  var issues = dbReadAll('issues');
+  var row = null;
+  for (var i = 0; i < issues.length; i++) if (String(issues[i].number) === String(number)) row = issues[i];
+  var points = 0;
+  if (row) {
+    var who = motivationCredited_(row, motivationClosers_());
+    if (who.indexOf(email) >= 0) {
+      points = Math.round(gameIssuePoints_(row, motivationChildren_(issues)) / who.length * 10) / 10;
+    }
+  }
+  var level = gameLevel(gamePointsByPerson_('', '')[email] || 0);
+  var seen = gameLevelSeen_(email);
+  if (level > seen) {
+    gameLevelSeenSet_(email, level);
+    return { points: points, levelUp: level };
+  }
+  return { points: points, levelUp: 0 };
+}
