@@ -5,8 +5,8 @@ import { createFakeGas } from './fakegas.js';
 
 /*
  * 前進を見せる (意欲づけ)。チームの前進と、本人にだけ見える最初の一歩に限る。
- * 点数・人ごとの順位は作らない (予告された報酬は内発的動機を下げ、職場の
- * ランキングは晒しと受け取られる)。
+ * 点数・順位はここでは返さない (Game.gs に守りを付けて分けてある)。予告された
+ * 報酬は内発的動機を下げ、職場のランキングは晒しと受け取られる。
  */
 const SOURCES = (() => {
   const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
