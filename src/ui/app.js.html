@@ -8630,7 +8630,12 @@
     head.textContent = '見本 (今日の中身で)';
     var preview = document.createElement('pre');
     preview.className = 'report-preview';
-    function show() { preview.textContent = reportFill(area.value, report.parts); }
+    function show() {
+      preview.textContent = reportFill(area.value, report.parts);
+      // 送る前に止める。送ってから断ると、欄はもう閉じていて書いたものが消える
+      setFieldMessage(area, area.value.length > 2000
+        ? '2000字までです (いま ' + area.value.length + ' 字)' : '', 'error');
+    }
     area.addEventListener('input', show);
     show();
     var actions = form.querySelector('.inline-form-actions');
