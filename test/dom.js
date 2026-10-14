@@ -8,16 +8,6 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
-/**
- * 画面を組み立てて実際に動かす。
- *
- * ソースを文字列で検査するだけでは、描画も応答も確かめられない。
- * wiki.html に部分HTMLを差し込み、google.script.run を差し替えたうえで
- * app.js を本当に走らせる。
- *
- * @param {Object<string, *|function>} responses API名 → 返す値、または関数
- * @returns {{calls: object[], respond: function, flush: function}}
- */
 /*
  * 前に組んだ画面が window / document に付けた聞き手と時計、待ちの rAF、iframe の中の window を外す。
  *
@@ -71,6 +61,16 @@ function dropLeftovers() {
   leftovers.frames = [];
 }
 
+/**
+ * 画面を組み立てて実際に動かす。
+ *
+ * ソースを文字列で検査するだけでは、描画も応答も確かめられない。
+ * wiki.html に部分HTMLを差し込み、google.script.run を差し替えたうえで
+ * app.js を本当に走らせる。
+ *
+ * @param {Object<string, *|function>} responses API名 → 返す値、または関数
+ * @returns {{calls: object[], respond: function, flush: function}}
+ */
 export function mountApp(responses) {
   trackGlobals();
   dropLeftovers();
