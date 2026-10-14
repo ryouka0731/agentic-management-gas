@@ -302,6 +302,7 @@ function reportCustom_(email) {
 
 /**
  * 自分の形を書く。中身があれば、選んだ形も「自分の形」にする (1回で両方)。
+ * 空にしたとき「自分の形」を選んでいたら、先頭の形 (3節) に戻す。
  *
  * @param {string} email
  * @param {string} text
@@ -315,6 +316,9 @@ function reportSetCustom_(email, text) {
   // 書いたら自分の形を選んだことにする。画面から2回に分けて送ると、2回目だけ
   // 落ちたとき書いた形と選んだ形が食い違う。空なら選ばない (空の形は 3節 で写る)
   if (t) props.setProperty('REPORT_KIND:' + email, 'custom');
+  // 自分の形を選んだまま空にしたら、選んだ形も先頭の形に戻す。戻さないと
+  // 「自分の形」を選んだことになっているのに 3節 で写る
+  else if (reportKind_(email) === 'custom') props.setProperty('REPORT_KIND:' + email, REPORT_TEMPLATES()[0].key);
   return t;
 }
 

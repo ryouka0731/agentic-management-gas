@@ -33,10 +33,11 @@ describe('起動', () => {
     expect(docs.querySelector('.flow-steps')).toBeNull();
   });
 
-  it('ホームに はじめに・あなたの番・草・前進・全体の数・最近の動き が並ぶ', () => {
+  it('ホームに はじめに・あなたの番・草・最近の動き・前進・全体の数 が並ぶ', () => {
     mount();
     const home = document.getElementById('panel-home');
-    const ids = ['guideline', 'home-turn', 'home-activity', 'home-cards', 'home-counts', 'home-recent'];
+    // 最近の動きは主の列の草の下 (従に置くと従だけ長くなり、主の下が空いた)
+    const ids = ['guideline', 'home-turn', 'home-activity', 'home-recent', 'home-cards', 'home-counts'];
     const at = ids.map((id) => home.querySelector('#' + id));
     at.forEach((el) => expect(el).not.toBeNull());
     for (let k = 1; k < at.length; k++) {
@@ -6948,6 +6949,25 @@ describe('前進を見せる (意欲づけ)', () => {
     // 選んだことはサーバが同じ1回で覚える。2回に分けると、2回目だけ落ちたとき食い違う
     expect(app.calls.some((c) => c.name === 'apiSetReportKind')).toBe(false);
     expect(card.querySelector('select.report-kind').value).toBe('custom');
+  });
+
+  it('自分の形を選んだまま空にして保存すると、選ぶ欄も写す形も 3節 に戻る', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    const app = mount({ apiReportParts: { ...DEFAULTS.apiReportParts, kind: 'custom', custom: '【本日】{今日}' } });
+    const card = document.querySelector('#home-cards .my-today');
+    const pick = card.querySelector('select.report-kind');
+    expect(pick.value).toBe('custom');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '自分の形を直す').click();
+    const form = document.querySelector('.inline-form');
+    form.querySelector('textarea').value = '';
+    form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+    expect(app.calls.filter((c) => c.name === 'apiSetReportCustom').pop().args).toEqual(['']);
+    expect(pick.value).toBe('three');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied.pop()).toMatch(/^✅今日やったこと\n/);
   });
 
   it('自分の形がまだ空なのに選んだら、選ばずに書く欄を開く (見せる形と写す形を揃える)', () => {

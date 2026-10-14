@@ -3271,7 +3271,14 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
   position: absolute;
   top: var(--sp-2);
   right: var(--sp-2);
+  width: 32px;
+  height: 32px;
 }
+/*
+ * 閉じる (×) は見出しの右上に重ねて置くので、見出しの右に × のぶん (端の間 + 32px + 間) を空ける。
+ * 空けていなかったときは、たたむ印 (▾) が × の真下に入り、狭い画面で2つが重なった。
+ */
+.guideline .guideline-head { padding-right: calc(var(--sp-2) + 32px + var(--sp-2)); }
 
 .guide-foot {
   display: flex;
@@ -4282,7 +4289,7 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .group-points { margin-left: var(--sp-1); }
 
 /*
- * ホーム。主 (あなたの番・草) と従 (前進・全体の数・最近の動き) の2列。
+ * ホーム。主 (あなたの番・草・最近の動き) と従 (前進・全体の数) の2列。
  *
  * 区画は1枚の面にし、中の行は線で区切るだけにする。1行ずつを影つきの
  * カードにすると、どれも同じ重さに見えて何から見ればよいか分からない。
@@ -4392,23 +4399,41 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 #home-counts .flow-desc { text-align: center; }
 /* 草。53週 × 7日。マスの色は既存トークンだけで5段 */
 .activity-body { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
-.activity-frame { display: flex; gap: var(--sp-1); }
+/*
+ * マスは列の幅いっぱいに広がる正方形。枠の幅 (100cqi) から曜日の名・間・余白を引き、
+ * 週の数で割る。8px を下回る狭い画面でだけ 8px で止めて横に流す (右端を見せて開く)。
+ * 広い画面で大きくなりすぎないよう 16px で止める。11px 固定にしていたときは、
+ * 1280px の主の列 (約610px) に 53週 (約742px) が入らず、古い10週ほどが流した先に隠れた。
+ * 月の名・曜日の名・マスは同じ --cell と同じ間 (2px) を使うので、列と名がずれない。
+ * 間を 3px から 2px にしたのは、1280px でも 8px を割らずに収めるため。
+ */
+.activity-frame {
+  display: flex;
+  gap: var(--sp-1);
+  container-type: inline-size;
+  --weeks: 53;
+}
+.activity-days,
+.activity-scroll {
+  --cell: clamp(8px, calc((100cqi - 12px - var(--sp-1) - 8px - (var(--weeks) - 1) * 2px) / var(--weeks)), 16px);
+}
 /* 曜日の名は流さない。上の余白は月の名の行 (枠の余白 4 + 高さ 15 + 間 3) のぶん */
 .activity-days {
-  flex: 0 0 auto;
+  flex: 0 0 12px;
+  width: 12px;
   display: grid;
-  grid-template-rows: repeat(7, 11px);
-  gap: 3px;
+  grid-template-rows: repeat(7, var(--cell));
+  gap: 2px;
   padding-top: 22px;
   font-size: 10px;
-  line-height: 11px;
+  line-height: var(--cell);
   color: var(--ink-2);
 }
 /* 選んだマスの枠が切れないよう、流す枠に少し余白を持たせる */
 .activity-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; padding: 4px; }
 .activity-months {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   width: max-content;
   height: 15px;
   margin-bottom: 3px;
@@ -4416,10 +4441,14 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   line-height: 15px;
   color: var(--ink-2);
 }
-.activity-month { flex: 0 0 11px; width: 11px; white-space: nowrap; overflow: visible; }
-.activity-grid { display: inline-flex; gap: 3px; }
-.activity-week { display: grid; grid-template-rows: repeat(7, 11px); gap: 3px; }
+.activity-month { flex: 0 0 var(--cell); width: var(--cell); white-space: nowrap; overflow: visible; }
+/* 右端の2週の名は左へはみ出させる。右へはみ出すと、収まっている草まで数px 横に流れる */
+.activity-month:nth-last-child(-n+2) { display: flex; justify-content: flex-end; }
+.activity-grid { display: inline-flex; gap: 2px; }
+.activity-week { display: grid; grid-template-rows: repeat(7, var(--cell)); gap: 2px; }
+/* 見本 (少 □□□□□ 多) は枠の外にあるので 11px のまま */
 .activity-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--line); }
+.activity-scroll .activity-cell { width: var(--cell); height: var(--cell); }
 .activity-cell.lv-none { background: transparent; }
 .activity-cell.lv1 { background: var(--accent); opacity: 0.3; }
 .activity-cell.lv2 { background: var(--accent); opacity: 0.5; }

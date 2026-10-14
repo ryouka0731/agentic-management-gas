@@ -3051,7 +3051,8 @@
    * ので、中に押せるものを置くと「見えないのに押せる」になる)。代わりに外側の
    * スクロールの枠に1つだけフォーカスを置き、矢印キーで日を選ぶ。選んだ日は下の
    * 1行 (aria-live) に字で出す。指で押したマスも同じ行に出す。
-   * 狭い画面では横に流し、右端 (今週) を見せる。
+   * マスは列の幅いっぱいに広がる (CSS の --cell)。8px でも収まらない狭い画面でだけ
+   * 横に流し、右端 (今週) を見せる。
    */
   function makeActivityBlock(act) {
     var box = document.createElement('div');
@@ -3100,6 +3101,8 @@
 
       var frame = document.createElement('div');
       frame.className = 'activity-frame';
+      // マスの大きさは枠の幅を週の数で割って決まる (CSS の --cell)。既定は 53週
+      if (weeks.length) frame.style.setProperty('--weeks', String(weeks.length));
 
       var dayNames = document.createElement('div');
       dayNames.className = 'activity-days';
@@ -8921,8 +8924,10 @@
       }
       call('apiSetReportCustom', [body], function (res) {
         report.custom = body;
-        // 空の形は選ばれない (サーバも選んだ形を変えない)
+        // 空の形は選ばれない。自分の形を選んだまま空にしたら先頭の形 (3節) に戻す
+        // (サーバも同じ1回でそう覚える)。戻さないと、欄は「自分の形」なのに 3節 で写る
         if (body) report.kind = (res && res.kind) || 'custom';
+        else if (report.kind === 'custom') report.kind = pick.options[0].value;
         pick.value = report.kind;
       }, failSnack('日報の形を保存できませんでした: '));
     }, btn);

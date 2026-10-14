@@ -1163,6 +1163,42 @@ describe('ホームの並び', () => {
     expect(cols).toContain('display: grid');
   });
 
+  it('最近の動きは主の列 (草の下) に置く。従だけが長くなり、主の下が空いた', () => {
+    const html = read('src/ui/wiki.html');
+    const main = html.slice(html.indexOf('<div class="home-main">'), html.indexOf('<div class="home-side">'));
+    expect(main).toContain('id="home-activity"');
+    expect(main).toContain('id="home-recent"');
+    expect(main.indexOf('id="home-activity"')).toBeLessThan(main.indexOf('id="home-recent"'));
+    expect(html.split('id="home-recent"')).toHaveLength(2);
+  });
+
+  it('草のマスは枠の幅いっぱいに広がる正方形。8px を割る狭い画面でだけ流す', () => {
+    // 11px 固定だと、1280px の主の列に 53週が入らず、古い週が流した先に隠れた
+    expect(body('.activity-frame')).toContain('container-type: inline-size');
+    const size = body('.activity-days,\n.activity-scroll');
+    expect(size).toMatch(/--cell: clamp\(8px, calc\(\(100cqi [^;]*\/ var\(--weeks\)\), 16px\)/);
+    // マス・週の行・月の名・曜日の名が同じ大きさを使う (列と名がずれない)
+    expect(body('.activity-scroll .activity-cell')).toContain('width: var(--cell); height: var(--cell)');
+    expect(body('.activity-week')).toContain('grid-template-rows: repeat(7, var(--cell))');
+    expect(body('.activity-days')).toContain('grid-template-rows: repeat(7, var(--cell))');
+    expect(body('.activity-month')).toContain('flex: 0 0 var(--cell)');
+    // 間も週の行・月の名・曜日の名で揃える。計算の間と同じ
+    expect(size).toContain('(var(--weeks) - 1) * 2px');
+    ['.activity-week', '.activity-days', '.activity-months', '.activity-grid'].forEach((sel) => {
+      expect(body(sel), sel).toContain('gap: 2px');
+    });
+    // 収まらないときだけ横に流す
+    expect(body('.activity-scroll', css.indexOf('.activity-scroll { flex'))).toContain('overflow-x: auto');
+  });
+
+  it('はじめに の × と ▾ が重ならない。見出しの右に × のぶんを空ける', () => {
+    const close = body('.guideline .side-close');
+    expect(close).toContain('position: absolute');
+    expect(close).toContain('width: 32px');
+    expect(close).toContain('height: 32px');
+    expect(body('.guideline .guideline-head')).toContain('padding-right: calc(var(--sp-2) + 32px + var(--sp-2))');
+  });
+
   it('区画の行は1行ずつ影を持たない。button の一覧は width: stretch', () => {
     const row = body('.home-row');
     expect(row).not.toContain('elev');
