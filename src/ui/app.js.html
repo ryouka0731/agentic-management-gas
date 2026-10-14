@@ -7967,23 +7967,130 @@
       homeCardsEl.textContent = '';
       return;
     }
+    // 前進が取れなければ描かない。ほかの4つは、どれが取れなくても空で補って描く
+    // (任意のカード1枚のために、ホーム全体を消さない)
     call('apiProgress', [], function (p) {
-      call('apiMyMilestones', [], function (steps) {
-        call('apiMyToday', [], function (today) {
+      var got = {};
+      var names = [
+        ['apiMyMilestones', 'steps', [], 'はじめの5歩が出なくても使える'],
+        ['apiMyToday', 'today', [], '今日の一覧が出なくても使える'],
+        ['apiGameState', 'game', { enabled: false }, 'ポイントが出なくても使える'],
+        ['apiGameTop', 'top', [], '週の上位が出なくても使える']
+      ];
+      var left = names.length;
+      names.forEach(function (n) {
+        function done(v) {
+          got[n[1]] = v || n[2];
+          left -= 1;
+          if (left > 0) return;
           // 返事を待つあいだに止められていたら描かない
           if (!progressNotesOn()) return;
-          renderHomeCards(p || {}, steps || [], today || []);
-        }, failQuiet('今日の一覧が出なくても使える'));
-      }, failQuiet('はじめの5歩が出なくても使える'));
+          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top);
+        }
+        var quiet = failQuiet(n[3]);
+        call(n[0], [], done, function (err) { quiet(err); done(null); });
+      });
     }, failQuiet('前進が出なくても使える'));
   }
 
-  function renderHomeCards(p, steps, today) {
+  function renderHomeCards(p, steps, today, game, top) {
     homeCardsEl.textContent = '';
     homeCardsEl.appendChild(makeTodayCard(today || []));
+    var g = makeGameCard(game || {}, top || []);
+    if (g) homeCardsEl.appendChild(g);
     homeCardsEl.appendChild(makeTeamProgressCard(p));
     var first = makeFirstStepsCard(steps);
     if (first) homeCardsEl.appendChild(first);
+  }
+
+  /**
+   * 自分のレベルと、今週の上位3人。オフなら出さない。
+   *
+   * **上位にいない人に自分の順位を見せない** (「◯位」が下位の印になる)。
+   * 自分の今週の点だけを見せる。
+   *
+   * @param {object} game apiGameState
+   * @param {Array} top apiGameTop
+   * @returns {HTMLElement|null}
+   */
+  function makeGameCard(game, top) {
+    if (!game.enabled) return null;
+    var card = document.createElement('section');
+    card.className = 'home-card game-card';
+    card.setAttribute('aria-label', 'ポイントとレベル');
+
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = 'ポイントとレベル';
+    card.appendChild(head);
+
+    var level = document.createElement('div');
+    level.className = 'game-level';
+    level.textContent = 'レベル ' + game.level + ' ・ 今週 ' + game.week + ' ・ 次のレベルまで ' +
+      Math.max(game.nextAt - game.total, 0);
+    card.appendChild(level);
+
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(game.nextAt));
+    bar.setAttribute('aria-valuenow', String(game.total));
+    var fill = document.createElement('span');
+    fill.style.width = Math.min(100, Math.round(game.total / game.nextAt * 100)) + '%';
+    bar.appendChild(fill);
+    card.appendChild(bar);
+
+    if (top.length) {
+      var title = document.createElement('div');
+      title.className = 'row-meta';
+      title.textContent = '今週の上位 (参加している人だけ)';
+      card.appendChild(title);
+      var list = document.createElement('ol');
+      list.className = 'game-top';
+      top.forEach(function (r) {
+        var li = document.createElement('li');
+        if (r.me) li.className = 'is-me';
+        li.textContent = r.rank + '. ' + r.name + ' ' + r.points;
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+    }
+
+    var note = document.createElement('p');
+    note.className = 'row-meta game-note';
+    note.textContent = '片づけたものの重さで付きます。人事の評価には使いません。月曜にゼロから数え直します';
+    card.appendChild(note);
+    return card;
+  }
+
+  /**
+   * 自分まわりに置く、週の上位に参加するかの切り替え。既定は不参加。
+   *
+   * @param {object} state apiGameState
+   * @returns {HTMLElement}
+   */
+  function makeGameJoinToggle(state) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'game-join-toggle';
+    btn.className = 'btn toggle-btn';
+    btn.textContent = '週の上位に参加する';
+    setToggle(btn, !!state.playing);
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      var want = btn.getAttribute('aria-checked') !== 'true';
+      setToggle(btn, want);
+      call('apiGameJoin', [want], function (res) {
+        btn.disabled = false;
+        setToggle(btn, !!(res && res.playing));
+        loadHomeCards();
+      }, function (err) {
+        setToggle(btn, !want);
+        failEnable(btn, '切り替えられませんでした: ')(err);
+      });
+    });
+    return btn;
   }
 
   /**
@@ -9532,6 +9639,12 @@
     });
     out.push(again);
     out.push(makeProgressToggle());
+    // ゲームがオンのときだけ、参加の切り替えを足す
+    var gameJoinHost = document.createElement('div');
+    out.push(gameJoinHost);
+    call('apiGameState', [], function (state) {
+      if (state && state.enabled) gameJoinHost.appendChild(makeGameJoinToggle(state));
+    }, failQuiet('参加の切り替えが出なくても使える'));
 
     return out;
   }
@@ -10775,6 +10888,7 @@
     loadSettings(function () {
       settingsEl.textContent = '';
       settingsEl.appendChild(makeScrumSettings());
+      settingsEl.appendChild(makeGameSettings());
     });
   }
 
@@ -10847,6 +10961,57 @@
     }
 
     box.appendChild(makeScrumKitGuide());
+    return box;
+  }
+
+  /**
+   * ポイント・レベル・週の上位の切り替え。既定はオフ。管理者だけ切り替えられる。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeGameSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.textContent = 'ポイントとレベル';
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.textContent = 'やることを片づけると、重さに応じてポイントが付き、レベルが上がります。' +
+      '週の上位3人をホームに出します (載るのは自分で参加を選んだ人だけです)。人事の評価には使いません。';
+    box.appendChild(about);
+
+    if (settings.canEdit) {
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.id = 'game-toggle';
+      toggle.className = 'btn toggle-btn';
+      toggle.textContent = 'ポイントとレベルを使う';
+      setToggle(toggle, !!settings.gameEnabled);
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        var want = !settings.gameEnabled;
+        setToggle(toggle, want);
+        call('apiSetGameEnabled', [want], function (res) {
+          settings = res || settings;
+          showSnack(settings.gameEnabled ? 'ポイントとレベルをオンにしました' : 'ポイントとレベルをオフにしました',
+            { kind: 'ok' });
+          loadSettingsPanel();
+          loadHomeCards();
+        }, function (err) {
+          setToggle(toggle, !!settings.gameEnabled);
+          failEnable(toggle, '切り替えられませんでした: ')(err);
+        });
+      });
+      box.appendChild(toggle);
+    } else {
+      var who = document.createElement('p');
+      who.className = 'row-meta';
+      who.textContent = '切り替えられるのは、このアプリの管理者だけです。';
+      box.appendChild(who);
+    }
     return box;
   }
 

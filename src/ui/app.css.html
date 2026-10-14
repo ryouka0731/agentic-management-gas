@@ -4268,6 +4268,12 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 /* ホームの「チームの前進」と「はじめの5歩」 */
 .home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) 0; align-items: start; background: var(--bg-2); }
 .home-cards:empty { display: none; }
+.game-level { margin: var(--sp-1) 0; }
+.game-level-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.game-level-bar span { display: block; height: 100%; background: var(--accent); }
+.game-top { margin: var(--sp-1) 0; padding-left: 0; list-style: none; }
+.game-top .is-me { font-weight: 600; }
+.game-note { margin: var(--sp-2) 0 0; }
 .home-card {
   display: flex;
   flex-direction: column;
