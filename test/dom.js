@@ -18,7 +18,63 @@ function read(rel) {
  * @param {Object<string, *|function>} responses API名 → 返す値、または関数
  * @returns {{calls: object[], respond: function, flush: function}}
  */
+/*
+ * 前に組んだ画面が window / document に付けた聞き手と時計、待ちの rAF、iframe の中の window を外す。
+ *
+ * 組み直しても window と document は同じものなので、外さないと前の画面
+ * (古い DOM まるごと) が聞き手から辿れたまま残る。画面を組むテストは
+ * 数百あり、ホームに草 (742 マス) を足した時点で積み上がりがヒープの上限を
+ * 超えて落ちた。前の画面の聞き手が今の画面の操作に応えることも無くなる。
+ */
+const leftovers = { listeners: [], intervals: [], frames: [] };
+let tracking = false;
+
+function trackGlobals() {
+  if (tracking) return;
+  tracking = true;
+  [window, document].forEach((target) => {
+    const add = target.addEventListener.bind(target);
+    target.addEventListener = function (type, fn, opts) {
+      leftovers.listeners.push([target, type, fn, opts]);
+      return add(type, fn, opts);
+    };
+  });
+  const every = window.setInterval.bind(window);
+  window.setInterval = function (...args) {
+    const id = every(...args);
+    leftovers.intervals.push(id);
+    return id;
+  };
+  // jsdom は描画しないので、待ちの rAF は呼ばれないまま前の画面を抱え続ける
+  if (window.requestAnimationFrame) {
+    const frame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = function (fn) {
+      const id = frame(fn);
+      leftovers.frames.push(id);
+      return id;
+    };
+  }
+}
+
+function dropLeftovers() {
+  leftovers.listeners.forEach(([target, type, fn, opts]) => target.removeEventListener(type, fn, opts));
+  leftovers.intervals.forEach((id) => window.clearInterval(id));
+  leftovers.frames.forEach((id) => window.cancelAnimationFrame(id));
+  // iframe の中の window は jsdom が手放さず、frameElement から前の画面を辿れて
+  // しまう。iframe だけを先に木から外し、辿る先を iframe 1つに留める
+  document.querySelectorAll('iframe').forEach((f) => {
+    if (f.contentWindow) f.contentWindow.close();
+    f.remove();
+  });
+  leftovers.listeners = [];
+  leftovers.intervals = [];
+  leftovers.frames = [];
+}
+
 export function mountApp(responses) {
+  trackGlobals();
+  dropLeftovers();
+
   const html = read('src/ui/wiki.html')
     .replace("<?!= include('ui/app.css') ?>", read('src/ui/app.css.html'))
     .replace("<?!= include('ui/app.js') ?>", '');
