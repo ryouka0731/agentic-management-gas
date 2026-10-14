@@ -236,3 +236,125 @@ function homeRecent_(now) {
   });
   return out.slice(0, HOME_RECENT_MAX());
 }
+
+/**
+ * 日報のひな形。**ここが唯一の定義。** 画面にも並びを持つが、取れなかったときの控え。
+ * 差し込み: {今日} {明日} {困りごと} {日付} {名前}
+ *
+ * @returns {Array<{key: string, name: string, body: string}>}
+ */
+function REPORT_TEMPLATES() {
+  return [
+    { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
+    { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
+    { key: 'plain', name: '見出し無し', body: '{今日}' },
+  ];
+}
+
+/** 自分の形の上限 (字数)。UserProperties の1つの値の上限より十分小さく */
+function REPORT_CUSTOM_MAX() {
+  return 2000;
+}
+
+/**
+ * 選んでいる形。鍵にアドレスを入れる (疑似GASの UserProperties は人で分かれない)。
+ *
+ * @param {string} email
+ * @returns {string} 'three' | 'today' | 'plain' | 'custom'
+ */
+function reportKind_(email) {
+  var v = String(PropertiesService.getUserProperties().getProperty('REPORT_KIND:' + email) || '');
+  return reportKindValid_(v) ? v : 'three';
+}
+
+/**
+ * @param {string} kind
+ * @returns {boolean}
+ */
+function reportKindValid_(kind) {
+  if (kind === 'custom') return true;
+  return REPORT_TEMPLATES().some(function (t) { return t.key === kind; });
+}
+
+/**
+ * @param {string} email
+ * @param {string} kind
+ * @returns {string}
+ */
+function reportSetKind_(email, kind) {
+  var k = String(kind || '');
+  if (!reportKindValid_(k)) throw new Error('日報の形が分かりません: ' + k);
+  PropertiesService.getUserProperties().setProperty('REPORT_KIND:' + email, k);
+  return k;
+}
+
+/**
+ * @param {string} email
+ * @returns {string}
+ */
+function reportCustom_(email) {
+  return String(PropertiesService.getUserProperties().getProperty('REPORT_CUSTOM:' + email) || '');
+}
+
+/**
+ * @param {string} email
+ * @param {string} text
+ * @returns {string}
+ */
+function reportSetCustom_(email, text) {
+  var t = String(text || '');
+  if (t.length > REPORT_CUSTOM_MAX()) throw new Error('日報の形は' + REPORT_CUSTOM_MAX() + '字までです');
+  PropertiesService.getUserProperties().setProperty('REPORT_CUSTOM:' + email, t);
+  return t;
+}
+
+/**
+ * 日報に差し込む中身。本人のぶんだけ。
+ *
+ * - 明日: 自分が担当の未完了 (捨てたものを除く) で、期限か開始日が明日以前 (期限の早い順、10件)
+ * - 困りごと: 自分が出した未解決の障害物。スクラムがオフなら空
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {{today: object[], tomorrow: object[], troubles: object[], date: string, name: string}}
+ */
+function reportParts_(email, now) {
+  var me = String(email || '');
+  var tomorrow = homeAddDay_(motivationDay_(now), 1);
+
+  var next = [];
+  var issues = dbReadAll('issues');
+  for (var i = 0; i < issues.length; i++) {
+    var row = issues[i];
+    if (String(row.state) === 'closed' || row.archivedAt) continue;
+    if (issueAssignees(row).indexOf(me) < 0) continue;
+    var due = motivationDay_(row.dueDate);
+    var start = motivationDay_(row.startDate);
+    if (!((due && due <= tomorrow) || (start && start <= tomorrow))) continue;
+    next.push({ number: Number(row.number), title: String(row.title || ''), due: due });
+  }
+  next.sort(function (a, b) {
+    var x = a.due || '9999';
+    var y = b.due || '9999';
+    return x < y ? -1 : x > y ? 1 : a.number - b.number;
+  });
+
+  var troubles = [];
+  if (scrumEnabled()) {
+    var imps = dbReadAll('impediments');
+    for (var m = 0; m < imps.length; m++) {
+      if (String(imps[m].reportedBy) !== me || String(imps[m].state) === 'resolved') continue;
+      troubles.push({ number: Number(imps[m].number), title: String(imps[m].title || '') });
+    }
+  }
+
+  var day = motivationDay_(now);
+  var dow = '日月火水木金土'.charAt(new Date(day + 'T00:00:00Z').getUTCDay());
+  return {
+    today: myToday_(me, now),
+    tomorrow: next.slice(0, 10),
+    troubles: troubles,
+    date: Number(day.substring(5, 7)) + '/' + Number(day.substring(8, 10)) + ' (' + dow + ')',
+    name: memberNames([me])[me] || me,
+  };
+}
