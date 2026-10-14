@@ -1133,3 +1133,40 @@ describe('スマホの形', () => {
     expect(mobile).toMatch(/\.main \{[^}]*padding-bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
   });
 });
+
+describe('ホームの並び', () => {
+  const css = read('src/ui/app.css.html');
+
+  /** 選択子そのものの規則 (`sel {`) の中身。@media の中は at で探し始める */
+  function body(sel, from) {
+    const at = css.indexOf(sel + ' {', from || 0);
+    expect(at, sel + ' の規則が無い').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  }
+
+  it('広い画面 (1024px 以上) では主と従の2列。狭いと1列', () => {
+    expect(body('.home-grid')).toContain('grid-template-columns: minmax(0, 1fr)');
+    const media = css.indexOf('@media (min-width: 1024px)');
+    expect(media).toBeGreaterThan(-1);
+    expect(body('.home-grid', media)).toContain('grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr)');
+  });
+
+  it('ホームの器は縮む並べ方にしない (はじめに が高さ0に潰れた)', () => {
+    // 高さの限られた器を flex の縦並びにすると、overflow: hidden の はじめに が縮んで消える
+    const scroll = body('.home-scroll');
+    expect(scroll).toContain('display: block');
+    expect(scroll).not.toMatch(/flex/);
+    // 2列の中も grid で積む (flex の縦並びは中身が縮む)
+    expect(body('.home-cards:empty', 0)).toContain('display: none');
+    const cols = css.slice(css.indexOf('.home-main,'), css.indexOf('}', css.indexOf('.home-main,')));
+    expect(cols).toContain('.home-side');
+    expect(cols).toContain('display: grid');
+  });
+
+  it('区画の行は1行ずつ影を持たない。button の一覧は width: stretch', () => {
+    const row = body('.home-row');
+    expect(row).not.toContain('elev');
+    expect(row).toContain('width: stretch');
+    expect(row).not.toContain('width: 100%');
+  });
+});
