@@ -170,7 +170,7 @@
   足しても全体に戻らない)。担当が空なら `change_log` で閉じた人に付ける
 - `parentDone` の条件は**いまの**子の状態で見る (後から子が開き直されたら +1 は消える)
 - `heavy` / `longAwaited` は①の定数をそのまま使う。①と食い違わせない
-- ①の完了の知らせに「+3」を添える (`apiCloseFeedback` が `points` を返す)
+- ①の完了の知らせに本人の取りぶんを「(+1)」のように添える (`apiCloseFeedback` が `points` を返す。固定値ではなく、重さと頭数で変わる。例: ふつうの完了 +1、2人で担当 +0.5)
 
 #### レベル
 
@@ -218,7 +218,7 @@
 |---|---|
 | `src/core/Game.gs` (新規) | `GAME_ENABLED` の読み書き・参加の出し入れ・`gamePointsByPerson_(from, to)`・`gameLevel(total)` |
 | `src/core/Motivation.gs` | `closeFeedback_` が `points` と `levelUp` を返す |
-| `src/Main.gs` | `apiGameState()` (オンか・自分の合計/週/レベル/参加しているか)・`apiGameLevelSeen(n)`・`apiGameTop()`・`apiGameJoin(bool)`・`apiGameSetEnabled(bool)` |
+| `src/Main.gs` | `apiGameState()` (オンか・自分の合計/週/レベル/参加しているか)・`apiGameLevelSeen(n)`・`apiGameTop()`・`apiGameJoin(bool)`・`apiSetGameEnabled(bool)` |
 | `src/ui/app.js.html` | ホームの「週の上位」「自分のレベル」カード・設定の切り替え・自分まわりの「順位に参加する」 |
 
 `gamePointsByPerson_` は `issues` / `reviews` / `pulls` / `change_log` を1回ずつ読んで

@@ -233,9 +233,9 @@ export const DEFAULTS = {
   apiMyToday: [],
   apiGameState: { enabled: false },
   apiGameTop: [],
-  apiGameJoin: { enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: true },
+  apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),
   apiGameLevelSeen: null,
-  apiSetGameEnabled: { scrumEnabled: false, gameEnabled: true, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiSetGameEnabled: (on) => ({ scrumEnabled: false, gameEnabled: !!on, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }),
   apiCommitGraph: {
     rows: [
       {

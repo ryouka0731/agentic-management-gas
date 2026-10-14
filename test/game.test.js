@@ -41,6 +41,14 @@ describe('ポイント', () => {
     expect(ctx.gamePointsByPerson_('', '')).toEqual({ 'a@example.com': 1 + 3 + 1.5, 'b@example.com': 1.5 });
   });
 
+  it('3人で分けても、人ごとを足すと元のポイントに戻る (数えるところでは丸めない)', () => {
+    const { ctx } = setup();
+    closed(ctx, '3人', { assignee: 'a@example.com, b@example.com, c@example.com' });
+    const pts = ctx.gamePointsByPerson_('', '');
+    expect(pts['a@example.com']).toBeCloseTo(1 / 3, 6);
+    expect(Object.values(pts).reduce((s, v) => s + v, 0)).toBeCloseTo(1, 6);
+  });
+
   it('小分けの最後の1つに +1 (いまの子の状態で見る)', () => {
     const { ctx } = setup();
     const parent = ctx.issueCreate('親', '', []).number;

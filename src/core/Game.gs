@@ -195,8 +195,11 @@ function gamePointsBySpans_(spans, pre) {
     add(motivationDay_(rv.at), reviewer, 1);
   }
 
+  // 浮動小数の端数 (1/3 を3回足して 0.9999999999999999) だけ落とす。0.1 刻みに
+  // 丸めると、3人で分けた1点が 0.3 ずつになり合計が 0.9 に減る。レベルの境目や
+  // 同点の判定もずれる。見せるときの丸めは画面 (pointWords) で行う
   for (var a = 0; a < all.length; a++) {
-    for (var k in all[a]) all[a][k] = Math.round(all[a][k] * 10) / 10;
+    for (var k in all[a]) all[a][k] = Math.round(all[a][k] * 1e9) / 1e9;
   }
   return all;
 }
