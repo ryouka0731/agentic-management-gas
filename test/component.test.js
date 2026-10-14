@@ -7441,6 +7441,19 @@ describe('ホームの区画', () => {
     expect(document.getElementById('panel-pulls').hidden).toBe(true);
   });
 
+  it('あなたの番: ホームから開いたやることを完了にしたら、あなたの番を取り直す', () => {
+    const app = mount({ apiIssueList: [...DEFAULTS.apiIssueList,
+      { ...DEFAULTS.apiIssueList[0], number: 7, title: '附則の施行日を決める', state: 'open' }] });
+    const before = app.calls.filter((c) => c.name === 'apiHomeSummary').length;
+    document.querySelector('#home-turn [data-issue="7"]').click();
+    app.respond('apiHomeSummary', { ...DEFAULTS.apiHomeSummary, myTurn: { ...DEFAULTS.apiHomeSummary.myTurn,
+      due: { items: [], total: 0 } } });
+    Array.from(document.querySelectorAll('#side-panel button'))
+      .find((b) => b.textContent === '完了にする').click();
+    expect(app.calls.filter((c) => c.name === 'apiHomeSummary').length).toBe(before + 1);
+    expect(document.querySelector('#home-turn [data-issue="7"]')).toBeNull();
+  });
+
   it('あなたの番: 何も無ければそう書く。5件を超えたら一覧へ送る', () => {
     mount({ apiHomeSummary: { myTurn: {
       reviews: { items: [], total: 0 }, returned: { items: [], total: 0 }, due: { items: [], total: 0 },
