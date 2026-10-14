@@ -1517,6 +1517,20 @@
     span.textContent = text;
     bar.appendChild(span);
 
+    // 終えたことを、印1つで返す。派手にすると動機がかえって下がる (Kao ら 2024)
+    if (options.mark) bar.insertBefore(makeSnackMark(options.mark), span);
+
+    if (options.action) {
+      var actBtn = document.createElement('button');
+      actBtn.type = 'button';
+      actBtn.textContent = options.action.label;
+      actBtn.addEventListener('click', function () {
+        bar.remove();
+        options.action.run();
+      });
+      bar.appendChild(actBtn);
+    }
+
     if (options.undo) {
       var undoBtn = document.createElement('button');
       undoBtn.type = 'button';
@@ -1536,8 +1550,49 @@
 
     document.body.appendChild(bar);
 
-    var ms = options.ms || (options.undo ? 10000 : 5000);
+    // 押す間が要るものは長めに出す
+    var ms = options.ms || (options.undo || options.action ? 10000 : 5000);
     snackTimer = window.setTimeout(function () { bar.remove(); }, ms);
+  }
+
+  /**
+   * 帯の左の印。チェックの線を描き、進み具合があれば細い棒を出す。
+   *
+   * @param {{done?: number, total?: number}} mark
+   * @returns {HTMLElement}
+   */
+  function makeSnackMark(mark) {
+    var box = document.createElement('span');
+    box.className = 'snack-mark';
+    box.setAttribute('aria-hidden', mark.total ? 'false' : 'true');
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'snack-check');
+    var path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', 'M5 12l5 5L19 7');
+    svg.appendChild(path);
+    box.appendChild(svg);
+
+    if (mark.total) {
+      var track = document.createElement('span');
+      track.className = 'snack-progress';
+      track.setAttribute('role', 'progressbar');
+      track.setAttribute('aria-valuemin', '0');
+      track.setAttribute('aria-valuemax', String(mark.total));
+      track.setAttribute('aria-valuenow', String(mark.done));
+      var fill = document.createElement('span');
+      fill.className = 'snack-progress-fill';
+      // 前の値から1段伸びる。動きを減らす設定では CSS が transition を止める
+      fill.style.width = Math.round(Math.max(mark.done - 1, 0) / mark.total * 100) + '%';
+      track.appendChild(fill);
+      box.appendChild(track);
+      window.requestAnimationFrame(function () {
+        fill.style.width = Math.round(mark.done / mark.total * 100) + '%';
+      });
+    }
+    return box;
   }
 
   // ===== サーバを呼ぶ =====
@@ -5229,7 +5284,7 @@
           hint(done, 'act:done');
           done.addEventListener('click', function () {
             call('apiIssueClose', [issue.number], function () {
-              celebrateProgress('close', '#' + issue.number + ' を完了にしました');
+              celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
               refreshIssueViews();
             });
           });
@@ -5774,7 +5829,7 @@
       done.appendChild(document.createTextNode('完了にする'));
       done.addEventListener('click', function () {
         call('apiIssueClose', [issue.number], function () {
-          celebrateProgress('close', '#' + issue.number + ' を完了にしました');
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
           form.remove();
           refreshIssueViews();
         });
@@ -6403,7 +6458,7 @@
 
       done.addEventListener('click', function () {
         call('apiIssueClose', [issue.number], function () {
-          celebrateProgress('close', '#' + issue.number + ' を完了にしました');
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
           closeSide();
           refreshIssueViews();
         });
@@ -7787,10 +7842,34 @@
    *
    * @param {string} kind 'close' | 'merge'
    * @param {string} text 基本の知らせ
+   * @param {number} [number] 完了にしたやること。あれば apiCloseFeedback で添えを求める
    */
-  function celebrateProgress(kind, text) {
+  function celebrateProgress(kind, text, number) {
     if (!progressNotesOn()) {
       showSnack(text, { kind: 'ok' });
+      return;
+    }
+    if (kind === 'close' && number) {
+      // 先に印だけの帯を出す。返事を待つあいだも、終えたことはすぐ伝わる
+      showSnack(text, { kind: 'ok', mark: {} });
+      call('apiCloseFeedback', [number], function (fb) {
+        // 返事を待つあいだに止められていたら、素の帯のまま
+        if (!progressNotesOn() || !fb) return;
+        var opts = { kind: 'ok', mark: {} };
+        if (fb.parent && (fb.kind === 'parentStep' || fb.kind === 'parentDone')) {
+          opts.mark = { done: fb.parent.done, total: fb.parent.total };
+        }
+        if (fb.kind === 'parentDone') {
+          opts.action = { label: '#' + fb.parent.number + ' も完了にする', run: function () {
+            call('apiIssueClose', [fb.parent.number], function () {
+              celebrateProgress('close', '#' + fb.parent.number + ' を完了にしました', fb.parent.number);
+              refreshIssueViews();
+            });
+          } };
+        }
+        showSnack(closeFeedbackText(text, fb), opts);
+        loadHomeCards();
+      }, failQuiet('前進の知らせが出なくても、終えたことは伝わっている'));
       return;
     }
     call('apiProgress', [], function (p) {
@@ -7800,15 +7879,50 @@
         return;
       }
       var more = '';
-      if (p && kind === 'close' && p.weekClosed) more = '。今週チームで ' + p.weekClosed + ' 件目です';
       if (p && kind === 'merge' && p.weekMerged) more = '。今週チームで ' + p.weekMerged + ' 件を正式版にしました';
-      if (p && kind === 'close' && p.goal && p.monthClosed === p.goal) more += '。今月の目標に届きました';
       showSnack(text + more, { kind: 'ok' });
       loadHomeCards();
     }, function () {
       // 前進が数えられなくても、終えたこと自体は伝える
       showSnack(text, { kind: 'ok' });
     });
+  }
+
+  /**
+   * 日数を「3週間」「10日」の言い方にする。
+   *
+   * @param {number} days
+   * @returns {string}
+   */
+  function spanWords(days) {
+    return days >= 14 && days % 7 < 4 ? Math.round(days / 7) + '週間' : days + '日';
+  }
+
+  /**
+   * 完了したときの帯の文。apiCloseFeedback の返りから組む。
+   *
+   * @param {string} base 「#3 を完了にしました」
+   * @param {object} fb
+   * @returns {string}
+   */
+  function closeFeedbackText(base, fb) {
+    var more = '';
+    if (fb.kind === 'parentDone') {
+      more = '。#' + fb.parent.number + ' ' + fb.parent.title + ' の小分けが全部終わりました';
+    } else if (fb.kind === 'parentStep') {
+      more = '。#' + fb.parent.number + ' ' + fb.parent.title + ' はあと ' +
+        (fb.parent.total - fb.parent.done) + ' つ';
+    } else if (fb.kind === 'longAwaited') {
+      more = '。' + spanWords(fb.days) + '越しのものが片づきました';
+    } else if (fb.kind === 'heavy') {
+      more = '。大きいものが1つ終わりました';
+    } else if (fb.weekClosed) {
+      more = '。今週チームで ' + fb.weekClosed + ' 件目です';
+      if (fb.goal && fb.monthClosed === fb.goal) more += '。今月の目標に届きました';
+    }
+    if (fb.points) more += ' (+' + fb.points + ')';
+    if (fb.levelUp) more += '。レベル ' + fb.levelUp + ' になりました';
+    return base + more;
   }
 
   /** 自分まわりに置く、前進の知らせの切り替え */
