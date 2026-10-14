@@ -222,7 +222,8 @@ function homeRecent_(now) {
     if (String(pr.state) === 'merged') push('merged', Number(pr.number), '', String(pr.title || ''), pr.mergedAt);
   }
 
-  var files = dbReadAll('files');
+  // Drive で消された文書は一覧と同じく出さない
+  var files = filesVisibleInWiki();
   for (var f = 0; f < files.length; f++) {
     if (branchOfPath_(String(files[f].path || '')) !== 'main') continue;
     push('file', 0, String(files[f].fileId || ''), String(files[f].path || ''), files[f].registeredAt);
