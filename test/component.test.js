@@ -6887,14 +6887,46 @@ describe('前進を見せる (意欲づけ)', () => {
   it('知らせを止めた直後に届いた返事では、素の帯のまま (ポイントも出さない)', () => {
     let reply = null;
     mount({ apiCloseFeedback: { later: (ok) => { reply = ok; } } });
-    const bar = closeFirst();
+    closeFirst();
     document.getElementById('me-btn').click();
     document.getElementById('progress-toggle').click();
     reply({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
     const t = document.getElementById('snackbar').textContent;
     expect(t).not.toContain('+3');
     expect(t).not.toContain('大きいもの');
-    expect(bar).toBeTruthy();
+    expect(t).toContain('を完了にしました');
+  });
+
+  it('知らせを止めているあいだは、apiCloseFeedback を呼ばない', () => {
+    const calls = [];
+    mount({ apiCloseFeedback: () => { calls.push(1); return null; } });
+    document.getElementById('me-btn').click();
+    document.getElementById('progress-toggle').click();
+    closeFirst();
+    expect(calls).toHaveLength(0);
+    expect(document.getElementById('snackbar').textContent).toContain('を完了にしました');
+  });
+
+  it('帯が別のものに替わったあとに届いた返事は、新しい帯を上書きしない', () => {
+    const replies = [];
+    mount({ apiCloseFeedback: { later: (ok) => { replies.push(ok); } } });
+    closeFirst();
+    document.querySelectorAll('#issue-list .row-item .icon-btn.ok')[1].click();
+    const newer = document.getElementById('snackbar');
+    const newerText = newer.textContent;
+    replies[0]({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    expect(document.getElementById('snackbar')).toBe(newer);
+    expect(newer.textContent).toBe(newerText);
+    expect(newer.textContent).not.toContain('+3');
+  });
+
+  it('帯を閉じたあとに届いた返事で、帯が出直さない', () => {
+    let reply = null;
+    mount({ apiCloseFeedback: { later: (ok) => { reply = ok; } } });
+    const bar = closeFirst();
+    Array.from(bar.querySelectorAll('button')).find((b) => b.textContent === '閉じる').click();
+    reply({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    expect(document.getElementById('snackbar')).toBeNull();
   });
 
   it('返事が失敗しても、完了したことは伝える', () => {
