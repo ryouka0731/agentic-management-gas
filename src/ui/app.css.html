@@ -3228,11 +3228,25 @@ button.label-pill {
   gap: var(--sp-2);
 }
 
+/*
+ * 長い名前は3行まで折り返す。1行で「…」にすると頭しか読めない。
+ * それ以上は切り、全文は指を置くと出す (行の title)。区切りの無い長い字も折る
+ */
 .gantt-title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
+
+/* 折り返した行が棒の行の高さを決めるので、上下に少し空ける */
+button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 
 .gantt-bar {
   display: flex;
