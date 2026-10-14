@@ -3156,6 +3156,11 @@ function apiCloseFeedback(number) {
       done: plainNumber(fb.parent.done), total: plainNumber(fb.parent.total) };
   }
   if (fb.days) out.days = plainNumber(fb.days);
+  if (gameEnabled()) {
+    var g = gameAfterClose_(String(Session.getActiveUser().getEmail() || ''), Number(number));
+    out.points = plainNumber(g.points);
+    if (g.levelUp) out.levelUp = plainNumber(g.levelUp);
+  }
   return out;
 }
 
@@ -3186,6 +3191,7 @@ function apiSettings() {
   var texts = scrumTexts();
   return {
     scrumEnabled: scrumEnabled(),
+    gameEnabled: gameEnabled(),
     canEdit: repoIsAdmin_(me),
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
@@ -3205,6 +3211,61 @@ function apiSetScrumEnabled(on) {
   repoAssertAdmin_('エージェンティックスクラムの切り替え');
   scrumSetEnabled_(!!on);
   return apiSettings();
+}
+
+/**
+ * ポイント・レベル・週の上位を切り替える (Web App API)。管理者だけ。既定はオフ。
+ *
+ * @param {boolean} on
+ * @returns {object} 切り替えたあとの apiSettings()
+ */
+function apiSetGameEnabled(on) {
+  repoAssertAdmin_('ポイントとレベルの切り替え');
+  gameSetEnabled_(!!on);
+  return apiSettings();
+}
+
+/**
+ * 本人のポイント・レベル・参加しているか (Web App API)。オフなら {enabled: false}。
+ * **順位は返さない。**
+ *
+ * @returns {object}
+ */
+function apiGameState() {
+  if (!gameEnabled()) return { enabled: false };
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var m = gameMine_(me, new Date());
+  return { enabled: true, total: plainNumber(m.total), week: plainNumber(m.week),
+    level: plainNumber(m.level), nextAt: plainNumber(m.nextAt), playing: !!m.playing };
+}
+
+/**
+ * 今週の上位3位まで (Web App API)。オフなら空。**アドレスは返さない。**
+ *
+ * 「人に関わる数は本人と部下のぶんだけ見せる」(memberVisibleTo) の唯一の例外。
+ * 本人が参加を選んだ人の、上位だけを出す。
+ *
+ * @returns {Array<{rank: number, name: string, points: number, me: boolean}>}
+ */
+function apiGameTop() {
+  if (!gameEnabled()) return [];
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return gameTop_(new Date()).map(function (r) {
+    return { rank: plainNumber(r.rank), name: plainText(r.name), points: plainNumber(r.points),
+      me: r.email === me };
+  });
+}
+
+/**
+ * 週の上位に参加する・やめる (Web App API)。本人のぶんだけ。
+ *
+ * @param {boolean} on
+ * @returns {object} apiGameState()
+ */
+function apiGameJoin(on) {
+  if (!gameEnabled()) throw new Error('ポイントとレベルはオフです');
+  gameSetPlaying_(String(Session.getActiveUser().getEmail() || ''), !!on);
+  return apiGameState();
 }
 
 /**

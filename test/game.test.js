@@ -168,3 +168,50 @@ describe('オン・オフと参加', () => {
     expect(order).toEqual(['lock', 'set', 'release']);
   });
 });
+
+describe('ゲームの API', () => {
+  it('オフのあいだは空を返す (断らない。ホームのカードが落ちないように)', () => {
+    const { ctx } = setup();
+    expect(ctx.apiGameState()).toEqual({ enabled: false });
+    expect(ctx.apiGameTop()).toEqual([]);
+    expect(() => ctx.apiGameJoin(true)).toThrow(/オフ/);
+    expect(ctx.apiSettings().gameEnabled).toBe(false);
+  });
+
+  it('切り替えは管理者だけ', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('viewer@example.com');
+    expect(() => ctx.apiSetGameEnabled(true)).toThrow(/管理者/);
+    fake._setUser('tester@example.com');
+    expect(ctx.apiSetGameEnabled(true).gameEnabled).toBe(true);
+  });
+
+  it('上位にはアドレスを返さず、自分の行に印を付ける', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    closed(ctx, 'x', { assignee: 'tester@example.com', closedAt: new Date() });
+    ctx.apiGameJoin(true);
+    const top = ctx.apiGameTop();
+    expect(top).toEqual([{ rank: 1, name: 'tester', points: 1, me: true }]);
+  });
+
+  it('完了の知らせに本人の取りぶんを添え、レベルが上がったらそれも添える', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 4; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com' });
+    const n = closed(ctx, '重くない5件目', { assignee: 'tester@example.com, b@example.com' });
+    // 担当が2人なので 0.5。合計 4.5 でまだレベル0
+    expect(ctx.apiCloseFeedback(n)).toMatchObject({ points: 0.5 });
+    expect(ctx.apiCloseFeedback(n)).not.toHaveProperty('levelUp');
+    const m = closed(ctx, '6件目', { assignee: 'tester@example.com' });
+    expect(ctx.apiCloseFeedback(m)).toMatchObject({ points: 1, levelUp: 1 });
+    // 2回目は上がったと言わない
+    expect(ctx.apiCloseFeedback(m)).not.toHaveProperty('levelUp');
+  });
+
+  it('オフのときは知らせにポイントを添えない', () => {
+    const { ctx } = setup();
+    const n = closed(ctx, 'x', { assignee: 'tester@example.com' });
+    expect(ctx.apiCloseFeedback(n)).not.toHaveProperty('points');
+  });
+});

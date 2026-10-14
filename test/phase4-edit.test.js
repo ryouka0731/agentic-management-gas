@@ -7,7 +7,8 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
   'src/core/Db.gs',
@@ -521,6 +522,12 @@ describe('画面に渡せる形か', () => {
     ['apiProgress', (ctx) => ctx.apiProgress()],
     ['apiSetTeamGoal', (ctx) => ctx.apiSetTeamGoal(10)],
     ['apiMyMilestones', (ctx) => ctx.apiMyMilestones()],
+    ['apiCloseFeedback', (ctx, env) => ctx.apiCloseFeedback(env.issue.number)],
+    ['apiMyToday', (ctx) => ctx.apiMyToday()],
+    ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
+    ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
+    ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
+    ['apiSetGameEnabled', (ctx) => ctx.apiSetGameEnabled(true)],
     ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
     ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],
