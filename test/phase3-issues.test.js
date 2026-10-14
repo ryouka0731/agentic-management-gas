@@ -37,7 +37,7 @@ const SOURCES = [
   'src/core/Notifier.gs',
   'src/core/Tally.js',
   'src/core/Plain.js',
-  'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/Main.gs',
 ];
 
 function setup() {

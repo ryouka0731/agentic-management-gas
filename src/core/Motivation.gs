@@ -5,9 +5,11 @@
  * - 小さな前進を日々実感できることが、仕事の中の気持ちを最も良くする (Amabile & Kramer 2011)
  * - 自律・有能感・関係性が満たされるほど自律的な動機が上がる (Gagné & Deci 2005)
  * - 予告された報酬は内発的動機を下げる (Deci, Koestner & Ryan 1999)。点数は配らない
- * - 職場の個人ランキングは晒しと受け取られる (Jia ら 2017)。人ごとの順位は作らない
+ * - 職場の個人ランキングは晒しと受け取られる (Jia ら 2017)
  *
- * だから、ここで数えるのは**チームの前進**と、**本人にだけ見える最初の一歩**に限る。
+ * ここで数えるのは**チームの前進**・**本人にだけ見える最初の一歩と今日片づけたもの**・
+ * **完了したときに何が起きたか**。ポイント・レベル・週の上位は Game.gs にあり、
+ * 守りを付けて別に置いてある (既定オフ)。
  */
 
 /**
@@ -59,13 +61,14 @@ function motivationSpan_(now) {
  * **人ごとには数えない。** チームの数だけを返す。
  *
  * @param {Date} [now]
+ * @param {object[]} [issues] 既に読んだ issues の行。あれば読み直さない
  * @returns {{weekClosed: number, weekMerged: number, monthClosed: number, goal: number}}
  */
-function motivationProgress(now) {
+function motivationProgress(now, issues) {
   var span = motivationSpan_(now || new Date());
   var out = { weekClosed: 0, weekMerged: 0, monthClosed: 0, goal: teamGoal() };
 
-  var issues = dbReadAll('issues');
+  if (!issues) issues = dbReadAll('issues');
   for (var i = 0; i < issues.length; i++) {
     // 捨てたものも数える。終えたあとに置き場へ移しただけで前進が減って見えると、
     // 目標の進み具合が後ろへ戻る
@@ -150,4 +153,210 @@ function motivationMilestones_(email) {
       hint: '承認された依頼を「正式版に反映する」。誰がいつ何を変えたかが残ります',
       done: pulls.some(function (pr) { return mine(pr) && String(pr.state) === 'merged'; }) },
   ];
+}
+
+/**
+ * 作ってからこの日数以上たって片づいたものを「長く止まっていたもの」とする。
+ * 入れたあと4週で見直す。
+ *
+ * @returns {number}
+ */
+function CLOSE_LONG_DAYS() {
+  return 14;
+}
+
+/** @returns {number} これ以上のポイントを「重いもの」とする */
+function CLOSE_HEAVY_POINTS() {
+  return 5;
+}
+
+/**
+ * これ以上の予定を「重いもの」とする。**単位は人日** (issues.plannedHours は
+ * 列の名前に反して人日で持っている。画面も「予定 N人日」と出す)。
+ *
+ * @returns {number}
+ */
+function CLOSE_HEAVY_DAYS() {
+  return 1;
+}
+
+/**
+ * ミリ秒。読めなければ NaN。台帳からは Date でも字でも返ってくる。
+ *
+ * @param {*} v
+ * @returns {number}
+ */
+function motivationTime_(v) {
+  if (!v) return NaN;
+  if (Object.prototype.toString.call(v) === '[object Date]') return v.getTime();
+  return Date.parse(String(v));
+}
+
+/**
+ * 重いものか。件数だけをほめると簡単なものから手を付けるようになる (KC ら 2020)
+ * ので、重さにも同じ手応えを返す。
+ *
+ * @param {object} row issues の行
+ * @returns {boolean}
+ */
+function motivationIsHeavy_(row) {
+  var p = Number(row.points);
+  // 空欄は Number('') で 0 になる。0 人日は重くない
+  var d = Number(row.plannedHours);
+  return (isFinite(p) && p >= CLOSE_HEAVY_POINTS()) || (isFinite(d) && d >= CLOSE_HEAVY_DAYS());
+}
+
+/**
+ * 作ってから閉じるまでの日数 (東京の暦日で数える)。読めなければ 0。
+ *
+ * @param {object} row issues の行
+ * @returns {number}
+ */
+function motivationWaitedDays_(row) {
+  var from = motivationDay_(row.createdAt);
+  var to = motivationDay_(row.closedAt);
+  if (!from || !to) return 0;
+  return Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000);
+}
+
+/**
+ * 親ごとの子。**捨てた子は入れない。** 残りとして居座ると親が永遠に終わらない。
+ *
+ * @param {object[]} issues
+ * @returns {Object<string, object[]>}
+ */
+function motivationChildren_(issues) {
+  var kids = {};
+  for (var i = 0; i < issues.length; i++) {
+    var p = issues[i].parent;
+    if (!p || issues[i].archivedAt) continue;
+    var key = String(p);
+    (kids[key] = kids[key] || []).push(issues[i]);
+  }
+  return kids;
+}
+
+/**
+ * 完了にしたやることについて、何が起きたかを**1つだけ**選んで返す。
+ * 重ねると派手になり、どれも残らない。
+ *
+ * くじで驚かせず、本当に起きたことで驚かせる。ドーパミンは予想との差に反応する
+ * (Schultz ら 1997) が、確率で変わる報酬は職場ではギャンブルと同じ形になる。
+ *
+ * **閉じていなければチームの数だけ返す** (`closed: false`)。完了を取り消したあとに
+ * 遅れて呼ばれても、起きていないことを知らせない。
+ *
+ * @param {number} number
+ * @param {Date} now
+ * @param {object[]} [issues] 既に読んだ issues の行。あれば読み直さない
+ * @returns {object}
+ */
+function closeFeedback_(number, now, issues) {
+  if (!issues) issues = dbReadAll('issues');
+  var byNo = {};
+  for (var i = 0; i < issues.length; i++) byNo[String(issues[i].number)] = issues[i];
+
+  var row = byNo[String(number)];
+  if (!row) throw new Error('やること #' + number + ' が見つかりません');
+
+  var team = motivationProgress(now, issues);
+  var out = {
+    kind: 'team',
+    number: Number(row.number),
+    title: String(row.title || ''),
+    weekClosed: team.weekClosed,
+    monthClosed: team.monthClosed,
+    goal: team.goal,
+    closed: String(row.state) === 'closed',
+  };
+  if (!out.closed) return out;
+
+  var parent = row.parent ? byNo[String(row.parent)] : null;
+  if (parent && String(parent.state) !== 'closed' && !parent.archivedAt) {
+    var kids = motivationChildren_(issues)[String(parent.number)] || [];
+    var done = 0;
+    for (var k = 0; k < kids.length; k++) if (String(kids[k].state) === 'closed') done++;
+    // 子が全部捨てられていると 0/0 になる。それを「全部終わった」と読まない
+    if (kids.length) {
+      out.parent = { number: Number(parent.number), title: String(parent.title || ''),
+        done: done, total: kids.length };
+      out.kind = done === kids.length ? 'parentDone' : 'parentStep';
+      return out;
+    }
+  }
+
+  var days = motivationWaitedDays_(row);
+  if (days >= CLOSE_LONG_DAYS()) {
+    out.kind = 'longAwaited';
+    out.days = days;
+    return out;
+  }
+  if (motivationIsHeavy_(row)) out.kind = 'heavy';
+  return out;
+}
+
+/**
+ * やることごとに、最後に閉じた人。担当が空のやることを誰のものとして数えるかに使う。
+ *
+ * @returns {Object<string, string>} 番号の字 → アドレス
+ */
+function motivationClosers_() {
+  var rows = dbReadAll('change_log');
+  var out = {};
+  // 足した順に並んでいるので、後の行が勝つ
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].action) !== 'close') continue;
+    var m = /^issue:(\d+)$/.exec(String(rows[i].target || ''));
+    if (m && rows[i].actor) out[m[1]] = String(rows[i].actor);
+  }
+  return out;
+}
+
+/**
+ * このやることを誰のものとして数えるか。担当がいれば担当、空なら閉じた人。
+ *
+ * @param {object} row
+ * @param {Object<string, string>} closers motivationClosers_()
+ * @returns {string[]}
+ */
+function motivationCredited_(row, closers) {
+  var who = issueAssignees(row);
+  if (who.length) return who;
+  var c = closers[String(row.number)];
+  return c ? [c] : [];
+}
+
+/**
+ * 今日片づけたもの。**本人にだけ**見せる。
+ *
+ * **画面から直に呼べない名前にする (末尾 _)。** アドレスを受けるので、呼べると
+ * ほかの人の一日を覗ける。apiMyToday が開いている本人のアドレスだけを渡す。
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {Array<{kind: string, number: number, title: string}>}
+ */
+function myToday_(email, now) {
+  var me = String(email || '');
+  var today = motivationDay_(now);
+  var out = [];
+  if (!me || !today) return out;
+
+  var closers = motivationClosers_();
+  var issues = dbReadAll('issues');
+  for (var i = 0; i < issues.length; i++) {
+    var row = issues[i];
+    if (String(row.state) !== 'closed' || motivationDay_(row.closedAt) !== today) continue;
+    if (motivationCredited_(row, closers).indexOf(me) < 0) continue;
+    out.push({ kind: 'issue', number: Number(row.number), title: String(row.title || '') });
+  }
+
+  var pulls = dbReadAll('pulls');
+  for (var p = 0; p < pulls.length; p++) {
+    var pr = pulls[p];
+    if (String(pr.state) !== 'merged' || String(pr.author) !== me) continue;
+    if (motivationDay_(pr.mergedAt) !== today) continue;
+    out.push({ kind: 'pull', number: Number(pr.number), title: String(pr.title || '') });
+  }
+  return out;
 }

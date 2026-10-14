@@ -466,6 +466,16 @@ describe('工程表の使い勝手', () => {
   const js = read('src/ui/app.js.html');
   const html = read('src/ui/wiki.html');
 
+  it('長い名前は1行で切らず、3行まで折り返す', () => {
+    // 1行で「…」にしていたため、長い名前は頭しか読めなかった
+    const css = read('src/ui/app.css.html');
+    const rules = css.match(/\.gantt-title\s*\{[^}]*\}/g) || [];
+    const all = rules.join('\n');
+    expect(all).not.toMatch(/white-space:\s*nowrap/);
+    expect(all).toMatch(/-webkit-line-clamp:\s*3/);
+    expect(all).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+
   it('月の見出しを出す', () => {
     // 日だけでは何月を見ているのか分からない
     expect(js).toContain('function ganttMonths(');
@@ -1080,6 +1090,17 @@ describe('スマホの形', () => {
   it('左の行き先は常に出さず、引き出しにする (上に積むと画面の4割を占めた)', () => {
     expect(mobile).toMatch(/\.sidebar \{[^}]*position: fixed[^}]*transform: translateX\(-105%\)/);
     expect(mobile).toMatch(/\.sidebar\.drawer-open \{[^}]*translateX\(0\)/);
+  });
+
+  it('通知は下の帯の上に、左右いっぱいで出す (中央寄せだと幅が半分になり、閉じるが帯に隠れる)', () => {
+    const rule = /\.snackbar \{([^}]*)\}/.exec(mobile);
+    expect(rule).not.toBeNull();
+    expect(rule[1]).toMatch(/transform:\s*none/);
+    expect(rule[1]).toMatch(/max-width:\s*none/);
+    const bottom = /bottom:\s*([^;]+);/.exec(rule[1]);
+    expect(bottom).not.toBeNull();
+    expect(bottom[1]).not.toBe('var(--sp-5)');
+    expect(bottom[1]).toMatch(/64px/);
   });
 
   it('入力の字は 16px 以上 (小さいと iPhone が拡大する)', () => {

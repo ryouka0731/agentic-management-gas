@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mountApp, DEFAULTS } from './dom.js';
 
 /**
@@ -23,6 +23,39 @@ describe('起動', () => {
     expect(document.getElementById('panel-docs').hidden).toBe(false);
     expect(document.getElementById('panel-issues').hidden).toBe(true);
     expect(document.querySelectorAll('.doc-card').length).toBe(1);
+    expect(document.querySelector('.doc-name').textContent).toBe('就業規則.doc');
+  });
+
+  it('文書の一覧が届く前に左で移った先から、ホームへ引き戻さない', () => {
+    // 開いた直後は文書の一覧の返事に数秒かかる。届いた時点でホームへ切り替えて
+    // いたため、そのあいだに押した行き先が押した直後に戻されていた
+    let lateList = null;
+    let first = true;
+    mount({
+      apiListFiles: () => {
+        if (!first) return DEFAULTS.apiListFiles;
+        first = false;
+        return { later: (ok) => { lateList = ok; } };
+      },
+    });
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
+
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+
+    lateList(DEFAULTS.apiListFiles);
+
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-docs').hidden).toBe(true);
+  });
+
+  it('文書の一覧が遅れて届いても、ホームを開いていれば一覧を描く', () => {
+    let lateList = null;
+    mount({ apiListFiles: () => ({ later: (ok) => { lateList = ok; } }) });
+
+    lateList(DEFAULTS.apiListFiles);
+
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
     expect(document.querySelector('.doc-name').textContent).toBe('就業規則.doc');
   });
 
@@ -2174,6 +2207,13 @@ describe('工程表の担当者と工数', () => {
 
     expect(row.querySelector('.gantt-name .avatar').textContent).toBe('山');
     expect(row.querySelector('.gantt-bar .avatar')).toBeTruthy();
+  });
+
+  it('名前に指を置くと、切れた名前も全部読める', () => {
+    openGantt();
+    const row = document.querySelector('.gantt-row');
+    const title = row.querySelector('.gantt-title').textContent;
+    expect(row.querySelector('.gantt-name').title).toContain(title);
   });
 
   it('棒に人日を出す', () => {
@@ -6780,6 +6820,60 @@ describe('進捗ボードの使い勝手', () => {
 
 describe('前進を見せる (意欲づけ)', () => {
   beforeEach(() => { window.localStorage.clear(); });
+  // 写し先を差し替えたテストが、後のテストに残らないようにする
+  afterEach(() => { delete window.navigator.clipboard; });
+
+  it('今日片づけたものを本人にだけ出し、日報の形で写せる', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    mount({ apiMyToday: [
+      { kind: 'issue', number: 12, title: '規程の改定' },
+      { kind: 'pull', number: 7, title: '細則の見直し' },
+    ] });
+    const card = document.querySelector('#home-cards .my-today');
+    expect(card.textContent).toContain('今日片づけたもの');
+    expect(card.textContent).toContain('あなたにだけ見えます');
+    expect(card.querySelectorAll('li')).toHaveLength(2);
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied[0]).toBe('✅今日\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映');
+  });
+
+  it('文書の一覧を先に出し、前進は見出しを付けて後ろに分ける (文書と取り違えない)', () => {
+    // 前進のカードが文書の上に同じ形で並び、どこからが文書なのか分からなかった
+    mount();
+    const docs = document.getElementById('doc-list');
+    const cards = document.getElementById('home-cards');
+    expect(docs.compareDocumentPosition(cards) & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 両方を1つの送り (スクロール) の中に置く。分けると文書の一覧が押し出される
+    expect(docs.parentNode).toBe(cards.parentNode);
+
+    const docHead = docs.previousElementSibling;
+    expect(docHead.tagName).toBe('H2');
+    expect(docHead.textContent).toBe('文書');
+
+    const head = cards.firstElementChild;
+    expect(head.tagName).toBe('H2');
+    expect(head.textContent).toBe('あなたとチームの前進');
+  });
+
+  it('今日まだ何も無いときは「これから」と書く', () => {
+    mount();
+    const card = document.querySelector('#home-cards .my-today');
+    expect(card.textContent).toContain('今日はこれから');
+    expect(card.querySelector('button')).toBeNull();
+  });
+
+  it('写せないブラウザでは、選んで写せる欄を出す', async () => {
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined });
+    mount({ apiMyToday: [{ kind: 'issue', number: 12, title: '規程の改定' }] });
+    const card = document.querySelector('#home-cards .my-today');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(card.querySelector('textarea').value).toContain('- #12 規程の改定');
+  });
   const STEPS = [
     { key: 'branch', label: '改訂版を作る', hint: 'h1', tab: 'docs', done: true },
     { key: 'commit', label: '変更を記録する', hint: '直したら「変更を記録」', tab: 'branches', done: false },
@@ -6833,13 +6927,143 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(document.querySelector('#home-cards .first-steps')).toBeNull();
   });
 
-  it('完了にしたとき、今週チームで何件目かを添えて知らせる', () => {
-    mount({ apiProgress: { weekClosed: 4, weekMerged: 0, monthClosed: 10, goal: 10, canEditGoal: false } });
+  function closeFirst() {
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-item .icon-btn.ok').click();
-    const snack = document.getElementById('snackbar').textContent;
+    return document.getElementById('snackbar');
+  }
+
+  it('完了にしたとき、どれにも当たらなければ今週チームで何件目かを添える', () => {
+    mount({ apiCloseFeedback: { kind: 'team', number: 1, title: 'x', weekClosed: 4, monthClosed: 10, goal: 10 } });
+    const snack = closeFirst().textContent;
     expect(snack).toContain('を完了にしました。今週チームで 4 件目です');
     expect(snack).toContain('今月の目標に届きました');
+  });
+
+  it('小分けの途中は「あと◯つ」と進み具合を出す', () => {
+    mount({ apiCloseFeedback: { kind: 'parentStep', number: 3, title: '子', weekClosed: 1, monthClosed: 1, goal: 0,
+      parent: { number: 12, title: '規程の改定', done: 1, total: 3 } } });
+    const bar = closeFirst();
+    expect(bar.textContent).toContain('#12 規程の改定 はあと 2 つ');
+    expect(bar.querySelector('.snack-mark [role="progressbar"]').getAttribute('aria-valuenow')).toBe('1');
+  });
+
+  it('小分けの最後は、親も完了にするボタンを出す。押すと親も閉じる', () => {
+    const closedNos = [];
+    mount({
+      apiIssueClose: (n) => { closedNos.push(n); return { number: n, state: 'closed' }; },
+      apiCloseFeedback: { kind: 'parentDone', number: 3, title: '子', weekClosed: 1, monthClosed: 1, goal: 0,
+        parent: { number: 12, title: '規程の改定', done: 3, total: 3 } },
+    });
+    const bar = closeFirst();
+    expect(bar.textContent).toContain('#12 規程の改定 の小分けが全部終わりました');
+    const btn = Array.from(bar.querySelectorAll('button')).find((b) => b.textContent === '#12 も完了にする');
+    btn.click();
+    expect(closedNos).toContain(12);
+  });
+
+  it('長く止まっていたもの・大きいものは、件数ではなくそのことを伝える', () => {
+    mount({ apiCloseFeedback: { kind: 'longAwaited', number: 1, title: 'x', weekClosed: 9, monthClosed: 9, goal: 0, days: 21 } });
+    expect(closeFirst().textContent).toContain('3週間越しのものが片づきました');
+    mount({ apiCloseFeedback: { kind: 'heavy', number: 1, title: 'x', weekClosed: 9, monthClosed: 9, goal: 0 } });
+    const t = closeFirst().textContent;
+    expect(t).toContain('大きいものが1つ終わりました');
+    expect(t).not.toContain('件目');
+  });
+
+  it('ポイントとレベルが届けば添え、帯に出したレベルを見せたと伝える', () => {
+    const seen = [];
+    mount({ apiCloseFeedback: { kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3, levelUp: 4 },
+      apiGameLevelSeen: (n) => { seen.push(n); return { level: n }; } });
+    const t = closeFirst().textContent;
+    expect(t).toContain('+3');
+    expect(t).toContain('レベル 4 になりました');
+    expect(seen).toEqual([4]);
+  });
+
+  it('割り算の端数は小数1桁で出す', () => {
+    mount({ apiCloseFeedback: { kind: 'team', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 1 / 3 } });
+    expect(closeFirst().textContent).toContain('(+0.3)');
+  });
+
+  it('捨てた返事のレベルは、見せたと伝えない (次の完了でもう一度知らせる)', () => {
+    const seen = [];
+    const replies = [];
+    mount({ apiCloseFeedback: { later: (ok) => { replies.push(ok); } },
+      apiGameLevelSeen: (n) => { seen.push(n); return { level: n }; } });
+    closeFirst();
+    document.querySelectorAll('#issue-list .row-item .icon-btn.ok')[1].click();
+    replies[0]({ kind: 'team', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 1, levelUp: 2 });
+    expect(seen).toEqual([]);
+  });
+
+  it('やることの画面で完了にしても、ホームのカードは取りに行かない', () => {
+    const app = mount({ apiCloseFeedback: { kind: 'team', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0 } });
+    document.querySelector('[data-tab="issues"]').click();
+    const before = app.calls.length;
+    document.querySelector('#issue-list .row-item .icon-btn.ok').click();
+    const names = app.calls.slice(before).map((c) => c.name);
+    expect(names).toContain('apiCloseFeedback');
+    expect(names).not.toContain('apiMyToday');
+    expect(names).not.toContain('apiGameState');
+    expect(names).not.toContain('apiGameTop');
+  });
+
+  it('小分けの棒に名前を付ける', () => {
+    mount({ apiCloseFeedback: { kind: 'parentStep', number: 3, title: '子', weekClosed: 1, monthClosed: 1, goal: 0,
+      parent: { number: 12, title: '規程の改定', done: 1, total: 3 } } });
+    const bar = closeFirst().querySelector('.snack-mark [role="progressbar"]');
+    expect(bar.getAttribute('aria-label')).toBe('小分けの進み具合');
+  });
+
+  it('知らせを止めた直後に届いた返事では、素の帯のまま (ポイントも出さない)', () => {
+    let reply = null;
+    mount({ apiCloseFeedback: { later: (ok) => { reply = ok; } } });
+    closeFirst();
+    document.getElementById('me-btn').click();
+    document.getElementById('progress-toggle').click();
+    reply({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    const t = document.getElementById('snackbar').textContent;
+    expect(t).not.toContain('+3');
+    expect(t).not.toContain('大きいもの');
+    expect(t).toContain('を完了にしました');
+  });
+
+  it('知らせを止めているあいだは、apiCloseFeedback を呼ばない', () => {
+    const calls = [];
+    mount({ apiCloseFeedback: () => { calls.push(1); return null; } });
+    document.getElementById('me-btn').click();
+    document.getElementById('progress-toggle').click();
+    closeFirst();
+    expect(calls).toHaveLength(0);
+    expect(document.getElementById('snackbar').textContent).toContain('を完了にしました');
+  });
+
+  it('帯が別のものに替わったあとに届いた返事は、新しい帯を上書きしない', () => {
+    const replies = [];
+    mount({ apiCloseFeedback: { later: (ok) => { replies.push(ok); } } });
+    closeFirst();
+    document.querySelectorAll('#issue-list .row-item .icon-btn.ok')[1].click();
+    const newer = document.getElementById('snackbar');
+    const newerText = newer.textContent;
+    replies[0]({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    expect(document.getElementById('snackbar')).toBe(newer);
+    expect(newer.textContent).toBe(newerText);
+    expect(newer.textContent).not.toContain('+3');
+  });
+
+  it('帯を閉じたあとに届いた返事で、帯が出直さない', () => {
+    let reply = null;
+    mount({ apiCloseFeedback: { later: (ok) => { reply = ok; } } });
+    const bar = closeFirst();
+    Array.from(bar.querySelectorAll('button')).find((b) => b.textContent === '閉じる').click();
+    reply({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    expect(document.getElementById('snackbar')).toBeNull();
+  });
+
+  it('返事が失敗しても、完了したことは伝える', () => {
+    mount({ apiCloseFeedback: () => new Error('落ちた') });
+    expect(closeFirst().textContent).toContain('を完了にしました');
   });
 
   it('止めた直後に届いた返事では、カードも前進の数も出さない', () => {
@@ -6901,5 +7125,122 @@ describe('前進を見せる (意欲づけ)', () => {
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-item .icon-btn.ok').click();
     expect(document.getElementById('snackbar').textContent).not.toContain('今週チームで');
+  });
+});
+
+describe('ポイント・レベル・週の上位', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const ON = { enabled: true, total: 12, week: 4, level: 1, nextAt: 15, playing: false };
+
+  it('オフのあいだは何も出さない', () => {
+    mount();
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+
+  it('自分のレベルと次までを出し、評価に使わないと書く', () => {
+    mount({ apiGameState: ON });
+    const card = document.querySelector('#home-cards .game-card');
+    expect(card.textContent).toContain('レベル 1');
+    expect(card.textContent).toContain('次のレベルまで 3');
+    expect(card.textContent).toContain('今週 4');
+    expect(card.textContent).toContain('人事の評価には使いません');
+  });
+
+  it('ホームで描いたレベルを、見せたと伝える', () => {
+    const seen = [];
+    mount({ apiGameState: ON, apiGameLevelSeen: (n) => { seen.push(n); return { level: n }; } });
+    expect(seen).toContain(1);
+  });
+
+  it('次のレベルまでは小数1桁で出す', () => {
+    mount({ apiGameState: Object.assign({}, ON, { total: 4.1, week: 4.1, level: 0, levelFrom: 0, nextAt: 5 }) });
+    const text = document.querySelector('#home-cards .game-card').textContent;
+    expect(text).toContain('次のレベルまで 0.9');
+    expect(text).not.toContain('0.900');
+  });
+
+  it('棒は、いまのレベルの中での進み具合で描く', () => {
+    mount({ apiGameState: Object.assign({}, ON, { total: 16, level: 2, levelFrom: 15, nextAt: 30 }) });
+    const bar = document.querySelector('#home-cards .game-level-bar');
+    expect(bar.getAttribute('aria-valuemin')).toBe('15');
+    expect(bar.getAttribute('aria-valuemax')).toBe('30');
+    expect(bar.getAttribute('aria-valuenow')).toBe('16');
+    expect(bar.querySelector('span').style.width).toBe('7%');
+  });
+
+  it('週の上位は3位まで。自分の行に印。上位にいなくても自分の順位は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { playing: true }), apiGameTop: [
+      { rank: 1, name: 'あ', points: 9, me: false },
+      { rank: 2, name: 'い', points: 6, me: true },
+    ] });
+    const rows = document.querySelectorAll('#home-cards .game-top li');
+    expect(rows).toHaveLength(2);
+    expect(rows[1].classList.contains('is-me')).toBe(true);
+    expect(document.querySelector('#home-cards .game-card').textContent).not.toMatch(/\d+ 位中/);
+  });
+
+  const SETTINGS_ON = Object.assign({}, DEFAULTS.apiSettings, { gameEnabled: true });
+
+  it('自分まわりで順位に参加できる。切り替えは並びのボタンと同じ器に入る', () => {
+    let joined = null;
+    mount({ apiSettings: SETTINGS_ON, apiGameState: ON,
+      apiGameJoin: (on) => { joined = on; return Object.assign({}, ON, { playing: on }); } });
+    document.getElementById('me-btn').click();
+    const toggle = document.getElementById('game-join-toggle');
+    expect(toggle.parentNode.classList.contains('me-actions')).toBe(true);
+    toggle.click();
+    expect(joined).toBe(true);
+  });
+
+  it('参加の返事が空でも、押したとおりのまま', () => {
+    mount({ apiSettings: SETTINGS_ON, apiGameState: ON, apiGameJoin: () => null });
+    document.getElementById('me-btn').click();
+    const toggle = document.getElementById('game-join-toggle');
+    toggle.click();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('設定でオフと分かっていれば、自分まわりはポイントを尋ねない', () => {
+    const app = mount();
+    const before = app.calls.length;
+    document.getElementById('me-btn').click();
+    expect(app.calls.slice(before).map((c) => c.name)).not.toContain('apiGameState');
+    expect(document.getElementById('game-join-toggle')).toBeNull();
+  });
+
+  it('設定の見出しにオン・オフを出す', () => {
+    mount({ apiSettings: SETTINGS_ON });
+    document.querySelector('[data-tab="settings"]').click();
+    const heads = Array.from(document.querySelectorAll('.settings-section h2'));
+    const game = heads.find((h) => h.textContent.indexOf('ポイントとレベル') === 0);
+    expect(game.querySelector('.state').textContent).toContain('オン');
+  });
+
+  it('管理者は設定で切り替えられる', () => {
+    let set = null;
+    mount({ apiSetGameEnabled: (on) => { set = on; return { scrumEnabled: false, gameEnabled: on, canEdit: true,
+      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }; } });
+    document.querySelector('[data-tab="settings"]').click();
+    document.getElementById('game-toggle').click();
+    expect(set).toBe(true);
+  });
+
+  it('前進の知らせを止めていると、ゲームのカードも出さない', () => {
+    window.localStorage.setItem('progressNotes', 'off');
+    mount({ apiGameState: ON });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+
+  it('今日の一覧が取れなくても、チームの前進は出る', () => {
+    mount({ apiMyToday: new Error('x'), apiGameState: ON });
+    expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+  });
+
+  it('ポイントが取れなくても、ほかのカードは出る', () => {
+    mount({ apiGameState: new Error('x') });
+    expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
+    expect(document.querySelector('#home-cards .my-today')).not.toBeNull();
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
   });
 });

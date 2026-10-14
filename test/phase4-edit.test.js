@@ -7,7 +7,8 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
   'src/core/Db.gs',
@@ -510,6 +511,14 @@ describe('画面に渡せる形か', () => {
     return env;
   }
 
+  /** 自分の担当で今日閉じたやること */
+  function closedToday(ctx) {
+    const n = ctx.apiIssueCreate('今日閉じた', '', []).number;
+    ctx.apiIssueUpdate(n, { assignee: 'tester@example.com' });
+    ctx.issueClose(n, null);
+    return n;
+  }
+
   const CASES = [
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],
     ['apiIssuesForFile', (ctx, env) => ctx.apiIssuesForFile(env.fileId)],
@@ -521,6 +530,24 @@ describe('画面に渡せる形か', () => {
     ['apiProgress', (ctx) => ctx.apiProgress()],
     ['apiSetTeamGoal', (ctx) => ctx.apiSetTeamGoal(10)],
     ['apiMyMilestones', (ctx) => ctx.apiMyMilestones()],
+    // 閉じたものが無いと、閉じたときにだけ返す欄と今日の一覧が空のまま検査される
+    ['apiCloseFeedback', (ctx) => {
+      ctx.apiSetGameEnabled(true);
+      const out = ctx.apiCloseFeedback(closedToday(ctx));
+      if (!out || !('points' in out)) throw new Error('閉じたときの返事になっていない');
+      return out;
+    }],
+    ['apiMyToday', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiMyToday();
+      if (!out.length) throw new Error('今日の一覧が空');
+      return out;
+    }],
+    ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
+    ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
+    ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
+    ['apiGameLevelSeen', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameLevelSeen(1); }],
+    ['apiSetGameEnabled', (ctx) => ctx.apiSetGameEnabled(true)],
     ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
     ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],

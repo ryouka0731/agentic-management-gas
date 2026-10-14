@@ -1122,6 +1122,28 @@ button:disabled {
 .snackbar.ng { border-left-color: var(--danger); }
 
 .snackbar-text { flex: 1; min-width: 0; }
+.snack-mark { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.snack-check { width: 18px; height: 18px; }
+.snack-check path {
+  fill: none; stroke: var(--success); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 24; stroke-dashoffset: 24; animation: snack-draw 300ms ease-out forwards;
+}
+@keyframes snack-draw { to { stroke-dashoffset: 0; } }
+.snack-progress { width: 56px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.snack-progress-fill { display: block; height: 100%; background: var(--success); transition: width 300ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .snack-check path { animation: none; stroke-dashoffset: 0; }
+  .snack-progress-fill { transition: none; }
+}
+/*
+ * 狭い画面では、文を印の横の1行に取り、ボタンは次の行の右に回す。並べたままだと
+ * 印と棒とボタンに押されて、文が 60px ほどに潰れる。棒は隠す (残りは文が言っている)
+ */
+@media (max-width: 420px) {
+  .snackbar { flex-wrap: wrap; justify-content: flex-end; }
+  .snackbar-text { flex: 1 1 calc(100% - 18px - var(--sp-3)); }
+  .snack-progress { display: none; }
+}
 
 .snackbar button {
   flex: 0 0 auto;
@@ -3206,11 +3228,25 @@ button.label-pill {
   gap: var(--sp-2);
 }
 
+/*
+ * 長い名前は3行まで折り返す。1行で「…」にすると頭しか読めない。
+ * それ以上は切り、全文は指を置くと出す (行の title)。区切りの無い長い字も折る
+ */
 .gantt-title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
+
+/* 折り返した行が棒の行の高さを決めるので、上下に少し空ける */
+button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 
 .gantt-bar {
   display: flex;
@@ -4253,8 +4289,35 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .group-points { margin-left: var(--sp-1); }
 
 /* ホームの「チームの前進」と「はじめの5歩」 */
-.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) 0; align-items: start; background: var(--bg-2); }
+/*
+ * 文書タブは「文書」と「あなたとチームの前進」の2つの区画。見出しで分け、
+ * 前進は線で区切った後ろに置く (同じ形で上に並べると文書と取り違える)
+ */
+.home-section-head {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+  padding: var(--sp-3) var(--sp-4) 0;
+  align-items: start;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.home-cards > .home-section-head { grid-column: 1 / -1; padding: 0; }
 .home-cards:empty { display: none; }
+.game-level { margin: var(--sp-1) 0; }
+.game-level-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.game-level-bar span { display: block; height: 100%; background: var(--accent); }
+.game-top { margin: var(--sp-1) 0; padding-left: 0; list-style: none; }
+.game-top .is-me { font-weight: 600; }
+.game-note { margin: var(--sp-2) 0 0; }
 .home-card {
   display: flex;
   flex-direction: column;
@@ -4264,6 +4327,9 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   background: var(--surface-raised);
   box-shadow: var(--hairline);
 }
+.my-today-list { margin: var(--sp-1) 0 var(--sp-2); padding-left: 18px; }
+.my-today-none { margin: var(--sp-1) 0 0; color: var(--ink-2); }
+.my-today-copy { display: block; width: 100%; min-height: 72px; margin-top: var(--sp-2); box-sizing: border-box; }
 .team-progress-line { font-size: 14px; font-weight: 600; color: var(--ink); }
 .team-goal { display: flex; flex-direction: column; gap: var(--sp-1); }
 .team-goal .state { align-self: flex-start; }
@@ -4357,6 +4423,16 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
     padding: var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));
     background: var(--bg);
     box-shadow: 0 -1px 0 var(--line), var(--elev-1);
+  }
+
+  /* 通知は下の帯の上に、左右いっぱいで出す (中央寄せのままだと幅が画面の半分になり、
+     閉じるボタンが帯の下に隠れた) */
+  .snackbar {
+    left: var(--sp-4);
+    right: var(--sp-4);
+    transform: none;
+    max-width: none;
+    bottom: calc(64px + env(safe-area-inset-bottom) + var(--sp-3));
   }
 
   .mobile-nav-item {
