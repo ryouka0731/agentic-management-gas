@@ -1122,6 +1122,19 @@ button:disabled {
 .snackbar.ng { border-left-color: var(--danger); }
 
 .snackbar-text { flex: 1; min-width: 0; }
+.snack-mark { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.snack-check { width: 18px; height: 18px; }
+.snack-check path {
+  fill: none; stroke: var(--success); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 24; stroke-dashoffset: 24; animation: snack-draw 300ms ease-out forwards;
+}
+@keyframes snack-draw { to { stroke-dashoffset: 0; } }
+.snack-progress { width: 56px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.snack-progress-fill { display: block; height: 100%; background: var(--success); transition: width 300ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .snack-check path { animation: none; stroke-dashoffset: 0; }
+  .snack-progress-fill { transition: none; }
+}
 
 .snackbar button {
   flex: 0 0 auto;

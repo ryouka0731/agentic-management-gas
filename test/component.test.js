@@ -6833,13 +6833,73 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(document.querySelector('#home-cards .first-steps')).toBeNull();
   });
 
-  it('完了にしたとき、今週チームで何件目かを添えて知らせる', () => {
-    mount({ apiProgress: { weekClosed: 4, weekMerged: 0, monthClosed: 10, goal: 10, canEditGoal: false } });
+  function closeFirst() {
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list .row-item .icon-btn.ok').click();
-    const snack = document.getElementById('snackbar').textContent;
+    return document.getElementById('snackbar');
+  }
+
+  it('完了にしたとき、どれにも当たらなければ今週チームで何件目かを添える', () => {
+    mount({ apiCloseFeedback: { kind: 'team', number: 1, title: 'x', weekClosed: 4, monthClosed: 10, goal: 10 } });
+    const snack = closeFirst().textContent;
     expect(snack).toContain('を完了にしました。今週チームで 4 件目です');
     expect(snack).toContain('今月の目標に届きました');
+  });
+
+  it('小分けの途中は「あと◯つ」と進み具合を出す', () => {
+    mount({ apiCloseFeedback: { kind: 'parentStep', number: 3, title: '子', weekClosed: 1, monthClosed: 1, goal: 0,
+      parent: { number: 12, title: '規程の改定', done: 1, total: 3 } } });
+    const bar = closeFirst();
+    expect(bar.textContent).toContain('#12 規程の改定 はあと 2 つ');
+    expect(bar.querySelector('.snack-mark [role="progressbar"]').getAttribute('aria-valuenow')).toBe('1');
+  });
+
+  it('小分けの最後は、親も完了にするボタンを出す。押すと親も閉じる', () => {
+    const closedNos = [];
+    mount({
+      apiIssueClose: (n) => { closedNos.push(n); return { number: n, state: 'closed' }; },
+      apiCloseFeedback: { kind: 'parentDone', number: 3, title: '子', weekClosed: 1, monthClosed: 1, goal: 0,
+        parent: { number: 12, title: '規程の改定', done: 3, total: 3 } },
+    });
+    const bar = closeFirst();
+    expect(bar.textContent).toContain('#12 規程の改定 の小分けが全部終わりました');
+    const btn = Array.from(bar.querySelectorAll('button')).find((b) => b.textContent === '#12 も完了にする');
+    btn.click();
+    expect(closedNos).toContain(12);
+  });
+
+  it('長く止まっていたもの・大きいものは、件数ではなくそのことを伝える', () => {
+    mount({ apiCloseFeedback: { kind: 'longAwaited', number: 1, title: 'x', weekClosed: 9, monthClosed: 9, goal: 0, days: 21 } });
+    expect(closeFirst().textContent).toContain('3週間越しのものが片づきました');
+    mount({ apiCloseFeedback: { kind: 'heavy', number: 1, title: 'x', weekClosed: 9, monthClosed: 9, goal: 0 } });
+    const t = closeFirst().textContent;
+    expect(t).toContain('大きいものが1つ終わりました');
+    expect(t).not.toContain('件目');
+  });
+
+  it('ポイントとレベルが届けば添える', () => {
+    mount({ apiCloseFeedback: { kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3, levelUp: 4 } });
+    const t = closeFirst().textContent;
+    expect(t).toContain('+3');
+    expect(t).toContain('レベル 4 になりました');
+  });
+
+  it('知らせを止めた直後に届いた返事では、素の帯のまま (ポイントも出さない)', () => {
+    let reply = null;
+    mount({ apiCloseFeedback: { later: (ok) => { reply = ok; } } });
+    const bar = closeFirst();
+    document.getElementById('me-btn').click();
+    document.getElementById('progress-toggle').click();
+    reply({ kind: 'heavy', number: 1, title: 'x', weekClosed: 1, monthClosed: 1, goal: 0, points: 3 });
+    const t = document.getElementById('snackbar').textContent;
+    expect(t).not.toContain('+3');
+    expect(t).not.toContain('大きいもの');
+    expect(bar).toBeTruthy();
+  });
+
+  it('返事が失敗しても、完了したことは伝える', () => {
+    mount({ apiCloseFeedback: () => new Error('落ちた') });
+    expect(closeFirst().textContent).toContain('を完了にしました');
   });
 
   it('止めた直後に届いた返事では、カードも前進の数も出さない', () => {
