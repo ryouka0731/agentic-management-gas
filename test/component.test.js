@@ -6953,10 +6953,17 @@ describe('前進を見せる (意欲づけ)', () => {
     const card = document.querySelector('#home-cards .my-today');
     Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '自分の形を直す').click();
     const form = document.querySelector('.inline-form');
-    form.querySelector('textarea').value = 'あ'.repeat(2001);
+    const area = form.querySelector('textarea');
+    area.value = 'あ'.repeat(2001);
+    area.dispatchEvent(new window.Event('input'));
     form.dispatchEvent(new window.Event('submit', { cancelable: true }));
     expect(app.calls.some((c) => c.name === 'apiSetReportCustom')).toBe(false);
-    expect(document.getElementById('snackbar').textContent).toContain('2000字まで');
+    // 欄は開いたままで、書いたものが残っている
+    const still = document.querySelector('.inline-form');
+    expect(still).not.toBeNull();
+    expect(still.isConnected).toBe(true);
+    expect(still.querySelector('textarea').value).toBe('あ'.repeat(2001));
+    expect(still.textContent).toContain('2000字までです (いま 2001 字)');
   });
 
   it('日報の中身が取れないときは、今の形 (✅今日 と箇条) で写す', async () => {
