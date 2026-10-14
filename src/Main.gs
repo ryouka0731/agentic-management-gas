@@ -3135,6 +3135,30 @@ function apiMyMilestones() {
   });
 }
 
+/**
+ * 完了にしたやることについて、何が起きたかを1つ返す (Web App API)。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiCloseFeedback(number) {
+  var fb = closeFeedback_(Number(number), new Date());
+  var out = {
+    kind: plainText(fb.kind),
+    number: plainId(fb.number),
+    title: plainText(fb.title),
+    weekClosed: plainNumber(fb.weekClosed),
+    monthClosed: plainNumber(fb.monthClosed),
+    goal: plainNumber(fb.goal),
+  };
+  if (fb.parent) {
+    out.parent = { number: plainId(fb.parent.number), title: plainText(fb.parent.title),
+      done: plainNumber(fb.parent.done), total: plainNumber(fb.parent.total) };
+  }
+  if (fb.days) out.days = plainNumber(fb.days);
+  return out;
+}
+
 // ===== 設定 =====
 
 /**
