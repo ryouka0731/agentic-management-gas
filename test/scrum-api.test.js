@@ -13,7 +13,7 @@ const SOURCES = [
   'src/core/Project.gs', 'src/core/Mention.js', 'src/core/Inquiry.gs', 'src/core/Brand.js',
   'src/core/Notifier.gs', 'src/core/Tally.js', 'src/core/Plain.js',
   'src/core/Settings.gs', 'src/core/Scrum.gs', 'src/core/ScrumView.js',
-  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/Main.gs',
+  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/Main.gs',
 ];
 
 function setup() {

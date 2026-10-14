@@ -8,6 +8,59 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
+/*
+ * 前に組んだ画面が window / document に付けた聞き手と時計、待ちの rAF、iframe の中の window を外す。
+ *
+ * 組み直しても window と document は同じものなので、外さないと前の画面
+ * (古い DOM まるごと) が聞き手から辿れたまま残る。画面を組むテストは
+ * 数百あり、ホームに草 (742 マス) を足した時点で積み上がりがヒープの上限を
+ * 超えて落ちた。前の画面の聞き手が今の画面の操作に応えることも無くなる。
+ */
+const leftovers = { listeners: [], intervals: [], frames: [] };
+let tracking = false;
+
+function trackGlobals() {
+  if (tracking) return;
+  tracking = true;
+  [window, document].forEach((target) => {
+    const add = target.addEventListener.bind(target);
+    target.addEventListener = function (type, fn, opts) {
+      leftovers.listeners.push([target, type, fn, opts]);
+      return add(type, fn, opts);
+    };
+  });
+  const every = window.setInterval.bind(window);
+  window.setInterval = function (...args) {
+    const id = every(...args);
+    leftovers.intervals.push(id);
+    return id;
+  };
+  // jsdom は描画しないので、待ちの rAF は呼ばれないまま前の画面を抱え続ける
+  if (window.requestAnimationFrame) {
+    const frame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = function (fn) {
+      const id = frame(fn);
+      leftovers.frames.push(id);
+      return id;
+    };
+  }
+}
+
+function dropLeftovers() {
+  leftovers.listeners.forEach(([target, type, fn, opts]) => target.removeEventListener(type, fn, opts));
+  leftovers.intervals.forEach((id) => window.clearInterval(id));
+  leftovers.frames.forEach((id) => window.cancelAnimationFrame(id));
+  // iframe の中の window は jsdom が手放さず、frameElement から前の画面を辿れて
+  // しまう。iframe だけを先に木から外し、辿る先を iframe 1つに留める
+  document.querySelectorAll('iframe').forEach((f) => {
+    if (f.contentWindow) f.contentWindow.close();
+    f.remove();
+  });
+  leftovers.listeners = [];
+  leftovers.intervals = [];
+  leftovers.frames = [];
+}
+
 /**
  * 画面を組み立てて実際に動かす。
  *
@@ -19,6 +72,9 @@ function read(rel) {
  * @returns {{calls: object[], respond: function, flush: function}}
  */
 export function mountApp(responses) {
+  trackGlobals();
+  dropLeftovers();
+
   const html = read('src/ui/wiki.html')
     .replace("<?!= include('ui/app.css') ?>", read('src/ui/app.css.html'))
     .replace("<?!= include('ui/app.js') ?>", '');
@@ -96,7 +152,7 @@ const API_NAMES = [
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
-  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday',
+  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiSetReportKind', 'apiSetReportCustom',
   'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
@@ -231,6 +287,35 @@ export const DEFAULTS = {
   apiMyMilestones: [],
   apiCloseFeedback: { kind: 'team', number: 1, title: 'x', weekClosed: 0, monthClosed: 0, goal: 0 },
   apiMyToday: [],
+  apiHomeActivity: { weeks: Array.from({ length: 53 }, (_, w) => Array.from({ length: 7 }, (_, d) => ({
+    day: '2026-' + String(1 + (w % 12)).padStart(2, '0') + '-' + String(1 + d).padStart(2, '0'),
+    me: (w + d) % 3, team: (w + d) % 5, future: w === 52 && d > 2,
+  }))), meTotal: 120 },
+  apiHomeSummary: {
+    myTurn: {
+      reviews: { items: [{ number: 1, title: '就業規則 第3条の改定' }], total: 1 },
+      returned: { items: [], total: 0 },
+      due: { items: [{ number: 7, title: '附則の施行日を決める', due: '2026-10-13', overdue: true }], total: 1 },
+    },
+    recent: [
+      { kind: 'merged', number: 1, fileId: '', title: '就業規則 第3条の改定', at: '2026-10-14T01:00:00.000Z' },
+      { kind: 'closed', number: 3, fileId: '', title: '第7条に在宅勤務を足す', at: '2026-10-13T01:00:00.000Z' },
+      { kind: 'file', number: 0, fileId: 'DOC1', title: '就業規則.doc', at: '2026-10-12T01:00:00.000Z' },
+    ],
+  },
+  apiReportParts: {
+    parts: { today: [], tomorrow: [], troubles: [], date: '10/14 (水)', name: '中井' },
+    templates: [
+      { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
+      { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
+      { key: 'plain', name: '見出し無し', body: '{今日}' },
+    ],
+    kind: 'three',
+    custom: '',
+  },
+  apiSetReportKind: (kind) => ({ kind }),
+  // 中身があれば、同じ1回で「自分の形」を選んだことにもなる
+  apiSetReportCustom: (text) => ({ custom: text, kind: text ? 'custom' : 'three' }),
   apiGameState: { enabled: false },
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),
