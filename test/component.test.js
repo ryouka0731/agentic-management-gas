@@ -7829,6 +7829,72 @@ describe('横断検索', () => {
     expect(app.calls.filter((c) => c.name === 'apiIssueArchivedList')).toHaveLength(1);
   });
 
+  it('探して置き場へ移っても、次に開くときの見え方は変えない', () => {
+    // 覚えると、以後ずっと「捨てたもの」で開くようになる
+    window.localStorage.setItem('issueView', 'board');
+    mount({
+      apiIssueArchivedList: [{ number: 13, title: '就業規則 古い案', state: 'open', archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22 }],
+    });
+    type('古い案');
+    document.querySelector('#search-results [data-kind="issue"]').click();
+    expect(document.getElementById('trash-list').hidden).toBe(false);
+    expect(window.localStorage.getItem('issueView')).toBe('board');
+  });
+
+  it('置き場が取れなかったら、指す先は捨てる (後で開いても古い行を指さない)', () => {
+    let n = 0;
+    const LIST = [{ number: 13, title: '就業規則 古い案', state: 'open', archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22 }];
+    mount({ apiIssueArchivedList: () => (++n === 1 ? new Error('混み合っています') : LIST) });
+    type('古い案');
+    document.querySelector('#search-results [data-kind="issue"]').click();
+    expect(document.getElementById('trash-list').textContent).toContain('混み合っています');
+    document.getElementById('view-trash').click();
+    expect(n).toBe(2);
+    expect(document.getElementById('trash-list').textContent).toContain('#13');
+    expect(document.querySelector('#trash-list [aria-current="true"]')).toBeNull();
+  });
+
+  describe('一覧を動かす操作のあとは取り直す。読むだけなら取り直さない', () => {
+    const indexCalls = (app) => app.calls.filter((c) => c.name === 'apiSearchIndex').length;
+    const touch = () => { key(document.body, 'k', { ctrlKey: true }); document.activeElement.blur(); };
+
+    it('やることを完了にしたあと', () => {
+      const app = mount();
+      touch();
+      document.querySelector('[data-tab="issues"]').click();
+      document.querySelector('#issue-list [aria-label$="を完了にする"]').click();
+      expect(app.calls.some((c) => c.name === 'apiIssueClose')).toBe(true);
+      touch();
+      expect(indexCalls(app)).toBe(2);
+    });
+
+    it('報告を解決にしたあと', () => {
+      const R = { number: 6, kind: 'bug', kindLabel: 'うまく動かない', title: '新しい報告', body: '新しい報告', by: 'me@example.com',
+        state: 'open', context: '', answer: '', at: '2026-09-09T00:00:00.000Z', answeredAt: '', mine: true, canClose: true, replyCount: 0 };
+      const app = mount({
+        apiSearchIndex: [{ kind: 'inquiry', number: 6, key: '', title: '新しい報告', state: 'open', archived: false }],
+        apiInquiryList: [R],
+        apiInquiryThread: { inquiry: R, replies: [] },
+      });
+      type('新しい');
+      document.querySelector('#search-results [data-kind="inquiry"]').click();
+      expect(indexCalls(app)).toBe(1);
+      document.querySelector('#report-detail .pr-actions .btn').click();
+      expect(app.calls.some((c) => c.name === 'apiInquiryClose')).toBe(true);
+      touch();
+      expect(indexCalls(app)).toBe(2);
+    });
+
+    it('一覧を読むだけなら取り直さない', () => {
+      const app = mount();
+      touch();
+      document.querySelector('[data-tab="issues"]').click();
+      expect(app.calls.some((c) => c.name === 'apiIssueList')).toBe(true);
+      touch();
+      expect(indexCalls(app)).toBe(1);
+    });
+  });
+
   describe('報告を選ぶと、その報告が開く', () => {
     const R = (number, title, state) => ({
       number, kind: 'bug', kindLabel: 'うまく動かない', title, body: title, by: 'other@example.com',

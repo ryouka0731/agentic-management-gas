@@ -71,3 +71,22 @@ describe('状態の札は一覧と同じ言葉', () => {
     expect(searchStateLabel(I('branch', 0, 'x'))).toBe('');
   });
 });
+
+describe('どの呼び出しのあとで一覧を取り直すか', () => {
+  const { searchIndexChangedBy } = ui(['searchIndexChangedBy']);
+
+  it('作る・閉じる・戻す・捨てる・反映する・取り下げる・解決するは当たる', () => {
+    ['apiIssueCreate', 'apiIssueUpdate', 'apiIssueClose', 'apiIssueReopen', 'apiIssueArchive', 'apiIssueRestore',
+      'apiIssuePurge', 'apiIssueCreateBranch', 'apiPrCreate', 'apiPrMerge', 'apiPrClose', 'apiBranchCreate',
+      'apiBranchDelete', 'apiBranchAddFile', 'apiInquiryCreate', 'apiInquiryClose', 'apiInquiryReopen',
+      'apiImpedimentCreate', 'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
+      'apiRegisterFiles', 'apiUnregisterFile', 'apiProjectMove']
+      .forEach((n) => expect([n, searchIndexChangedBy(n)]).toEqual([n, true]));
+  });
+
+  it('読むだけのものは当たらない', () => {
+    ['apiIssueList', 'apiSearchIndex', 'apiHomeSummary', 'apiPrList', 'apiPrPreview', 'apiTasksState',
+      'apiGetFileHtml', 'apiInquiryThread', 'apiIssueArchivedList', 'apiUsageRecord', 'apiNotificationsRead']
+      .forEach((n) => expect([n, searchIndexChangedBy(n)]).toEqual([n, false]));
+  });
+});
