@@ -2888,6 +2888,8 @@ button.gantt-name:hover { color: var(--accent); }
 /* 捨てたものの置き場 */
 .row-item.archived .row-open { cursor: default; }
 .row-item.archived .row-title { color: var(--ink-2); }
+/* 探した結果から開いた行。どれを探していたかを見失わない */
+.row-item.archived[aria-current="true"] { box-shadow: var(--hairline), 0 0 0 2px var(--accent); }
 
 /*
  * 押す前の補足。

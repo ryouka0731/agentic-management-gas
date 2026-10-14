@@ -2926,7 +2926,13 @@
   function searchFilter(index, query) {
     var words = searchNormalize(query).split(/\s+/).filter(Boolean);
     if (!words.length) return [];
-    var stateOrder = { open: 0, approved: 0, closed: 1, merged: 1, done: 1, resolved: 1 };
+    // 同じ段の中の並び。種類ごとに持つ (確認依頼は取り下げを反映済みより後ろに)
+    var stateOrder = {
+      issue: { open: 0, closed: 1 },
+      pull: { open: 0, approved: 0, merged: 1, closed: 2 },
+      inquiry: { open: 0, done: 1 },
+      impediment: { open: 0, resolved: 1 },
+    };
 
     var groups = {};
     (index || []).forEach(function (item) {
@@ -2951,7 +2957,7 @@
       list.sort(function (a, b) {
         return a.rank - b.rank ||
           (a.archived ? 1 : 0) - (b.archived ? 1 : 0) ||
-          (stateOrder[a.state] || 0) - (stateOrder[b.state] || 0) ||
+          ((stateOrder[kind] || {})[a.state] || 0) - ((stateOrder[kind] || {})[b.state] || 0) ||
           b.number - a.number;
       });
       var take = list.slice(0, Math.min(5, left));
@@ -2973,12 +2979,19 @@
   var searchLoading = false;
   var searchError = '';
   var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '障害物' };
-  var SEARCH_STATES = {
-    issue: { open: '作業中', closed: '完了' },
-    pull: { open: '確認中', approved: '承認済み', merged: '反映済み', closed: '取り下げ' },
-    inquiry: { open: '受付', done: '済み' },
-    impediment: { open: '未解決', resolved: '解決' },
-  };
+  /**
+   * 状態の札。**それぞれの一覧と同じ言葉にする。** 違う言葉だと、開いた先で同じものだと分からない。
+   * 確認依頼は stateLabel に寄せる (一覧と同じ関数)。
+   */
+  function searchStateLabel(item) {
+    if (item.archived) return '置き場';
+    if (item.kind === 'pull') return stateLabel(item.state);
+    return ({
+      issue: { open: '対応中', closed: '完了' },
+      inquiry: { open: '未解決', done: '解決' },
+      impediment: { open: '未解決', resolved: '解決済み' },
+    }[item.kind] || {})[item.state] || '';
+  }
 
   // Mac では ⌘K、ほかは Ctrl+K と案内する
   var searchMac = /Mac|iPhone|iPad/.test(window.navigator.platform || '');
@@ -3010,6 +3023,15 @@
     });
   }
 
+  /**
+   * 一覧を古いことにする。次に欄へ入ったとき取り直す。
+   * この画面で作ったり題名を直したりしたら呼ぶ。60秒待たないと出てこないと、
+   * 作ったはずのものが探せない。
+   */
+  function searchIndexStale() {
+    searchIndexAt = 0;
+  }
+
   /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
   function hideSearchResults() {
     searchResults.hidden = true;
@@ -3027,6 +3049,8 @@
 
   function showSearchMessage(text) {
     searchResults.textContent = '';
+    searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
     var p = document.createElement('p');
     p.className = 'search-empty row-meta';
     p.textContent = text;
@@ -3062,6 +3086,7 @@
 
     searchResults.textContent = '';
     searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
     var n = 0;
     groups.forEach(function (g) {
       var head = document.createElement('div');
@@ -3083,9 +3108,8 @@
           row.appendChild(num);
         }
         row.appendChild(searchTitle(item));
-        var label = item.archived ? '置き場' : ((SEARCH_STATES[item.kind] || {})[item.state] || '');
+        var label = searchStateLabel(item);
         if (label) row.appendChild(makePill(label));
-        row.addEventListener('mousedown', function (e) { e.preventDefault(); });
         row.addEventListener('click', function () { openSearchItem(item); });
         searchResults.appendChild(row);
       });
@@ -3109,12 +3133,37 @@
     closeSearch();
     searchInput.blur();
     if (item.kind === 'doc') openDocById(item.key, item.title);
+    else if (item.kind === 'issue' && item.archived) {
+      // 捨てたものは一覧に出ない (apiIssueList は置き場を返さない)。置き場を開いてその行を指す
+      trashFocus = item.number;
+      setIssueView('trash', true);
+      switchTab('issues');
+    }
     else if (item.kind === 'issue') openIssueByNumber(item.number);
     else if (item.kind === 'pull') switchTab('pulls', { pr: item.number });
     else if (item.kind === 'branch') switchTab('branches');
-    else if (item.kind === 'inquiry') { reportShown = item.number; switchTab('report'); }
+    else if (item.kind === 'inquiry') {
+      // 絞り込みが残っていたり「未解決だけ」で済んだものが外れていたりすると、別の報告が開く
+      reportFilterEl.value = '';
+      if (reportOpenOnly && item.state === 'done') {
+        reportOpenOnly = false;
+        setToggle(reportOpenBtn, reportOpenOnly);
+      }
+      reportShown = item.number;
+      switchTab('report');
+    }
     else if (item.kind === 'impediment') switchTab('impediments');
   }
+
+  // 一覧の中 (見出し・送りのつまみ・行) を押しても欄から抜けない。抜けると blur で閉じる
+  searchResults.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+  // 狭い画面で開いた欄は、外側を押すと閉じる (広い画面は blur で閉じる)
+  document.addEventListener('pointerdown', function (e) {
+    if (!searchBox.classList.contains('is-open')) return;
+    if (searchBox.contains(e.target)) return;
+    closeSearch();
+  });
 
   searchInput.addEventListener('focus', loadSearchIndex);
   searchInput.addEventListener('input', renderSearch);
@@ -4016,6 +4065,7 @@
       '作る',
       function (v) {
         call('apiBranchCreate', [v.name, current.docFileId], function () {
+          searchIndexStale();
           showSnack('改訂版「' + v.name + '」を作りました', { kind: 'ok' });
           loadFiles(function () {
             loadDrafts();
@@ -4506,6 +4556,7 @@
 
         call('apiPrCreate', [v.title, v.body, branchName, ids, v.into],
           function () {
+            searchIndexStale();
             showSnack('確認を依頼しました', { kind: 'ok' });
             switchTab('pulls');
             loadOverview();
@@ -5539,7 +5590,11 @@
     return el;
   }
 
-  function setIssueView(view) {
+  /**
+   * @param {string} view
+   * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
+   */
+  function setIssueView(view, quiet) {
     issueView = view;
 
     Object.keys(viewBtns).forEach(function (k) {
@@ -5567,7 +5622,7 @@
       window.localStorage.setItem('issueView', view);
     } catch (e) { /* 保存できなくても切り替えは効く */ }
 
-    reloadIssueView();
+    if (!quiet) reloadIssueView();
   }
 
   function reloadIssueView() {
@@ -6147,6 +6202,7 @@
           branchBtn.addEventListener('click', function () {
             branchBtn.disabled = true;
             call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
+              searchIndexStale();
               showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
               loadFiles(function () { loadIssues(); });
               loadOverview();
@@ -6595,6 +6651,7 @@
         }
 
         call('apiIssueUpdate', [issue.number, patch], function (after) {
+          searchIndexStale();
           showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
           // 直したら読む形に戻す。書き換えの形のまま残ると、
           // どこまで反映されたのかが分からない
@@ -6986,14 +7043,24 @@
    * 捨てたものの置き場。
    *
    * 期限まで何日残っているかを出す。何もしなければ自然に片付く。
+   *
+   * 探した結果から開いたときは、その行を指す (trashFocus)。
    */
+  var trashFocus = null;
+
   function loadTrash() {
     showSkeleton(trashListEl, 'list', 3);
 
     call('apiIssueArchivedList', [], function (list) {
       var rows = list || [];
+      var focus = trashFocus;
+      trashFocus = null;
       trashListEl.textContent = '';
       issueCountEl.textContent = rows.length + '件';
+      if (focus && !rows.some(function (r) { return Number(r.number) === Number(focus); })) {
+        // 期限が来て片付いたか、ほかの人が戻した
+        showSnack('やること #' + focus + ' は置き場にありません', { kind: 'ng' });
+      }
 
       if (!rows.length) {
         trashListEl.appendChild(makeBlankState(
@@ -7007,6 +7074,7 @@
       rows.forEach(function (issue) {
         var row = document.createElement('div');
         row.className = 'row-item archived';
+        row.dataset.number = issue.number;
 
         var main = document.createElement('div');
         main.className = 'row-main';
@@ -7061,6 +7129,10 @@
         row.appendChild(purge);
 
         trashListEl.appendChild(row);
+        if (focus && Number(issue.number) === Number(focus)) {
+          row.setAttribute('aria-current', 'true');
+          if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+        }
       });
     }, failInto(trashListEl));
   }
@@ -7104,6 +7176,7 @@
         scrumIssuePatch(v, extra);
 
         call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', extra], function () {
+          searchIndexStale();
           showSnack('やることを作りました', { kind: 'ok' });
           // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
           if (panelIssues.hidden) switchTab('issues');
@@ -8632,6 +8705,7 @@
       if (!title) return;
       add.disabled = true;
       call('apiIssueCreate', [title, '', [], '', {}], function (made) {
+        searchIndexStale();
         function done() {
           showSnack('#' + made.number + ' を ' + label + ' に足しました', { kind: 'ok' });
           loadBoard();
@@ -9720,6 +9794,7 @@
       '送る',
       function (v) {
         call('apiInquiryCreate', [v.kind, reportBody(v), reportContext(), shots], function (row) {
+          searchIndexStale();
           showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
           closeSide();
           loadReports();
@@ -10567,6 +10642,7 @@
         go.disabled = true;
 
         call('apiRegisterFiles', [ids], function (res) {
+          searchIndexStale();
           go.disabled = false;
           var text = res.added.length + '件を登録しました';
 
@@ -13406,6 +13482,7 @@
         return;
       }
       call('apiImpedimentCreate', [fields], function () {
+        searchIndexStale();
         showSnack('障害物を記録しました', { kind: 'ok' });
         loadImpediments();
       });
