@@ -137,19 +137,25 @@ describe('週の上位', () => {
 });
 
 describe('オン・オフと参加', () => {
+  it('参加者の一覧は画面から直に呼べない', () => {
+    const { ctx } = setup();
+    expect(ctx.gamePlayers).toBeUndefined();
+    expect(typeof ctx.gamePlayers_).toBe('function');
+  });
+
   it('既定はオフ・不参加', () => {
     const { ctx } = setup();
     expect(ctx.gameEnabled()).toBe(false);
-    expect(ctx.gamePlayers()).toEqual([]);
+    expect(ctx.gamePlayers_()).toEqual([]);
     expect(ctx.gameSetEnabled_(true)).toBe(true);
   });
 
   it('参加の一覧が壊れていても空として読む', () => {
     const { ctx, fake } = setup();
     fake.PropertiesService.getScriptProperties().setProperty('GAME_PLAYERS', '{壊れた');
-    expect(ctx.gamePlayers()).toEqual([]);
+    expect(ctx.gamePlayers_()).toEqual([]);
     expect(ctx.gameSetPlaying_('a@example.com', true)).toBe(true);
-    expect(ctx.gamePlayers()).toEqual(['a@example.com']);
+    expect(ctx.gamePlayers_()).toEqual(['a@example.com']);
   });
 
   it('参加の出し入れは鍵の中で行う', () => {
@@ -205,8 +211,92 @@ describe('ゲームの API', () => {
     expect(ctx.apiCloseFeedback(n)).not.toHaveProperty('levelUp');
     const m = closed(ctx, '6件目', { assignee: 'tester@example.com' });
     expect(ctx.apiCloseFeedback(m)).toMatchObject({ points: 1, levelUp: 1 });
-    // 2回目は上がったと言わない
+    // 画面が見せたと言うまでは、もう一度知らせる (返事が捨てられていても失われない)
+    expect(ctx.apiCloseFeedback(m)).toMatchObject({ levelUp: 1 });
+    ctx.apiGameLevelSeen(1);
     expect(ctx.apiCloseFeedback(m)).not.toHaveProperty('levelUp');
+  });
+
+  it('ホームで見せたレベルは、次の完了で上がったと言わない', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 5; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    const state = ctx.apiGameState();
+    expect(state.level).toBe(1);
+    ctx.apiGameLevelSeen(state.level);
+
+    const keep = closed(ctx, 'まだ1', { assignee: 'tester@example.com', closedAt: new Date() });
+    expect(ctx.apiCloseFeedback(keep)).not.toHaveProperty('levelUp');
+    // 合計 6 → 重いもの (+3) を3つで 15、レベル 2
+    for (let k = 0; k < 2; k++) closed(ctx, 'h' + k, { assignee: 'tester@example.com', points: 5, closedAt: new Date() });
+    const up = closed(ctx, '2へ', { assignee: 'tester@example.com', points: 5, closedAt: new Date() });
+    expect(ctx.apiCloseFeedback(up)).toMatchObject({ levelUp: 2 });
+  });
+
+  it('見せたと言われても、届いていないレベルは覚えない。下げもしない', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 5; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    expect(ctx.apiGameLevelSeen(9)).toEqual({ level: 1 });
+    expect(ctx.gameLevelSeen_('tester@example.com')).toBe(1);
+    expect(ctx.apiGameLevelSeen(0)).toEqual({ level: 1 });
+    expect(ctx.gameLevelSeen_('tester@example.com')).toBe(1);
+  });
+
+  it('オフのあいだは見せたことを覚えない', () => {
+    const { ctx } = setup();
+    for (let k = 0; k < 5; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    expect(ctx.apiGameLevelSeen(1)).toBeNull();
+    expect(ctx.gameLevelSeen_('tester@example.com')).toBe(0);
+  });
+
+  it('閉じていないやることには、ポイントもレベルも添えない', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 4; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    const n = closed(ctx, '5件目', { assignee: 'tester@example.com', closedAt: new Date() });
+    ctx.issueReopen(n);
+    const fb = ctx.apiCloseFeedback(n);
+    expect(fb.kind).toBe('team');
+    expect(fb).not.toHaveProperty('points');
+    expect(fb).not.toHaveProperty('levelUp');
+  });
+
+  it('レベルの棒の起点 (いまのレベルに届いた合計) を返す', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 6; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    expect(ctx.apiGameState()).toMatchObject({ total: 6, level: 1, levelFrom: 5, nextAt: 15 });
+  });
+
+  it('完了の知らせ1回で issues を読むのは1回だけ', () => {
+    const { ctx } = setup();
+    ctx.apiSetGameEnabled(true);
+    const n = closed(ctx, 'x', { assignee: 'tester@example.com', closedAt: new Date() });
+    const real = ctx.dbReadAll;
+    const reads = {};
+    ctx.dbReadAll = (t) => { reads[t] = (reads[t] || 0) + 1; return real(t); };
+    try {
+      ctx.apiCloseFeedback(n);
+    } finally {
+      ctx.dbReadAll = real;
+    }
+    expect(reads.issues).toBe(1);
+    expect(reads.change_log).toBe(1);
+  });
+
+  it('自分のポイントは表ごとに1回の読みで数える (通算と今週を別に読まない)', () => {
+    const { ctx } = setup();
+    closed(ctx, 'x', { assignee: 'tester@example.com' });
+    const real = ctx.dbReadAll;
+    const reads = {};
+    ctx.dbReadAll = (t) => { reads[t] = (reads[t] || 0) + 1; return real(t); };
+    try {
+      ctx.gameMine_('tester@example.com', NOW);
+    } finally {
+      ctx.dbReadAll = real;
+    }
+    expect(reads).toEqual({ issues: 1, change_log: 1, pulls: 1, reviews: 1 });
   });
 
   it('オフのときは知らせにポイントを添えない', () => {

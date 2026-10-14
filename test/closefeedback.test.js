@@ -38,11 +38,12 @@ describe('完了したときに返す知らせ', () => {
     expect(ctx.closeFeedback_(n, NOW)).toMatchObject({ kind: 'team', number: n, title: 'ふつう', weekClosed: 1 });
   });
 
-  it('重いもの (ポイント5以上・予定4時間以上) は heavy。字の数でも読む', () => {
+  it('重いもの (ポイント5以上・予定1人日以上) は heavy。字の数でも読む', () => {
     const { ctx } = setup();
+    // plannedHours は列の名前に反して人日で持っている (画面は「予定 N人日」)
     const a = closed(ctx, 'ポイント', { points: 5 });
-    const b = closed(ctx, '時間', { plannedHours: '4' });
-    const c = closed(ctx, '軽い', { points: '', plannedHours: 3 });
+    const b = closed(ctx, '1人日', { plannedHours: '1' });
+    const c = closed(ctx, '半日', { points: '', plannedHours: 0.5 });
     expect(ctx.closeFeedback_(a, NOW).kind).toBe('heavy');
     expect(ctx.closeFeedback_(b, NOW).kind).toBe('heavy');
     expect(ctx.closeFeedback_(c, NOW).kind).toBe('team');
@@ -94,6 +95,15 @@ describe('完了したときに返す知らせ', () => {
     const parent = ctx.issueCreate('親', '', []).number;
     const kid = closed(ctx, '捨てた子', { parent, archivedAt: new Date('2026-10-14T02:30:00Z') });
     expect(ctx.closeFeedback_(kid, NOW).kind).toBe('team');
+  });
+
+  it('閉じていないやることには、起きていないことを知らせない', () => {
+    const { ctx } = setup();
+    const parent = ctx.issueCreate('親', '', []).number;
+    const kid = ctx.issueCreate('開いたままの子', '', []).number;
+    ctx.dbUpdate('issues', 'number', kid, { parent, points: 8 });
+    expect(ctx.closeFeedback_(kid, NOW)).toMatchObject({ kind: 'team', closed: false });
+    expect(ctx.closeFeedback_(kid, NOW)).not.toHaveProperty('parent');
   });
 
   it('画面からは apiCloseFeedback で呼ぶ', () => {
@@ -162,5 +172,19 @@ describe('今日片づけたもの (本人にだけ)', () => {
     expect(ctx.myToday).toBeUndefined();
     expect(Array.isArray(ctx.apiMyToday())).toBe(true);
     expect(ctx.apiMyToday.length).toBe(0);
+  });
+
+  it('apiMyToday は開いている本人のぶんだけを返す', () => {
+    const { ctx, fake } = setup();
+    const now = new Date();
+    const a = ctx.issueCreate('tester のもの', '', []).number;
+    ctx.issueClose(a, null);
+    ctx.dbUpdate('issues', 'number', a, { assignee: 'tester@example.com', closedAt: now });
+    const b = ctx.issueCreate('B のもの', '', []).number;
+    ctx.issueClose(b, null);
+    ctx.dbUpdate('issues', 'number', b, { assignee: 'b@example.com', closedAt: now });
+
+    fake._setUser('b@example.com');
+    expect(ctx.apiMyToday()).toEqual([{ kind: 'issue', number: b, title: 'B のもの' }]);
   });
 });

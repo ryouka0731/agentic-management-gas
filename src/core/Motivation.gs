@@ -61,13 +61,14 @@ function motivationSpan_(now) {
  * **人ごとには数えない。** チームの数だけを返す。
  *
  * @param {Date} [now]
+ * @param {object[]} [issues] 既に読んだ issues の行。あれば読み直さない
  * @returns {{weekClosed: number, weekMerged: number, monthClosed: number, goal: number}}
  */
-function motivationProgress(now) {
+function motivationProgress(now, issues) {
   var span = motivationSpan_(now || new Date());
   var out = { weekClosed: 0, weekMerged: 0, monthClosed: 0, goal: teamGoal() };
 
-  var issues = dbReadAll('issues');
+  if (!issues) issues = dbReadAll('issues');
   for (var i = 0; i < issues.length; i++) {
     // 捨てたものも数える。終えたあとに置き場へ移しただけで前進が減って見えると、
     // 目標の進み具合が後ろへ戻る
@@ -169,9 +170,14 @@ function CLOSE_HEAVY_POINTS() {
   return 5;
 }
 
-/** @returns {number} これ以上の予定時間を「重いもの」とする */
-function CLOSE_HEAVY_HOURS() {
-  return 4;
+/**
+ * これ以上の予定を「重いもの」とする。**単位は人日** (issues.plannedHours は
+ * 列の名前に反して人日で持っている。画面も「予定 N人日」と出す)。
+ *
+ * @returns {number}
+ */
+function CLOSE_HEAVY_DAYS() {
+  return 1;
 }
 
 /**
@@ -195,8 +201,9 @@ function motivationTime_(v) {
  */
 function motivationIsHeavy_(row) {
   var p = Number(row.points);
-  var h = Number(row.plannedHours);
-  return (isFinite(p) && p >= CLOSE_HEAVY_POINTS()) || (isFinite(h) && h >= CLOSE_HEAVY_HOURS());
+  // 空欄は Number('') で 0 になる。0 人日は重くない
+  var d = Number(row.plannedHours);
+  return (isFinite(p) && p >= CLOSE_HEAVY_POINTS()) || (isFinite(d) && d >= CLOSE_HEAVY_DAYS());
 }
 
 /**
@@ -236,19 +243,23 @@ function motivationChildren_(issues) {
  * くじで驚かせず、本当に起きたことで驚かせる。ドーパミンは予想との差に反応する
  * (Schultz ら 1997) が、確率で変わる報酬は職場ではギャンブルと同じ形になる。
  *
+ * **閉じていなければチームの数だけ返す** (`closed: false`)。完了を取り消したあとに
+ * 遅れて呼ばれても、起きていないことを知らせない。
+ *
  * @param {number} number
  * @param {Date} now
+ * @param {object[]} [issues] 既に読んだ issues の行。あれば読み直さない
  * @returns {object}
  */
-function closeFeedback_(number, now) {
-  var issues = dbReadAll('issues');
+function closeFeedback_(number, now, issues) {
+  if (!issues) issues = dbReadAll('issues');
   var byNo = {};
   for (var i = 0; i < issues.length; i++) byNo[String(issues[i].number)] = issues[i];
 
   var row = byNo[String(number)];
   if (!row) throw new Error('やること #' + number + ' が見つかりません');
 
-  var team = motivationProgress(now);
+  var team = motivationProgress(now, issues);
   var out = {
     kind: 'team',
     number: Number(row.number),
@@ -256,7 +267,9 @@ function closeFeedback_(number, now) {
     weekClosed: team.weekClosed,
     monthClosed: team.monthClosed,
     goal: team.goal,
+    closed: String(row.state) === 'closed',
   };
+  if (!out.closed) return out;
 
   var parent = row.parent ? byNo[String(row.parent)] : null;
   if (parent && String(parent.state) !== 'closed' && !parent.archivedAt) {

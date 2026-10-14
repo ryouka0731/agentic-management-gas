@@ -97,7 +97,7 @@ const API_NAMES = [
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
   'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday',
-  'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled',
+  'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
   'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssuePriorities', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',
@@ -233,7 +233,8 @@ export const DEFAULTS = {
   apiMyToday: [],
   apiGameState: { enabled: false },
   apiGameTop: [],
-  apiGameJoin: { enabled: true, total: 0, week: 0, level: 0, nextAt: 5, playing: true },
+  apiGameJoin: { enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: true },
+  apiGameLevelSeen: null,
   apiSetGameEnabled: { scrumEnabled: false, gameEnabled: true, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
   apiCommitGraph: {
     rows: [
