@@ -138,11 +138,13 @@
               <div class="guideline-extra" id="guideline-extra"></div>
             </div>
           </aside>
-          <!-- 主 (あなたの番・草) と従 (前進・全体の数・最近の動き) の2列。狭いと主を先に1列 -->
+          <!-- 主 (あなたの番・草・最近の動き) と従 (前進・全体の数) の2列。狭いと主を先に1列。
+               最近の動きを従に置くと従だけが長く、主の下が大きく空いた -->
           <div class="home-grid">
             <div class="home-main">
               <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
               <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
+              <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
             </div>
             <div class="home-side">
               <div class="home-cards" id="home-cards"></div>
@@ -182,7 +184,6 @@
                   </li>
                 </ol>
               </section>
-              <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
             </div>
           </div>
         </div>

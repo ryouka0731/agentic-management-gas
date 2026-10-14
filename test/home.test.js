@@ -262,6 +262,18 @@ describe('日報', () => {
     expect(ctx.apiSetReportCustom('{今日}')).toEqual({ custom: '{今日}', kind: 'custom' });
   });
 
+  it('自分の形を選んだまま空にすると、選んだ形も 3節 に戻す (空の自分の形は 3節 で写る)', () => {
+    const { ctx } = setup();
+    ctx.reportSetCustom_(ME, '【本日】{今日}');
+    expect(ctx.reportKind_(ME)).toBe('custom');
+    expect(ctx.apiSetReportCustom('')).toEqual({ custom: '', kind: 'three' });
+    expect(ctx.reportKind_(ME)).toBe('three');
+    // ほかの形を選んでいたら、空にしてもそのまま
+    ctx.reportSetKind_(ME, 'today');
+    ctx.reportSetCustom_(ME, '');
+    expect(ctx.reportKind_(ME)).toBe('today');
+  });
+
   it('明日: 自分の担当の未完了で、期限か開始日が明日以前。困りごと: 自分の未解決の障害物 (スクラムがオンのときだけ)', () => {
     const { ctx } = setup();
     const mk = (title, patch) => {
