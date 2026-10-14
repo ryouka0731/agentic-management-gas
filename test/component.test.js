@@ -6840,6 +6840,25 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(copied[0]).toBe('✅今日\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映');
   });
 
+  it('文書の一覧を先に出し、前進は見出しを付けて後ろに分ける (文書と取り違えない)', () => {
+    // 前進のカードが文書の上に同じ形で並び、どこからが文書なのか分からなかった
+    mount();
+    const docs = document.getElementById('doc-list');
+    const cards = document.getElementById('home-cards');
+    expect(docs.compareDocumentPosition(cards) & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 両方を1つの送り (スクロール) の中に置く。分けると文書の一覧が押し出される
+    expect(docs.parentNode).toBe(cards.parentNode);
+
+    const docHead = docs.previousElementSibling;
+    expect(docHead.tagName).toBe('H2');
+    expect(docHead.textContent).toBe('文書');
+
+    const head = cards.firstElementChild;
+    expect(head.tagName).toBe('H2');
+    expect(head.textContent).toBe('あなたとチームの前進');
+  });
+
   it('今日まだ何も無いときは「これから」と書く', () => {
     mount();
     const card = document.querySelector('#home-cards .my-today');

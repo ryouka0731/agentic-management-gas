@@ -8028,6 +8028,11 @@
 
   function renderHomeCards(p, steps, today, game, top) {
     homeCardsEl.textContent = '';
+    // 文書の一覧と取り違えないよう、ここからは文書ではないと見出しで分ける
+    var head = document.createElement('h2');
+    head.className = 'home-section-head';
+    head.textContent = 'あなたとチームの前進';
+    homeCardsEl.appendChild(head);
     homeCardsEl.appendChild(makeTodayCard(today || []));
     var g = makeGameCard(game || {}, top || []);
     if (g) {

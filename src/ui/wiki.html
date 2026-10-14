@@ -120,8 +120,13 @@
             正式版の入れ物に入れた文書を、この道具で管理できるようにします
           </span>
         </div>
-        <div class="home-cards" id="home-cards"></div>
-        <div class="list-area" id="doc-list"></div>
+        <!-- 文書を先に、前進は見出しを付けて後ろに置く。前進が上に同じ形で並ぶと、
+             どこからが文書の一覧なのか分からなかった。両方を1つの送りの中に置く -->
+        <div class="list-area home-scroll">
+          <h2 class="home-section-head">文書</h2>
+          <div id="doc-list"></div>
+          <div class="home-cards" id="home-cards"></div>
+        </div>
 
         <aside class="guideline" id="guideline">
           <button class="guideline-head" id="guideline-toggle" aria-expanded="true">
