@@ -2884,6 +2884,82 @@
     return row;
   }
 
+  // ===== 横断検索 =====
+
+  /**
+   * 比べるための形にそろえる。全角半角・大文字小文字・カタカナとひらがなの違いを消す。
+   * **1字ずつ置き換えるので、字の数は変わらない (NFKC で変わる字を除く)。**
+   *
+   * @param {string} s
+   * @returns {string}
+   */
+  function searchNormalize(s) {
+    return String(s || '').normalize('NFKC').toLowerCase()
+      .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  }
+
+  /**
+   * 1件の段。0 番号がぴったり / 1 先頭が合う / 2 途中が合う / -1 合わない。
+   *
+   * @param {object} item
+   * @param {string[]} words 正規化済みの語
+   * @returns {number}
+   */
+  function searchRank(item, words) {
+    var title = searchNormalize(item.title);
+    var num = words.length === 1 ? words[0].replace(/^#/, '') : '';
+    if (num && /^\d+$/.test(num) && Number(num) === Number(item.number) && item.number) return 0;
+    for (var i = 0; i < words.length; i++) {
+      if (title.indexOf(words[i]) < 0) return -1;
+    }
+    return title.indexOf(words[0]) === 0 ? 1 : 2;
+  }
+
+  /**
+   * 候補を種類ごとに並べる。種類ごとに5件・全体で20件まで。
+   *
+   * @param {object[]} index apiSearchIndex
+   * @param {string} query
+   * @returns {Array<{kind: string, items: object[]}>}
+   */
+  function searchFilter(index, query) {
+    var words = searchNormalize(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    var stateOrder = { open: 0, approved: 0, closed: 1, merged: 1, done: 1, resolved: 1 };
+
+    var groups = {};
+    (index || []).forEach(function (item) {
+      var rank = searchRank(item, words);
+      if (rank < 0) return;
+      // 合った場所 (題名の字の位置)。正規化で字数が変わる字があれば印を付けない
+      var hit = null;
+      var norm = searchNormalize(item.title);
+      if (norm.length === String(item.title).length) {
+        var at = norm.indexOf(words[0]);
+        if (at >= 0) hit = [at, at + words[0].length];
+      }
+      (groups[item.kind] = groups[item.kind] || []).push(Object.assign({}, item, { rank: rank, hit: hit }));
+    });
+
+    var out = [];
+    var left = 20;
+    // 候補に出す種類の並び (ここだけが定義)
+    ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].forEach(function (kind) {
+      var list = groups[kind];
+      if (!list || left <= 0) return;
+      list.sort(function (a, b) {
+        return a.rank - b.rank ||
+          (a.archived ? 1 : 0) - (b.archived ? 1 : 0) ||
+          (stateOrder[a.state] || 0) - (stateOrder[b.state] || 0) ||
+          b.number - a.number;
+      });
+      var take = list.slice(0, Math.min(5, left));
+      left -= take.length;
+      out.push({ kind: kind, items: take });
+    });
+    return out;
+  }
+
   /**
    * 何分前・何時間前。1週間を超えたら月/日で出す。
    *
