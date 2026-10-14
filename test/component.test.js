@@ -10,49 +10,82 @@ import { mountApp, DEFAULTS } from './dom.js';
  * 起きた不具合はそこでは捕まらなかった。ここでは本当に走らせる。
  */
 
-function mount(over) {
-  return mountApp(Object.assign({}, DEFAULTS, over || {}));
+function mount(over, opts) {
+  const app = mountApp(Object.assign({}, DEFAULTS, over || {}));
+  // 開くとホームが出る。文書の一覧を触るテストは先に文書タブを開く
+  if (opts && opts.docs) document.querySelector('.nav-item[data-tab="docs"]').click();
+  return app;
 }
 
 describe('起動', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  it('文書の一覧から始まる', () => {
+  it('ホームから始まる。文書タブには文書の一覧だけがある', () => {
     mount();
+    expect(document.getElementById('panel-home').hidden).toBe(false);
+    expect(document.getElementById('panel-docs').hidden).toBe(true);
 
-    expect(document.getElementById('panel-docs').hidden).toBe(false);
-    expect(document.getElementById('panel-issues').hidden).toBe(true);
-    expect(document.querySelectorAll('.doc-card').length).toBe(1);
+    document.querySelector('.nav-item[data-tab="docs"]').click();
+    const docs = document.getElementById('panel-docs');
+    expect(docs.querySelectorAll('.doc-card').length).toBe(1);
     expect(document.querySelector('.doc-name').textContent).toBe('就業規則.doc');
+    // 文書でないものは文書タブに置かない
+    expect(docs.querySelector('#home-cards')).toBeNull();
+    expect(docs.querySelector('#guideline')).toBeNull();
+    expect(docs.querySelector('.flow-steps')).toBeNull();
   });
 
-  it('文書の一覧が届く前に左で移った先から、ホームへ引き戻さない', () => {
-    // 開いた直後は文書の一覧の返事に数秒かかる。届いた時点でホームへ切り替えて
+  it('ホームに はじめに・あなたの番・草・前進・全体の数・最近の動き が並ぶ', () => {
+    mount();
+    const home = document.getElementById('panel-home');
+    const ids = ['guideline', 'home-turn', 'home-activity', 'home-cards', 'home-counts', 'home-recent'];
+    const at = ids.map((id) => home.querySelector('#' + id));
+    at.forEach((el) => expect(el).not.toBeNull());
+    for (let k = 1; k < at.length; k++) {
+      expect(at[k - 1].compareDocumentPosition(at[k]) & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // 全体の数は流れの形で、はじめに からは外す (同じ数を2回出さない)
+    expect(home.querySelector('#home-counts #flow-issues').textContent).toBe('2');
+    expect(home.querySelector('#guideline .flow-steps')).toBeNull();
+  });
+
+  it('左のメニューと下の帯の先頭がホーム', () => {
+    mount();
+    expect(document.querySelector('.sidebar .nav-item').dataset.tab).toBe('home');
+    expect(document.querySelector('#mobile-nav .mobile-nav-item').dataset.go).toBe('home');
+    expect(document.getElementById('doc-title').textContent).toBe('ホーム');
+  });
+
+  it('ホームを開いたまま返事を待つあいだに やること へ移り、届いても戻されない', () => {
+    // 開いた直後は返事に数秒かかる。届いた時点で最初の画面へ切り替えて
     // いたため、そのあいだに押した行き先が押した直後に戻されていた
-    let lateList = null;
+    let lateOverview = null;
     let first = true;
     mount({
-      apiListFiles: () => {
-        if (!first) return DEFAULTS.apiListFiles;
+      apiOverview: () => {
+        if (!first) return DEFAULTS.apiOverview;
         first = false;
-        return { later: (ok) => { lateList = ok; } };
+        return { later: (ok) => { lateOverview = ok; } };
       },
     });
-    expect(document.getElementById('panel-docs').hidden).toBe(false);
+    expect(document.getElementById('panel-home').hidden).toBe(false);
+    expect(lateOverview).not.toBeNull();
 
     document.querySelector('.nav-item[data-tab="issues"]').click();
     expect(document.getElementById('panel-issues').hidden).toBe(false);
 
-    lateList(DEFAULTS.apiListFiles);
+    lateOverview(DEFAULTS.apiOverview);
 
     expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-home').hidden).toBe(true);
     expect(document.getElementById('panel-docs').hidden).toBe(true);
   });
 
-  it('文書の一覧が遅れて届いても、ホームを開いていれば一覧を描く', () => {
+  it('文書の一覧が遅れて届いても、文書タブを開いていれば一覧を描く', () => {
     let lateList = null;
     mount({ apiListFiles: () => ({ later: (ok) => { lateList = ok; } }) });
 
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     lateList(DEFAULTS.apiListFiles);
 
     expect(document.getElementById('panel-docs').hidden).toBe(false);
@@ -237,6 +270,7 @@ describe('文書', () => {
   it('開くとタブが出て、正式版では直せない', () => {
     mount({ apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false } });
 
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
 
     expect(document.getElementById('tabs').hidden).toBe(false);
@@ -250,6 +284,7 @@ describe('文書', () => {
 
   it('文書を見ている間は左の「文書」が現在地になる', () => {
     mount();
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     document.querySelector('[data-tab="history"]').click();
 
@@ -259,6 +294,7 @@ describe('文書', () => {
 
   it('戻る道がある', () => {
     mount();
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     expect(document.getElementById('crumb-back').hidden).toBe(false);
 
@@ -336,6 +372,7 @@ describe('改訂の履歴', () => {
 
   function openHistory(over) {
     const app = mountApp(Object.assign({}, DEFAULTS, { apiCommitGraph: GRAPH }, over || {}));
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     document.querySelector('[data-tab="history"]').click();
     return app;
@@ -2358,8 +2395,9 @@ describe('はじめの案内', () => {
     [...document.querySelectorAll('#guide .btn')]
       .find((b) => b.textContent.includes('もう一度出す')).click();
 
+    // 案内はホームにあるので、ホームを開いて見せる
     expect(document.getElementById('guideline').hidden).toBe(false);
-    expect(document.getElementById('panel-docs').hidden).toBe(false);
+    expect(document.getElementById('panel-home').hidden).toBe(false);
   });
 });
 
@@ -5768,6 +5806,7 @@ describe('Markdown で直して保存する', () => {
       apiGetMarkdown: { markdown: '# 第1条\n', branch: '改訂', editable: true, baseSha: 'A' },
       apiSaveMarkdown: { ok: true, baseSha: 'B' },
     });
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     document.getElementById('mode-edit').click();
 
@@ -5871,6 +5910,7 @@ describe('遅れて届いた返事で、別の文書を描かない', () => {
         : { html: '<p>見直し版の本文</p>\n', url: 'https://e.test/W1', path: fileId }),
     });
 
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     const sel = document.getElementById('branch-select');
     sel.value = 'W1';
@@ -5891,6 +5931,7 @@ describe('遅れて届いた返事で、別の文書を描かない', () => {
         : { markdown: '# 見直し版\n', branch: '見直し', editable: true, baseSha: 'W' }),
     });
 
+    document.querySelector('.nav-item[data-tab="docs"]').click();
     document.querySelector('.doc-open').click();
     document.getElementById('mode-edit').click();
     const sel = document.getElementById('branch-select');
@@ -6630,11 +6671,13 @@ describe('スマホ', () => {
   it('主な行き先を下の帯に並べ、押すとその画面を開いて現在地にする', () => {
     mount();
     const items = [...document.querySelectorAll('#mobile-nav .mobile-nav-item')];
-    expect(items.map((b) => b.textContent)).toEqual(['文書', 'やること', '改訂中の版', '確認依頼', 'メニュー']);
+    // 4つに絞る。改訂中の版は「メニュー」から
+    expect(items.map((b) => b.textContent)).toEqual(['ホーム', '文書', 'やること', '確認依頼', 'メニュー']);
+    expect(items[0].getAttribute('aria-current')).toBe('true');
 
-    items[1].click();
+    items[2].click();
     expect(document.getElementById('panel-issues').hidden).toBe(false);
-    expect(items[1].getAttribute('aria-current')).toBe('true');
+    expect(items[2].getAttribute('aria-current')).toBe('true');
     expect(items[0].getAttribute('aria-current')).toBe('false');
   });
 
@@ -6840,19 +6883,12 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(copied[0]).toBe('✅今日\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映');
   });
 
-  it('文書の一覧を先に出し、前進は見出しを付けて後ろに分ける (文書と取り違えない)', () => {
+  it('前進はホームに見出しを付けて置き、文書の一覧とは別の画面にする (文書と取り違えない)', () => {
     // 前進のカードが文書の上に同じ形で並び、どこからが文書なのか分からなかった
     mount();
-    const docs = document.getElementById('doc-list');
     const cards = document.getElementById('home-cards');
-    expect(docs.compareDocumentPosition(cards) & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-    // 両方を1つの送り (スクロール) の中に置く。分けると文書の一覧が押し出される
-    expect(docs.parentNode).toBe(cards.parentNode);
-
-    const docHead = docs.previousElementSibling;
-    expect(docHead.tagName).toBe('H2');
-    expect(docHead.textContent).toBe('文書');
+    expect(cards.closest('#panel-home')).not.toBeNull();
+    expect(document.getElementById('doc-list').closest('#panel-home')).toBeNull();
 
     const head = cards.firstElementChild;
     expect(head.tagName).toBe('H2');

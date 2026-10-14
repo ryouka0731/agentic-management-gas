@@ -689,9 +689,13 @@ describe('やることの中身と操作', () => {
     expect(html).toContain('class="guideline"');
     expect(html).toContain('はじめに');
 
-    const docList = html.indexOf('id="doc-list"');
-    const guide = html.indexOf('class="guideline"');
-    expect(docList).toBeLessThan(guide);
+    // 案内はホームに置き、文書タブには置かない
+    const docs = html.slice(html.indexOf('id="panel-docs"'),
+      html.indexOf('id="panel-content"'));
+    expect(docs).toContain('id="doc-list"');
+    expect(docs).not.toContain('class="guideline"');
+    const home = html.slice(html.indexOf('id="panel-home"'), html.indexOf('id="panel-docs"'));
+    expect(home).toContain('class="guideline"');
   });
 
   it('案内はしまえて、出し直せる', () => {
@@ -722,10 +726,12 @@ describe('やることの中身と操作', () => {
     expect(js).toContain("rows.className = 'gantt-rows'");
   });
 
-  it('左のメニューはすべて見出しの下にある', () => {
+  it('左のメニューはすべて見出しの下にある (先頭のホームだけは見出しを持たない)', () => {
     const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
     const sections = (sidebar.match(/<h2>/g) || []).length;
-    expect(sections).toBe((sidebar.match(/nav-section/g) || []).length);
+    const home = (sidebar.match(/nav-section nav-home/g) || []).length;
+    expect(home).toBe(1);
+    expect(sections).toBe((sidebar.match(/nav-section/g) || []).length - home);
   });
 });
 
