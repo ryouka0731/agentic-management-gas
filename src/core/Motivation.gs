@@ -151,3 +151,131 @@ function motivationMilestones_(email) {
       done: pulls.some(function (pr) { return mine(pr) && String(pr.state) === 'merged'; }) },
   ];
 }
+
+/**
+ * 作ってからこの日数以上たって片づいたものを「長く止まっていたもの」とする。
+ * 入れたあと4週で見直す。
+ *
+ * @returns {number}
+ */
+function CLOSE_LONG_DAYS() {
+  return 14;
+}
+
+/** @returns {number} これ以上のポイントを「重いもの」とする */
+function CLOSE_HEAVY_POINTS() {
+  return 5;
+}
+
+/** @returns {number} これ以上の予定時間を「重いもの」とする */
+function CLOSE_HEAVY_HOURS() {
+  return 4;
+}
+
+/**
+ * ミリ秒。読めなければ NaN。台帳からは Date でも字でも返ってくる。
+ *
+ * @param {*} v
+ * @returns {number}
+ */
+function motivationTime_(v) {
+  if (!v) return NaN;
+  if (Object.prototype.toString.call(v) === '[object Date]') return v.getTime();
+  return Date.parse(String(v));
+}
+
+/**
+ * 重いものか。件数だけをほめると簡単なものから手を付けるようになる (KC ら 2020)
+ * ので、重さにも同じ手応えを返す。
+ *
+ * @param {object} row issues の行
+ * @returns {boolean}
+ */
+function motivationIsHeavy_(row) {
+  var p = Number(row.points);
+  var h = Number(row.plannedHours);
+  return (isFinite(p) && p >= CLOSE_HEAVY_POINTS()) || (isFinite(h) && h >= CLOSE_HEAVY_HOURS());
+}
+
+/**
+ * 作ってから閉じるまでの日数 (東京の暦日で数える)。読めなければ 0。
+ *
+ * @param {object} row issues の行
+ * @returns {number}
+ */
+function motivationWaitedDays_(row) {
+  var from = motivationDay_(row.createdAt);
+  var to = motivationDay_(row.closedAt);
+  if (!from || !to) return 0;
+  return Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000);
+}
+
+/**
+ * 親ごとの子。**捨てた子は入れない。** 残りとして居座ると親が永遠に終わらない。
+ *
+ * @param {object[]} issues
+ * @returns {Object<string, object[]>}
+ */
+function motivationChildren_(issues) {
+  var kids = {};
+  for (var i = 0; i < issues.length; i++) {
+    var p = issues[i].parent;
+    if (!p || issues[i].archivedAt) continue;
+    var key = String(p);
+    (kids[key] = kids[key] || []).push(issues[i]);
+  }
+  return kids;
+}
+
+/**
+ * 完了にしたやることについて、何が起きたかを**1つだけ**選んで返す。
+ * 重ねると派手になり、どれも残らない。
+ *
+ * くじで驚かせず、本当に起きたことで驚かせる。ドーパミンは予想との差に反応する
+ * (Schultz ら 1997) が、確率で変わる報酬は職場ではギャンブルと同じ形になる。
+ *
+ * @param {number} number
+ * @param {Date} now
+ * @returns {object}
+ */
+function closeFeedback_(number, now) {
+  var issues = dbReadAll('issues');
+  var byNo = {};
+  for (var i = 0; i < issues.length; i++) byNo[String(issues[i].number)] = issues[i];
+
+  var row = byNo[String(number)];
+  if (!row) throw new Error('やること #' + number + ' が見つかりません');
+
+  var team = motivationProgress(now);
+  var out = {
+    kind: 'team',
+    number: Number(row.number),
+    title: String(row.title || ''),
+    weekClosed: team.weekClosed,
+    monthClosed: team.monthClosed,
+    goal: team.goal,
+  };
+
+  var parent = row.parent ? byNo[String(row.parent)] : null;
+  if (parent && String(parent.state) !== 'closed' && !parent.archivedAt) {
+    var kids = motivationChildren_(issues)[String(parent.number)] || [];
+    var done = 0;
+    for (var k = 0; k < kids.length; k++) if (String(kids[k].state) === 'closed') done++;
+    // 子が全部捨てられていると 0/0 になる。それを「全部終わった」と読まない
+    if (kids.length) {
+      out.parent = { number: Number(parent.number), title: String(parent.title || ''),
+        done: done, total: kids.length };
+      out.kind = done === kids.length ? 'parentDone' : 'parentStep';
+      return out;
+    }
+  }
+
+  var days = motivationWaitedDays_(row);
+  if (days >= CLOSE_LONG_DAYS()) {
+    out.kind = 'longAwaited';
+    out.days = days;
+    return out;
+  }
+  if (motivationIsHeavy_(row)) out.kind = 'heavy';
+  return out;
+}
