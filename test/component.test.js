@@ -26,6 +26,39 @@ describe('起動', () => {
     expect(document.querySelector('.doc-name').textContent).toBe('就業規則.doc');
   });
 
+  it('文書の一覧が届く前に左で移った先から、ホームへ引き戻さない', () => {
+    // 開いた直後は文書の一覧の返事に数秒かかる。届いた時点でホームへ切り替えて
+    // いたため、そのあいだに押した行き先が押した直後に戻されていた
+    let lateList = null;
+    let first = true;
+    mount({
+      apiListFiles: () => {
+        if (!first) return DEFAULTS.apiListFiles;
+        first = false;
+        return { later: (ok) => { lateList = ok; } };
+      },
+    });
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
+
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+
+    lateList(DEFAULTS.apiListFiles);
+
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-docs').hidden).toBe(true);
+  });
+
+  it('文書の一覧が遅れて届いても、ホームを開いていれば一覧を描く', () => {
+    let lateList = null;
+    mount({ apiListFiles: () => ({ later: (ok) => { lateList = ok; } }) });
+
+    lateList(DEFAULTS.apiListFiles);
+
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
+    expect(document.querySelector('.doc-name').textContent).toBe('就業規則.doc');
+  });
+
   it('文書を選ぶまでタブを出さない', () => {
     mount();
     expect(document.getElementById('tabs').hidden).toBe(true);

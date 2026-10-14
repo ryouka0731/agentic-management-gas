@@ -12897,6 +12897,8 @@
   applyHints();
   // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
   loadSettings();
-  loadFiles(function () { switchTab('docs'); });
+  // 一覧の返事を待たずにホームを出す (loadDocs が読み込み中の形を出して自分で取りに行く)。
+  // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
+  switchTab('docs');
 })();
 </script>
