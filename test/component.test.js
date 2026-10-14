@@ -7682,3 +7682,117 @@ describe('ホームの区画', () => {
     expect(document.getElementById('home-turn').textContent).toBe('');
   });
 });
+
+describe('横断検索', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function type(text) {
+    const input = document.getElementById('search-input');
+    input.focus();
+    input.dispatchEvent(new window.Event('focus'));
+    input.value = text;
+    input.dispatchEvent(new window.Event('input'));
+    return input;
+  }
+  const key = (el, k, extra) => el.dispatchEvent(new window.KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true, cancelable: true }, extra || {})));
+
+  it('打つと種類ごとに候補が出る。合った部分に印が付き、字は字のまま', () => {
+    mount({ apiSearchIndex: DEFAULTS.apiSearchIndex.concat([{ kind: 'issue', number: 30, key: '', title: '<b>就業</b>&', state: 'open', archived: false }]) });
+    type('就業');
+    const box = document.getElementById('search-results');
+    expect(box.hidden).toBe(false);
+    expect(Array.from(box.querySelectorAll('.search-group-head')).map((h) => h.textContent)).toEqual(['文書', 'やること', '確認依頼']);
+    expect(box.querySelector('mark').textContent).toBe('就業');
+    expect(box.textContent).toContain('<b>就業</b>&');
+    expect(box.querySelector('b')).toBeNull();
+  });
+
+  it('↑↓ で選び Enter で開く。やることは右のパネル', () => {
+    // 開くときは一覧から引き直すので、候補の #12 を一覧にも置く
+    mount({ apiIssueList: DEFAULTS.apiIssueList.concat([Object.assign({}, DEFAULTS.apiIssueList[1], { number: 12, title: '賃金規程の見直し', parent: '' })]) });
+    const input = type('賃金');
+    key(input, 'ArrowDown');
+    expect(input.getAttribute('aria-activedescendant')).toBeTruthy();
+    key(input, 'Enter');
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    expect(document.getElementById('search-results').hidden).toBe(true);
+    expect(input.value).toBe('');
+  });
+
+  it('文書は本文を、確認依頼はその依頼を、改訂中の版と報告はその画面を開く', () => {
+    mount();
+    type('就業規則.doc');
+    document.querySelector('#search-results [data-kind="doc"]').click();
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+
+    type('第3条');
+    document.querySelector('#search-results [data-kind="pull"]').click();
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+
+    type('見直し');
+    document.querySelector('#search-results [data-kind="branch"]').click();
+    expect(document.getElementById('panel-branches').hidden).toBe(false);
+
+    type('棒が');
+    document.querySelector('#search-results [data-kind="inquiry"]').click();
+    expect(document.getElementById('panel-report').hidden).toBe(false);
+  });
+
+  it('Esc で閉じる。合わなければ「見つかりませんでした」', () => {
+    mount();
+    const input = type('ありえない字');
+    expect(document.getElementById('search-results').textContent).toContain('見つかりませんでした');
+    key(input, 'Escape');
+    expect(document.getElementById('search-results').hidden).toBe(true);
+  });
+
+  it('Ctrl+K と ⌘K でどの画面からでも欄へ移る', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    key(document.body, 'k', { ctrlKey: true });
+    expect(document.activeElement.id).toBe('search-input');
+    document.activeElement.blur();
+    key(document.body, 'k', { metaKey: true });
+    expect(document.activeElement.id).toBe('search-input');
+  });
+
+  it('一覧は1回だけ取る (60秒以内は取り直さない)', () => {
+    const app = mount();
+    type('就業');
+    document.getElementById('search-input').dispatchEvent(new window.Event('blur'));
+    type('賃金');
+    expect(app.calls.filter((c) => c.name === 'apiSearchIndex')).toHaveLength(1);
+  });
+
+  it('取れないときはその場に知らせる', () => {
+    mount({ apiSearchIndex: () => new Error('混み合っています') });
+    type('就業');
+    expect(document.getElementById('search-results').textContent).toMatch(/探せませんでした.*混み合っています/);
+  });
+
+  it('返事を待つあいだに打った字で、届いてから絞る。閉じていれば出さず、画面も変えない', () => {
+    let late = null;
+    mount({ apiSearchIndex: () => ({ later: (ok) => { late = ok; } }) });
+    type('就業');
+    late(DEFAULTS.apiSearchIndex);
+    expect(document.getElementById('search-results').textContent).toContain('就業規則の改定');
+
+    let late2 = null;
+    mount({ apiSearchIndex: () => ({ later: (ok) => { late2 = ok; } }) });
+    const input = type('就業');
+    key(input, 'Escape');
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    late2(DEFAULTS.apiSearchIndex);
+    expect(document.getElementById('search-results').hidden).toBe(true);
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+  });
+
+  it('狭い画面のボタンで欄が開き、Esc で閉じる', () => {
+    mount();
+    document.getElementById('search-open').click();
+    expect(document.querySelector('.search-box').classList.contains('is-open')).toBe(true);
+    expect(document.activeElement.id).toBe('search-input');
+    key(document.activeElement, 'Escape');
+    expect(document.querySelector('.search-box').classList.contains('is-open')).toBe(false);
+  });
+});
