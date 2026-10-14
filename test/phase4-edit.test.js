@@ -7,7 +7,7 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
@@ -541,6 +541,12 @@ describe('画面に渡せる形か', () => {
       closedToday(ctx);
       const out = ctx.apiMyToday();
       if (!out.length) throw new Error('今日の一覧が空');
+      return out;
+    }],
+    ['apiHomeActivity', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiHomeActivity();
+      if (!out.meTotal) throw new Error('草が空のまま検査されている');
       return out;
     }],
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
