@@ -7030,3 +7030,69 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(document.getElementById('snackbar').textContent).not.toContain('今週チームで');
   });
 });
+
+describe('ポイント・レベル・週の上位', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const ON = { enabled: true, total: 12, week: 4, level: 1, nextAt: 15, playing: false };
+
+  it('オフのあいだは何も出さない', () => {
+    mount();
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+
+  it('自分のレベルと次までを出し、評価に使わないと書く', () => {
+    mount({ apiGameState: ON });
+    const card = document.querySelector('#home-cards .game-card');
+    expect(card.textContent).toContain('レベル 1');
+    expect(card.textContent).toContain('次のレベルまで 3');
+    expect(card.textContent).toContain('今週 4');
+    expect(card.textContent).toContain('人事の評価には使いません');
+  });
+
+  it('週の上位は3位まで。自分の行に印。上位にいなくても自分の順位は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { playing: true }), apiGameTop: [
+      { rank: 1, name: 'あ', points: 9, me: false },
+      { rank: 2, name: 'い', points: 6, me: true },
+    ] });
+    const rows = document.querySelectorAll('#home-cards .game-top li');
+    expect(rows).toHaveLength(2);
+    expect(rows[1].classList.contains('is-me')).toBe(true);
+    expect(document.querySelector('#home-cards .game-card').textContent).not.toMatch(/\d+ 位中/);
+  });
+
+  it('自分まわりで順位に参加できる', () => {
+    let joined = null;
+    mount({ apiGameState: ON, apiGameJoin: (on) => { joined = on; return Object.assign({}, ON, { playing: on }); } });
+    document.getElementById('me-btn').click();
+    document.getElementById('game-join-toggle').click();
+    expect(joined).toBe(true);
+  });
+
+  it('管理者は設定で切り替えられる', () => {
+    let set = null;
+    mount({ apiSetGameEnabled: (on) => { set = on; return { scrumEnabled: false, gameEnabled: on, canEdit: true,
+      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }; } });
+    document.querySelector('[data-tab="settings"]').click();
+    document.getElementById('game-toggle').click();
+    expect(set).toBe(true);
+  });
+
+  it('前進の知らせを止めていると、ゲームのカードも出さない', () => {
+    window.localStorage.setItem('progressNotes', 'off');
+    mount({ apiGameState: ON });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+
+  it('今日の一覧が取れなくても、チームの前進は出る', () => {
+    mount({ apiMyToday: new Error('x'), apiGameState: ON });
+    expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+  });
+
+  it('ポイントが取れなくても、ほかのカードは出る', () => {
+    mount({ apiGameState: new Error('x') });
+    expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
+    expect(document.querySelector('#home-cards .my-today')).not.toBeNull();
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+});
