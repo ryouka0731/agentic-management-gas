@@ -63,10 +63,10 @@
 | 1 | `parentDone` | 親を持ち、親の子が全部 `closed` になった | 「#12 規程の改定 の小分けが全部終わりました」と「#12 も完了にする」ボタン |
 | 2 | `parentStep` | 親を持ち、親の子にまだ開いているものがある | 「#12 はあと2つ」と細い進み具合 (`done / total`) |
 | 3 | `longAwaited` | `createdAt` から `CLOSE_LONG_DAYS()` 日以上たっている | 「3週間越しのものが片づきました」(日数を週・日の言い方に直す) |
-| 4 | `heavy` | `points >= CLOSE_HEAVY_POINTS()` または `plannedHours >= CLOSE_HEAVY_HOURS()` | 「大きいものが1つ終わりました」 |
+| 4 | `heavy` | `points >= CLOSE_HEAVY_POINTS()` または `plannedHours >= CLOSE_HEAVY_DAYS()` (plannedHours は人日) | 「大きいものが1つ終わりました」 |
 | 5 | `team` | どれにも当てはまらない | いまの「今週チームで◯件目」(`apiProgress` の値) |
 
-- 定数は `CLOSE_LONG_DAYS() = 14`、`CLOSE_HEAVY_POINTS() = 5`、`CLOSE_HEAVY_HOURS() = 4`。
+- 定数は `CLOSE_LONG_DAYS() = 14`、`CLOSE_HEAVY_POINTS() = 5`、`CLOSE_HEAVY_DAYS() = 1` (単位は人日。plannedHours は列の名前に反して人日で持っている)。
   入れたあと4週で見直す
 - **親は勝手に閉じない。** 子が全部終わっても親に残りの仕事があることがある。ボタンで
   本人に決めさせる (押すと `apiIssueClose(親)` を呼び、親についても同じ知らせを返す)
@@ -180,6 +180,11 @@
 - **下がらない。** 取り消しで合計が減っても、`PropertiesService.getUserProperties()` に
   覚えた最高を下回らない。上がった瞬間は①の知らせに「レベル4になりました」を添える
   (ほかの知らせの代わりにはしない)
+- **見せたことを覚えるのは、画面が実際に見せたときだけ** (`apiGameLevelSeen(n)`)。
+  ホームのカードがレベルを描いたとき・帯が「レベル N になりました」を出したときに
+  覚える。返事を作った時点で覚えると、画面がその返事を捨てたとき (帯が替わっていた等)
+  一度も見えないまま消え、逆にホームで見せたレベルを次の完了で「なりました」と言う。
+  実際に届いているレベルより上は覚えない
 
 #### 週の上位
 
@@ -213,7 +218,7 @@
 |---|---|
 | `src/core/Game.gs` (新規) | `GAME_ENABLED` の読み書き・参加の出し入れ・`gamePointsByPerson_(from, to)`・`gameLevel(total)` |
 | `src/core/Motivation.gs` | `closeFeedback_` が `points` と `levelUp` を返す |
-| `src/Main.gs` | `apiGameState()` (オンか・自分の合計/週/レベル/参加しているか)・`apiGameTop()`・`apiGameJoin(bool)`・`apiGameSetEnabled(bool)` |
+| `src/Main.gs` | `apiGameState()` (オンか・自分の合計/週/レベル/参加しているか)・`apiGameLevelSeen(n)`・`apiGameTop()`・`apiGameJoin(bool)`・`apiGameSetEnabled(bool)` |
 | `src/ui/app.js.html` | ホームの「週の上位」「自分のレベル」カード・設定の切り替え・自分まわりの「順位に参加する」 |
 
 `gamePointsByPerson_` は `issues` / `reviews` / `pulls` / `change_log` を1回ずつ読んで

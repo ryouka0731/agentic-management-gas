@@ -527,6 +527,7 @@ describe('画面に渡せる形か', () => {
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
+    ['apiGameLevelSeen', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameLevelSeen(1); }],
     ['apiSetGameEnabled', (ctx) => ctx.apiSetGameEnabled(true)],
     ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],

@@ -43,9 +43,11 @@ function gameSetEnabled_(on) {
 /**
  * 順位に参加している人。手で壊されていても空として読む。
  *
+ * **画面から直に呼べない名前にする (末尾 _)。** 参加している全員のアドレスを返す。
+ *
  * @returns {string[]}
  */
-function gamePlayers() {
+function gamePlayers_() {
   var raw = PropertiesService.getScriptProperties().getProperty(GAME_PLAYERS_KEY());
   if (!raw) return [];
   try {
@@ -68,7 +70,7 @@ function gameSetPlaying_(email, on) {
   var me = String(email || '');
   if (!me) throw new Error('誰か分かりません');
   return dbWithLock_(30000, function () {
-    var list = gamePlayers().filter(function (x) { return x !== me; });
+    var list = gamePlayers_().filter(function (x) { return x !== me; });
     if (on) list.push(me);
     PropertiesService.getScriptProperties().setProperty(GAME_PLAYERS_KEY(), JSON.stringify(list));
     return list.indexOf(me) >= 0;
@@ -130,29 +132,51 @@ function gameIssuePoints_(row, kids) {
  * @returns {Object<string, number>}
  */
 function gamePointsByPerson_(from, to) {
-  var pts = {};
-  function inSpan(day) { return !!day && (!from || day >= from) && (!to || day <= to); }
-  function add(who, n) { if (who) pts[who] = (pts[who] || 0) + n; }
+  return gamePointsBySpans_([[from, to]])[0];
+}
 
-  var issues = dbReadAll('issues');
+/**
+ * いくつかの期間の、人ごとのポイントを**1回の読みで**まとめて数える。
+ * 通算と今週を別々に数えると、同じ表を2回ずつ読むことになる。
+ *
+ * @param {Array<Array<string>>} spans [[from, to], ...] ('' なら端なし)
+ * @param {{issues?: object[], closers?: Object<string, string>}} [pre] 既に読んだもの
+ * @returns {Array<Object<string, number>>} spans と同じ順
+ */
+function gamePointsBySpans_(spans, pre) {
+  var got = pre || {};
+  var all = spans.map(function () { return {}; });
+  function add(day, who, n) {
+    if (!who || !day) return;
+    for (var s = 0; s < spans.length; s++) {
+      var from = spans[s][0];
+      var to = spans[s][1];
+      if ((from && day < from) || (to && day > to)) continue;
+      all[s][who] = (all[s][who] || 0) + n;
+    }
+  }
+
+  var issues = got.issues || dbReadAll('issues');
   var kids = motivationChildren_(issues);
-  var closers = motivationClosers_();
+  var closers = got.closers || motivationClosers_();
   for (var i = 0; i < issues.length; i++) {
     var row = issues[i];
-    if (String(row.state) !== 'closed' || !inSpan(motivationDay_(row.closedAt))) continue;
+    if (String(row.state) !== 'closed') continue;
+    var day = motivationDay_(row.closedAt);
+    if (!day) continue;
     var who = motivationCredited_(row, closers);
     if (!who.length) continue;
     // 頭数で割る。割らないと人ごとの合計を足しても全体に戻らない
     var share = gameIssuePoints_(row, kids) / who.length;
-    for (var w = 0; w < who.length; w++) add(who[w], share);
+    for (var w = 0; w < who.length; w++) add(day, who[w], share);
   }
 
   var pulls = dbReadAll('pulls');
   var authors = {};
   for (var p = 0; p < pulls.length; p++) {
     authors[String(pulls[p].number)] = String(pulls[p].author || '');
-    if (String(pulls[p].state) === 'merged' && inSpan(motivationDay_(pulls[p].mergedAt))) {
-      add(String(pulls[p].author || ''), 2);
+    if (String(pulls[p].state) === 'merged') {
+      add(motivationDay_(pulls[p].mergedAt), String(pulls[p].author || ''), 2);
     }
   }
 
@@ -168,11 +192,13 @@ function gamePointsByPerson_(from, to) {
     var key = String(rv.prNumber) + '|' + reviewer;
     if (seen[key]) continue;
     seen[key] = true;
-    if (inSpan(motivationDay_(rv.at))) add(reviewer, 1);
+    add(motivationDay_(rv.at), reviewer, 1);
   }
 
-  for (var k in pts) pts[k] = Math.round(pts[k] * 10) / 10;
-  return pts;
+  for (var a = 0; a < all.length; a++) {
+    for (var k in all[a]) all[a][k] = Math.round(all[a][k] * 10) / 10;
+  }
+  return all;
 }
 
 /**
@@ -196,21 +222,52 @@ function gameLevelSeenSet_(email, n) {
 }
 
 /**
+ * 画面がレベル n を見せたことを覚える。**覚えるのは画面が実際に見せたときだけ。**
+ * 返事を返した時点で覚えると、画面がその返事を捨てたとき (帯が替わっていた等)
+ * 上がったことが一度も見えないまま消える。
+ *
+ * 実際に届いているレベルより上は覚えない (画面から好きな数を送られても上げない)。
+ * 下げもしない。読む → 比べる → 書くは鍵の中で行う (合計を数えるのは鍵の外)。
+ *
+ * @param {string} email
+ * @param {number} n
+ * @returns {number} 覚えている最高のレベル
+ */
+function gameLevelSeenAck_(email, n) {
+  var me = String(email || '');
+  if (!me) return 0;
+  var earned = gameLevel(gamePointsByPerson_('', '')[me] || 0);
+  var want = Math.min(Math.floor(Number(n)), earned);
+  return dbWithLock_(30000, function () {
+    var seen = gameLevelSeen_(me);
+    if (isFinite(want) && want > seen) {
+      gameLevelSeenSet_(me, want);
+      return want;
+    }
+    return seen;
+  });
+}
+
+/**
  * 本人の合計・今週・レベル・次のレベルまで・参加しているか。**順位は返さない**
  * (上位にいない人に「◯位」を見せると下位の印になる)。
  *
+ * levelFrom はいまのレベルに届いた合計。棒はここから nextAt までの進み具合で描く。
+ *
  * @param {string} email
  * @param {Date} now
- * @returns {{total: number, week: number, level: number, nextAt: number, playing: boolean}}
+ * @returns {{total: number, week: number, level: number, levelFrom: number, nextAt: number,
+ *   playing: boolean}}
  */
 function gameMine_(email, now) {
   var me = String(email || '');
   var span = motivationSpan_(now);
-  var total = gamePointsByPerson_('', '')[me] || 0;
-  var week = gamePointsByPerson_(span.weekStart, span.today)[me] || 0;
+  var both = gamePointsBySpans_([['', ''], [span.weekStart, span.today]]);
+  var total = both[0][me] || 0;
+  var week = both[1][me] || 0;
   var level = Math.max(gameLevel(total), gameLevelSeen_(me));
-  return { total: total, week: week, level: level, nextAt: gameLevelAt(level + 1),
-    playing: gamePlayers().indexOf(me) >= 0 };
+  return { total: total, week: week, level: level, levelFrom: gameLevelAt(level),
+    nextAt: gameLevelAt(level + 1), playing: gamePlayers_().indexOf(me) >= 0 };
 }
 
 /**
@@ -222,7 +279,7 @@ function gameMine_(email, now) {
 function gameTop_(now) {
   var span = motivationSpan_(now);
   var pts = gamePointsByPerson_(span.weekStart, span.today);
-  var list = gamePlayers()
+  var list = gamePlayers_()
     .filter(function (e) { return (pts[e] || 0) > 0; })
     .map(function (e) { return { email: e, points: pts[e] }; })
     .sort(function (a, b) { return b.points - a.points || (a.email < b.email ? -1 : 1); });
@@ -239,28 +296,30 @@ function gameTop_(now) {
 
 /**
  * 完了したやることの、本人の取りぶんと、レベルが上がったか。
- * 上がったと言うのは一度だけ (見せた最高を覚える)。
+ *
+ * **ここでは見せたことを覚えない。** 画面が帯に「レベル N になりました」を
+ * 実際に出したときに apiGameLevelSeen で覚える。返事を捨てた場合は、次の完了で
+ * もう一度知らせる。
  *
  * @param {string} email
  * @param {number} number
+ * @param {{issues?: object[], closers?: Object<string, string>}} [pre] 既に読んだもの
  * @returns {{points: number, levelUp: number}} levelUp は上がっていなければ 0
  */
-function gameAfterClose_(email, number) {
-  var issues = dbReadAll('issues');
+function gameAfterClose_(email, number, pre) {
+  var got = { issues: (pre && pre.issues) || dbReadAll('issues'),
+    closers: (pre && pre.closers) || motivationClosers_() };
   var row = null;
-  for (var i = 0; i < issues.length; i++) if (String(issues[i].number) === String(number)) row = issues[i];
+  for (var i = 0; i < got.issues.length; i++) {
+    if (String(got.issues[i].number) === String(number)) row = got.issues[i];
+  }
   var points = 0;
   if (row) {
-    var who = motivationCredited_(row, motivationClosers_());
+    var who = motivationCredited_(row, got.closers);
     if (who.indexOf(email) >= 0) {
-      points = Math.round(gameIssuePoints_(row, motivationChildren_(issues)) / who.length * 10) / 10;
+      points = Math.round(gameIssuePoints_(row, motivationChildren_(got.issues)) / who.length * 10) / 10;
     }
   }
-  var level = gameLevel(gamePointsByPerson_('', '')[email] || 0);
-  var seen = gameLevelSeen_(email);
-  if (level > seen) {
-    gameLevelSeenSet_(email, level);
-    return { points: points, levelUp: level };
-  }
-  return { points: points, levelUp: 0 };
+  var level = gameLevel(gamePointsBySpans_([['', '']], got)[0][email] || 0);
+  return { points: points, levelUp: level > gameLevelSeen_(email) ? level : 0 };
 }

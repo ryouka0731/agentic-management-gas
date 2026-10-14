@@ -3138,11 +3138,15 @@ function apiMyMilestones() {
 /**
  * 完了にしたやることについて、何が起きたかを1つ返す (Web App API)。
  *
+ * issues は1回だけ読み、知らせとポイントの両方に回す (完了のたびに走るため)。
+ * 閉じていないやることには、ポイントもレベルも添えない。
+ *
  * @param {number} number
  * @returns {object}
  */
 function apiCloseFeedback(number) {
-  var fb = closeFeedback_(Number(number), new Date());
+  var issues = dbReadAll('issues');
+  var fb = closeFeedback_(Number(number), new Date(), issues);
   var out = {
     kind: plainText(fb.kind),
     number: plainId(fb.number),
@@ -3156,8 +3160,9 @@ function apiCloseFeedback(number) {
       done: plainNumber(fb.parent.done), total: plainNumber(fb.parent.total) };
   }
   if (fb.days) out.days = plainNumber(fb.days);
-  if (gameEnabled()) {
-    var g = gameAfterClose_(String(Session.getActiveUser().getEmail() || ''), Number(number));
+  if (gameEnabled() && fb.closed) {
+    var g = gameAfterClose_(String(Session.getActiveUser().getEmail() || ''), Number(number),
+      { issues: issues });
     out.points = plainNumber(g.points);
     if (g.levelUp) out.levelUp = plainNumber(g.levelUp);
   }
@@ -3236,7 +3241,22 @@ function apiGameState() {
   var me = String(Session.getActiveUser().getEmail() || '');
   var m = gameMine_(me, new Date());
   return { enabled: true, total: plainNumber(m.total), week: plainNumber(m.week),
-    level: plainNumber(m.level), nextAt: plainNumber(m.nextAt), playing: !!m.playing };
+    level: plainNumber(m.level), levelFrom: plainNumber(m.levelFrom), nextAt: plainNumber(m.nextAt),
+    playing: !!m.playing };
+}
+
+/**
+ * 画面がレベル n を見せたことを覚える (Web App API)。本人のぶんだけ。オフなら何もしない。
+ *
+ * 実際に届いているレベルより上は覚えず、下げもしない (gameLevelSeenAck_)。
+ *
+ * @param {number} n
+ * @returns {{level: number}|null} 覚えている最高のレベル
+ */
+function apiGameLevelSeen(n) {
+  if (!gameEnabled()) return null;
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return { level: plainNumber(gameLevelSeenAck_(me, Number(n))) };
 }
 
 /**
