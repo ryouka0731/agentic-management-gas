@@ -236,8 +236,12 @@ function gameLevelSeenSet_(email, n) {
 function gameLevelSeenAck_(email, n) {
   var me = String(email || '');
   if (!me) return 0;
+  var asked = Math.floor(Number(n));
+  var seen0 = gameLevelSeen_(me);
+  // 上げられない頼みは、数えも鍵も取らずに今の値を返す
+  if (!isFinite(asked) || asked <= 0 || asked <= seen0) return seen0;
   var earned = gameLevel(gamePointsByPerson_('', '')[me] || 0);
-  var want = Math.min(Math.floor(Number(n)), earned);
+  var want = Math.min(asked, earned);
   return dbWithLock_(30000, function () {
     var seen = gameLevelSeen_(me);
     if (isFinite(want) && want > seen) {

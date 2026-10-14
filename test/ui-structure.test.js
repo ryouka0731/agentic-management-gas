@@ -1082,6 +1082,17 @@ describe('スマホの形', () => {
     expect(mobile).toMatch(/\.sidebar\.drawer-open \{[^}]*translateX\(0\)/);
   });
 
+  it('通知は下の帯の上に、左右いっぱいで出す (中央寄せだと幅が半分になり、閉じるが帯に隠れる)', () => {
+    const rule = /\.snackbar \{([^}]*)\}/.exec(mobile);
+    expect(rule).not.toBeNull();
+    expect(rule[1]).toMatch(/transform:\s*none/);
+    expect(rule[1]).toMatch(/max-width:\s*none/);
+    const bottom = /bottom:\s*([^;]+);/.exec(rule[1]);
+    expect(bottom).not.toBeNull();
+    expect(bottom[1]).not.toBe('var(--sp-5)');
+    expect(bottom[1]).toMatch(/64px/);
+  });
+
   it('入力の字は 16px 以上 (小さいと iPhone が拡大する)', () => {
     expect(mobile).toMatch(/input, select, textarea \{ font-size: 16px; \}/);
   });
