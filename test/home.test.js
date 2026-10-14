@@ -187,4 +187,30 @@ describe('最近の動き', () => {
     closed(ctx, '読めない', { closedAt: 'きのう' });
     expect(ctx.homeRecent_(NOW)).toEqual([]);
   });
+
+  describe('文書の登録', () => {
+    function reg(ctx, fake, name) {
+      const id = fake._createDoc(name, '<p>x</p>', ctx.repoConfig().mainId);
+      ctx.repoRegisterFile(id, name);
+      return id;
+    }
+
+    it('登録した正式版の文書は file として出る。作業コピーは出ない', () => {
+      const { ctx, fake } = setup();
+      const id = reg(ctx, fake, '就業規則.doc');
+      const wc = fake._createDoc('copy', '<p>x</p>', ctx.repoConfig().mainId);
+      ctx.dbAppend('files', { fileId: wc, path: 'branches/改訂/就業規則.doc', type: 'doc',
+        registeredAt: new Date('2026-10-13T00:00:00Z'), registeredBy: ME });
+      const recent = ctx.homeRecent_(new Date(Date.now() + 60000));
+      expect(recent).toHaveLength(1);
+      expect(recent[0]).toMatchObject({ kind: 'file', fileId: id, title: '就業規則.doc', number: 0 });
+    });
+
+    it('ゴミ箱に入れた文書は出さない', () => {
+      const { ctx, fake } = setup();
+      const id = reg(ctx, fake, '就業規則.doc');
+      fake.DriveApp.getFileById(id).setTrashed(true);
+      expect(ctx.homeRecent_(new Date(Date.now() + 60000))).toEqual([]);
+    });
+  });
 });
