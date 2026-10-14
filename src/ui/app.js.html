@@ -7134,7 +7134,8 @@
 
           var rel = makeRelationChips(r.number);
           if (rel.childNodes.length) name.appendChild(rel);
-          name.title = (r.assignee || '担当なし');
+          // 名前は3行で切れることがあるので、全文も添える
+          name.title = who.textContent + '\n' + (r.assignee || '担当なし');
           name.addEventListener('click', function () {
             openIssueByNumber(r.number, row);
           });

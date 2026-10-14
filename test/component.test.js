@@ -2209,6 +2209,13 @@ describe('工程表の担当者と工数', () => {
     expect(row.querySelector('.gantt-bar .avatar')).toBeTruthy();
   });
 
+  it('名前に指を置くと、切れた名前も全部読める', () => {
+    openGantt();
+    const row = document.querySelector('.gantt-row');
+    const title = row.querySelector('.gantt-title').textContent;
+    expect(row.querySelector('.gantt-name').title).toContain(title);
+  });
+
   it('棒に人日を出す', () => {
     openGantt();
 

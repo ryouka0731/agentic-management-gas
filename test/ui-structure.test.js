@@ -466,6 +466,16 @@ describe('工程表の使い勝手', () => {
   const js = read('src/ui/app.js.html');
   const html = read('src/ui/wiki.html');
 
+  it('長い名前は1行で切らず、3行まで折り返す', () => {
+    // 1行で「…」にしていたため、長い名前は頭しか読めなかった
+    const css = read('src/ui/app.css.html');
+    const rules = css.match(/\.gantt-title\s*\{[^}]*\}/g) || [];
+    const all = rules.join('\n');
+    expect(all).not.toMatch(/white-space:\s*nowrap/);
+    expect(all).toMatch(/-webkit-line-clamp:\s*3/);
+    expect(all).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+
   it('月の見出しを出す', () => {
     // 日だけでは何月を見ているのか分からない
     expect(js).toContain('function ganttMonths(');
