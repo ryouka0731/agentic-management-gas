@@ -134,6 +134,22 @@ describe('あなたの番', () => {
     expect(ctx.homeMyTurn_(ME, NOW).returned.items.map((x) => x.number)).toEqual([1]);
   });
 
+  it('差し戻したあとで中身が変わった依頼は、差し戻した人の「確かめてほしい」に戻る', () => {
+    const { ctx } = setup();
+    // 差し戻したまま中身は変わっていない: まだ相手の番
+    pr(ctx, 1);
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: ME, state: 'request_changes', at: new Date(), id: 1 });
+    // 差し戻したあとで直された (差し戻しの番号が staleReviewId 以下)
+    pr(ctx, 2, { staleReviewId: 2 });
+    ctx.dbAppend('reviews', { prNumber: 2, reviewer: ME, state: 'request_changes', at: new Date(), id: 2 });
+    const t = ctx.homeMyTurn_(ME, NOW);
+    expect(t.reviews.items.map((x) => x.number)).toEqual([2]);
+    // 書いた人の「戻ってきた」は差し戻しが残る限りそのまま
+    pr(ctx, 3, { author: ME, reviewers: 'b@example.com', staleReviewId: 3 });
+    ctx.dbAppend('reviews', { prNumber: 3, reviewer: 'b@example.com', state: 'request_changes', at: new Date(), id: 3 });
+    expect(ctx.homeMyTurn_(ME, NOW).returned.items.map((x) => x.number)).toEqual([3]);
+  });
+
   it('期限のやること: 自分の担当の未完了で、期限切れか3日以内。期限の早い順。今日は期限切れではない', () => {
     const { ctx } = setup();
     const mk = (title, due, patch) => {

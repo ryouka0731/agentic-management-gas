@@ -150,10 +150,11 @@ function homeMyTurn_(email, now) {
     if (state !== 'approve' && state !== 'request_changes') continue;
     var pr = byNumber[String(rv.prNumber)];
     if (!pr) continue;
-    if (state === 'approve' && Number(rv.id) <= (Number(pr.staleReviewId) || 0)) state = 'stale';
+    var old = Number(rv.id) <= (Number(pr.staleReviewId) || 0);
+    if (state === 'approve' && old) state = 'stale';
     var key = String(rv.prNumber);
     latest[key] = latest[key] || {};
-    latest[key][String(rv.reviewer)] = state;
+    latest[key][String(rv.reviewer)] = { state: state, old: old };
   }
 
   var toReview = [];
@@ -165,13 +166,16 @@ function homeMyTurn_(email, now) {
     var decided = latest[String(one.number)] || {};
     var item = { number: Number(one.number), title: String(one.title || '') };
 
+    // 差し戻したあとで中身が変わったら、差し戻した人にもう一度回す。回さないと、
+    // 直してもらった依頼が誰の番にも出ない (書いた人の「戻ってきた」は差し戻しが残る限り出す)
+    var mine = decided[me];
     if (String(one.author) !== me && prReviewers(one).indexOf(me) >= 0 &&
-        (!decided[me] || decided[me] === 'stale')) {
+        (!mine || mine.state === 'stale' || (mine.state === 'request_changes' && mine.old))) {
       toReview.push(item);
     }
     if (String(one.author) === me) {
       for (var who in decided) {
-        if (decided[who] === 'request_changes') { returned.push(item); break; }
+        if (decided[who].state === 'request_changes') { returned.push(item); break; }
       }
     }
   }
