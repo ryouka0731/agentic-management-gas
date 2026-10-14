@@ -3135,6 +3135,52 @@ function apiMyMilestones() {
   });
 }
 
+/**
+ * 完了にしたやることについて、何が起きたかを1つ返す (Web App API)。
+ *
+ * issues は1回だけ読み、知らせとポイントの両方に回す (完了のたびに走るため)。
+ * 閉じていないやることには、ポイントもレベルも添えない。
+ *
+ * @param {number} number
+ * @returns {object}
+ */
+function apiCloseFeedback(number) {
+  var issues = dbReadAll('issues');
+  var fb = closeFeedback_(Number(number), new Date(), issues);
+  var out = {
+    kind: plainText(fb.kind),
+    number: plainId(fb.number),
+    title: plainText(fb.title),
+    weekClosed: plainNumber(fb.weekClosed),
+    monthClosed: plainNumber(fb.monthClosed),
+    goal: plainNumber(fb.goal),
+  };
+  if (fb.parent) {
+    out.parent = { number: plainId(fb.parent.number), title: plainText(fb.parent.title),
+      done: plainNumber(fb.parent.done), total: plainNumber(fb.parent.total) };
+  }
+  if (fb.days) out.days = plainNumber(fb.days);
+  if (gameEnabled() && fb.closed) {
+    var g = gameAfterClose_(String(Session.getActiveUser().getEmail() || ''), Number(number),
+      { issues: issues });
+    out.points = plainNumber(g.points);
+    if (g.levelUp) out.levelUp = plainNumber(g.levelUp);
+  }
+  return out;
+}
+
+/**
+ * 今日片づけたもの (Web App API)。開いている本人のぶんだけ。
+ *
+ * @returns {Array<{kind: string, number: number, title: string}>}
+ */
+function apiMyToday() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return myToday_(me, new Date()).map(function (x) {
+    return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
+  });
+}
+
 // ===== 設定 =====
 
 /**
@@ -3150,6 +3196,7 @@ function apiSettings() {
   var texts = scrumTexts();
   return {
     scrumEnabled: scrumEnabled(),
+    gameEnabled: gameEnabled(),
     canEdit: repoIsAdmin_(me),
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
@@ -3169,6 +3216,76 @@ function apiSetScrumEnabled(on) {
   repoAssertAdmin_('エージェンティックスクラムの切り替え');
   scrumSetEnabled_(!!on);
   return apiSettings();
+}
+
+/**
+ * ポイント・レベル・週の上位を切り替える (Web App API)。管理者だけ。既定はオフ。
+ *
+ * @param {boolean} on
+ * @returns {object} 切り替えたあとの apiSettings()
+ */
+function apiSetGameEnabled(on) {
+  repoAssertAdmin_('ポイントとレベルの切り替え');
+  gameSetEnabled_(!!on);
+  return apiSettings();
+}
+
+/**
+ * 本人のポイント・レベル・参加しているか (Web App API)。オフなら {enabled: false}。
+ * **順位は返さない。**
+ *
+ * @returns {object}
+ */
+function apiGameState() {
+  if (!gameEnabled()) return { enabled: false };
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var m = gameMine_(me, new Date());
+  return { enabled: true, total: plainNumber(m.total), week: plainNumber(m.week),
+    level: plainNumber(m.level), levelFrom: plainNumber(m.levelFrom), nextAt: plainNumber(m.nextAt),
+    playing: !!m.playing };
+}
+
+/**
+ * 画面がレベル n を見せたことを覚える (Web App API)。本人のぶんだけ。オフなら何もしない。
+ *
+ * 実際に届いているレベルより上は覚えず、下げもしない (gameLevelSeenAck_)。
+ *
+ * @param {number} n
+ * @returns {{level: number}|null} 覚えている最高のレベル
+ */
+function apiGameLevelSeen(n) {
+  if (!gameEnabled()) return null;
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return { level: plainNumber(gameLevelSeenAck_(me, Number(n))) };
+}
+
+/**
+ * 今週の上位3位まで (Web App API)。オフなら空。**アドレスは返さない。**
+ *
+ * 「人に関わる数は本人と部下のぶんだけ見せる」(memberVisibleTo) の唯一の例外。
+ * 本人が参加を選んだ人の、上位だけを出す。
+ *
+ * @returns {Array<{rank: number, name: string, points: number, me: boolean}>}
+ */
+function apiGameTop() {
+  if (!gameEnabled()) return [];
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return gameTop_(new Date()).map(function (r) {
+    return { rank: plainNumber(r.rank), name: plainText(r.name), points: plainNumber(r.points),
+      me: r.email === me };
+  });
+}
+
+/**
+ * 週の上位に参加する・やめる (Web App API)。本人のぶんだけ。
+ *
+ * @param {boolean} on
+ * @returns {object} apiGameState()
+ */
+function apiGameJoin(on) {
+  if (!gameEnabled()) throw new Error('ポイントとレベルはオフです');
+  gameSetPlaying_(String(Session.getActiveUser().getEmail() || ''), !!on);
+  return apiGameState();
 }
 
 /**
