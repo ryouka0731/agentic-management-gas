@@ -4290,8 +4290,8 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 
 /* ホームの「チームの前進」と「はじめの5歩」 */
 /*
- * 文書タブは「文書」と「あなたとチームの前進」の2つの区画。見出しで分け、
- * 前進は線で区切った後ろに置く (同じ形で上に並べると文書と取り違える)
+ * ホームの区画の見出し。前進は線で区切って置く (同じ形で並べると区画の
+ * 境目が分からない)
  */
 .home-section-head {
   margin: 0;
@@ -4312,6 +4312,20 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 }
 .home-cards > .home-section-head { grid-column: 1 / -1; padding: 0; }
 .home-cards:empty { display: none; }
+
+/* ホーム。区画を縦に積み、全体の数と最近の動きだけ横に並べる */
+.home-scroll { display: flex; flex-direction: column; gap: var(--sp-4); }
+.home-scroll > .guideline { margin: var(--sp-3) var(--sp-4) 0; }
+.home-block { padding: 0 var(--sp-4); }
+.home-block:empty { display: none; }
+.home-block > .home-section-head { padding-left: 0; padding-right: 0; }
+.home-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--sp-3);
+}
+.home-pair > .home-block { padding: 0 var(--sp-4); }
+.home-cards { margin-top: 0; }
 .game-level { margin: var(--sp-1) 0; }
 .game-level-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .game-level-bar span { display: block; height: 100%; background: var(--accent); }

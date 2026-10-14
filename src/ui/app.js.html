@@ -52,6 +52,7 @@
   var openLink = document.getElementById('open-in-docs');
 
   var tabsEl = document.getElementById('tabs');
+  var panelHome = document.getElementById('panel-home');
   var panelDocs = document.getElementById('panel-docs');
   var panelContent = document.getElementById('panel-content');
   var panelHistory = document.getElementById('panel-history');
@@ -577,6 +578,7 @@
       menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
       'circle-dot': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
       columns: ['M4 4h16v16H4z', 'M9 4v16', 'M15 4v16'],
+      home: ['M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'],
       'help-circle': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3', 'M12 17h.01'],
       save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z', 'M17 21v-8H7v8', 'M7 3v5h8'],
       archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
@@ -607,6 +609,7 @@
   }
 
   var TAB_ICONS = {
+    home: 'home',
     docs: 'file-text',
     content: 'file-text',
     history: 'git-commit',
@@ -2538,6 +2541,7 @@
     // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
     if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
 
+    panelHome.hidden = name !== 'home';
     panelDocs.hidden = name !== 'docs';
     panelContent.hidden = name !== 'content';
     panelHistory.hidden = name !== 'history';
@@ -2559,7 +2563,8 @@
 
     usageCount('view', name);
 
-    if (name === 'docs') loadDocs();
+    if (name === 'home') loadHome();
+    else if (name === 'docs') loadDocs();
     else if (name === 'history') loadHistory();
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
@@ -2586,7 +2591,7 @@
 
     if (!inDoc) {
       var names = {
-        docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
+        home: 'ホーム', docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
         issues: 'やること', board: '進捗ボード', help: '使い方',
         settings: '設定', sprint: 'スプリント', impediments: '障害物',
         usage: '使われ方', report: '要望・不具合',
@@ -2601,7 +2606,7 @@
     titleEl.textContent = current.docPath || '';
   }
 
-  // ===== 文書の一覧 (ホーム) =====
+  // ===== 文書の一覧 =====
 
   function loadFiles(then) {
     call('apiListFiles', [], function (list) {
@@ -2729,6 +2734,13 @@
     } else {
       renderDocs();
     }
+  }
+
+  /**
+   * ホーム。各区画を並べて呼び、1つが取れなくてもほかは出す。
+   * 返事を描く前に、まだホームを開いているかを各区画で見る。
+   */
+  function loadHome() {
     loadOverview();
     loadHomeCards();
   }
@@ -7909,10 +7921,10 @@
 
   /**
    * ホームを開いているときだけ、カードを描き直す。ほかの画面で完了にするたびに
-   * 5つの api を呼ぶことになる。ホームへ戻ったときは loadDocs が描き直す。
+   * 5つの api を呼ぶことになる。ホームへ戻ったときは loadHome が描き直す。
    */
   function reloadHomeIfShown() {
-    if (!panelDocs.hidden) loadHomeCards();
+    if (!panelHome.hidden) loadHomeCards();
   }
 
   /**
@@ -9686,8 +9698,8 @@
     again.addEventListener('click', function () {
       closeMe();
       setGuideline(true);
-      switchTab('docs');
-      showSnack('文書の画面に案内を出しました', { kind: 'ok' });
+      switchTab('home');
+      showSnack('ホームに案内を出しました', { kind: 'ok' });
     });
     out.push(again);
     out.push(makeProgressToggle());
@@ -12772,7 +12784,7 @@
   // 残りは「メニュー」から引き出す。広い画面では何も変えない (CSS で出し分ける)。
 
   /** 下の帯に並べる行き先。多いと1つずつが狭くなるので4つに絞る */
-  var MOBILE_NAV = ['docs', 'issues', 'branches', 'pulls'];
+  var MOBILE_NAV = ['home', 'docs', 'issues', 'pulls'];
 
   var sidebarEl = document.querySelector('.sidebar');
   var navScrim = document.createElement('div');
@@ -12903,8 +12915,12 @@
   applyHints();
   // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
   loadSettings();
-  // 一覧の返事を待たずにホームを出す (loadDocs が読み込み中の形を出して自分で取りに行く)。
+  // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
+  // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
+  // 返事では画面を切り替えない
+  loadFiles();
+  // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
   // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
-  switchTab('docs');
+  switchTab('home');
 })();
 </script>
