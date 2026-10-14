@@ -17,6 +17,12 @@ function read(rel) {
  * CSS や JS がページ本文としてそのまま表示される。実際に踏んだ。
  */
 describe('UI 部分HTMLの構造', () => {
+  it('日報のひな形はサーバが本体で、画面は控えを1か所だけ持つ', () => {
+    const js = read('src/ui/app.js.html');
+    expect(js.split('📅明日やること').length - 1).toBe(1);
+    expect(read('src/core/Home.gs')).toContain('function REPORT_TEMPLATES()');
+  });
+
   const cases = [
     ['src/ui/app.css.html', 'style'],
     ['src/ui/app.js.html', 'script'],

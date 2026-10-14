@@ -6871,17 +6871,21 @@ describe('前進を見せる (意欲づけ)', () => {
     const copied = [];
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
       value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
-    mount({ apiMyToday: [
+    const today = [
       { kind: 'issue', number: 12, title: '規程の改定' },
       { kind: 'pull', number: 7, title: '細則の見直し' },
-    ] });
+    ];
+    mount({ apiMyToday: today,
+      apiReportParts: Object.assign({}, DEFAULTS.apiReportParts, { parts: Object.assign({},
+        DEFAULTS.apiReportParts.parts, { today }) }) });
     const card = document.querySelector('#home-cards .my-today');
     expect(card.textContent).toContain('今日片づけたもの');
     expect(card.textContent).toContain('あなたにだけ見えます');
     expect(card.querySelectorAll('li')).toHaveLength(2);
     Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
     await Promise.resolve();
-    expect(copied[0]).toBe('✅今日\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映');
+    expect(copied[0]).toBe('✅今日やったこと\n- #12 規程の改定\n- 確認依頼 #7 細則の見直し を正式版に反映\n\n' +
+      '📅明日やること\n- 特になし\n\n⛔️困っていること\n- 特になし');
   });
 
   it('前進はホームに見出しを付けて置き、文書の一覧とは別の画面にする (文書と取り違えない)', () => {
@@ -6900,12 +6904,80 @@ describe('前進を見せる (意欲づけ)', () => {
     mount();
     const card = document.querySelector('#home-cards .my-today');
     expect(card.textContent).toContain('今日はこれから');
-    expect(card.querySelector('button')).toBeNull();
+    expect(Array.from(card.querySelectorAll('button')).some((b) => b.textContent === '日報にコピー')).toBe(true);
+  });
+
+  it('日報の形を選ぶと、写す中身が変わり、選んだ形を覚える', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    const app = mount({ apiMyToday: [{ kind: 'issue', number: 12, title: '規程の改定' }],
+      apiReportParts: Object.assign({}, DEFAULTS.apiReportParts, { parts: Object.assign({},
+        DEFAULTS.apiReportParts.parts, { today: [{ kind: 'issue', number: 12, title: '規程の改定' }] }) }) });
+    const card = document.querySelector('#home-cards .my-today');
+    const pick = card.querySelector('select.report-kind');
+    pick.value = 'today';
+    pick.dispatchEvent(new window.Event('change'));
+    expect(app.calls.filter((c) => c.name === 'apiSetReportKind').pop().args).toEqual(['today']);
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied.pop()).toBe('✅今日\n- #12 規程の改定');
+  });
+
+  it('自分の形: 差し込みを当てはめ、知らない差し込みと閉じていない括弧はそのまま残す', () => {
+    const { reportFill } = ui(['reportFill', 'reportLines'], { OFFICIAL: '正式版' });
+    const parts = { today: [{ kind: 'issue', number: 1, title: 'a' }], tomorrow: [], troubles: [],
+      date: '10/14 (水)', name: '中井' };
+    expect(reportFill('{日付} {名前}\n{今日}\n{明日}\n{未知}\n{今日', parts))
+      .toBe('10/14 (水) 中井\n- #1 a\n- 特になし\n{未知}\n{今日');
+  });
+
+  it('自分の形を直す欄で書いて保存すると、自分の形を選んだことになる', () => {
+    const app = mount();
+    const card = document.querySelector('#home-cards .my-today');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '自分の形を直す').click();
+    const form = document.querySelector('.inline-form');
+    const area = form.querySelector('textarea');
+    expect(form.textContent).toContain('{今日}');
+    area.value = '【本日】{今日}';
+    area.dispatchEvent(new window.Event('input'));
+    expect(form.querySelector('.report-preview').textContent).toBe('【本日】- 特になし');
+    form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+    expect(app.calls.filter((c) => c.name === 'apiSetReportCustom').pop().args).toEqual(['【本日】{今日}']);
+    expect(app.calls.filter((c) => c.name === 'apiSetReportKind').pop().args).toEqual(['custom']);
+    expect(card.querySelector('select.report-kind').value).toBe('custom');
+  });
+
+  it('自分の形が2000字を超えたら送らない', () => {
+    const app = mount();
+    const card = document.querySelector('#home-cards .my-today');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '自分の形を直す').click();
+    const form = document.querySelector('.inline-form');
+    form.querySelector('textarea').value = 'あ'.repeat(2001);
+    form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+    expect(app.calls.some((c) => c.name === 'apiSetReportCustom')).toBe(false);
+    expect(document.getElementById('snackbar').textContent).toContain('2000字まで');
+  });
+
+  it('日報の中身が取れないときは、今の形 (✅今日 と箇条) で写す', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    mount({ apiMyToday: [{ kind: 'issue', number: 12, title: '規程の改定' }],
+      apiReportParts: () => new Error('混み合っています') });
+    const card = document.querySelector('#home-cards .my-today');
+    expect(card.querySelector('select.report-kind')).toBeNull();
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied.pop()).toBe('✅今日\n- #12 規程の改定');
   });
 
   it('写せないブラウザでは、選んで写せる欄を出す', async () => {
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined });
-    mount({ apiMyToday: [{ kind: 'issue', number: 12, title: '規程の改定' }] });
+    const today = [{ kind: 'issue', number: 12, title: '規程の改定' }];
+    mount({ apiMyToday: today,
+      apiReportParts: Object.assign({}, DEFAULTS.apiReportParts, { parts: Object.assign({},
+        DEFAULTS.apiReportParts.parts, { today }) }) });
     const card = document.querySelector('#home-cards .my-today');
     Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
     await Promise.resolve();
