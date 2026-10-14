@@ -3159,6 +3159,18 @@ function apiCloseFeedback(number) {
   return out;
 }
 
+/**
+ * 今日片づけたもの (Web App API)。開いている本人のぶんだけ。
+ *
+ * @returns {Array<{kind: string, number: number, title: string}>}
+ */
+function apiMyToday() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  return myToday_(me, new Date()).map(function (x) {
+    return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
+  });
+}
+
 // ===== 設定 =====
 
 /**

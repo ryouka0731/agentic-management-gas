@@ -102,3 +102,65 @@ describe('完了したときに返す知らせ', () => {
     expect(ctx.apiCloseFeedback(n)).toMatchObject({ kind: 'team', number: n });
   });
 });
+
+describe('今日片づけたもの (本人にだけ)', () => {
+  it('担当に自分が入っている・担当が空で自分が閉じた・自分の依頼の反映を載せる', () => {
+    const { ctx, fake } = setup();
+    const today = new Date('2026-10-14T02:00:00Z');
+    const yesterday = new Date('2026-10-13T02:00:00Z');
+
+    // 作る順を期待の逆にする
+    ctx.dbAppend('pulls', { number: 7, title: '細則の見直し', state: 'merged', author: 'tester@example.com', mergedAt: today });
+    ctx.dbAppend('pulls', { number: 8, title: '人の依頼', state: 'merged', author: 'b@example.com', mergedAt: today });
+
+    const empty = ctx.issueCreate('担当なし', '', []).number;
+    ctx.issueClose(empty, null); // tester が閉じた記録が残る
+    ctx.dbUpdate('issues', 'number', empty, { closedAt: today });
+
+    const mine = ctx.issueCreate('規程の改定', '', []).number;
+    ctx.issueClose(mine, null);
+    ctx.dbUpdate('issues', 'number', mine, { assignee: 'b@example.com, tester@example.com', closedAt: today });
+
+    const others = ctx.issueCreate('人の', '', []).number;
+    ctx.issueClose(others, null);
+    ctx.dbUpdate('issues', 'number', others, { assignee: 'b@example.com', closedAt: today });
+
+    const old = ctx.issueCreate('昨日の', '', []).number;
+    ctx.issueClose(old, null);
+    ctx.dbUpdate('issues', 'number', old, { assignee: 'tester@example.com', closedAt: yesterday });
+
+    fake._setUser('b@example.com');
+    const byB = ctx.issueCreate('B が閉じた担当なし', '', []).number;
+    ctx.issueClose(byB, null);
+    ctx.dbUpdate('issues', 'number', byB, { closedAt: today });
+    fake._setUser('tester@example.com');
+
+    expect(ctx.myToday_('tester@example.com', NOW)).toEqual([
+      { kind: 'issue', number: empty, title: '担当なし' },
+      { kind: 'issue', number: mine, title: '規程の改定' },
+      { kind: 'pull', number: 7, title: '細則の見直し' },
+    ]);
+  });
+
+  it('完了を取り消したものは消える', () => {
+    const { ctx } = setup();
+    const n = ctx.issueCreate('早合点', '', []).number;
+    ctx.issueClose(n, null);
+    ctx.dbUpdate('issues', 'number', n, { assignee: 'tester@example.com', closedAt: new Date('2026-10-14T02:00:00Z') });
+    ctx.issueReopen(n);
+    expect(ctx.myToday_('tester@example.com', NOW)).toEqual([]);
+  });
+
+  it('閉じた記録の無い担当なしのものは、誰の今日にも載らない (例外にしない)', () => {
+    const { ctx } = setup();
+    ctx.dbAppend('issues', { number: 99, title: '古い', state: 'closed', closedAt: new Date('2026-10-14T02:00:00Z') });
+    expect(ctx.myToday_('tester@example.com', NOW)).toEqual([]);
+  });
+
+  it('画面からは本人のぶんだけ (アドレスを受ける関数は直に呼べない)', () => {
+    const { ctx } = setup();
+    expect(ctx.myToday).toBeUndefined();
+    expect(Array.isArray(ctx.apiMyToday())).toBe(true);
+    expect(ctx.apiMyToday.length).toBe(0);
+  });
+});

@@ -279,3 +279,69 @@ function closeFeedback_(number, now) {
   if (motivationIsHeavy_(row)) out.kind = 'heavy';
   return out;
 }
+
+/**
+ * やることごとに、最後に閉じた人。担当が空のやることを誰のものとして数えるかに使う。
+ *
+ * @returns {Object<string, string>} 番号の字 → アドレス
+ */
+function motivationClosers_() {
+  var rows = dbReadAll('change_log');
+  var out = {};
+  // 足した順に並んでいるので、後の行が勝つ
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].action) !== 'close') continue;
+    var m = /^issue:(\d+)$/.exec(String(rows[i].target || ''));
+    if (m && rows[i].actor) out[m[1]] = String(rows[i].actor);
+  }
+  return out;
+}
+
+/**
+ * このやることを誰のものとして数えるか。担当がいれば担当、空なら閉じた人。
+ *
+ * @param {object} row
+ * @param {Object<string, string>} closers motivationClosers_()
+ * @returns {string[]}
+ */
+function motivationCredited_(row, closers) {
+  var who = issueAssignees(row);
+  if (who.length) return who;
+  var c = closers[String(row.number)];
+  return c ? [c] : [];
+}
+
+/**
+ * 今日片づけたもの。**本人にだけ**見せる。
+ *
+ * **画面から直に呼べない名前にする (末尾 _)。** アドレスを受けるので、呼べると
+ * ほかの人の一日を覗ける。apiMyToday が開いている本人のアドレスだけを渡す。
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {Array<{kind: string, number: number, title: string}>}
+ */
+function myToday_(email, now) {
+  var me = String(email || '');
+  var today = motivationDay_(now);
+  var out = [];
+  if (!me || !today) return out;
+
+  var closers = motivationClosers_();
+  var issues = dbReadAll('issues');
+  for (var i = 0; i < issues.length; i++) {
+    var row = issues[i];
+    if (String(row.state) !== 'closed' || motivationDay_(row.closedAt) !== today) continue;
+    if (motivationCredited_(row, closers).indexOf(me) < 0) continue;
+    out.push({ kind: 'issue', number: Number(row.number), title: String(row.title || '') });
+  }
+
+  var pulls = dbReadAll('pulls');
+  for (var p = 0; p < pulls.length; p++) {
+    var pr = pulls[p];
+    if (String(pr.state) !== 'merged' || String(pr.author) !== me) continue;
+    if (motivationDay_(pr.mergedAt) !== today) continue;
+    out.push({ kind: 'pull', number: Number(pr.number), title: String(pr.title || '') });
+  }
+  return out;
+}
