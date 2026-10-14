@@ -1206,3 +1206,19 @@ describe('ホームの並び', () => {
     expect(row).not.toContain('width: 100%');
   });
 });
+
+describe('ヘッダーの検索欄', () => {
+  it('欄の見た目は絞り込みの欄と同じ規則から取る (欄ごとに書き直さない)', () => {
+    const html = read('src/ui/wiki.html');
+    // #search-input は .filter-box の中に置く。.filter-box input の規則がそのまま当たる
+    const m = html.match(/<div class="([^"]*)">\s*<input id="search-input"/);
+    expect(m).not.toBeNull();
+    expect(m[1].split(/\s+/)).toContain('filter-box');
+
+    const css = read('src/ui/app.css.html');
+    expect(css).toMatch(/\.filter-box input\s*\{[^}]*border-radius:\s*var\(--radius\)/);
+    // 検索欄だけの枠・角・余白を別に書かない
+    const own = css.match(/\.search-input\s*\{[^}]*\}/g) || [];
+    own.forEach((rule) => expect(rule).not.toMatch(/border|padding|box-shadow|background/));
+  });
+});

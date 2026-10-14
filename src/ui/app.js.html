@@ -3123,6 +3123,9 @@
     if (!searchBox.classList.contains('is-open')) closeSearch();
   });
   searchInput.addEventListener('keydown', function (e) {
+    // かな漢字の変換中は何もしない。変換を決める Enter で候補が開き、Esc で欄が
+    // 閉じてしまう (Chrome は isComposing、Safari は確定直後に keyCode 229 で届く)
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
     else if (e.key === 'Enter') {
