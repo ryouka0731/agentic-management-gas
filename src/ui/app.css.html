@@ -4390,6 +4390,16 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
     box-shadow: 0 -1px 0 var(--line), var(--elev-1);
   }
 
+  /* 通知は下の帯の上に、左右いっぱいで出す (中央寄せのままだと幅が画面の半分になり、
+     閉じるボタンが帯の下に隠れた) */
+  .snackbar {
+    left: var(--sp-4);
+    right: var(--sp-4);
+    transform: none;
+    max-width: none;
+    bottom: calc(64px + env(safe-area-inset-bottom) + var(--sp-3));
+  }
+
   .mobile-nav-item {
     flex: 1 1 0;
     display: flex;

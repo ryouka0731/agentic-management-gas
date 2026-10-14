@@ -243,6 +243,22 @@ describe('ゲームの API', () => {
     expect(ctx.gameLevelSeen_('tester@example.com')).toBe(1);
   });
 
+  it('すでに覚えたレベルを見せたと言われても、鍵を取らない', () => {
+    const { ctx, fake } = setup();
+    ctx.apiSetGameEnabled(true);
+    for (let k = 0; k < 5; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
+    expect(ctx.apiGameLevelSeen(1)).toEqual({ level: 1 });
+    let locks = 0;
+    fake.LockService.getScriptLock = () => ({
+      tryLock: () => { locks++; return true; },
+      releaseLock: () => {},
+    });
+    expect(ctx.apiGameLevelSeen(1)).toEqual({ level: 1 });
+    expect(ctx.apiGameLevelSeen(0)).toEqual({ level: 1 });
+    expect(ctx.apiGameLevelSeen('x')).toEqual({ level: 1 });
+    expect(locks).toBe(0);
+  });
+
   it('オフのあいだは見せたことを覚えない', () => {
     const { ctx } = setup();
     for (let k = 0; k < 5; k++) closed(ctx, 'x' + k, { assignee: 'tester@example.com', closedAt: new Date() });
