@@ -1632,14 +1632,42 @@
     formDraftForCall = null;
 
     var failed = onFail || failSnack();
+    var ok = onOk || function () {};
     var run = google.script.run
-      .withSuccessHandler(onOk || function () {})
+      .withSuccessHandler(function (res) {
+        if (searchIndexChangedBy(name)) searchIndexStale();
+        ok(res);
+      })
       .withFailureHandler(function (err) {
         failed(err);
         if (draft) reopenDraft(draft);
       });
 
     run[name].apply(run, args || []);
+  }
+
+  /**
+   * この api が成功すると、横断検索の一覧が古くなるか。
+   *
+   * 一覧は60秒取り直さない。そのあいだに閉じた・戻した・捨てた・反映したものを
+   * 前の状態のまま開きに行くと、別の道へ進む (済んだ報告を「未解決だけ」の
+   * 一覧で探して見つからない、など)。**成功した呼び出しの名前だけで決める。**
+   * 呼ぶ場所ごとに書くと、書き忘れた操作だけが古いまま残る。
+   *
+   * 一覧に出るのは題名・番号・状態・あるかないかだけなので、それを作る・消す・
+   * 直す・状態を動かす動詞で終わる名前を数える。読むだけのもの
+   * (apiIssueList / apiSearchIndex / apiHomeSummary / …List / …Get /
+   * …Preview / …State など) はどれにも当たらない。余分に当たっても
+   * 取り直すだけで、害は無い。**書き込みの api を足したら、ここに当たるかを
+   * 確かめる。** call() を通らない呼び出しには効かないので、一覧に出るものを
+   * 動かす呼び出しは call() で書く。
+   *
+   * @param {string} name api 関数の名前
+   * @returns {boolean}
+   */
+  function searchIndexChangedBy(name) {
+    return /^api.*(Create|CreateBranch|Update|Close|Reopen|Archive|Restore|Purge|Merge|Delete|Resolve|RegisterFiles|UnregisterFile|AddFile|Move)$/
+      .test(String(name || ''));
   }
 
   /**
@@ -3025,8 +3053,8 @@
 
   /**
    * 一覧を古いことにする。次に欄へ入ったとき取り直す。
-   * この画面で作ったり題名を直したりしたら呼ぶ。60秒待たないと出てこないと、
-   * 作ったはずのものが探せない。
+   * **呼ぶのは call() だけ** (searchIndexChangedBy が決める)。60秒待たないと
+   * 出てこないと、作ったはずのものが探せず、閉じたものを前の状態で開きに行く。
    */
   function searchIndexStale() {
     searchIndexAt = 0;
@@ -3136,7 +3164,7 @@
     else if (item.kind === 'issue' && item.archived) {
       // 捨てたものは一覧に出ない (apiIssueList は置き場を返さない)。置き場を開いてその行を指す
       trashFocus = item.number;
-      setIssueView('trash', true);
+      setIssueView('trash', true, { noSave: true });
       switchTab('issues');
     }
     else if (item.kind === 'issue') openIssueByNumber(item.number);
@@ -4065,7 +4093,6 @@
       '作る',
       function (v) {
         call('apiBranchCreate', [v.name, current.docFileId], function () {
-          searchIndexStale();
           showSnack('改訂版「' + v.name + '」を作りました', { kind: 'ok' });
           loadFiles(function () {
             loadDrafts();
@@ -4556,7 +4583,6 @@
 
         call('apiPrCreate', [v.title, v.body, branchName, ids, v.into],
           function () {
-            searchIndexStale();
             showSnack('確認を依頼しました', { kind: 'ok' });
             switchTab('pulls');
             loadOverview();
@@ -5593,8 +5619,10 @@
   /**
    * @param {string} view
    * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
+   * @param {{noSave: boolean}} [opts] noSave: 次に開いたときの見え方として覚えない。
+   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く
    */
-  function setIssueView(view, quiet) {
+  function setIssueView(view, quiet, opts) {
     issueView = view;
 
     Object.keys(viewBtns).forEach(function (k) {
@@ -5618,9 +5646,11 @@
     document.getElementById('tally-who-box').hidden =
       view !== 'tally' || !tallyScope.isManager;
 
-    try {
-      window.localStorage.setItem('issueView', view);
-    } catch (e) { /* 保存できなくても切り替えは効く */ }
+    if (!(opts && opts.noSave)) {
+      try {
+        window.localStorage.setItem('issueView', view);
+      } catch (e) { /* 保存できなくても切り替えは効く */ }
+    }
 
     if (!quiet) reloadIssueView();
   }
@@ -6202,7 +6232,6 @@
           branchBtn.addEventListener('click', function () {
             branchBtn.disabled = true;
             call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
-              searchIndexStale();
               showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
               loadFiles(function () { loadIssues(); });
               loadOverview();
@@ -6651,7 +6680,6 @@
         }
 
         call('apiIssueUpdate', [issue.number, patch], function (after) {
-          searchIndexStale();
           showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
           // 直したら読む形に戻す。書き換えの形のまま残ると、
           // どこまで反映されたのかが分からない
@@ -7134,7 +7162,11 @@
           if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
         }
       });
-    }, failInto(trashListEl));
+    }, function (err) {
+      // 取れなくても指す先は捨てる。残すと、後で自分で開いたときに古い行を指す
+      trashFocus = null;
+      failInto(trashListEl)(err);
+    });
   }
 
   function refreshIssueViews() {
@@ -7176,7 +7208,6 @@
         scrumIssuePatch(v, extra);
 
         call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', extra], function () {
-          searchIndexStale();
           showSnack('やることを作りました', { kind: 'ok' });
           // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
           if (panelIssues.hidden) switchTab('issues');
@@ -8705,7 +8736,6 @@
       if (!title) return;
       add.disabled = true;
       call('apiIssueCreate', [title, '', [], '', {}], function (made) {
-        searchIndexStale();
         function done() {
           showSnack('#' + made.number + ' を ' + label + ' に足しました', { kind: 'ok' });
           loadBoard();
@@ -9794,7 +9824,6 @@
       '送る',
       function (v) {
         call('apiInquiryCreate', [v.kind, reportBody(v), reportContext(), shots], function (row) {
-          searchIndexStale();
           showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
           closeSide();
           loadReports();
@@ -10323,15 +10352,9 @@
 
       toggle.addEventListener('click', function () {
         toggle.disabled = true;
-        var run = google.script.run
-          .withSuccessHandler(function () { loadReports(); })
-          .withFailureHandler(function (err) {
-            toggle.disabled = false;
-            showSnack(err.message, { kind: 'ng' });
-          });
-
-        if (q.state === 'done') run.apiInquiryReopen(q.number);
-        else run.apiInquiryClose(q.number);
+        // call() を通す。横断検索の一覧が、解決・取り消しを知る
+        call(q.state === 'done' ? 'apiInquiryReopen' : 'apiInquiryClose', [q.number],
+          function () { loadReports(); }, failEnable(toggle));
       });
 
       actions.appendChild(toggle);
@@ -10642,7 +10665,6 @@
         go.disabled = true;
 
         call('apiRegisterFiles', [ids], function (res) {
-          searchIndexStale();
           go.disabled = false;
           var text = res.added.length + '件を登録しました';
 
@@ -13482,7 +13504,6 @@
         return;
       }
       call('apiImpedimentCreate', [fields], function () {
-        searchIndexStale();
         showSnack('障害物を記録しました', { kind: 'ok' });
         loadImpediments();
       });
