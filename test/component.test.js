@@ -7812,6 +7812,110 @@ describe('横断検索', () => {
     expect(document.getElementById('panel-issues').hidden).toBe(false);
   });
 
+  it('捨てたもの (#13) を選ぶと、置き場を開いてその行を指す', () => {
+    const app = mount({
+      apiIssueArchivedList: [
+        { number: 9, title: '別のもの', state: 'open', archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 20 },
+        { number: 13, title: '就業規則 古い案', state: 'open', archivedAt: '2026-09-01T00:00:00.000Z', daysLeft: 22 },
+      ],
+    });
+    type('古い案');
+    document.querySelector('#search-results [data-kind="issue"]').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('trash-list').hidden).toBe(false);
+    expect(document.querySelector('#trash-list [aria-current="true"]').textContent).toContain('#13');
+    expect(document.getElementById('snackbar')).toBeNull();
+    // 置き場は1回だけ読む
+    expect(app.calls.filter((c) => c.name === 'apiIssueArchivedList')).toHaveLength(1);
+  });
+
+  describe('報告を選ぶと、その報告が開く', () => {
+    const R = (number, title, state) => ({
+      number, kind: 'bug', kindLabel: 'うまく動かない', title, body: title, by: 'other@example.com',
+      state, context: '', answer: '', at: '2026-09-09T00:00:00.000Z', answeredAt: '', mine: false,
+      canClose: false, replyCount: 0,
+    });
+    const LIST = [R(6, '新しい報告', 'open'), R(5, '棒が伸びない', 'done')];
+    const over = {
+      apiSearchIndex: [{ kind: 'inquiry', number: 5, key: '', title: '棒が伸びない', state: 'done', archived: false }],
+      apiInquiryList: LIST,
+      apiInquiryThread: (n) => ({ inquiry: LIST.filter((r) => r.number === n)[0], replies: [] }),
+    };
+    const opened = (app) => app.calls.filter((c) => c.name === 'apiInquiryThread').pop().args[0];
+
+    it('済んだ報告 (「未解決だけ」で外れるもの)', () => {
+      const app = mount(over);
+      type('棒が');
+      document.querySelector('#search-results [data-kind="inquiry"]').click();
+      expect(opened(app)).toBe(5);
+      expect(document.querySelector('#report-list [aria-current="true"]').dataset.number).toBe('5');
+    });
+
+    it('報告の絞り込みに字が残っていても', () => {
+      const app = mount(over);
+      document.querySelector('[data-tab="report"]').click();
+      const filter = document.getElementById('report-filter');
+      filter.value = '新しい';
+      filter.dispatchEvent(new window.Event('input'));
+      type('棒が');
+      document.querySelector('#search-results [data-kind="inquiry"]').click();
+      expect(opened(app)).toBe(5);
+      expect(filter.value).toBe('');
+    });
+  });
+
+  it('狭い画面で開いた欄は、外側を押すと閉じる。中を押しても閉じない', () => {
+    mount();
+    document.getElementById('search-open').click();
+    const box = document.querySelector('.search-box');
+    document.getElementById('search-input').dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    expect(box.classList.contains('is-open')).toBe(true);
+    document.querySelector('main, #panel-home, body').dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    expect(box.classList.contains('is-open')).toBe(false);
+  });
+
+  it('一覧の見出しを押しても候補は閉じない (欄から抜けない)', () => {
+    mount();
+    type('就業');
+    const head = document.querySelector('#search-results .search-group-head');
+    const ev = new window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    head.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    // 行を押せば今までどおり開く
+    document.querySelector('#search-results [data-kind="doc"]').click();
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+  });
+
+  it('選んだ行を外して打ち直すと、aria-activedescendant を残さない', () => {
+    mount();
+    const input = type('就業');
+    key(input, 'ArrowDown');
+    expect(input.getAttribute('aria-activedescendant')).toBeTruthy();
+    input.value = '就業規';
+    input.dispatchEvent(new window.Event('input'));
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    key(input, 'ArrowDown');
+    input.value = 'ありえない字';
+    input.dispatchEvent(new window.Event('input'));
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
+  it('この画面でやることを作ったら、次に欄へ入ったとき一覧を取り直す', () => {
+    const app = mount();
+    key(document.body, 'k', { ctrlKey: true });
+    document.activeElement.blur();
+    expect(app.calls.filter((c) => c.name === 'apiSearchIndex')).toHaveLength(1);
+
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('issue-create-btn').click();
+    document.querySelector('#side-body form input').value = '新しいやること';
+    document.querySelector('#side-body form .btn-primary').click();
+    expect(app.calls.some((c) => c.name === 'apiIssueCreate')).toBe(true);
+
+    key(document.body, 'k', { ctrlKey: true });
+    expect(app.calls.filter((c) => c.name === 'apiSearchIndex')).toHaveLength(2);
+  });
+
   it('狭い画面のボタンで欄が開き、Esc で閉じる', () => {
     mount();
     document.getElementById('search-open').click();

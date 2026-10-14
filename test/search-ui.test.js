@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ui } from './ui-source.js';
 
-const { searchNormalize, searchFilter } = ui(['searchNormalize', 'searchFilter', 'searchRank']);
+const { searchNormalize, searchFilter, searchStateLabel } = ui(['searchNormalize', 'searchFilter', 'searchRank', 'searchStateLabel', 'stateLabel']);
 
 const I = (kind, number, title, extra) => Object.assign({ kind, number, key: '', title, state: 'open', archived: false }, extra || {});
 
@@ -49,5 +49,25 @@ describe('合わせ方', () => {
   it('合った場所を返す (正規化前の題名の位置)', () => {
     const out = searchFilter([I('issue', 1, 'ＡＢＣ規程')], 'abc');
     expect(out[0].items[0].hit).toEqual([0, 3]);
+  });
+
+  it('確認依頼は 確認待ち・承認済み → 反映済み → 取り下げ の順 (取り下げは同じ段の最後)', () => {
+    const idx = [I('pull', 5, '規程E', { state: 'closed' }), I('pull', 4, '規程D', { state: 'merged' }),
+      I('pull', 3, '規程C', { state: 'closed' }), I('pull', 2, '規程B', { state: 'approved' }), I('pull', 1, '規程A')];
+    expect(searchFilter(idx, '規程')[0].items.map((x) => x.number)).toEqual([2, 1, 4, 5, 3]);
+  });
+});
+
+describe('状態の札は一覧と同じ言葉', () => {
+  it('確認依頼は一覧の stateLabel、報告は 未解決/解決、捨てたものは 置き場', () => {
+    expect(searchStateLabel(I('pull', 1, 'x'))).toBe('確認待ち');
+    expect(searchStateLabel(I('pull', 1, 'x', { state: 'closed' }))).toBe('取り下げ');
+    expect(searchStateLabel(I('inquiry', 1, 'x'))).toBe('未解決');
+    expect(searchStateLabel(I('inquiry', 1, 'x', { state: 'done' }))).toBe('解決');
+    expect(searchStateLabel(I('issue', 1, 'x'))).toBe('対応中');
+    expect(searchStateLabel(I('issue', 1, 'x', { state: 'closed' }))).toBe('完了');
+    expect(searchStateLabel(I('impediment', 1, 'x', { state: 'resolved' }))).toBe('解決済み');
+    expect(searchStateLabel(I('issue', 1, 'x', { archived: true }))).toBe('置き場');
+    expect(searchStateLabel(I('branch', 0, 'x'))).toBe('');
   });
 });
