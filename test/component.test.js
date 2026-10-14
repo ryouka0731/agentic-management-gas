@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import fs from 'node:fs';
+import vm from 'node:vm';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mountApp, DEFAULTS } from './dom.js';
 
@@ -7278,5 +7280,140 @@ describe('ポイント・レベル・週の上位', () => {
     expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
     expect(document.querySelector('#home-cards .my-today')).not.toBeNull();
     expect(document.querySelector('#home-cards .game-card')).toBeNull();
+  });
+});
+
+/*
+ * 画面の純関数は app.js.html から原文のまま切り出して動かす
+ * (test/ui-parity.test.js と同じ方法)。テストのために window へ出す口は作らない。
+ */
+const APP_SRC = fs.readFileSync('src/ui/app.js.html', 'utf8');
+
+function extractUi(name) {
+  const start = APP_SRC.indexOf('  function ' + name + '(');
+  if (start < 0) throw new Error('画面に ' + name + ' がありません');
+  let i = APP_SRC.indexOf('{', start);
+  let depth = 0;
+  let quote = null;
+  for (; i < APP_SRC.length; i++) {
+    const ch = APP_SRC[i];
+    const next = APP_SRC[i + 1];
+    if (quote) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '/' && next === '/') { i = APP_SRC.indexOf('\n', i); continue; }
+    if (ch === '/' && next === '*') { i = APP_SRC.indexOf('*/', i) + 1; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (ch === '{') depth++;
+    if (ch === '}') { depth--; if (depth === 0) break; }
+  }
+  return APP_SRC.substring(start, i + 1);
+}
+
+function uiFns(names) {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(names.map(extractUi).join('\n'), ctx);
+  return ctx;
+}
+
+describe('ホームの区画', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('あなたの番: 種類ごとに並び、押すと開く', () => {
+    // やること #7 は既定の一覧に無いので足す
+    mount({ apiIssueList: [...DEFAULTS.apiIssueList,
+      { ...DEFAULTS.apiIssueList[0], number: 7, title: '附則の施行日を決める' }] });
+    const turn = document.getElementById('home-turn');
+    expect(turn.textContent).toContain('確かめてほしい確認依頼');
+    expect(turn.textContent).toContain('就業規則 第3条の改定');
+    expect(turn.textContent).toContain('期限切れ');
+    turn.querySelector('[data-issue="7"]').click();
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+  });
+
+  it('あなたの番: 確認依頼を押すと確認依頼の画面でその中身を開く', () => {
+    const app = mount();
+    document.querySelector('#home-turn [data-pr="1"]').click();
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    expect(app.calls.filter((c) => c.name === 'apiPrPreview').map((c) => c.args[0])).toContain(1);
+  });
+
+  it('あなたの番: 何も無ければそう書く。5件を超えたら一覧へ送る', () => {
+    mount({ apiHomeSummary: { myTurn: {
+      reviews: { items: [], total: 0 }, returned: { items: [], total: 0 }, due: { items: [], total: 0 },
+    }, recent: [] } });
+    expect(document.getElementById('home-turn').textContent).toContain('いまあなたを待っているものはありません');
+
+    mount({ apiHomeSummary: { myTurn: {
+      reviews: { items: [1, 2, 3, 4, 5].map((n) => ({ number: n, title: 'x' + n })), total: 8 },
+      returned: { items: [], total: 0 }, due: { items: [], total: 0 },
+    }, recent: [] } });
+    expect(document.getElementById('home-turn').textContent).toContain('ほか 3 件');
+  });
+
+  it('草: 自分とチームの2段で 371 マスずつ。読み上げの字があり、連続日数の字は無い', () => {
+    mount();
+    const box = document.getElementById('home-activity');
+    const grids = box.querySelectorAll('.activity-grid');
+    expect(grids).toHaveLength(2);
+    grids.forEach((g) => {
+      expect(g.querySelectorAll('.activity-cell')).toHaveLength(371);
+      expect(g.getAttribute('role')).toBe('img');
+      expect(g.getAttribute('aria-label')).toMatch(/直近1年/);
+    });
+    expect(box.textContent).toContain('直近1年で 120 件');
+    expect(box.textContent).not.toMatch(/連続|最長/);
+    const one = grids[0].querySelector('.activity-cell[data-day]');
+    expect(one.title).toMatch(/\d+月\d+日 \(.\) \d+件/);
+  });
+
+  it('草: 色の段は0件が0、ほかは分布で1〜4', () => {
+    const { activityCuts, activityLevel } = uiFns(['activityCuts', 'activityLevel']);
+    const cuts = activityCuts([0, 0, 1, 1, 2, 3, 4, 8]);
+    expect(activityLevel(0, cuts)).toBe(0);
+    expect(activityLevel(1, cuts)).toBeGreaterThanOrEqual(1);
+    expect(activityLevel(8, cuts)).toBe(4);
+    // 1件も無い年でも段が決まる (0件は0のまま)
+    expect(activityLevel(0, activityCuts([0, 0]))).toBe(0);
+  });
+
+  it('最近の動き: 名前を出さず、押すと開く', () => {
+    mount();
+    const recent = document.getElementById('home-recent');
+    expect(recent.textContent).toContain('正式版に反映');
+    expect(recent.textContent).toContain('完了');
+    expect(recent.textContent).not.toMatch(/@|中井|佐藤/);
+    recent.querySelector('[data-file="DOC1"]').click();
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+  });
+
+  it('最近の動き: 文書の一覧がまだ届いていなくても、文書を開ける', () => {
+    let lateList = null;
+    let first = true;
+    mount({ apiListFiles: () => {
+      if (first) { first = false; return { later: (ok) => { lateList = ok; } }; }
+      return DEFAULTS.apiListFiles;
+    } });
+    document.querySelector('#home-recent [data-file="DOC1"]').click();
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(lateList).not.toBeNull();
+  });
+
+  it('1つの区画が取れなくても、ほかは出す。取れない区画にはその場で知らせる', () => {
+    mount({ apiHomeActivity: () => new Error('混み合っています') });
+    expect(document.getElementById('home-activity').textContent).toMatch(/出せませんでした|混み合っています/);
+    expect(document.getElementById('home-turn').textContent).toContain('就業規則 第3条の改定');
+  });
+
+  it('返事を待つあいだに別の画面へ移ったら、届いても描かず、戻しもしない', () => {
+    let late = null;
+    mount({ apiHomeSummary: () => ({ later: (ok) => { late = ok; } }) });
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    late(DEFAULTS.apiHomeSummary);
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('home-turn').textContent).toBe('');
   });
 });

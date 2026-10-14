@@ -2736,13 +2736,279 @@
     }
   }
 
+  var homeTurnEl = document.getElementById('home-turn');
+  var homeActivityEl = document.getElementById('home-activity');
+  var homeRecentEl = document.getElementById('home-recent');
+
   /**
    * ホーム。各区画を並べて呼び、1つが取れなくてもほかは出す。
-   * 返事を描く前に、まだホームを開いているかを各区画で見る。
+   * あなたの番・草・最近の動きは、返事を描く前にまだホームを開いているかを見る
+   * (前の返事で別の画面の上に描かない)。全体の数は左の数字も兼ねるので、
+   * 開いていなくても入れる。
    */
   function loadHome() {
     loadOverview();
     loadHomeCards();
+    call('apiHomeSummary', [], function (s) {
+      if (panelHome.hidden) return;
+      s = s || {};
+      fillBlock(homeTurnEl, makeTurnBlock(s.myTurn || {}));
+      fillBlock(homeRecentEl, makeRecentBlock(s.recent || []));
+    }, function (err) {
+      if (panelHome.hidden) return;
+      failInto(homeTurnEl)(err);
+      failInto(homeRecentEl)(err);
+    });
+    call('apiHomeActivity', [], function (act) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));
+    }, function (err) {
+      if (panelHome.hidden) return;
+      failInto(homeActivityEl)(err);
+    });
+  }
+
+  function fillBlock(host, el) {
+    host.textContent = '';
+    host.appendChild(el);
+  }
+
+  function homeHead(text) {
+    var h = document.createElement('h2');
+    h.className = 'home-section-head';
+    h.textContent = text;
+    return h;
+  }
+
+  /**
+   * 何分前・何時間前。1週間を超えたら月/日で出す。
+   *
+   * @param {string} iso
+   * @returns {string}
+   */
+  function relativeTime(iso) {
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 1) return 'いま';
+    if (min < 60) return min + '分前';
+    var hours = Math.floor(min / 60);
+    if (hours < 24) return hours + '時間前';
+    var days = Math.floor(hours / 24);
+    if (days < 7) return days + '日前';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  /** あなたの番。種類ごとに5件まで。押すとそのものを開く */
+  function makeTurnBlock(turn) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('あなたの番'));
+    var groups = [
+      ['reviews', '確かめてほしい確認依頼', 'pulls'],
+      ['returned', '直してほしいと戻ってきた確認依頼', 'pulls'],
+      ['due', '期限が近いやること', 'issues'],
+    ];
+    var any = false;
+    groups.forEach(function (g) {
+      var part = turn[g[0]] || { items: [], total: 0 };
+      var items = part.items || [];
+      if (!items.length) return;
+      any = true;
+      var sec = document.createElement('div');
+      sec.className = 'home-turn-group';
+      var name = document.createElement('div');
+      name.className = 'row-meta';
+      name.textContent = g[1];
+      sec.appendChild(name);
+      items.forEach(function (it) {
+        var row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'row-item home-turn-row';
+        row.textContent = (g[2] === 'pulls' ? '確認依頼 #' : '#') + it.number + ' ' + it.title;
+        if (g[0] === 'due') {
+          row.dataset.issue = String(it.number);
+          var due = String(it.due || '');
+          if (it.overdue) row.appendChild(makePill('期限切れ', 'chip chip-pri-high'));
+          else if (due) row.appendChild(makePill('期限 ' + Number(due.substring(5, 7)) + '/' + Number(due.substring(8, 10))));
+          row.addEventListener('click', function () { openIssueByNumber(it.number, row); });
+        } else {
+          row.dataset.pr = String(it.number);
+          row.addEventListener('click', function () { openPrByNumber(it.number); });
+        }
+        sec.appendChild(row);
+      });
+      if (part.total > items.length) {
+        var more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'btn';
+        more.textContent = 'ほか ' + (part.total - items.length) + ' 件';
+        more.addEventListener('click', function () { switchTab(g[2]); });
+        sec.appendChild(more);
+      }
+      box.appendChild(sec);
+    });
+    if (!any) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = 'いまあなたを待っているものはありません';
+      box.appendChild(none);
+    }
+    return box;
+  }
+
+  /** 確認依頼を番号で開く。一覧を取り直してから中身を出す */
+  function openPrByNumber(number) {
+    call('apiPrList', [], function (list) {
+      var pr = (list || []).filter(function (p) { return Number(p.number) === Number(number); })[0];
+      if (!pr) {
+        showSnack('確認依頼 #' + number + ' が見つかりません', { kind: 'ng' });
+        return;
+      }
+      switchTab('pulls');
+      showPrDetail(pr);
+    });
+  }
+
+  /**
+   * 文書を fileId で開く。文書の一覧がまだ届いていなければ取ってから開く
+   * (openDoc は allFiles から正式版を引く)。
+   *
+   * @param {string} fileId
+   * @param {string} title 一覧に見当たらないときの題名
+   */
+  function openDocById(fileId, title) {
+    function go() {
+      var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
+      openDoc(fileId, f ? f.path : title);
+    }
+    if (allFiles.length) go();
+    else loadFiles(go);
+  }
+
+  /**
+   * 草の色の段の切れ目。1件以上の日の分布の 1/4・2/4・3/4 (GitHub と同じ考え方)。
+   *
+   * @param {number[]} counts
+   * @returns {number[]}
+   */
+  function activityCuts(counts) {
+    var on = counts.filter(function (n) { return n > 0; }).sort(function (a, b) { return a - b; });
+    if (!on.length) return [1, 1, 1];
+    function q(f) { return on[Math.min(on.length - 1, Math.floor(on.length * f))]; }
+    return [q(0.25), q(0.5), q(0.75)];
+  }
+
+  /**
+   * @param {number} n
+   * @param {number[]} cuts activityCuts
+   * @returns {number} 0〜4
+   */
+  function activityLevel(n, cuts) {
+    if (!n) return 0;
+    if (n <= cuts[0]) return 1;
+    if (n <= cuts[1]) return 2;
+    if (n <= cuts[2]) return 3;
+    return 4;
+  }
+
+  var WEEKDAYS = '月火水木金土日';
+
+  /**
+   * 草を2段 (あなた・チーム) 描く。**日が続いた数・その最高は出さない。**
+   * 狭い画面では横に流し、右端 (今週) を見せる。
+   */
+  function makeActivityBlock(act) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('アクティビティ'));
+    var weeks = act.weeks || [];
+
+    [['me', 'あなた (あなたにだけ見えます)'], ['team', 'チーム (全員の合計)']].forEach(function (pair) {
+      var key = pair[0];
+      var counts = [];
+      weeks.forEach(function (w) { w.forEach(function (c) { if (!c.future) counts.push(Number(c[key]) || 0); }); });
+      var cuts = activityCuts(counts);
+      var total = counts.reduce(function (s, n) { return s + n; }, 0);
+
+      var label = document.createElement('div');
+      label.className = 'row-meta';
+      label.textContent = pair[1];
+      box.appendChild(label);
+
+      var scroll = document.createElement('div');
+      scroll.className = 'activity-scroll';
+      var grid = document.createElement('div');
+      grid.className = 'activity-grid';
+      grid.setAttribute('role', 'img');
+      grid.setAttribute('aria-label', pair[1] + '。直近1年で ' + total + ' 件の行い');
+
+      weeks.forEach(function (w) {
+        var col = document.createElement('div');
+        col.className = 'activity-week';
+        w.forEach(function (c, d) {
+          var cell = document.createElement('span');
+          var n = Number(c[key]) || 0;
+          cell.className = 'activity-cell lv' + (c.future ? '-none' : activityLevel(n, cuts));
+          if (!c.future) {
+            var day = String(c.day || '');
+            cell.dataset.day = day;
+            cell.title = Number(day.substring(5, 7)) + '月' + Number(day.substring(8, 10)) + '日 (' +
+              WEEKDAYS.charAt(d) + ') ' + n + '件';
+          }
+          col.appendChild(cell);
+        });
+        grid.appendChild(col);
+      });
+      scroll.appendChild(grid);
+      box.appendChild(scroll);
+      // 開いたら右端 (今週) を見せる
+      window.requestAnimationFrame(function () { scroll.scrollLeft = scroll.scrollWidth; });
+    });
+
+    var sum = document.createElement('p');
+    sum.className = 'row-meta';
+    sum.textContent = '直近1年で ' + (act.meTotal || 0) + ' 件 (あなた)';
+    box.appendChild(sum);
+    return box;
+  }
+
+  var RECENT_WORDS = { merged: '正式版に反映', closed: '完了', pull: '確認依頼が出た', file: '文書を登録' };
+
+  /** 最近の動き。**名前を出さない。** 押すと開く */
+  function makeRecentBlock(list) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('最近の動き'));
+    if (!list.length) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = 'まだ動きはありません';
+      box.appendChild(none);
+      return box;
+    }
+    list.forEach(function (x) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'row-item home-recent-row';
+      var what = x.kind === 'file' ? x.title : (x.kind === 'closed' ? '#' : '確認依頼 #') + x.number + ' ' + x.title;
+      row.textContent = what + ' が' + (RECENT_WORDS[x.kind] || '');
+      var when = document.createElement('span');
+      when.className = 'row-meta';
+      when.textContent = ' ' + relativeTime(x.at);
+      row.appendChild(when);
+      // 文書の行は番号を持たない (0) ので fileId で名指す
+      if (x.kind === 'file') {
+        row.dataset.file = x.fileId;
+        row.addEventListener('click', function () { openDocById(x.fileId, x.title); });
+      } else if (x.kind === 'closed') {
+        row.dataset.issue = String(x.number);
+        row.addEventListener('click', function () { openIssueByNumber(x.number, row); });
+      } else {
+        row.dataset.pr = String(x.number);
+        row.addEventListener('click', function () { openPrByNumber(x.number); });
+      }
+      box.appendChild(row);
+    });
+    return box;
   }
 
   /**
