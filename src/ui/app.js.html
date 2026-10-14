@@ -8286,7 +8286,9 @@
         ['apiMyMilestones', 'steps', [], 'はじめの5歩が出なくても使える'],
         ['apiMyToday', 'today', [], '今日の一覧が出なくても使える'],
         ['apiGameState', 'game', { enabled: false }, 'ポイントが出なくても使える'],
-        ['apiGameTop', 'top', [], '週の上位が出なくても使える']
+        ['apiGameTop', 'top', [], '週の上位が出なくても使える'],
+        // 取れなかったときは null のまま渡す。控えのひな形は使わず、今の形 (✅今日) で写す
+        ['apiReportParts', 'report', null, '日報の形が取れなくても今の形で写せる']
       ];
       var left = names.length;
       names.forEach(function (n) {
@@ -8296,7 +8298,7 @@
           if (left > 0) return;
           // 返事を待つあいだに止められていたら描かない
           if (!progressNotesOn()) return;
-          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top);
+          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top, got.report);
         }
         var quiet = failQuiet(n[3]);
         call(n[0], [], done, function (err) { quiet(err); done(null); });
@@ -8304,14 +8306,14 @@
     }, failQuiet('前進が出なくても使える'));
   }
 
-  function renderHomeCards(p, steps, today, game, top) {
+  function renderHomeCards(p, steps, today, game, top, report) {
     homeCardsEl.textContent = '';
     // 文書の一覧と取り違えないよう、ここからは文書ではないと見出しで分ける
     var head = document.createElement('h2');
     head.className = 'home-section-head';
     head.textContent = 'あなたとチームの前進';
     homeCardsEl.appendChild(head);
-    homeCardsEl.appendChild(makeTodayCard(today || []));
+    homeCardsEl.appendChild(makeTodayCard(today || [], report || null));
     var g = makeGameCard(game || {}, top || []);
     if (g) {
       homeCardsEl.appendChild(g);
@@ -8437,14 +8439,74 @@
     })).join('\n');
   }
 
+  /** 日報のひな形の控え。**本体はサーバの REPORT_TEMPLATES()**。取れなかったときだけ使う */
+  var REPORT_FALLBACK = [
+    { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
+    { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
+    { key: 'plain', name: '見出し無し', body: '{今日}' },
+  ];
+
+  /**
+   * 箇条を1行ずつ `- ` で並べる。無ければ `- 特になし`。
+   *
+   * @param {Array} items
+   * @param {function(object): string} fmt
+   * @returns {string}
+   */
+  function reportLines(items, fmt) {
+    return items && items.length ? items.map(fmt).join('\n') : '- 特になし';
+  }
+
+  /**
+   * 日報の形に中身を当てはめる。**知らない差し込みはそのまま残す** (消すと書いたものが黙って消える)。
+   *
+   * @param {string} template
+   * @param {{today: object[], tomorrow: object[], troubles: object[], date: string, name: string}} parts
+   * @returns {string}
+   */
+  function reportFill(template, parts) {
+    var map = {
+      '今日': reportLines(parts.today, function (x) {
+        return x.kind === 'pull'
+          ? '- 確認依頼 #' + x.number + ' ' + x.title + ' を' + OFFICIAL + 'に反映'
+          : '- #' + x.number + ' ' + x.title;
+      }),
+      '明日': reportLines(parts.tomorrow, function (x) {
+        return '- #' + x.number + ' ' + x.title +
+          (x.due ? ' (期限 ' + Number(x.due.substring(5, 7)) + '/' + Number(x.due.substring(8, 10)) + ')' : '');
+      }),
+      '困りごと': reportLines(parts.troubles, function (x) { return '- ' + x.title; }),
+      '日付': parts.date || '',
+      '名前': parts.name || '',
+    };
+    return String(template).replace(/\{(今日|明日|困りごと|日付|名前)\}/g, function (m, k) { return map[k]; });
+  }
+
+  /**
+   * いま選んでいる形の本文。自分の形が空なら 3節。
+   *
+   * @param {{templates: object[], kind: string, custom: string}} report
+   * @returns {string}
+   */
+  function reportTemplateOf(report) {
+    if (report.kind === 'custom' && report.custom) return report.custom;
+    var list = report.templates && report.templates.length ? report.templates : REPORT_FALLBACK;
+    var hit = list.filter(function (t) { return t.key === report.kind; })[0];
+    return (hit || list[0]).body;
+  }
+
   /**
    * 今日片づけたもの。**本人にだけ見える。** 件数は大きく出さず、題名を並べる
    * (件数を追わせると簡単なものから手を付ける)。
    *
+   * 「日報にコピー」は件数に関わらず出す (3節は明日と困りごとだけでも使う)。
+   * 日報の中身が取れなかったとき (`report` が null) は、今の形 (✅今日) で写す。
+   *
    * @param {Array<{kind: string, number: number, title: string}>} items
+   * @param {?{parts: object, templates: object[], kind: string, custom: string}} report apiReportParts
    * @returns {HTMLElement}
    */
-  function makeTodayCard(items) {
+  function makeTodayCard(items, report) {
     var card = document.createElement('section');
     card.className = 'home-card my-today';
     card.setAttribute('aria-label', '今日片づけたもの');
@@ -8459,24 +8521,61 @@
       none.className = 'my-today-none';
       none.textContent = '今日はこれから。片づけたものがここに並びます';
       card.appendChild(none);
-      return card;
+    } else {
+      var list = document.createElement('ul');
+      list.className = 'my-today-list';
+      items.forEach(function (x) {
+        var li = document.createElement('li');
+        li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
+        list.appendChild(li);
+      });
+      card.appendChild(list);
     }
 
-    var list = document.createElement('ul');
-    list.className = 'my-today-list';
-    items.forEach(function (x) {
-      var li = document.createElement('li');
-      li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
-      list.appendChild(li);
-    });
-    card.appendChild(list);
+    var actions = document.createElement('div');
+    actions.className = 'my-today-actions';
+    card.appendChild(actions);
 
     var copy = document.createElement('button');
     copy.type = 'button';
     copy.className = 'btn';
     copy.textContent = '日報にコピー';
+    actions.appendChild(copy);
+
+    var pick = null;
+    if (report) {
+      // 選んだ形と自分の形はこのカードの中で書き換える。返事そのものは触らない
+      report = { parts: report.parts || {}, templates: report.templates || [],
+        kind: String(report.kind || ''), custom: String(report.custom || '') };
+      var choices = (report.templates && report.templates.length ? report.templates : REPORT_FALLBACK)
+        .map(function (t) { return [t.key, t.name]; })
+        .concat([['custom', '自分の形']]);
+      pick = document.createElement('select');
+      pick.className = 'report-kind';
+      pick.setAttribute('aria-label', '日報の形');
+      choices.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c[0];
+        opt.textContent = c[1];
+        pick.appendChild(opt);
+      });
+      pick.value = report.kind || choices[0][0];
+      pick.addEventListener('change', function () {
+        report.kind = pick.value;
+        call('apiSetReportKind', [pick.value], null, failSnack('日報の形を覚えられませんでした: '));
+      });
+      actions.appendChild(pick);
+
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn';
+      edit.textContent = '自分の形を直す';
+      edit.addEventListener('click', function () { openReportCustomForm(report, pick, edit); });
+      actions.appendChild(edit);
+    }
+
     copy.addEventListener('click', function () {
-      var text = todayReportText(items);
+      var text = report ? reportFill(reportTemplateOf(report), report.parts) : todayReportText(items);
       // 埋め込みの枠では写せないことがある。そのときは選んで写せる欄を出す
       function fallback() {
         var area = card.querySelector('textarea') || document.createElement('textarea');
@@ -8490,11 +8589,53 @@
       var clip = window.navigator.clipboard;
       if (!clip || !clip.writeText) { fallback(); return; }
       clip.writeText(text).then(function () {
-        showSnack('日報の「✅今日」の形で写しました', { kind: 'ok' });
+        showSnack('日報の形で写しました', { kind: 'ok' });
       }, fallback);
     });
-    card.appendChild(copy);
     return card;
+  }
+
+  /**
+   * 自分の形を書く欄。書くたびに、今日の中身を当てはめた見本を下に出す。
+   * 保存すると「自分の形」を選んだことにする (書いたのに使われないと迷う)。
+   *
+   * @param {object} report apiReportParts (書き換える)
+   * @param {HTMLSelectElement} pick 形を選ぶ欄
+   * @param {HTMLElement} btn 開いたボタン
+   */
+  function openReportCustomForm(report, pick, btn) {
+    var form = openInlineForm('日報の形', [{
+      name: 'body',
+      label: '形 (使える差し込み: {今日} {明日} {困りごと} {日付} {名前})',
+      multiline: true,
+      value: report.custom || reportTemplateOf(report),
+      note: '2000字まで。知らない {…} はそのまま残ります',
+    }], '保存する', function (v) {
+      var body = String(v.body || '');
+      if (body.length > 2000) {
+        showSnack('日報の形は2000字までです (いま ' + body.length + ' 字)', { kind: 'ng' });
+        return;
+      }
+      call('apiSetReportCustom', [body], function () {
+        report.custom = body;
+        report.kind = 'custom';
+        pick.value = 'custom';
+        call('apiSetReportKind', ['custom'], null, failSnack('日報の形を覚えられませんでした: '));
+      }, failSnack('日報の形を保存できませんでした: '));
+    }, btn);
+
+    var area = form.querySelector('textarea');
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '見本 (今日の中身で)';
+    var preview = document.createElement('pre');
+    preview.className = 'report-preview';
+    function show() { preview.textContent = reportFill(area.value, report.parts); }
+    area.addEventListener('input', show);
+    show();
+    var actions = form.querySelector('.inline-form-actions');
+    form.insertBefore(head, actions);
+    form.insertBefore(preview, actions);
   }
 
   /**
