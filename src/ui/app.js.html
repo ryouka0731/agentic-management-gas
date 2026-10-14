@@ -2750,6 +2750,18 @@
   function loadHome() {
     loadOverview();
     loadHomeCards();
+    loadHomeSummary();
+    call('apiHomeActivity', [], function (act) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));
+    }, function (err) {
+      if (panelHome.hidden) return;
+      failInto(homeActivityEl)(err);
+    });
+  }
+
+  /** あなたの番と最近の動き。ホームから何かを片づけたあとにも取り直す */
+  function loadHomeSummary() {
     call('apiHomeSummary', [], function (s) {
       if (panelHome.hidden) return;
       s = s || {};
@@ -2759,13 +2771,6 @@
       if (panelHome.hidden) return;
       failInto(homeTurnEl)(err);
       failInto(homeRecentEl)(err);
-    });
-    call('apiHomeActivity', [], function (act) {
-      if (panelHome.hidden) return;
-      fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));
-    }, function (err) {
-      if (panelHome.hidden) return;
-      failInto(homeActivityEl)(err);
     });
   }
 
@@ -8159,12 +8164,15 @@
   function celebrateProgress(kind, text, number) {
     if (!progressNotesOn()) {
       showSnack(text, { kind: 'ok' });
+      reloadHomeIfShown();
       return;
     }
     if (kind === 'close' && number) {
       // 先に印だけの帯を出す。返事を待つあいだも、終えたことはすぐ伝わる
       var firstBar = showSnack(text, { kind: 'ok', mark: {} });
       call('apiCloseFeedback', [number], function (fb) {
+        // 帯を差し替えないときも、ホームのあなたの番からは外す
+        reloadHomeIfShown();
         // 返事を待つあいだに止められていたら、素の帯のまま
         if (!progressNotesOn() || !fb) return;
         // 閉じられたか、別の帯に替わっていたら、新しいほうを上書きしない
@@ -8187,8 +8195,10 @@
           call('apiGameLevelSeen', [fb.levelUp], null,
             failQuiet('覚えられなくても、次の完了でもう一度知らせるだけ'));
         }
+      }, function (err) {
+        failQuiet('前進の知らせが出なくても、終えたことは伝わっている')(err);
         reloadHomeIfShown();
-      }, failQuiet('前進の知らせが出なくても、終えたことは伝わっている'));
+      });
       return;
     }
     call('apiProgress', [], function (p) {
@@ -8208,11 +8218,14 @@
   }
 
   /**
-   * ホームを開いているときだけ、カードを描き直す。ほかの画面で完了にするたびに
-   * 5つの api を呼ぶことになる。ホームへ戻ったときは loadHome が描き直す。
+   * ホームを開いているときだけ、カードとあなたの番を描き直す。ほかの画面で完了に
+   * するたびに api を呼ぶことになる。ホームへ戻ったときは loadHome が描き直す。
+   * あなたの番も取り直す (取り直さないと、片づけたものが残って見える)。
    */
   function reloadHomeIfShown() {
-    if (!panelHome.hidden) loadHomeCards();
+    if (panelHome.hidden) return;
+    loadHomeCards();
+    loadHomeSummary();
   }
 
   /**
