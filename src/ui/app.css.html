@@ -2888,6 +2888,8 @@ button.gantt-name:hover { color: var(--accent); }
 /* 捨てたものの置き場 */
 .row-item.archived .row-open { cursor: default; }
 .row-item.archived .row-title { color: var(--ink-2); }
+/* 探した結果から開いた行。どれを探していたかを見失わない */
+.row-item.archived[aria-current="true"] { box-shadow: var(--hairline), 0 0 0 2px var(--accent); }
 
 /*
  * 押す前の補足。
@@ -4650,5 +4652,36 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 
 @media (max-width: 767px) and (prefers-reduced-motion: reduce) {
   .sidebar { transition: none; }
+}
+
+/* 横断検索。広い画面ではヘッダーの欄、狭い画面では虫めがねから開く */
+.search-box { position: relative; }
+.search-open { display: none; }
+/* 欄の見た目は絞り込みの欄 (.filter-box input) と同じ。ここでは幅だけ決める */
+.search-field { align-items: center; width: 240px; max-width: 32vw; }
+.search-close { display: none; }
+.search-results {
+  position: absolute; right: 0; top: calc(100% + var(--sp-1)); z-index: 30;
+  width: min(440px, 90vw); max-height: 60vh; overflow-y: auto;
+  background: var(--surface-raised); box-shadow: var(--hairline); border-radius: var(--radius);
+  padding: var(--sp-1) 0;
+}
+.search-group-head { padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+.search-row { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); cursor: pointer; }
+.search-row[aria-selected="true"], .search-row:hover { background: var(--bg-2); }
+.search-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-title mark { background: var(--accent-bg); color: inherit; }
+.search-empty { padding: var(--sp-2) var(--sp-3); margin: 0; }
+
+@media (max-width: 767px) {
+  .search-open { display: inline-flex; }
+  .search-box .search-field { display: none; }
+  .search-box.is-open .search-field {
+    display: flex; position: fixed; left: 0; right: 0; top: 0; z-index: 40; width: auto; max-width: none;
+    padding: var(--sp-2) var(--sp-4); background: var(--bg); box-shadow: var(--hairline); gap: var(--sp-2);
+  }
+  .search-box.is-open .search-input { flex: 1 1 auto; width: auto; }
+  .search-box.is-open .search-close { display: inline-flex; }
+  .search-box.is-open .search-results { position: fixed; left: var(--sp-4); right: var(--sp-4); top: 56px; width: auto; }
 }
 </style>

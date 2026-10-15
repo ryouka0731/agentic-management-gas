@@ -29,7 +29,7 @@ const SOURCES = [
   'src/core/Plain.js',
   'src/core/Member.gs',
   'src/core/Mention.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
 ];
 
 /*

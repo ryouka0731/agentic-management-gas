@@ -7,7 +7,7 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
@@ -570,6 +570,11 @@ describe('画面に渡せる形か', () => {
     }],
     ['apiSetReportKind', (ctx) => ctx.apiSetReportKind('today')],
     ['apiSetReportCustom', (ctx) => ctx.apiSetReportCustom('【本日】{今日}')],
+    ['apiSearchIndex', (ctx) => {
+      const out = ctx.apiSearchIndex();
+      if (!out.length) throw new Error('検索の一覧が空のまま検査されている');
+      return out;
+    }],
     ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
