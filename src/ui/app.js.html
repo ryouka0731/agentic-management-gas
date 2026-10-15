@@ -1662,12 +1662,18 @@
    * 確かめる。** call() を通らない呼び出しには効かないので、一覧に出るものを
    * 動かす呼び出しは call() で書く。
    *
+   * 動詞の形に当たらないのに一覧を動かすものは、名前を1つずつ並べる。
+   * スクラムの切り替え (障害物が出る・消える)、ToDo の取り込み (やることが
+   * 完了になる)、承認・差し戻し (確認依頼の状態が動く)、1件の登録、
+   * 確認依頼の一覧 (元の文書が消えた依頼をその場で取り下げる)。
+   *
    * @param {string} name api 関数の名前
    * @returns {boolean}
    */
   function searchIndexChangedBy(name) {
-    return /^api.*(Create|CreateBranch|Update|Close|Reopen|Archive|Restore|Purge|Merge|Delete|Resolve|RegisterFiles|UnregisterFile|AddFile|Move)$/
-      .test(String(name || ''));
+    var n = String(name || '');
+    return /^api.*(Create|CreateBranch|Update|Close|Reopen|Archive|Restore|Purge|Merge|Delete|Resolve|RegisterFiles|UnregisterFile|AddFile|Move)$/.test(n) ||
+      /^(apiSetScrumEnabled|apiTasksSync|apiPrReview|apiRegisterFile|apiPrList)$/.test(n);
   }
 
   /**
@@ -2947,6 +2953,11 @@
   /**
    * 候補を種類ごとに並べる。種類ごとに5件・全体で20件まで。
    *
+   * 枠は先に、合った種類どうしで分ける (20 ÷ 種類の数、切り捨て。切り上げると
+   * 6種類で 4×6=24 になり、最後の種類がまた0件になる)。前から5件ずつ
+   * 取ると、種類が5つ以上合ったとき後ろの種類が1件も出ない。余った枠は種類の
+   * 並び順に、5件まで足す。
+   *
    * @param {object[]} index apiSearchIndex
    * @param {string} query
    * @returns {Array<{kind: string, items: object[]}>}
@@ -2976,21 +2987,39 @@
       (groups[item.kind] = groups[item.kind] || []).push(Object.assign({}, item, { rank: rank, hit: hit }));
     });
 
-    var out = [];
-    var left = 20;
+    var TOTAL = 20;
+    var PER_KIND = 5;
     // 候補に出す種類の並び (ここだけが定義)
-    ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].forEach(function (kind) {
-      var list = groups[kind];
-      if (!list || left <= 0) return;
-      list.sort(function (a, b) {
+    var kinds = ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].filter(function (kind) {
+      return groups[kind];
+    });
+    if (!kinds.length) return [];
+    kinds.forEach(function (kind) {
+      groups[kind].sort(function (a, b) {
         return a.rank - b.rank ||
           (a.archived ? 1 : 0) - (b.archived ? 1 : 0) ||
           ((stateOrder[kind] || {})[a.state] || 0) - ((stateOrder[kind] || {})[b.state] || 0) ||
           b.number - a.number;
       });
-      var take = list.slice(0, Math.min(5, left));
-      left -= take.length;
-      out.push({ kind: kind, items: take });
+    });
+
+    // 先に公平に分け、余りを並び順に足す
+    var share = Math.max(1, Math.floor(TOTAL / kinds.length));
+    var left = TOTAL;
+    var count = {};
+    kinds.forEach(function (kind) {
+      var n = Math.min(groups[kind].length, share, PER_KIND, left);
+      count[kind] = n;
+      left -= n;
+    });
+    kinds.forEach(function (kind) {
+      var more = Math.min(groups[kind].length, PER_KIND, count[kind] + left) - count[kind];
+      if (more > 0) { count[kind] += more; left -= more; }
+    });
+
+    var out = [];
+    kinds.forEach(function (kind) {
+      if (count[kind] > 0) out.push({ kind: kind, items: groups[kind].slice(0, count[kind]) });
     });
     return out;
   }
@@ -3002,6 +3031,9 @@
   var searchResults = document.getElementById('search-results');
   var searchIndexRows = null;
   var searchIndexAt = 0;
+  // 一覧を古くした回数。取りに行ってから返事までのあいだに古くなったら、
+  // 届いたものは使うが「取ったばかり」とは扱わない
+  var searchIndexGen = 0;
   var searchActive = -1;
   var searchSeq = 0;
   var searchLoading = false;
@@ -3035,11 +3067,13 @@
     if (searchLoading) return;
     searchLoading = true;
     var seq = ++searchSeq;
+    var gen = searchIndexGen;
     call('apiSearchIndex', [], function (rows) {
       searchLoading = false;
       if (seq !== searchSeq) return;
       searchIndexRows = rows || [];
-      searchIndexAt = Date.now();
+      // 待つあいだに一覧を動かす操作があった。中身はその前のものなので、次に欄へ入ったとき取り直す
+      searchIndexAt = gen === searchIndexGen ? Date.now() : 0;
       searchError = '';
       if (document.activeElement === searchInput || searchBox.classList.contains('is-open')) renderSearch();
     }, function (err) {
@@ -3058,6 +3092,7 @@
    */
   function searchIndexStale() {
     searchIndexAt = 0;
+    searchIndexGen++;
   }
 
   /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
@@ -3193,7 +3228,11 @@
     closeSearch();
   });
 
-  searchInput.addEventListener('focus', loadSearchIndex);
+  searchInput.addEventListener('focus', function () {
+    loadSearchIndex();
+    // 字を残したまま戻ってきたら、打ち直さなくても候補を出す
+    if (searchInput.value.replace(/\s+/g, '')) renderSearch();
+  });
   searchInput.addEventListener('input', renderSearch);
   searchInput.addEventListener('blur', function () {
     // 候補を押したときは mousedown で blur を止めてある
@@ -3214,6 +3253,9 @@
       e.stopPropagation();
       closeSearch();
       searchInput.blur();
+    } else if (e.key === 'Tab') {
+      // 狭い画面で開いた欄は blur では閉じない。Tab で次へ移るときは閉じる (移動は止めない)
+      closeSearch();
     }
   });
 
