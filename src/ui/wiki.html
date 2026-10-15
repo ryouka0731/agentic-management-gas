@@ -105,6 +105,16 @@
         <button id="commit-btn" class="btn btn-primary" hidden>変更を記録</button>
         <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>元のファイルを開く</a>
+        <div class="search-box" id="search-box">
+          <button id="search-open" class="theme-btn search-open" type="button" aria-label="探す"></button>
+          <div class="search-field filter-box">
+            <input id="search-input" class="search-input" type="search" autocomplete="off"
+                   role="combobox" aria-expanded="false" aria-controls="search-results"
+                   aria-autocomplete="list" aria-label="文書・やること・確認依頼を探す">
+            <button id="search-close" class="side-close search-close" type="button" aria-label="探すのをやめる">×</button>
+          </div>
+          <div class="search-results" id="search-results" role="listbox" aria-label="探した結果" hidden></div>
+        </div>
         <button id="bell-btn" class="theme-btn bell" type="button"
                 aria-expanded="false">
           <span class="bell-count" id="bell-count" hidden></span>

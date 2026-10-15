@@ -3287,6 +3287,20 @@ function apiSetReportCustom(text) {
   return { custom: plainText(custom), kind: plainText(reportKind_(me)) };
 }
 
+// ===== 横断検索 =====
+
+/**
+ * 横断検索の一覧 (Web App API)。題名・番号・状態だけ。画面が手元で絞る。
+ *
+ * @returns {Array<{kind: string, number: number, key: string, title: string, state: string, archived: boolean}>}
+ */
+function apiSearchIndex() {
+  return searchIndex_().map(function (x) {
+    return { kind: plainText(x.kind), number: plainId(x.number), key: plainText(x.key),
+      title: plainText(x.title), state: plainText(x.state), archived: !!x.archived };
+  });
+}
+
 // ===== 設定 =====
 
 /**

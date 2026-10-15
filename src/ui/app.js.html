@@ -591,6 +591,7 @@
       user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
       bell: ['M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
       expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
+      search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.35-4.35'],
       shrink: ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'],
     };
 
@@ -1631,14 +1632,48 @@
     formDraftForCall = null;
 
     var failed = onFail || failSnack();
+    var ok = onOk || function () {};
     var run = google.script.run
-      .withSuccessHandler(onOk || function () {})
+      .withSuccessHandler(function (res) {
+        if (searchIndexChangedBy(name)) searchIndexStale();
+        ok(res);
+      })
       .withFailureHandler(function (err) {
         failed(err);
         if (draft) reopenDraft(draft);
       });
 
     run[name].apply(run, args || []);
+  }
+
+  /**
+   * この api が成功すると、横断検索の一覧が古くなるか。
+   *
+   * 一覧は60秒取り直さない。そのあいだに閉じた・戻した・捨てた・反映したものを
+   * 前の状態のまま開きに行くと、別の道へ進む (済んだ報告を「未解決だけ」の
+   * 一覧で探して見つからない、など)。**成功した呼び出しの名前だけで決める。**
+   * 呼ぶ場所ごとに書くと、書き忘れた操作だけが古いまま残る。
+   *
+   * 一覧に出るのは題名・番号・状態・あるかないかだけなので、それを作る・消す・
+   * 直す・状態を動かす動詞で終わる名前を数える。読むだけのもの
+   * (apiIssueList / apiSearchIndex / apiHomeSummary / …List / …Get /
+   * …Preview / …State など) はどれにも当たらない。余分に当たっても
+   * 取り直すだけで、害は無い。**書き込みの api を足したら、ここに当たるかを
+   * 確かめる。** call() を通らない呼び出しには効かないので、一覧に出るものを
+   * 動かす呼び出しは call() で書く。
+   *
+   * 動詞の形に当たらないのに一覧を動かすものは、名前を1つずつ並べる。
+   * スクラムの切り替え (障害物が出る・消える)、ToDo の取り込み (やることが
+   * 完了になる)、承認・差し戻し (確認依頼の状態が動く)、1件の登録、
+   * 確認依頼の一覧 (元の文書が消えた依頼をその場で取り下げる)。
+   *
+   * @param {string} name api 関数の名前
+   * @returns {boolean}
+   */
+  function searchIndexChangedBy(name) {
+    var n = String(name || '');
+    return /^api.*(Create|CreateBranch|Update|Close|Reopen|Archive|Restore|Purge|Merge|Delete|Resolve|RegisterFiles|UnregisterFile|AddFile|Move)$/.test(n) ||
+      /^(apiSetScrumEnabled|apiTasksSync|apiPrReview|apiRegisterFile|apiPrList)$/.test(n);
   }
 
   /**
@@ -2883,6 +2918,366 @@
     row.appendChild(t);
     return row;
   }
+
+  // ===== 横断検索 =====
+
+  /**
+   * 比べるための形にそろえる。全角半角・大文字小文字・カタカナとひらがなの違いを消す。
+   * **1字ずつ置き換えるので、字の数は変わらない (NFKC で変わる字を除く)。**
+   *
+   * @param {string} s
+   * @returns {string}
+   */
+  function searchNormalize(s) {
+    return String(s || '').normalize('NFKC').toLowerCase()
+      .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  }
+
+  /**
+   * 1件の段。0 番号がぴったり / 1 先頭が合う / 2 途中が合う / -1 合わない。
+   *
+   * @param {object} item
+   * @param {string[]} words 正規化済みの語
+   * @returns {number}
+   */
+  function searchRank(item, words) {
+    var title = searchNormalize(item.title);
+    var num = words.length === 1 ? words[0].replace(/^#/, '') : '';
+    if (num && /^\d+$/.test(num) && Number(num) === Number(item.number) && item.number) return 0;
+    for (var i = 0; i < words.length; i++) {
+      if (title.indexOf(words[i]) < 0) return -1;
+    }
+    return title.indexOf(words[0]) === 0 ? 1 : 2;
+  }
+
+  /**
+   * 候補を種類ごとに並べる。種類ごとに5件・全体で20件まで。
+   *
+   * 枠は先に、合った種類どうしで分ける (20 ÷ 種類の数、切り捨て。切り上げると
+   * 6種類で 4×6=24 になり、最後の種類がまた0件になる)。前から5件ずつ
+   * 取ると、種類が5つ以上合ったとき後ろの種類が1件も出ない。余った枠は種類の
+   * 並び順に、5件まで足す。
+   *
+   * @param {object[]} index apiSearchIndex
+   * @param {string} query
+   * @returns {Array<{kind: string, items: object[]}>}
+   */
+  function searchFilter(index, query) {
+    var words = searchNormalize(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    // 同じ段の中の並び。種類ごとに持つ (確認依頼は取り下げを反映済みより後ろに)
+    var stateOrder = {
+      issue: { open: 0, closed: 1 },
+      pull: { open: 0, approved: 0, merged: 1, closed: 2 },
+      inquiry: { open: 0, done: 1 },
+      impediment: { open: 0, resolved: 1 },
+    };
+
+    var groups = {};
+    (index || []).forEach(function (item) {
+      var rank = searchRank(item, words);
+      if (rank < 0) return;
+      // 合った場所 (題名の字の位置)。正規化で字数が変わる字があれば印を付けない
+      var hit = null;
+      var norm = searchNormalize(item.title);
+      if (norm.length === String(item.title).length) {
+        var at = norm.indexOf(words[0]);
+        if (at >= 0) hit = [at, at + words[0].length];
+      }
+      (groups[item.kind] = groups[item.kind] || []).push(Object.assign({}, item, { rank: rank, hit: hit }));
+    });
+
+    var TOTAL = 20;
+    var PER_KIND = 5;
+    // 候補に出す種類の並び (ここだけが定義)
+    var kinds = ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].filter(function (kind) {
+      return groups[kind];
+    });
+    if (!kinds.length) return [];
+    kinds.forEach(function (kind) {
+      groups[kind].sort(function (a, b) {
+        return a.rank - b.rank ||
+          (a.archived ? 1 : 0) - (b.archived ? 1 : 0) ||
+          ((stateOrder[kind] || {})[a.state] || 0) - ((stateOrder[kind] || {})[b.state] || 0) ||
+          b.number - a.number;
+      });
+    });
+
+    // 先に公平に分け、余りを並び順に足す
+    var share = Math.max(1, Math.floor(TOTAL / kinds.length));
+    var left = TOTAL;
+    var count = {};
+    kinds.forEach(function (kind) {
+      var n = Math.min(groups[kind].length, share, PER_KIND, left);
+      count[kind] = n;
+      left -= n;
+    });
+    kinds.forEach(function (kind) {
+      var more = Math.min(groups[kind].length, PER_KIND, count[kind] + left) - count[kind];
+      if (more > 0) { count[kind] += more; left -= more; }
+    });
+
+    var out = [];
+    kinds.forEach(function (kind) {
+      if (count[kind] > 0) out.push({ kind: kind, items: groups[kind].slice(0, count[kind]) });
+    });
+    return out;
+  }
+
+  // ===== 横断検索 (ヘッダーの欄) =====
+
+  var searchBox = document.getElementById('search-box');
+  var searchInput = document.getElementById('search-input');
+  var searchResults = document.getElementById('search-results');
+  var searchIndexRows = null;
+  var searchIndexAt = 0;
+  // 一覧を古くした回数。取りに行ってから返事までのあいだに古くなったら、
+  // 届いたものは使うが「取ったばかり」とは扱わない
+  var searchIndexGen = 0;
+  var searchActive = -1;
+  var searchSeq = 0;
+  var searchLoading = false;
+  var searchError = '';
+  var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '障害物' };
+  /**
+   * 状態の札。**それぞれの一覧と同じ言葉にする。** 違う言葉だと、開いた先で同じものだと分からない。
+   * 確認依頼は stateLabel に寄せる (一覧と同じ関数)。
+   */
+  function searchStateLabel(item) {
+    if (item.archived) return '置き場';
+    if (item.kind === 'pull') return stateLabel(item.state);
+    return ({
+      issue: { open: '対応中', closed: '完了' },
+      inquiry: { open: '未解決', done: '解決' },
+      impediment: { open: '未解決', resolved: '解決済み' },
+    }[item.kind] || {})[item.state] || '';
+  }
+
+  // Mac では ⌘K、ほかは Ctrl+K と案内する
+  var searchMac = /Mac|iPhone|iPad/.test(window.navigator.platform || '');
+  searchInput.placeholder = '探す (' + (searchMac ? '⌘K' : 'Ctrl+K') + ')';
+  document.getElementById('search-open').appendChild(makeIcon('search'));
+
+  /**
+   * 一覧を取る。60秒以内に取ったものがあれば取り直さない。
+   * **返事で画面を切り替えない。** 届いたとき欄が開いていれば今の字で絞り直す。
+   */
+  function loadSearchIndex() {
+    if (searchIndexRows && Date.now() - searchIndexAt < 60000) return;
+    if (searchLoading) return;
+    searchLoading = true;
+    var seq = ++searchSeq;
+    var gen = searchIndexGen;
+    call('apiSearchIndex', [], function (rows) {
+      searchLoading = false;
+      if (seq !== searchSeq) return;
+      searchIndexRows = rows || [];
+      // 待つあいだに一覧を動かす操作があった。中身はその前のものなので、次に欄へ入ったとき取り直す
+      searchIndexAt = gen === searchIndexGen ? Date.now() : 0;
+      searchError = '';
+      if (document.activeElement === searchInput || searchBox.classList.contains('is-open')) renderSearch();
+    }, function (err) {
+      searchLoading = false;
+      if (seq !== searchSeq) return;
+      searchError = '探せませんでした: ' + ((err && err.message) || err);
+      if (document.activeElement !== searchInput && !searchBox.classList.contains('is-open')) return;
+      if (searchInput.value.replace(/\s+/g, '')) showSearchMessage(searchError);
+    });
+  }
+
+  /**
+   * 一覧を古いことにする。次に欄へ入ったとき取り直す。
+   * **呼ぶのは call() だけ** (searchIndexChangedBy が決める)。60秒待たないと
+   * 出てこないと、作ったはずのものが探せず、閉じたものを前の状態で開きに行く。
+   */
+  function searchIndexStale() {
+    searchIndexAt = 0;
+    searchIndexGen++;
+  }
+
+  /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
+  function hideSearchResults() {
+    searchResults.hidden = true;
+    searchResults.textContent = '';
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    searchActive = -1;
+  }
+
+  /** 候補を畳み、狭い画面で開いた欄も閉じる */
+  function closeSearch() {
+    hideSearchResults();
+    searchBox.classList.remove('is-open');
+  }
+
+  function showSearchMessage(text) {
+    searchResults.textContent = '';
+    searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+    var p = document.createElement('p');
+    p.className = 'search-empty row-meta';
+    p.textContent = text;
+    searchResults.appendChild(p);
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  /** 題名を字のまま並べ、合った部分だけ mark で囲む */
+  function searchTitle(item) {
+    var span = document.createElement('span');
+    span.className = 'search-title';
+    var t = String(item.title);
+    if (!item.hit) { span.textContent = t; return span; }
+    span.appendChild(document.createTextNode(t.substring(0, item.hit[0])));
+    var mark = document.createElement('mark');
+    mark.textContent = t.substring(item.hit[0], item.hit[1]);
+    span.appendChild(mark);
+    span.appendChild(document.createTextNode(t.substring(item.hit[1])));
+    return span;
+  }
+
+  function renderSearch() {
+    var q = searchInput.value;
+    if (!q.replace(/\s+/g, '')) { hideSearchResults(); return; }
+    if (!searchIndexRows) {
+      // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
+      showSearchMessage(searchLoading || !searchError ? '探しています…' : searchError);
+      return;
+    }
+    var groups = searchFilter(searchIndexRows, q);
+    if (!groups.length) { showSearchMessage('見つかりませんでした'); return; }
+
+    searchResults.textContent = '';
+    searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+    var n = 0;
+    groups.forEach(function (g) {
+      var head = document.createElement('div');
+      head.className = 'search-group-head row-meta';
+      head.setAttribute('role', 'presentation');
+      head.textContent = SEARCH_LABELS[g.kind];
+      searchResults.appendChild(head);
+      g.items.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'search-row';
+        row.id = 'search-opt-' + (n++);
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', 'false');
+        row.dataset.kind = item.kind;
+        if (item.number) {
+          var num = document.createElement('span');
+          num.className = 'search-num row-meta';
+          num.textContent = '#' + item.number;
+          row.appendChild(num);
+        }
+        row.appendChild(searchTitle(item));
+        var label = searchStateLabel(item);
+        if (label) row.appendChild(makePill(label));
+        row.addEventListener('click', function () { openSearchItem(item); });
+        searchResults.appendChild(row);
+      });
+    });
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function moveSearch(step) {
+    var rows = searchResults.querySelectorAll('.search-row');
+    if (!rows.length) return;
+    searchActive = Math.max(0, Math.min(rows.length - 1, searchActive + step));
+    for (var i = 0; i < rows.length; i++) rows[i].setAttribute('aria-selected', String(i === searchActive));
+    searchInput.setAttribute('aria-activedescendant', rows[searchActive].id);
+    if (rows[searchActive].scrollIntoView) rows[searchActive].scrollIntoView({ block: 'nearest' });
+  }
+
+  /** 選んだものを開く。開いたら欄を空にして閉じる */
+  function openSearchItem(item) {
+    searchInput.value = '';
+    closeSearch();
+    searchInput.blur();
+    if (item.kind === 'doc') openDocById(item.key, item.title);
+    else if (item.kind === 'issue' && item.archived) {
+      // 捨てたものは一覧に出ない (apiIssueList は置き場を返さない)。置き場を開いてその行を指す
+      trashFocus = item.number;
+      setIssueView('trash', true, { noSave: true });
+      switchTab('issues');
+    }
+    else if (item.kind === 'issue') openIssueByNumber(item.number);
+    else if (item.kind === 'pull') switchTab('pulls', { pr: item.number });
+    else if (item.kind === 'branch') switchTab('branches');
+    else if (item.kind === 'inquiry') {
+      // 絞り込みが残っていたり「未解決だけ」で済んだものが外れていたりすると、別の報告が開く
+      reportFilterEl.value = '';
+      if (reportOpenOnly && item.state === 'done') {
+        reportOpenOnly = false;
+        setToggle(reportOpenBtn, reportOpenOnly);
+      }
+      reportShown = item.number;
+      switchTab('report');
+    }
+    else if (item.kind === 'impediment') switchTab('impediments');
+  }
+
+  // 一覧の中 (見出し・送りのつまみ・行) を押しても欄から抜けない。抜けると blur で閉じる
+  searchResults.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+  // 狭い画面で開いた欄は、外側を押すと閉じる (広い画面は blur で閉じる)
+  document.addEventListener('pointerdown', function (e) {
+    if (!searchBox.classList.contains('is-open')) return;
+    if (searchBox.contains(e.target)) return;
+    closeSearch();
+  });
+
+  searchInput.addEventListener('focus', function () {
+    loadSearchIndex();
+    // 字を残したまま戻ってきたら、打ち直さなくても候補を出す
+    if (searchInput.value.replace(/\s+/g, '')) renderSearch();
+  });
+  searchInput.addEventListener('input', renderSearch);
+  searchInput.addEventListener('blur', function () {
+    // 候補を押したときは mousedown で blur を止めてある
+    if (!searchBox.classList.contains('is-open')) closeSearch();
+  });
+  searchInput.addEventListener('keydown', function (e) {
+    // かな漢字の変換中は何もしない。変換を決める Enter で候補が開き、Esc で欄が
+    // 閉じてしまう (Chrome は isComposing、Safari は確定直後に keyCode 229 で届く)
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    else if (e.key === 'Enter') {
+      var rows = searchResults.querySelectorAll('.search-row');
+      var pick = rows[searchActive >= 0 ? searchActive : 0];
+      if (pick) { e.preventDefault(); pick.click(); }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSearch();
+      searchInput.blur();
+    } else if (e.key === 'Tab') {
+      // 狭い画面で開いた欄は blur では閉じない。Tab で次へ移るときは閉じる (移動は止めない)
+      closeSearch();
+    }
+  });
+
+  document.getElementById('search-open').addEventListener('click', function () {
+    searchBox.classList.add('is-open');
+    searchInput.focus();
+    loadSearchIndex();
+  });
+  document.getElementById('search-close').addEventListener('click', function () {
+    searchInput.value = '';
+    closeSearch();
+  });
+
+  // Ctrl+K / ⌘K でどこからでも欄へ (入力欄の中でも効く)
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) searchBox.classList.add('is-open');
+      searchInput.focus();
+      loadSearchIndex();
+    }
+  });
 
   /**
    * 何分前・何時間前。1週間を超えたら月/日で出す。
@@ -5263,7 +5658,13 @@
     return el;
   }
 
-  function setIssueView(view) {
+  /**
+   * @param {string} view
+   * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
+   * @param {{noSave: boolean}} [opts] noSave: 次に開いたときの見え方として覚えない。
+   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く
+   */
+  function setIssueView(view, quiet, opts) {
     issueView = view;
 
     Object.keys(viewBtns).forEach(function (k) {
@@ -5287,11 +5688,13 @@
     document.getElementById('tally-who-box').hidden =
       view !== 'tally' || !tallyScope.isManager;
 
-    try {
-      window.localStorage.setItem('issueView', view);
-    } catch (e) { /* 保存できなくても切り替えは効く */ }
+    if (!(opts && opts.noSave)) {
+      try {
+        window.localStorage.setItem('issueView', view);
+      } catch (e) { /* 保存できなくても切り替えは効く */ }
+    }
 
-    reloadIssueView();
+    if (!quiet) reloadIssueView();
   }
 
   function reloadIssueView() {
@@ -6710,14 +7113,24 @@
    * 捨てたものの置き場。
    *
    * 期限まで何日残っているかを出す。何もしなければ自然に片付く。
+   *
+   * 探した結果から開いたときは、その行を指す (trashFocus)。
    */
+  var trashFocus = null;
+
   function loadTrash() {
     showSkeleton(trashListEl, 'list', 3);
 
     call('apiIssueArchivedList', [], function (list) {
       var rows = list || [];
+      var focus = trashFocus;
+      trashFocus = null;
       trashListEl.textContent = '';
       issueCountEl.textContent = rows.length + '件';
+      if (focus && !rows.some(function (r) { return Number(r.number) === Number(focus); })) {
+        // 期限が来て片付いたか、ほかの人が戻した
+        showSnack('やること #' + focus + ' は置き場にありません', { kind: 'ng' });
+      }
 
       if (!rows.length) {
         trashListEl.appendChild(makeBlankState(
@@ -6731,6 +7144,7 @@
       rows.forEach(function (issue) {
         var row = document.createElement('div');
         row.className = 'row-item archived';
+        row.dataset.number = issue.number;
 
         var main = document.createElement('div');
         main.className = 'row-main';
@@ -6785,8 +7199,16 @@
         row.appendChild(purge);
 
         trashListEl.appendChild(row);
+        if (focus && Number(issue.number) === Number(focus)) {
+          row.setAttribute('aria-current', 'true');
+          if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+        }
       });
-    }, failInto(trashListEl));
+    }, function (err) {
+      // 取れなくても指す先は捨てる。残すと、後で自分で開いたときに古い行を指す
+      trashFocus = null;
+      failInto(trashListEl)(err);
+    });
   }
 
   function refreshIssueViews() {
@@ -9090,6 +9512,7 @@
   // ところ (入力欄) では効かせない。何が使えるかは「?」で出す。
 
   var SHORTCUTS = [
+    ['Ctrl+K / ⌘K', '文書・やること・確認依頼を探す'],
     ['/', '絞り込みの欄に移る (やることの一覧・ボード)'],
     ['N', 'やることを作る'],
     ['?', 'キーボードで使える操作を出す'],
@@ -9194,7 +9617,7 @@
       'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
       'Google ToDo との同期は追加の設定が要るため、使えるときだけ「やること」に入口が出ます。自分が担当で、まだ終わっていないぶんだけを送ります。',
       'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
-      'キーボードでも動かせます。「?」で使える操作の一覧が出ます (「/」で絞り込み、「N」でやることを作る)。進捗ボードでは列の「＋」から題名だけ打って足せ、掴んだカードは線の出た位置に入ります。',
+      'キーボードでも動かせます。「?」で使える操作の一覧が出ます (「/」で絞り込み、「N」でやることを作る)。画面上の「探す」欄は Ctrl+K (Mac は ⌘K) でどこからでも開けます。進捗ボードでは列の「＋」から題名だけ打って足せ、掴んだカードは線の出た位置に入ります。',
       'うまく動かないとき、こうしてほしいことがあるとき、使い方が分からないときは、左の「要望・不具合」から送ってください。見ている画面と使っている環境も一緒に届きます。',
       '送られたものは、開発者のやることに自動で積まれます。種類に応じて「不具合」「要望」のタグが付き、進捗ボードの「これから」に並びます。',
       '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
@@ -9971,15 +10394,9 @@
 
       toggle.addEventListener('click', function () {
         toggle.disabled = true;
-        var run = google.script.run
-          .withSuccessHandler(function () { loadReports(); })
-          .withFailureHandler(function (err) {
-            toggle.disabled = false;
-            showSnack(err.message, { kind: 'ng' });
-          });
-
-        if (q.state === 'done') run.apiInquiryReopen(q.number);
-        else run.apiInquiryClose(q.number);
+        // call() を通す。横断検索の一覧が、解決・取り消しを知る
+        call(q.state === 'done' ? 'apiInquiryReopen' : 'apiInquiryClose', [q.number],
+          function () { loadReports(); }, failEnable(toggle));
       });
 
       actions.appendChild(toggle);
