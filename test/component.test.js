@@ -7707,27 +7707,53 @@ describe('横断検索', () => {
     expect(box.querySelector('b')).toBeNull();
   });
 
-  it('↑↓ で選び Enter で開く。やることは右のパネル', () => {
-    // 開くときは一覧から引き直すので、候補の #12 を一覧にも置く
-    mount({ apiIssueList: DEFAULTS.apiIssueList.concat([Object.assign({}, DEFAULTS.apiIssueList[1], { number: 12, title: '賃金規程の見直し', parent: '' })]) });
-    const input = type('賃金');
+  it('↑↓ で選び Enter で開く。やることは右のパネルに、選んだもの', () => {
+    // 開くときは一覧から引き直すので、候補の #12 と #1 を一覧にも置く
+    mount({ apiIssueList: DEFAULTS.apiIssueList.concat([
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 12, title: '賃金規程の見直し', parent: '' }),
+      Object.assign({}, DEFAULTS.apiIssueList[1], { number: 1, title: '就業規則の改定', parent: '' }),
+    ]) });
+    // 「規」で 文書 → #12 → #1 → #13 → … と並ぶ。下へ3つ・上へ1つで #12 を選ぶ
+    const input = type('規');
     key(input, 'ArrowDown');
-    expect(input.getAttribute('aria-activedescendant')).toBeTruthy();
+    key(input, 'ArrowDown');
+    key(input, 'ArrowDown');
+    key(input, 'ArrowUp');
+    const picked = document.getElementById(input.getAttribute('aria-activedescendant'));
+    expect(picked.textContent).toContain('#12');
     key(input, 'Enter');
-    expect(document.getElementById('side-panel').hidden).toBe(false);
+    const side = document.getElementById('side-panel');
+    expect(side.hidden).toBe(false);
+    expect(side.textContent).toContain('賃金規程の見直し');
+    expect(side.textContent).not.toContain('就業規則の改定');
     expect(document.getElementById('search-results').hidden).toBe(true);
     expect(input.value).toBe('');
   });
 
-  it('文書は本文を、確認依頼はその依頼を、改訂中の版と報告はその画面を開く', () => {
-    mount();
-    type('就業規則.doc');
+  it('文書は本文を、確認依頼はその依頼を、改訂中の版と報告はその画面を開く (選んだものが開く)', () => {
+    const PR2 = Object.assign({}, DEFAULTS.apiPrList[0], { number: 2, title: '就業規則 第3条の改定' });
+    const app = mount({
+      apiListFiles: DEFAULTS.apiListFiles.concat([{ fileId: 'DOC2', path: '賃金規程.doc', type: 'doc' }]),
+      apiSearchIndex: DEFAULTS.apiSearchIndex.concat([
+        { kind: 'doc', number: 0, key: 'DOC2', title: '賃金規程.doc', state: '', archived: false },
+        { kind: 'pull', number: 2, key: '', title: '就業規則 第3条の改定', state: 'open', archived: false },
+      ]).filter((x) => !(x.kind === 'pull' && x.number === 1)).concat([
+        { kind: 'pull', number: 1, key: '', title: '第2条の改訂', state: 'open', archived: false },
+      ]),
+      apiPrList: DEFAULTS.apiPrList.concat([PR2]),
+    });
+    const last = (name) => app.calls.filter((c) => c.name === name).pop();
+
+    type('賃金規程.doc');
     document.querySelector('#search-results [data-kind="doc"]').click();
     expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(last('apiGetFileHtml').args[0]).toBe('DOC2');
 
     type('第3条');
     document.querySelector('#search-results [data-kind="pull"]').click();
     expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    expect(last('apiPrReviews').args[0]).toBe(2);
+    expect(document.getElementById('pr-detail').textContent).toContain('第3条の改定');
 
     type('見直し');
     document.querySelector('#search-results [data-kind="branch"]').click();
@@ -7736,6 +7762,7 @@ describe('横断検索', () => {
     type('棒が');
     document.querySelector('#search-results [data-kind="inquiry"]').click();
     expect(document.getElementById('panel-report').hidden).toBe(false);
+    // 報告がその番号で開くことは「報告を選ぶと、その報告が開く」が見ている
   });
 
   it('Esc で閉じる。合わなければ「見つかりませんでした」', () => {
@@ -7806,10 +7833,67 @@ describe('横断検索', () => {
     mount({ apiSearchIndex: () => ({ later: (ok) => { late2 = ok; } }) });
     const input = type('就業');
     key(input, 'Escape');
-    document.querySelector('.nav-item[data-tab="issues"]').click();
+    // 候補の先頭はやること (issues) なので、それ以外の画面で返事を受ける
+    document.querySelector('.nav-item[data-tab="pulls"]').click();
     late2(DEFAULTS.apiSearchIndex);
     expect(document.getElementById('search-results').hidden).toBe(true);
-    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    expect(document.getElementById('panel-issues').hidden).toBe(true);
+    expect(document.getElementById('panel-content').hidden).toBe(true);
+    expect(document.querySelector('.nav-item[data-tab="pulls"]').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('返事を待つあいだに一覧を動かす操作があったら、届いたものは使うが次に欄へ入ったとき取り直す', () => {
+    const lates = [];
+    const app = mount({ apiSearchIndex: () => ({ later: (ok) => { lates.push(ok); } }) });
+    const indexCalls = () => app.calls.filter((c) => c.name === 'apiSearchIndex').length;
+    key(document.body, 'k', { ctrlKey: true });
+    document.activeElement.blur();
+    expect(indexCalls()).toBe(1);
+    // 返事が届く前に、やることを完了にする
+    document.querySelector('[data-tab="issues"]').click();
+    document.querySelector('#issue-list [aria-label$="を完了にする"]').click();
+    expect(app.calls.some((c) => c.name === 'apiIssueClose')).toBe(true);
+    lates[0](DEFAULTS.apiSearchIndex);
+    // 届いたものは使える
+    const input = type('就業');
+    expect(document.getElementById('search-results').textContent).toContain('就業規則の改定');
+    // が、取ったばかりとは扱わない (完了にする前の中身なので)
+    expect(indexCalls()).toBe(2);
+    input.blur();
+  });
+
+  it('字を残したまま欄に戻ると、打ち直さなくても候補が出る', () => {
+    mount();
+    const input = type('就業');
+    input.dispatchEvent(new window.Event('blur'));
+    expect(document.getElementById('search-results').hidden).toBe(true);
+    input.dispatchEvent(new window.Event('focus'));
+    expect(document.getElementById('search-results').hidden).toBe(false);
+    expect(document.getElementById('search-results').textContent).toContain('就業規則の改定');
+  });
+
+  it('狭い画面で開いた欄は、Tab で次へ移るとき閉じる', () => {
+    mount();
+    document.getElementById('search-open').click();
+    const input = document.getElementById('search-input');
+    input.value = '就業';
+    input.dispatchEvent(new window.Event('input'));
+    expect(document.querySelector('.search-box').classList.contains('is-open')).toBe(true);
+    const ev = new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    expect(document.querySelector('.search-box').classList.contains('is-open')).toBe(false);
+    expect(document.getElementById('search-results').hidden).toBe(true);
+    // 次への移動は止めない
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('変換中の Tab では閉じない', () => {
+    mount();
+    document.getElementById('search-open').click();
+    const input = document.getElementById('search-input');
+    key(input, 'Tab', { isComposing: true });
+    expect(document.querySelector('.search-box').classList.contains('is-open')).toBe(true);
   });
 
   it('捨てたもの (#13) を選ぶと、置き場を開いてその行を指す', () => {

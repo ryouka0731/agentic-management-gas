@@ -41,9 +41,29 @@ describe('合わせ方', () => {
       for (let n = 1; n <= 7; n++) idx.push(I(k, n, '規程' + n, { key: k + n }));
     });
     const out = searchFilter(idx, '規程');
-    expect(out.map((g) => g.kind)).toEqual(['doc', 'issue', 'pull', 'branch']);
+    expect(out.map((g) => g.kind)).toEqual(['doc', 'issue', 'pull', 'branch', 'inquiry']);
     expect(out.reduce((s, g) => s + g.items.length, 0)).toBe(20);
     out.forEach((g) => expect(g.items.length).toBeLessThanOrEqual(5));
+  });
+
+  it('6種類とも合っても、後ろの種類が締め出されない', () => {
+    const idx = [];
+    ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].forEach((k) => {
+      for (let n = 1; n <= 7; n++) idx.push(I(k, n, '規程' + n, { key: k + n }));
+    });
+    const out = searchFilter(idx, '規程');
+    expect(out.map((g) => g.kind)).toEqual(['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment']);
+    expect(out.reduce((s, g) => s + g.items.length, 0)).toBe(20);
+    out.forEach((g) => expect(g.items.length).toBeLessThanOrEqual(5));
+  });
+
+  it('合った件数が少ない種類のぶんは、ほかの種類へ回す (5件まで)', () => {
+    const idx = [I('doc', 0, '規程', { key: 'd' })];
+    ['issue', 'pull'].forEach((k) => {
+      for (let n = 1; n <= 9; n++) idx.push(I(k, n, '規程' + n));
+    });
+    const out = searchFilter(idx, '規程');
+    expect(out.map((g) => g.items.length)).toEqual([1, 5, 5]);
   });
 
   it('合った場所を返す (正規化前の題名の位置)', () => {
@@ -80,12 +100,14 @@ describe('どの呼び出しのあとで一覧を取り直すか', () => {
       'apiIssuePurge', 'apiIssueCreateBranch', 'apiPrCreate', 'apiPrMerge', 'apiPrClose', 'apiBranchCreate',
       'apiBranchDelete', 'apiBranchAddFile', 'apiInquiryCreate', 'apiInquiryClose', 'apiInquiryReopen',
       'apiImpedimentCreate', 'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
-      'apiRegisterFiles', 'apiUnregisterFile', 'apiProjectMove']
+      'apiRegisterFiles', 'apiUnregisterFile', 'apiProjectMove',
+      // 動詞の形に当たらないが一覧を動かすもの
+      'apiSetScrumEnabled', 'apiTasksSync', 'apiPrReview', 'apiRegisterFile', 'apiPrList']
       .forEach((n) => expect([n, searchIndexChangedBy(n)]).toEqual([n, true]));
   });
 
   it('読むだけのものは当たらない', () => {
-    ['apiIssueList', 'apiSearchIndex', 'apiHomeSummary', 'apiPrList', 'apiPrPreview', 'apiTasksState',
+    ['apiIssueList', 'apiSearchIndex', 'apiHomeSummary', 'apiPrReviews', 'apiPrPreview', 'apiTasksState', 'apiInquiryReply',
       'apiGetFileHtml', 'apiInquiryThread', 'apiIssueArchivedList', 'apiUsageRecord', 'apiNotificationsRead']
       .forEach((n) => expect([n, searchIndexChangedBy(n)]).toEqual([n, false]));
   });
