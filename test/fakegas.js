@@ -73,6 +73,7 @@ export function createFakeGas() {
       getId: () => id,
       getName: () => fo._name,
       setTrashed: (v) => { fo._trashed = v !== false; return fo; },
+      isTrashed: () => fo._trashed,
       createFolder: (n) => makeFolder(n, id),
       createFile: (a, b, c) => (a && typeof a === 'object' && a.getBytes)
         ? makeFile(a.getName(), a.getBytes(), id, a.getContentType())
