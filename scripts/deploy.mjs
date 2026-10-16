@@ -67,7 +67,8 @@ function main() {
   // KitSigning.gs が消え、全員の道具が黙って自動で新しくならなくなるので断る
   const signing = prepareSigning({ keyPath: signingKeyPath(), publicPath: PUBLIC_KEY, outPath: SIGNING_SOURCE, noSign });
   if (!signing.signed) {
-    process.stderr.write('署名せずに送ります。手元の道具は自動では入れ替えなくなります\n');
+    process.stderr.write('署名せずに送ります。手元の道具は自動では入れ替えなくなります' +
+      (signing.removed ? ' (src/KitSigning.gs を消しました。向こうの鍵も消えます)' : '') + '\n');
   }
 
   // 先に送る。送らずに差し替えると、前の中身のまま版だけが上がる

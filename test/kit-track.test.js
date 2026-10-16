@@ -704,6 +704,15 @@ describe('スキルと説明', () => {
     const claude = fs.readFileSync('CLAUDE.md', 'utf8');
     expect(claude).toContain('src/KitSigning.gs');
     expect(claude).toContain('node scripts/kit-key.mjs');
+    // 秘密鍵を読めるのはスクリプトを開ける人。共有するのは agentic-management/ だけ
+    for (const file of ['CLAUDE.md', 'README.md']) {
+      const t = fs.readFileSync(file, 'utf8');
+      expect(t, file).toContain('開ける人');
+      expect(t, file).toContain('共有するのは `agentic-management/` フォルダだけ');
+    }
+    // 古い版に戻さないこと、鍵の無い道具は zip を落とし直すこと
+    expect(agents).toContain('古い版には戻しません');
+    expect(agents).toContain('zip を落とし直し');
   });
 
   it('入れる前の説明も、署名で偽物を断ることと残る信頼の先を出す', () => {

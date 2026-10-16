@@ -59,9 +59,16 @@ function kitSignedText_(version, files) {
  */
 function kitSignature_(version, files) {
   if (typeof KIT_SIGNING_KEY_ !== 'function') return '';
-  var bytes = Utilities.computeRsaSha256Signature(
-    kitSignedText_(version, files), KIT_SIGNING_KEY_(), Utilities.Charset.UTF_8);
-  return Utilities.base64Encode(bytes);
+  // 署名に失敗しても kitFiles そのものは落とさない。落とすと全員の道具が中身を受け取れず、
+  // 手で入れ直す道まで塞がる。空の署名なら、手元は自動では入れず知らせるだけにする
+  try {
+    var bytes = Utilities.computeRsaSha256Signature(
+      kitSignedText_(version, files), KIT_SIGNING_KEY_(), Utilities.Charset.UTF_8);
+    return Utilities.base64Encode(bytes);
+  } catch (e) {
+    console.error('道具に署名できませんでした: ' + (e && e.message ? e.message : e));
+    return '';
+  }
 }
 
 /**
