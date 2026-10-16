@@ -4102,6 +4102,44 @@ describe('自分まわりの操作', () => {
     expect(top.compareDocumentPosition(firstHead) &
       window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  describe('道具の更新', () => {
+    const OLD = { apiKitStatus: { print: 'abcd1234', mine: '00000000', outdated: true } };
+    const kitBtn = () => [...document.querySelectorAll('#me-body .btn')]
+      .find((b) => b.textContent.includes('手元から動かす道具'));
+
+    it('古い道具を持つ人の顔に点を出す', () => {
+      mount(OLD);
+      const me = document.getElementById('me-btn');
+      expect(me.querySelector('.me-dot')).not.toBeNull();
+      expect(me.getAttribute('aria-label')).toContain('道具の更新あり');
+    });
+
+    it('自分まわりの道具のボタンに「更新あり」', () => {
+      mount(OLD);
+      document.getElementById('me-btn').click();
+      expect(kitBtn().textContent).toContain('更新あり');
+    });
+
+    it('落とし直すと点も札も消える', () => {
+      mount(OLD);
+      document.getElementById('me-btn').click();
+      kitBtn().click();
+      expect(document.getElementById('me-btn').querySelector('.me-dot')).toBeNull();
+      expect(kitBtn().textContent).not.toContain('更新あり');
+    });
+
+    it('新しければ何も出さない', () => {
+      mount();
+      expect(document.getElementById('me-btn').querySelector('.me-dot')).toBeNull();
+    });
+
+    it('取れなくても画面は動く', () => {
+      mount({ apiKitStatus: new Error('止まっています') });
+      expect(document.getElementById('me-btn').querySelector('.avatar')).not.toBeNull();
+      expect(document.getElementById('me-btn').querySelector('.me-dot')).toBeNull();
+    });
+  });
 });
 
 describe('一覧の行の高さ', () => {

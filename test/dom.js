@@ -164,7 +164,7 @@ const API_NAMES = [
   'apiPeopleNames', 'apiPeopleSetName',
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
-  'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiWorkspace',
+  'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
 ];
 
@@ -195,6 +195,7 @@ export const DEFAULTS = {
     name: '総務共有', path: '総務共有/agentic-management',
     url: 'https://drive.google.com/drive/folders/PLACE',
   },
+  apiKitStatus: { print: 'abcd1234', mine: 'abcd1234', outdated: false },
   apiAgentKit: {
     name: 'softbanto-agent-kit-1.2.0.zip',
     version: '1.2.0',
