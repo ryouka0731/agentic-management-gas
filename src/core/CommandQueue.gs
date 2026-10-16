@@ -132,12 +132,15 @@ function COMMAND_OPS() {
  */
 function queueFolderLive_(id) {
   if (!id) return null;
+  var folder;
   try {
-    var folder = DriveApp.getFolderById(id);
-    return folder.isTrashed() ? null : folder;
+    folder = DriveApp.getFolderById(id);
   } catch (e) {
     return null; // 手で消された場合は作り直す
   }
+  // ゴミ箱か確かめるところの失敗は投げる。握ると、一時的な失敗でまだ使える
+  // フォルダを捨てて作り直し、そこに置かれた命令が拾われなくなる
+  return folder.isTrashed() ? null : folder;
 }
 
 /**

@@ -352,6 +352,16 @@ describe('鍵の外に出した処理の重なり', () => {
     expect(ctx.commandQueueFolder_().getId()).toBe(queue.getId());
   });
 
+  it('ゴミ箱か確かめられなかったときは、作り直さずに投げる', () => {
+    // 一時的な失敗で作り直すと、まだ使える置き場の命令が拾われなくなる
+    const { ctx } = setup();
+    const queue = ctx.commandQueueFolder_();
+    queue.isTrashed = () => { throw new Error('一時的な失敗'); };
+
+    expect(() => ctx.commandQueueFolder_()).toThrow('一時的な失敗');
+    expect(ctx.repoConfig().queueId).toBe(queue.getId());
+  });
+
   it('期限切れの捨てたものは、消す直前に戻されていたら消さない', () => {
     const { ctx } = setup();
     const made = ctx.issueCreate('戻すもの', '', []);
