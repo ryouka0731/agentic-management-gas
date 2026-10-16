@@ -339,6 +339,13 @@ export function createFakeGas() {
         .replace('yyyy', parts.year).replace('MM', parts.month).replace('dd', parts.day)
         .replace('HH', parts.hour).replace('mm', parts.minute).replace('ss', parts.second);
     },
+    // 実機と同じく符号付き byte の配列を返す。秘密鍵は PKCS#8 の PEM
+    computeRsaSha256Signature: (text, pem) => Array.from(
+      crypto.sign('RSA-SHA256', Buffer.from(String(text), 'utf8'), pem))
+      .map((b) => (b > 127 ? b - 256 : b)),
+    base64Encode: (data) => (Array.isArray(data)
+      ? Buffer.from(data.map((b) => b & 0xff))
+      : Buffer.from(String(data), 'utf8')).toString('base64'),
     base64Decode: (text) => Array.from(Buffer.from(String(text), 'base64'))
       .map((b) => (b > 127 ? b - 256 : b)),
     zip: (blobs, name) => ({

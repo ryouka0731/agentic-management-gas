@@ -6,8 +6,9 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import {
   checkForUpdate, installFromServer, rollback, kitPrintOf, safeName, readConfig, writeConfig, paths,
-  tickUpdate, dropPending,
+  tickUpdate, dropPending, staleUpdateFiles,
 } from '../kit/track/update.mjs';
+import { TEST_KEYS, signKit } from './kitkeys.js';
 
 const NOW = Date.parse('2026-10-15T00:00:00Z');
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
@@ -34,28 +35,32 @@ function dirs() {
   return { root, home, claude };
 }
 
-/** 向こう側の代わり。files を配る */
+/** 向こう側の代わり。files を配る (テストの鍵で署名を付ける) */
 function server(files, version) {
   const print = kitPrintOf(files);
+  const signature = signKit(version, files, TEST_KEYS.priv);
   const calls = [];
   const send = async (op, args) => {
     calls.push({ op, args });
     if (op === 'kitVersion') return { ok: true, result: { version, print } };
-    if (op === 'kitFiles') return { ok: true, result: { version, print, files } };
+    if (op === 'kitFiles') return { ok: true, result: { version, print, files, signature } };
     return { ok: false, error: 'unknown' };
   };
   return { send, calls, print };
 }
 
-/** 欠けると入れない3つ。agent.mjs が無いと戻す命令ごと無くなる */
+/** 欠けると入れない3つ。agent.mjs が無いと戻す命令ごと無くなる。署名を確かめる公開鍵も配る */
 const kit = (agent, more) => ({ 'agent.mjs': b64(agent), 'track/hook.mjs': b64('hook v1'),
-  'track/update.mjs': b64('update v1'), ...(more || {}) });
+  'track/update.mjs': b64('update v1'), 'track/kit-key.pem': b64(TEST_KEYS.pub), ...(more || {}) });
+const quiet = () => {};
 const V1 = kit('v1', { 'track/SKILL.md': b64('skill v1') });
 const V2 = kit('v2', { 'track/SKILL.md': b64('skill v2'), 'new.md': b64('n') });
 
 async function installed(d) {
   writeConfig(d.home, { queueDir: '/q' });
-  await installFromServer({ home: d.home, claude: d.claude, send: server(V1, '1.0.0').send, now: NOW, link: true });
+  // 最初の1回は鍵をまだ持たないので、手で頼んだ扱いで入れる
+  await installFromServer({ home: d.home, claude: d.claude, send: server(V1, '1.0.0').send, now: NOW, link: true,
+    manual: true, warn: quiet });
 }
 
 describe('指紋', () => {
@@ -138,7 +143,8 @@ describe('入れる', () => {
   it('入れていない人の ~/.claude にはスキルを写さない', async () => {
     const d = dirs();
     writeConfig(d.home, { queueDir: '/q' });
-    await installFromServer({ home: d.home, claude: d.claude, send: server(V1, '1').send, now: NOW });
+    await installFromServer({ home: d.home, claude: d.claude, send: server(V1, '1').send, now: NOW,
+      manual: true, warn: quiet });
     expect(fs.existsSync(path.join(d.claude, 'skills'))).toBe(false);
   });
 });
@@ -442,6 +448,91 @@ describe('1日1回の確認は待たない', () => {
     expect(readConfig(d.home).pendingUpdate).toBeFalsy();
     await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 2 });
     expect(q.placed).toHaveLength(1);
+  });
+
+  /** kitVersion を置いて新しい版と答え、kitFiles を置かせたところまで進める */
+  async function filesPending(d, q, s) {
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    q.answer(q.last().id, await s.send('kitVersion', {}));
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 1 });
+    expect(readConfig(d.home).pendingUpdate.op).toBe('kitFiles');
+  }
+
+  it('中身を頼んだあとで自動で入れない設定にしたら、届いても入れずに知らせるだけ', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    const s = server(V2, '2.0.0');
+    await filesPending(d, q, s);
+    writeConfig(d.home, { autoUpdate: false });
+    q.answer(q.last().id, await s.send('kitFiles', {}));
+    const r = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 2 });
+    expect(r).toMatchObject({ updated: false, available: true, version: '2.0.0' });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+    expect(fs.existsSync(paths(d.home).backup)).toBe(false);
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+  });
+
+  it('中身を頼んだあとでその版を戻したことになっていれば、届いても入れない', async () => {
+    const d = dirs();
+    await installed(d);
+    await checkForUpdate({ home: d.home, claude: d.claude, send: server(V2, '2.0.0').send, now: NOW + DAY });
+    rollback({ home: d.home, claude: d.claude });
+    const q = queue();
+    // 戻す前に置いた kitFiles が残っていた形 (戻す命令が捨てる前に別の呼び出しが書いた)
+    writeConfig(d.home, { pendingUpdate: { op: 'kitFiles', id: 'kitup-1-x', at: new Date(NOW + 2 * DAY).toISOString() } });
+    q.answer('kitup-1-x', await server(V2, '2.0.0').send('kitFiles', {}));
+    const r = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 1 });
+    expect(r).toMatchObject({ updated: false, skipped: true });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
+  it('戻すときは、置いたままの確認の命令を捨てる', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    const s = server(V2, '2.0.0');
+    await checkForUpdate({ home: d.home, claude: d.claude, send: s.send, now: NOW + DAY });
+    writeConfig(d.home, { lastUpdateCheck: new Date(NOW).toISOString() });
+    await filesPending(d, q, server(kit('v3'), '3.0.0'));
+    const pendingId = readConfig(d.home).pendingUpdate.id;
+    rollback({ home: d.home, claude: d.claude, drop: q.drop });
+    expect(q.dropped).toEqual([pendingId]);
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+  });
+
+  it('結果を拾うところで投げても、待ちを捨てて命令は止めない', async () => {
+    const d = dirs();
+    await installed(d);
+    writeConfig(d.home, { lastUpdateCheck: new Date(NOW).toISOString(),
+      pendingUpdate: { op: 'kitVersion', id: 'bad id', at: new Date(NOW).toISOString() } });
+    const q = queue();
+    const dropped = [];
+    const hands = { ...q, collect: () => { throw new Error('命令の id が読めません'); },
+      drop: (id) => { dropped.push(id); throw new Error('命令の id が読めません'); } };
+    await expect(tickUpdate({ home: d.home, claude: d.claude, ...hands, now: NOW + 1000 })).resolves.toMatchObject({ updated: false });
+    expect(dropped).toEqual(['bad id']);
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+  });
+
+  it('この確認が置いて24時間たった命令と結果を片付ける。待っているものとほかの命令は残す', async () => {
+    const t = NOW + 3 * DAY;
+    const old = 'kitup-' + (t - DAY - 1) + '-aa';
+    const fresh = 'kitup-' + (t - 1000) + '-bb';
+    const keep = 'kitup-' + (t - 2 * DAY) + '-cc';
+    const names = [old + '.result.json', old + '.cmd.json', fresh + '.result.json', keep + '.result.json',
+      'kit-' + (t - 2 * DAY) + '-dd.result.json', 'other.txt', 'kitup-zz-aa.result.json'];
+    expect(staleUpdateFiles(names, t, keep).sort()).toEqual([old + '.cmd.json', old + '.result.json']);
+
+    const d = dirs();
+    await installed(d);
+    const calls = [];
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, sweep: (k, n) => calls.push([k, n]), now: NOW + 2 * DAY });
+    expect(calls).toEqual([['', NOW + 2 * DAY]]);
+    await tickUpdate({ home: d.home, claude: d.claude, ...q,
+      sweep: (k) => { calls.push([k]); throw new Error('読めません'); }, now: NOW + 2 * DAY + 1 });
+    expect(calls[1]).toEqual([q.last().id]);
   });
 
   it('手で確かめる前に、置いたままの命令を捨てる', async () => {

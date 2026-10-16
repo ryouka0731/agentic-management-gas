@@ -130,7 +130,13 @@ function COMMAND_OPS() {
     kitFiles: function (a, by) {
       var print = kitPrint_();
       kitRemember_(by, print);
-      return { version: AGENT_KIT_VERSION(), print: print, files: KIT_FILES() };
+      var files = KIT_FILES();
+      // 署名は手元の道具が自動で入れ替えるかを決める唯一の根拠。版の問い合わせ
+      // (kitVersion) には付けない。偽られても中身を頼み直させるだけで済む
+      return {
+        version: AGENT_KIT_VERSION(), print: print, files: files,
+        signature: kitSignature_(AGENT_KIT_VERSION(), files),
+      };
     },
   };
 }

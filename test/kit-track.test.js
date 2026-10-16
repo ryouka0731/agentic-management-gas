@@ -9,6 +9,7 @@ import {
 } from '../kit/track/track.mjs';
 import { kitPrintOf, writeConfig, readConfig } from '../kit/track/update.mjs';
 import { trackedFolders } from '../kit/track/hook.mjs';
+import { TEST_KEYS, OTHER_KEYS, signKit } from './kitkeys.js';
 
 /** 一時的な ~/.banto と、載せるフォルダを作る */
 function home(folders) {
@@ -358,7 +359,7 @@ describe('まとめて入れる', () => {
     };
     const send = async (op) => ({ ok: true, result: { version: '1.8.0', print: kitPrintOf(files), files } });
 
-    await trackInstall({ home: h, claude: c, config: { queueDir: q, webAppUrl: 'https://x/exec' }, send });
+    await trackInstall({ home: h, claude: c, config: { queueDir: q, webAppUrl: 'https://x/exec' }, send, warn: () => {} });
 
     expect(readConfig(h)).toMatchObject({ queueDir: q, webAppUrl: 'https://x/exec', kitPrint: kitPrintOf(files) });
     expect(fs.existsSync(path.join(c, 'skills', 'banto-track', 'SKILL.md'))).toBe(true);
@@ -497,6 +498,8 @@ describe('agent.mjs から使う', () => {
     fs.mkdirSync(path.join(h, 'kit', 'track'), { recursive: true });
     fs.copyFileSync('kit/agent.mjs', path.join(h, 'kit', 'agent.mjs'));
     for (const n of fs.readdirSync('kit/track')) fs.copyFileSync(path.join('kit/track', n), path.join(h, 'kit', 'track', n));
+    // 本物の公開鍵ではなくテストの鍵を固定する (署名もテストの鍵で付ける)
+    fs.writeFileSync(path.join(h, 'kit', 'track', 'kit-key.pem'), TEST_KEYS.pub);
     return { h, q };
   }
 
@@ -553,6 +556,7 @@ describe('agent.mjs から使う', () => {
     const b64 = (f) => fs.readFileSync(f).toString('base64');
     const files = { 'agent.mjs': b64('kit/agent.mjs'), 'marker.md': Buffer.from('new').toString('base64') };
     for (const n of fs.readdirSync('kit/track')) files['track/' + n] = b64(path.join('kit/track', n));
+    files['track/kit-key.pem'] = Buffer.from(TEST_KEYS.pub).toString('base64');
     const print = kitPrintOf(files);
     const at = new Date().toISOString();
     writeConfig(h, { queueDir: q, lastUpdateCheck: at, kitPrint: 'abcd1234',
@@ -570,7 +574,7 @@ describe('agent.mjs から使う', () => {
     expect(JSON.parse(fs.readFileSync(path.join(q, pending.id + '.cmd.json'), 'utf8')).op).toBe('kitFiles');
 
     fs.writeFileSync(path.join(q, pending.id + '.result.json'),
-      JSON.stringify({ ok: true, result: { version: '9.9.9', print, files } }));
+      JSON.stringify({ ok: true, result: { version: '9.9.9', print, files, signature: signKit('9.9.9', files, TEST_KEYS.priv) } }));
     const third = await runFromBanto(h, q);
     expect(third.waited).toBeLessThan(5000);
     expect(JSON.parse(third.stdout)).toEqual({ ok: true, result: ['文書'] });
@@ -578,6 +582,60 @@ describe('agent.mjs から使う', () => {
     expect(fs.readFileSync(path.join(h, 'kit', 'marker.md'), 'utf8')).toBe('new');
     expect(readConfig(h)).toMatchObject({ kitPrint: print, pendingUpdate: null });
     expect(fs.readdirSync(q)).toEqual([]);
+  }, 30000);
+
+  it('届いた中身の署名が合わなければ、~/.banto/kit から動かしても入れ替えない', async () => {
+    const { h, q } = bantoKit();
+    const files = { 'agent.mjs': Buffer.from('evil').toString('base64') };
+    for (const n of ['hook.mjs', 'update.mjs']) files['track/' + n] = Buffer.from('evil').toString('base64');
+    const at = new Date().toISOString();
+    writeConfig(h, { queueDir: q, lastUpdateCheck: at, kitPrint: 'abcd1234',
+      pendingUpdate: { op: 'kitFiles', id: 'kitup-1-aaaaaa', at } });
+    fs.writeFileSync(path.join(q, 'kitup-1-aaaaaa.result.json'), JSON.stringify({ ok: true,
+      result: { version: '6.6.6', print: kitPrintOf(files), files, signature: signKit('6.6.6', files, OTHER_KEYS.priv) } }));
+    const before = fs.readFileSync(path.join(h, 'kit', 'agent.mjs'), 'utf8');
+
+    const r = await runFromBanto(h, q);
+    expect(JSON.parse(r.stdout)).toEqual({ ok: true, result: ['文書'] });
+    expect(r.stderr).toContain('署名が合いません');
+    expect(fs.readFileSync(path.join(h, 'kit', 'agent.mjs'), 'utf8')).toBe(before);
+    expect(fs.existsSync(path.join(h, 'backup'))).toBe(false);
+  }, 30000);
+
+  it('track install は、落とした zip の公開鍵で、番頭から受け取る中身の署名を確かめる', async () => {
+    // 落とした zip の代わり。agent.mjs と track/ をテストの鍵と一緒に置く
+    const zip = fs.mkdtempSync(path.join(os.tmpdir(), 'zip-'));
+    fs.mkdirSync(path.join(zip, 'track'));
+    fs.copyFileSync('kit/agent.mjs', path.join(zip, 'agent.mjs'));
+    for (const n of fs.readdirSync('kit/track')) fs.copyFileSync(path.join('kit/track', n), path.join(zip, 'track', n));
+    fs.writeFileSync(path.join(zip, 'track', 'kit-key.pem'), TEST_KEYS.pub);
+    const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
+    const c = claudeDir();
+    const q = fs.mkdtempSync(path.join(os.tmpdir(), 'q-'));
+    const files = { 'agent.mjs': Buffer.from('evil').toString('base64'),
+      'track/hook.mjs': Buffer.from('evil').toString('base64'), 'track/update.mjs': Buffer.from('evil').toString('base64') };
+    const forged = { ok: true, result: { version: '6.6.6', print: kitPrintOf(files), files,
+      signature: signKit('6.6.6', files, OTHER_KEYS.priv) } };
+
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, [path.join(zip, 'agent.mjs'), 'track', 'install', '--yes', '--queue', q],
+      { env: { ...process.env, ...ISO(), BANTO_HOME: h, CLAUDE_CONFIG_DIR: c, AGENTKIT_QUEUE: '' } });
+    let stderr = '';
+    child.stderr.on('data', (b) => { stderr += b; });
+    let exited = false;
+    const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
+    for (let i = 0; i < 200 && !exited; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      for (const name of fs.readdirSync(q).filter((n) => n.endsWith('.cmd.json'))) {
+        fs.writeFileSync(path.join(q, name.replace('.cmd.json', '.result.json')), JSON.stringify(forged));
+        fs.unlinkSync(path.join(q, name));
+      }
+    }
+    if (!exited) child.kill();
+    await done;
+    expect(stderr).toContain('署名が合いません');
+    expect(fs.existsSync(path.join(h, 'kit'))).toBe(false);
+    expect(fs.existsSync(path.join(c, 'skills', 'banto-track'))).toBe(false);
   }, 30000);
 });
 
@@ -630,5 +688,27 @@ describe('スキルと説明', () => {
     const at = agents.indexOf('`--yes` を付ける前に');
     expect(at).toBeGreaterThan(-1);
     expect(agents.slice(at, at + 300)).toContain('"autoUpdate": false');
+  });
+
+  it('署名が合うものしか自動で入れないこと、残る信頼の先、手で頼む update は待つことを書いてある', () => {
+    for (const file of ['kit/AGENTS.md', 'CLAUDE.md', 'docs/superpowers/specs/2026-10-15-kit-track-design.md']) {
+      const t = fs.readFileSync(file, 'utf8');
+      expect(t, file).toContain('署名');
+      expect(t, file).toContain('持ち主');
+      expect(t, file).not.toContain('偽物は防げません');
+      expect(t, file).not.toContain('偽物は防げない。本当の止め方');
+      expect(t, file).not.toContain('この変更では入れていない');
+    }
+    const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    expect(agents).toContain('バックグラウンド');
+    const claude = fs.readFileSync('CLAUDE.md', 'utf8');
+    expect(claude).toContain('src/KitSigning.gs');
+    expect(claude).toContain('node scripts/kit-key.mjs');
+  });
+
+  it('入れる前の説明も、署名で偽物を断ることと残る信頼の先を出す', () => {
+    const src = fs.readFileSync('kit/agent.mjs', 'utf8');
+    expect(src).not.toContain('偽物は防げません');
+    expect(src).toContain('署名');
   });
 });

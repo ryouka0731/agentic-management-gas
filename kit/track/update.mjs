@@ -6,15 +6,19 @@
  * Claude Code が次の依頼から (どのフォルダでも) 自動で動かす。
  *
  * 命令の入れ先 (Drive の queue/) は、Drive を共有している人なら誰でも書ける。
- * 偽の結果を置かれると、その人が書いたものが全員の手元で動く。この仕組みの
- * 中に本物か確かめる手段は無い (署名は後で足す予定)。次の手当ては壊れた版には
- * 効くが、偽物は防げない。本当の止め方は autoUpdate: false である:
+ * そこへ偽の結果を置かれても動かないよう、**番頭の署名が合うものしか自動では
+ * 入れない** (verifyKit)。秘密鍵は Apps Script の中にだけあり、Drive に書ける
+ * だけの人には読めない。確かめる公開鍵は、いま入っている道具の track/kit-key.pem
+ * (最初は Web アプリから落とした zip のもの) で、届いた中身の鍵は使わない。
+ * 残る信頼の先は、Apps Script を編集できる人 (= 持ち主) である。
+ *
+ * そのほかの手当て (壊れた版に効く):
  *   - 置き場 (~/.banto/kit) の外には書かない (safeName)。外を指す名前・字でない中身・
  *     欠けた中身が1つでもあれば、全体を断る (checkFiles)
  *   - 入れ替える前に控えを取り、agent update rollback で戻せる
  *   - 何が変わったかを、次に Claude Code を開いたときに見せる
  *   - config.json の autoUpdate: false で、知らせるだけにできる
- *   - 指紋が名乗りと合わなければ入れない (途中で切れたものを防ぐ。偽物は防げない)
+ *   - 指紋が名乗りと合わなければ入れない (途中で切れたものを防ぐ)
  */
 
 import fs from 'node:fs';
@@ -56,6 +60,52 @@ export function writeConfig(home, patch) {
  */
 export function kitPrintOf(files) {
   return crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex').slice(0, 8);
+}
+
+/**
+ * 署名する文。**番頭の kitSignedText_() と同じ字でなければならない。**
+ *
+ * 指紋 (kitPrintOf) は8字しか無いので、署名には中身の sha256 を64字まるごと入れる。
+ * 頭の 'softbanto-kit/1' は、同じ鍵で別の物に付けた署名を流用させないため。
+ *
+ * @param {string} version
+ * @param {Object<string,string>} files 名前 → base64
+ * @returns {string}
+ */
+export function kitSignedText(version, files) {
+  const digest = crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex');
+  return 'softbanto-kit/1\n' + String(version) + '\n' + digest;
+}
+
+/**
+ * 番頭の署名が、固定した公開鍵で確かめられるか。読めないものは全部「合わない」。
+ *
+ * @param {{version:string, files:Object<string,string>, signature:string}} kit
+ * @param {string} publicKeyPem
+ * @returns {boolean}
+ */
+export function verifyKit({ version, files, signature }, publicKeyPem) {
+  try {
+    if (typeof signature !== 'string' || !signature) return false;
+    return crypto.verify('RSA-SHA256', Buffer.from(kitSignedText(version, files), 'utf8'),
+      publicKeyPem, Buffer.from(signature, 'base64'));
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * いま入っている道具が固定している公開鍵。無ければ ''。
+ *
+ * **確かめる鍵は必ずここから読む。** 届いた中身の kit-key.pem で確かめると、
+ * 偽物は自分の鍵を添えて自分で署名するだけで通ってしまう。
+ */
+export function readPinnedKey(home) {
+  try {
+    return fs.readFileSync(path.join(paths(home).kit, 'track', 'kit-key.pem'), 'utf8');
+  } catch (e) {
+    return '';
+  }
 }
 
 /**
@@ -184,14 +234,23 @@ function backupKit(home, now, print) {
   }
 }
 
+const stderr = (s) => process.stderr.write(s);
+
 /**
  * 番頭から中身を受け取って置き場を入れ替える。
  *
- * @param {{home:string, claude:string, send:Function, now?:number, link?:boolean}} o
+ * **署名が合わなければ入れない。** 確かめる鍵は pinnedKey (落とした zip の鍵) か、
+ * いま入っている道具の kit-key.pem。どちらも無いとき (初めて入れる・署名の前の道具) は、
+ * 人が頼んだとき (manual) だけ、確かめられないと断ってから入れる。自動では入れない。
+ *
+ * @param {{home:string, claude:string, send:Function, now?:number, link?:boolean,
+ *   manual?:boolean, pinnedKey?:string, warn?:Function}} o
  *   link: スキルとフックを必ず写す (入れるとき)。偽なら、入れている人だけ写す
+ *   manual: 人が頼んだ (agent update / track install)
  * @returns {Promise<{print:string, version:string, changed:string[]}>}
  */
-export async function installFromServer({ home, claude, send, now = Date.now(), link = false }) {
+export async function installFromServer({ home, claude, send, now = Date.now(), link = false,
+  manual = false, pinnedKey = '', warn = stderr }) {
   const res = await send('kitFiles', {});
   if (!res || !res.ok) throw new Error('道具を受け取れませんでした: ' + ((res && res.error) || '返事がありません'));
   const result = res.result || {};
@@ -203,6 +262,17 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
   }
   // 控えを取る前に確かめる。断ったときに控えだけ増えると、戻す先がずれる
   const entries = checkFiles(files);
+  const key = pinnedKey || readPinnedKey(home);
+  if (key) {
+    if (!verifyKit({ version, files, signature: result.signature }, key)) {
+      throw new Error('受け取った道具の署名が合いません。番頭が作ったものではないおそれがあります。入れ替えませんでした');
+    }
+  } else if (!manual) {
+    throw new Error('いまの道具は署名を確かめる鍵を持っていないため、自動では入れ替えませんでした。' +
+      'node agent.mjs update で入れてください');
+  } else {
+    warn('署名を確かめられませんでした (確かめる鍵をまだ持っていません)。頼まれたので入れます\n');
+  }
 
   const p = paths(home);
   const before = snapshot(p.kit);
@@ -250,8 +320,8 @@ function writeAvailable(home, version, now) {
 }
 
 /** 入れ替えて、次に Claude Code を開いたときに見せる記録を書く */
-async function installAndLog({ home, claude, send, now }) {
-  const done = await installFromServer({ home, claude, send, now });
+async function installAndLog({ home, claude, send, now, manual = false, warn = stderr }) {
+  const done = await installFromServer({ home, claude, send, now, manual, warn });
   fs.writeFileSync(paths(home).log,
     JSON.stringify({ version: done.version, changed: done.changed, at: new Date(now).toISOString() }));
   return { checked: true, updated: true, ...done };
@@ -262,10 +332,11 @@ async function installAndLog({ home, claude, send, now }) {
  *
  * 待つのは人が頼んだとき (agent update) だけ。命令のついでの確認は tickUpdate で待たない。
  *
- * @param {{home:string, claude:string, send:Function, now?:number, force?:boolean}} o
+ * @param {{home:string, claude:string, send:Function, now?:number, force?:boolean, manual?:boolean, warn?:Function}} o
  *   force: 24時間を待たず、飛ばした版も入れる (agent update)
+ *   manual: 人が頼んだ。鍵を持たない道具でも、確かめられないと断ってから入れる
  */
-export async function checkForUpdate({ home, claude, send, now = Date.now(), force = false }) {
+export async function checkForUpdate({ home, claude, send, now = Date.now(), force = false, manual = false, warn = stderr }) {
   const config = readConfig(home);
   if (!config) return { checked: false, updated: false };
   const last = Date.parse(config.lastUpdateCheck || '');
@@ -282,7 +353,32 @@ export async function checkForUpdate({ home, claude, send, now = Date.now(), for
     writeAvailable(home, j.version, now);
     return { checked: true, updated: false, available: true, version: j.version };
   }
-  return installAndLog({ home, claude, send, now });
+  return installAndLog({ home, claude, send, now, manual, warn });
+}
+
+/**
+ * 1日1回の確認が置く命令の id の頭。ほかの命令 (kit-) と分け、片付けで他人の命令を消さない。
+ */
+export const UPDATE_ID_PREFIX = 'kitup';
+
+/**
+ * 入れ先のファイル名から、この確認が置いて24時間たった命令と結果を選ぶ。
+ *
+ * 待ちを捨てたとき (24時間・手で update) や、2つの呼び出しが同時に置いて片方の
+ * 記録が上書きされたとき、届いた結果は誰にも拾われずに残る。時刻は名前に入っている
+ * ものを使う (Drive の同期で更新時刻は当てにならない)。
+ *
+ * @param {string[]} names
+ * @param {number} now
+ * @param {string} keepId 今待っている命令。古くても消さない (捨てるのは tickUpdate が決める)
+ * @returns {string[]}
+ */
+export function staleUpdateFiles(names, now, keepId) {
+  const re = new RegExp('^(' + UPDATE_ID_PREFIX + '-([0-9]+)-[a-z0-9]+)\\.(cmd|result)\\.json$');
+  return names.filter((n) => {
+    const m = re.exec(n);
+    return !!m && m[1] !== keepId && now - Number(m[2]) >= DAY_MS;
+  });
 }
 
 /**
@@ -294,7 +390,7 @@ export function dropPending(home, drop) {
   const config = readConfig(home);
   const pending = config && config.pendingUpdate;
   if (!pending) return;
-  try { drop(String(pending.id || '')); } catch (e) { /* 読めない id なら置いた物も無い */ }
+  try { if (drop) drop(String(pending.id || '')); } catch (e) { /* 読めない id なら置いた物も無い */ }
   writeConfig(home, { pendingUpdate: null });
 }
 
@@ -307,43 +403,59 @@ export function dropPending(home, drop) {
  *
  *   版を尋ねる (kitVersion) を置く → 次: 新しければ中身を頼む (kitFiles) を置く → 次: 入れ替える
  *
+ * **中身が届いたときにも、入れてよいかを決め直す。** 頼んでから届くまで何時間も
+ * 空くことがあり、その間に autoUpdate: false にした・rollback で戻した人の道具を
+ * 入れ替えてはならない。
+ *
+ * 公開鍵を持たない道具 (署名の前の版) は、自動では入れず知らせるだけにする。
+ *
  * 24時間たっても返らない命令は捨てる (向こうが止まっているか、同期が切れている)。
  *
- * @param {{home:string, claude:string, place:Function, collect:Function, drop:Function, now?:number}} o
- *   place(op, args) → id / collect(id) → 結果か null / drop(id) は命令と結果を消す
+ * @param {{home:string, claude:string, place:Function, collect:Function, drop:Function,
+ *   sweep?:Function, now?:number}} o
+ *   place(op, args) → id / collect(id) → 結果か null / drop(id) は命令と結果を消す /
+ *   sweep(keepId, now) は、この確認が置いて24時間たった命令と結果を消す (捨てた待ちの残り。staleUpdateFiles)
  * @returns {Promise<{updated:boolean, placed?:string, available?:boolean, skipped?:boolean, version?:string, changed?:string[]}>}
  */
-export async function tickUpdate({ home, claude, place, collect, drop, now = Date.now() }) {
+export async function tickUpdate({ home, claude, place, collect, drop, sweep, now = Date.now() }) {
   let config = readConfig(home);
   if (!config) return { updated: false };
 
   const pending = config.pendingUpdate;
+  if (sweep) {
+    // 片付けに失敗しても、確認そのものは止めない
+    try { sweep(pending && pending.id ? String(pending.id) : '', now); } catch (e) { /* 次の日にまた試す */ }
+  }
   if (pending) {
     const at = Date.parse(pending.at || '');
     const known = pending.op === 'kitVersion' || pending.op === 'kitFiles';
-    if (!known || !Number.isFinite(at) || now - at >= DAY_MS) {
+    let res = null;
+    let broken = !known || !Number.isFinite(at) || now - at >= DAY_MS;
+    if (!broken) {
+      // 読めない id で collect が投げると、24時間のあいだ命令のたびに失敗する。捨てる
+      try { res = collect(String(pending.id)); } catch (e) { broken = true; }
+    }
+    if (broken) {
       dropPending(home, drop);
       config = readConfig(home);
     } else {
-      const res = collect(String(pending.id));
       if (res === null || res === undefined) return { updated: false };
       writeConfig(home, { pendingUpdate: null });
+      config = readConfig(home);
 
-      if (pending.op === 'kitFiles') {
-        return installAndLog({ home, claude, send: async () => res, now });
-      }
       const j = judgeVersion(config, res, false);
       if (j.next === 'skip') return { updated: false, skipped: true };
-      if (j.next === 'available') {
+      if (j.next === 'available' || (j.next === 'install' && !readPinnedKey(home))) {
         writeAvailable(home, j.version, now);
         return { updated: false, available: true, version: j.version };
       }
-      if (j.next === 'install') {
-        const id = place('kitFiles', {});
-        writeConfig(home, { pendingUpdate: { op: 'kitFiles', id, at: new Date(now).toISOString() } });
-        return { updated: false, placed: 'kitFiles' };
+      if (j.next !== 'install') return { updated: false };
+      if (pending.op === 'kitFiles') {
+        return installAndLog({ home, claude, send: async () => res, now });
       }
-      return { updated: false };
+      const id = place('kitFiles', {});
+      writeConfig(home, { pendingUpdate: { op: 'kitFiles', id, at: new Date(now).toISOString() } });
+      return { updated: false, placed: 'kitFiles' };
     }
   }
 
@@ -360,9 +472,15 @@ export async function tickUpdate({ home, claude, place, collect, drop, now = Dat
 /**
  * 最後の控えに戻す。戻した版は、翌日の確認で入れ直さない。
  *
+ * 置いたまま拾っていない確認の命令も捨てる。残すと、あとで届いた中身で戻した
+ * 先から入れ替わる。
+ *
+ * @param {{home:string, claude:string, drop?:Function}} o
+ *
  * @returns {{restored:string}}
  */
-export function rollback({ home, claude }) {
+export function rollback({ home, claude, drop }) {
+  dropPending(home, drop);
   const p = paths(home);
   const all = listBackups(home);
   if (!all.length) throw new Error('戻せる控えがありません');
