@@ -173,7 +173,7 @@ export function clearIssue(home, session, now = new Date()) {
  * 道具は手元の展開先を写さずに番頭から受け取る。展開先が利用者のリポジトリの
  * 直下だと、写すときに .claude/ や CLAUDE.md まで巻き込むため。
  */
-export async function trackInstall({ home, claude, config, send, now = Date.now() }) {
+export async function trackInstall({ home, claude, config, send, now = Date.now(), pinnedKey = '', warn }) {
   if (!config || !config.queueDir || !fs.existsSync(config.queueDir)) {
     throw new Error('命令の入れ先が見つかりません。先に node agent.mjs setup の案内どおりに設定してください');
   }
@@ -184,7 +184,9 @@ export async function trackInstall({ home, claude, config, send, now = Date.now(
     scriptUrl: config.scriptUrl || before.scriptUrl || '',
     autoUpdate: before.autoUpdate !== false,
   });
-  const kit = await installFromServer({ home, claude, send, now, link: true });
+  // 人が頼んだ入れ方。落とした zip の公開鍵 (pinnedKey) があれば、それで署名を確かめる
+  const kit = await installFromServer({ home, claude, send, now, link: true, manual: true, pinnedKey,
+    ...(warn ? { warn } : {}) });
   writeConfig(home, { lastUpdateCheck: new Date(now).toISOString() });
   const hooks = installHooks({ home, claude, now });
   return { kit, hooks };

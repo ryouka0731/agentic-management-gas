@@ -106,8 +106,11 @@ function argValue(name) {
   return at >= 0 ? String(process.argv[at + 1] || '') : '';
 }
 
-/** 命令の id は手元で作る。設定から読んだ id で入れ先の外を指させない */
-const ID_RE = /^kit-[0-9]+-[a-z0-9]+$/;
+/**
+ * 命令の id は手元で作る。設定から読んだ id で入れ先の外を指させない。
+ * kitup- は1日1回の確認が置くもの (片付けでほかの命令を消さないよう分ける)
+ */
+const ID_RE = /^kit(up)?-[0-9]+-[a-z0-9]+$/;
 
 function commandFiles(queueDir, id) {
   if (!ID_RE.test(String(id))) throw new Error('命令の id が読めません: ' + id);
@@ -119,11 +122,11 @@ function commandFiles(queueDir, id) {
  *
  * @returns {string} 命令の id (結果を拾うときに使う)
  */
-function placeCommand(queueDir, op, args) {
+function placeCommand(queueDir, op, args, prefix = 'kit') {
   if (!fs.existsSync(queueDir)) {
     throw new Error('キューのフォルダがありません: ' + queueDir);
   }
-  const id = 'kit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  const id = prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   fs.writeFileSync(commandFiles(queueDir, id).cmd, JSON.stringify({ op, args: args || {} }, null, 2));
   return id;
 }
@@ -444,6 +447,20 @@ function setupGuide() {
   return lines.join('\n');
 }
 
+/**
+ * この agent.mjs と一緒に置かれた公開鍵 (Web アプリから落とした zip の鍵)。無ければ ''。
+ *
+ * 入れるときは番頭から道具を受け取り直すので、その署名をこの鍵で確かめる。
+ * 落とした zip が信頼の起点 (最初の1回)。
+ */
+function zipKey() {
+  try {
+    return fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'track', 'kit-key.pem'), 'utf8');
+  } catch (e) {
+    return '';
+  }
+}
+
 /** いま動いているのが ~/.banto/kit の道具か。自動の確認はそのときだけ */
 function runningFromBanto() {
   const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return path.resolve(p); } };
@@ -458,9 +475,15 @@ function sender(config) {
 /** 置いて・拾って・捨てる関数を、設定から作る (1日1回の確認は待たない) */
 function queueHands(config) {
   return {
-    place: (op, args) => placeCommand(config.queueDir, op, args),
+    place: (op, args) => placeCommand(config.queueDir, op, args, update.UPDATE_ID_PREFIX),
     collect: (id) => collectResult(config.queueDir, id),
     drop: (id) => forgetCommand(config.queueDir, id, true),
+    // 捨てた待ちの結果は誰にも拾われずに残る。この確認が置いたものだけ片付ける
+    sweep: (keepId, now) => {
+      for (const name of update.staleUpdateFiles(fs.readdirSync(config.queueDir), now, keepId)) {
+        try { fs.unlinkSync(path.join(config.queueDir, name)); } catch (e) { /* 次にまた試す */ }
+      }
+    },
   };
 }
 
@@ -503,8 +526,9 @@ async function confirmInstall(rest) {
     '入れたあと、道具は1日1回番頭に新しい版を尋ね、あれば自動で入れ替えます。そのとき',
     '  ' + path.join(home, 'hooks', 'track-hook.mjs') + ' とスキルも新しくなり、Claude Code は',
     '  そのフックを次の依頼から (どのフォルダでも) 自動で動かします。',
-    '危険: 番頭の Drive フォルダに書ける人なら、偽の返事を置いて全員の手元でプログラムを動かせます。',
-    '  控えと戻し (update rollback) は壊れた版には効きますが、偽物は防げません。',
+    '自動で入れるのは番頭の署名が合うものだけです。Drive フォルダに書ける人が偽の返事を置いても入れません。',
+    '危険: 署名できるのは番頭の Apps Script を編集できる人 (持ち主) です。その人を信頼することになります。',
+    '  控えと戻し (update rollback) で1つ前に戻せます。',
     '切る: ' + path.join(home, 'config.json') + ' に "autoUpdate": false と書くと、知らせるだけになります。',
   ].join('\n');
   process.stderr.write(plan + '\n');
@@ -529,7 +553,7 @@ async function runTrack(rest) {
   if (sub === 'install') {
     if (!(await confirmInstall(a))) return;
     const config = loadConfig();
-    const r = await track.trackInstall({ home, claude, config, send: sender(config) });
+    const r = await track.trackInstall({ home, claude, config, send: sender(config), pinnedKey: zipKey() });
     process.stdout.write('入れました (道具 ' + r.kit.version + ')。' +
       '載せるフォルダは node agent.mjs track add <フォルダ> で選んでください\n');
     return;
@@ -558,7 +582,9 @@ async function runUpdate(rest) {
   const home = bantoHome();
   const claude = track.claudeHome();
   if (rest[0] === 'rollback') {
-    const r = update.rollback({ home, claude });
+    // 置いたままの確認も捨てる。残すと、あとで届いた中身で戻した先から入れ替わる
+    const c = update.readConfig(home);
+    const r = update.rollback({ home, claude, drop: c && c.queueDir ? queueHands(c).drop : undefined });
     process.stdout.write(r.restored + ' の控えに戻しました。この版は自動では入れ直しません\n');
     return;
   }
@@ -566,7 +592,7 @@ async function runUpdate(rest) {
   if (!config || !config.queueDir) throw new Error('まだ入れていません。先に node agent.mjs track install を実行してください');
   // 手で頼んだときは待つ。置いたまま拾っていない確認は、二重にならないよう捨てる
   update.dropPending(home, queueHands(config).drop);
-  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true });
+  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true, manual: true });
   process.stdout.write(r.updated
     ? '新しくしました (' + r.version + '): ' + (r.changed.join(', ') || '変わったファイルなし') + '\n'
     : 'いまの道具が最新です\n');

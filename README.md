@@ -311,6 +311,9 @@ clasp create-deployment --description "Phase 1"
 clasp open-web-app
 ```
 
+2回目からは `npm run deploy -- "何を変えたか"`。その前に一度だけ `node scripts/kit-key.mjs` で手元の道具に
+付ける署名の鍵を作る (秘密鍵は `~/.config/softbanto/` に置かれる。控えを取ること。無いと deploy は断る)。
+
 ### 5. 文書の登録
 
 対象の文書（Docs / Sheets / Slides）を Drive で `agentic-management/main/` に

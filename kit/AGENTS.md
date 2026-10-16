@@ -180,8 +180,9 @@ node agent.mjs work-fail <id> "なぜ無理か"  # できなかったと返す
 `node agent.mjs track install` で、Claude Code の作業を番頭のやることに載せる仕掛けを入れられます。
 **入れる前に利用者に確かめ、ok をもらってから `--yes` を付けて実行してください。**
 `--yes` を付ける前に、次の2行を必ず利用者に伝えてください:
-「道具は1日1回自動で新しくなり、そのたびにフックも入れ替わって次の依頼から自動で動きます。Drive フォルダに
-書ける人なら偽の版を配れます」「切るには `~/.banto/config.json` に `"autoUpdate": false` と書きます」
+「道具は1日1回自動で新しくなり、そのたびにフックも入れ替わって次の依頼から自動で動きます。入れるのは番頭の
+署名が合うものだけですが、番頭の持ち主 (Apps Script を編集できる人) を信頼することになります」「切るには
+`~/.banto/config.json` に `"autoUpdate": false` と書きます」
 
 - 入るもの: `~/.claude/settings.json` の hooks に2つ (今の設定は `settings.json.banto-backup-<日時>` に控える)・
   `~/.claude/skills/banto-track/SKILL.md`・`~/.banto/` (道具の本体と設定)
@@ -197,13 +198,18 @@ node agent.mjs work-fail <id> "なぜ無理か"  # できなかったと返す
 
 - 入れ替えると、道具の本体だけでなく `~/.banto/hooks/track-hook.mjs` と `~/.claude/skills/banto-track` も
   新しくなります。**Claude Code はそのフックを次の依頼から (どのフォルダでも) 自動で動かします**
-- **危険**: 命令の入れ先 (Drive の queue/) は、Drive を共有している人なら誰でも書けます。偽の返事を置かれると、
-  その人が書いたものが全員の手元で動きえます。受け取った中身が本物かを確かめる手段はありません
-- 控えと戻し (`node agent.mjs update rollback`) は壊れた版には効きますが、偽物は防げません
-- 切る: `~/.banto/config.json` に `"autoUpdate": false` と書くと、新しい版があることを知らせるだけになります。
-  これが本当の止め方です
+- **自動で入れるのは、番頭の署名が合うものだけです。** 命令の入れ先 (Drive の queue/) は Drive を共有している
+  人なら誰でも書けますが、偽の返事には正しい署名を付けられないので、入れずに断ります。確かめる鍵は今入っている
+  道具の `track/kit-key.pem` (最初は Web アプリから落とした zip のもの) で、届いた中身の鍵は使いません
+- **残る危険**: 署名できるのは番頭の Apps Script を編集できる人 (持ち主) です。その人を信頼することになります
+- 鍵を持たない古い道具は自動では入れ替えず、新しい版があることだけを知らせます。`node agent.mjs update` で
+  入れると「署名を確かめられませんでした」と出ますが、手で頼んだので入れます (最初の1回だけ)
+- 控えと戻し (`node agent.mjs update rollback`) で1つ前に戻せます
+- 切る: `~/.banto/config.json` に `"autoUpdate": false` と書くと、新しい版があることを知らせるだけになります
 - 入れ替えたら、次に Claude Code を開いたときに何が変わったかが合図に出ます。利用者に1行だけ伝えてください
 - 戻した版は自動では入れ直しません。今すぐ確かめる: `node agent.mjs update` (手で頼んだときは、飛ばしている版でも入れます)
+- `node agent.mjs update` は番頭の返事を待つので数分かかることがあります。**バックグラウンドで実行してください**
+  (Claude Code の Bash は2分で打ち切ります)
 
 ## エージェンティックスクラム
 

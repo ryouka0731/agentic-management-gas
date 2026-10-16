@@ -30,6 +30,41 @@ function kitPrint_() {
 }
 
 /**
+ * 署名する文。**手元の道具 (kit/track/update.mjs の kitSignedText) と同じ字でなければならない。**
+ *
+ * 指紋は8字しか無いので、中身の sha256 を64字まるごと入れる。頭の
+ * 'softbanto-kit/1' は、同じ鍵で別の物に付けた署名を流用させないため。
+ *
+ * @param {string} version
+ * @param {Object<string,string>} files
+ * @returns {string}
+ */
+function kitSignedText_(version, files) {
+  return 'softbanto-kit/1\n' + String(version) + '\n' + sha256Hex(JSON.stringify(files));
+}
+
+/**
+ * 配る中身に番頭の署名を付ける。
+ *
+ * 秘密鍵は src/KitSigning.gs (KIT_SIGNING_KEY_) にだけあり、記録には残さない。
+ * scripts/deploy.mjs が送る直前に書く。読めるのは Apps Script を編集できる人
+ * だけで、Drive のフォルダに書けるだけの人には読めない。だから偽の返事に
+ * 正しい署名は付けられない。
+ *
+ * 鍵が無いときは空を返す。手元の道具は、空の署名を自動では入れない。
+ *
+ * @param {string} version
+ * @param {Object<string,string>} files
+ * @returns {string} base64
+ */
+function kitSignature_(version, files) {
+  if (typeof KIT_SIGNING_KEY_ !== 'function') return '';
+  var bytes = Utilities.computeRsaSha256Signature(
+    kitSignedText_(version, files), KIT_SIGNING_KEY_(), Utilities.Charset.UTF_8);
+  return Utilities.base64Encode(bytes);
+}
+
+/**
  * その人が持っている道具の指紋を覚える。
  *
  * **スクリプトプロパティに置く。** 手元の道具からの命令は持ち主のトリガーで
