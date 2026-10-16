@@ -18,6 +18,11 @@ import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
+import readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+import { bantoHome, trackedFolders } from './track/hook.mjs';
+import * as track from './track/track.mjs';
+import * as update from './track/update.mjs';
 
 const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
 
@@ -77,6 +82,17 @@ function findConfig() {
   const home = path.join(os.homedir(), '.agentkit.json');
   if (fs.existsSync(home)) {
     return { ...JSON.parse(fs.readFileSync(home, 'utf8')), from: home };
+  }
+
+  // 番頭に作業を載せる仕掛けを入れた人は、どこからでも ~/.banto/kit/agent.mjs を呼ぶ
+  const banto = update.paths(bantoHome()).config;
+  if (fs.existsSync(banto)) {
+    try {
+      const c = JSON.parse(fs.readFileSync(banto, 'utf8'));
+      if (c && c.queueDir) return { ...c, from: banto };
+    } catch (e) {
+      // 壊れていれば見なかったことにする (案内で「見つかりません」と出す)
+    }
   }
   return null;
 }
@@ -378,6 +394,14 @@ function setupGuide() {
   lines.push('  .claude/ に、読み替えは SCRUM.md にあります。');
   lines.push('');
 
+  const linked = update.claudeLinked(track.claudeHome());
+  lines.push('番頭に作業を載せる (Claude Code を使う人だけ):');
+  lines.push('  node agent.mjs track install で、~/.claude にフック2つとスキル1つを足し、');
+  lines.push('  道具を ~/.banto/kit に置きます。載せるフォルダは node agent.mjs track add で選びます。');
+  lines.push('  道具は1日1回、新しい版を確かめて自動で入れ替わります (~/.banto/config.json の');
+  lines.push('  autoUpdate を false にすると知らせるだけになります)。');
+  lines.push('  いま: ' + (linked ? '入っています' : '入っていません'));
+  lines.push('');
   if (!config) {
     lines.push('次にすること: agentkit.example.json を .agentkit.json として');
     lines.push('写し、queueDir に 2 のパスを書いてください。');
@@ -390,6 +414,105 @@ function setupGuide() {
     lines.push('すぐ返らないのは異常ではありません。');
   }
   return lines.join('\n');
+}
+
+/** いま動いているのが ~/.banto/kit の道具か。自動の確認はそのときだけ */
+function runningFromBanto() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return path.resolve(p); } };
+  return real(path.dirname(fileURLToPath(import.meta.url))) === real(update.paths(bantoHome()).kit);
+}
+
+/** 命令の入れ先へ送る関数を、設定から作る */
+function sender(config) {
+  return (op, args) => send(config.queueDir, op, args);
+}
+
+/**
+ * 1日1回、道具の新しい版を確かめる。本来の命令の結果は変えない。
+ *
+ * 出すのは標準エラーだけ。標準出力は Claude が読む結果である。
+ */
+async function maybeUpdate() {
+  if (!runningFromBanto()) return;
+  const home = bantoHome();
+  const config = update.readConfig(home);
+  if (!config || !config.queueDir) return;
+  try {
+    const r = await update.checkForUpdate({ home, claude: track.claudeHome(), send: sender(config) });
+    if (r.updated) process.stderr.write('番頭の道具を新しくしました (' + r.version + ')。戻すときは agent update rollback\n');
+  } catch (e) {
+    process.stderr.write('道具の新しい版を確かめられませんでした: ' + (e.message || e) + '\n');
+  }
+}
+
+async function confirmInstall(rest) {
+  const plan = [
+    '次のものを入れます:',
+    '  ' + path.join(track.claudeHome(), 'settings.json') + ' の hooks に2つ (今の設定は控えを取って残します)',
+    '  ' + path.join(track.claudeHome(), 'skills', 'banto-track', 'SKILL.md'),
+    '  ' + bantoHome() + ' (道具の本体と設定)',
+  ].join('\n');
+  if (rest.includes('--yes')) return true;
+  process.stdout.write(plan + '\n');
+  if (!process.stdin.isTTY) {
+    process.stderr.write('入れてよいか尋ねられませんでした。--yes を付けて実行してください' +
+      ' (Claude に頼むときは、利用者に確かめてから --yes を付ける)\n');
+    process.exitCode = 2;
+    return false;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question('入れますか [y/N] ');
+  rl.close();
+  return /^y/i.test(answer.trim());
+}
+
+async function runTrack(rest) {
+  const home = bantoHome();
+  const claude = track.claudeHome();
+  const [sub, ...a] = rest;
+
+  if (sub === 'install') {
+    if (!(await confirmInstall(a))) return;
+    const config = loadConfig();
+    const r = await track.trackInstall({ home, claude, config, send: sender(config) });
+    process.stdout.write('入れました (道具 ' + r.kit.version + ')。' +
+      '載せるフォルダは node agent.mjs track add <フォルダ> で選んでください\n');
+    return;
+  }
+  if (sub === 'uninstall') {
+    track.uninstallHooks({ home, claude });
+    process.stdout.write('フックとスキルを外しました (' + home + ' は残してあります)\n');
+    return;
+  }
+  if (sub === 'add') { process.stdout.write(track.addFolder(home, a[0]).join('\n') + '\n'); return; }
+  if (sub === 'remove') { process.stdout.write(track.removeFolder(home, a[0]).join('\n') + '\n'); return; }
+  if (sub === 'list') {
+    const list = trackedFolders(home);
+    process.stdout.write((list.length ? list.join('\n') : '(載せるフォルダはありません)') + '\n');
+    return;
+  }
+  if (sub === 'set') { track.setIssue(home, a[0], a[1], a[2]); return; }
+  if (sub === 'touch') { track.touch(home, a[0]); return; }
+  if (sub === 'clear') { track.clearIssue(home, a[0]); return; }
+
+  process.stderr.write('track の後には install / uninstall / add / remove / list / set / touch / clear のどれかを書いてください\n');
+  process.exitCode = 2;
+}
+
+async function runUpdate(rest) {
+  const home = bantoHome();
+  const claude = track.claudeHome();
+  if (rest[0] === 'rollback') {
+    const r = update.rollback({ home, claude });
+    process.stdout.write(r.restored + ' の控えに戻しました。この版は自動では入れ直しません\n');
+    return;
+  }
+  const config = update.readConfig(home);
+  if (!config || !config.queueDir) throw new Error('まだ入れていません。先に node agent.mjs track install を実行してください');
+  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true });
+  process.stdout.write(r.updated
+    ? '新しくしました (' + r.version + '): ' + (r.changed.join(', ') || '変わったファイルなし') + '\n'
+    : 'いまの道具が最新です\n');
 }
 
 /**
@@ -466,6 +589,10 @@ function usage() {
   lines.push('  agent scrum                            # スクラムがオンか (既定はオフ)');
   lines.push('  agent sprint-add sprint001 "申請の流れ" 2026-10-01 2026-10-14');
   lines.push('  agent impediment-resolve 3 "代理が承認"');
+  lines.push('  agent track install                    # Claude Code の作業を番頭に載せる仕掛けを入れる');
+  lines.push('  agent track add .                      # いまのフォルダを載せる');
+  lines.push('  agent update                           # 道具の新しい版を今すぐ確かめて入れる');
+  lines.push('  agent update rollback                  # 1つ前の道具に戻す');
   lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');
   lines.push('はじめてなら、まず agent setup を実行する');
@@ -488,6 +615,10 @@ async function main() {
     return;
   }
 
+  // 仕掛けと道具の更新は手元で済む (track install と update は中で命令を送る)
+  if (name === 'track') { await runTrack(process.argv.slice(3)); return; }
+  if (name === 'update') { await runUpdate(process.argv.slice(3)); return; }
+
   const entry = OPS[name];
   if (!entry) {
     process.stderr.write('知らない操作です: ' + name + '\n\n' + usage() + '\n');
@@ -507,6 +638,7 @@ async function main() {
 
   process.stdout.write(JSON.stringify(res, null, 2) + '\n');
   if (!res.ok) process.exitCode = 1;
+  await maybeUpdate();
 }
 
 main().catch((err) => {

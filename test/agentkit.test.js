@@ -8,6 +8,12 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import { buildKitSource, FILES } from '../scripts/build-kit.mjs';
 
+// 手元に本物の ~/.banto や ~/.claude があっても、設定を拾ったり本物の入れ先に命令を置いたりしない
+const ISOLATED = {
+  BANTO_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'banto-none-')),
+  CLAUDE_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'claude-none-')),
+};
+
 const SOURCES = [
   'src/core/Hash.js',
   'src/core/HashGas.gs',
@@ -183,7 +189,7 @@ describe('初めて動くときの案内', () => {
 
     return execFileSync(process.execPath,
       [path.resolve('kit/agent.mjs'), 'setup'],
-      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+      { cwd, encoding: 'utf8', env: { ...process.env, ...ISOLATED, AGENTKIT_QUEUE: '' } });
   }
 
   it('設定が無くても案内が出る', () => {
@@ -213,7 +219,7 @@ describe('初めて動くときの案内', () => {
 
   it('使い方の一覧からも辿れる', () => {
     const out = execFileSync(process.execPath,
-      [path.resolve('kit/agent.mjs')], { encoding: 'utf8' });
+      [path.resolve('kit/agent.mjs')], { encoding: 'utf8', env: { ...process.env, ...ISOLATED } });
 
     expect(out).toContain('まず agent setup を実行する');
   });
@@ -417,7 +423,7 @@ describe('手元の道具が受け取る引数', () => {
     try {
       execFileSync(process.execPath,
         [AGENT, 'patch', '3', 'f.txt', '--output=' + target, '--queue', path.join(repo, 'no-queue')],
-        { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
+        { cwd: repo, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...ISOLATED } });
     } catch (e) {
       err = String(e.stderr || '');
     }
@@ -429,7 +435,8 @@ describe('手元の道具が受け取る引数', () => {
   it('--queue の値を、ほかの引数に混ぜない', async () => {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
-    const child = spawn(process.execPath, [AGENT, 'status', '--queue', queue, 'FILE1']);
+    const child = spawn(process.execPath, [AGENT, 'status', '--queue', queue, 'FILE1'],
+      { env: { ...process.env, ...ISOLATED } });
 
     // 置かれた命令を読み、結果を書き返す (向こう側の代わり)
     let cmd = null;
@@ -458,14 +465,15 @@ describe('エージェンティックスクラム (手元の道具)', () => {
   function setupOut() {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
     return execFileSync(process.execPath, [AGENT, 'setup'],
-      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+      { cwd, encoding: 'utf8', env: { ...process.env, ...ISOLATED, AGENTKIT_QUEUE: '' } });
   }
 
   /** 命令を送らせ、置かれた命令の中身を返す (向こう側の代わりに結果を書く) */
   async function sent(args) {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
-    const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue]);
+    const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue],
+      { env: { ...process.env, ...ISOLATED } });
     // 送らずに断ったときは、道具が先に終わる。そこで待つのをやめる
     let exited = false;
     const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
