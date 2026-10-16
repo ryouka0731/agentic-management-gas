@@ -14,7 +14,93 @@
  * @returns {string}
  */
 function AGENT_KIT_VERSION() {
-  return '1.7.2';
+  return '1.8.0';
+}
+
+/**
+ * 配る中身の指紋。zip の名前と、手元の道具が古いかの判定に使う。
+ *
+ * **手元の道具 (kit/track/update.mjs の kitPrintOf) と同じ式でなければならない。**
+ * 式が食い違うと、手元は毎日「新しい版がある」と読み、入れ替えを繰り返す。
+ *
+ * @returns {string} 16進8字
+ */
+function kitPrint_() {
+  return sha256Hex(JSON.stringify(KIT_FILES())).substring(0, 8);
+}
+
+/**
+ * 署名する文。**手元の道具 (kit/track/update.mjs の kitSignedText) と同じ字でなければならない。**
+ *
+ * 指紋は8字しか無いので、中身の sha256 を64字まるごと入れる。頭の
+ * 'softbanto-kit/1' は、同じ鍵で別の物に付けた署名を流用させないため。
+ *
+ * @param {string} version
+ * @param {Object<string,string>} files
+ * @returns {string}
+ */
+function kitSignedText_(version, files) {
+  return 'softbanto-kit/1\n' + String(version) + '\n' + sha256Hex(JSON.stringify(files));
+}
+
+/**
+ * 配る中身に番頭の署名を付ける。
+ *
+ * 秘密鍵は src/KitSigning.gs (KIT_SIGNING_KEY_) にだけあり、記録には残さない。
+ * scripts/deploy.mjs が送る直前に書く。読めるのは Apps Script を編集できる人
+ * だけで、Drive のフォルダに書けるだけの人には読めない。だから偽の返事に
+ * 正しい署名は付けられない。
+ *
+ * 鍵が無いときは空を返す。手元の道具は、空の署名を自動では入れない。
+ *
+ * @param {string} version
+ * @param {Object<string,string>} files
+ * @returns {string} base64
+ */
+function kitSignature_(version, files) {
+  if (typeof KIT_SIGNING_KEY_ !== 'function') return '';
+  // 署名に失敗しても kitFiles そのものは落とさない。落とすと全員の道具が中身を受け取れず、
+  // 手で入れ直す道まで塞がる。空の署名なら、手元は自動では入れず知らせるだけにする
+  try {
+    var bytes = Utilities.computeRsaSha256Signature(
+      kitSignedText_(version, files), KIT_SIGNING_KEY_(), Utilities.Charset.UTF_8);
+    return Utilities.base64Encode(bytes);
+  } catch (e) {
+    console.error('道具に署名できませんでした: ' + (e && e.message ? e.message : e));
+    return '';
+  }
+}
+
+/**
+ * その人が持っている道具の指紋を覚える。
+ *
+ * **スクリプトプロパティに置く。** 手元の道具からの命令は持ち主のトリガーで
+ * 走るため、そこから利用者本人の UserProperties には書けない。
+ *
+ * @param {string} email
+ * @param {string} print
+ */
+function kitRemember_(email, print) {
+  var who = String(email || '').toLowerCase();
+  if (!who || !/^[0-9a-f]{8}$/.test(String(print || ''))) return;
+  PropertiesService.getScriptProperties().setProperty('KIT_PRINT:' + who, String(print));
+}
+
+/**
+ * その人の道具が古いか。
+ *
+ * まだ一度も落としていない人は古いことにしない (札を出しても落とす理由が分からない)。
+ *
+ * @param {string} email
+ * @returns {{print:string, mine:string, outdated:boolean}}
+ */
+function kitStatus_(email) {
+  var print = kitPrint_();
+  var who = String(email || '').toLowerCase();
+  var mine = who
+    ? String(PropertiesService.getScriptProperties().getProperty('KIT_PRINT:' + who) || '')
+    : '';
+  return { print: print, mine: mine, outdated: mine !== '' && mine !== print };
 }
 
 /**
@@ -28,7 +114,7 @@ function AGENT_KIT_VERSION() {
  * @returns {string}
  */
 function agentKitName_() {
-  var print = sha256Hex(JSON.stringify(KIT_FILES())).substring(0, 8);
+  var print = kitPrint_();
   return 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '-' + print + '.zip';
 }
 

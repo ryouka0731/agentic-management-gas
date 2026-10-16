@@ -128,6 +128,10 @@ main の保護などの安全機構はキュー経由でも同じように効く
 | Drive のリビジョン履歴 | 実際の編集者が残る | 全部オーナー名になる |
 | 実行クォータ | 各自 | オーナーに集中 |
 
+**共有するのは `agentic-management/` フォルダだけにする。スクリプトの入ったフォルダや Apps Script の
+プロジェクトそのものは共有しない。** 手元の道具に付ける署名の秘密鍵 (`src/KitSigning.gs`) は、スクリプトを
+開ける人 (閲覧者を含む) とそのフォルダを編集できる人なら読める。読めた人は偽の道具に正しい署名を付けられる。
+
 `ME` を推奨する。アプリ側の main 保護は「アプリ経由の操作」しか止められないため、
 `USER_ACCESSING` だと Docs を直接開く抜け道が残る。
 
@@ -310,6 +314,9 @@ GAS エディタ（`clasp open-script`）で **`setupRepo()`** を 1 回だけ�
 clasp create-deployment --description "Phase 1"
 clasp open-web-app
 ```
+
+2回目からは `npm run deploy -- "何を変えたか"`。その前に一度だけ `node scripts/kit-key.mjs` で手元の道具に
+付ける署名の鍵を作る (秘密鍵は `~/.config/softbanto/` に置かれる。控えを取ること。無いと deploy は断る)。
 
 ### 5. 文書の登録
 

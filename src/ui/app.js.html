@@ -85,6 +85,8 @@
   var mePanel = document.getElementById('me-panel');
   var meBody = document.getElementById('me-body');
   var seenNoticeId = 0;
+  // 手元の道具が古いか (apiKitStatus)。顔の点と道具のボタンの札に使う
+  var kitOutdated = false;
 
   var docListEl = document.getElementById('doc-list');
   var linkedIssuesEl = document.getElementById('linked-issues');
@@ -10764,6 +10766,7 @@
     kit.className = 'btn btn-primary';
     kit.appendChild(makeIcon('save'));
     kit.appendChild(document.createTextNode(label || '手元から動かす道具を落とす'));
+    if (kitOutdated) kit.appendChild(makePill('更新あり', 'stale-badge'));
     attachHint(kit,
       '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
       'Claude や Codex に読ませる説明も入っています');
@@ -10779,6 +10782,11 @@
         window.open(res.url, '_blank');
         showSnack(res.name + ' を落としています', { kind: 'ok' });
         openKitSteps(res);
+        // 落とし直した道具は最新。点と札を消す (サーバ側も apiAgentKit で覚え直している)
+        if (kitOutdated) {
+          kitOutdated = false;
+          drawMe();
+        }
       }, failEnable(kit));
     });
     return kit;
@@ -10975,7 +10983,12 @@
   function drawMe() {
     meBtn.textContent = '';
     meBtn.appendChild(makeAvatar(currentUser));
-    meBtn.setAttribute('aria-label', '自分の設定');
+    if (kitOutdated) {
+      var dot = document.createElement('span');
+      dot.className = 'me-dot';
+      meBtn.appendChild(dot);
+    }
+    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
 
     document.getElementById('me-who').textContent =
       personName(currentUser) || 'あなた';
@@ -11827,6 +11840,11 @@
     currentUser = (who || {}).activeUser || '';
     drawMe();
   }, failQuiet('判定できなければ従来どおり押せる'));
+
+  call('apiKitStatus', [], function (s) {
+    kitOutdated = Boolean(s && s.outdated);
+    if (kitOutdated) drawMe();
+  }, failQuiet('道具の更新の札が出ないだけで、使うのに困らない'));
 
   call('apiPeopleNames', [],
     function (map) { peopleNames = map || {}; },

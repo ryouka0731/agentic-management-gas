@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -6,6 +7,12 @@ import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import { buildKitSource, FILES } from '../scripts/build-kit.mjs';
+
+// 手元に本物の ~/.banto や ~/.claude があっても、設定を拾ったり本物の入れ先に命令を置いたりしない
+const ISOLATED = {
+  BANTO_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'banto-none-')),
+  CLAUDE_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'claude-none-')),
+};
 
 const SOURCES = [
   'src/core/Hash.js',
@@ -182,7 +189,7 @@ describe('初めて動くときの案内', () => {
 
     return execFileSync(process.execPath,
       [path.resolve('kit/agent.mjs'), 'setup'],
-      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+      { cwd, encoding: 'utf8', env: { ...process.env, ...ISOLATED, AGENTKIT_QUEUE: '' } });
   }
 
   it('設定が無くても案内が出る', () => {
@@ -212,7 +219,7 @@ describe('初めて動くときの案内', () => {
 
   it('使い方の一覧からも辿れる', () => {
     const out = execFileSync(process.execPath,
-      [path.resolve('kit/agent.mjs')], { encoding: 'utf8' });
+      [path.resolve('kit/agent.mjs')], { encoding: 'utf8', env: { ...process.env, ...ISOLATED } });
 
     expect(out).toContain('まず agent setup を実行する');
   });
@@ -371,8 +378,10 @@ describe('置いた命令を片付ける', () => {
   it('結果を受け取ったら命令を消す', () => {
     const text = kitText('agent.mjs');
 
-    expect(text).toContain('function forget()');
-    expect(text).toContain('if (fs.existsSync(cmd)) fs.unlinkSync(cmd);');
+    const at = text.indexOf('function collectResult(');
+    const body = text.slice(at, text.indexOf('\n}', at));
+    expect(body).toContain('forgetCommand(queueDir, id);');
+    expect(text).toContain('if (fs.existsSync(file)) fs.unlinkSync(file);');
   });
 
   it('返らなかったときも消す', () => {
@@ -386,8 +395,8 @@ describe('置いた命令を片付ける', () => {
   it('消せなくても操作は成立させる', () => {
     // 片付けに失敗したからといって、返ってきた結果を捨てては困る
     const text = kitText('agent.mjs');
-    const at = text.indexOf('function forget()');
-    const body = text.slice(at, text.indexOf('\n  }', at));
+    const at = text.indexOf('function forgetCommand(');
+    const body = text.slice(at, text.indexOf('\n}', at));
 
     expect(body).toContain('try {');
     expect(body).not.toContain('throw');
@@ -416,7 +425,7 @@ describe('手元の道具が受け取る引数', () => {
     try {
       execFileSync(process.execPath,
         [AGENT, 'patch', '3', 'f.txt', '--output=' + target, '--queue', path.join(repo, 'no-queue')],
-        { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
+        { cwd: repo, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...ISOLATED } });
     } catch (e) {
       err = String(e.stderr || '');
     }
@@ -428,7 +437,8 @@ describe('手元の道具が受け取る引数', () => {
   it('--queue の値を、ほかの引数に混ぜない', async () => {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
-    const child = spawn(process.execPath, [AGENT, 'status', '--queue', queue, 'FILE1']);
+    const child = spawn(process.execPath, [AGENT, 'status', '--queue', queue, 'FILE1'],
+      { env: { ...process.env, ...ISOLATED } });
 
     // 置かれた命令を読み、結果を書き返す (向こう側の代わり)
     let cmd = null;
@@ -457,14 +467,15 @@ describe('エージェンティックスクラム (手元の道具)', () => {
   function setupOut() {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
     return execFileSync(process.execPath, [AGENT, 'setup'],
-      { cwd, encoding: 'utf8', env: { ...process.env, AGENTKIT_QUEUE: '' } });
+      { cwd, encoding: 'utf8', env: { ...process.env, ...ISOLATED, AGENTKIT_QUEUE: '' } });
   }
 
   /** 命令を送らせ、置かれた命令の中身を返す (向こう側の代わりに結果を書く) */
   async function sent(args) {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
-    const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue]);
+    const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue],
+      { env: { ...process.env, ...ISOLATED } });
     // 送らずに断ったときは、道具が先に終わる。そこで待つのをやめる
     let exited = false;
     const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
@@ -538,5 +549,55 @@ describe('エージェンティックスクラム (手元の道具)', () => {
       expect(text, name).toContain('node agent.mjs scrum');
       expect(text, name).not.toMatch(/scrum\/(product_backlog|velocity|impediment_log|comments)[._]/);
     }
+  });
+});
+
+describe('道具の版を手元に教える', () => {
+  function print8(files) {
+    return crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex').slice(0, 8);
+  }
+
+  it('指紋は手元と同じ式で出る', () => {
+    const { ctx } = setup();
+    expect(ctx.kitPrint_()).toBe(print8(ctx.KIT_FILES()));
+    expect(ctx.agentKitName_()).toContain('-' + ctx.kitPrint_() + '.zip');
+  });
+
+  it('kitVersion は版と指紋を返し、名乗った指紋を覚える', () => {
+    const { ctx } = setup();
+    const out = ctx.runCommand_({ op: 'kitVersion', args: { mine: 'abcd1234' } }, 'A@Example.com');
+    expect(out).toEqual({ version: ctx.AGENT_KIT_VERSION(), print: ctx.kitPrint_() });
+    expect(ctx.kitStatus_('a@example.com').mine).toBe('abcd1234');
+  });
+
+  it('指紋に見えない字は覚えない', () => {
+    const { ctx } = setup();
+    ctx.runCommand_({ op: 'kitVersion', args: { mine: '../x' } }, 'a@example.com');
+    expect(ctx.kitStatus_('a@example.com').mine).toBe('');
+  });
+
+  it('kitFiles は中身を返し、渡した指紋を覚える', () => {
+    const { ctx } = setup();
+    const out = ctx.runCommand_({ op: 'kitFiles', args: {} }, 'a@example.com');
+    expect(out.print).toBe(print8(out.files));
+    expect(Object.keys(out.files)).toContain('agent.mjs');
+    expect(ctx.kitStatus_('a@example.com')).toEqual({ print: out.print, mine: out.print, outdated: false });
+  });
+
+  it('持ち主が分からなければ覚えない', () => {
+    const { ctx, fake } = setup();
+    ctx.runCommand_({ op: 'kitFiles', args: {} }, '');
+    expect(fake.PropertiesService.getScriptProperties().getProperty('KIT_PRINT:')).toBeNull();
+  });
+
+  it('まだ落としていない人は古いことにしない', () => {
+    const { ctx } = setup();
+    expect(ctx.kitStatus_('b@example.com')).toEqual({ print: ctx.kitPrint_(), mine: '', outdated: false });
+  });
+
+  it('覚えた指紋が今と違えば古い', () => {
+    const { ctx } = setup();
+    ctx.kitRemember_('b@example.com', '00000000');
+    expect(ctx.kitStatus_('b@example.com').outdated).toBe(true);
   });
 });

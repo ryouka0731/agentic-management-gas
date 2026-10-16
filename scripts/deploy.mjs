@@ -6,10 +6,12 @@
  * この道具は必ず deployment.json の ID に対して差し替える。
  *
  *   npm run deploy -- "何を変えたか"
+ *   npm run deploy -- --no-sign "何を変えたか"   # 署名の鍵が無いまま送る (自動の入れ替えが止まる)
  */
 
 import { execFileSync } from 'node:child_process';
 import { writeKitSource } from './build-kit.mjs';
+import { prepareSigning, signingKeyPath, PUBLIC_KEY, SIGNING_SOURCE } from './kit-key.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -45,7 +47,9 @@ function clasp(args) {
 }
 
 function main() {
-  const message = process.argv.slice(2).join(' ').trim();
+  const args = process.argv.slice(2);
+  const noSign = args.includes('--no-sign');
+  const message = args.filter((a) => a !== '--no-sign').join(' ').trim();
   if (!message) {
     process.stderr.write('何を変えたかを渡してください: npm run deploy -- "説明"\n');
     process.exitCode = 2;
@@ -57,6 +61,14 @@ function main() {
   // 配る道具は kit/ が本物。焼き直してから送らないと、古い中身が配られる
   if (writeKitSource()) {
     process.stdout.write('src/KitFiles.gs を作り直しました\n');
+  }
+
+  // 署名の秘密鍵を src/KitSigning.gs (記録しない) に書く。無いまま送ると向こうの
+  // KitSigning.gs が消え、全員の道具が黙って自動で新しくならなくなるので断る
+  const signing = prepareSigning({ keyPath: signingKeyPath(), publicPath: PUBLIC_KEY, outPath: SIGNING_SOURCE, noSign });
+  if (!signing.signed) {
+    process.stderr.write('署名せずに送ります。手元の道具は自動では入れ替えなくなります' +
+      (signing.removed ? ' (src/KitSigning.gs を消しました。向こうの鍵も消えます)' : '') + '\n');
   }
 
   // 先に送る。送らずに差し替えると、前の中身のまま版だけが上がる
