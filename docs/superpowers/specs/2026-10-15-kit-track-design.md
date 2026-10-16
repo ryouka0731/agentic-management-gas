@@ -56,14 +56,14 @@
 
 今までの案内 (要る3つ) のあとに:
 
-1. 「Claude Code の作業を番頭のやることに載せる仕掛けを `~/.claude` に入れますか」と尋ねる
-   (`--yes` で尋ねない)。入れるもの (フック2つ・スキル1つ・`~/.banto/`) を先に並べて見せる
+1. `setup` は尋ねず、入れ方 (`track install`) を案内する (R3)。入れるもの (フック2つ・スキル1つ・`~/.banto/`) は
+   `track install` が先に並べて見せる。端末なら y/N で尋ね、端末でなければ `--yes` を求める
 2. 入れるとき:
    - `~/.banto/kit/` に道具を写す (`agent.mjs` を含む)。`config.json` に今の設定を写す
    - `~/.claude/settings.json` を `settings.json.banto-backup-<日時>` に控えてから、`hooks` に
      2つを**足す** (同じものが既にあれば足さない。他のフックと設定は触らない)
    - `~/.claude/skills/banto-track/SKILL.md` を置く
-3. 「いまのフォルダを番頭に載せますか」と尋ねる (`tracked.json` に足す)
+3. いまのフォルダを載せるかは `track add [フォルダ]` で足す (`tracked.json` に足す。尋ねない)
 
 `agent track install` / `agent track uninstall` (足したフック・スキルだけを外す。`~/.banto/` は残す) /
 `agent track add [フォルダ]` / `agent track remove [フォルダ]` / `agent track list` も置く。
@@ -90,7 +90,7 @@
 - **起票する依頼**: ファイル・設定・文書を作る・直す・消す依頼。**しない**: 質問・説明・調べもの・
   雑談・確認だけの依頼
 - 起票: `node ~/.banto/kit/agent.mjs issue "<題名>" "<本文>"` を**バックグラウンドで**走らせ
-  (返事に最大1分かかる)、番号が返ったら `agent track set <番号> "<題名>"` で会話に結び付ける
+  (返事に最大1分かかる)、番号が返ったら `agent track set <会話id> <番号> "<題名>"` で会話に結び付ける
   - 題名は依頼を40字以内でまとめたもの。本文は依頼の要約・フォルダ名・関係するリンク (PR など)
 - 着手したら `agent board <番号> "In Progress"`、PR などを出したら `"In Review"` とリンクを
   `agent issue-say <番号> "<一言>"` で書き足す
@@ -124,7 +124,7 @@
 - 命令 `kitVersion` → `{version: AGENT_KIT_VERSION(), print: 指紋}`、`kitFiles` → `{print, files: KIT_FILES()}`
   を `COMMAND_OPS()` に足す (`OUTBOX_VERBS` ではない。読むだけ)
 - **画面の札**:
-  - 道具を落とすとき (`apiAgentKit`) に、その人の UserProperties に今の指紋を `KIT_PRINT:<email>` で覚える
+  - 道具を落とすとき (`apiAgentKit`) に、スクリプトプロパティに今の指紋を `KIT_PRINT:<email>` で覚える
   - 命令 `kitVersion` を置いた人 (命令ファイルの持ち主) が分かれば、その人にも覚え直す
     (入れ替えたあとに札を消すため)。分からなければ何もしない
   - `apiKitStatus()` → `{print, mine, outdated}`。`mine` が空 (まだ落としていない) なら `outdated: false`
@@ -162,3 +162,13 @@
 - フックの中で番頭に問い合わせる (待たせない)
 - settings.json の自動書き換え (入れるのはセットアップのときだけ、人が ok したとき)
 - 受け取った中身の本物確認 (この仕組みではできない。§1 の手当てで代える)
+
+## 8. 実装で決めたこと
+
+- **R1 指紋の覚え先はスクリプトプロパティ** (`KIT_PRINT:<email 小文字>`)。仕様は UserProperties だが、コマンドキューは持ち主のトリガーで走るため、そこから他人の UserProperties には書けない。画面 (開いている本人として走る) とトリガーの両方から読み書きできるのはスクリプトプロパティだけ
+- **R2 `track install` は道具を番頭から受け取って置く** (`kitFiles`)。展開した zip のフォルダを写すと、利用者のリポジトリの直下に展開していた場合に `.claude/` や `CLAUDE.md` まで巻き込む。番頭から受け取れば中身が zip と同じだと決まり、指紋も最初から分かる
+- **R3 `setup` は尋ねない**。Claude Code は `setup` を端末なしで走らせるため、尋ねても答えられない。`setup` は入れ方を案内し、`track install` が端末なら y/N で尋ね、端末でなければ `--yes` を求める (Claude は利用者に確かめてから `--yes` を付ける)
+- **R4 会話の id は合図に入れて渡す**。手元のコマンドからは会話の id が分からないため、UserPromptSubmit の合図に `この会話の id: <id>` を書き、`track set / touch / clear` は id を引数に取る。完了したら結び付きを外す `track clear` を足す
+- **R5 スキルとフックは `kit/track/` に置く** (`kit/.claude/skills/` ではない)。`kit/.claude/skills/` の全スキルはスクラムの決まり (`node agent.mjs scrum` を含む) をテストで課されている。zip の中では `track/SKILL.md` / `track/hook.mjs`
+- **R6 自動の確認は `~/.banto/kit/agent.mjs` として動いたときだけ**。入れ替えるのは `~/.banto/kit` なので、ほかの場所の写し (リポジトリの `kit/`、展開した zip) から確かめても意味が無く、テストが本物の命令の入れ先に命令を置く事故にもなる
+- **R7 戻したら、その版を飛ばす** (`config.skipPrint`)。戻しても翌日の確認で同じ版が入り直すため。`agent update` (手で頼んだとき) は飛ばさない

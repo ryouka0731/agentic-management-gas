@@ -477,3 +477,38 @@ describe('agent.mjs から使う', () => {
     expect(readConfig(h).lastUpdateCheck).not.toBe('2000-01-01T00:00:00.000Z');
   }, 30000);
 });
+
+describe('スキルと説明', () => {
+  const skill = () => fs.readFileSync('kit/track/SKILL.md', 'utf8');
+
+  it('スキルは名前と、いつ使うかを持つ', () => {
+    expect(skill()).toMatch(/^---\nname: banto-track\ndescription: .+\n---\n/);
+  });
+
+  it('載せる依頼と載せない依頼を分けてある', () => {
+    expect(skill()).toContain('作る・直す・消す');
+    expect(skill()).toContain('質問・説明・調べもの');
+  });
+
+  it('起票・結び付け・印・完了・外すの手順がある', () => {
+    const t = skill();
+    for (const s of ['agent.mjs" issue ', 'track set ', '"In Progress"', '"In Review"', 'issue-say ',
+      'issue-close ', 'track touch ', 'track clear ']) {
+      expect(t, s).toContain(s);
+    }
+  });
+
+  it('待たずに進め、届かなくても作業を止めない', () => {
+    expect(skill()).toContain('バックグラウンド');
+    expect(skill()).toContain('番頭に載せられませんでした');
+  });
+
+  it('AGENTS.md に入れ方・更新・危険と切り方がある', () => {
+    const t = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    expect(t).toContain('## 番頭に作業を載せる');
+    expect(t).toContain('track install');
+    expect(t).toContain('agent update rollback');
+    expect(t).toContain('"autoUpdate": false');
+    expect(t).toContain('Drive を共有している人なら誰でも');
+  });
+});

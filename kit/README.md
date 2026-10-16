@@ -20,6 +20,10 @@ node agent.mjs setup
 下ごしらえに要る3つの場所と、いまどこまで出来ているかが出ます。迷ったら
 いつでもこれを打ってください。
 
+Claude Code を使う人は、`node agent.mjs track install` で作業を番頭のやることに載せる仕掛けを入れられます
+(フック2つとスキル1つ。何が入るかは実行したときに出ます)。入れた道具は1日1回、自分を新しくします。
+切り方と戻し方は AGENTS.md の「番頭に作業を載せる」にあります。
+
 ## 設定 (ここだけ最初にやる)
 
 `agentkit.example.json` を `.agentkit.json` という名前で写し、`queueDir` に

@@ -539,6 +539,16 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   読まれ、`git diff --output=<ファイル>` で手元のファイルを書き換えられた。手元
   (`agent.mjs` の `gitDiff`) とサーバ (`outboxArgValid_`) の両方で断っている
 
+- **手元の道具は1日1回自分を新しくする** (`kit/track/update.mjs`)。入れ替えは**書き換えるだけで実行しない**。
+  `~/.claude` に自動で書くのは banto-track のスキルだけで、`settings.json` は人が ok した
+  `track install` / `uninstall` のときしか書かない。命令の入れ先は Drive を共有している人なら書けるので、
+  偽の返事で全員の手元に物を置かれうる。手当ては控え・戻し・変わったものを見せる・`autoUpdate: false`
+- **指紋の式は2か所にある** (`kitPrint_` と `kitPrintOf`)。片方だけ変えると、手元が毎日入れ替えを繰り返す。
+  `test/kit-update.test.js` の「番頭の kitPrint_ と同じ値になる」が見ている
+- 誰の道具が古いかは**スクリプトプロパティ** (`KIT_PRINT:<email>`) に覚える。手元からの命令は持ち主の
+  トリガーで走るので、利用者本人の UserProperties には書けない
+- `kit/track/hook.mjs` は ~/.banto/hooks に写して単体で動かす。**ほかのファイルを import しない**
+
 ## エージェンティックスクラムは既定でオフ
 
 `ai-scrum-gas` から取り入れた (`docs/superpowers/plans/2026-10-07-agentic-scrum.md`)。
