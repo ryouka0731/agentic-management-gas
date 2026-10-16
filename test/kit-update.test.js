@@ -6,10 +6,24 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import {
   checkForUpdate, installFromServer, rollback, kitPrintOf, safeName, readConfig, writeConfig, paths,
+  tickUpdate, dropPending,
 } from '../kit/track/update.mjs';
 
 const NOW = Date.parse('2026-10-15T00:00:00Z');
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+
+/** フォルダの中身を、名前 → 字で読む (変わっていないことを1字単位で比べる) */
+function tree(dir) {
+  const out = {};
+  (function visit(rel) {
+    for (const name of fs.readdirSync(path.join(dir, rel))) {
+      const next = rel ? rel + '/' + name : name;
+      if (fs.statSync(path.join(dir, next)).isDirectory()) visit(next);
+      else out[next] = fs.readFileSync(path.join(dir, next), 'utf8');
+    }
+  })('');
+  return out;
+}
 
 function dirs() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-up-'));
@@ -33,8 +47,11 @@ function server(files, version) {
   return { send, calls, print };
 }
 
-const V1 = { 'agent.mjs': b64('v1'), 'track/SKILL.md': b64('skill v1'), 'track/hook.mjs': b64('hook v1') };
-const V2 = { 'agent.mjs': b64('v2'), 'track/SKILL.md': b64('skill v2'), 'track/hook.mjs': b64('hook v1'), 'new.md': b64('n') };
+/** 欠けると入れない3つ。agent.mjs が無いと戻す命令ごと無くなる */
+const kit = (agent, more) => ({ 'agent.mjs': b64(agent), 'track/hook.mjs': b64('hook v1'),
+  'track/update.mjs': b64('update v1'), ...(more || {}) });
+const V1 = kit('v1', { 'track/SKILL.md': b64('skill v1') });
+const V2 = kit('v2', { 'track/SKILL.md': b64('skill v2'), 'new.md': b64('n') });
 
 async function installed(d) {
   writeConfig(d.home, { queueDir: '/q' });
@@ -72,13 +89,38 @@ describe('入れる', () => {
     expect(readConfig(d.home).kitPrint).toBe(kitPrintOf(V1));
   });
 
-  it('外を指す名前は書かない', async () => {
+  it('外を指す名前が1つでも混ざれば、何も書かずに断る', async () => {
     const d = dirs();
-    writeConfig(d.home, { queueDir: '/q' });
-    const evil = { 'agent.mjs': b64('x'), '../../evil.txt': b64('e'), '/tmp/abs.txt': b64('e') };
-    await installFromServer({ home: d.home, claude: d.claude, send: server(evil, '1').send, now: NOW });
-    expect(fs.existsSync(path.join(d.root, 'evil.txt'))).toBe(false);
-    expect(fs.readdirSync(path.join(d.home, 'kit'))).toEqual(['agent.mjs']);
+    await installed(d);
+    const before = tree(d.home);
+    for (const bad of ['../../evil.txt', '/tmp/abs.txt', 'a\\b', '']) {
+      const evil = kit('x', { [bad]: b64('e') });
+      await expect(installFromServer({ home: d.home, claude: d.claude, send: server(evil, '1').send, now: NOW + 1000 }))
+        .rejects.toThrow('入れ替えませんでした');
+      expect(fs.existsSync(path.join(d.root, 'evil.txt'))).toBe(false);
+      expect(tree(d.home)).toEqual(before);
+    }
+  });
+
+  it('中身が空・字・配列・欠けていれば、置き場も控えも変えずに断る', async () => {
+    const d = dirs();
+    await installed(d);
+    const before = tree(d.home);
+    const noAgent = kit('x');
+    delete noAgent['agent.mjs'];
+    const noUpdate = kit('x');
+    delete noUpdate['track/update.mjs'];
+    const noHook = kit('x');
+    delete noHook['track/hook.mjs'];
+    const notString = kit('x', { 'more.md': 5 });
+    for (const files of [{}, 'zz', [b64('a')], null, noAgent, noUpdate, noHook, notString]) {
+      // 名乗る指紋は届いた中身と合わせる (指紋だけでは防げないことを確かめる)
+      const send = async () => ({ ok: true, result: { version: '9', print: kitPrintOf(files), files } });
+      await expect(installFromServer({ home: d.home, claude: d.claude, send, now: NOW + 1000 }), JSON.stringify(files))
+        .rejects.toThrow('入れ替えませんでした');
+      expect(tree(d.home), JSON.stringify(files)).toEqual(before);
+    }
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
   });
 
   it('指紋が合わなければ何も変えない', async () => {
@@ -147,9 +189,9 @@ describe('1日1回の確認', () => {
   it('消えたファイルは置き場からも消える', async () => {
     const d = dirs();
     await installed(d);
-    const V3 = { 'agent.mjs': b64('v3') };
+    const V3 = kit('v3');
     await checkForUpdate({ home: d.home, claude: d.claude, send: server(V3, '3').send, now: NOW + 2 * 86400000 });
-    expect(fs.existsSync(path.join(d.home, 'kit', 'track'))).toBe(false);
+    expect(fs.existsSync(path.join(d.home, 'kit', 'track', 'SKILL.md'))).toBe(false);
   });
 
   it('自動で入れない設定なら知らせるだけ', async () => {
@@ -177,7 +219,7 @@ describe('1日1回の確認', () => {
     const d = dirs();
     await installed(d);
     for (let i = 1; i <= 5; i++) {
-      const files = { 'agent.mjs': b64('v' + (i + 1)) };
+      const files = kit('v' + (i + 1));
       await checkForUpdate({ home: d.home, claude: d.claude, send: server(files, String(i)).send,
         now: NOW + i * 2 * 86400000 });
     }
@@ -217,7 +259,7 @@ describe('戻す', () => {
   it('2回戻しても、戻した元の版を翌日に入れ直さない', async () => {
     const d = dirs();
     await installed(d);
-    const files = (n) => ({ 'agent.mjs': b64('v' + n) });
+    const files = (n) => kit('v' + n);
     await checkForUpdate({ home: d.home, claude: d.claude, send: server(files(2), '2').send, now: NOW + 2 * 86400000 });
     const s3 = server(files(3), '3');
     await checkForUpdate({ home: d.home, claude: d.claude, send: s3.send, now: NOW + 4 * 86400000 });
@@ -247,5 +289,168 @@ describe('戻す', () => {
   it('控えが無ければ断る', () => {
     const d = dirs();
     expect(() => rollback({ home: d.home, claude: d.claude })).toThrow('戻せる控えがありません');
+  });
+});
+
+/**
+ * 待たない入れ先の代わり。置いた命令を覚え、answer() で返事を書くまで collect は null を返す。
+ */
+function queue() {
+  const placed = [];
+  const results = new Map();
+  const dropped = [];
+  let n = 0;
+  return {
+    placed, dropped, results,
+    place: (op, args) => { const id = 'kit-' + (++n) + '-x'; placed.push({ id, op, args }); return id; },
+    collect: (id) => { if (!results.has(id)) return null; const r = results.get(id); results.delete(id); return r; },
+    drop: (id) => { dropped.push(id); results.delete(id); },
+    answer(id, res) { results.set(id, res); },
+    last() { return placed[placed.length - 1]; },
+  };
+}
+
+describe('1日1回の確認は待たない', () => {
+  const DAY = 86400000;
+
+  it('確かめる日には、版を尋ねる命令を置いて覚えるだけで帰る', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    const r = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    expect(r).toMatchObject({ updated: false });
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion']);
+    expect(q.placed[0].args.mine).toBe(kitPrintOf(V1));
+    const c = readConfig(d.home);
+    expect(c.pendingUpdate).toEqual({ op: 'kitVersion', id: q.placed[0].id, at: new Date(NOW + 2 * DAY).toISOString() });
+    expect(c.lastUpdateCheck).toBe(new Date(NOW + 2 * DAY).toISOString());
+  });
+
+  it('24時間以内で待っている命令も無ければ、何も置かない', async () => {
+    const d = dirs();
+    await installed(d);
+    writeConfig(d.home, { lastUpdateCheck: new Date(NOW).toISOString() });
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 3600000 });
+    expect(q.placed).toEqual([]);
+  });
+
+  it('返事がまだなら、もう1つは置かずに待ち続ける', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 60000 });
+    expect(q.placed).toHaveLength(1);
+    expect(readConfig(d.home).pendingUpdate.id).toBe(q.placed[0].id);
+  });
+
+  it('次に呼ばれたとき、新しい版の返事があれば中身を頼み、その次に入れ替える', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    const s = server(V2, '2.0.0');
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    q.answer(q.last().id, await s.send('kitVersion', {}));
+
+    const second = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 60000 });
+    expect(second.updated).toBe(false);
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion', 'kitFiles']);
+    expect(readConfig(d.home).pendingUpdate.op).toBe('kitFiles');
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+
+    q.answer(q.last().id, await s.send('kitFiles', {}));
+    const third = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 120000 });
+    expect(third).toMatchObject({ updated: true, version: '2.0.0' });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v2');
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+    const log = JSON.parse(fs.readFileSync(paths(d.home).log, 'utf8'));
+    expect(log).toMatchObject({ version: '2.0.0', changed: ['agent.mjs', 'new.md', 'track/SKILL.md'] });
+  });
+
+  it('同じ版なら、中身は頼まずに待ちを外す', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    q.answer(q.last().id, await server(V1, '1.0.0').send('kitVersion', {}));
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 60000 });
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion']);
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+  });
+
+  it('自動で入れない設定なら、新しい版があることだけ記録する', async () => {
+    const d = dirs();
+    await installed(d);
+    writeConfig(d.home, { autoUpdate: false });
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    q.answer(q.last().id, await server(V2, '2.0.0').send('kitVersion', {}));
+    const r = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 60000 });
+    expect(r).toMatchObject({ updated: false, available: true });
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion']);
+    expect(JSON.parse(fs.readFileSync(paths(d.home).log, 'utf8')).available).toBe('2.0.0');
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
+  it('戻した版は、待たない確認でも入れ直さない', async () => {
+    const d = dirs();
+    await installed(d);
+    await checkForUpdate({ home: d.home, claude: d.claude, send: server(V2, '2.0.0').send, now: NOW + 2 * DAY });
+    rollback({ home: d.home, claude: d.claude });
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 4 * DAY });
+    q.answer(q.last().id, await server(V2, '2.0.0').send('kitVersion', {}));
+    const r = await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 4 * DAY + 1 });
+    expect(r).toMatchObject({ skipped: true });
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion']);
+  });
+
+  it('24時間たっても返らない命令は捨て、ファイルも片付ける', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    const stale = q.last().id;
+    q.answer(stale, await server(V2, '2.0.0').send('kitVersion', {}));
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 3 * DAY + 1 });
+    expect(q.dropped).toEqual([stale]);
+    // 古い返事は読まない。捨てたあとは、その日の確認として新しく尋ねる
+    expect(q.placed.map((c) => c.op)).toEqual(['kitVersion', 'kitVersion']);
+    expect(readConfig(d.home).pendingUpdate.id).toBe(q.last().id);
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
+  it('読めない待ちの記録は捨てる', async () => {
+    const d = dirs();
+    await installed(d);
+    writeConfig(d.home, { lastUpdateCheck: new Date(NOW).toISOString(), pendingUpdate: { op: 'rm', id: '../x', at: 'zz' } });
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 1000 });
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+    expect(q.placed).toEqual([]);
+  });
+
+  it('向こうが断った返事でも、待ちを外して翌日まで尋ねない', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    q.answer(q.last().id, { ok: false, error: '止まっています' });
+    await expect(tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 1 }))
+      .rejects.toThrow('止まっています');
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY + 2 });
+    expect(q.placed).toHaveLength(1);
+  });
+
+  it('手で確かめる前に、置いたままの命令を捨てる', async () => {
+    const d = dirs();
+    await installed(d);
+    const q = queue();
+    await tickUpdate({ home: d.home, claude: d.claude, ...q, now: NOW + 2 * DAY });
+    dropPending(d.home, q.drop);
+    expect(q.dropped).toEqual([q.placed[0].id]);
+    expect(readConfig(d.home).pendingUpdate).toBeFalsy();
   });
 });

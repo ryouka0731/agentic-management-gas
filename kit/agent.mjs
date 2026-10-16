@@ -106,6 +106,70 @@ function argValue(name) {
   return at >= 0 ? String(process.argv[at + 1] || '') : '';
 }
 
+/** 命令の id は手元で作る。設定から読んだ id で入れ先の外を指させない */
+const ID_RE = /^kit-[0-9]+-[a-z0-9]+$/;
+
+function commandFiles(queueDir, id) {
+  if (!ID_RE.test(String(id))) throw new Error('命令の id が読めません: ' + id);
+  return { cmd: path.join(queueDir, id + '.cmd.json'), out: path.join(queueDir, id + '.result.json') };
+}
+
+/**
+ * 命令を1つ置く。待たない。
+ *
+ * @returns {string} 命令の id (結果を拾うときに使う)
+ */
+function placeCommand(queueDir, op, args) {
+  if (!fs.existsSync(queueDir)) {
+    throw new Error('キューのフォルダがありません: ' + queueDir);
+  }
+  const id = 'kit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  fs.writeFileSync(commandFiles(queueDir, id).cmd, JSON.stringify({ op, args: args || {} }, null, 2));
+  return id;
+}
+
+/**
+ * 置いた命令を片付ける。
+ *
+ * **残すと、同じ命令が何度も実行される。** 向こう側は命令を処理済みの
+ * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
+ * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
+ * 番号違いで複数できた」という形で現れた。
+ *
+ * 消せなくても操作は成立しているので、投げない。
+ *
+ * @param {boolean} [withResult] 届いた結果も消す (読まずに捨てるとき)
+ */
+function forgetCommand(queueDir, id, withResult) {
+  const { cmd, out } = commandFiles(queueDir, id);
+  for (const file of withResult ? [cmd, out] : [cmd]) {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (e) {
+      process.stderr.write('命令のファイルを片付けられませんでした: ' + file + '\n');
+    }
+  }
+}
+
+/**
+ * 置いた命令の結果を1回だけ見る。待たない。
+ *
+ * @returns {object|null} まだ無い (書き込みの途中を含む) なら null
+ */
+function collectResult(queueDir, id) {
+  const { out } = commandFiles(queueDir, id);
+  if (!fs.existsSync(out)) return null;
+  // 書き込みの途中を読むことがある。読めなければ、まだ無いことにする
+  try {
+    const parsed = JSON.parse(fs.readFileSync(out, 'utf8'));
+    fs.unlinkSync(out);
+    forgetCommand(queueDir, id);
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * 命令を1つ送り、結果を待つ。
  *
@@ -115,53 +179,17 @@ function argValue(name) {
  * @returns {Promise<object>}
  */
 async function send(queueDir, op, args) {
-  if (!fs.existsSync(queueDir)) {
-    throw new Error('キューのフォルダがありません: ' + queueDir);
-  }
-
-  const id = 'kit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-  const cmd = path.join(queueDir, id + '.cmd.json');
-  const out = path.join(queueDir, id + '.result.json');
-
-  fs.writeFileSync(cmd, JSON.stringify({ op, args: args || {} }, null, 2));
-
-  /**
-   * 置いた命令を片付ける。
-   *
-   * **残すと、同じ命令が何度も実行される。** 向こう側は命令を処理済みの
-   * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
-   * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
-   * 番号違いで複数できた」という形で現れた。
-   *
-   * 消せなくても操作は成立しているので、投げない。
-   */
-  function forget() {
-    try {
-      if (fs.existsSync(cmd)) fs.unlinkSync(cmd);
-    } catch (e) {
-      process.stderr.write('命令のファイルを片付けられませんでした: ' + cmd + '\n');
-    }
-  }
+  const id = placeCommand(queueDir, op, args);
 
   const until = Date.now() + WAIT_MS;
   while (Date.now() < until) {
-    if (fs.existsSync(out)) {
-      // 書き込みの途中を読むことがある。読めるまで少し待つ
-      try {
-        const text = fs.readFileSync(out, 'utf8');
-        const parsed = JSON.parse(text);
-        fs.unlinkSync(out);
-        forget();
-        return parsed;
-      } catch (e) {
-        // まだ書き終わっていない
-      }
-    }
+    const got = collectResult(queueDir, id);
+    if (got) return got;
     await new Promise((done) => setTimeout(done, POLL_MS));
   }
 
   // 返らなかったときも片付ける。残すと、あとで拾われて一度だけ走る
-  forget();
+  forgetCommand(queueDir, id);
 
   throw new Error(
     '結果が返りませんでした。向こう側で setupCommandQueue() を実行しているか、' +
@@ -398,8 +426,8 @@ function setupGuide() {
   lines.push('番頭に作業を載せる (Claude Code を使う人だけ):');
   lines.push('  node agent.mjs track install で、~/.claude にフック2つとスキル1つを足し、');
   lines.push('  道具を ~/.banto/kit に置きます。載せるフォルダは node agent.mjs track add で選びます。');
-  lines.push('  道具は1日1回、新しい版を確かめて自動で入れ替わります (~/.banto/config.json の');
-  lines.push('  autoUpdate を false にすると知らせるだけになります)。');
+  lines.push('  道具は1日1回、新しい版を確かめて自動で入れ替わり、フックも次の依頼から新しいものが');
+  lines.push('  自動で動きます (~/.banto/config.json に "autoUpdate": false と書くと知らせるだけになります)。');
   lines.push('  いま: ' + (linked ? '入っています' : '入っていません'));
   lines.push('');
   if (!config) {
@@ -427,8 +455,21 @@ function sender(config) {
   return (op, args) => send(config.queueDir, op, args);
 }
 
+/** 置いて・拾って・捨てる関数を、設定から作る (1日1回の確認は待たない) */
+function queueHands(config) {
+  return {
+    place: (op, args) => placeCommand(config.queueDir, op, args),
+    collect: (id) => collectResult(config.queueDir, id),
+    drop: (id) => forgetCommand(config.queueDir, id, true),
+  };
+}
+
 /**
  * 1日1回、道具の新しい版を確かめる。本来の命令の結果は変えない。
+ *
+ * **ここでは待たない。** 命令の返事は最大で数分かかり、Claude Code の Bash は
+ * 2分で打ち切る。版を尋ねる命令を置いて帰り、返事は次に呼ばれたときに拾う
+ * (update.tickUpdate)。
  *
  * 出すのは標準エラーだけ。標準出力は Claude が読む結果である。
  */
@@ -438,25 +479,39 @@ async function maybeUpdate() {
   const config = update.readConfig(home);
   if (!config || !config.queueDir) return;
   try {
-    const r = await update.checkForUpdate({ home, claude: track.claudeHome(), send: sender(config) });
+    const r = await update.tickUpdate({ home, claude: track.claudeHome(), ...queueHands(config) });
     if (r.updated) process.stderr.write('番頭の道具を新しくしました (' + r.version + ')。戻すときは node "' + fileURLToPath(import.meta.url) + '" update rollback\n');
   } catch (e) {
     process.stderr.write('道具の新しい版を確かめられませんでした: ' + (e.message || e) + '\n');
   }
 }
 
+/**
+ * 入れる前に、入れるものと自動更新の危険・切り方を出す。
+ *
+ * **--yes でも必ず出す。** Claude が利用者に確かめずに --yes を付けたときも、
+ * 何が入り、何が自動で動くのかが画面に残るようにする。出すのは標準エラー
+ * (標準出力は Claude が読む結果)。
+ */
 async function confirmInstall(rest) {
+  const home = bantoHome();
   const plan = [
     '次のものを入れます:',
     '  ' + path.join(track.claudeHome(), 'settings.json') + ' の hooks に2つ (今の設定は控えを取って残します)',
     '  ' + path.join(track.claudeHome(), 'skills', 'banto-track', 'SKILL.md'),
-    '  ' + bantoHome() + ' (道具の本体と設定)',
+    '  ' + home + ' (道具の本体と設定)',
+    '入れたあと、道具は1日1回番頭に新しい版を尋ね、あれば自動で入れ替えます。そのとき',
+    '  ' + path.join(home, 'hooks', 'track-hook.mjs') + ' とスキルも新しくなり、Claude Code は',
+    '  そのフックを次の依頼から (どのフォルダでも) 自動で動かします。',
+    '危険: 番頭の Drive フォルダに書ける人なら、偽の返事を置いて全員の手元でプログラムを動かせます。',
+    '  控えと戻し (update rollback) は壊れた版には効きますが、偽物は防げません。',
+    '切る: ' + path.join(home, 'config.json') + ' に "autoUpdate": false と書くと、知らせるだけになります。',
   ].join('\n');
+  process.stderr.write(plan + '\n');
   if (rest.includes('--yes')) return true;
-  process.stdout.write(plan + '\n');
   if (!process.stdin.isTTY) {
     process.stderr.write('入れてよいか尋ねられませんでした。--yes を付けて実行してください' +
-      ' (Claude に頼むときは、利用者に確かめてから --yes を付ける)\n');
+      ' (Claude に頼むときは、利用者に上の危険と切り方を伝えて確かめてから --yes を付ける)\n');
     process.exitCode = 2;
     return false;
   }
@@ -509,6 +564,8 @@ async function runUpdate(rest) {
   }
   const config = update.readConfig(home);
   if (!config || !config.queueDir) throw new Error('まだ入れていません。先に node agent.mjs track install を実行してください');
+  // 手で頼んだときは待つ。置いたまま拾っていない確認は、二重にならないよう捨てる
+  update.dropPending(home, queueHands(config).drop);
   const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true });
   process.stdout.write(r.updated
     ? '新しくしました (' + r.version + '): ' + (r.changed.join(', ') || '変わったファイルなし') + '\n'

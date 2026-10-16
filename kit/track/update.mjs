@@ -1,13 +1,16 @@
 /**
  * 手元の道具を、番頭から新しい版を受け取って入れ替える。
  *
- * **入れ替えは書き換えるだけで、受け取った中身を実行しない。** 新しい
- * agent.mjs が動くのは、次に呼ばれたときである。
+ * 入れ替えのあいだは受け取った中身を実行しない。**ただし実行されないわけではない。**
+ * 新しい agent.mjs は次に呼ばれたときに動き、写した ~/.banto/hooks/track-hook.mjs は
+ * Claude Code が次の依頼から (どのフォルダでも) 自動で動かす。
  *
  * 命令の入れ先 (Drive の queue/) は、Drive を共有している人なら誰でも書ける。
- * 偽の結果を置かれると、その人が書いたものが次に呼んだときに動く。この仕組みの
- * 中に本物か確かめる手段は無いので、次の手当てで代える:
- *   - 置き場 (~/.banto/kit) の外には書かない (safeName)
+ * 偽の結果を置かれると、その人が書いたものが全員の手元で動く。この仕組みの
+ * 中に本物か確かめる手段は無い (署名は後で足す予定)。次の手当ては壊れた版には
+ * 効くが、偽物は防げない。本当の止め方は autoUpdate: false である:
+ *   - 置き場 (~/.banto/kit) の外には書かない (safeName)。外を指す名前・字でない中身・
+ *     欠けた中身が1つでもあれば、全体を断る (checkFiles)
  *   - 入れ替える前に控えを取り、agent update rollback で戻せる
  *   - 何が変わったかを、次に Claude Code を開いたときに見せる
  *   - config.json の autoUpdate: false で、知らせるだけにできる
@@ -68,6 +71,34 @@ export function safeName(name) {
   const norm = path.posix.normalize(s);
   if (norm === '.' || norm.split('/').includes('..')) return null;
   return norm;
+}
+
+/** 欠けていれば入れない。agent.mjs が無いと、戻す命令 (update rollback) ごと無くなる */
+export const REQUIRED_FILES = ['agent.mjs', 'track/hook.mjs', 'track/update.mjs'];
+
+/**
+ * 届いた中身を、書く前に丸ごと確かめる。1つでも駄目なら全体を断る。
+ *
+ * **黙って飛ばさない。** 外を指す名前だけを捨てて残りを入れると、空や欠けた
+ * 置き場が出来上がり、agent.mjs ごと消えて戻すこともできなくなる。
+ *
+ * @param {*} files
+ * @returns {Array<[string, string]>} 置き場の中の名前と base64
+ */
+export function checkFiles(files) {
+  const refuse = (why) => new Error('受け取った道具の中身が' + why + '。入れ替えませんでした');
+  if (!files || typeof files !== 'object' || Array.isArray(files)) throw refuse('読めない形です');
+  const out = [];
+  for (const [name, body] of Object.entries(files)) {
+    const safe = safeName(name);
+    if (!safe) throw refuse('置き場の外を指しています (' + name + ')');
+    if (typeof body !== 'string') throw refuse('字ではありません (' + name + ')');
+    out.push([safe, body]);
+  }
+  const have = new Set(out.map(([n]) => n));
+  const missing = REQUIRED_FILES.filter((n) => !have.has(n));
+  if (missing.length) throw refuse('欠けています (' + missing.join(', ') + ')');
+  return out;
 }
 
 /** 並べると古い順になる日時の字 (20261015-093000) */
@@ -170,6 +201,8 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
   if (!print || kitPrintOf(files) !== print) {
     throw new Error('受け取った道具の指紋が合いません。入れ替えませんでした');
   }
+  // 控えを取る前に確かめる。断ったときに控えだけ増えると、戻す先がずれる
+  const entries = checkFiles(files);
 
   const p = paths(home);
   const before = snapshot(p.kit);
@@ -180,12 +213,10 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
   fs.rmSync(next, { recursive: true, force: true });
   fs.mkdirSync(next, { recursive: true });
   const written = {};
-  for (const [name, body] of Object.entries(files)) {
-    const safe = safeName(name);
-    if (!safe) continue;
+  for (const [safe, body] of entries) {
     const to = path.join(next, ...safe.split('/'));
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    const bytes = Buffer.from(String(body), 'base64');
+    const bytes = Buffer.from(body, 'base64');
     fs.writeFileSync(to, bytes);
     written[safe] = bytes.toString('utf8');
   }
@@ -200,7 +231,36 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
 }
 
 /**
- * 新しい版が来ていないか確かめ、来ていれば入れ替える。
+ * 版の返事を読み、次にすることを決める。待つ確認と待たない確認で同じ判断にする。
+ *
+ * @returns {{next:'none'|'skip'|'available'|'install', print:string, version:string}}
+ */
+function judgeVersion(config, res, force) {
+  if (!res || !res.ok) throw new Error('道具の版を確かめられませんでした: ' + ((res && res.error) || '返事がありません'));
+  const print = String((res.result || {}).print || '');
+  const version = String((res.result || {}).version || '');
+  if (!print || print === config.kitPrint) return { next: 'none', print, version };
+  if (!force && print === config.skipPrint) return { next: 'skip', print, version };
+  if (!force && config.autoUpdate === false) return { next: 'available', print, version };
+  return { next: 'install', print, version };
+}
+
+function writeAvailable(home, version, now) {
+  fs.writeFileSync(paths(home).log, JSON.stringify({ available: version, at: new Date(now).toISOString() }));
+}
+
+/** 入れ替えて、次に Claude Code を開いたときに見せる記録を書く */
+async function installAndLog({ home, claude, send, now }) {
+  const done = await installFromServer({ home, claude, send, now });
+  fs.writeFileSync(paths(home).log,
+    JSON.stringify({ version: done.version, changed: done.changed, at: new Date(now).toISOString() }));
+  return { checked: true, updated: true, ...done };
+}
+
+/**
+ * 新しい版が来ていないか確かめ、来ていれば入れ替える。**返事を待つ。**
+ *
+ * 待つのは人が頼んだとき (agent update) だけ。命令のついでの確認は tickUpdate で待たない。
  *
  * @param {{home:string, claude:string, send:Function, now?:number, force?:boolean}} o
  *   force: 24時間を待たず、飛ばした版も入れる (agent update)
@@ -215,21 +275,86 @@ export async function checkForUpdate({ home, claude, send, now = Date.now(), for
   writeConfig(home, { lastUpdateCheck: new Date(now).toISOString() });
 
   const res = await send('kitVersion', { mine: config.kitPrint || '' });
-  if (!res || !res.ok) throw new Error('道具の版を確かめられませんでした: ' + ((res && res.error) || '返事がありません'));
-  const print = String((res.result || {}).print || '');
-  const version = String((res.result || {}).version || '');
-  const at = new Date(now).toISOString();
+  const j = judgeVersion(config, res, force);
+  if (j.next === 'none') return { checked: true, updated: false };
+  if (j.next === 'skip') return { checked: true, updated: false, skipped: true };
+  if (j.next === 'available') {
+    writeAvailable(home, j.version, now);
+    return { checked: true, updated: false, available: true, version: j.version };
+  }
+  return installAndLog({ home, claude, send, now });
+}
 
-  if (!print || print === config.kitPrint) return { checked: true, updated: false };
-  if (!force && print === config.skipPrint) return { checked: true, updated: false, skipped: true };
-  if (!force && config.autoUpdate === false) {
-    fs.writeFileSync(paths(home).log, JSON.stringify({ available: version, at }));
-    return { checked: true, updated: false, available: true, version };
+/**
+ * 置いたまま拾っていない確認の命令を捨てる。捨てられなくても記録は外す。
+ *
+ * @param {Function} drop (id) => void。命令と届いた結果のファイルを消す
+ */
+export function dropPending(home, drop) {
+  const config = readConfig(home);
+  const pending = config && config.pendingUpdate;
+  if (!pending) return;
+  try { drop(String(pending.id || '')); } catch (e) { /* 読めない id なら置いた物も無い */ }
+  writeConfig(home, { pendingUpdate: null });
+}
+
+/**
+ * 1日1回の確認を、**待たずに**1歩だけ進める。命令のついでに呼ぶ。
+ *
+ * Claude Code の Bash は2分で打ち切るので、命令の返事 (最大で数分) を待てない。
+ * 置いた命令を config.json の pendingUpdate に覚えて帰り、次に呼ばれたときに
+ * 結果があれば拾って続きをする:
+ *
+ *   版を尋ねる (kitVersion) を置く → 次: 新しければ中身を頼む (kitFiles) を置く → 次: 入れ替える
+ *
+ * 24時間たっても返らない命令は捨てる (向こうが止まっているか、同期が切れている)。
+ *
+ * @param {{home:string, claude:string, place:Function, collect:Function, drop:Function, now?:number}} o
+ *   place(op, args) → id / collect(id) → 結果か null / drop(id) は命令と結果を消す
+ * @returns {Promise<{updated:boolean, placed?:string, available?:boolean, skipped?:boolean, version?:string, changed?:string[]}>}
+ */
+export async function tickUpdate({ home, claude, place, collect, drop, now = Date.now() }) {
+  let config = readConfig(home);
+  if (!config) return { updated: false };
+
+  const pending = config.pendingUpdate;
+  if (pending) {
+    const at = Date.parse(pending.at || '');
+    const known = pending.op === 'kitVersion' || pending.op === 'kitFiles';
+    if (!known || !Number.isFinite(at) || now - at >= DAY_MS) {
+      dropPending(home, drop);
+      config = readConfig(home);
+    } else {
+      const res = collect(String(pending.id));
+      if (res === null || res === undefined) return { updated: false };
+      writeConfig(home, { pendingUpdate: null });
+
+      if (pending.op === 'kitFiles') {
+        return installAndLog({ home, claude, send: async () => res, now });
+      }
+      const j = judgeVersion(config, res, false);
+      if (j.next === 'skip') return { updated: false, skipped: true };
+      if (j.next === 'available') {
+        writeAvailable(home, j.version, now);
+        return { updated: false, available: true, version: j.version };
+      }
+      if (j.next === 'install') {
+        const id = place('kitFiles', {});
+        writeConfig(home, { pendingUpdate: { op: 'kitFiles', id, at: new Date(now).toISOString() } });
+        return { updated: false, placed: 'kitFiles' };
+      }
+      return { updated: false };
+    }
   }
 
-  const done = await installFromServer({ home, claude, send, now });
-  fs.writeFileSync(paths(home).log, JSON.stringify({ version: done.version, changed: done.changed, at }));
-  return { checked: true, updated: true, ...done };
+  const last = Date.parse(config.lastUpdateCheck || '');
+  if (Number.isFinite(last) && now - last < DAY_MS) return { updated: false };
+
+  // 先に書く。置けなくても、命令のたびに置き直さない
+  writeConfig(home, { lastUpdateCheck: new Date(now).toISOString() });
+  const id = place('kitVersion', { mine: config.kitPrint || '' });
+  writeConfig(home, { pendingUpdate: { op: 'kitVersion', id, at: new Date(now).toISOString() } });
+  return { updated: false, placed: 'kitVersion' };
 }
 
 /**
