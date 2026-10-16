@@ -439,7 +439,7 @@ async function maybeUpdate() {
   if (!config || !config.queueDir) return;
   try {
     const r = await update.checkForUpdate({ home, claude: track.claudeHome(), send: sender(config) });
-    if (r.updated) process.stderr.write('番頭の道具を新しくしました (' + r.version + ')。戻すときは agent update rollback\n');
+    if (r.updated) process.stderr.write('番頭の道具を新しくしました (' + r.version + ')。戻すときは node "' + fileURLToPath(import.meta.url) + '" update rollback\n');
   } catch (e) {
     process.stderr.write('道具の新しい版を確かめられませんでした: ' + (e.message || e) + '\n');
   }

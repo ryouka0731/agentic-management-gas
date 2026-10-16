@@ -84,9 +84,9 @@ describe('フック: 依頼のたびの合図', () => {
       JSON.stringify({ version: '1.8.0', changed: ['agent.mjs'] }));
     const first = JSON.parse(onPrompt(h, { cwd: p, session_id: 's1' })).hookSpecificOutput.additionalContext;
     expect(first).toContain('agent.mjs');
-    expect(first).toContain('agent update rollback');
+    expect(first).toContain('/kit/agent.mjs" update rollback');
     const second = JSON.parse(onPrompt(h, { cwd: p, session_id: 's1' })).hookSpecificOutput.additionalContext;
-    expect(second).not.toContain('agent update rollback');
+    expect(second).not.toContain('update rollback');
   });
 
   it('自動で入れない設定なら「新しい版がある」とだけ伝える', () => {
@@ -95,7 +95,7 @@ describe('フック: 依頼のたびの合図', () => {
     fs.writeFileSync(path.join(h, 'update-log.json'), JSON.stringify({ available: '1.9.0' }));
     const text = JSON.parse(onPrompt(h, { cwd: p, session_id: 's1' })).hookSpecificOutput.additionalContext;
     expect(text).toContain('1.9.0');
-    expect(text).toContain('agent update');
+    expect(text).toContain('/kit/agent.mjs" update`');
   });
 });
 
@@ -507,7 +507,9 @@ describe('スキルと説明', () => {
     const t = fs.readFileSync('kit/AGENTS.md', 'utf8');
     expect(t).toContain('## 番頭に作業を載せる');
     expect(t).toContain('track install');
-    expect(t).toContain('agent update rollback');
+    expect(t).toContain('node agent.mjs update rollback');
+    expect(t).not.toContain('agent.mjs agent ');
+    expect(skill()).not.toContain('agent.mjs agent ');
     expect(t).toContain('"autoUpdate": false');
     expect(t).toContain('Drive を共有している人なら誰でも');
   });
