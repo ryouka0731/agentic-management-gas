@@ -38,6 +38,8 @@ const SOURCES = [
   'src/core/Brand.js',
   'src/core/Notifier.gs',
   'src/core/CommandQueue.gs',
+  'src/KitFiles.gs',
+  'src/core/AgentKit.gs',
   'src/core/Tally.js',
   'src/core/Plain.js',
   'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
@@ -401,5 +403,30 @@ describe('鍵の外に出した処理の重なり', () => {
     ctx.housekeepArchiveDaily_();
     expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBe(
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+  });
+});
+
+describe('命令を置いた人', () => {
+  it('kitVersion を置いた人の指紋を覚える', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('b@example.com');
+    enqueue(ctx, 'k1', { op: 'kitVersion', args: { mine: '1234abcd' } });
+    fake._setUser('tester@example.com');
+
+    ctx.processCommandQueue();
+
+    expect(readResult(ctx, 'k1').ok).toBe(true);
+    expect(ctx.kitStatus_('b@example.com').mine).toBe('1234abcd');
+  });
+
+  it('持ち主の無いファイル (共有ドライブ) でも命令は通る', () => {
+    const { ctx } = setup();
+    enqueue(ctx, 'k2', { op: 'kitVersion', args: { mine: '1234abcd' } });
+    const it = ctx.commandQueueFolder_().getFilesByName('k2.cmd.json');
+    it.next()._setOwner('');
+
+    ctx.processCommandQueue();
+
+    expect(readResult(ctx, 'k2').ok).toBe(true);
   });
 });

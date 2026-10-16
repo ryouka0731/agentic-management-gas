@@ -18,6 +18,11 @@ import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
+import readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+import { bantoHome, trackedFolders } from './track/hook.mjs';
+import * as track from './track/track.mjs';
+import * as update from './track/update.mjs';
 
 const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
 
@@ -78,6 +83,17 @@ function findConfig() {
   if (fs.existsSync(home)) {
     return { ...JSON.parse(fs.readFileSync(home, 'utf8')), from: home };
   }
+
+  // 番頭に作業を載せる仕掛けを入れた人は、どこからでも ~/.banto/kit/agent.mjs を呼ぶ
+  const banto = update.paths(bantoHome()).config;
+  if (fs.existsSync(banto)) {
+    try {
+      const c = JSON.parse(fs.readFileSync(banto, 'utf8'));
+      if (c && c.queueDir) return { ...c, from: banto };
+    } catch (e) {
+      // 壊れていれば見なかったことにする (案内で「見つかりません」と出す)
+    }
+  }
   return null;
 }
 
@@ -91,6 +107,73 @@ function argValue(name) {
 }
 
 /**
+ * 命令の id は手元で作る。設定から読んだ id で入れ先の外を指させない。
+ * kitup- は1日1回の確認が置くもの (片付けでほかの命令を消さないよう分ける)
+ */
+const ID_RE = /^kit(up)?-[0-9]+-[a-z0-9]+$/;
+
+function commandFiles(queueDir, id) {
+  if (!ID_RE.test(String(id))) throw new Error('命令の id が読めません: ' + id);
+  return { cmd: path.join(queueDir, id + '.cmd.json'), out: path.join(queueDir, id + '.result.json') };
+}
+
+/**
+ * 命令を1つ置く。待たない。
+ *
+ * @returns {string} 命令の id (結果を拾うときに使う)
+ */
+function placeCommand(queueDir, op, args, prefix = 'kit') {
+  if (!fs.existsSync(queueDir)) {
+    throw new Error('キューのフォルダがありません: ' + queueDir);
+  }
+  const id = prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  fs.writeFileSync(commandFiles(queueDir, id).cmd, JSON.stringify({ op, args: args || {} }, null, 2));
+  return id;
+}
+
+/**
+ * 置いた命令を片付ける。
+ *
+ * **残すと、同じ命令が何度も実行される。** 向こう側は命令を処理済みの
+ * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
+ * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
+ * 番号違いで複数できた」という形で現れた。
+ *
+ * 消せなくても操作は成立しているので、投げない。
+ *
+ * @param {boolean} [withResult] 届いた結果も消す (読まずに捨てるとき)
+ */
+function forgetCommand(queueDir, id, withResult) {
+  const { cmd, out } = commandFiles(queueDir, id);
+  for (const file of withResult ? [cmd, out] : [cmd]) {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (e) {
+      process.stderr.write('命令のファイルを片付けられませんでした: ' + file + '\n');
+    }
+  }
+}
+
+/**
+ * 置いた命令の結果を1回だけ見る。待たない。
+ *
+ * @returns {object|null} まだ無い (書き込みの途中を含む) なら null
+ */
+function collectResult(queueDir, id) {
+  const { out } = commandFiles(queueDir, id);
+  if (!fs.existsSync(out)) return null;
+  // 書き込みの途中を読むことがある。読めなければ、まだ無いことにする
+  try {
+    const parsed = JSON.parse(fs.readFileSync(out, 'utf8'));
+    fs.unlinkSync(out);
+    forgetCommand(queueDir, id);
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * 命令を1つ送り、結果を待つ。
  *
  * @param {string} queueDir
@@ -99,53 +182,17 @@ function argValue(name) {
  * @returns {Promise<object>}
  */
 async function send(queueDir, op, args) {
-  if (!fs.existsSync(queueDir)) {
-    throw new Error('キューのフォルダがありません: ' + queueDir);
-  }
-
-  const id = 'kit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-  const cmd = path.join(queueDir, id + '.cmd.json');
-  const out = path.join(queueDir, id + '.result.json');
-
-  fs.writeFileSync(cmd, JSON.stringify({ op, args: args || {} }, null, 2));
-
-  /**
-   * 置いた命令を片付ける。
-   *
-   * **残すと、同じ命令が何度も実行される。** 向こう側は命令を処理済みの
-   * フォルダへ移すが、こちらに実体が残っていると、同期の都合で queue に
-   * 戻ってくることがある。実際に「やることを1つ作ったのに、同じものが
-   * 番号違いで複数できた」という形で現れた。
-   *
-   * 消せなくても操作は成立しているので、投げない。
-   */
-  function forget() {
-    try {
-      if (fs.existsSync(cmd)) fs.unlinkSync(cmd);
-    } catch (e) {
-      process.stderr.write('命令のファイルを片付けられませんでした: ' + cmd + '\n');
-    }
-  }
+  const id = placeCommand(queueDir, op, args);
 
   const until = Date.now() + WAIT_MS;
   while (Date.now() < until) {
-    if (fs.existsSync(out)) {
-      // 書き込みの途中を読むことがある。読めるまで少し待つ
-      try {
-        const text = fs.readFileSync(out, 'utf8');
-        const parsed = JSON.parse(text);
-        fs.unlinkSync(out);
-        forget();
-        return parsed;
-      } catch (e) {
-        // まだ書き終わっていない
-      }
-    }
+    const got = collectResult(queueDir, id);
+    if (got) return got;
     await new Promise((done) => setTimeout(done, POLL_MS));
   }
 
   // 返らなかったときも片付ける。残すと、あとで拾われて一度だけ走る
-  forget();
+  forgetCommand(queueDir, id);
 
   throw new Error(
     '結果が返りませんでした。向こう側で setupCommandQueue() を実行しているか、' +
@@ -378,6 +425,14 @@ function setupGuide() {
   lines.push('  .claude/ に、読み替えは SCRUM.md にあります。');
   lines.push('');
 
+  const linked = update.claudeLinked(track.claudeHome());
+  lines.push('番頭に作業を載せる (Claude Code を使う人だけ):');
+  lines.push('  node agent.mjs track install で、~/.claude にフック2つとスキル1つを足し、');
+  lines.push('  道具を ~/.banto/kit に置きます。載せるフォルダは node agent.mjs track add で選びます。');
+  lines.push('  道具は1日1回、新しい版を確かめて自動で入れ替わり、フックも次の依頼から新しいものが');
+  lines.push('  自動で動きます (~/.banto/config.json に "autoUpdate": false と書くと知らせるだけになります)。');
+  lines.push('  いま: ' + (linked ? '入っています' : '入っていません'));
+  lines.push('');
   if (!config) {
     lines.push('次にすること: agentkit.example.json を .agentkit.json として');
     lines.push('写し、queueDir に 2 のパスを書いてください。');
@@ -390,6 +445,159 @@ function setupGuide() {
     lines.push('すぐ返らないのは異常ではありません。');
   }
   return lines.join('\n');
+}
+
+/**
+ * この agent.mjs と一緒に置かれた公開鍵 (Web アプリから落とした zip の鍵)。無ければ ''。
+ *
+ * 入れるときは番頭から道具を受け取り直すので、その署名をこの鍵で確かめる。
+ * 落とした zip が信頼の起点 (最初の1回)。
+ */
+function zipKey() {
+  try {
+    return fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'track', 'kit-key.pem'), 'utf8');
+  } catch (e) {
+    return '';
+  }
+}
+
+/** いま動いているのが ~/.banto/kit の道具か。自動の確認はそのときだけ */
+function runningFromBanto() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return path.resolve(p); } };
+  return real(path.dirname(fileURLToPath(import.meta.url))) === real(update.paths(bantoHome()).kit);
+}
+
+/** 命令の入れ先へ送る関数を、設定から作る */
+function sender(config) {
+  return (op, args) => send(config.queueDir, op, args);
+}
+
+/** 置いて・拾って・捨てる関数を、設定から作る (1日1回の確認は待たない) */
+function queueHands(config) {
+  return {
+    place: (op, args) => placeCommand(config.queueDir, op, args, update.UPDATE_ID_PREFIX),
+    collect: (id) => collectResult(config.queueDir, id),
+    drop: (id) => forgetCommand(config.queueDir, id, true),
+    // 捨てた待ちの結果は誰にも拾われずに残る。この確認が置いたものだけ片付ける
+    sweep: (keepId, now) => {
+      for (const name of update.staleUpdateFiles(fs.readdirSync(config.queueDir), now, keepId)) {
+        try { fs.unlinkSync(path.join(config.queueDir, name)); } catch (e) { /* 次にまた試す */ }
+      }
+    },
+  };
+}
+
+/**
+ * 1日1回、道具の新しい版を確かめる。本来の命令の結果は変えない。
+ *
+ * **ここでは待たない。** 命令の返事は最大で数分かかり、Claude Code の Bash は
+ * 2分で打ち切る。版を尋ねる命令を置いて帰り、返事は次に呼ばれたときに拾う
+ * (update.tickUpdate)。
+ *
+ * 出すのは標準エラーだけ。標準出力は Claude が読む結果である。
+ */
+async function maybeUpdate() {
+  if (!runningFromBanto()) return;
+  const home = bantoHome();
+  const config = update.readConfig(home);
+  if (!config || !config.queueDir) return;
+  try {
+    const r = await update.tickUpdate({ home, claude: track.claudeHome(), ...queueHands(config) });
+    if (r.updated) process.stderr.write('番頭の道具を新しくしました (' + r.version + ')。戻すときは node "' + fileURLToPath(import.meta.url) + '" update rollback\n');
+  } catch (e) {
+    process.stderr.write('道具の新しい版を確かめられませんでした: ' + (e.message || e) + '\n');
+  }
+}
+
+/**
+ * 入れる前に、入れるものと自動更新の危険・切り方を出す。
+ *
+ * **--yes でも必ず出す。** Claude が利用者に確かめずに --yes を付けたときも、
+ * 何が入り、何が自動で動くのかが画面に残るようにする。出すのは標準エラー
+ * (標準出力は Claude が読む結果)。
+ */
+async function confirmInstall(rest) {
+  const home = bantoHome();
+  const plan = [
+    '次のものを入れます:',
+    '  ' + path.join(track.claudeHome(), 'settings.json') + ' の hooks に2つ (今の設定は控えを取って残します)',
+    '  ' + path.join(track.claudeHome(), 'skills', 'banto-track', 'SKILL.md'),
+    '  ' + home + ' (道具の本体と設定)',
+    '入れたあと、道具は1日1回番頭に新しい版を尋ね、あれば自動で入れ替えます。そのとき',
+    '  ' + path.join(home, 'hooks', 'track-hook.mjs') + ' とスキルも新しくなり、Claude Code は',
+    '  そのフックを次の依頼から (どのフォルダでも) 自動で動かします。',
+    '自動で入れるのは番頭の署名が合うものだけです。Drive フォルダに書ける人が偽の返事を置いても入れません。',
+    '危険: 署名できるのは番頭の Apps Script を編集できる人 (持ち主) です。その人を信頼することになります。',
+    '  控えと戻し (update rollback) で1つ前に戻せます。',
+    '切る: ' + path.join(home, 'config.json') + ' に "autoUpdate": false と書くと、知らせるだけになります。',
+  ].join('\n');
+  process.stderr.write(plan + '\n');
+  if (rest.includes('--yes')) return true;
+  if (!process.stdin.isTTY) {
+    process.stderr.write('入れてよいか尋ねられませんでした。--yes を付けて実行してください' +
+      ' (Claude に頼むときは、利用者に上の危険と切り方を伝えて確かめてから --yes を付ける)\n');
+    process.exitCode = 2;
+    return false;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question('入れますか [y/N] ');
+  rl.close();
+  return /^y/i.test(answer.trim());
+}
+
+async function runTrack(rest) {
+  const home = bantoHome();
+  const claude = track.claudeHome();
+  const [sub, ...a] = rest;
+
+  if (sub === 'install') {
+    if (!(await confirmInstall(a))) return;
+    const config = loadConfig();
+    const r = await track.trackInstall({ home, claude, config, send: sender(config), pinnedKey: zipKey() });
+    process.stdout.write('入れました (道具 ' + r.kit.version + ')。' +
+      '載せるフォルダは node agent.mjs track add <フォルダ> で選んでください\n');
+    return;
+  }
+  if (sub === 'uninstall') {
+    track.uninstallHooks({ home, claude });
+    process.stdout.write('フックとスキルを外しました (' + home + ' は残してあります)\n');
+    return;
+  }
+  if (sub === 'add') { process.stdout.write(track.addFolder(home, a[0]).join('\n') + '\n'); return; }
+  if (sub === 'remove') { process.stdout.write(track.removeFolder(home, a[0]).join('\n') + '\n'); return; }
+  if (sub === 'list') {
+    const list = trackedFolders(home);
+    process.stdout.write((list.length ? list.join('\n') : '(載せるフォルダはありません)') + '\n');
+    return;
+  }
+  if (sub === 'set') { track.setIssue(home, a[0], a[1], a.slice(2).join(' ')); return; }
+  if (sub === 'touch') { track.touch(home, a[0]); return; }
+  if (sub === 'clear') { track.clearIssue(home, a[0]); return; }
+
+  process.stderr.write('track の後には install / uninstall / add / remove / list / set / touch / clear のどれかを書いてください\n');
+  process.exitCode = 2;
+}
+
+async function runUpdate(rest) {
+  const home = bantoHome();
+  const claude = track.claudeHome();
+  if (rest[0] === 'rollback') {
+    // 置いたままの確認も捨てる。残すと、あとで届いた中身で戻した先から入れ替わる
+    const c = update.readConfig(home);
+    const r = update.rollback({ home, claude, drop: c && c.queueDir ? queueHands(c).drop : undefined });
+    process.stdout.write(r.restored + ' の控えに戻しました。この版は自動では入れ直しません\n');
+    return;
+  }
+  const config = update.readConfig(home);
+  if (!config || !config.queueDir) throw new Error('まだ入れていません。先に node agent.mjs track install を実行してください');
+  // 手で頼んだときは待つ。置いたまま拾っていない確認は、二重にならないよう捨てる
+  update.dropPending(home, queueHands(config).drop);
+  // 置き場に鍵が無い (署名の前の道具) なら、落とした zip の鍵で確かめる
+  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true, manual: true,
+    pinnedKey: update.readPinnedKey(home) || zipKey() });
+  process.stdout.write(r.updated
+    ? '新しくしました (' + r.version + '): ' + (r.changed.join(', ') || '変わったファイルなし') + '\n'
+    : 'いまの道具が最新です\n');
 }
 
 /**
@@ -466,6 +674,10 @@ function usage() {
   lines.push('  agent scrum                            # スクラムがオンか (既定はオフ)');
   lines.push('  agent sprint-add sprint001 "申請の流れ" 2026-10-01 2026-10-14');
   lines.push('  agent impediment-resolve 3 "代理が承認"');
+  lines.push('  agent track install                    # Claude Code の作業を番頭に載せる仕掛けを入れる');
+  lines.push('  agent track add .                      # いまのフォルダを載せる');
+  lines.push('  agent update                           # 道具の新しい版を今すぐ確かめて入れる');
+  lines.push('  agent update rollback                  # 1つ前の道具に戻す');
   lines.push('  setup   (何が要るか、いまどこまで出来ているかを出す)');
   lines.push('');
   lines.push('はじめてなら、まず agent setup を実行する');
@@ -488,6 +700,10 @@ async function main() {
     return;
   }
 
+  // 仕掛けと道具の更新は手元で済む (track install と update は中で命令を送る)
+  if (name === 'track') { await runTrack(process.argv.slice(3)); return; }
+  if (name === 'update') { await runUpdate(process.argv.slice(3)); return; }
+
   const entry = OPS[name];
   if (!entry) {
     process.stderr.write('知らない操作です: ' + name + '\n\n' + usage() + '\n');
@@ -507,6 +723,7 @@ async function main() {
 
   process.stdout.write(JSON.stringify(res, null, 2) + '\n');
   if (!res.ok) process.exitCode = 1;
+  await maybeUpdate();
 }
 
 main().catch((err) => {

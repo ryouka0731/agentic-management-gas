@@ -5,3 +5,5 @@ node_modules/
 .DS_Store
 .claude/terminal-state.json
 .serena/
+# 署名の秘密鍵。scripts/deploy.mjs が送る直前に作る。記録しない
+src/KitSigning.gs
