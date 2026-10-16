@@ -82,14 +82,15 @@ export function writeSession(home, id, patch) {
 }
 
 /** 入れ替えの記録を、Claude に伝える1文にする */
-function describeLog(log) {
+function describeLog(log, home) {
+  const tool = 'node "' + path.join(home, 'kit', 'agent.mjs') + '"';
   if (log.available) {
     return '番頭の道具に新しい版があります (' + log.available + ')。' +
-      '`agent update` で入れられます。利用者に1行だけ伝えてください。';
+      '`' + tool + ' update` で入れられます。利用者に1行だけ伝えてください。';
   }
   const changed = Array.isArray(log.changed) ? log.changed : [];
   return '番頭の道具を自動で新しくしました (' + (log.version || '') + ')。変わったファイル: ' +
-    (changed.join(', ') || 'なし') + '。戻すときは `agent update rollback`。利用者に1行だけ伝えてください。';
+    (changed.join(', ') || 'なし') + '。戻すときは `' + tool + ' update rollback`。利用者に1行だけ伝えてください。';
 }
 
 /**
@@ -118,7 +119,7 @@ export function onPrompt(home, input, now) {
   const logFile = path.join(home, 'update-log.json');
   const log = readJson(logFile, null);
   if (log) {
-    lines.push(describeLog(log));
+    lines.push(describeLog(log, home));
     try { fs.unlinkSync(logFile); } catch (e) { /* 次に見せればよい */ }
   }
 
