@@ -2143,7 +2143,19 @@ function apiTemplateDelete(name) {
  * @returns {{name:string, url:string, version:string}}
  */
 function apiAgentKit() {
-  return agentKitFile();
+  var kit = agentKitFile();
+  // 落とした時点でその人の道具は最新。画面の「更新あり」を消すため
+  kitRemember_(String(Session.getActiveUser().getEmail() || ''), kitPrint_());
+  return kit;
+}
+
+/**
+ * 自分の手元の道具が古いか (Web App API)。
+ *
+ * @returns {{print:string, mine:string, outdated:boolean}}
+ */
+function apiKitStatus() {
+  return kitStatus_(String(Session.getActiveUser().getEmail() || ''));
 }
 
 /**

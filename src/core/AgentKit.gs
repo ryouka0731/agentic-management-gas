@@ -18,6 +18,50 @@ function AGENT_KIT_VERSION() {
 }
 
 /**
+ * 配る中身の指紋。zip の名前と、手元の道具が古いかの判定に使う。
+ *
+ * **手元の道具 (kit/track/update.mjs の kitPrintOf) と同じ式でなければならない。**
+ * 式が食い違うと、手元は毎日「新しい版がある」と読み、入れ替えを繰り返す。
+ *
+ * @returns {string} 16進8字
+ */
+function kitPrint_() {
+  return sha256Hex(JSON.stringify(KIT_FILES())).substring(0, 8);
+}
+
+/**
+ * その人が持っている道具の指紋を覚える。
+ *
+ * **スクリプトプロパティに置く。** 手元の道具からの命令は持ち主のトリガーで
+ * 走るため、そこから利用者本人の UserProperties には書けない。
+ *
+ * @param {string} email
+ * @param {string} print
+ */
+function kitRemember_(email, print) {
+  var who = String(email || '').toLowerCase();
+  if (!who || !/^[0-9a-f]{8}$/.test(String(print || ''))) return;
+  PropertiesService.getScriptProperties().setProperty('KIT_PRINT:' + who, String(print));
+}
+
+/**
+ * その人の道具が古いか。
+ *
+ * まだ一度も落としていない人は古いことにしない (札を出しても落とす理由が分からない)。
+ *
+ * @param {string} email
+ * @returns {{print:string, mine:string, outdated:boolean}}
+ */
+function kitStatus_(email) {
+  var print = kitPrint_();
+  var who = String(email || '').toLowerCase();
+  var mine = who
+    ? String(PropertiesService.getScriptProperties().getProperty('KIT_PRINT:' + who) || '')
+    : '';
+  return { print: print, mine: mine, outdated: mine !== '' && mine !== print };
+}
+
+/**
  * 配る zip の名前。
  *
  * **中身の指紋を名前に入れる。** 版だけで名前を決めていたため、kit/ を直して
@@ -28,7 +72,7 @@ function AGENT_KIT_VERSION() {
  * @returns {string}
  */
 function agentKitName_() {
-  var print = sha256Hex(JSON.stringify(KIT_FILES())).substring(0, 8);
+  var print = kitPrint_();
   return 'softbanto-agent-kit-' + AGENT_KIT_VERSION() + '-' + print + '.zip';
 }
 
