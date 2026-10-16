@@ -30,6 +30,10 @@ export function createFakeGas() {
       _parent: parentId,
       _mime: mime || 'text/plain',
       _trashed: false,
+      _owner: activeUser,
+      // 共有ドライブのファイルは持ち主が無い (実機は null を返す)
+      getOwner: () => (f._owner ? { getEmail: () => f._owner } : null),
+      _setOwner: (email) => { f._owner = email; return f; },
       getId: () => id,
       getName: () => f._name,
       setName: (n) => { f._name = n; return f; },

@@ -117,6 +117,21 @@ function COMMAND_OPS() {
     impedimentResolve: function (a) { return apiImpedimentResolve(a.number, a.resolution); },
     impedimentComment: function (a) { return apiImpedimentComment(a.number, a.body); },
     history: function (a) { return apiHistory(a.target); },
+    /*
+     * 手元の道具が自分を新しくするための読むだけの命令。
+     *
+     * 誰がどの版を持っているかを覚えて、画面に「更新あり」を出す。置いた人
+     * (命令ファイルの持ち主) が分からないとき (共有ドライブ) は覚えない。
+     */
+    kitVersion: function (a, by) {
+      kitRemember_(by, String(a.mine || ''));
+      return { version: AGENT_KIT_VERSION(), print: kitPrint_() };
+    },
+    kitFiles: function (a, by) {
+      var print = kitPrint_();
+      kitRemember_(by, print);
+      return { version: AGENT_KIT_VERSION(), print: print, files: KIT_FILES() };
+    },
   };
 }
 
@@ -196,16 +211,17 @@ function commandDoneFolder_() {
  * 命令を1つ実行する。
  *
  * @param {object} cmd {op, args}
+ * @param {string} [by] 命令を置いた人の email
  * @returns {*} op の戻り値
  */
-function runCommand_(cmd) {
+function runCommand_(cmd, by) {
   var ops = COMMAND_OPS();
   var op = String(cmd && cmd.op ? cmd.op : '');
 
   if (!Object.prototype.hasOwnProperty.call(ops, op)) {
     throw new Error('実行できない操作です: ' + op);
   }
-  return ops[op](cmd.args || {});
+  return ops[op](cmd.args || {}, String(by || ''));
 }
 
 /**
@@ -248,7 +264,7 @@ function runCommandFileLocked_(file, queue, done) {
   try {
     var cmd = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
     op = String(cmd && cmd.op ? cmd.op : '');
-    result = { ok: true, op: op, result: runCommand_(cmd) };
+    result = { ok: true, op: op, result: runCommand_(cmd, commandOwner_(file)) };
   } catch (e) {
     result = { ok: false, op: op, error: e.message };
   }
@@ -263,6 +279,23 @@ function runCommandFileLocked_(file, queue, done) {
   commandRetire_(file, queue, done);
 
   queue.createFile(id + '.result.json', JSON.stringify(result), MimeType.PLAIN_TEXT);
+}
+
+/**
+ * 命令ファイルを置いた人。分からなければ空。
+ *
+ * 共有ドライブのファイルは持ち主を持たず、getOwner() が null を返す。
+ *
+ * @param {GoogleAppsScript.Drive.File} file
+ * @returns {string}
+ */
+function commandOwner_(file) {
+  try {
+    var owner = file.getOwner();
+    return owner ? String(owner.getEmail() || '') : '';
+  } catch (e) {
+    return '';
+  }
 }
 
 /**

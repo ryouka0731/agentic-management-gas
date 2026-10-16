@@ -40,6 +40,9 @@ const SOURCES = [
   'src/core/Notifier.gs',
   'src/core/Tally.js',
   'src/core/Plain.js',
+  'src/core/CommandQueue.gs',
+  'src/KitFiles.gs',
+  'src/core/AgentKit.gs',
   'src/Main.gs',
 ];
 
@@ -520,6 +523,7 @@ describe('画面に渡せる形か', () => {
   }
 
   const CASES = [
+    ['apiKitStatus', (ctx) => ctx.apiKitStatus()],
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],
     ['apiIssuesForFile', (ctx, env) => ctx.apiIssuesForFile(env.fileId)],
     ['apiProjectBoard', (ctx) => ctx.apiProjectBoard()],
@@ -1418,5 +1422,17 @@ describe('以前に化けた字を探す', () => {
     const { ctx, fake } = setup();
     fake._setUser('someone@example.com');
     expect(() => ctx.debugFindConvertedCells()).toThrow(/持ち主だけ/);
+  });
+});
+
+describe('道具を落とした人を覚える', () => {
+  it('落とすと古くないことになる', () => {
+    const { ctx } = setup();
+    ctx.kitRemember_('tester@example.com', '00000000');
+    expect(ctx.apiKitStatus().outdated).toBe(true);
+
+    ctx.apiAgentKit();
+
+    expect(ctx.apiKitStatus()).toEqual({ print: ctx.kitPrint_(), mine: ctx.kitPrint_(), outdated: false });
   });
 });

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -538,5 +539,55 @@ describe('エージェンティックスクラム (手元の道具)', () => {
       expect(text, name).toContain('node agent.mjs scrum');
       expect(text, name).not.toMatch(/scrum\/(product_backlog|velocity|impediment_log|comments)[._]/);
     }
+  });
+});
+
+describe('道具の版を手元に教える', () => {
+  function print8(files) {
+    return crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex').slice(0, 8);
+  }
+
+  it('指紋は手元と同じ式で出る', () => {
+    const { ctx } = setup();
+    expect(ctx.kitPrint_()).toBe(print8(ctx.KIT_FILES()));
+    expect(ctx.agentKitName_()).toContain('-' + ctx.kitPrint_() + '.zip');
+  });
+
+  it('kitVersion は版と指紋を返し、名乗った指紋を覚える', () => {
+    const { ctx } = setup();
+    const out = ctx.runCommand_({ op: 'kitVersion', args: { mine: 'abcd1234' } }, 'A@Example.com');
+    expect(out).toEqual({ version: ctx.AGENT_KIT_VERSION(), print: ctx.kitPrint_() });
+    expect(ctx.kitStatus_('a@example.com').mine).toBe('abcd1234');
+  });
+
+  it('指紋に見えない字は覚えない', () => {
+    const { ctx } = setup();
+    ctx.runCommand_({ op: 'kitVersion', args: { mine: '../x' } }, 'a@example.com');
+    expect(ctx.kitStatus_('a@example.com').mine).toBe('');
+  });
+
+  it('kitFiles は中身を返し、渡した指紋を覚える', () => {
+    const { ctx } = setup();
+    const out = ctx.runCommand_({ op: 'kitFiles', args: {} }, 'a@example.com');
+    expect(out.print).toBe(print8(out.files));
+    expect(Object.keys(out.files)).toContain('agent.mjs');
+    expect(ctx.kitStatus_('a@example.com')).toEqual({ print: out.print, mine: out.print, outdated: false });
+  });
+
+  it('持ち主が分からなければ覚えない', () => {
+    const { ctx, fake } = setup();
+    ctx.runCommand_({ op: 'kitFiles', args: {} }, '');
+    expect(fake.PropertiesService.getScriptProperties().getProperty('KIT_PRINT:')).toBeNull();
+  });
+
+  it('まだ落としていない人は古いことにしない', () => {
+    const { ctx } = setup();
+    expect(ctx.kitStatus_('b@example.com')).toEqual({ print: ctx.kitPrint_(), mine: '', outdated: false });
+  });
+
+  it('覚えた指紋が今と違えば古い', () => {
+    const { ctx } = setup();
+    ctx.kitRemember_('b@example.com', '00000000');
+    expect(ctx.kitStatus_('b@example.com').outdated).toBe(true);
   });
 });
