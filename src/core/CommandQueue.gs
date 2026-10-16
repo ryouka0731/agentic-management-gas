@@ -121,6 +121,29 @@ function COMMAND_OPS() {
 }
 
 /**
+ * 覚えている ID のフォルダが使えるなら返す。
+ *
+ * **ゴミ箱に入ったものは使えないものとして扱う。** Apps Script はゴミ箱の中の
+ * フォルダも開けるので、開けるかだけを見ると、命令がゴミ箱に置かれて誰も拾わない
+ * (setupCommandQueue() もゴミ箱の中の ID を返し続けた。実機で踏んだ)。
+ *
+ * @param {string} id
+ * @returns {GoogleAppsScript.Drive.Folder|null}
+ */
+function queueFolderLive_(id) {
+  if (!id) return null;
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(id);
+  } catch (e) {
+    return null; // 手で消された場合は作り直す
+  }
+  // ゴミ箱か確かめるところの失敗は投げる。握ると、一時的な失敗でまだ使える
+  // フォルダを捨てて作り直し、そこに置かれた命令が拾われなくなる
+  return folder.isTrashed() ? null : folder;
+}
+
+/**
  * キュー用のフォルダを返す。無ければ作って設定に書き戻す。
  *
  * 既存のリポジトリには queue が無いため、移行関数を人に実行させずに
@@ -133,26 +156,16 @@ function COMMAND_OPS() {
 function queueFolder_(key, name) {
   var config = repoConfig();
 
-  if (config[key]) {
-    try {
-      return DriveApp.getFolderById(config[key]);
-    } catch (e) {
-      // 手で消された場合は作り直す
-    }
-  }
+  var known = queueFolderLive_(config[key]);
+  if (known) return known;
 
   // **作るのは鍵の中で、確かめ直してから。** 1分ごとのキューはフォルダを鍵の外で
   // 引くので、重なった初回の起動が別々のフォルダを作ると、処理済みの印が分かれて
   // 同じ命令が2回走る
   return dbWithLock_(30000, function () {
     var again = repoConfig();
-    if (again[key]) {
-      try {
-        return DriveApp.getFolderById(again[key]);
-      } catch (e2) {
-        // 手で消された場合は作り直す
-      }
-    }
+    var live = queueFolderLive_(again[key]);
+    if (live) return live;
     var folder = DriveApp.getFolderById(again.gitId).createFolder(name);
     again[key] = folder.getId();
     PropertiesService.getScriptProperties()

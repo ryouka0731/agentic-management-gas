@@ -331,6 +331,37 @@ describe('鍵の外に出した処理の重なり', () => {
     expect(a.getId()).toBe(b.getId());
   });
 
+  it('ゴミ箱に入った置き場は使わず、作り直す', () => {
+    /*
+     * 覚えている ID で開けるかだけを見ていたため、ゴミ箱の中のフォルダを返していた
+     * (Apps Script はゴミ箱の中も開ける)。命令はゴミ箱に置かれて誰も拾わず、
+     * setupCommandQueue() も同じフォルダの ID を返し続けた (実機で踏んだ)。
+     */
+    const { ctx } = setup();
+    const oldQueue = ctx.commandQueueFolder_();
+    const oldDone = ctx.commandDoneFolder_();
+    oldQueue.setTrashed(true);
+    oldDone.setTrashed(true);
+
+    const queue = ctx.commandQueueFolder_();
+    const done = ctx.commandDoneFolder_();
+    expect(queue.getId()).not.toBe(oldQueue.getId());
+    expect(done.getId()).not.toBe(oldDone.getId());
+    expect(queue.isTrashed()).toBe(false);
+    expect(ctx.repoConfig().queueId).toBe(queue.getId());
+    expect(ctx.commandQueueFolder_().getId()).toBe(queue.getId());
+  });
+
+  it('ゴミ箱か確かめられなかったときは、作り直さずに投げる', () => {
+    // 一時的な失敗で作り直すと、まだ使える置き場の命令が拾われなくなる
+    const { ctx } = setup();
+    const queue = ctx.commandQueueFolder_();
+    queue.isTrashed = () => { throw new Error('一時的な失敗'); };
+
+    expect(() => ctx.commandQueueFolder_()).toThrow('一時的な失敗');
+    expect(ctx.repoConfig().queueId).toBe(queue.getId());
+  });
+
   it('期限切れの捨てたものは、消す直前に戻されていたら消さない', () => {
     const { ctx } = setup();
     const made = ctx.issueCreate('戻すもの', '', []);
