@@ -175,6 +175,29 @@ node agent.mjs work-fail <id> "なぜ無理か"  # できなかったと返す
 ください。** 何をするつもりかを先に利用者に見せ、進めてよいか確かめてから
 動かしてください。承認を人の手に残すのがこの道具の設計です。
 
+## 番頭に作業を載せる (Claude Code を使う人だけ)
+
+`node agent.mjs track install` で、Claude Code の作業を番頭のやることに載せる仕掛けを入れられます。
+**入れる前に利用者に確かめ、ok をもらってから `--yes` を付けて実行してください。**
+
+- 入るもの: `~/.claude/settings.json` の hooks に2つ (今の設定は `settings.json.banto-backup-<日時>` に控える)・
+  `~/.claude/skills/banto-track/SKILL.md`・`~/.banto/` (道具の本体と設定)
+- 設定が読めない形のとき (JSON として壊れている・hooks の形が違う) は、何も書かずに断ります
+- 載せるのは**登録したフォルダ (とその下) だけ**: `node agent.mjs track add <フォルダ>` / `track remove` / `track list`
+- 外す: `node agent.mjs track uninstall` (足したフックとスキルだけを外す。`~/.banto/` は残る)
+- 会話とやることの結び付け (スキルが使う): `track set <会話id> <番号> <題名>` / `track touch <会話id>` / `track clear <会話id>`
+
+### 道具の自動更新
+
+`~/.banto/kit/agent.mjs` は、1日1回、どの命令のあとでも番頭に新しい版を確かめ、あれば**自動で入れ替えます**
+(書き換えるだけで、その場では実行しません。新しい版が動くのは次に呼ばれたとき)。
+
+- 入れ替えたら、次に Claude Code を開いたときに何が変わったかが合図に出ます。利用者に1行だけ伝えてください
+- 戻す: `node agent.mjs agent update rollback` (戻した版は自動では入れ直しません。戻したあとも、その版は飛ばし続けます)。今すぐ確かめる: `node agent.mjs agent update` (手で頼んだときは、飛ばしている版でも入れます)
+- **危険**: 命令の入れ先 (Drive の queue/) は、Drive を共有している人なら誰でも書けます。偽の返事を置かれると、
+  その人が書いたものが全員の手元で動きえます。受け取った中身が本物かを確かめる手段はありません
+- 切る: `~/.banto/config.json` に `"autoUpdate": false` と書くと、新しい版があることを知らせるだけになります
+
 ## エージェンティックスクラム
 
 AI のチームメンバーとしてスクラムで進める機能です。**既定ではオフ**で、使わない
