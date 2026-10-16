@@ -214,6 +214,36 @@ describe('戻す', () => {
     expect(r.updated).toBe(true);
   });
 
+  it('2回戻しても、戻した元の版を翌日に入れ直さない', async () => {
+    const d = dirs();
+    await installed(d);
+    const files = (n) => ({ 'agent.mjs': b64('v' + n) });
+    await checkForUpdate({ home: d.home, claude: d.claude, send: server(files(2), '2').send, now: NOW + 2 * 86400000 });
+    const s3 = server(files(3), '3');
+    await checkForUpdate({ home: d.home, claude: d.claude, send: s3.send, now: NOW + 4 * 86400000 });
+    rollback({ home: d.home, claude: d.claude });
+    rollback({ home: d.home, claude: d.claude });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+    const r = await checkForUpdate({ home: d.home, claude: d.claude, send: s3.send, now: NOW + 6 * 86400000 });
+    expect(r).toMatchObject({ updated: false, skipped: true });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
+  it('落ちた跡の kit.old / kit.new があっても次の入れ替えは通る', async () => {
+    const d = dirs();
+    await installed(d);
+    for (const n of ['kit.old', 'kit.new']) {
+      fs.mkdirSync(path.join(d.home, n));
+      fs.writeFileSync(path.join(d.home, n, 'junk'), 'x');
+    }
+    await checkForUpdate({ home: d.home, claude: d.claude, send: server(V2, '2.0.0').send, now: NOW + 2 * 86400000 });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v2');
+    expect(fs.existsSync(path.join(d.home, 'kit.old'))).toBe(false);
+    expect(fs.existsSync(path.join(d.home, 'kit.new'))).toBe(false);
+    rollback({ home: d.home, claude: d.claude });
+    expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
   it('控えが無ければ断る', () => {
     const d = dirs();
     expect(() => rollback({ home: d.home, claude: d.claude })).toThrow('戻せる控えがありません');

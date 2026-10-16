@@ -115,6 +115,24 @@ export function linkClaude(home, claude) {
   }
 }
 
+/**
+ * 置き場を差し替える。**消してから置く形にしない**: 間で落ちると rollback の
+ * 命令を持つ agent.mjs ごと無くなる。いまのを .old に退けてから置き、置けなければ戻す。
+ */
+function swapKit(kit, next) {
+  const old = kit + '.old';
+  fs.rmSync(old, { recursive: true, force: true });
+  const had = fs.existsSync(kit);
+  if (had) fs.renameSync(kit, old);
+  try {
+    fs.renameSync(next, kit);
+  } catch (e) {
+    if (had) fs.renameSync(old, kit);
+    throw e;
+  }
+  fs.rmSync(old, { recursive: true, force: true });
+}
+
 function listBackups(home) {
   const dir = paths(home).backup;
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => /^\d{8}-\d{6}/.test(n)).sort() : [];
@@ -171,8 +189,7 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
     fs.writeFileSync(to, bytes);
     written[safe] = bytes.toString('utf8');
   }
-  fs.rmSync(p.kit, { recursive: true, force: true });
-  fs.renameSync(next, p.kit);
+  swapKit(p.kit, next);
 
   if (link || claudeLinked(claude)) linkClaude(home, claude);
 
@@ -230,12 +247,14 @@ export function rollback({ home, claude }) {
   try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'backup.json'), 'utf8')); } catch (e) { meta = {}; }
   const config = readConfig(home) || {};
 
-  fs.rmSync(p.kit, { recursive: true, force: true });
-  fs.cpSync(dir, p.kit, { recursive: true });
-  fs.rmSync(path.join(p.kit, 'backup.json'), { force: true });
+  const next = p.kit + '.new';
+  fs.rmSync(next, { recursive: true, force: true });
+  fs.cpSync(dir, next, { recursive: true });
+  fs.rmSync(path.join(next, 'backup.json'), { force: true });
+  swapKit(p.kit, next);
   if (claudeLinked(claude)) linkClaude(home, claude);
 
-  writeConfig(home, { kitPrint: meta.print || '', skipPrint: config.kitPrint || '' });
+  writeConfig(home, { kitPrint: meta.print || '', skipPrint: config.skipPrint || config.kitPrint || '' });
   fs.rmSync(dir, { recursive: true, force: true });
   return { restored: last };
 }
