@@ -123,6 +123,39 @@ export function safeName(name) {
   return norm;
 }
 
+/**
+ * 記録に残す版の字。形が違えば ''。
+ *
+ * **版の字は Claude への合図 (hook の additionalContext) に入る。** kitVersion の返事には
+ * 署名が無いので、偽の返事で好きな文を Claude に読ませられる。字の並びを絞って止める。
+ * hook.mjs の cleanVersion_ と同じ規則 (hook は他のファイルを import しない)。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+export function cleanVersion(v) {
+  const s = String(v == null ? '' : v);
+  return /^[0-9A-Za-z.+-]{1,32}$/.test(s) ? s : '';
+}
+
+/**
+ * 版を比べる。点で区切り、両方が数なら数として、ほかは字として比べる。欠けた段は 0。
+ *
+ * @returns {number} a が新しければ正、古ければ負、同じなら 0
+ */
+export function compareVersions(a, b) {
+  const pa = String(a || '').split('.');
+  const pb = String(b || '').split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] === undefined ? '0' : pa[i];
+    const y = pb[i] === undefined ? '0' : pb[i];
+    if (x === y) continue;
+    if (/^[0-9]+$/.test(x) && /^[0-9]+$/.test(y)) return Number(x) - Number(y);
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 /** 欠けていれば入れない。agent.mjs が無いと、戻す命令 (update rollback) ごと無くなる */
 export const REQUIRED_FILES = ['agent.mjs', 'track/hook.mjs', 'track/update.mjs'];
 
@@ -219,7 +252,7 @@ function listBackups(home) {
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => /^\d{8}-\d{6}/.test(n)).sort() : [];
 }
 
-function backupKit(home, now, print) {
+function backupKit(home, now, print, version) {
   const p = paths(home);
   if (!fs.existsSync(p.kit)) return;
   let name = stamp(now);
@@ -227,7 +260,7 @@ function backupKit(home, now, print) {
   for (let i = 1; fs.existsSync(path.join(p.backup, name)); i++) name = stamp(now) + '-' + i;
   const to = path.join(p.backup, name);
   fs.cpSync(p.kit, to, { recursive: true });
-  fs.writeFileSync(path.join(to, 'backup.json'), JSON.stringify({ print: print || '' }));
+  fs.writeFileSync(path.join(to, 'backup.json'), JSON.stringify({ print: print || '', version: version || '' }));
   const all = listBackups(home);
   for (const old of all.slice(0, Math.max(0, all.length - KEEP_BACKUPS))) {
     fs.rmSync(path.join(p.backup, old), { recursive: true, force: true });
@@ -269,14 +302,20 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
     }
   } else if (!manual) {
     throw new Error('いまの道具は署名を確かめる鍵を持っていないため、自動では入れ替えませんでした。' +
-      'node agent.mjs update で入れてください');
+      '番頭の画面から道具の zip を落とし直し、node agent.mjs track install で入れ直してください');
   } else {
     warn('署名を確かめられませんでした (確かめる鍵をまだ持っていません)。頼まれたので入れます\n');
+  }
+  const mine = readConfig(home) || {};
+  // 署名は本物でも、前に配った古い版の返事を流し直されうる (待っている id に置くだけで済む)。
+  // 自動では今より古い版に戻さない。戻すのは人が頼んだとき (update / rollback) だけ
+  if (!manual && cleanVersion(mine.kitVersion) && compareVersions(version, mine.kitVersion) < 0) {
+    throw new Error('受け取った道具は今より古い版です (' + cleanVersion(version) + ')。自動では戻しません');
   }
 
   const p = paths(home);
   const before = snapshot(p.kit);
-  backupKit(home, now, (readConfig(home) || {}).kitPrint);
+  backupKit(home, now, mine.kitPrint, cleanVersion(mine.kitVersion));
 
   // 新しい置き場を隣に組んでから差し替える。途中で落ちても今の置き場は残る
   const next = p.kit + '.new';
@@ -296,8 +335,10 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
 
   const names = new Set([...Object.keys(before), ...Object.keys(written)]);
   const changed = [...names].filter((n) => before[n] !== written[n]).sort();
-  writeConfig(home, { kitPrint: print, kitVersion: version, skipPrint: '' });
-  return { print, version, changed };
+  // 確かめたあとの版も、記録や合図に出すのは形の合う字だけ
+  const shown = cleanVersion(version);
+  writeConfig(home, { kitPrint: print, kitVersion: shown, skipPrint: '' });
+  return { print, version: shown, changed };
 }
 
 /**
@@ -315,13 +356,19 @@ function judgeVersion(config, res, force) {
   return { next: 'install', print, version };
 }
 
-function writeAvailable(home, version, now) {
-  fs.writeFileSync(paths(home).log, JSON.stringify({ available: version, at: new Date(now).toISOString() }));
+/**
+ * 新しい版があることだけを記録する。版の字は形が合うときだけ残す (署名の無い返事から来るため)。
+ *
+ * @param {boolean} [unsigned] 鍵を持たない道具なので入れられない (zip を落とし直してもらう)
+ */
+function writeAvailable(home, version, now, unsigned) {
+  fs.writeFileSync(paths(home).log, JSON.stringify({ available: cleanVersion(version) || '?',
+    ...(unsigned ? { unsigned: true } : {}), at: new Date(now).toISOString() }));
 }
 
 /** 入れ替えて、次に Claude Code を開いたときに見せる記録を書く */
-async function installAndLog({ home, claude, send, now, manual = false, warn = stderr }) {
-  const done = await installFromServer({ home, claude, send, now, manual, warn });
+async function installAndLog({ home, claude, send, now, manual = false, pinnedKey = '', warn = stderr }) {
+  const done = await installFromServer({ home, claude, send, now, manual, pinnedKey, warn });
   fs.writeFileSync(paths(home).log,
     JSON.stringify({ version: done.version, changed: done.changed, at: new Date(now).toISOString() }));
   return { checked: true, updated: true, ...done };
@@ -336,7 +383,8 @@ async function installAndLog({ home, claude, send, now, manual = false, warn = s
  *   force: 24時間を待たず、飛ばした版も入れる (agent update)
  *   manual: 人が頼んだ。鍵を持たない道具でも、確かめられないと断ってから入れる
  */
-export async function checkForUpdate({ home, claude, send, now = Date.now(), force = false, manual = false, warn = stderr }) {
+export async function checkForUpdate({ home, claude, send, now = Date.now(), force = false, manual = false,
+  pinnedKey = '', warn = stderr }) {
   const config = readConfig(home);
   if (!config) return { checked: false, updated: false };
   const last = Date.parse(config.lastUpdateCheck || '');
@@ -351,9 +399,9 @@ export async function checkForUpdate({ home, claude, send, now = Date.now(), for
   if (j.next === 'skip') return { checked: true, updated: false, skipped: true };
   if (j.next === 'available') {
     writeAvailable(home, j.version, now);
-    return { checked: true, updated: false, available: true, version: j.version };
+    return { checked: true, updated: false, available: true, version: cleanVersion(j.version) };
   }
-  return installAndLog({ home, claude, send, now, manual, warn });
+  return installAndLog({ home, claude, send, now, manual, pinnedKey, warn });
 }
 
 /**
@@ -446,8 +494,8 @@ export async function tickUpdate({ home, claude, place, collect, drop, sweep, no
       const j = judgeVersion(config, res, false);
       if (j.next === 'skip') return { updated: false, skipped: true };
       if (j.next === 'available' || (j.next === 'install' && !readPinnedKey(home))) {
-        writeAvailable(home, j.version, now);
-        return { updated: false, available: true, version: j.version };
+        writeAvailable(home, j.version, now, j.next === 'install');
+        return { updated: false, available: true, version: cleanVersion(j.version) };
       }
       if (j.next !== 'install') return { updated: false };
       if (pending.op === 'kitFiles') {
@@ -497,7 +545,7 @@ export function rollback({ home, claude, drop }) {
   swapKit(p.kit, next);
   if (claudeLinked(claude)) linkClaude(home, claude);
 
-  writeConfig(home, { kitPrint: meta.print || '', skipPrint: config.skipPrint || config.kitPrint || '' });
+  writeConfig(home, { kitPrint: meta.print || '', kitVersion: cleanVersion(meta.version), skipPrint: config.skipPrint || config.kitPrint || '' });
   fs.rmSync(dir, { recursive: true, force: true });
   return { restored: last };
 }

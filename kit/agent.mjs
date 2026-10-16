@@ -592,7 +592,9 @@ async function runUpdate(rest) {
   if (!config || !config.queueDir) throw new Error('まだ入れていません。先に node agent.mjs track install を実行してください');
   // 手で頼んだときは待つ。置いたまま拾っていない確認は、二重にならないよう捨てる
   update.dropPending(home, queueHands(config).drop);
-  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true, manual: true });
+  // 置き場に鍵が無い (署名の前の道具) なら、落とした zip の鍵で確かめる
+  const r = await update.checkForUpdate({ home, claude, send: sender(config), force: true, manual: true,
+    pinnedKey: update.readPinnedKey(home) || zipKey() });
   process.stdout.write(r.updated
     ? '新しくしました (' + r.version + '): ' + (r.changed.join(', ') || '変わったファイルなし') + '\n'
     : 'いまの道具が最新です\n');

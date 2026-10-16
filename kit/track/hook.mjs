@@ -89,16 +89,46 @@ export function writeSession(home, id, patch) {
   fs.writeFileSync(file, JSON.stringify({ ...readSession(home, id), ...patch }, null, 2));
 }
 
+/**
+ * 記録の版の字。形が違えば ''。update.mjs の cleanVersion と同じ規則。
+ *
+ * **ここに書いた字は Claude がそのまま読む。** 記録は手で書き換えられるうえ、版の
+ * 返事には署名が無い。改行や文を混ぜられても合図に出さない。
+ */
+function cleanVersion_(v) {
+  const s = String(v == null ? '' : v);
+  return /^[0-9A-Za-z.+-]{1,32}$/.test(s) ? s : '';
+}
+
+/** 合図に出してよい名前か (置き場の中の道のり。制御文字・外を指すものは出さない) */
+function shownName_(n) {
+  if (typeof n !== 'string' || !n || n.length > 200 || /[\x00-\x1f\x7f\\`]/.test(n)) return false;
+  if (path.posix.isAbsolute(n) || /^[A-Za-z]:/.test(n)) return false;
+  return !n.split('/').some((part) => part === '' || part === '.' || part === '..');
+}
+
+const MAX_SHOWN_ = 20;
+
 /** 入れ替えの記録を、Claude に伝える1文にする */
 function describeLog(log, home) {
   const tool = 'node "' + path.join(home, 'kit', 'agent.mjs') + '"';
   if (log.available) {
-    return '番頭の道具に新しい版があります (' + log.available + ')。' +
-      '`' + tool + ' update` で入れられます。利用者に1行だけ伝えてください。';
+    const v = cleanVersion_(log.available);
+    const head = '番頭の道具に新しい版があります' + (v ? ' (' + v + ')' : '') + '。';
+    if (log.unsigned) {
+      // 鍵を持たない道具は署名を確かめられない。手で update しても確かめずに入るだけなので、
+      // 信頼の起点 (画面から落とす zip) からやり直してもらう
+      return head + 'いまの道具は署名を確かめられないので、番頭の画面から道具の zip を落とし直し、' +
+        'その中の agent.mjs で track install を実行してください。利用者に1行だけ伝えてください。';
+    }
+    return head + '`' + tool + ' update` で入れられます。利用者に1行だけ伝えてください。';
   }
-  const changed = Array.isArray(log.changed) ? log.changed : [];
-  return '番頭の道具を自動で新しくしました (' + (log.version || '') + ')。変わったファイル: ' +
-    (changed.join(', ') || 'なし') + '。戻すときは `' + tool + ' update rollback`。利用者に1行だけ伝えてください。';
+  const all = (Array.isArray(log.changed) ? log.changed : []).filter(shownName_);
+  const shown = all.slice(0, MAX_SHOWN_);
+  const more = all.length > shown.length ? ' ほか' + (all.length - shown.length) + '件' : '';
+  const v = cleanVersion_(log.version);
+  return '番頭の道具を自動で新しくしました' + (v ? ' (' + v + ')' : '') + '。変わったファイル: ' +
+    (shown.join(', ') || 'なし') + more + '。戻すときは `' + tool + ' update rollback`。利用者に1行だけ伝えてください。';
 }
 
 /**

@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const PUBLIC_KEY = path.join(ROOT, 'kit', 'track', 'kit-key.pem');
@@ -112,10 +112,18 @@ export function createKeys({ keyPath, publicPath, rotate = false }) {
  * @returns {{signed:boolean}}
  */
 export function prepareSigning({ keyPath, publicPath, outPath, noSign = false }) {
-  if (noSign) return { signed: false };
+  if (noSign) {
+    // 手元に前の KitSigning.gs が残っていると、署名しないつもりで古い鍵を送ってしまう。消してから送る
+    if (!fs.existsSync(outPath)) return { signed: false };
+    fs.rmSync(outPath, { force: true });
+    return { signed: false, removed: true };
+  }
   if (!fs.existsSync(keyPath)) {
+    const copy = fs.existsSync(outPath)
+      ? ' 前に送ったときの ' + outPath + ' に秘密鍵の写しが残っています。失くしたならそこから戻せます。'
+      : '';
     throw new Error('署名の秘密鍵がありません (' + keyPath + ')。node scripts/kit-key.mjs で作るか、' +
-      '控えを戻してください。署名せずに送るなら --no-sign を付けます (手元の道具は自動で入れ替えなくなります)');
+      '控えを戻してください。' + copy + '署名せずに送るなら --no-sign を付けます (手元の道具は自動で入れ替えなくなります)');
   }
   const priv = fs.readFileSync(keyPath, 'utf8');
   const pub = fs.existsSync(publicPath) ? fs.readFileSync(publicPath, 'utf8') : '';
@@ -141,7 +149,17 @@ function main() {
   ].join('\n'));
 }
 
-if (import.meta.url === 'file://' + process.argv[1]) {
+/** 直に実行されたか。空白・日本語・シンボリックリンクを含む道のりでも当たるよう、実体の URL で比べる */
+function isMain() {
+  try {
+    return pathToFileURL(fs.realpathSync(process.argv[1] || '')).href ===
+      pathToFileURL(fs.realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch (e) {
+    return false;
+  }
+}
+
+if (isMain()) {
   try {
     main();
   } catch (err) {
