@@ -3777,7 +3777,18 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
  * 名前を決める・道具を落とすは読み物ではなく操作なので、上の帯から
  * いつでも開ける場所に置く
  */
-.me-btn { padding: 0; }
+.me-btn { padding: 0; position: relative; }
+
+/* 手元の道具が古いときの印。知らせの数 (.bell-count) と同じ色で、数は持たない */
+.me-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--danger-solid);
+}
 .me-btn .avatar { width: 24px; height: 24px; }
 
 .me-panel { width: min(92vw, 320px); }
