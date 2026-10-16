@@ -43,18 +43,26 @@ function real(p) {
   }
 }
 
-/** @returns {string[]} 載せるフォルダ */
+/**
+ * 載せるフォルダ。**絶対パスでないものは見ない。** 空や相対の登録は、フックが
+ * 走った場所を起点に読まれ、手で書き換えた1行でどこでも載ることになる。
+ *
+ * @returns {string[]}
+ */
 export function trackedFolders(home) {
   const t = readJson(path.join(home, 'tracked.json'), {});
-  return t && Array.isArray(t.folders) ? t.folders.map(String) : [];
+  if (!t || !Array.isArray(t.folders)) return [];
+  return t.folders.filter((f) => typeof f === 'string' && f && path.isAbsolute(f));
 }
 
 /** そのフォルダ (またはその下) を載せるか */
 export function isTracked(home, cwd) {
   if (!cwd) return false;
-  const here = real(String(cwd));
+  // Windows の道のりは大文字小文字を区別しない。綴りが違うだけで載らなくなるのを防ぐ
+  const fold = process.platform === 'win32' ? (p) => p.toLowerCase() : (p) => p;
+  const here = fold(real(String(cwd)));
   return trackedFolders(home).some((f) => {
-    const root = real(f);
+    const root = fold(real(f));
     return here === root || here.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
   });
 }
@@ -146,7 +154,8 @@ export function onStop(home, input) {
   return JSON.stringify({
     decision: 'block',
     reason: '番頭のやること #' + s.issue + ' を、この作業に合わせて更新するか完了にしてください' +
-      ' (banto-track スキル)。済んでいれば `agent track touch ' + id + '` で印を付けてください。',
+      ' (banto-track スキル)。済んでいれば `node "' + path.join(home, 'kit', 'agent.mjs') + '" track touch ' + id +
+      '` で印を付けてください。',
   });
 }
 

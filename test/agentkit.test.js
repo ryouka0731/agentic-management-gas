@@ -378,8 +378,10 @@ describe('置いた命令を片付ける', () => {
   it('結果を受け取ったら命令を消す', () => {
     const text = kitText('agent.mjs');
 
-    expect(text).toContain('function forget()');
-    expect(text).toContain('if (fs.existsSync(cmd)) fs.unlinkSync(cmd);');
+    const at = text.indexOf('function collectResult(');
+    const body = text.slice(at, text.indexOf('\n}', at));
+    expect(body).toContain('forgetCommand(queueDir, id);');
+    expect(text).toContain('if (fs.existsSync(file)) fs.unlinkSync(file);');
   });
 
   it('返らなかったときも消す', () => {
@@ -393,8 +395,8 @@ describe('置いた命令を片付ける', () => {
   it('消せなくても操作は成立させる', () => {
     // 片付けに失敗したからといって、返ってきた結果を捨てては困る
     const text = kitText('agent.mjs');
-    const at = text.indexOf('function forget()');
-    const body = text.slice(at, text.indexOf('\n  }', at));
+    const at = text.indexOf('function forgetCommand(');
+    const body = text.slice(at, text.indexOf('\n}', at));
 
     expect(body).toContain('try {');
     expect(body).not.toContain('throw');

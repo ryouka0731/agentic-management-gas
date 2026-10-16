@@ -38,6 +38,32 @@ describe('フック: 登録したフォルダだけ', () => {
     expect(isTracked(h, p)).toBe(true);
   });
 
+  it('絶対パスでない登録は見ない (空や相対だと、いまの場所しだいで何でも載る)', () => {
+    const p = project();
+    const h = home(['', 'relative', '.', p, 42]);
+    expect(trackedFolders(h)).toEqual([p]);
+    expect(isTracked(h, process.cwd())).toBe(false);
+    expect(isTracked(h, path.join(process.cwd(), 'relative'))).toBe(false);
+    expect(isTracked(h, p)).toBe(true);
+  });
+
+  it('Windows では大文字小文字を区別せずに比べる', () => {
+    // 実在しない道のりなら realpath を通らず、そのままの綴りで比べる
+    const root = path.join(path.parse(process.cwd()).root, 'no-such-banto-case', 'Proj');
+    const h = home([root]);
+    const lower = path.join(path.dirname(root), 'proj', 'sub');
+    const was = Object.getOwnPropertyDescriptor(process, 'platform');
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(isTracked(h, lower)).toBe(true);
+      expect(isTracked(h, path.join(path.dirname(root), 'proj-other'))).toBe(false);
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      expect(isTracked(h, lower)).toBe(false);
+    } finally {
+      Object.defineProperty(process, 'platform', was);
+    }
+  });
+
   it('一覧が無い・壊れていても落ちない', () => {
     const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
     expect(isTracked(h, project())).toBe(false);
@@ -113,7 +139,9 @@ describe('フック: 返事の終わり', () => {
     const out = JSON.parse(onStop(h, { cwd: p, session_id: 's1', stop_hook_active: false }));
     expect(out.decision).toBe('block');
     expect(out.reason).toContain('#7');
-    expect(out.reason).toContain('agent track touch s1');
+    // 合図の道具と同じ、そのまま動く綴りで促す (agent というコマンドは無い)
+    expect(out.reason).toContain('node "' + path.join(h, 'kit', 'agent.mjs') + '" track touch s1');
+    expect(out.reason).not.toContain('`agent track');
   });
 
   it('止めたあとの2回目は止めない', () => {
@@ -326,6 +354,7 @@ describe('まとめて入れる', () => {
       'agent.mjs': Buffer.from('a').toString('base64'),
       'track/SKILL.md': Buffer.from('s').toString('base64'),
       'track/hook.mjs': Buffer.from('h').toString('base64'),
+      'track/update.mjs': Buffer.from('u').toString('base64'),
     };
     const send = async (op) => ({ ok: true, result: { version: '1.8.0', print: kitPrintOf(files), files } });
 
@@ -390,6 +419,24 @@ describe('agent.mjs から使う', () => {
     expect(fs.existsSync(path.join(c, 'settings.json'))).toBe(false);
   });
 
+  it('--yes を付けても、入れるものと自動更新の危険・切り方を必ず出す', () => {
+    const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
+    let err = '';
+    try {
+      // 入れ先の設定が無いので入れる手前で止まる。出したものだけを見る
+      agent(['track', 'install', '--yes'], { BANTO_HOME: h, CLAUDE_CONFIG_DIR: claudeDir(), AGENTKIT_QUEUE: '' },
+        { cwd: project() });
+    } catch (e) {
+      err = String(e.stderr || '');
+    }
+    expect(err).toContain('settings.json');
+    expect(err).toContain('track-hook.mjs');
+    expect(err).toContain('自動で動かします');
+    expect(err).toContain('偽の返事');
+    expect(err).toContain('"autoUpdate": false');
+    expect(err).toContain(path.join(h, 'config.json'));
+  });
+
   it('setup が入れ方を案内し、次にすることは1つのまま', () => {
     const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
     const out = agent(['setup'], { BANTO_HOME: h, CLAUDE_CONFIG_DIR: claudeDir(), AGENTKIT_QUEUE: '' },
@@ -443,38 +490,94 @@ describe('agent.mjs から使う', () => {
     expect(readConfig(h).lastUpdateCheck).toBe('2000-01-01T00:00:00.000Z');
   }, 20000);
 
-  it('~/.banto/kit から動かすと、命令のあとで版を確かめ、結果は変えない', async () => {
+  /** ~/.banto/kit に今の道具を置き、そこから agent.mjs を1回動かす。listFiles にだけ答える */
+  function bantoKit() {
     const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
     const q = fs.mkdtempSync(path.join(os.tmpdir(), 'q-'));
     fs.mkdirSync(path.join(h, 'kit', 'track'), { recursive: true });
     fs.copyFileSync('kit/agent.mjs', path.join(h, 'kit', 'agent.mjs'));
     for (const n of fs.readdirSync('kit/track')) fs.copyFileSync(path.join('kit/track', n), path.join(h, 'kit', 'track', n));
-    writeConfig(h, { queueDir: q, lastUpdateCheck: '2000-01-01T00:00:00.000Z', kitPrint: 'abcd1234' });
+    return { h, q };
+  }
 
+  async function runFromBanto(h, q) {
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [path.join(h, 'kit', 'agent.mjs'), 'files'],
       { cwd: project(), env: { ...process.env, ...ISO(), HOME: h, BANTO_HOME: h, AGENTKIT_QUEUE: '' } });
     let stdout = '';
+    let stderr = '';
     child.stdout.on('data', (b) => { stdout += b; });
-    const ops = [];
+    child.stderr.on('data', (b) => { stderr += b; });
     let exited = false;
     const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
-    for (let i = 0; i < 400 && !exited; i++) {
+    const ops = [];
+    let answeredAt = 0;
+    for (let i = 0; i < 300 && !exited; i++) {
       await new Promise((r) => setTimeout(r, 50));
       for (const name of fs.readdirSync(q).filter((n) => n.endsWith('.cmd.json'))) {
         const cmd = JSON.parse(fs.readFileSync(path.join(q, name), 'utf8'));
+        if (cmd.op !== 'listFiles') continue;
         ops.push(cmd.op);
-        const result = cmd.op === 'kitVersion'
-          ? { ok: true, result: { version: '1.8.0', print: 'abcd1234' } }
-          : { ok: true, result: ['文書'] };
-        fs.writeFileSync(path.join(q, name.replace('.cmd.json', '.result.json')), JSON.stringify(result));
+        fs.writeFileSync(path.join(q, name.replace('.cmd.json', '.result.json')),
+          JSON.stringify({ ok: true, result: ['文書'] }));
         fs.unlinkSync(path.join(q, name));
+        answeredAt = Date.now();
       }
     }
+    const finished = exited;
+    if (!exited) child.kill();
     await done;
-    expect(ops).toEqual(['listFiles', 'kitVersion']);
-    expect(JSON.parse(stdout)).toEqual({ ok: true, result: ['文書'] });
-    expect(readConfig(h).lastUpdateCheck).not.toBe('2000-01-01T00:00:00.000Z');
+    return { stdout, stderr, ops, exited: finished, waited: Date.now() - answeredAt };
+  }
+
+  it('~/.banto/kit から動かすと、命令のあとで版を尋ねる命令を置くだけで、返事を待たない', async () => {
+    const { h, q } = bantoKit();
+    writeConfig(h, { queueDir: q, lastUpdateCheck: '2000-01-01T00:00:00.000Z', kitPrint: 'abcd1234' });
+
+    const r = await runFromBanto(h, q);
+
+    // Claude Code の Bash は2分で打ち切る。版の返事を待つと本来の命令まで失敗に見える
+    expect(r.exited).toBe(true);
+    expect(r.waited).toBeLessThan(5000);
+    expect(r.ops).toEqual(['listFiles']);
+    expect(JSON.parse(r.stdout)).toEqual({ ok: true, result: ['文書'] });
+    const c = readConfig(h);
+    expect(c.lastUpdateCheck).not.toBe('2000-01-01T00:00:00.000Z');
+    expect(c.pendingUpdate.op).toBe('kitVersion');
+    const cmd = JSON.parse(fs.readFileSync(path.join(q, c.pendingUpdate.id + '.cmd.json'), 'utf8'));
+    expect(cmd).toEqual({ op: 'kitVersion', args: { mine: 'abcd1234' } });
+  }, 30000);
+
+  it('次に呼ばれたとき、届いていた返事を拾って続きを進め、その次に入れ替える', async () => {
+    const { h, q } = bantoKit();
+    const b64 = (f) => fs.readFileSync(f).toString('base64');
+    const files = { 'agent.mjs': b64('kit/agent.mjs'), 'marker.md': Buffer.from('new').toString('base64') };
+    for (const n of fs.readdirSync('kit/track')) files['track/' + n] = b64(path.join('kit/track', n));
+    const print = kitPrintOf(files);
+    const at = new Date().toISOString();
+    writeConfig(h, { queueDir: q, lastUpdateCheck: at, kitPrint: 'abcd1234',
+      pendingUpdate: { op: 'kitVersion', id: 'kit-1-aaaaaa', at } });
+    fs.writeFileSync(path.join(q, 'kit-1-aaaaaa.cmd.json'), '{}');
+    fs.writeFileSync(path.join(q, 'kit-1-aaaaaa.result.json'),
+      JSON.stringify({ ok: true, result: { version: '9.9.9', print } }));
+
+    const second = await runFromBanto(h, q);
+    expect(second.waited).toBeLessThan(5000);
+    const pending = readConfig(h).pendingUpdate;
+    expect(pending.op).toBe('kitFiles');
+    expect(fs.existsSync(path.join(q, 'kit-1-aaaaaa.result.json'))).toBe(false);
+    expect(fs.existsSync(path.join(q, 'kit-1-aaaaaa.cmd.json'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(q, pending.id + '.cmd.json'), 'utf8')).op).toBe('kitFiles');
+
+    fs.writeFileSync(path.join(q, pending.id + '.result.json'),
+      JSON.stringify({ ok: true, result: { version: '9.9.9', print, files } }));
+    const third = await runFromBanto(h, q);
+    expect(third.waited).toBeLessThan(5000);
+    expect(JSON.parse(third.stdout)).toEqual({ ok: true, result: ['文書'] });
+    expect(third.stderr).toContain('新しくしました (9.9.9)');
+    expect(fs.readFileSync(path.join(h, 'kit', 'marker.md'), 'utf8')).toBe('new');
+    expect(readConfig(h)).toMatchObject({ kitPrint: print, pendingUpdate: null });
+    expect(fs.readdirSync(q)).toEqual([]);
   }, 30000);
 });
 
@@ -512,5 +615,20 @@ describe('スキルと説明', () => {
     expect(skill()).not.toContain('agent.mjs agent ');
     expect(t).toContain('"autoUpdate": false');
     expect(t).toContain('Drive を共有している人なら誰でも');
+  });
+
+  it('自動更新は「書き換えるだけ」ではないと書いてある (フックが次の依頼で自動で動く)', () => {
+    for (const file of ['kit/AGENTS.md', 'CLAUDE.md']) {
+      const t = fs.readFileSync(file, 'utf8');
+      expect(t, file).not.toContain('書き換えるだけで');
+      expect(t, file).toContain('track-hook.mjs');
+      expect(t, file).toContain('自動で動かします');
+      expect(t, file).toContain('"autoUpdate": false');
+    }
+    // --yes を付ける前に、利用者へ危険と切り方を伝える
+    const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    const at = agents.indexOf('`--yes` を付ける前に');
+    expect(at).toBeGreaterThan(-1);
+    expect(agents.slice(at, at + 300)).toContain('"autoUpdate": false');
   });
 });

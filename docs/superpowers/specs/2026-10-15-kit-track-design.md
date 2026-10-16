@@ -20,12 +20,14 @@
 
 命令の入れ先 (Drive の `queue/`) は、Drive を共有している人なら誰でも書ける。結果のファイルを
 偽って「新しい道具」を置くと、**それを受け取った全員の手元で、その人が書いたプログラムが動く**。
-この仕組みの中に、受け取った中身が本物かを確かめる手段は無い (向こう側は GAS で、署名を作れない。
-画面の Web アプリは Google のログインが要り、手元の node からは取れない)。
+この変更の中には、受け取った中身が本物かを確かめる手段は無い (画面の Web アプリは Google のログインが要り、
+手元の node からは取れない)。GAS は `Utilities.computeRsaSha256Signature` で署名を作れ、手元の node は
+`crypto.verify` で確かめられるので、署名は作れないわけではない。この変更では入れていない。
 
 その上で入れる手当て:
 
-- **入れ替えのあいだは何も実行しない** (書き換えるだけ。新しい `agent.mjs` が動くのは次に呼ばれたとき)
+- **入れ替えのあいだは何も実行しない**。ただし新しい `agent.mjs` は次に呼ばれたときに動き、写した
+  `~/.banto/hooks/track-hook.mjs` は Claude Code が次の依頼から (どのフォルダでも) 自動で動かす
 - **道具の置き場 (`~/.banto/kit/`) の外には書かない**。名前に `..`・絶対パス・`~/.claude` 以外の
   場所を含むものは捨てる (`~/.claude` へは決まったファイルだけ。§3.4)
 - **入れ替える前の中身を控える** (`~/.banto/backup/<日時>/`)。`agent update rollback` で1回で戻せる
@@ -33,6 +35,9 @@
 - **切れる**: `~/.banto/config.json` の `autoUpdate: false` で、知らせるだけにできる
 - 受け取った中身の指紋が、向こうが名乗った指紋と合わなければ入れない (壊れた・途中で切れたものを防ぐ。
   偽物は防げない)
+- 上の手当ては壊れた版には効くが、偽物は防げない。本当の止め方は `autoUpdate: false`
+- **残る危険への次の手**: 固定した公開鍵で署名し、手元で確かめてから入れる (GAS で署名・node で検証)。
+  これは後続の変更で入れる予定で、この変更には含まない
 
 ## 2. 全体の形
 
@@ -103,14 +108,15 @@
 ### 3.4 1日1回の更新確認と自動入れ替え
 
 - **いつ**: `agent` のどの命令でも、`config.json` の `lastUpdateCheck` が24時間より前なら、
-  本来の命令のあとで確認する (UserPromptSubmit フックでは確認しない。待つから)
+  本来の命令のあとで確認する (UserPromptSubmit フックでは確認しない。待つから)。**命令のついでの確認は
+  返事を待たない** (R8)。命令を置いて帰り、返事は次に呼ばれたときに拾う
 - **どう**: 命令 `kitVersion` (新しい op) で向こうの `{version, print}` を取る。手元の `kitPrint` と
   違えば命令 `kitFiles` (新しい op) で `{print, files: {名前: base64}}` を取る
 - 受け取った `files` の指紋 (`sha256(JSON.stringify(files))` の先頭8字。`agentKitName_` と同じ作り方) が
   `print` と合わなければ入れない
 - 入れ替え:
   1. `~/.banto/kit/` の今の中身を `~/.banto/backup/<日時>/` に写す (控えは新しい3つだけ残す)
-  2. `files` を `~/.banto/kit/` に書く。名前は正規化して `kit/` の外に出るものは捨てる
+  2. `files` を `~/.banto/kit/` に書く。名前は正規化し、`kit/` の外に出るものが1つでもあれば全体を断る (R9)
   3. `~/.claude/skills/banto-track/SKILL.md` と `~/.banto/hooks/track-hook.mjs` を kit の中の同名から写す
      (**`~/.claude` に書くのはこの1つだけ**。settings.json は自動では触らない)
   4. `config.json` の `kitPrint` / `lastUpdateCheck` を書き、変わったファイルを `update-log.json` に書く
@@ -147,14 +153,14 @@
 - `test/` (GAS): `kitVersion` / `kitFiles` の op、`apiAgentKit` で指紋を覚える、`apiKitStatus` の outdated、
   `phase4-edit` の「画面に渡せる形か」に `apiKitStatus`
 - `test/component.test.js`: outdated なら自分の顔に点と「更新あり」、落とし直すと消える
-- `test/agentkit.test.js` の「この道具は頼みごとを実行しない」(`execFileSync` の数) を崩さない。**更新は書き換えるだけで実行しない**
+- `test/agentkit.test.js` の「この道具は頼みごとを実行しない」(`execFileSync` の数) を崩さない。**更新は子プロセスを起こさない** (`kit/track/*.mjs` は `child_process` を使わない)
 
 ## 6. 文書
 
 - `kit/AGENTS.md` (zip の中で CLAUDE.md にもなる) に、番頭に載せる仕組み・`track`・`update` の使い方と、
   自動入れ替えの危険と切り方を書く
-- CLAUDE.md (このリポジトリ) に「手元の道具は1日1回自分を更新する。入れ替えは書き換えるだけで実行しない。
-  `~/.claude` に自動で書くのは banto-track のスキルだけ」を書く
+- CLAUDE.md (このリポジトリ) に「手元の道具は1日1回自分を更新する。入れ替えたフックは次の依頼から自動で動く。
+  偽物は防げず、本当の止め方は `autoUpdate: false`。`~/.claude` に自動で書くのは banto-track のスキルだけ」を書く
 
 ## 7. やらないこと
 
@@ -172,3 +178,5 @@
 - **R5 スキルとフックは `kit/track/` に置く** (`kit/.claude/skills/` ではない)。`kit/.claude/skills/` の全スキルはスクラムの決まり (`node agent.mjs scrum` を含む) をテストで課されている。zip の中では `track/SKILL.md` / `track/hook.mjs`
 - **R6 自動の確認は `~/.banto/kit/agent.mjs` として動いたときだけ**。入れ替えるのは `~/.banto/kit` なので、ほかの場所の写し (リポジトリの `kit/`、展開した zip) から確かめても意味が無く、テストが本物の命令の入れ先に命令を置く事故にもなる
 - **R7 戻したら、その版を飛ばす** (`config.skipPrint`)。戻しても翌日の確認で同じ版が入り直すため。`agent update` (手で頼んだとき) は飛ばさない
+- **R8 命令のついでの確認は待たない** (最終レビューで直した)。Claude Code の Bash は2分で打ち切り、`kitVersion` と `kitFiles` を続けて待つと最大6分かかる。命令を置いて `config.json` の `pendingUpdate: {op, id, at}` に覚えて帰り、次に呼ばれたときに結果があれば拾って続きをする (`tickUpdate`)。24時間返らなければ捨てる。`agent update` (手で頼んだとき) だけは待つ
+- **R9 届いた中身は丸ごと確かめてから入れる** (最終レビューで直した)。`files: {}` でも指紋は合うので、指紋だけでは空の置き場が入り、`agent.mjs` ごと消えて戻せなくなる。外を指す名前を黙って捨てるのもやめ、1つでもあれば全体を断る。`agent.mjs` / `track/hook.mjs` / `track/update.mjs` が欠けていても断る (`checkFiles`)
