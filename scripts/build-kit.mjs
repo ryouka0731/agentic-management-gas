@@ -31,6 +31,8 @@ export const FILES = [
   ['SCRUM.md', 'SCRUM.md'],
   ...walk('.claude'),
   ...walk('scrum-templates'),
+  // 番頭に作業を載せるフックとスキル、道具の自動更新 (~/.banto に置かれる)
+  ...walk('track'),
 ];
 
 /**
