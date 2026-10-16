@@ -40,9 +40,19 @@ function readSettings(file) {
   }
 }
 
-function hooksOf(settings) {
-  if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = {};
-  return settings.hooks;
+function brokenHooks(file) {
+  return new Error(file + ' の hooks の形が想定と違います (壊れています)。直してからもう一度実行してください。何も変えていません');
+}
+
+/** hooks が object で、各イベントが配列であることを確かめる。形が違えば何も触らず断る */
+function hooksOf(settings, file) {
+  if (settings.hooks === undefined) settings.hooks = {};
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) throw brokenHooks(file);
+  for (const [event] of EVENTS) {
+    if (hooks[event] !== undefined && !Array.isArray(hooks[event])) throw brokenHooks(file);
+  }
+  return hooks;
 }
 
 /**
@@ -53,7 +63,7 @@ function hooksOf(settings) {
 export function installHooks({ home, claude, now = Date.now() }) {
   const file = path.join(claude, 'settings.json');
   const { settings, text } = readSettings(file);
-  const hooks = hooksOf(settings);
+  const hooks = hooksOf(settings, file);
   let added = 0;
   for (const [event, kind] of EVENTS) {
     const cmd = hookCommand(home, kind);
@@ -70,7 +80,7 @@ export function installHooks({ home, claude, now = Date.now() }) {
   let backup = '';
   if (text !== null) {
     backup = file + '.banto-backup-' + stamp(now);
-    fs.writeFileSync(backup, text);
+    fs.copyFileSync(file, backup); // 元の許可 (600 など) を保つ。トークンを含みうる
   }
   fs.mkdirSync(claude, { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
@@ -87,7 +97,7 @@ export function uninstallHooks({ home, claude, now = Date.now() }) {
   let removed = 0;
   if (fs.existsSync(file)) {
     const { settings, text } = readSettings(file);
-    const hooks = hooksOf(settings);
+    const hooks = hooksOf(settings, file);
     for (const [event, kind] of EVENTS) {
       const cmd = hookCommand(home, kind);
       if (!Array.isArray(hooks[event])) continue;
@@ -103,7 +113,7 @@ export function uninstallHooks({ home, claude, now = Date.now() }) {
     }
     if (!Object.keys(hooks).length) delete settings.hooks;
     if (removed) {
-      fs.writeFileSync(file + '.banto-backup-' + stamp(now), text);
+      fs.copyFileSync(file, file + '.banto-backup-' + stamp(now));
       fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
     }
   }

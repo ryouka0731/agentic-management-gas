@@ -491,7 +491,7 @@ async function runTrack(rest) {
     process.stdout.write((list.length ? list.join('\n') : '(載せるフォルダはありません)') + '\n');
     return;
   }
-  if (sub === 'set') { track.setIssue(home, a[0], a[1], a[2]); return; }
+  if (sub === 'set') { track.setIssue(home, a[0], a[1], a.slice(2).join(' ')); return; }
   if (sub === 'touch') { track.touch(home, a[0]); return; }
   if (sub === 'clear') { track.clearIssue(home, a[0]); return; }
 

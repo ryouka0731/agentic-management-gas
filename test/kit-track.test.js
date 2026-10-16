@@ -236,6 +236,30 @@ describe('仕掛けを入れる・外す', () => {
     expect(fs.readFileSync(path.join(c, 'settings.json'), 'utf8')).toBe('{こわれ');
   });
 
+  it('hooks の形が違えば、何も書かず控えも取らずに断る', () => {
+    const shapes = [
+      '{"hooks":"x"}',
+      '{"hooks":[1]}',
+      '{"hooks":{"Stop":{"matcher":"","hooks":[{"type":"command","command":"keep"}]}}}',
+      '{"hooks":{"UserPromptSubmit":"x"}}',
+    ];
+    for (const text of shapes) {
+      for (const fn of [installHooks, uninstallHooks]) {
+        const c = claudeDir(text);
+        expect(() => fn({ home: home([]), claude: c })).toThrow('壊れています');
+        expect(fs.readFileSync(path.join(c, 'settings.json'), 'utf8')).toBe(text);
+        expect(fs.readdirSync(c)).toEqual(['settings.json']);
+      }
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('控えは元の許可を保つ', () => {
+    const c = claudeDir(JSON.stringify(OTHER));
+    fs.chmodSync(path.join(c, 'settings.json'), 0o600);
+    const r = installHooks({ home: home([]), claude: c });
+    expect(fs.statSync(r.backup).mode & 0o777).toBe(0o600);
+  });
+
   it('外すと足したものだけが消える', () => {
     const h = home([]);
     const c = claudeDir(JSON.stringify(OTHER));
@@ -323,11 +347,17 @@ describe('まとめて入れる', () => {
 });
 
 describe('agent.mjs から使う', () => {
+  /** 本物の HOME / ~/.claude / ~/.banto を触らせない */
+  const ISO = () => ({
+    HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')),
+    BANTO_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'banto-iso-')),
+    CLAUDE_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'claude-iso-')),
+  });
   const AGENT = path.resolve('kit/agent.mjs');
 
   function agent(args, env, opts) {
     return execFileSync(process.execPath, [AGENT, ...args], {
-      encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...env }, ...(opts || {}),
+      encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...ISO(), ...env }, ...(opts || {}),
     });
   }
 
@@ -336,6 +366,12 @@ describe('agent.mjs から使う', () => {
     const p = project();
     agent(['track', 'add', p], { BANTO_HOME: h });
     expect(agent(['track', 'list'], { BANTO_HOME: h })).toContain(path.resolve(p));
+  });
+
+  it('track set は、引用符の無い題名も続けて受ける', () => {
+    const h = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
+    agent(['track', 'set', 's1', '5', '第3条', 'を', '直す'], { BANTO_HOME: h });
+    expect(readSession(h, 's1')).toMatchObject({ issue: 5, title: '第3条 を 直す' });
   });
 
   it('端末でなく --yes も無ければ、入れずに断る', () => {
@@ -369,7 +405,7 @@ describe('agent.mjs から使う', () => {
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [AGENT, 'files'],
       // HOME も向ける。手元に本物の ~/.agentkit.json があると先にそちらを拾う
-      { cwd: project(), env: { ...process.env, HOME: h, BANTO_HOME: h, AGENTKIT_QUEUE: '' } });
+      { cwd: project(), env: { ...process.env, ...ISO(), HOME: h, BANTO_HOME: h, AGENTKIT_QUEUE: '' } });
     let cmd = null;
     for (let i = 0; i < 100 && !cmd; i++) {
       await new Promise((r) => setTimeout(r, 50));
@@ -390,7 +426,7 @@ describe('agent.mjs から使う', () => {
     writeConfig(h, { queueDir: q, lastUpdateCheck: '2000-01-01T00:00:00.000Z' });
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [AGENT, 'files', '--queue', q],
-      { env: { ...process.env, BANTO_HOME: h } });
+      { env: { ...process.env, ...ISO(), BANTO_HOME: h } });
     const ops = [];
     let exited = false;
     const done = new Promise((r) => child.on('exit', () => { exited = true; r(); }));
@@ -417,7 +453,7 @@ describe('agent.mjs から使う', () => {
 
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [path.join(h, 'kit', 'agent.mjs'), 'files'],
-      { cwd: project(), env: { ...process.env, HOME: h, BANTO_HOME: h, AGENTKIT_QUEUE: '' } });
+      { cwd: project(), env: { ...process.env, ...ISO(), HOME: h, BANTO_HOME: h, AGENTKIT_QUEUE: '' } });
     let stdout = '';
     child.stdout.on('data', (b) => { stdout += b; });
     const ops = [];
