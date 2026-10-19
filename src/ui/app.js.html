@@ -3720,6 +3720,9 @@
       return splitPath(f.path).branch === 'main' && f.path === docPath;
     })[0];
 
+    // 描かずにやめたとき (opts.since) に戻すため、前に開いていた文書を控える
+    var prev = { fileId: current.fileId, docFileId: current.docFileId, docPath: current.docPath };
+
     current.docPath = docPath;
     current.docFileId = doc ? doc.fileId : fileId;
     current.fileId = fileId;
@@ -3732,7 +3735,14 @@
       // いまの題名の下に出る
       if (current.fileId !== fileId) return;
       // リンクから開いたときは、返事を待つあいだに人が移った先を奪わない
-      if (opts && opts.since !== undefined && navCount !== opts.since) return;
+      // 開きかけた文書をいまの文書として残さない。残すと本文のタブで空の本文が出る
+      if (opts && opts.since !== undefined && navCount !== opts.since) {
+        current.fileId = prev.fileId;
+        current.docFileId = prev.docFileId;
+        current.docPath = prev.docPath;
+        renderVersionSelect();
+        return;
+      }
       openLink.href = res.url;
       renderIntoViewer(res.html);
       loadLinkedIssues(fileId);
