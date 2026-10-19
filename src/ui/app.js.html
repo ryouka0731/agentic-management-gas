@@ -1430,11 +1430,19 @@
   function makeResizable(handle, cssVar, key, measure, limit) {
     var dragging = false;
 
-    /** いまの幅。覚えていなければ CSS の既定の値 */
+    /**
+     * いまの幅 (px)。既定が割合 (46% など) のペインは字のままでは px にならない
+     * ので、隣のペインを測る。測れない (隠れている) ときは null
+     */
     function current() {
-      return parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue(cssVar), 10
-      ) || limit.min;
+      var raw = String(
+        getComputedStyle(document.documentElement).getPropertyValue(cssVar)
+      ).replace(/^\s+|\s+$/g, '');
+      if (/^\d+(\.\d+)?px$/.test(raw)) return parseInt(raw, 10);
+
+      var pane = handle.previousElementSibling;
+      var w = pane ? Math.round(pane.getBoundingClientRect().width) : 0;
+      return w > 0 ? w : null;
     }
 
     /*
@@ -1442,7 +1450,8 @@
      * 「動かせる境界」とだけ読まれ、どこまで動いたのかが分からない
      */
     function announce(px) {
-      handle.setAttribute('aria-valuenow', String(px));
+      if (px === null) handle.removeAttribute('aria-valuenow');
+      else handle.setAttribute('aria-valuenow', String(px));
     }
 
     function forget() {
@@ -1532,6 +1541,7 @@
 
     handle.addEventListener('keydown', function (e) {
       var now = current();
+      if (now === null) now = limit.min;
 
       if (e.key === 'ArrowLeft') save(set(now - 16));
       else if (e.key === 'ArrowRight') save(set(now + 16));
@@ -2661,7 +2671,11 @@
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
     else if (name === 'pulls') loadPulls(opts && opts.pr);
-    else if (name === 'issues') reloadIssueView();
+    else if (name === 'issues') {
+      // 起動時に工程表を覚えていると、隠れたまま一度描かれる。開いたこの時に今日へ送る
+      if (issueView === 'gantt') ganttToToday = true;
+      reloadIssueView();
+    }
     else if (name === 'help') loadHelp();
     else if (name === 'report') loadReports();
     else if (name === 'usage') loadUsage();
@@ -8186,8 +8200,10 @@
         return;
       }
 
-      // 1日の幅は細かさで変わる。描いたときの幅で日に直す
-      var moved = Math.round((e.clientX - startX) / colWidth);
+      // 1日の幅は細かさで変わる。描いたときの幅で日に直す。
+      // 3px 未満は手のぶれとして動かさない (月の細かさでは 2px で半日を超え、1日ずれる)
+      var dx = e.clientX - startX;
+      var moved = Math.abs(dx) < 3 ? 0 : Math.round(dx / colWidth);
 
       if (mode === 'move') {
         row.offset = Math.max(0, origin.offset + moved);
@@ -8248,6 +8264,9 @@
   function ganttScrollToToday() {
     var chart = ganttEl.querySelector('.gantt');
     if (!chart || !ganttShown) return;
+    // 隠れている器は幅が 0 で送れない。印を残し、見えてから描いたときに送る
+    if (!ganttEl.clientWidth) return;
+    ganttToToday = false;
 
     var nameW = parseFloat(getComputedStyle(chart).getPropertyValue('--gantt-name-w')) || 220;
     var head = chart.querySelector('.gantt-head');
@@ -8465,7 +8484,6 @@
 
       ganttShown = { today: g.todayOffset, col: COL };
       if (ganttToToday) {
-        ganttToToday = false;
         ganttScrollToToday();
       } else {
         ganttEl.scrollLeft = keepScroll;

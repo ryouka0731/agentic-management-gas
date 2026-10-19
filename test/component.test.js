@@ -8807,11 +8807,69 @@ describe('工程表のペインと細かさ', () => {
     expect(Math.abs(document.getElementById('gantt').scrollLeft - expected)).toBeLessThan(40);
   });
 
+  it('工程表を覚えたまま起動し、あとでやることを開いても今日へ送る', () => {
+    // 起動時はホームが出ていて工程表は隠れている。隠れたまま描いた時点で
+    // 今日へ送る印を使い切ると、開いたときに左端のままになる
+    window.localStorage.setItem('issueView', 'gantt');
+    mount();
+    const scroller = document.getElementById('gantt');
+    scroller.scrollLeft = 0; // 隠れている器は実機では送れない
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 900 });
+
+    document.querySelector('[data-tab="issues"]').click();
+    const cells = [...document.querySelectorAll('.gantt-day')];
+    const today = cells.findIndex((c) => c.classList.contains('today'));
+    const expected = today * 26 + 13 - (900 - 220) / 3;
+    expect(Math.abs(scroller.scrollLeft - expected)).toBeLessThan(40);
+  });
+
+  it('月の細かさで 2px ぶれただけでは、期間を変えない', () => {
+    const capture = window.Element.prototype.setPointerCapture;
+    const release = window.Element.prototype.releasePointerCapture;
+    window.Element.prototype.setPointerCapture = () => {};
+    window.Element.prototype.releasePointerCapture = () => {};
+    try {
+      const app = openGantt();
+      zoom('month');
+      const before = app.calls.length;
+      const bar = document.querySelector('.gantt-row[data-number="2"] .gantt-bar');
+      bar.dispatchEvent(pointer('pointerdown', 100));
+      bar.dispatchEvent(pointer('pointermove', 102));
+      bar.dispatchEvent(pointer('pointerup', 102));
+
+      expect(app.calls.slice(before).some((c) => c.name === 'apiIssueUpdate')).toBe(false);
+    } finally {
+      window.Element.prototype.setPointerCapture = capture;
+      window.Element.prototype.releasePointerCapture = release;
+    }
+  });
+
   it('狭い画面では掴み手を出さず、名前の欄は 140px', () => {
     openGantt();
     const css = document.querySelector('style').textContent;
     expect(handle().classList.contains('resizer')).toBe(true);
     expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.resizer \{ display: none/);
     expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.gantt \{ --gantt-name-w: 140px; \}/);
+  });
+});
+
+describe('割合で決まる幅の掴み手', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.style.removeProperty('--graph-pane-w');
+  });
+
+  it('既定が割合のペインは、今の幅を測って値にし、矢印でそこから動く', () => {
+    mount();
+    const handle = document.getElementById('diff-resizer');
+    // 既定は 46% 。字のまま数えると 46 になり、下限より小さい値を名乗る
+    expect(handle.getAttribute('aria-valuenow')).not.toBe('46');
+
+    const pane = handle.previousElementSibling;
+    pane.getBoundingClientRect = () => ({ left: 0, right: 500, top: 0, bottom: 0, width: 500, height: 0 });
+
+    handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    expect(document.documentElement.style.getPropertyValue('--graph-pane-w')).toBe('516px');
+    expect(handle.getAttribute('aria-valuenow')).toBe('516');
   });
 });
