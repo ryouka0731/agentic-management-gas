@@ -543,7 +543,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   `~/.banto/hooks/track-hook.mjs` と banto-track のスキルもで、**Claude Code はそのフックを次の依頼から
   (どのフォルダでも) 自動で動かします**。`settings.json` は人が ok した `track install` / `uninstall` のときしか書かない。
   命令の入れ先は Drive を共有している人なら書けるが、**番頭の署名が合うものしか自動では入れない**
-  (下の「道具の署名」)。残る信頼の先は Apps Script を編集できる人 (= 持ち主)。止め方は
+  (下の「道具の署名」)。残る信頼の先は秘密鍵を持つ人 (= deploy する人)。止め方は
   `~/.banto/config.json` の `"autoUpdate": false`。`track install` は `--yes` でもこの危険と切り方を必ず出す
 - **中身が届いたときにも入れてよいかを決め直す** (`tickUpdate`)。頼んでから届くまで何時間も空くので、その間に
   `autoUpdate: false` にした・戻した人の道具を入れ替えない。`rollback` は置いたままの確認を捨てる

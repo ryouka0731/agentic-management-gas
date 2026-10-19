@@ -282,6 +282,7 @@ describe('番頭が署名する (kitFiles)', () => {
     const ctx = loadGasWith(fake, ...SOURCES);
     const signature = ctx.kitSignature_('1.8.0', ctx.KIT_FILES());
     expect(verifyKit({ version: '1.8.0', files, signature }, TEST_KEYS.pub)).toBe(true);
+    expect(verifyKit({ version: '1.8.0', files, signature }, OTHER_KEYS.pub)).toBe(false);
   });
 
   it('中身が1字違えば空', () => {
