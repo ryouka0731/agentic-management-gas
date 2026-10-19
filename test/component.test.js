@@ -7441,6 +7441,50 @@ describe('ポイント・レベル・週の上位', () => {
     expect(document.querySelector('#home-cards .game-card').textContent).not.toMatch(/\d+ 位中/);
   });
 
+  const BADGES = [
+    { key: 'first', label: 'はじめの一歩', done: true, at: '2026-10-01', left: 0 },
+    { key: 'closed10', label: '10件片づけた', done: false, at: '', left: 7 },
+    { key: 'heavy', label: '重いやることを片づけた', done: false, at: '', left: 1 },
+  ];
+
+  it('称号は得たものを日付つきで並べ、まだのものは薄く「あと N 件」と出す', () => {
+    mount({ apiGameState: Object.assign({}, ON, { badges: BADGES }) });
+    const items = Array.from(document.querySelectorAll('#home-cards .game-badges li'));
+    expect(items).toHaveLength(3);
+    expect(items[0].classList.contains('is-done')).toBe(true);
+    expect(items[0].textContent).toContain('はじめの一歩');
+    expect(items[0].textContent).toContain('10/1');
+    expect(items[1].classList.contains('is-done')).toBe(false);
+    expect(items[1].textContent).toContain('あと 7 件');
+    expect(items[2].textContent).toContain('あと 1 件');
+  });
+
+  it('称号が届かなければ並びを出さない', () => {
+    mount({ apiGameState: ON });
+    expect(document.querySelector('#home-cards .game-badges')).toBeNull();
+  });
+
+  it('チームの今週を、先週の合計を目標に棒で出す。名前は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { week: 6, lastWeek: 8 } }) });
+    const bar = document.querySelector('#home-cards .game-team-bar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('6');
+    expect(bar.getAttribute('aria-valuemax')).toBe('8');
+    expect(bar.querySelector('span').style.width).toBe('75%');
+    const team = document.querySelector('#home-cards .game-team');
+    expect(team.textContent).toContain('チームの今週 6');
+    expect(team.textContent).toContain('先週 8');
+  });
+
+  it('先週を超えたら棒は満ちたまま。先週が0でも割らない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { week: 3, lastWeek: 0 } }) });
+    expect(document.querySelector('#home-cards .game-team-bar span').style.width).toBe('100%');
+  });
+
+  it('チームが届かなければ (2人未満) 出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: null }) });
+    expect(document.querySelector('#home-cards .game-team')).toBeNull();
+  });
+
   const SETTINGS_ON = Object.assign({}, DEFAULTS.apiSettings, { gameEnabled: true });
 
   it('自分まわりで順位に参加できる。切り替えは並びのボタンと同じ器に入る', () => {
