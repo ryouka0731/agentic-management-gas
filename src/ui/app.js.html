@@ -170,6 +170,30 @@
   var issueView = 'list';
   var collapsed = {};
   var lastIssues = [];
+
+  /*
+   * 工程表の細かさ。1日の幅 (px) を変える。月の単位で眺めたいときに、日の幅の
+   * ままだと横に送り続けることになる
+   */
+  var GANTT_ZOOMS = { day: 26, week: 12, month: 4 };
+  var ganttZoom = 'day';
+  try {
+    var savedZoom = window.localStorage.getItem('ganttZoom');
+    // 手で書き換えられうる値なので、Object の持ち物 ('constructor' など) を通さない
+    if (Object.prototype.hasOwnProperty.call(GANTT_ZOOMS, savedZoom)) ganttZoom = savedZoom;
+  } catch (e) { /* 既定の日でよい */ }
+
+  /** 次に描いたとき今日へ送るか。開いたときと細かさを変えたときだけ送る */
+  var ganttToToday = false;
+
+  /** 今日へ送るのに使う、いま描いている工程表の今日の列と1日の幅 */
+  var ganttShown = null;
+
+  /** 工程表の名前の欄の掴み手。初めに1つだけ作る */
+  var ganttResizer = null;
+
+  /** 工程表の読み込みの番号。遅れて届いた古い返事で、新しい描画を上書きしない */
+  var ganttLoadSeq = 0;
   var mineOnly = false;
   var archiveKeepDays = 30;
 
@@ -1409,16 +1433,42 @@
   function makeResizable(handle, cssVar, key, measure, limit) {
     var dragging = false;
 
+    /**
+     * いまの幅 (px)。既定が割合 (46% など) のペインは字のままでは px にならない
+     * ので、隣のペインを測る。測れない (隠れている) ときは null
+     */
+    function current() {
+      var raw = String(
+        getComputedStyle(document.documentElement).getPropertyValue(cssVar)
+      ).replace(/^\s+|\s+$/g, '');
+      if (/^\d+(\.\d+)?px$/.test(raw)) return parseInt(raw, 10);
+
+      var pane = handle.previousElementSibling;
+      var w = pane ? Math.round(pane.getBoundingClientRect().width) : 0;
+      return w > 0 ? w : null;
+    }
+
+    /*
+     * 読み上げにも今の幅を伝える。separator は値を持てる役割で、値が無いと
+     * 「動かせる境界」とだけ読まれ、どこまで動いたのかが分からない
+     */
+    function announce(px) {
+      if (px === null) handle.removeAttribute('aria-valuenow');
+      else handle.setAttribute('aria-valuenow', String(px));
+    }
+
     function forget() {
       document.documentElement.style.removeProperty(cssVar);
       try {
         window.localStorage.removeItem(key);
       } catch (e) { /* 消せなくても既定には戻る */ }
+      announce(current());
     }
 
     function set(px) {
       var w = Math.min(limit.max, Math.max(limit.min, Math.round(px)));
       document.documentElement.style.setProperty(cssVar, w + 'px');
+      announce(w);
       return w;
     }
 
@@ -1427,6 +1477,13 @@
         window.localStorage.setItem(key, String(px));
       } catch (e) { /* 覚えられなくても操作はできる */ }
     }
+
+    handle.setAttribute('aria-valuemin', String(limit.min));
+    handle.setAttribute('aria-valuemax', String(limit.max));
+    announce(current());
+
+    // 起動時に隠れていたペインは測れず値を持たない。触れた時に測り直す
+    handle.addEventListener('focus', function () { announce(current()); });
 
     try {
       var saved = Number(window.localStorage.getItem(key));
@@ -1489,9 +1546,8 @@
     });
 
     handle.addEventListener('keydown', function (e) {
-      var now = parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue(cssVar), 10
-      ) || limit.min;
+      var now = current();
+      if (now === null) now = limit.min;
 
       if (e.key === 'ArrowLeft') save(set(now - 16));
       else if (e.key === 'ArrowRight') save(set(now + 16));
@@ -2621,7 +2677,11 @@
     else if (name === 'drafts') loadDrafts();
     else if (name === 'branches') loadBranches();
     else if (name === 'pulls') loadPulls(opts && opts.pr);
-    else if (name === 'issues') reloadIssueView();
+    else if (name === 'issues') {
+      // 起動時に工程表を覚えていると、隠れたまま一度描かれる。開いたこの時に今日へ送る
+      if (issueView === 'gantt') ganttToToday = true;
+      reloadIssueView();
+    }
     else if (name === 'help') loadHelp();
     else if (name === 'report') loadReports();
     else if (name === 'usage') loadUsage();
@@ -5899,6 +5959,10 @@
     mineBtn.hidden = view === 'trash';
 
     document.getElementById('tally-unit-box').hidden = view !== 'tally';
+    document.getElementById('gantt-zoom').hidden = view !== 'gantt';
+    document.getElementById('gantt-today').hidden = view !== 'gantt';
+    // 開いたら今日を見せる。描き直しのたびに送ると、人が送った位置を奪う
+    if (view === 'gantt') ganttToToday = true;
     document.getElementById('tally-basis-box').hidden = view !== 'tally';
     document.getElementById('tally-who-box').hidden =
       view !== 'tally' || !tallyScope.isManager;
@@ -8116,7 +8180,9 @@
 
     bar.addEventListener('pointerdown', function (e) {
       var rect = bar.getBoundingClientRect();
-      var edge = 10;
+      // 月の細かさでは棒が数 px しかない。端の幅を棒に合わせて狭めないと、
+      // どこを掴んでも端になり全体を動かせない
+      var edge = Math.min(10, rect.width / 4);
 
       if (e.clientX - rect.left <= edge) mode = 'start';
       else if (rect.right - e.clientX <= edge) mode = 'end';
@@ -8134,12 +8200,16 @@
       if (!mode) {
         // 掴める場所を形で示す
         var rect = bar.getBoundingClientRect();
-        var near = e.clientX - rect.left <= 10 || rect.right - e.clientX <= 10;
+        var edge = Math.min(10, rect.width / 4);
+        var near = e.clientX - rect.left <= edge || rect.right - e.clientX <= edge;
         bar.style.cursor = near ? 'ew-resize' : 'grab';
         return;
       }
 
-      var moved = Math.round((e.clientX - startX) / colWidth);
+      // 1日の幅は細かさで変わる。描いたときの幅で日に直す。
+      // 3px 未満は手のぶれとして動かさない (月の細かさでは 2px で半日を超え、1日ずれる)
+      var dx = e.clientX - startX;
+      var moved = Math.abs(dx) < 3 ? 0 : Math.round(dx / colWidth);
 
       if (mode === 'move') {
         row.offset = Math.max(0, origin.offset + moved);
@@ -8192,12 +8262,101 @@
     });
   }
 
+  /**
+   * 工程表を今日が見える位置まで横に送る。今日の線を、名前の欄を除いた
+   * 見える幅の左から 1/3 に置く。真ん中より左に寄せるのは、これからの
+   * 予定のほうを多く見せるため
+   */
+  function ganttScrollToToday() {
+    var chart = ganttEl.querySelector('.gantt');
+    if (!chart || !ganttShown) {
+      // 描き直しを待っている (骨組みしか無い)。届いて描いたときに送る
+      ganttToToday = true;
+      return;
+    }
+    // 隠れている器は幅が 0 で送れない。印を残し、見えてから描いたときに送る
+    if (!ganttEl.clientWidth) return;
+    ganttToToday = false;
+
+    var nameW = parseFloat(getComputedStyle(chart).getPropertyValue('--gantt-name-w')) || 220;
+    var head = chart.querySelector('.gantt-head');
+    var gap = (head && parseFloat(getComputedStyle(head).columnGap)) || 0;
+    var pad = parseFloat(getComputedStyle(ganttEl).paddingLeft) || 0;
+    var view = ganttEl.clientWidth - nameW - gap;
+    var col = ganttShown.col;
+
+    ganttEl.scrollLeft = Math.max(0,
+      Math.round(pad + ganttShown.today * col + col / 2 - view / 3));
+    ganttSyncResizer();
+  }
+
+  /**
+   * 掴み手を名前の欄の右に合わせる。名前の欄は左に貼り付いているが、掴み手は
+   * 工程表と一緒に横へ流れるので、貼り付いたぶんだけ送り返す
+   */
+  function ganttSyncResizer() {
+    var chart = ganttEl.querySelector('.gantt');
+    var name = chart && chart.querySelector('.gantt-head .gantt-name');
+    if (!name || !ganttResizer) return;
+
+    var shift = Math.round(name.getBoundingClientRect().left - chart.getBoundingClientRect().left);
+    ganttResizer.style.transform = shift ? 'translateX(' + shift + 'px)' : '';
+  }
+
+  /**
+   * 日の見出しの字。週では月曜だけ、月では出さない (月の見出しが残る)。
+   * 細い列に毎日の字を詰めると重なって読めない
+   *
+   * @param {Date} day
+   * @returns {string}
+   */
+  function ganttDayLabel(day) {
+    if (ganttZoom === 'month') return '';
+    if (ganttZoom === 'week' && day.getDay() !== 1) return '';
+    return String(day.getDate());
+  }
+
+  /**
+   * 今日を左から 1/3 に置けるよう、前後に余白の日を足す。今日が目盛りの端に
+   * あると、送れる幅が足りず端に張り付いたままになる。
+   * ganttLayout (サーバと画面の両方にある) は変えず、描く側で起点をずらす。
+   * 棒の位置と日付への直し (ganttDateAt) は同じ g を使うので食い違わない
+   *
+   * @param {object} g ganttLayout の結果 (書き換える)
+   * @param {number} col 1日の幅
+   */
+  function ganttPadForToday(g, col) {
+    var DAY = 24 * 60 * 60 * 1000;
+    var nameW = parseFloat(getComputedStyle(ganttEl).getPropertyValue('--gantt-name-w')) || 220;
+    var view = ganttEl.clientWidth - nameW;
+    if (view <= 0) return;  // 隠れていて測れない。見えてから描き直したときに足す
+
+    var lead = Math.max(0, Math.ceil((view / 3 - col / 2) / col) - g.todayOffset);
+    var tail = Math.max(0, Math.ceil(view * 2 / 3 / col) - (g.days - g.todayOffset));
+
+    g.from -= lead * DAY;
+    g.to += tail * DAY;
+    g.days += lead + tail;
+    g.todayOffset += lead;
+    g.rows.forEach(function (r) { r.offset += lead; });
+  }
+
   function loadGantt() {
+    var seq = ++ganttLoadSeq;
+    // 描き直しでは、人が送った位置を保つ (中身を消すと 0 に戻る)
+    var keepScroll = ganttEl.scrollLeft;
     showSkeleton(ganttEl, 'gantt', 5);
+    ganttShown = null;  // 骨組みの間は送れる工程表が無い (「今日」は届いてから送る)
+    // 待つ間に人が送ったら、その位置を奪わない
+    var waitingScroll = ganttEl.scrollLeft;
 
     call('apiIssueList', [''], function (list) {
+      if (seq !== ganttLoadSeq) return;  // もっと新しい読み込みがある
+      if (ganttEl.scrollLeft !== waitingScroll) keepScroll = ganttEl.scrollLeft;
+
       var issues = list || [];
       ganttEl.textContent = '';
+      ganttShown = null;
 
       lastIssues = issues;
       issues = issues.filter(matchesFilter);
@@ -8214,9 +8373,11 @@
         return;
       }
 
-      var COL = 26;
+      var COL = GANTT_ZOOMS[ganttZoom] || GANTT_ZOOMS.day;
+      ganttPadForToday(g, COL);
       var chart = document.createElement('div');
       chart.className = 'gantt';
+      chart.dataset.zoom = ganttZoom;
       chart.style.setProperty('--gantt-days', String(g.days));
       chart.style.setProperty('--gantt-col', COL + 'px');
 
@@ -8263,7 +8424,7 @@
         var cell = document.createElement('div');
         cell.className = 'gantt-day' +
           (d === g.todayOffset ? ' today' : '') + (weekend ? ' weekend' : '');
-        cell.textContent = day.getDate();
+        cell.textContent = ganttDayLabel(day);
         cell.title = day.toLocaleDateString('ja-JP');
         scale.appendChild(cell);
       }
@@ -8359,8 +8520,43 @@
       });
 
       chart.appendChild(rows);
+
+      // 掴み手は1つを使い回す。描くたびに作ると、聞き手が window に積もる
+      if (ganttResizer) chart.appendChild(ganttResizer);
       ganttEl.appendChild(chart);
-    }, failInto(ganttEl));
+
+      ganttShown = { today: g.todayOffset, col: COL };
+      if (ganttToToday) {
+        ganttScrollToToday();
+      } else {
+        ganttEl.scrollLeft = keepScroll;
+        ganttSyncResizer();
+      }
+    }, function (err) {
+      if (seq === ganttLoadSeq) failInto(ganttEl)(err);
+    });
+  }
+
+  /**
+   * 細かさを変える。日の幅が変わると今の位置は意味を失うので、今日へ送り直す
+   *
+   * @param {string} zoom 'day' | 'week' | 'month'
+   */
+  function setGanttZoom(zoom) {
+    if (!Object.prototype.hasOwnProperty.call(GANTT_ZOOMS, zoom)) return;
+    ganttZoom = zoom;
+    try {
+      window.localStorage.setItem('ganttZoom', zoom);
+    } catch (e) { /* 覚えられなくても切り替わる */ }
+    markGanttZoom();
+    ganttToToday = true;
+    loadGantt();
+  }
+
+  function markGanttZoom() {
+    document.querySelectorAll('#gantt-zoom [data-zoom]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.zoom === ganttZoom));
+    });
   }
 
 
@@ -12116,6 +12312,32 @@
   makeResizable(sideResizer, '--side-pane-w', 'sidePaneWidth',
     function (e) { return window.innerWidth - e.clientX; },
     { min: 280, max: 900 });
+
+  // 工程表の名前の欄。工程表を描くたびに中へ入れ直すので、ここで1つだけ作る
+  ganttResizer = document.createElement('div');
+  ganttResizer.className = 'resizer gantt-resizer';
+  ganttResizer.id = 'gantt-resizer';
+  ganttResizer.setAttribute('role', 'separator');
+  ganttResizer.setAttribute('aria-orientation', 'vertical');
+  ganttResizer.setAttribute('tabindex', '0');
+  ganttResizer.setAttribute('aria-label', '名前の欄の幅を変える (二度押しで元に戻す)');
+  makeResizable(ganttResizer, '--gantt-name-w', 'ganttNameW',
+    function (e) {
+      // 名前の欄は左に貼り付いている。その左端から測り、掴み手は欄と日の並びの
+      // 間 (gap の真ん中) にあるので、そのぶんを引く
+      var name = ganttEl.querySelector('.gantt-head .gantt-name');
+      var head = ganttEl.querySelector('.gantt-head');
+      var gap = (head && parseFloat(getComputedStyle(head).columnGap)) || 0;
+      var left = (name || ganttEl).getBoundingClientRect().left;
+      return e.clientX - left - gap / 2;
+    }, { min: 120, max: 480 });
+  ganttEl.addEventListener('scroll', ganttSyncResizer);
+
+  markGanttZoom();
+  document.querySelectorAll('#gantt-zoom [data-zoom]').forEach(function (b) {
+    b.addEventListener('click', function () { setGanttZoom(b.dataset.zoom); });
+  });
+  document.getElementById('gantt-today').addEventListener('click', ganttScrollToToday);
 
   makeResizable(document.getElementById('pr-resizer'), '--pr-pane-w', 'prPaneWidth',
     function (e) {
