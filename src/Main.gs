@@ -2972,6 +2972,69 @@ function debugVerifyCommandQueue() {
 }
 
 /**
+ * 共有ドライブに置いたときに動くかを、実機で確かめる。持ち主専用。置いた命令は片付ける。
+ *
+ * 疑似GASでは「権限で断られる」形を再現しきれない。役割の読み方・親が1つの移動・
+ * 外への共有の拒否はここで見る。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifySharedDrive() {
+  assertOwner_();
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  var driveId = repoDriveId_();
+  if (!driveId) {
+    return '共有ドライブではありません (入れ物はマイドライブにあるか、Drive の拡張サービスが使えません)';
+  }
+  check('入れ物は共有ドライブにある', true, driveId);
+
+  var members = driveMembers_(driveId);
+  check('持ち主 (organizer) が読めた', members.owners.length > 0, members.owners.join(', '));
+  check('自分が持ち主に入っている',
+    members.owners.indexOf(String(Session.getActiveUser().getEmail() || '')) >= 0);
+
+  var queue = commandQueueFolder_();
+  var id = 'verify-shared';
+  try {
+    queue.createFile(id + '.cmd.json', JSON.stringify({ op: 'listFiles', args: {} }), MimeType.PLAIN_TEXT);
+    processCommandQueue();
+    var res = queue.getFilesByName(id + '.result.json');
+    check('命令を処理して結果を書いた (親が1つの移動が通った)', res.hasNext());
+    check('命令は queue-done へ移った', commandDoneFolder_().getFilesByName(id + '.cmd.json').hasNext());
+    check('キューが回った時刻を残した', !!queueStatus_().lastRun);
+  } catch (e) {
+    check('命令を通す', false, e.message);
+  } finally {
+    var leftovers = [queue.getFilesByName(id + '.cmd.json'), queue.getFilesByName(id + '.result.json'),
+      commandDoneFolder_().getFilesByName(id + '.cmd.json')];
+    for (var i = 0; i < leftovers.length; i++) {
+      while (leftovers[i].hasNext()) {
+        try { leftovers[i].next().setTrashed(true); } catch (e2) { Logger.log('片付けられません: ' + e2.message); }
+      }
+    }
+  }
+
+  try {
+    check('道具の zip を作れた (外への共有を断られても)', !!agentKitBuild_().getId());
+  } catch (e3) {
+    check('道具の zip を作る', false, e3.message);
+  }
+
+  log.push(failed ? '失敗: ' + failed + '件' : 'すべて通りました');
+  var out = log.join('\n');
+  Logger.log(out);
+  return out;
+}
+
+/**
  * 検証ハーネスが残した Issue とカードを片付ける。
  *
  * debugVerifyPhase3b が作る Issue は題名と本文が固定されているため、

@@ -252,3 +252,20 @@ describe('共有ドライブで命令を置いた人', () => {
     expect(ctx.commandOwner_(f)).toBe('writer@example.com');
   });
 });
+
+describe('実機で確かめる入口 (debugVerifySharedDrive)', () => {
+  it('共有ドライブで全部通り、置いた命令を片付ける', () => {
+    const { ctx } = setupShared();
+    const out = ctx.debugVerifySharedDrive();
+    expect(out).toContain('すべて通りました');
+    expect(ctx.commandQueueFolder_().getFilesByName('verify-shared.cmd.json').hasNext()).toBe(false);
+    expect(ctx.commandQueueFolder_().getFilesByName('verify-shared.result.json').hasNext()).toBe(false);
+  });
+
+  it('マイドライブでは「共有ドライブではありません」と言って止まる', () => {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    expect(ctx.debugVerifySharedDrive()).toContain('共有ドライブではありません');
+  });
+});

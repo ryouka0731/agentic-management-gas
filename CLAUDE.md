@@ -839,6 +839,7 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 | `debugVerifyPhase2()` | コンフリクト → 解決 → マージ → 書き戻し → 楽観的並行制御 |
 | `debugVerifyPhase3b()` | Issue → ブランチ → PR → マージとカンバンの自動移動 |
 | `debugVerifyCommandQueue()` | コマンドキューの実行経路 |
+| `debugVerifySharedDrive()` | 共有ドライブに置いたとき: 役割が読めるか → 命令の移動 → 回った時刻 → 道具の zip。マイドライブなら何もせずにそう言う |
 | `debugMarkdownRoundTrip()` | 実文書で HTML → Markdown → HTML がバイト一致するか |
 | `debugWriteRoundTrip()` | 実文書で書き戻しが情報を落としていないか |
 | `debugVerifyScrum()` | スプリント → ポイント → 完了 → ベロシティ・バーンダウン・障害物・履歴。成否にかかわらず片付け、オン・オフも戻す |
