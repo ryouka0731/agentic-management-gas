@@ -3324,6 +3324,23 @@ function apiHomeSummary() {
   } catch (e) {
     Logger.log('改善のヒントを出せませんでした: ' + e.message);
   }
+  return {
+    myTurn: homeTurnPlain_(turn),
+    recent: homeRecent_(now, tables).map(function (x) {
+      return { kind: plainText(x.kind), number: plainId(x.number), fileId: plainText(x.fileId),
+        title: plainText(x.title), at: plainDate(x.at) };
+    }),
+    advice: homeAdvicePlain_(advice),
+  };
+}
+
+/**
+ * あなたの番を画面 (と手元の道具) に渡せる形にする。apiHomeSummary とキューの homeMine が使う。
+ *
+ * @param {object} turn homeMyTurn_
+ * @returns {{reviews: object, returned: object, due: object}}
+ */
+function homeTurnPlain_(turn) {
   function part(x, extra) {
     return {
       total: plainNumber(x.total),
@@ -3335,23 +3352,26 @@ function apiHomeSummary() {
     };
   }
   return {
-    myTurn: {
-      reviews: part(turn.reviews),
-      returned: part(turn.returned),
-      due: part(turn.due, function (o, it) { o.due = plainText(it.due); o.overdue = !!it.overdue; }),
-    },
-    recent: homeRecent_(now, tables).map(function (x) {
-      return { kind: plainText(x.kind), number: plainId(x.number), fileId: plainText(x.fileId),
-        title: plainText(x.title), at: plainDate(x.at) };
-    }),
-    advice: advice.map(function (a) {
-      return {
-        id: plainText(a.id), title: plainText(a.title), why: plainText(a.why), tip: plainText(a.tip),
-        action: { kind: plainText(a.action.kind), arg: plainText(a.action.arg), label: plainText(a.action.label) },
-        weight: plainNumber(a.weight),
-      };
-    }),
+    reviews: part(turn.reviews),
+    returned: part(turn.returned),
+    due: part(turn.due, function (o, it) { o.due = plainText(it.due); o.overdue = !!it.overdue; }),
   };
+}
+
+/**
+ * 改善のヒントを渡せる形にする。apiHomeSummary とキューの homeAdvice が使う。
+ *
+ * @param {object[]} advice homeAdvice_
+ * @returns {object[]}
+ */
+function homeAdvicePlain_(advice) {
+  return advice.map(function (a) {
+    return {
+      id: plainText(a.id), title: plainText(a.title), why: plainText(a.why), tip: plainText(a.tip),
+      action: { kind: plainText(a.action.kind), arg: plainText(a.action.arg), label: plainText(a.action.label) },
+      weight: plainNumber(a.weight),
+    };
+  });
 }
 
 /**
@@ -3361,26 +3381,35 @@ function apiHomeSummary() {
  */
 function apiReportParts() {
   var me = String(Session.getActiveUser().getEmail() || '');
-  var p = reportParts_(me, new Date());
   return {
-    parts: {
-      today: p.today.map(function (x) {
-        return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
-      }),
-      tomorrow: p.tomorrow.map(function (x) {
-        return { number: plainId(x.number), title: plainText(x.title), due: plainText(x.due) };
-      }),
-      troubles: p.troubles.map(function (x) {
-        return { number: plainId(x.number), title: plainText(x.title) };
-      }),
-      date: plainText(p.date),
-      name: plainText(p.name),
-    },
+    parts: reportPartsPlain_(reportParts_(me, new Date())),
     templates: REPORT_TEMPLATES().map(function (t) {
       return { key: plainText(t.key), name: plainText(t.name), body: plainText(t.body) };
     }),
     kind: plainText(reportKind_(me)),
     custom: plainText(reportCustom_(me)),
+  };
+}
+
+/**
+ * 日報の中身を渡せる形にする。apiReportParts とキューの reportDraft が使う。
+ *
+ * @param {object} p reportParts_
+ * @returns {object}
+ */
+function reportPartsPlain_(p) {
+  return {
+    today: p.today.map(function (x) {
+      return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
+    }),
+    tomorrow: p.tomorrow.map(function (x) {
+      return { number: plainId(x.number), title: plainText(x.title), due: plainText(x.due) };
+    }),
+    troubles: p.troubles.map(function (x) {
+      return { number: plainId(x.number), title: plainText(x.title) };
+    }),
+    date: plainText(p.date),
+    name: plainText(p.name),
   };
 }
 

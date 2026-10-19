@@ -571,8 +571,9 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   置いて `config.json` の `pendingUpdate` に覚え、返事は次に呼ばれたときに拾う。24時間返らなければ捨てる。
   待つのは人が頼んだ `agent update` だけ
 - **届いた中身は書く前に丸ごと確かめる** (`checkFiles`)。外を指す名前・字でない中身・`agent.mjs` /
-  `track/hook.mjs` / `track/update.mjs` の欠けが1つでもあれば、控えも取らずに全体を断る。名乗った指紋と
-  合っていても通さない (空の中身でも指紋は合う)
+  `track/hook.mjs` / `track/update.mjs` / `track/track.mjs` / `track/local.mjs` (`REQUIRED_FILES`) の欠けが1つでも
+  あれば、控えも取らずに全体を断る。名乗った指紋と合っていても通さない (空の中身でも指紋は合う)。
+  **`agent.mjs` が読み込むファイルを足したら `REQUIRED_FILES` にも足す** (欠けると起動時に落ち、`update rollback` もできない)
 - **道具の署名** (`kitSignature_` / `verifyKit`)。秘密鍵は `$BANTO_SIGNING_KEY` か
   `~/.config/softbanto/kit-signing-key.pem` にだけ置き、**リポジトリにも Drive にも番頭にも置かない**。
   `npm run deploy` が送る直前に手元で中身に署名し、**署名と、署名した版・中身の指紋だけ**を
@@ -598,6 +599,12 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - 誰の道具が古いかは**スクリプトプロパティ** (`KIT_PRINT:<email>`) に覚える。手元からの命令は持ち主の
   トリガーで走るので、利用者本人の UserProperties には書けない
 - `kit/track/hook.mjs` は ~/.banto/hooks に写して単体で動かす。**ほかのファイルを import しない**
+- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft`) は、命令を置いた人 (`by`) から見た様子を返す**
+  (`commandBy_`。分からなければ断る。持ち主と最後に書いた人が食い違えば断る `commandPersonOf_`)。**`by` は誰の
+  見え方かを決めるだけで、権限の仕組みではない。** 結果は queue に置かれ、共有している人なら誰でも読める (台帳と
+  同じ中身)。画面の `api*` を呼ばない (トリガーは持ち主の権限で走るので、持ち主のぶんが返る)
+- **`kit/track/local.mjs` の `searchFilter` / `reportFill` は画面の写し**、`KIT_VERSION` は `AGENT_KIT_VERSION()` の写し。
+  `test/kit-commands.test.js` が揃っているかを見ている (版を上げるときは2か所)。`doctor` は番頭に何も頼まない
 
 ## エージェンティックスクラムは既定でオフ
 

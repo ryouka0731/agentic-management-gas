@@ -1,0 +1,445 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { describe, it, expect } from 'vitest';
+import { loadGasWith } from './harness.js';
+import { createFakeGas } from './fakegas.js';
+import { ui } from './ui-source.js';
+import * as local from '../kit/track/local.mjs';
+
+/*
+ * 手元の道具を強くする (#13)。手元から「あなたの番」「改善のヒント」「横断検索」
+ * 「日報の下書き」を頼み、手元だけで道具の具合を点検する。
+ *
+ * **頼んだ本人のぶんだけ返す。** 本人は命令ファイルを置いた人 (commandOwner_)。
+ * 分からなければ断る。他人のぶんは返さない。
+ */
+const SOURCES = (() => {
+  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
+  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
+})();
+
+const ME = 'tester@example.com';
+const OTHER = 'b@example.com';
+const DAY = 24 * 60 * 60 * 1000;
+
+function setup() {
+  const fake = createFakeGas();
+  const ctx = loadGasWith(fake, ...SOURCES);
+  ctx.repoInit('agentic-management');
+  ctx.repoIsAdmin_ = () => false;
+  return { ctx, fake };
+}
+
+/** 画面に渡せない値 (Date・関数・undefined) を探す。キューの結果は JSON で運ぶ */
+function unserializable(value, where) {
+  if (value === undefined) return [where + ' が undefined'];
+  if (value === null) return [];
+  if (Object.prototype.toString.call(value) === '[object Date]') return [where + ' が Date のまま'];
+  if (typeof value === 'function') return [where + ' が関数'];
+  if (Array.isArray(value)) return value.flatMap((v, i) => unserializable(v, where + '[' + i + ']'));
+  if (typeof value === 'object') return Object.keys(value).flatMap((k) => unserializable(value[k], where + '.' + k));
+  return [];
+}
+
+function issue(ctx, title, patch) {
+  const n = ctx.issueCreate(title, '', []).number;
+  if (patch) ctx.dbUpdate('issues', 'number', n, patch);
+  return n;
+}
+
+describe('番頭の命令 (COMMAND_OPS)', () => {
+  it('4つの命令がある', () => {
+    const { ctx } = setup();
+    const ops = Object.keys(ctx.COMMAND_OPS());
+    for (const op of ['homeMine', 'homeAdvice', 'searchIndex', 'reportDraft']) expect(ops).toContain(op);
+  });
+
+  it('本人が分からないと断る (他人のぶんを返さない)', () => {
+    const { ctx } = setup();
+    for (const op of ['homeMine', 'homeAdvice', 'reportDraft']) {
+      expect(() => ctx.runCommand_({ op, args: {} }, '')).toThrow('命令を置いた人が分かりません');
+    }
+  });
+
+  it('homeMine は置いた人の番だけを返す', () => {
+    const { ctx } = setup();
+    ctx.dbAppend('pulls', { number: 1, title: '私が確かめる', state: 'open', author: OTHER, reviewers: ME,
+      createdAt: new Date() });
+    issue(ctx, '他人の期限', { assignee: OTHER, dueDate: new Date(Date.now() - DAY) });
+    issue(ctx, '私の期限', { assignee: ME, dueDate: new Date(Date.now() - DAY) });
+
+    const mine = ctx.runCommand_({ op: 'homeMine', args: {} }, ME);
+    expect(unserializable(mine, 'homeMine')).toEqual([]);
+    expect(mine.reviews.items.map((x) => x.title)).toEqual(['私が確かめる']);
+    expect(mine.due.items.map((x) => x.title)).toEqual(['私の期限']);
+    expect(mine.due.items[0].overdue).toBe(true);
+    expect(JSON.stringify(mine)).not.toContain(OTHER);
+
+    const theirs = ctx.runCommand_({ op: 'homeMine', args: {} }, OTHER);
+    expect(theirs.reviews.items).toEqual([]);
+    expect(theirs.due.items.map((x) => x.title)).toEqual(['他人の期限']);
+  });
+
+  it('homeAdvice は置いた人のぶんだけ数える', () => {
+    const { ctx } = setup();
+    const min = ctx.ADVICE_RULES().filter((r) => r.id === 'overdue')[0].min;
+    for (let k = 0; k < min; k++) issue(ctx, '遅れ' + k, { assignee: ME, dueDate: new Date(Date.now() - 10 * DAY) });
+
+    const mine = ctx.runCommand_({ op: 'homeAdvice', args: {} }, ME);
+    expect(unserializable(mine, 'homeAdvice')).toEqual([]);
+    expect(mine.map((a) => a.id)).toContain('overdue');
+    expect(JSON.stringify(mine)).not.toContain('@');
+    expect(ctx.runCommand_({ op: 'homeAdvice', args: {} }, OTHER).map((a) => a.id)).not.toContain('overdue');
+  });
+
+  it('searchIndex は題名・番号・状態だけ。人の名前もアドレスも入れない', () => {
+    const { ctx } = setup();
+    issue(ctx, '規程の第3条', { assignee: ME });
+    const list = ctx.runCommand_({ op: 'searchIndex', args: {} }, ME);
+    expect(unserializable(list, 'searchIndex')).toEqual([]);
+    expect(list.map((x) => x.title)).toContain('規程の第3条');
+    for (const x of list) expect(Object.keys(x).sort()).toEqual(['archived', 'key', 'kind', 'number', 'state', 'title']);
+    expect(JSON.stringify(list)).not.toContain(ME);
+  });
+
+  it('reportDraft は置いた人の中身と、その人の形を返す', () => {
+    const { ctx } = setup();
+    issue(ctx, '私の明日', { assignee: ME, dueDate: new Date(Date.now() + DAY) });
+    issue(ctx, '他人の明日', { assignee: OTHER, dueDate: new Date(Date.now() + DAY) });
+    ctx.reportSetCustom_(OTHER, '他人の形 {今日}');
+
+    const r = ctx.runCommand_({ op: 'reportDraft', args: {} }, ME);
+    expect(unserializable(r, 'reportDraft')).toEqual([]);
+    expect(r.parts.tomorrow.map((x) => x.title)).toEqual(['私の明日']);
+    expect(r.kind).toBe('three');
+    expect(r.template).toBe(ctx.REPORT_TEMPLATES()[0].body);
+    expect(JSON.stringify(r)).not.toContain('他人の形');
+    expect(JSON.stringify(r)).not.toContain('他人の明日');
+  });
+
+  it('reportDraft は形を選べる。知らない形は断る', () => {
+    const { ctx } = setup();
+    ctx.reportSetCustom_(ME, '私の形 {今日}');
+    expect(ctx.runCommand_({ op: 'reportDraft', args: {} }, ME).template).toBe('私の形 {今日}');
+    const today = ctx.runCommand_({ op: 'reportDraft', args: { kind: 'today' } }, ME);
+    expect(today.kind).toBe('today');
+    expect(today.template).toBe('✅今日\n{今日}');
+    expect(() => ctx.runCommand_({ op: 'reportDraft', args: { kind: 'x' } }, ME)).toThrow('日報の形が分かりません');
+  });
+});
+
+describe('持ち主を移された命令', () => {
+  /*
+   * マイドライブでは命令ファイルの持ち主を同僚へ移せる。移しても中身を書いた人は変わらないので、
+   * 持ち主と最後に書いた人が食い違う。そのときは本人のぶんを返す命令を断る (誰のぶんか決められない)
+   */
+  function place(withDrive, owner) {
+    const fake = createFakeGas();
+    if (withDrive) fake.Drive = fake._makeDrive();
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    issue(ctx, '私の期限', { assignee: ME, dueDate: new Date(Date.now() - DAY) });
+    const queue = ctx.commandQueueFolder_();
+    const f = queue.createFile('kit-1-a.cmd.json', JSON.stringify({ op: 'homeMine', args: {} }), 'text/plain');
+    if (owner) f._setOwner(owner);
+    ctx.runCommandFileLocked_(f, queue, ctx.commandDoneFolder_());
+    const out = queue.getFilesByName('kit-1-a.result.json').next();
+    return JSON.parse(out.getBlob().getDataAsString('UTF-8'));
+  }
+
+  it('持ち主と最後に書いた人が同じなら返す', () => {
+    const r = place(true, ME);
+    expect(r.ok).toBe(true);
+    expect(r.result.due.items.map((x) => x.title)).toEqual(['私の期限']);
+  });
+
+  it('持ち主が書いた人と違えば断る', () => {
+    const r = place(true, OTHER);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('命令を置いた人が分かりません');
+  });
+
+  it('見比べられない (Drive の拡張サービスが無い) ときは持ち主で決める', () => {
+    expect(place(false, ME).ok).toBe(true);
+  });
+});
+
+/* ---------- 手元の道具 ---------- */
+
+const AGENT = path.resolve('kit/agent.mjs');
+
+function isolated() {
+  return {
+    BANTO_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'banto-')),
+    CLAUDE_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'claude-')),
+  };
+}
+
+/**
+ * 道具を走らせる。命令が置かれたら、向こう側の代わりに reply を結果として書く。
+ *
+ * @returns {Promise<{cmd: ?object, out: string, err: string, code: number}>}
+ */
+async function run(args, reply, env) {
+  const queue = (env && env.queue) || fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
+  const child = spawn(process.execPath, [AGENT, ...args, '--queue', queue],
+    { env: { ...process.env, ...isolated(), AGENTKIT_QUEUE: '', ...((env && env.vars) || {}) } });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  let code = null;
+  const done = new Promise((r) => child.on('exit', (c) => { code = c; r(); }));
+  let cmd = null;
+  for (let i = 0; i < 100 && !cmd && code === null; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    if (!fs.existsSync(queue)) continue;
+    const name = fs.readdirSync(queue).find((n) => n.endsWith('.cmd.json'));
+    if (name) {
+      cmd = JSON.parse(fs.readFileSync(path.join(queue, name), 'utf8'));
+      fs.writeFileSync(path.join(queue, name.replace('.cmd.json', '.result.json')),
+        JSON.stringify({ ok: true, op: cmd.op, result: reply === undefined ? {} : reply }));
+    }
+  }
+  await done;
+  return { cmd, out, err, code };
+}
+
+describe('手元の道具の命令', () => {
+  it('mine / advice / search / report が番頭の命令に結び付く', async () => {
+    const mine = await run(['mine'], { reviews: { items: [], total: 0 }, returned: { items: [], total: 0 }, due: { items: [], total: 0 } });
+    expect(mine.cmd).toEqual({ op: 'homeMine', args: {} });
+    expect((await run(['advice'], [])).cmd).toEqual({ op: 'homeAdvice', args: {} });
+    // 探す語は送らない。一覧を取って手元で絞る
+    expect((await run(['search', '規程'], [])).cmd).toEqual({ op: 'searchIndex', args: {} });
+    const report = await run(['report'], { parts: { today: [], tomorrow: [], troubles: [], date: '', name: '' }, template: '{今日}', kind: 'plain' });
+    expect(report.cmd).toEqual({ op: 'reportDraft', args: { kind: '' } });
+    expect((await run(['report', 'today'], { parts: {}, template: '', kind: 'today' })).cmd)
+      .toEqual({ op: 'reportDraft', args: { kind: 'today' } });
+  }, 30000);
+
+  it('mine は自分の番を読める形で出す', async () => {
+    const r = await run(['mine'], {
+      reviews: { items: [{ number: 3, title: '規程の改訂' }], total: 1 },
+      returned: { items: [], total: 0 },
+      due: { items: [{ number: 7, title: '届け出', due: '2026-10-18', overdue: true }], total: 1 },
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('#3 規程の改訂');
+    expect(r.out).toContain('#7 届け出');
+    expect(r.out).toContain('期限切れ');
+  });
+
+  it('search は手元で絞り、合ったものだけ出す', async () => {
+    const r = await run(['search', 'きてい'], [
+      { kind: 'issue', number: 4, key: '', title: '規程の第3条', state: 'open', archived: false },
+      { kind: 'issue', number: 5, key: '', title: 'キテイを読む', state: 'open', archived: false },
+      { kind: 'pull', number: 9, key: '', title: '関係ない', state: 'open', archived: false },
+    ]);
+    expect(r.out).toContain('#5 キテイを読む');
+    expect(r.out).not.toContain('関係ない');
+  });
+
+  it('report は知らない形を送らずに断る', async () => {
+    const r = await run(['report', 'tomorrow'], {});
+    expect(r.cmd).toBeNull();
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('three');
+  });
+
+  it('返事の形が思っていたものと違えば、落ちずにそのまま出す', async () => {
+    const r = await run(['mine'], 'へんな返事');
+    expect(r.code).toBe(0);
+    expect(r.err).not.toContain('TypeError');
+    expect(r.out).toContain('へんな返事');
+  });
+
+  it('search は語が無ければ送らずに断る', async () => {
+    const r = await run(['search'], []);
+    expect(r.cmd).toBeNull();
+    expect(r.code).toBe(2);
+  });
+
+  it('report は形に中身を当てはめた下書きを出す', async () => {
+    const r = await run(['report'], {
+      parts: { today: [{ kind: 'issue', number: 1, title: '片づけた' }], tomorrow: [], troubles: [], date: '10/19 (月)', name: '中井' },
+      template: '{日付} {名前}\n{今日}\n{明日}', kind: 'custom',
+    });
+    expect(r.out).toContain('10/19 (月) 中井\n- #1 片づけた\n- 特になし');
+  });
+
+  it('使い方に4つと doctor が出る', async () => {
+    const r = await run(['--help']);
+    for (const name of ['mine', 'advice', 'search', 'report', 'doctor']) expect(r.out).toContain(name);
+  });
+});
+
+describe('画面と手元で同じ答えになる', () => {
+  let seed = 29;
+  const rnd = (n) => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return (seed >>> 8) % n;
+  };
+  const pick = (list) => list[rnd(list.length)];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  it('searchFilter', () => {
+    const view = ui(['searchNormalize', 'searchRank', 'searchFilter']);
+    const kinds = ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment', 'other'];
+    const states = ['open', 'closed', 'approved', 'merged', 'done', 'resolved', ''];
+    const bits = ['規程', 'きてい', 'キテイ', 'ＡＢＣ', 'abc', 'Abc', '第3条', '3', '12', ' ', '㍻', 'ﾃｽﾄ'];
+    for (let t = 0; t < 1500; t++) {
+      const index = Array.from({ length: rnd(40) }, () => ({
+        kind: pick(kinds), number: rnd(15), key: '', state: pick(states), archived: rnd(4) === 0,
+        title: Array.from({ length: 1 + rnd(3) }, () => pick(bits)).join(''),
+      }));
+      const query = pick(['', ' ', '#' + rnd(15), String(rnd(15)), pick(bits), pick(bits) + ' ' + pick(bits), 'ＡＢＣ  きてい']);
+      const a = view.searchFilter(index, query);
+      const b = local.searchFilter(index, query);
+      if (!same(a, b)) expect(b).toEqual(JSON.parse(JSON.stringify(a)));
+    }
+  });
+
+  it('reportFill', () => {
+    const view = ui(['reportLines', 'reportFill'], { OFFICIAL: '正式版' });
+    const templates = ['✅今日\n{今日}', '{日付} {名前}\n{明日}\n{困りごと}\n{知らない}', '', '{今日}{今日}'];
+    for (let t = 0; t < 300; t++) {
+      const parts = {
+        today: Array.from({ length: rnd(3) }, (_, i) => ({ kind: pick(['issue', 'pull']), number: i + 1, title: 't' + i })),
+        tomorrow: Array.from({ length: rnd(3) }, (_, i) => ({ number: i + 1, title: 'n' + i, due: pick(['', '2026-01-05', '2026-12-31']) })),
+        troubles: Array.from({ length: rnd(3) }, (_, i) => ({ number: i + 1, title: 'x' + i })),
+        date: pick(['', '10/19 (月)']), name: pick(['', '中井']),
+      };
+      const tpl = pick(templates);
+      expect(local.reportFill(tpl, parts)).toBe(view.reportFill(tpl, parts));
+    }
+  });
+});
+
+describe('道具の版', () => {
+  it('手元が名乗る版は AGENT_KIT_VERSION と同じ', () => {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, 'src/core/AgentKit.gs');
+    expect(local.KIT_VERSION).toBe(ctx.AGENT_KIT_VERSION());
+    expect(local.KIT_VERSION).toBe('1.9.0');
+  });
+});
+
+describe('doctor (番頭に頼まずに点検する)', () => {
+  function dirs() {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'banto-'));
+    const claude = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-'));
+    const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
+    return { home, claude, queue };
+  }
+  const NOW = Date.parse('2026-10-19T03:00:00Z');
+
+  function touch(file, ago) {
+    fs.writeFileSync(file, '{}');
+    const t = new Date(NOW - ago);
+    fs.utimesSync(file, t, t);
+  }
+
+  it('設定が無ければ setup を案内する', () => {
+    const d = dirs();
+    const r = local.doctor({ config: null, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('node agent.mjs setup');
+  });
+
+  it('入れ先が無ければ直し方を出す', () => {
+    const d = dirs();
+    const r = local.doctor({ config: { queueDir: path.join(d.queue, 'nai'), from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('入れ先');
+    expect(r.text).toContain('Drive for desktop');
+  });
+
+  it('返事が来ない命令が残っていれば、止まっていると知らせる', () => {
+    const d = dirs();
+    touch(path.join(d.queue, 'kit-1-a.cmd.json'), 20 * 60 * 1000);
+    touch(path.join(d.queue, 'kit-0-b.result.json'), 3 * 60 * 60 * 1000);
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('20分');
+    expect(r.text).toContain('setupCommandQueue');
+    expect(r.text).toContain('180分前');
+  });
+
+  it('新しい命令はまだ待つだけ。止まったことにしない', () => {
+    const d = dirs();
+    touch(path.join(d.queue, 'kit-1-a.cmd.json'), 30 * 1000);
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(true);
+  });
+
+  it('入れた道具の版が違えば update を、フックが無ければ track install を案内する', () => {
+    const d = dirs();
+    fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue, kitVersion: '1.8.1' }));
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('1.8.1');
+    expect(r.text).toContain('node agent.mjs update');
+    expect(r.text).toContain('node agent.mjs track install');
+  });
+
+  it('入れた道具のほうが新しければ、update ではなく ~/.banto の道具を使うよう案内する', () => {
+    const d = dirs();
+    fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue, kitVersion: '9.0.0' }));
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain(path.join(d.home, 'kit', 'agent.mjs'));
+    expect(r.text).not.toContain('node agent.mjs update');
+  });
+
+  it('全部そろっていれば直すことは無い', () => {
+    const d = dirs();
+    fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue, kitVersion: local.KIT_VERSION }));
+    const hook = (kind) => 'node "' + path.join(d.home, 'hooks', 'track-hook.mjs') + '" ' + kind;
+    fs.writeFileSync(path.join(d.claude, 'settings.json'), JSON.stringify({ hooks: {
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: hook('prompt') }] }],
+      Stop: [{ hooks: [{ type: 'command', command: hook('stop') }] }],
+    } }));
+    fs.mkdirSync(path.join(d.claude, 'skills', 'banto-track'), { recursive: true });
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.text).not.toContain('直すこと');
+    expect(r.ok).toBe(true);
+  });
+
+  it('agent.mjs doctor は命令を置かずに点検する', async () => {
+    const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
+    const r = await run(['doctor'], undefined, { queue });
+    expect(r.cmd).toBeNull();
+    expect(fs.readdirSync(queue)).toEqual([]);
+    expect(r.out).toContain('入れ先');
+  });
+
+  it('agent.mjs doctor は入れ先が無いと直し方を出して 1 で終わる', async () => {
+    const queue = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-')), 'nai');
+    const r = await run(['doctor'], undefined, { queue });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('直すこと');
+  });
+});
+
+describe('説明', () => {
+  const text = (f) => fs.readFileSync('kit/' + f, 'utf8');
+  it('AGENTS.md に4つの命令と doctor がある', () => {
+    for (const s of ['node agent.mjs mine', 'node agent.mjs advice', 'node agent.mjs search', 'node agent.mjs report', 'node agent.mjs doctor']) {
+      expect(text('AGENTS.md')).toContain(s);
+    }
+  });
+  it('AGENTS.md は「本人のぶんだけ」を言い過ぎない。誰の見え方かを決めるだけで、結果は共有している人に読める', () => {
+    expect(text('AGENTS.md')).not.toContain('頼んだ本人のぶんだけ返ります');
+    expect(text('AGENTS.md')).toContain('権限の仕組みではありません');
+    expect(text('AGENTS.md')).toContain('共有している人なら誰でも読めます');
+  });
+  it('AGENTS.md に、選んだ日報の形が使われるのはキューを仕掛けた人だけと書いてある', () => {
+    expect(text('AGENTS.md')).toContain('キューを仕掛けた人');
+  });
+  it('banto-track のスキルは、始める前に mine で自分の番を見させる', () => {
+    expect(text('track/SKILL.md')).toMatch(/始める前に[^\n]*mine/);
+  });
+});

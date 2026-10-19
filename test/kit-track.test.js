@@ -356,6 +356,8 @@ describe('まとめて入れる', () => {
       'track/SKILL.md': Buffer.from('s').toString('base64'),
       'track/hook.mjs': Buffer.from('h').toString('base64'),
       'track/update.mjs': Buffer.from('u').toString('base64'),
+      'track/track.mjs': Buffer.from('t').toString('base64'),
+      'track/local.mjs': Buffer.from('l').toString('base64'),
     };
     const send = async (op) => ({ ok: true, result: { version: '1.8.0', print: kitPrintOf(files), files } });
 
@@ -587,7 +589,7 @@ describe('agent.mjs から使う', () => {
   it('届いた中身の署名が合わなければ、~/.banto/kit から動かしても入れ替えない', async () => {
     const { h, q } = bantoKit();
     const files = { 'agent.mjs': Buffer.from('evil').toString('base64') };
-    for (const n of ['hook.mjs', 'update.mjs']) files['track/' + n] = Buffer.from('evil').toString('base64');
+    for (const n of ['hook.mjs', 'update.mjs', 'track.mjs', 'local.mjs']) files['track/' + n] = Buffer.from('evil').toString('base64');
     const at = new Date().toISOString();
     writeConfig(h, { queueDir: q, lastUpdateCheck: at, kitPrint: 'abcd1234',
       pendingUpdate: { op: 'kitFiles', id: 'kitup-1-aaaaaa', at } });
@@ -613,7 +615,8 @@ describe('agent.mjs から使う', () => {
     const c = claudeDir();
     const q = fs.mkdtempSync(path.join(os.tmpdir(), 'q-'));
     const files = { 'agent.mjs': Buffer.from('evil').toString('base64'),
-      'track/hook.mjs': Buffer.from('evil').toString('base64'), 'track/update.mjs': Buffer.from('evil').toString('base64') };
+      'track/hook.mjs': Buffer.from('evil').toString('base64'), 'track/update.mjs': Buffer.from('evil').toString('base64'),
+      'track/track.mjs': Buffer.from('evil').toString('base64'), 'track/local.mjs': Buffer.from('evil').toString('base64') };
     const forged = { ok: true, result: { version: '6.6.6', print: kitPrintOf(files), files,
       signature: signKit('6.6.6', files, OTHER_KEYS.priv) } };
 
