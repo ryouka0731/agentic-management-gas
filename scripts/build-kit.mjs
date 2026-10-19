@@ -60,6 +60,22 @@ function walk(dir) {
 }
 
 /**
+ * zip の中の名前 → base64 にした中身。src/KitFiles.gs の KIT_FILES() と同じ並び。
+ *
+ * **署名はこの並びの JSON に付く。** 並びを変えると署名が合わなくなる。
+ *
+ * @returns {Object<string,string>}
+ */
+export function kitFilesMap() {
+  const out = {};
+  for (const [from, to] of FILES) {
+    if (Object.prototype.hasOwnProperty.call(out, to)) continue;
+    out[to] = Buffer.from(fs.readFileSync(path.join(SRC, from), 'utf8'), 'utf8').toString('base64');
+  }
+  return out;
+}
+
+/**
  * 焼き直した中身を返す。
  *
  * @returns {string} src/KitFiles.gs に書くもの
@@ -83,16 +99,7 @@ export function buildKitSource() {
     '  return {',
   ];
 
-  const seen = new Set();
-  for (const [from, to] of FILES) {
-    if (seen.has(to)) continue;
-    seen.add(to);
-
-    const text = fs.readFileSync(path.join(SRC, from), 'utf8');
-    const b64 = Buffer.from(text, 'utf8').toString('base64');
-
-    lines.push("    '" + to + "': '" + b64 + "',");
-  }
+  for (const [to, b64] of Object.entries(kitFilesMap())) lines.push("    '" + to + "': '" + b64 + "',");
 
   lines.push('  };', '}', '');
   return lines.join('\n');

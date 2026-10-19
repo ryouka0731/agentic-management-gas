@@ -44,31 +44,26 @@ function kitSignedText_(version, files) {
 }
 
 /**
- * 配る中身に番頭の署名を付ける。
+ * 配る中身の署名を返す。
  *
- * 秘密鍵は src/KitSigning.gs (KIT_SIGNING_KEY_) にだけあり、記録には残さない。
- * scripts/deploy.mjs が送る直前に書く。読めるのは Apps Script を編集できる人
- * だけで、Drive のフォルダに書けるだけの人には読めない。だから偽の返事に
- * 正しい署名は付けられない。
+ * **番頭は署名を計算しない。** 秘密鍵は deploy する人の手元にだけあり、scripts/deploy.mjs が
+ * 送る直前に署名して src/KitSigning.gs (KIT_SIGNATURE_。記録しない) に書く。スクリプトを開ける人
+ * (共有ドライブならメンバー全員) が KIT_FILES を書き換えても、署名は合わない。
  *
- * 鍵が無いときは空を返す。手元の道具は、空の署名を自動では入れない。
+ * 記録した版と中身の指紋が、いまの版と中身に**両方**合うときだけ返す。合わなければ空
+ * (版を上げて署名し直さずに送ったとき)。手元の道具は、空の署名を自動では入れない。
+ * 指紋は64字で比べる (kitPrint_ の8字では短すぎる)。
  *
  * @param {string} version
  * @param {Object<string,string>} files
  * @returns {string} base64
  */
 function kitSignature_(version, files) {
-  if (typeof KIT_SIGNING_KEY_ !== 'function') return '';
-  // 署名に失敗しても kitFiles そのものは落とさない。落とすと全員の道具が中身を受け取れず、
-  // 手で入れ直す道まで塞がる。空の署名なら、手元は自動では入れず知らせるだけにする
-  try {
-    var bytes = Utilities.computeRsaSha256Signature(
-      kitSignedText_(version, files), KIT_SIGNING_KEY_(), Utilities.Charset.UTF_8);
-    return Utilities.base64Encode(bytes);
-  } catch (e) {
-    console.error('道具に署名できませんでした: ' + (e && e.message ? e.message : e));
-    return '';
-  }
+  if (typeof KIT_SIGNATURE_ !== 'function') return '';
+  var rec = KIT_SIGNATURE_() || {};
+  if (String(rec.version) !== String(version)) return '';
+  if (String(rec.filesSha) !== sha256Hex(JSON.stringify(files))) return '';
+  return String(rec.signature || '');
 }
 
 /**
