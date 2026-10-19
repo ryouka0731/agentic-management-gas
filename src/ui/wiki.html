@@ -155,6 +155,8 @@
           <div class="home-grid">
             <div class="home-main">
               <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
+              <!-- 改善のヒント。当たる規則が無ければ空のまま (.home-block:empty で隠れる) -->
+              <section class="home-block" id="home-advice" aria-label="改善のヒント"></section>
               <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
               <section class="home-block" id="home-recent" aria-label="最近の動き"></section>
             </div>
@@ -325,6 +327,10 @@
           <button class="btn toggle-btn" id="mine-btn" type="button">
             自分の担当だけ
           </button>
+
+          <!-- 改善のヒントから開いたときだけ出る絞り。押すと外れる -->
+          <button class="btn" id="overdue-only" type="button" hidden
+                  aria-label="期限切れだけの絞りを外す">期限切れだけ ×</button>
 
           <label class="filter-box">
             <input id="issue-filter" type="search" placeholder="題名・担当・ラベル・文書名で絞る"

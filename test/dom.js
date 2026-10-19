@@ -311,6 +311,8 @@ export const DEFAULTS = {
       { kind: 'closed', number: 3, fileId: '', title: '第7条に在宅勤務を足す', at: '2026-10-13T01:00:00.000Z' },
       { kind: 'file', number: 0, fileId: 'DOC1', title: '就業規則.doc', at: '2026-10-12T01:00:00.000Z' },
     ],
+    // 既定は当たる規則なし (カードは出ない)
+    advice: [],
   },
   apiReportParts: {
     parts: { today: [], tomorrow: [], troubles: [], date: '10/14 (水)', name: '中井' },

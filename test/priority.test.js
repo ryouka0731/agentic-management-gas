@@ -23,14 +23,14 @@ const SOURCES = [
   'src/core/Staleness.js',
   'src/core/Tag.gs',
   'src/core/Member.gs',
-  'src/core/Issue.gs',
+  'src/core/Issue.gs', 'src/core/Inquiry.gs',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',
   'src/core/Brand.js',
   'src/core/Notifier.gs',
   'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
 ];
 
 function setup() {

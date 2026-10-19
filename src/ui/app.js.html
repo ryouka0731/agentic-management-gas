@@ -139,6 +139,7 @@
   var diffCaption = document.getElementById('diff-caption');
   var diffExpandBtn = document.getElementById('diff-expand');
   var mineBtn = document.getElementById('mine-btn');
+  var overdueOnlyBtn = document.getElementById('overdue-only');
   var viewBtns = {
     list: document.getElementById('view-list'),
     board: document.getElementById('view-board'),
@@ -195,6 +196,8 @@
   /** 工程表の読み込みの番号。遅れて届いた古い返事で、新しい描画を上書きしない */
   var ganttLoadSeq = 0;
   var mineOnly = false;
+  // 自分の担当の期限切れだけ。改善のヒントから開いたときだけ立つ (overdueOnlyBtn で外す)
+  var overdueOnly = false;
   var archiveKeepDays = 30;
 
   /** 業務での呼び方。画面には Git の用語を出さない */
@@ -1319,6 +1322,56 @@
       { x: 408, y: 246, text: 'スプリント・障害物・ポイントの読み書き' },
     ],
     caption: '既定ではオフです。使わないチームは何も変わりません。',
+  };
+
+  /** 改善のヒントの出し方 */
+  var ADVICE_DIAGRAM = {
+    title: '改善のヒントが出るまで',
+    desc: '番頭が台帳から本人のぶんを数え、決まった規則に当てて、当たったものを重い順に' +
+      '多くて3件ホームに出す。1件ごとに理由の数字と、次に開く画面のボタンが付く。' +
+      '「今週は出さない」で隠すと、その週はこの端末に出ない。',
+    width: 760,
+    height: 278,
+    lanes: [
+      {
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '数えるもの',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn', label: '使わないもの',
+      },
+    ],
+    boxes: [
+      {
+        x: 10, y: 34, w: 160, h: 70,
+        label: '台帳から数える', sub: '本人のぶん',
+      },
+      {
+        x: 200, y: 34, w: 160, h: 70,
+        label: '規則に当てる', sub: '決まった6つ',
+      },
+      {
+        x: 390, y: 34, w: 160, h: 70,
+        label: 'ホームに出す', sub: '重い順に3件まで', tone: 'strong',
+      },
+      {
+        x: 580, y: 34, w: 170, h: 70,
+        label: 'ボタンで開く', sub: '絞った一覧・ボードなど',
+      },
+    ],
+    arrows: [
+      { d: 'M170 69h24' },
+      { d: 'M360 69h24' },
+      { d: 'M550 69h24' },
+      {
+        d: 'M665 104C665 166 470 166 470 108', soft: true,
+        lx: 568, ly: 184, label: '「今週は出さない」で隠す',
+      },
+    ],
+    notes: [
+      { x: 26, y: 246, text: '自分の担当・自分宛て・自分が作ったもの' },
+      { x: 408, y: 246, text: '他人の数・人の名前・AI への問い合わせ' },
+    ],
+    caption: '当たる規則が無ければ、カードごと出ません。',
   };
 
   /** 同じ場所が両方で変わったとき */
@@ -2857,6 +2910,7 @@
   var homeActivityEl = document.getElementById('home-activity');
   var homeRecentEl = document.getElementById('home-recent');
   var homeSummaryEl = document.getElementById('home-summary');
+  var homeAdviceEl = document.getElementById('home-advice');
 
   /**
    * 上の1行に出す数。届いていないもの (null) は出さない ("undefined" と出さない)。
@@ -2893,6 +2947,7 @@
       var turn = s.myTurn || {};
       fillBlock(homeTurnEl, makeTurnBlock(turn));
       fillBlock(homeRecentEl, makeRecentBlock(s.recent || []));
+      renderAdvice(s.advice || []);
       homeLine.turn = ['reviews', 'returned', 'due'].reduce(function (n, k) {
         return n + (Number(turn[k] && turn[k].total) || 0);
       }, 0);
@@ -2901,9 +2956,150 @@
       if (panelHome.hidden) return;
       fillBlock(homeTurnEl, homeFailBlock('あなたの番', err));
       fillBlock(homeRecentEl, homeFailBlock('最近の動き', err));
+      // 改善のヒントは無くても困らない。取れなかったことは出さずに隠す
+      homeAdviceEl.textContent = '';
       homeLine.turn = null;
       renderHomeLine();
     });
+  }
+
+  // ===== 改善のヒント =====
+
+  /**
+   * ISO の週 ('2026-W42')。「今週は出さない」を週ごとに覚えるため。東京の暦日で数える。
+   *
+   * @param {Date} now
+   * @returns {string}
+   */
+  function adviceWeek(now) {
+    var t = new Date(now.getTime() + 9 * 3600000);
+    var d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+    // その週の木曜が属する年の週
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var year = d.getUTCFullYear();
+    var week = Math.ceil(((d.getTime() - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+    return year + '-W' + (week < 10 ? '0' : '') + week;
+  }
+
+  /**
+   * 隠した助言 {id: 週}。端末にだけ覚える。読めなければ何も隠していないことにする。
+   *
+   * @returns {object}
+   */
+  function adviceHiddenRead() {
+    try {
+      var v = JSON.parse(window.localStorage.getItem('adviceHidden') || '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  /**
+   * その助言を今週は出さない。前の週の覚え書きはついでに捨てる。
+   *
+   * @param {string} id
+   */
+  function adviceHide(id) {
+    var week = adviceWeek(new Date());
+    var all = adviceHiddenRead();
+    var keep = {};
+    Object.keys(all).forEach(function (k) { if (all[k] === week) keep[k] = week; });
+    keep[id] = week;
+    try {
+      window.localStorage.setItem('adviceHidden', JSON.stringify(keep));
+    } catch (e) { /* 覚えられなくても、この画面では消える */ }
+  }
+
+  /** 最後に届いた助言。隠したあと描き直すために持つ */
+  var adviceLast = [];
+
+  /**
+   * 改善のヒントのカード。今週隠したものは出さず、残りが無ければカードごと出さない。
+   *
+   * @param {Array} list apiHomeSummary の advice
+   */
+  function renderAdvice(list) {
+    adviceLast = list || [];
+    homeAdviceEl.textContent = '';
+    var week = adviceWeek(new Date());
+    var hidden = adviceHiddenRead();
+    var shown = adviceLast.filter(function (a) { return hidden[a.id] !== week; });
+    if (!shown.length) return;
+
+    homeAdviceEl.appendChild(homeHead('改善のヒント', [privatePill()]));
+    shown.forEach(function (a) {
+      var item = document.createElement('div');
+      item.className = 'advice-item';
+      item.dataset.advice = a.id;
+
+      var title = document.createElement('p');
+      title.className = 'advice-title';
+      title.textContent = a.title;
+      item.appendChild(title);
+
+      var why = document.createElement('p');
+      why.className = 'advice-why';
+      why.textContent = a.why;
+      item.appendChild(why);
+
+      var tip = document.createElement('p');
+      tip.className = 'advice-tip';
+      tip.textContent = a.tip;
+      item.appendChild(tip);
+
+      var actions = document.createElement('div');
+      actions.className = 'advice-actions';
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn btn-primary';
+      go.textContent = (a.action && a.action.label) || '開く';
+      go.addEventListener('click', function () { adviceGo(a.action || {}); });
+      actions.appendChild(go);
+
+      var hide = document.createElement('button');
+      hide.type = 'button';
+      hide.className = 'btn advice-hide';
+      hide.textContent = '今週は出さない';
+      hide.addEventListener('click', function () {
+        adviceHide(a.id);
+        renderAdvice(adviceLast);
+      });
+      actions.appendChild(hide);
+      item.appendChild(actions);
+
+      homeAdviceEl.appendChild(item);
+    });
+  }
+
+  /**
+   * 助言のボタンの行き先。kind はサーバの ADVICE_RULES() の action.kind と揃える。
+   *
+   * @param {{kind: string, arg: string}} action
+   */
+  function adviceGo(action) {
+    var kind = String(action.kind || '');
+    var arg = String(action.arg || '');
+    if (kind === 'pulls') {
+      switchTab('pulls', Number(arg) ? { pr: Number(arg) } : undefined);
+      return;
+    }
+    if (kind === 'report') {
+      switchTab('report');
+      return;
+    }
+    var views = { 'issues-overdue': 'list', 'issues-filter': 'list', board: 'board', gantt: 'gantt' };
+    if (!views[kind]) return;
+
+    setOverdueOnly(kind === 'issues-overdue');
+    // 期限切れと工程表は自分の担当のこと。繰り返しは自分が作っただけのものも数えるので外す
+    if (kind === 'issues-overdue' || kind === 'gantt') mineOnly = true;
+    if (kind === 'issues-filter') mineOnly = false;
+    setToggle(mineBtn, mineOnly);
+    issueFilterEl.value = kind === 'issues-filter' ? arg : '';
+    // ヒントから開いた見え方は、次に開いたときの見え方として覚えない
+    setIssueView(views[kind], true, { noSave: true, keepOverdue: true });
+    switchTab('issues');
   }
 
   /**
@@ -5937,10 +6133,13 @@
    * @param {string} view
    * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
    * @param {{noSave: boolean}} [opts] noSave: 次に開いたときの見え方として覚えない。
-   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く
+   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く。
+   *   keepOverdue: 期限切れだけの絞りを残す (改善のヒントから開いたとき)。人が見え方を
+   *   切り替えたら外す。残すと、何で絞られているのか分からないまま件数が減って見える
    */
   function setIssueView(view, quiet, opts) {
     issueView = view;
+    if (!(opts && opts.keepOverdue)) setOverdueOnly(false);
 
     Object.keys(viewBtns).forEach(function (k) {
       viewBtns[k].setAttribute('aria-pressed', String(k === view));
@@ -5957,6 +6156,8 @@
     issueFilterEl.parentNode.hidden = plain;
     issueGroupSel.parentNode.hidden = plain;
     mineBtn.hidden = view === 'trash';
+    // 集計と捨てたものには絞りが効かないので出さない
+    overdueOnlyBtn.hidden = !overdueOnly || plain;
 
     document.getElementById('tally-unit-box').hidden = view !== 'tally';
     document.getElementById('gantt-zoom').hidden = view !== 'gantt';
@@ -6009,6 +6210,7 @@
 
   function matchesFilter(issue) {
     if (mineOnly && !hasAssignee(issue, currentUser)) return false;
+    if (overdueOnly && !isOverdueIssue(issue, tokyoToday(new Date()))) return false;
 
     var q = String(issueFilterEl.value || '').toLowerCase().replace(/^\s+|\s+$/g, '');
     if (!q) return true;
@@ -6040,6 +6242,34 @@
       }
     }
     return out;
+  }
+
+  /**
+   * 東京の今日 'YYYY-MM-DD'。東京は夏時間が無いので9時間足すだけでよい (homeDateText と同じ)。
+   *
+   * @param {Date} now
+   * @returns {string}
+   */
+  function tokyoToday(now) {
+    return new Date(now.getTime() + 9 * 3600000).toISOString().substring(0, 10);
+  }
+
+  /**
+   * 期限切れか。今日が期限のものはまだ切れていない (サーバの homeAdvice_ と同じ)。
+   *
+   * @param {object} issue
+   * @param {string} today 'YYYY-MM-DD'
+   * @returns {boolean}
+   */
+  function isOverdueIssue(issue, today) {
+    var due = String(issue.dueDate || '').substring(0, 10);
+    return String(issue.state) === 'open' && !!due && due < today;
+  }
+
+  /** 期限切れだけの絞りを立てる・外す。札は立っている間だけ出す */
+  function setOverdueOnly(on) {
+    overdueOnly = !!on;
+    overdueOnlyBtn.hidden = !overdueOnly;
   }
 
   /**
@@ -10048,6 +10278,13 @@
       '手元から使うときは、まず「node agent.mjs scrum」でオンかを確かめます。落とした道具の中に、スプリントの計画・振り返りなどのスキルとチームの役割 (.claude/) と、進め方の読み替え (SCRUM.md) が入っています。',
       'オンにしても、確認依頼の承認と設定の変更は人が画面で行います。',
     ]],
+    ['改善のヒント', [
+      'ホームに、仕事の進め方を良くするヒントが多くて3件出ます。番頭が台帳の数から決まった規則で出すもので、AI に問い合わせてはいません。',
+      '見るのはあなたのぶんだけです (担当のやること・あなた宛ての確認・あなたが作ったやること)。ほかの人の数や名前は出ません。',
+      '出るもの — 確認を3日以上待たせている / 期限切れが3件以上 / 作業中が5件以上 / 見積もりの倍以上かかったものが半分以上 / 同じタグや題名のやることを30日で5件以上作った / 「使い方が分からない」の報告が30日で3件以上 (管理者だけ)',
+      '1件ごとに理由の数字と、次に開く画面のボタンが付きます。「期限切れを見る」で開いた一覧は「期限切れだけ ×」を押すか見え方を切り替えると、絞りが外れます。',
+      '「今週は出さない」を押すと、その週はこの端末に出ません。次の週にまだ当てはまれば、また出ます。',
+    ]],
   ];
 
   function loadHelp() {
@@ -10105,6 +10342,7 @@
       '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
       'つまずきやすい点': CONFLICT_DIAGRAM,
       'スクラムで進める (使う人だけ)': SCRUM_DIAGRAM,
+      '改善のヒント': ADVICE_DIAGRAM,
     };
 
     GUIDE.forEach(function (section) {
@@ -12256,6 +12494,11 @@
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;
     setToggle(mineBtn, mineOnly);
+    reloadIssueView();
+  });
+
+  overdueOnlyBtn.addEventListener('click', function () {
+    setOverdueOnly(false);
     reloadIssueView();
   });
 

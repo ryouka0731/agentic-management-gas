@@ -43,7 +43,7 @@ const SOURCES = [
   'src/core/AgentKit.gs',
   'src/core/Tally.js',
   'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
 ];
 
 function setup() {

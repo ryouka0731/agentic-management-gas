@@ -3308,14 +3308,22 @@ function apiHomeActivity() {
 }
 
 /**
- * あなたの番と最近の動き (Web App API)。最近の動きに名前は入らない。
+ * あなたの番・最近の動き・改善のヒント (Web App API)。最近の動きにも改善のヒントにも名前は入らない。
  *
- * @returns {{myTurn: object, recent: object[]}}
+ * @returns {{myTurn: object, recent: object[], advice: object[]}}
  */
 function apiHomeSummary() {
   var me = String(Session.getActiveUser().getEmail() || '');
   var now = new Date();
-  var turn = homeMyTurn_(me, now);
+  var tables = homeTables_();
+  var turn = homeMyTurn_(me, now, tables);
+  // 改善のヒントは無くてもホームは使える。落ちてもほかの区画は返す
+  var advice = [];
+  try {
+    advice = homeAdvice_(me, now, tables);
+  } catch (e) {
+    Logger.log('改善のヒントを出せませんでした: ' + e.message);
+  }
   function part(x, extra) {
     return {
       total: plainNumber(x.total),
@@ -3332,9 +3340,16 @@ function apiHomeSummary() {
       returned: part(turn.returned),
       due: part(turn.due, function (o, it) { o.due = plainText(it.due); o.overdue = !!it.overdue; }),
     },
-    recent: homeRecent_(now).map(function (x) {
+    recent: homeRecent_(now, tables).map(function (x) {
       return { kind: plainText(x.kind), number: plainId(x.number), fileId: plainText(x.fileId),
         title: plainText(x.title), at: plainDate(x.at) };
+    }),
+    advice: advice.map(function (a) {
+      return {
+        id: plainText(a.id), title: plainText(a.title), why: plainText(a.why), tip: plainText(a.tip),
+        action: { kind: plainText(a.action.kind), arg: plainText(a.action.arg), label: plainText(a.action.label) },
+        weight: plainNumber(a.weight),
+      };
     }),
   };
 }
