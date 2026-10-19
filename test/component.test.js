@@ -8431,3 +8431,257 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(document.getElementById('snackbar').textContent).toContain('この文書は見られないか、登録されていません');
   });
 });
+
+describe('工程表のペインと細かさ', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.style.removeProperty('--gantt-name-w');
+  });
+
+  /** jsdom の PointerEvent は clientX を持たせにくいので、同じ形のものを送る */
+  function pointer(type, x) {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.clientX = x;
+    ev.pointerId = 1;
+    ev.button = 0;
+    return ev;
+  }
+
+  function openGantt(over, viewWidth) {
+    const app = mount(over);
+    if (viewWidth) {
+      Object.defineProperty(document.getElementById('gantt'), 'clientWidth',
+        { configurable: true, value: viewWidth });
+    }
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-gantt').click();
+    return app;
+  }
+
+  function handle() {
+    return document.getElementById('gantt-resizer');
+  }
+
+  function width() {
+    return document.documentElement.style.getPropertyValue('--gantt-name-w');
+  }
+
+  function zoom(name) {
+    document.querySelector('#gantt-zoom [data-zoom="' + name + '"]').click();
+  }
+
+  function col() {
+    return document.querySelector('.gantt').style.getPropertyValue('--gantt-col');
+  }
+
+  it('名前の欄と日の並びの間に掴み手があり、工程表と一緒に出る', () => {
+    openGantt();
+    const h = handle();
+
+    expect(h).toBeTruthy();
+    expect(document.getElementById('gantt').contains(h)).toBe(true);
+    expect(h.getAttribute('role')).toBe('separator');
+    expect(h.getAttribute('aria-orientation')).toBe('vertical');
+    expect(h.getAttribute('tabindex')).toBe('0');
+    expect(h.getAttribute('aria-valuenow')).toBe('220');
+
+    // 一覧へ切り替えると、器ごと隠れる (掴み手だけが宙に残らない)
+    document.getElementById('view-list').click();
+    expect(document.getElementById('gantt').hidden).toBe(true);
+  });
+
+  it('掴んで動かすと名前の欄の幅が変わり、覚える', () => {
+    openGantt();
+    handle().dispatchEvent(pointer('pointerdown', 220));
+    handle().dispatchEvent(pointer('pointermove', 300));
+    expect(width()).toBe('300px');
+
+    handle().dispatchEvent(pointer('pointerup', 320));
+    expect(width()).toBe('320px');
+    expect(window.localStorage.getItem('ganttNameW')).toBe('320');
+    expect(handle().getAttribute('aria-valuenow')).toBe('320');
+
+    // 開き直しても覚えている
+    document.documentElement.style.removeProperty('--gantt-name-w');
+    openGantt();
+    expect(width()).toBe('320px');
+  });
+
+  it('120〜480px の範囲で止まる', () => {
+    openGantt();
+    handle().dispatchEvent(pointer('pointerdown', 220));
+
+    handle().dispatchEvent(pointer('pointermove', 10));
+    expect(width()).toBe('120px');
+
+    handle().dispatchEvent(pointer('pointermove', 9999));
+    expect(width()).toBe('480px');
+  });
+
+  it('枠の外で離しても、取り消されても張り付かない', () => {
+    openGantt();
+    handle().dispatchEvent(pointer('pointerdown', 220));
+    window.dispatchEvent(pointer('pointerup', 260));
+    handle().dispatchEvent(pointer('pointermove', 400));
+    expect(width()).toBe('260px');
+
+    handle().dispatchEvent(pointer('pointerdown', 260));
+    handle().dispatchEvent(pointer('pointercancel', 280));
+    handle().dispatchEvent(pointer('pointermove', 400));
+    expect(width()).toBe('280px');
+  });
+
+  it('キーボードの ←→ で 16px ずつ動く', () => {
+    openGantt();
+
+    handle().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    expect(width()).toBe('236px');
+    expect(handle().getAttribute('aria-valuenow')).toBe('236');
+
+    handle().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    handle().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    expect(width()).toBe('204px');
+    expect(window.localStorage.getItem('ganttNameW')).toBe('204');
+  });
+
+  it('ダブルクリックで既定の 220px に戻る', () => {
+    openGantt();
+    handle().dispatchEvent(pointer('pointerdown', 220));
+    handle().dispatchEvent(pointer('pointerup', 400));
+    expect(width()).toBe('400px');
+
+    handle().dispatchEvent(new window.Event('dblclick', { bubbles: true }));
+    expect(width()).toBe('');
+    expect(window.localStorage.getItem('ganttNameW')).toBe(null);
+    expect(handle().getAttribute('aria-valuenow')).toBe('220');
+  });
+
+  it('描き直しても掴み手は1つ', () => {
+    openGantt();
+    const first = handle();
+    document.getElementById('issue-group').dispatchEvent(new window.Event('change'));
+
+    expect(document.querySelectorAll('#gantt .gantt-resizer').length).toBe(1);
+    expect(handle()).toBe(first);
+  });
+
+  it('細かさを変えると1日の幅が変わり、覚える', () => {
+    openGantt();
+    expect(col()).toBe('26px');
+    expect(document.getElementById('gantt-zoom').hidden).toBe(false);
+
+    zoom('week');
+    expect(col()).toBe('12px');
+    expect(document.querySelector('#gantt-zoom [data-zoom="week"]')
+      .getAttribute('aria-pressed')).toBe('true');
+    expect(window.localStorage.getItem('ganttZoom')).toBe('week');
+
+    zoom('month');
+    expect(col()).toBe('4px');
+
+    // 開き直しても覚えている
+    openGantt();
+    expect(col()).toBe('4px');
+
+    // 工程表でなければ切り替えは出さない
+    document.getElementById('view-list').click();
+    expect(document.getElementById('gantt-zoom').hidden).toBe(true);
+    expect(document.getElementById('gantt-today').hidden).toBe(true);
+  });
+
+  it('週・月では日の見出しを間引き、月の見出しは残す', () => {
+    openGantt();
+    const named = () => [...document.querySelectorAll('.gantt-day')]
+      .filter((c) => c.textContent !== '').length;
+    const days = document.querySelectorAll('.gantt-day').length;
+    expect(named()).toBe(days);
+
+    zoom('week');
+    expect(named()).toBeGreaterThan(0);
+    expect(named()).toBeLessThan(days / 5);
+    expect(document.querySelectorAll('.gantt-month').length).toBeGreaterThan(0);
+
+    zoom('month');
+    expect(named()).toBe(0);
+    expect(document.querySelectorAll('.gantt-month').length).toBeGreaterThan(0);
+    // 字が無くても、指を置けば日付は読める
+    expect(document.querySelector('.gantt-day').title).not.toBe('');
+  });
+
+  // 細かさごとに分ける。1つにまとめると画面を3回組むぶん時間の上限に当たる
+  it.each([['day', 26], ['week', 12], ['month', 4]])(
+    '細かさが %s (1日 %ipx) でも、棒を掴んで1日ずらせる', (name, px) => {
+      const capture = window.Element.prototype.setPointerCapture;
+      const release = window.Element.prototype.releasePointerCapture;
+      window.Element.prototype.setPointerCapture = () => {};
+      window.Element.prototype.releasePointerCapture = () => {};
+
+      try {
+        const due = new Date('2026-09-30T00:00:00.000Z');
+        const next = new Date(due.getFullYear(), due.getMonth(), due.getDate() + 1);
+        const pad = (n) => String(n).padStart(2, '0');
+        const expected = next.getFullYear() + '-' + pad(next.getMonth() + 1) + '-' + pad(next.getDate());
+
+        const app = openGantt();
+        zoom(name);
+        const before = app.calls.length;
+
+        const bar = document.querySelector('.gantt-row[data-number="2"] .gantt-bar');
+        // jsdom では大きさが 0 なので、右の端を掴んだことになる (期限だけ動く)
+        bar.dispatchEvent(pointer('pointerdown', 100));
+        bar.dispatchEvent(pointer('pointermove', 100 + px));
+        bar.dispatchEvent(pointer('pointerup', 100 + px));
+
+        const update = app.calls.slice(before).find((c) => c.name === 'apiIssueUpdate');
+        expect(update).toBeTruthy();
+        expect(update.args[0]).toBe(2);
+        expect(update.args[1].dueDate).toBe(expected);
+      } finally {
+        window.Element.prototype.setPointerCapture = capture;
+        window.Element.prototype.releasePointerCapture = release;
+      }
+    });
+
+  it('開いたとき、今日の線が左から 1/3 に来るよう横に送る', () => {
+    openGantt(null, 900);
+    const scroller = document.getElementById('gantt');
+    const cells = [...document.querySelectorAll('.gantt-day')];
+    const today = cells.findIndex((c) => c.classList.contains('today'));
+    expect(today).toBeGreaterThan(10);
+
+    // 名前の欄 (220px) を除いた見える幅の 1/3 に今日の真ん中を置く
+    const expected = today * 26 + 13 - (900 - 220) / 3;
+    expect(Math.abs(scroller.scrollLeft - expected)).toBeLessThan(40);
+  });
+
+  it('「今日」で今日へ戻り、描き直しでは人が送った位置を保つ', () => {
+    openGantt(null, 900);
+    const scroller = document.getElementById('gantt');
+    const atToday = scroller.scrollLeft;
+    expect(atToday).toBeGreaterThan(0);
+
+    scroller.scrollLeft = 5;
+    document.getElementById('issue-group').dispatchEvent(new window.Event('change'));
+    expect(scroller.scrollLeft).toBe(5);
+
+    document.getElementById('gantt-today').click();
+    expect(scroller.scrollLeft).toBe(atToday);
+  });
+
+  it('細かさを変えても今日へ送り直す', () => {
+    openGantt(null, 900);
+    zoom('week');
+    const cells = [...document.querySelectorAll('.gantt-day')];
+    const today = cells.findIndex((c) => c.classList.contains('today'));
+    const expected = today * 12 + 6 - (900 - 220) / 3;
+    expect(Math.abs(document.getElementById('gantt').scrollLeft - expected)).toBeLessThan(40);
+  });
+
+  it('狭い画面では掴み手を出さず、名前の欄は 140px', () => {
+    openGantt();
+    const css = document.querySelector('style').textContent;
+    expect(handle().classList.contains('resizer')).toBe(true);
+    expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.resizer \{ display: none/);
+    expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.gantt \{ --gantt-name-w: 140px; \}/);
+  });
+});

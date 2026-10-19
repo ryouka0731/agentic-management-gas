@@ -1954,8 +1954,28 @@ button.row-item, button.commit-item { text-align: left; }
 .gantt {
   --gantt-days: 1;
   --gantt-col: 26px;
+  position: relative;
   min-width: 100%;
   display: inline-block;
+}
+
+/*
+ * 名前の欄の幅を掴んで変える。欄と日の並びの間 (gap の真ん中) に、工程表の
+ * 上から下まで通して置く。名前の欄は左に貼り付くので、横に送ったぶんは
+ * 画面側が transform で送り返す (ganttSyncResizer)
+ */
+.gantt-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gantt-name-w) + var(--sp-4) / 2 - 5px);
+  width: 11px;
+  z-index: 5;
+}
+
+@media (max-width: 767px) {
+  /* 狭い画面では掴み手を出さない (.resizer ごと隠れる)。名前の欄を細くして、日の並びに場所を譲る */
+  .gantt { --gantt-name-w: 140px; }
 }
 
 .gantt-head, .gantt-row {
@@ -2116,6 +2136,22 @@ button.gantt-name:hover { color: var(--accent); }
   opacity: 0.55;
   pointer-events: none;
 }
+
+/* 月の細かさでは日の線が 4px おきになり、面が灰色に潰れる。週の線と土日だけ残す */
+.gantt[data-zoom="month"] .gantt-grid {
+  background-image:
+    repeating-linear-gradient(to right,
+      transparent 0 calc(var(--gantt-col) * 5),
+      var(--bg-2) calc(var(--gantt-col) * 5) calc(var(--gantt-col) * 7)),
+    repeating-linear-gradient(to right,
+      var(--line) 0 1px,
+      transparent 1px calc(var(--gantt-col) * 7));
+}
+
+.gantt[data-zoom="month"] .gantt-head:last-of-type .gantt-scale { background-image: none; }
+
+/* 棒が数 px しかないので、字の余白で幅を押し広げない */
+.gantt[data-zoom="month"] .gantt-bar { padding: 0 2px; }
 
 /*
  * 画面側のエラー。
