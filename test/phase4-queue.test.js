@@ -470,6 +470,19 @@ describe('キューを動かしている人', () => {
     expect(ctx.queueStatus_().stale).toBe(true);
   });
 
+  it('前から動いている番頭 (仕掛けた人の記録が無い) でも、回った時刻で決める', () => {
+    const { ctx, fake } = setup();
+    // QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らない
+    ctx.processCommandQueue();
+    const st = ctx.queueStatus_();
+    expect(st.runner).toBe('');
+    expect(st.stale).toBe(false);
+    expect(ctx.queueStatus_(new Date(Date.now() + 61 * 60 * 1000)).stale).toBe(true);
+    // 読めない時刻は、回っているか分からないので止まった側に倒す
+    fake.PropertiesService.getScriptProperties().setProperty('QUEUE_LAST_RUN', 'あとで');
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
   it('apiSettings は管理者にだけ返す', () => {
     const { ctx, fake } = setup();
     ctx.setupCommandQueue();
