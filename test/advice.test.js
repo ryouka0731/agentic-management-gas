@@ -43,6 +43,22 @@ function issue(ctx, patch) {
   return n;
 }
 
+/** 全部の規則を当てる */
+function everything(ctx) {
+  for (let k = 0; k < 5; k++) {
+    const n = issue(ctx, { assignee: ME, dueDate: new Date('2026-10-01T00:00:00Z'), labels: '月次',
+      createdAt: new Date('2026-10-10T01:00:00Z') });
+    ctx.projectPlace(n, 'In Progress');
+  }
+  ctx.dbAppend('pulls', { number: 1, title: '依頼', state: 'open', author: OTHER, reviewers: ME,
+    createdAt: new Date('2026-10-01T01:00:00Z') });
+  for (let k = 0; k < 5; k++) {
+    ctx.dbAppend('inquiries', { number: k + 1, kind: 'question', body: 'x', by: OTHER,
+      at: new Date('2026-10-10T01:00:00Z'), state: 'open' });
+  }
+}
+
+
 describe('規則の定義', () => {
   it('ADVICE_RULES が id・重み・閾値・言葉・ボタンを持ち、id は重ならない', () => {
     const { ctx } = setup();
@@ -144,6 +160,25 @@ describe('確認を待たせている', () => {
     expect(a.action).toMatchObject({ kind: 'pulls', arg: '2' });
   });
 
+  it('承認したあとで直されて回ってきた依頼は、直された時から数える (出した時からではない)', () => {
+    const { ctx } = setup();
+    const days = rule(ctx, 'reviews').days;
+    // 10日前に出して、その日に承認した。今日 (東京 10/14) 書いた人が直した
+    pr(ctx, 1, new Date('2026-10-04T01:00:00Z'), { sourceBranch: '見直し', staleReviewId: 1 });
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: ME, state: 'approve', at: new Date('2026-10-04T02:00:00Z'), id: 1 });
+    ctx.dbAppend('commits', { sha: 'c1', branch: '見直し', author: OTHER, timestamp: new Date('2026-10-14T01:00:00Z') });
+    expect(ctx.homeMyTurn_(ME, NOW).reviews.total).toBe(1); // 自分の番ではある
+    expect(ids(ctx.homeAdvice_(ME, NOW))).not.toContain('reviews');
+
+    // 直されてから閾値の日数が経てば出す
+    const b = setup().ctx;
+    pr(b, 1, new Date('2026-10-04T01:00:00Z'), { sourceBranch: '見直し', staleReviewId: 1 });
+    b.dbAppend('reviews', { prNumber: 1, reviewer: ME, state: 'approve', at: new Date('2026-10-04T02:00:00Z'), id: 1 });
+    b.dbAppend('commits', { sha: 'c1', branch: '見直し', author: OTHER,
+      timestamp: new Date(Date.UTC(2026, 9, 14 - days, 1)) });
+    expect(ids(b.homeAdvice_(ME, NOW))).toContain('reviews');
+  });
+
   it('返した依頼・他人宛て・閉じた依頼は数えない', () => {
     const { ctx } = setup();
     const old = new Date('2026-09-01T01:00:00Z');
@@ -190,6 +225,51 @@ describe('同じ作業の繰り返し', () => {
     made(ctx, 3, { labels: '月次', assignee: OTHER });
     fake._setUser(ME);
     expect(ids(ctx.homeAdvice_(ME, NOW))).not.toContain('repeat');
+  });
+
+  /** 疑似の CacheService。期限は見ない (1時間の中で呼ぶ想定) */
+  function fakeCache(ctx) {
+    const store = new Map();
+    ctx.CacheService = { getScriptCache: () => ({
+      get: (k) => (store.has(k) ? store.get(k) : null),
+      put: (k, v) => { store.set(k, v); },
+    }) };
+    return store;
+  }
+  function countReads(ctx, table) {
+    const real = ctx.dbReadAll;
+    const seen = { n: 0 };
+    ctx.dbReadAll = (t) => { if (t === table) seen.n++; return real(t); };
+    return seen;
+  }
+
+  it('作った人 (変更の履歴) は人ごとに覚え、1時間の中の2回目は読まない。覚えたあとに作ったものも数える', () => {
+    const { ctx } = setup();
+    fakeCache(ctx);
+    const min = rule(ctx, 'repeat').min;
+    made(ctx, min - 1, { labels: '月次' });
+    made(ctx, 1, { labels: '月次' });
+    const reads = countReads(ctx, 'change_log');
+    expect(ids(ctx.homeAdvice_(ME, NOW))).toContain('repeat');
+    expect(reads.n).toBe(1);
+    expect(ids(ctx.homeAdvice_(ME, NOW))).toContain('repeat');
+    expect(reads.n).toBe(1);
+    // 覚えたあとに作った (担当の無い) 束も読み直さずに数える
+    // (作るときは番号を採るために表を読むので、数えるのは homeAdvice_ の間だけ)
+    made(ctx, min + 1, { labels: '週次', title: '週の作業' }, 2);
+    reads.n = 0;
+    const out = ctx.homeAdvice_(ME, NOW).filter((x) => x.id === 'repeat')[0];
+    expect(reads.n).toBe(0);
+    expect(out.action.arg).toBe('週次');
+  });
+
+  it('チーム全体で束ねても閾値に届かなければ、変更の履歴を読まない', () => {
+    const { ctx } = setup();
+    const min = rule(ctx, 'repeat').min;
+    for (let k = 0; k < min * 2; k++) made(ctx, 1, { title: '題' + k + 'あ', labels: 't' + k });
+    const reads = countReads(ctx, 'change_log');
+    expect(ids(ctx.homeAdvice_(ME, NOW))).not.toContain('repeat');
+    expect(reads.n).toBe(0);
   });
 
   it('他人が作っても自分が担当なら数える', () => {
@@ -291,22 +371,40 @@ describe('使い方の問い合わせ (管理者のみ)', () => {
   });
 });
 
-describe('並びと形', () => {
-  /** 全部の規則を当てる */
-  function everything(ctx) {
-    for (let k = 0; k < 5; k++) {
-      const n = issue(ctx, { assignee: ME, dueDate: new Date('2026-10-01T00:00:00Z'), labels: '月次',
-        createdAt: new Date('2026-10-10T01:00:00Z') });
-      ctx.projectPlace(n, 'In Progress');
-    }
-    ctx.dbAppend('pulls', { number: 1, title: '依頼', state: 'open', author: OTHER, reviewers: ME,
-      createdAt: new Date('2026-10-01T01:00:00Z') });
-    for (let k = 0; k < 5; k++) {
-      ctx.dbAppend('inquiries', { number: k + 1, kind: 'question', body: 'x', by: OTHER,
-        at: new Date('2026-10-10T01:00:00Z'), state: 'open' });
-    }
-  }
+describe('テストの SOURCES', () => {
+  // apiHomeSummary は助言の例外を握る。読み込みの足りない SOURCES だと ReferenceError が黙って
+  // 空の助言になり、ほかのテストが何も確かめないまま通る。Home.gs を読む全ての SOURCES で、
+  // 全部の規則が当たる状況を握らずに通す
+  const lists = fs.readdirSync(new URL('.', import.meta.url))
+    .filter((f) => f.endsWith('.test.js'))
+    .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const SOURCES = (\[[\s\S]*?\]);/)])
+    .filter(([, m]) => m && m[1].indexOf('src/core/Home.gs') >= 0);
 
+  it('Home.gs を読む SOURCES が見つかる', () => {
+    expect(lists.length).toBeGreaterThan(3);
+  });
+
+  lists.forEach(([file, m]) => {
+    it(file + ' の SOURCES で全部の規則が動く', () => {
+      const fake = createFakeGas();
+      const ctx = loadGasWith(fake, ...eval(m[1]));
+      ctx.repoInit('agentic-management');
+      ctx.repoIsAdmin_ = () => true;
+      everything(ctx);
+      for (let k = 0; k < 3; k++) {
+        const n = issue(ctx, { assignee: ME, plannedHours: 1, startDate: new Date('2026-10-01T00:00:00Z') });
+        ctx.issueClose(n, null);
+        ctx.dbUpdate('issues', 'number', n, { closedAt: new Date('2026-10-13T03:00:00Z') });
+      }
+      ctx.ADVICE_MAX = () => 99;
+      expect(ids(ctx.homeAdvice_(ME, NOW)).sort())
+        .toEqual(['estimate', 'overdue', 'questions', 'repeat', 'reviews', 'wip']);
+      expect(ctx.apiHomeSummary().advice.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('並びと形', () => {
   it('重みの重い順に3件まで', () => {
     const { ctx } = setup({ admin: true });
     everything(ctx);

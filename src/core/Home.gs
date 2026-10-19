@@ -140,7 +140,8 @@ function homeTables_() {
  * @param {string} me
  * @param {object[]} pulls
  * @param {object[]} reviews
- * @returns {{toReview: object[], returned: object[]}} pulls の行
+ * @returns {{toReview: object[], returned: object[], mineAt: object}} pulls の行。mineAt は
+ *   toReview のうち自分が前に判断したものの {番号: 判断した時刻} (もう一度回ってきたもの)
  */
 function homeReviewQueue_(me, pulls, reviews) {
   var byNumber = {};
@@ -158,11 +159,12 @@ function homeReviewQueue_(me, pulls, reviews) {
     if (state === 'approve' && old) state = 'stale';
     var key = String(rv.prNumber);
     latest[key] = latest[key] || {};
-    latest[key][String(rv.reviewer)] = { state: state, old: old };
+    latest[key][String(rv.reviewer)] = { state: state, old: old, at: rv.at };
   }
 
   var toReview = [];
   var returned = [];
+  var mineAt = {};
   for (var q = 0; q < pulls.length; q++) {
     var one = pulls[q];
     var st = String(one.state);
@@ -175,6 +177,7 @@ function homeReviewQueue_(me, pulls, reviews) {
     if (String(one.author) !== me && prReviewers(one).indexOf(me) >= 0 &&
         (!mine || mine.state === 'stale' || (mine.state === 'request_changes' && mine.old))) {
       toReview.push(one);
+      if (mine) mineAt[String(one.number)] = mine.at;
     }
     if (String(one.author) === me) {
       for (var who in decided) {
@@ -182,7 +185,7 @@ function homeReviewQueue_(me, pulls, reviews) {
       }
     }
   }
-  return { toReview: toReview, returned: returned };
+  return { toReview: toReview, returned: returned, mineAt: mineAt };
 }
 
 /**
@@ -315,7 +318,7 @@ function ADVICE_RULES() {
       action: { kind: 'issues-filter', label: 'まとめて見る' } },
     { id: 'questions', weight: 10, min: 3, days: 30, admin: true,
       title: '使い方の問い合わせが続いています',
-      why: '{days}日で「使い方が分からない」の報告が {n}件ありました',
+      why: '{days}日で「' + INQUIRY_KINDS().question + '」の報告が {n}件ありました',
       tip: '使い方に書き足すと減ります',
       action: { kind: 'report', label: '要望・不具合を開く' } },
   ];
@@ -362,6 +365,66 @@ function adviceTitleHead_(title) {
   return head.length >= 2 ? head : '';
 }
 
+/** 自分が作ったやることの番号を覚えておく秒数。変更の履歴は増え続けるので、毎回は読まない */
+function ADVICE_MADE_SECONDS() {
+  return 3600;
+}
+
+/**
+ * 自分が作ったやること {番号: true}。変更の履歴 (change_log の create) から求め、
+ * CacheService に人ごとに ADVICE_MADE_SECONDS() 覚える。使えなければ毎回読む。
+ * 覚えている間に作ったものは adviceNoteMade_ が足す。
+ *
+ * @param {string} me
+ * @returns {object}
+ */
+function adviceMadeBy_(me) {
+  var key = 'ADVICE_MADE:' + me;
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {
+    cache = null;
+  }
+  var made = {};
+  dbReadAll('change_log').forEach(function (c) {
+    if (String(c.action) !== 'create' || String(c.actor) !== me) return;
+    var m = /^issue:(\d+)$/.exec(String(c.target));
+    if (m) made[m[1]] = true;
+  });
+  if (cache) {
+    try {
+      cache.put(key, JSON.stringify(made), ADVICE_MADE_SECONDS());
+    } catch (e) {
+      Logger.log('作ったやることを覚えられませんでした: ' + e.message);
+    }
+  }
+  return made;
+}
+
+/**
+ * やることを作ったとき、覚えている「自分が作ったもの」に足す。覚えていなければ何もしない
+ * (次に読むときに変更の履歴から求める)。失敗しても作ることは巻き戻さない。
+ *
+ * @param {string} me
+ * @param {number} number
+ */
+function adviceNoteMade_(me, number) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 'ADVICE_MADE:' + me;
+    var hit = cache.get(key);
+    if (!hit) return;
+    var made = JSON.parse(hit);
+    made[String(number)] = true;
+    cache.put(key, JSON.stringify(made), ADVICE_MADE_SECONDS());
+  } catch (e) {
+    Logger.log('作ったやることを覚えられませんでした: ' + e.message);
+  }
+}
+
 /**
  * 改善のヒント。規則を順に当て、当たったものを重い順に ADVICE_MAX() 件まで返す。
  *
@@ -402,14 +465,39 @@ function homeAdvice_(email, now, tables) {
   });
 
   // 確認を待たせている
+  // 待ち始めは依頼を出した時。前に判断した依頼がもう一度回ってきたときは、判断した時と
+  // 中身が変わった時 (改訂版の最後の記録) のうち遅いほう。出した時から数えると、承認して
+  // 10日後に直された依頼が、直された当日から「待たせている」になる
   var rv = rules.reviews;
-  var waiting = homeReviewQueue_(me, t.pulls, t.reviews).toReview.filter(function (pr) {
-    var day = motivationDay_(pr.createdAt);
-    return day && adviceDays_(day, today) >= rv.days;
+  var queue = homeReviewQueue_(me, t.pulls, t.reviews);
+  var waitFrom = {};
+  var again = queue.toReview.filter(function (pr) {
+    waitFrom[String(pr.number)] = motivationTime_(pr.createdAt);
+    return Object.prototype.hasOwnProperty.call(queue.mineAt, String(pr.number));
+  });
+  // 記録の表は大きいので、もう一度回ってきた依頼があるときだけ読む
+  if (again.length) {
+    var lastCommit = {};
+    dbReadAll('commits').forEach(function (c) {
+      var b = String(c.branch || '');
+      var ms = motivationTime_(c.timestamp);
+      if (!isNaN(ms) && !(lastCommit[b] >= ms)) lastCommit[b] = ms;
+    });
+    again.forEach(function (pr) {
+      var key = String(pr.number);
+      [motivationTime_(queue.mineAt[key]), lastCommit[String(pr.sourceBranch || '')]].forEach(function (ms) {
+        if (typeof ms === 'number' && !isNaN(ms) && !(waitFrom[key] >= ms)) waitFrom[key] = ms;
+      });
+    });
+  }
+  var waiting = queue.toReview.filter(function (pr) {
+    var ms = waitFrom[String(pr.number)];
+    if (!(ms > 0)) return false;
+    return adviceDays_(motivationDay_(new Date(ms)), today) >= rv.days;
   });
   if (waiting.length >= rv.min) {
     // いちばん長く待たせているものを開く
-    waiting.sort(function (a, b) { return motivationTime_(a.createdAt) - motivationTime_(b.createdAt); });
+    waiting.sort(function (a, b) { return waitFrom[String(a.number)] - waitFrom[String(b.number)]; });
     hit(rv, { n: waiting.length }, Number(waiting[0].number));
   }
 
@@ -451,22 +539,29 @@ function homeAdvice_(email, now, tables) {
     var day = motivationDay_(row.createdAt);
     return day && day >= since(rp) && day <= today;
   });
-  if (recent.length >= rp.min) {
-    var madeByMe = {};
-    dbReadAll('change_log').forEach(function (c) {
-      if (String(c.action) !== 'create' || String(c.actor) !== me) return;
-      var m = /^issue:(\d+)$/.exec(String(c.target));
-      if (m) madeByMe[m[1]] = true;
+  // 誰のものかを問わずに束ねても閾値に届く束が無ければ、作った人 (変更の履歴) は読まない
+  function keysOf(row) {
+    var keys = tagsOf(row.labels);
+    var head = adviceTitleHead_(row.title);
+    if (head && keys.indexOf(head) < 0) keys.push(head);
+    return keys;
+  }
+  var team = {};
+  var teamMax = 0;
+  recent.forEach(function (row) {
+    keysOf(row).forEach(function (k) {
+      team[k] = (team[k] || 0) + 1;
+      if (team[k] > teamMax) teamMax = team[k];
     });
+  });
+  if (teamMax >= rp.min) {
+    var madeByMe = adviceMadeBy_(me);
     var counts = {};
     var isTag = {};
     recent.forEach(function (row) {
       if (!madeByMe[String(row.number)] && issueAssignees(row).indexOf(me) < 0) return;
-      var keys = tagsOf(row.labels);
-      keys.forEach(function (k) { isTag[k] = true; });
-      var head = adviceTitleHead_(row.title);
-      if (head && keys.indexOf(head) < 0) keys.push(head);
-      keys.forEach(function (k) { counts[k] = (counts[k] || 0) + 1; });
+      tagsOf(row.labels).forEach(function (k) { isTag[k] = true; });
+      keysOf(row).forEach(function (k) { counts[k] = (counts[k] || 0) + 1; });
     });
     // 多いものから。同じ数ならタグを先に (人が付けた束ねなので、題名の語より当たっている)
     var best = Object.keys(counts).sort(function (a, b) {
