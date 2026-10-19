@@ -345,27 +345,56 @@ const OPS = {
 /**
  * 自分の様子を見る命令 (#13)。番頭に頼み、返事を手元で読める形にして出す。
  *
- * **頼んだ本人のぶんだけ返る。** 本人は命令ファイルを置いた人で、番頭が決める
- * (分からなければ断る)。探す語は送らない。一覧を取って手元で絞る (画面と同じ合わせ方)。
+ * 誰から見た様子かは、命令ファイルを置いた人で番頭が決める (分からなければ断る)。
+ * 権限の仕組みではなく、結果は命令の入れ先を共有している人なら読める。
+ * 探す語は送らない。一覧を取って手元で絞る (画面と同じ合わせ方)。
  */
 const VIEWS = {
-  'mine': { op: 'homeMine', args: () => ({}), show: (r) => local.formatMine(r) },
-  'advice': { op: 'homeAdvice', args: () => ({}), show: (r) => local.formatAdvice(r) },
+  'mine': {
+    op: 'homeMine', args: () => ({}),
+    show: (r) => local.formatMine(shaped(r, r && r.reviews && r.returned && r.due)),
+  },
+  'advice': { op: 'homeAdvice', args: () => ({}), show: (r) => local.formatAdvice(shaped(r, Array.isArray(r))) },
   'search': {
     op: 'searchIndex',
     args: (a) => {
       if (!a.join(' ').trim()) throw usageError('探す語を渡してください (例: node agent.mjs search 規程 第3条)');
       return {};
     },
-    show: (r, a) => local.formatSearch(local.searchFilter(r, a.join(' '))),
+    show: (r, a) => local.formatSearch(local.searchFilter(shaped(r, Array.isArray(r)), a.join(' '))),
   },
   // 'today' などの形を渡すとその形で。渡さなければ画面で選んでいる形
   'report': {
     op: 'reportDraft',
-    args: (a) => ({ kind: a[0] || '' }),
-    show: (r) => local.reportFill(r.template, r.parts),
+    args: (a) => {
+      if (a[0] && !REPORT_KINDS.includes(a[0])) {
+        throw usageError('日報の形は ' + REPORT_KINDS.join(' / ') + ' のどれかです: ' + a[0]);
+      }
+      return { kind: a[0] || '' };
+    },
+    show: (r) => local.reportFill(shaped(r, r && typeof r.template === 'string' && r.parts).template, r.parts),
   },
 };
+
+/** 返事が思っていた形か。違えば投げる (showView が JSON のまま出す) */
+function shaped(r, ok) {
+  if (!ok) throw new Error('返事の形が違います');
+  return r;
+}
+
+/** 日報の形。番頭の REPORT_TEMPLATES() の key と custom (番頭も知らない形は断る) */
+const REPORT_KINDS = ['three', 'today', 'plain', 'custom'];
+
+/**
+ * 返事を読める字にする。思っていた形と違えば (番頭が古い・新しいなど) 落とさずに JSON のまま出す。
+ */
+function showView(view, result, rest) {
+  try {
+    return view.show(result, rest);
+  } catch (e) {
+    return JSON.stringify(result, null, 2);
+  }
+}
 
 /** 送る前に断る使い方の誤り (終わりの番号を 2 にする) */
 function usageError(message) {
@@ -779,7 +808,7 @@ async function main() {
   const config = loadConfig();
   const res = await send(config.queueDir, entry.op, args);
 
-  if (view && res.ok) process.stdout.write(view.show(res.result, rest) + '\n');
+  if (view && res.ok) process.stdout.write(showView(view, res.result, rest) + '\n');
   else process.stdout.write(JSON.stringify(res, null, 2) + '\n');
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();

@@ -157,8 +157,11 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-/** 欠けていれば入れない。agent.mjs が無いと、戻す命令 (update rollback) ごと無くなる */
-export const REQUIRED_FILES = ['agent.mjs', 'track/hook.mjs', 'track/update.mjs'];
+/**
+ * 欠けていれば入れない。agent.mjs が無いと、戻す命令 (update rollback) ごと無くなる。
+ * **agent.mjs が読み込むものも同じ** (欠けると agent.mjs が起動時に落ちる)。読み込むものを足したらここにも足す
+ */
+export const REQUIRED_FILES = ['agent.mjs', 'track/hook.mjs', 'track/update.mjs', 'track/track.mjs', 'track/local.mjs'];
 
 /**
  * 届いた中身を、書く前に丸ごと確かめる。1つでも駄目なら全体を断る。

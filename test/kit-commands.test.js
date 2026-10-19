@@ -130,6 +130,42 @@ describe('番頭の命令 (COMMAND_OPS)', () => {
   });
 });
 
+describe('持ち主を移された命令', () => {
+  /*
+   * マイドライブでは命令ファイルの持ち主を同僚へ移せる。移しても中身を書いた人は変わらないので、
+   * 持ち主と最後に書いた人が食い違う。そのときは本人のぶんを返す命令を断る (誰のぶんか決められない)
+   */
+  function place(withDrive, owner) {
+    const fake = createFakeGas();
+    if (withDrive) fake.Drive = fake._makeDrive();
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    issue(ctx, '私の期限', { assignee: ME, dueDate: new Date(Date.now() - DAY) });
+    const queue = ctx.commandQueueFolder_();
+    const f = queue.createFile('kit-1-a.cmd.json', JSON.stringify({ op: 'homeMine', args: {} }), 'text/plain');
+    if (owner) f._setOwner(owner);
+    ctx.runCommandFileLocked_(f, queue, ctx.commandDoneFolder_());
+    const out = queue.getFilesByName('kit-1-a.result.json').next();
+    return JSON.parse(out.getBlob().getDataAsString('UTF-8'));
+  }
+
+  it('持ち主と最後に書いた人が同じなら返す', () => {
+    const r = place(true, ME);
+    expect(r.ok).toBe(true);
+    expect(r.result.due.items.map((x) => x.title)).toEqual(['私の期限']);
+  });
+
+  it('持ち主が書いた人と違えば断る', () => {
+    const r = place(true, OTHER);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('命令を置いた人が分かりません');
+  });
+
+  it('見比べられない (Drive の拡張サービスが無い) ときは持ち主で決める', () => {
+    expect(place(false, ME).ok).toBe(true);
+  });
+});
+
 /* ---------- 手元の道具 ---------- */
 
 const AGENT = path.resolve('kit/agent.mjs');
@@ -204,6 +240,20 @@ describe('手元の道具の命令', () => {
     ]);
     expect(r.out).toContain('#5 キテイを読む');
     expect(r.out).not.toContain('関係ない');
+  });
+
+  it('report は知らない形を送らずに断る', async () => {
+    const r = await run(['report', 'tomorrow'], {});
+    expect(r.cmd).toBeNull();
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('three');
+  });
+
+  it('返事の形が思っていたものと違えば、落ちずにそのまま出す', async () => {
+    const r = await run(['mine'], 'へんな返事');
+    expect(r.code).toBe(0);
+    expect(r.err).not.toContain('TypeError');
+    expect(r.out).toContain('へんな返事');
   });
 
   it('search は語が無ければ送らずに断る', async () => {
@@ -335,6 +385,15 @@ describe('doctor (番頭に頼まずに点検する)', () => {
     expect(r.text).toContain('node agent.mjs track install');
   });
 
+  it('入れた道具のほうが新しければ、update ではなく ~/.banto の道具を使うよう案内する', () => {
+    const d = dirs();
+    fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue, kitVersion: '9.0.0' }));
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain(path.join(d.home, 'kit', 'agent.mjs'));
+    expect(r.text).not.toContain('node agent.mjs update');
+  });
+
   it('全部そろっていれば直すことは無い', () => {
     const d = dirs();
     fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue, kitVersion: local.KIT_VERSION }));
@@ -371,6 +430,14 @@ describe('説明', () => {
     for (const s of ['node agent.mjs mine', 'node agent.mjs advice', 'node agent.mjs search', 'node agent.mjs report', 'node agent.mjs doctor']) {
       expect(text('AGENTS.md')).toContain(s);
     }
+  });
+  it('AGENTS.md は「本人のぶんだけ」を言い過ぎない。誰の見え方かを決めるだけで、結果は共有している人に読める', () => {
+    expect(text('AGENTS.md')).not.toContain('頼んだ本人のぶんだけ返ります');
+    expect(text('AGENTS.md')).toContain('権限の仕組みではありません');
+    expect(text('AGENTS.md')).toContain('共有している人なら誰でも読めます');
+  });
+  it('AGENTS.md に、選んだ日報の形が使われるのはキューを仕掛けた人だけと書いてある', () => {
+    expect(text('AGENTS.md')).toContain('キューを仕掛けた人');
   });
   it('banto-track のスキルは、始める前に mine で自分の番を見させる', () => {
     expect(text('track/SKILL.md')).toMatch(/始める前に[^\n]*mine/);
