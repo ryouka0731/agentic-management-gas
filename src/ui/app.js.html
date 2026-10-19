@@ -9323,31 +9323,37 @@
 
   /**
    * チームの今週の合計を、先週の合計を目標に棒で見せる。**名前は出さない。**
-   * サーバが 2人未満のチームでは null を返す (1人だと本人の数がそのまま見える)。
+   * サーバは、見る人のほかに2人いない週を null で返す (引き算でその人の数が見える)。
+   * 今週が null なら欄ごと出さず、先週が null なら今週の合計だけ出して棒は出さない。
    *
-   * @param {{week: number, lastWeek: number}|null|undefined} team
+   * @param {{week: (number|null), lastWeek: (number|null)}|null|undefined} team
    * @returns {HTMLElement|null}
    */
   function makeGameTeam(team) {
-    if (!team) return null;
-    var week = Number(team.week || 0);
-    var last = Number(team.lastWeek || 0);
+    if (!team || team.week === null || team.week === undefined || team.week === '') return null;
+    var week = Number(team.week) || 0;
+    var hasLast = team.lastWeek !== null && team.lastWeek !== undefined && team.lastWeek !== '';
+    var last = hasLast ? (Number(team.lastWeek) || 0) : 0;
     var box = document.createElement('div');
     box.className = 'game-team';
     var head = document.createElement('div');
     head.className = 'row-meta';
-    head.textContent = 'チームの今週 ' + pointWords(week) + ' ・ 先週 ' + pointWords(last);
+    head.textContent = 'チームの今週 ' + pointWords(week) + (hasLast ? ' ・ 先週 ' + pointWords(last) : '');
     box.appendChild(head);
+    if (!hasLast) return box;
+
     var bar = document.createElement('div');
     bar.className = 'game-level-bar game-team-bar';
     bar.setAttribute('role', 'progressbar');
     bar.setAttribute('aria-label', '先週の合計までの進み具合');
-    bar.setAttribute('aria-valuemin', '0');
-    bar.setAttribute('aria-valuemax', String(pointWords(last)));
-    bar.setAttribute('aria-valuenow', String(pointWords(Math.min(week, last))));
+    // 先週が0なら割らない。今週に1つでもあれば満ちたとし、aria も 1/1 にそろえる
+    var max = last > 0 ? pointWords(last) : 1;
+    var now = last > 0 ? pointWords(Math.min(week, last)) : (week > 0 ? 1 : 0);
+    bar.setAttribute('aria-valuemin', 0);
+    bar.setAttribute('aria-valuemax', max);
+    bar.setAttribute('aria-valuenow', now);
     var fill = document.createElement('span');
-    // 先週が0なら割らない。今週に1つでもあれば満ちたとする
-    var ratio = last > 0 ? week / last : (week > 0 ? 1 : 0);
+    var ratio = last > 0 ? week / last : now;
     fill.style.width = Math.min(100, Math.max(0, Math.round(ratio * 100))) + '%';
     bar.appendChild(fill);
     box.appendChild(bar);

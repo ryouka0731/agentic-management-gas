@@ -3481,8 +3481,9 @@ function apiGameState() {
       return { key: plainText(b.key), label: plainText(b.label), done: !!b.done, at: plainDay(b.at),
         left: plainNumber(b.left) };
     }),
-    // 名前もアドレスも入れない。チームが2人未満なら null (1人だと本人の数がそのまま見える)
-    team: m.team ? { week: plainNumber(m.team.week), lastWeek: plainNumber(m.team.lastWeek) } : null };
+    // 名前もアドレスも入れない。見る人のほかに2人いない週は null (引き算でその人の数が見える)
+    team: { week: m.team.week === null ? null : plainNumber(m.team.week),
+      lastWeek: m.team.lastWeek === null ? null : plainNumber(m.team.lastWeek) } };
 }
 
 /**
