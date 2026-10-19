@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { bantoHome, trackedFolders } from './track/hook.mjs';
 import * as track from './track/track.mjs';
 import * as update from './track/update.mjs';
+import * as local from './track/local.mjs';
 
 const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
 
@@ -342,6 +343,38 @@ const OPS = {
 };
 
 /**
+ * 自分の様子を見る命令 (#13)。番頭に頼み、返事を手元で読める形にして出す。
+ *
+ * **頼んだ本人のぶんだけ返る。** 本人は命令ファイルを置いた人で、番頭が決める
+ * (分からなければ断る)。探す語は送らない。一覧を取って手元で絞る (画面と同じ合わせ方)。
+ */
+const VIEWS = {
+  'mine': { op: 'homeMine', args: () => ({}), show: (r) => local.formatMine(r) },
+  'advice': { op: 'homeAdvice', args: () => ({}), show: (r) => local.formatAdvice(r) },
+  'search': {
+    op: 'searchIndex',
+    args: (a) => {
+      if (!a.join(' ').trim()) throw usageError('探す語を渡してください (例: node agent.mjs search 規程 第3条)');
+      return {};
+    },
+    show: (r, a) => local.formatSearch(local.searchFilter(r, a.join(' '))),
+  },
+  // 'today' などの形を渡すとその形で。渡さなければ画面で選んでいる形
+  'report': {
+    op: 'reportDraft',
+    args: (a) => ({ kind: a[0] || '' }),
+    show: (r) => local.reportFill(r.template, r.parts),
+  },
+};
+
+/** 送る前に断る使い方の誤り (終わりの番号を 2 にする) */
+function usageError(message) {
+  const e = new Error(message);
+  e.usage = true;
+  return e;
+}
+
+/**
  * 番号の引数を数にする。読めなければ、送る前にここで断る。
  *
  * 数にできない字 ('abc') をそのまま Number にすると null として送られ、
@@ -656,6 +689,13 @@ function usage() {
   ];
 
   for (const name of Object.keys(OPS)) lines.push('  ' + name);
+  lines.push('');
+  lines.push('自分の様子を見る (本人のぶんだけ返る):');
+  lines.push('  mine                   あなたの番 (確かめてほしい確認依頼・戻ってきたもの・期限)');
+  lines.push('  advice                 改善のヒント');
+  lines.push('  search <語…>           文書・やること・確認依頼などを題名で探す');
+  lines.push('  report [today]         今日の日報の下書き (形を渡さなければ画面で選んでいる形)');
+  lines.push('  doctor                 番頭に頼まずに、設定・入れ先・返事・道具の版・フックを点検する');
 
   lines.push('');
   lines.push('例:');
@@ -704,7 +744,16 @@ async function main() {
   if (name === 'track') { await runTrack(process.argv.slice(3)); return; }
   if (name === 'update') { await runUpdate(process.argv.slice(3)); return; }
 
-  const entry = OPS[name];
+  // 点検は番頭に頼まない。届かないときに使うものなので
+  if (name === 'doctor') {
+    const r = local.doctor({ config: findConfig(), home: bantoHome(), claude: track.claudeHome() });
+    process.stdout.write(r.text + '\n');
+    if (!r.ok) process.exitCode = 1;
+    return;
+  }
+
+  const view = VIEWS[name];
+  const entry = OPS[name] || view;
   if (!entry) {
     process.stderr.write('知らない操作です: ' + name + '\n\n' + usage() + '\n');
     process.exitCode = 2;
@@ -718,10 +767,20 @@ async function main() {
     if (given[i] === '--queue') { i++; continue; }
     rest.push(given[i]);
   }
+  let args;
+  try {
+    args = entry.args(rest);
+  } catch (e) {
+    if (!e.usage) throw e;
+    process.stderr.write(e.message + '\n');
+    process.exitCode = 2;
+    return;
+  }
   const config = loadConfig();
-  const res = await send(config.queueDir, entry.op, entry.args(rest));
+  const res = await send(config.queueDir, entry.op, args);
 
-  process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+  if (view && res.ok) process.stdout.write(view.show(res.result, rest) + '\n');
+  else process.stdout.write(JSON.stringify(res, null, 2) + '\n');
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();
 }

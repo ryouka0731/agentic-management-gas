@@ -117,6 +117,47 @@ function COMMAND_OPS() {
     impedimentResolve: function (a) { return apiImpedimentResolve(a.number, a.resolution); },
     impedimentComment: function (a) { return apiImpedimentComment(a.number, a.body); },
     history: function (a) { return apiHistory(a.target); },
+
+    /*
+     * 手元から自分の様子を見る (#13)。**頼んだ本人のぶんだけ返す。**
+     *
+     * 本人は命令ファイルを置いた人 (commandOwner_)。トリガーは持ち主の権限で走るので、
+     * Session から本人は分からない (画面の api* 関数は呼ばない。呼ぶと持ち主のぶんが返る)。
+     * 分からなければ断る。持ち主や誰かのぶんに倒すと、他人の番を返すことになる
+     */
+    homeMine: function (a, by) {
+      return homeTurnPlain_(homeMyTurn_(commandBy_(by), new Date()));
+    },
+    homeAdvice: function (a, by) {
+      return homeAdvicePlain_(homeAdvice_(commandBy_(by), new Date()));
+    },
+    // 題名・番号・状態だけ (人の名前もアドレスも入らない)。絞るのは手元
+    searchIndex: function () { return apiSearchIndex(); },
+    /*
+     * 日報の下書きの中身と、本人の形。当てはめるのは手元 (画面の reportFill と同じ式)。
+     * 形を渡されなければ本人が選んでいる形。本人の形は UserProperties にあるので、
+     * キューを仕掛けた人以外では読めず、先頭の形 (3節) に倒れる
+     */
+    reportDraft: function (a, by) {
+      var me = commandBy_(by);
+      var kind = String(a.kind || '');
+      if (kind && !reportKindValid_(kind)) throw new Error('日報の形が分かりません: ' + kind);
+      kind = kind || reportKind_(me);
+      var custom = reportCustom_(me);
+      var template;
+      if (kind === 'custom' && custom) {
+        template = custom;
+      } else {
+        var list = REPORT_TEMPLATES();
+        var hit = list.filter(function (t) { return t.key === kind; })[0];
+        template = (hit || list[0]).body;
+      }
+      return {
+        parts: reportPartsPlain_(reportParts_(me, new Date())),
+        template: plainText(template),
+        kind: plainText(kind),
+      };
+    },
     /*
      * 手元の道具が自分を新しくするための読むだけの命令。
      *
@@ -139,6 +180,18 @@ function COMMAND_OPS() {
       };
     },
   };
+}
+
+/**
+ * 本人のぶんを返す命令の、本人。分からなければ断る。
+ *
+ * @param {string} by 命令を置いた人 (commandOwner_)
+ * @returns {string}
+ */
+function commandBy_(by) {
+  var me = String(by || '');
+  if (!me) throw new Error('命令を置いた人が分かりません');
+  return me;
 }
 
 /**
@@ -303,7 +356,9 @@ function commandOwner_(file) {
   } catch (e) {
     // 共有ドライブのファイルは持ち主を持たない。下で最後に書いた人を読む
   }
-  // 使い道は「誰の道具が古いか」(kitRemember_) だけ。書き換えられるので権限の判断には使わない
+  // 使い道は「誰の道具が古いか」(kitRemember_) と「本人のぶんを返す命令の本人」(commandBy_) だけ。
+  // 権限の判断には使わない。最後に書いた人なので、他人の命令を書き換えた人はその人自身になり、
+  // 他人のぶんを取る道にはならない (結果は queue に置かれ、共有している人には読める点は画面と違う)
   if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return '';
   try {
     var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });

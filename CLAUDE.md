@@ -590,6 +590,10 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - 誰の道具が古いかは**スクリプトプロパティ** (`KIT_PRINT:<email>`) に覚える。手元からの命令は持ち主の
   トリガーで走るので、利用者本人の UserProperties には書けない
 - `kit/track/hook.mjs` は ~/.banto/hooks に写して単体で動かす。**ほかのファイルを import しない**
+- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft`) は、命令を置いた人 (`by`) のぶんだけ返す**
+  (`commandBy_`。分からなければ断る)。画面の `api*` を呼ばない (トリガーは持ち主の権限で走るので、持ち主のぶんが返る)
+- **`kit/track/local.mjs` の `searchFilter` / `reportFill` は画面の写し**、`KIT_VERSION` は `AGENT_KIT_VERSION()` の写し。
+  `test/kit-commands.test.js` が揃っているかを見ている (版を上げるときは2か所)。`doctor` は番頭に何も頼まない
 
 ## エージェンティックスクラムは既定でオフ
 
