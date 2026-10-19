@@ -105,6 +105,8 @@
         <button id="commit-btn" class="btn btn-primary" hidden>変更を記録</button>
         <button id="stash-btn" class="btn" hidden>直接編集を退避</button>
         <a id="open-in-docs" href="#" target="_blank" hidden>元のファイルを開く</a>
+        <button id="doc-link-btn" class="btn" type="button" hidden>リンクをコピー</button>
+        <button id="doc-full-btn" class="btn" type="button" hidden>全画面</button>
         <div class="search-box" id="search-box">
           <button id="search-open" class="theme-btn search-open" type="button" aria-label="探す"></button>
           <div class="search-field filter-box">
@@ -221,6 +223,7 @@
           <span class="spacer"></span>
           <button id="edit-save-btn" class="btn btn-primary" hidden>保存</button>
         </div>
+        <div class="doc-link-row" id="doc-link-row" hidden></div>
 
         <iframe id="viewer" class="viewer" sandbox></iframe>
         <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
