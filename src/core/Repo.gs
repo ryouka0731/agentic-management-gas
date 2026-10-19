@@ -35,8 +35,7 @@ function repoInit(rootFolderName) {
 
   var db = SpreadsheetApp.create(rootFolderName + ' repo-db');
   var dbFile = DriveApp.getFileById(db.getId());
-  git.addFile(dbFile);
-  DriveApp.getRootFolder().removeFile(dbFile);
+  dbFile.moveTo(git);
 
   var config = {
     rootId: root.getId(),
@@ -49,6 +48,7 @@ function repoInit(rootFolderName) {
 
   PropertiesService.getScriptProperties()
     .setProperty(REPO_CONFIG_KEY(), JSON.stringify(config));
+  repoDriveId_(); // 共有ドライブなら覚える
 
   // スキーマ定義済みのシートをすべて先に作っておく
   var schema = DB_SCHEMA();
@@ -94,6 +94,220 @@ function repoParentFolder_() {
     Logger.log('スクリプトの場所が分かりませんでした: ' + e.message);
   }
   return DriveApp.getRootFolder();
+}
+
+/**
+ * Drive の拡張サービス (v3) が使えるか。
+ *
+ * appsscript.json で足してあるが、足す前に作ったデプロイや、組織が止めている環境もある。
+ * 使えなければマイドライブとして扱う。
+ *
+ * @returns {boolean}
+ */
+function driveApiAvailable_() {
+  try {
+    return typeof Drive !== 'undefined' && !!Drive.Files && !!Drive.Permissions;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 入れ物が置かれている共有ドライブの id。マイドライブなら空。
+ *
+ * **共有ドライブとマイドライブの分かれ目はここだけ。** `if (driveId)` を散らさない。
+ *
+ * 設定 (`repoConfig().driveId`) に覚える。空文字も「マイドライブ」として覚え、毎回
+ * 問い合わせない。拡張サービスが無いときと問い合わせに失敗したときは覚えない
+ * (あとで足されたら読み直す)。設定が読めなければ投げる (repoConfig と同じ)。
+ *
+ * @returns {string}
+ */
+function repoDriveId_() {
+  var config = repoConfig();
+  if (typeof config.driveId === 'string') return config.driveId;
+  if (!driveApiAvailable_()) return '';
+
+  var id;
+  try {
+    var meta = Drive.Files.get(config.rootId, { fields: 'driveId', supportsAllDrives: true });
+    id = String((meta && meta.driveId) || '');
+  } catch (e) {
+    Logger.log('共有ドライブか分かりませんでした: ' + e.message);
+    return '';
+  }
+
+  // 設定はキューの置き場を作るときにも書くので、鍵の中で読み直してから書く。
+  // 取れなければ覚えずに返す (次に読んだときにまた問い合わせるだけ)。
+  // 読むついでに覚えるだけなので待たない (画面からの読み出しを鍵で30秒止めない)
+  dbWithLock_(1500, function () {
+    var again = repoConfig();
+    if (typeof again.driveId === 'string') return;
+    again.driveId = id;
+    PropertiesService.getScriptProperties().setProperty(REPO_CONFIG_KEY(), JSON.stringify(again));
+  }, function () {});
+  return id;
+}
+
+/**
+ * repoDriveId_ を、設定が読めないときに空で返す形。消す・断るの判断に使う。
+ *
+ * @returns {string}
+ */
+function repoDriveIdSafe_() {
+  try {
+    return repoDriveId_();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 1回の実行のあいだだけ覚える共有ドライブの役割 (読めなかったことも含む)。
+ *
+ * 読めなかったものは CacheService に入れない (10分のあいだ全員が持ち主でなくなる)。
+ * ただ何も覚えないと、一覧を1回描くあいだに行の数だけ Drive に問い合わせる。
+ * GAS は実行ごとにグローバルを作り直すので、ここは次の実行には残らない。
+ * テストでは同じ文脈で読み直すときに `{}` へ戻す。
+ */
+var DRIVE_MEMBERS_MEMO_ = {};
+
+/**
+ * 共有ドライブのメンバーを、持ち主 (organizer) と管理者 (organizer / fileOrganizer / writer) に分ける。
+ *
+ * **グループは数えない。** 中の人を確かめる手立てが無い。
+ * **読めなければ投げずに空。** 誰も持ち主・管理者ではない (安全側)。失敗は CacheService には
+ * 覚えない (その実行のあいだだけ DRIVE_MEMBERS_MEMO_ に覚える)。
+ * **管理者 (organizer) が1人も居ない読みも失敗として扱う。** 共有ドライブには必ず
+ * 1人は居るので、居ないのは読めたのが一部だけということ。覚えると、10分のあいだ
+ * 全員が持ち主でなくなる。
+ * **アドレスは小文字にそろえて持つ。** Drive が返す字と Session の字は大文字小文字が
+ * 違うことがあり、そのまま比べると持ち主が全員締め出される。比べる側も小文字にする。
+ * 読めたものは10分覚える。一覧で1行ごとに問い合わせると、行の数だけ待つ。
+ *
+ * @param {string} driveId
+ * @returns {{owners: string[], admins: string[]}}
+ */
+function driveMembers_(driveId) {
+  var key = 'driveMembers:' + driveId;
+  if (Object.prototype.hasOwnProperty.call(DRIVE_MEMBERS_MEMO_, key)) return DRIVE_MEMBERS_MEMO_[key];
+  var got = driveMembersRead_(driveId, key);
+  DRIVE_MEMBERS_MEMO_[key] = got;
+  return got;
+}
+
+/**
+ * driveMembers_ の本体。CacheService を見て、無ければ Drive に問い合わせる。
+ *
+ * @param {string} driveId
+ * @param {string} key
+ * @returns {{owners: string[], admins: string[]}}
+ */
+function driveMembersRead_(driveId, key) {
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {
+    cache = null;
+  }
+
+  var out = { owners: [], admins: [] };
+  try {
+    var token = '';
+    do {
+      var res = Drive.Permissions.list(driveId, {
+        supportsAllDrives: true, pageSize: 100, pageToken: token || undefined,
+        fields: 'nextPageToken,permissions(emailAddress,role,type)',
+      });
+      var list = (res && res.permissions) || [];
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        if (p.type !== 'user' || !p.emailAddress) continue;
+        var email = String(p.emailAddress).toLowerCase();
+        if (p.role === 'organizer') out.owners.push(email);
+        if (p.role === 'organizer' || p.role === 'fileOrganizer' || p.role === 'writer') out.admins.push(email);
+      }
+      token = (res && res.nextPageToken) || '';
+    } while (token);
+  } catch (e) {
+    Logger.log('共有ドライブの役割が読めませんでした: ' + e.message);
+    return { owners: [], admins: [] };
+  }
+  if (out.owners.length === 0) {
+    Logger.log('共有ドライブの管理者が読めませんでした (一部しか返りませんでした)');
+    return { owners: [], admins: [] };
+  }
+
+  try {
+    if (cache) cache.put(key, JSON.stringify(out), 600);
+  } catch (e2) {
+    Logger.log('役割を覚えられませんでした: ' + e2.message);
+  }
+  return out;
+}
+
+/**
+ * このアプリの持ち主。マイドライブでは入れ物の持ち主1人、共有ドライブでは管理者 (organizer) 全員。
+ *
+ * エディタ専用の関数・報告の知らせ・報告から作るやることの担当が見る。
+ *
+ * @returns {string[]} 分からなければ空
+ */
+function repoOwners_() {
+  var driveId;
+  try {
+    driveId = repoDriveId_();
+  } catch (e) {
+    return [];
+  }
+  if (driveId) return driveMembers_(driveId).owners;
+  var owner = repoOwnerEmail();
+  return owner ? [owner] : [];
+}
+
+/**
+ * その人が持ち主か。大文字小文字は見ない。
+ *
+ * Drive が返すアドレスと Session のアドレスは字の大小が違うことがある。そのまま
+ * 比べると、共有ドライブの管理者が全員エディタ専用の関数から締め出される。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function repoHasOwner_(email) {
+  var who = String(email || '').toLowerCase();
+  if (!who) return false;
+  var owners = repoOwners_();
+  for (var i = 0; i < owners.length; i++) {
+    if (String(owners[i]).toLowerCase() === who) return true;
+  }
+  return false;
+}
+
+/**
+ * ゴミ箱へ移す。
+ *
+ * **共有ドライブでは、投稿者の役割では消せない。** 黙って続けると、捨てたはずの改訂版が
+ * 残り続ける。何が要るかを添えて投げる。マイドライブでは今までどおり記録して続ける
+ * (持ち主でない編集者は他人のファイルを消せないが、それで止めたことはない)。
+ *
+ * @param {GoogleAppsScript.Drive.File|GoogleAppsScript.Drive.Folder} item
+ * @returns {boolean} 消せたら true
+ */
+function driveTrash_(item) {
+  try {
+    item.setTrashed(true);
+    return true;
+  } catch (e) {
+    if (repoDriveIdSafe_()) {
+      throw new Error('ゴミ箱へ移せませんでした。共有ドライブで消すには「コンテンツ管理者」以上の' +
+        '役割が要ります (' + e.message + ')');
+    }
+    Logger.log('ゴミ箱へ移せませんでした: ' + e.message);
+    return false;
+  }
 }
 
 /**
@@ -231,6 +445,8 @@ function repoOwnerEmail() {
 /**
  * その人がこのアプリの管理者か。
  *
+ * **共有ドライブでは** organizer / fileOrganizer / writer (driveMembers_)。
+ *
  * **管理者 = 持ち主 + 入れ物のフォルダを編集できる人。** 以前は持ち主1人だけが
  * 設定や他人の依頼の取り下げを行えたため、持ち主が休むと誰も直せなかった。
  * フォルダを編集できる人は台帳も直接書き換えられるので、画面の操作でも同じ
@@ -249,13 +465,24 @@ function repoIsAdmin_(email) {
   var who = String(email || '');
   if (!who) return false;
 
-  var owner = repoOwnerEmail();
-  if (owner && owner === who) return true;
+  var driveId;
+  try {
+    driveId = repoDriveId_();
+  } catch (e) {
+    return false;
+  }
+  // 共有ドライブでは、台帳を書き換えられる役割 (投稿者まで) を管理者とする。フォルダの持ち主は無い
+  if (driveId) return driveMembers_(driveId).admins.indexOf(who.toLowerCase()) >= 0;
+
+  // 大文字小文字は見ない (repoHasOwner_ と同じ)。Drive と Session で字の大小が違うことがある
+  var me = who.toLowerCase();
+  var owner = String(repoOwnerEmail() || '').toLowerCase();
+  if (owner && owner === me) return true;
 
   try {
     var editors = DriveApp.getFolderById(repoConfig().rootId).getEditors();
     for (var i = 0; i < editors.length; i++) {
-      if (String(editors[i].getEmail() || '') === who) return true;
+      if (String(editors[i].getEmail() || '').toLowerCase() === me) return true;
     }
   } catch (e) {
     Logger.log('編集者が分かりませんでした: ' + e.message);
@@ -352,7 +579,7 @@ function repoEnsureMainBranch() {
       baseSha: '',
       state: 'open',
       workingFolderId: repoConfig().mainId,
-      createdBy: repoOwnerEmail(),
+      createdBy: repoOwners_()[0] || '',
       createdAt: new Date(),
     });
     return true;

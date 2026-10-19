@@ -10,8 +10,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeKitSource } from './build-kit.mjs';
-import { prepareSigning, signingKeyPath, PUBLIC_KEY, SIGNING_SOURCE } from './kit-key.mjs';
+import { writeKitSource, kitFilesMap } from './build-kit.mjs';
+import { prepareSigning, kitVersionOf, signingKeyPath, PUBLIC_KEY, SIGNING_SOURCE } from './kit-key.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -63,12 +63,14 @@ function main() {
     process.stdout.write('src/KitFiles.gs を作り直しました\n');
   }
 
-  // 署名の秘密鍵を src/KitSigning.gs (記録しない) に書く。無いまま送ると向こうの
+  // 中身に手元で署名し、署名だけを src/KitSigning.gs (記録しない) に書く。無いまま送ると向こうの
   // KitSigning.gs が消え、全員の道具が黙って自動で新しくならなくなるので断る
-  const signing = prepareSigning({ keyPath: signingKeyPath(), publicPath: PUBLIC_KEY, outPath: SIGNING_SOURCE, noSign });
+  const version = kitVersionOf(fs.readFileSync(path.join(ROOT, 'src', 'core', 'AgentKit.gs'), 'utf8'));
+  const signing = prepareSigning({ keyPath: signingKeyPath(), publicPath: PUBLIC_KEY, outPath: SIGNING_SOURCE,
+    noSign, version, files: kitFilesMap() });
   if (!signing.signed) {
     process.stderr.write('署名せずに送ります。手元の道具は自動では入れ替えなくなります' +
-      (signing.removed ? ' (src/KitSigning.gs を消しました。向こうの鍵も消えます)' : '') + '\n');
+      (signing.removed ? ' (src/KitSigning.gs を消しました。向こうの署名も消えます)' : '') + '\n');
   }
 
   // 先に送る。送らずに差し替えると、前の中身のまま版だけが上がる

@@ -46,12 +46,14 @@ function setupRepo() {
  * エディタで動かすつもりの関数 (debug* / setupCommandQueue) も例外ではない。
  * 今は持ち主しか開けない設定だが、executeAs: ME で共有すると、利用者の誰もが
  * 持ち主の権限で呼べる。自己承認の解禁などを塞ぐため、最初にこれを呼ぶ。
+ *
+ * 持ち主は repoOwners_ が決める (共有ドライブでは管理者 = organizer 全員)。
+ * 大文字小文字は見ない (共有ドライブの役割は小文字で持っている)。
  */
 function assertOwner_() {
-  var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
-  if (!owner || !me || owner !== me) {
-    throw new Error('この操作は、このアプリの持ち主だけが行えます');
+  var me = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  if (!me || !repoHasOwner_(me)) {
+    throw new Error('この操作は、このアプリの持ち主だけが行えます (共有ドライブでは管理者)');
   }
 }
 
@@ -2580,8 +2582,7 @@ function debugVerifyPhase2() {
     doc.saveAndClose();
 
     var file = DriveApp.getFileById(mainFileId);
-    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    file.moveTo(DriveApp.getFolderById(repoConfig().mainId));
 
     repoRegisterFile(mainFileId, tag + '.doc');
     liveCacheInvalidate(mainFileId);
@@ -2749,8 +2750,7 @@ function debugVerifyPhase3b() {
     doc.saveAndClose();
 
     var file = DriveApp.getFileById(mainFileId);
-    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    file.moveTo(DriveApp.getFolderById(repoConfig().mainId));
 
     repoRegisterFile(mainFileId, tag + '.doc');
     liveCacheInvalidate(mainFileId);
@@ -2900,6 +2900,16 @@ function setupCommandQueue() {
     .everyMinutes(1)
     .create();
 
+  // 誰の権限で回っているかを残す。他人のトリガーは見えないので、抜けた人のぶんは消せない。
+  // 引き継いだ人がもう一度実行すれば、その人のトリガーで回る (二重に回っても同じ命令は二度走らない)
+  PropertiesService.getScriptProperties()
+    .setProperty('QUEUE_RUNNER', String(Session.getActiveUser().getEmail() || ''));
+
+  // 仕掛けた時刻も残す。最初の1分が来るまで回った時刻が無く、それだけで見ると
+  // 入れたばかりのキューが「止まっています」と出る (queueStatus_)
+  PropertiesService.getScriptProperties()
+    .setProperty('QUEUE_RUNNER_AT', new Date().toISOString());
+
   var queueId = commandQueueFolder_().getId();
   Logger.log('キューのフォルダ: ' + queueId);
 
@@ -2928,6 +2938,8 @@ function debugVerifyCommandQueue() {
 
   var id = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
   var queue = commandQueueFolder_();
+  // 手で回すと回った時刻が今になる。終わったら戻す (止まったトリガーを隠さない)
+  var lastRunBefore = PropertiesService.getScriptProperties().getProperty('QUEUE_LAST_RUN');
 
   try {
     queue.createFile(
@@ -2960,11 +2972,81 @@ function debugVerifyCommandQueue() {
   } catch (e) {
     failed++;
     log.push('EXCEPTION ' + e.message);
+  } finally {
+    queueLastRunRestore_(lastRunBefore);
   }
 
   var summary = (failed === 0) ? 'すべて PASS' : failed + ' 件 FAIL';
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
+}
+
+/**
+ * 共有ドライブに置いたときに動くかを、実機で確かめる。持ち主専用。置いた命令は片付ける。
+ *
+ * 疑似GASでは「権限で断られる」形を再現しきれない。役割の読み方・親が1つの移動・
+ * 外への共有の拒否はここで見る。
+ *
+ * @returns {string} 判定サマリ
+ */
+function debugVerifySharedDrive() {
+  assertOwner_();
+  var log = [];
+  var failed = 0;
+
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  var driveId = repoDriveId_();
+  if (!driveId) {
+    return '共有ドライブではありません (入れ物はマイドライブにあるか、Drive の拡張サービスが使えません)';
+  }
+  check('入れ物は共有ドライブにある', true, driveId);
+
+  var members = driveMembers_(driveId);
+  check('持ち主 (organizer) が読めた', members.owners.length > 0, members.owners.join(', '));
+  check('自分が持ち主に入っている',
+    members.owners.indexOf(String(Session.getActiveUser().getEmail() || '').toLowerCase()) >= 0);
+
+  var queue = commandQueueFolder_();
+  // 名前は毎回変える。同じ名前だと、打ち切られて残った処理済みの命令を commandAlreadyRan_ が
+  // 見て、次の実行で命令が走らず、何度やっても「結果を書いた」が通らない
+  var id = 'verify-shared-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  // 手で回すと回った時刻が今になり、止まったトリガーが1時間「動いています」に見える。
+  // 終わったら戻す
+  var lastRunBefore = PropertiesService.getScriptProperties().getProperty('QUEUE_LAST_RUN');
+  try {
+    queue.createFile(id + '.cmd.json', JSON.stringify({ op: 'listFiles', args: {} }), MimeType.PLAIN_TEXT);
+    processCommandQueue();
+    var res = queue.getFilesByName(id + '.result.json');
+    check('命令を処理して結果を書いた (親が1つの移動が通った)', res.hasNext());
+    check('命令は queue-done へ移った', commandDoneFolder_().getFilesByName(id + '.cmd.json').hasNext());
+  } catch (e) {
+    check('命令を通す', false, e.message);
+  } finally {
+    queueLastRunRestore_(lastRunBefore);
+    var leftovers = [queue.getFilesByName(id + '.cmd.json'), queue.getFilesByName(id + '.result.json'),
+      commandDoneFolder_().getFilesByName(id + '.cmd.json')];
+    for (var i = 0; i < leftovers.length; i++) {
+      while (leftovers[i].hasNext()) {
+        try { leftovers[i].next().setTrashed(true); } catch (e2) { Logger.log('片付けられません: ' + e2.message); }
+      }
+    }
+  }
+
+  try {
+    check('道具の zip を作れた (外への共有を断られても)', !!agentKitBuild_().getId());
+  } catch (e3) {
+    check('道具の zip を作る', false, e3.message);
+  }
+
+  log.push(failed ? '失敗: ' + failed + '件' : 'すべて通りました');
+  var out = log.join('\n');
+  Logger.log(out);
+  return out;
 }
 
 /**
@@ -3315,21 +3397,29 @@ function apiSearchIndex() {
 
 // ===== 設定 =====
 
+function plainQueueStatus_(st) {
+  return { runner: plainText(st.runner), lastRun: plainText(st.lastRun), stale: !!st.stale };
+}
+
 /**
  * アプリ全体の設定を返す (Web App API)。
  *
  * 変えられるのは管理者だけ。画面は canEdit を見て、切り替えの入口を出すか決める。
  *
  * @returns {{scrumEnabled: boolean, canEdit: boolean, productGoal: string,
- *   definitionOfDone: string}}
+ *   definitionOfDone: string,
+ *   queue: ({runner:string, lastRun:string, stale:boolean}|null)}}
  */
 function apiSettings() {
   var me = String(Session.getActiveUser().getEmail() || '');
+  var admin = repoIsAdmin_(me);
   var texts = scrumTexts();
   return {
     scrumEnabled: scrumEnabled(),
     gameEnabled: gameEnabled(),
-    canEdit: repoIsAdmin_(me),
+    canEdit: admin,
+    // 人のアドレスを含むので、管理者にだけ返す
+    queue: admin ? plainQueueStatus_(queueStatus_()) : null,
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
     // 用語の説明は画面に写しを持たせず、ここから渡す (食い違わないように)

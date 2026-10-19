@@ -481,7 +481,10 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 
 この Web アプリは `executeAs: USER_ACCESSING` で動くため、
 **`Session.getEffectiveUser()` は常に開いている本人になる**。持ち主として扱うと
-誰もが持ち主になる。`inquiryOwner_()` はリポジトリのフォルダの持ち主を見る。
+誰もが持ち主になる。`inquiryOwners_()` はリポジトリの入れ物の持ち主を見る。
+
+**共有ドライブには持ち主が無い。** 持ち主は `repoOwners_()` が決め、共有ドライブでは管理者
+(`organizer`) 全員になる。`repoOwnerEmail()` を直に呼んで持ち主を決めない。
 
 ## 管理者と持ち主は分けて使う
 
@@ -492,8 +495,13 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - 管理者に広げたもの: スクラムの設定、上下関係と他人の表示名、他人の改訂版を捨てる・
   確認依頼を取り下げる・報告を閉じる・下書きを消す
 - **持ち主のままのもの**: エディタ専用の関数 (`assertOwner_`)、報告の知らせの宛先と
-  報告から作るやることの担当 (`inquiryOwner_`)。宛先を管理者に広げると同じ知らせが
-  何通も届く
+  報告から作るやることの担当 (`inquiryOwners_`)。宛先を (持ち主でない) 管理者に広げると
+  同じ知らせが何通も届く
+- **共有ドライブでは** 持ち主 = `organizer` 全員、管理者 = `organizer` / `fileOrganizer` /
+  `writer`。グループは数えない。役割は `driveMembers_` が10分覚える。読めないときは誰も
+  持ち主・管理者ではない。**共有ドライブの管理者は個人で付ける** (グループだけで付けると持ち主が
+  0人になり、`setupCommandQueue` も `debug*` も誰にも動かせない。README にも書いてある)
+- 報告の知らせは持ち主全員に届く。報告から作るやることは、持ち主が複数なら担当なし
 - Drive の `getEditors` は編集権限の無い人が呼ぶと空を返す。分からないときは投げずに
   「管理者ではない」と答える。一覧では1件ごとに問い合わせず、先に1回だけ求める
 
@@ -543,7 +551,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   `~/.banto/hooks/track-hook.mjs` と banto-track のスキルもで、**Claude Code はそのフックを次の依頼から
   (どのフォルダでも) 自動で動かします**。`settings.json` は人が ok した `track install` / `uninstall` のときしか書かない。
   命令の入れ先は Drive を共有している人なら書けるが、**番頭の署名が合うものしか自動では入れない**
-  (下の「道具の署名」)。残る信頼の先は Apps Script を編集できる人 (= 持ち主)。止め方は
+  (下の「道具の署名」)。残る信頼の先は秘密鍵を持つ人 (= deploy する人)。止め方は
   `~/.banto/config.json` の `"autoUpdate": false`。`track install` は `--yes` でもこの危険と切り方を必ず出す
 - **中身が届いたときにも入れてよいかを決め直す** (`tickUpdate`)。頼んでから届くまで何時間も空くので、その間に
   `autoUpdate: false` にした・戻した人の道具を入れ替えない。`rollback` は置いたままの確認を捨てる
@@ -554,24 +562,23 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   `track/hook.mjs` / `track/update.mjs` の欠けが1つでもあれば、控えも取らずに全体を断る。名乗った指紋と
   合っていても通さない (空の中身でも指紋は合う)
 - **道具の署名** (`kitSignature_` / `verifyKit`)。秘密鍵は `$BANTO_SIGNING_KEY` か
-  `~/.config/softbanto/kit-signing-key.pem` にだけ置き、**リポジトリにも Drive にも置かない**。作るのは
-  `node scripts/kit-key.mjs` (公開鍵は `kit/track/kit-key.pem` に書かれ、道具と一緒に配る)。
-  `src/KitSigning.gs` は `npm run deploy` が送る直前に秘密鍵から作るもので、記録しない (.gitignore)。
-  **鍵が無いと deploy は断る** (そのまま送ると向こうの KitSigning.gs が消え、全員の自動更新が黙って止まる)。
-  承知で送るなら `--no-sign` (手元の `src/KitSigning.gs` を消してから送る)。公開鍵と組が合わないときも断る。
-  **秘密鍵を失うと**、利用者は zip を落とし直すまで自動で新しくならない。作り直しは `--rotate` で、同じく
-  落とし直しが要る (新しい鍵は今の鍵で署名されていないので、道具は受け入れない)。
+  `~/.config/softbanto/kit-signing-key.pem` にだけ置き、**リポジトリにも Drive にも番頭にも置かない**。
+  `npm run deploy` が送る直前に手元で中身に署名し、**署名と、署名した版・中身の指紋だけ**を
+  `src/KitSigning.gs` (`KIT_SIGNATURE_`。記録しない) に書く。番頭は記録が今の版と中身に合うときだけ返す
+  (版を上げて送り直さなければ空になり、手元の道具は知らせるだけになる)。
+  作るのは `node scripts/kit-key.mjs` (公開鍵は `kit/track/kit-key.pem`)。
+  **鍵が無いと deploy は断る。** 承知で送るなら `--no-sign`。公開鍵と組が合わないときも断る。
+  **秘密鍵を失うと**、利用者は zip を落とし直すまで自動で新しくならない。作り直しは `--rotate`。
   確かめる鍵は必ず今入っている道具のもの (最初は落とした zip のもの)。届いた中身の鍵では確かめない
-- **秘密鍵を読めるのは「スクリプトを開ける人」全員である。** Apps Script のプロジェクトの編集者だけでなく
-  閲覧者も、スクリプトの入ったフォルダを編集できる人も `src/KitSigning.gs` を読める。鍵を替えても、古い版の
-  スクリプトに古い鍵が残る。**共有するのは `agentic-management/` フォルダだけにし、スクリプトの入ったフォルダは
-  共有しない。** 信頼の起点は「スクリプトを開ける人」
+- **信頼の起点は「秘密鍵を持つ人 (deploy する人)」。** スクリプトを開ける人が `KIT_FILES` を書き換えても
+  署名は合わない。以前 (1.8.0 を配った @151 まで) は番頭が秘密鍵を持って署名していたので、**それより前の
+  版のスクリプトには秘密鍵が残っている**。スクリプトを他の人と共有する前に `--rotate` を検討する
 - **自動では古い版に戻さない** (`compareVersions`)。署名が本物でも、前に配った返事を流し直されうる。
   `config.kitVersion` より古いものは自動では断る。戻すのは人が頼む `update rollback` だけ
 - **版の字は Claude が読む。** `kitVersion` の返事には署名が無いので、記録 (`update-log.json`) と合図
   (`hook.mjs` の `describeLog`) には `^[0-9A-Za-z.+-]{1,32}$` に合う字だけを出す。変わったファイルの名前も
   同じく絞り、20件までにする
-- **番頭で署名に失敗しても `kitFiles` は落とさない** (`kitSignature_` が握って空を返す)。落とすと全員が
+- **記録が無い・合わないときも `kitFiles` は落とさない** (`kitSignature_` は空を返す)。落とすと全員が
   中身を受け取れなくなる
 - **署名する文の式も2か所にある** (`kitSignedText_` と `kitSignedText`)。`test/kit-signing.test.js` が揃っているかを見ている
 - **指紋の式は2か所にある** (`kitPrint_` と `kitPrintOf`)。片方だけ変えると、手元が毎日入れ替えを繰り返す。
@@ -715,11 +722,19 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - **キューの置き場は、ゴミ箱に入っていたら作り直す** (`queueFolderLive_`)。Apps Script は
   ゴミ箱の中のフォルダも開けるので、開けるかだけを見ると命令がゴミ箱に置かれて誰も
   拾わない。`setupCommandQueue()` もゴミ箱の中の ID を返し続けた (実機で踏んだ)
-- **`addFile` と `removeFile` は両方呼ぶ。** Drive のファイルは複数のフォルダに
-  属せるので、`addFile` だけでは `queue/` に残り、`removeFile` だけでは行き先が
-  無くなる。`commandRetire_` に寄せてある。
-  **`test/fakegas.js` の `removeFile` は空実装で、`addFile` が親を移す作りである。**
-  疑似GASのほうが実機より甘いので、片方だけ呼ぶ書き方はテストを通ってしまう
+- **キューは仕掛けた人の権限で回る** (`QUEUE_RUNNER`)。共有ドライブでその人が抜けると止まり、
+  他人のトリガーは見えない。`processCommandQueue` が回った時刻 (`QUEUE_LAST_RUN`) を残し、設定の
+  画面が1時間より前なら引き継ぎ方を出す (持ち主 = 共有ドライブでは管理者の役割の人が `setupCommandQueue()`
+  を実行する。`assertOwner_` なので投稿者などの管理者には動かない)。仕掛けた時刻 (`QUEUE_RUNNER_AT`) も
+  残し、新しいほうで決める (仕掛けた直後は回った時刻が無い)。回った時刻は置き場を開けてから書く。
+  確かめの入口 (`debugVerify*`) は手で回したぶんを元に戻す。人のアドレスを
+  含むので `apiSettings` は管理者にだけ返す
+- **フォルダを移すのは `moveTo` だけ。** `addFile` は共有ドライブで例外になる (ファイルは親を1つしか
+  持てない)。以前は `addFile` と `removeFile` を両方呼ぶ形で、マイドライブでしか動かなかった。
+  `test/fakegas.js` は `_markShared` した場所への `addFile` を投げる。**`removeFile` は空実装で
+  `addFile` が親を移すので、マイドライブのテストだけでは片方だけの書き方が通ってしまう**
+- **共有ドライブでゴミ箱へ移せるのはコンテンツ管理者から。** 人が押した操作は `driveTrash_` で
+  要る役割を添えて断る。片付けのついで (古い zip など) は握って続ける
 - **`button` は地の色も枠も継がない。** 既定の `color: buttontext` は OS の設定で
   決まるため、暗い OS で明るいテーマを選ぶと白い面に白い文字が乗って消える
   (確認依頼の題名だけが見えなかった)。既定の `border` も面と影で段を表す設計を
@@ -828,6 +843,7 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 | `debugVerifyPhase2()` | コンフリクト → 解決 → マージ → 書き戻し → 楽観的並行制御 |
 | `debugVerifyPhase3b()` | Issue → ブランチ → PR → マージとカンバンの自動移動 |
 | `debugVerifyCommandQueue()` | コマンドキューの実行経路 |
+| `debugVerifySharedDrive()` | 共有ドライブに置いたとき: 役割が読めるか → 命令の移動 → 回った時刻 → 道具の zip。マイドライブなら何もせずにそう言う |
 | `debugMarkdownRoundTrip()` | 実文書で HTML → Markdown → HTML がバイト一致するか |
 | `debugWriteRoundTrip()` | 実文書で書き戻しが情報を落としていないか |
 | `debugVerifyScrum()` | スプリント → ポイント → 完了 → ベロシティ・バーンダウン・障害物・履歴。成否にかかわらず片付け、オン・オフも戻す |
@@ -840,8 +856,10 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 - **GAS 標準サービスのみ。GCP プロジェクトは使えない**ため `clasp run` は使用不可。
   ローカルからの操作は `.git/queue/` のコマンドキュー経由（README 参照）
 - 外部 API / 公開エンドポイントは使わない
-- **拡張サービスは Google ToDo 連携 (`src/core/GoogleTasks.gs`) だけの例外。**
-  エディタの「サービス +」から Tasks を足していない環境でも他が壊れないよう、
+- **拡張サービスは2つだけの例外**: Google ToDo 連携 (`src/core/GoogleTasks.gs`) と
+  Drive (v3。共有ドライブの役割を読む `driveMembers_` と、入れ物が共有ドライブかを見る
+  `repoDriveId_`)。Drive は `appsscript.json` で足してあるので利用者は何もしない。
+  使えないときはマイドライブとして扱う。Tasks は、エディタの「サービス +」から Tasks を足していない環境でも他が壊れないよう、
   `tasksAvailable()` が false のときは画面に入口すら出さない
 - 色・フォント・サイズは版管理の対象外（意図的な割り切り）
 - Slides はマージ非対応。PR 作成の時点で拒否する

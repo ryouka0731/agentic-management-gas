@@ -305,16 +305,16 @@ function inquiryReplyDelete(id) {
 }
 
 /**
- * このアプリの持ち主を返す。
+ * 報告の知らせを受ける人。このアプリの持ち主 (共有ドライブでは管理者全員)。
  *
  * この Web アプリは開いた人の権限で動く (executeAs: USER_ACCESSING) ため、
  * Session.getEffectiveUser() は常に開いている本人になる。それを持ち主と
- * 見なすと誰もが持ち主になってしまうので、入れ物の持ち主を見る。
+ * 見なすと誰もが持ち主になってしまうので、入れ物を見る (repoOwners_)。
  *
- * @returns {string} 分からなければ空文字
+ * @returns {string[]}
  */
-function inquiryOwner_() {
-  return repoOwnerEmail();
+function inquiryOwners_() {
+  return repoOwners_();
 }
 
 /**
@@ -517,7 +517,8 @@ function inquiryRoster_() {
     for (var w = 0; w < who.length; w++) add(who[w]);
   }
 
-  add(inquiryOwner_());
+  var owners = inquiryOwners_();
+  for (var o = 0; o < owners.length; o++) add(owners[o]);
   return out;
 }
 
@@ -528,7 +529,8 @@ function inquiryRoster_() {
  * いつ手を付けるかを決められる。
  *
  * 持ち主は環境によって変わるため、入れ物の持ち主を見る。分からない
- * ときは担当なしで積む。担当が付かないより、積まれないほうが困る。
+ * ときは担当なしで積む。持ち主が複数 (共有ドライブ) のときも担当なしで積む。
+ * 担当が付かないより、積まれないほうが困る。
  *
  * @param {object} row inquiries 行
  * @returns {number|string} 作ったやることの番号。作れなければ空文字
@@ -546,8 +548,9 @@ function inquiryToIssue_(row) {
       INQUIRY_TAGS()[row.kind] || '問合せ対応'
     );
 
-    var owner = inquiryOwner_();
-    if (owner) issueUpdate(issue.number, { assignee: owner });
+    // 持ち主が1人ならその人。共有ドライブで複数なら空 (全員を担当にすると工数が頭数で割られる)
+    var owners = inquiryOwners_();
+    if (owners.length === 1) issueUpdate(issue.number, { assignee: owners[0] });
 
     projectPlace(issue.number, 'Backlog');
     return issue.number;

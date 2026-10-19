@@ -6041,6 +6041,66 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(toggle.disabled).toBe(false);
   });
 
+  it('キューが止まっていれば、引き継ぎ方を出す', () => {
+    mount({ apiSettings: Object.assign({}, ON, {
+      queue: { runner: 'boss@example.com', lastRun: '2026-10-19T00:00:00.000Z', stale: true } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.textContent).toContain('boss@example.com');
+    expect(box.textContent).toContain('setupCommandQueue()');
+    // setupCommandQueue() は持ち主にしか動かない。投稿者などの管理者に頼ませない
+    expect(box.querySelector('.row-meta').textContent).toContain('持ち主');
+    expect(box.querySelector('.row-meta').textContent).not.toMatch(/^管理者が/);
+    // 札が「止まっています」なのに、本文で「動いています」と言わない
+    expect(box.querySelector('p').textContent).not.toContain('動いています');
+    expect(box.querySelector('p').textContent).toContain('止まっているようです');
+  });
+
+  it('仕掛けた人の記録が無くても、回った時刻があれば動いていると出す', () => {
+    mount({ apiSettings: Object.assign({}, ON, {
+      queue: { runner: '', lastRun: '2026-10-19T00:00:00.000Z', stale: false } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.querySelector('h2').textContent).toContain('動いています');
+    expect(box.textContent).not.toContain('未設定');
+    expect(box.textContent).toContain('仕掛けた人は分かりません');
+    expect(box.textContent).not.toContain('まだ仕掛けていません');
+  });
+
+  it('記録が無く止まっていれば「止まっています」と引き継ぎ方を出す', () => {
+    mount({ apiSettings: Object.assign({}, ON, {
+      queue: { runner: '', lastRun: '2026-10-19T00:00:00.000Z', stale: true } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.querySelector('h2').textContent).toContain('止まっています');
+    expect(box.querySelector('.row-meta').textContent).toContain('setupCommandQueue()');
+    expect(box.querySelector('p').textContent).not.toContain('動いています');
+    expect(box.querySelector('p').textContent).toContain('仕掛けた人は分かりません');
+  });
+
+  it('回った時刻が読めなければ「不明」と出す (Invalid Date と出さない)', () => {
+    mount({ apiSettings: Object.assign({}, ON, {
+      queue: { runner: 'boss@example.com', lastRun: 'あとで', stale: true } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.textContent).toContain('最後に動いたのは 不明。');
+    expect(box.textContent).not.toContain('Invalid Date');
+  });
+
+  it('一度も仕掛けていなければ「未設定」', () => {
+    mount({ apiSettings: Object.assign({}, ON, { queue: { runner: '', lastRun: '', stale: false } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.querySelector('h2').textContent).toContain('未設定');
+    expect(box.textContent).toContain('まだ仕掛けていません');
+  });
+
+  it('管理者でなければキューの節を出さない', () => {
+    mount({ apiSettings: Object.assign({}, ON, { canEdit: false, queue: null }) });
+    document.querySelector('[data-tab="settings"]').click();
+    expect(document.getElementById('queue-settings')).toBe(null);
+  });
+
   it('持ち主でなければ、切り替えの入口は出さず、頼む先を書く', () => {
     mount({ apiSettings: Object.assign({}, ON, { scrumEnabled: false, canEdit: false }) });
     document.querySelector('[data-tab="settings"]').click();

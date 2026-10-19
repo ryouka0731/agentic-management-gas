@@ -9,8 +9,8 @@
  * 偽の道具に正しい署名を付けられる。公開鍵は kit/track/kit-key.pem に書き、
  * 道具と一緒に配る (手元の道具はこの鍵で確かめる)。
  *
- * GAS へは src/KitSigning.gs (記録しない) として持ち込む。scripts/deploy.mjs が
- * 送る直前に prepareSigning() で書く。
+ * 署名だけを src/KitSigning.gs として持ち込む。秘密鍵は手元から出さない。
+ * scripts/deploy.mjs が送る直前に prepareSigning() で書く。
  */
 
 import crypto from 'node:crypto';
@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { kitSignedText } from '../kit/track/update.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const PUBLIC_KEY = path.join(ROOT, 'kit', 'track', 'kit-key.pem');
@@ -36,23 +37,38 @@ export function signingKeyPath(env = process.env, home = os.homedir()) {
 }
 
 /**
- * src/KitSigning.gs の中身。秘密鍵を返す関数1つだけ。
+ * src/KitSigning.gs の中身。**秘密鍵は入れない。** 署名と、署名した版・中身の指紋だけ。
  *
- * @param {string} privatePem
+ * 番頭はこれを返すだけで、署名を計算しない。だからスクリプトを開ける人が何人いても、
+ * 偽の中身に正しい署名を付けることはできない。
+ *
+ * @param {{version:string, filesSha:string, signature:string}} rec
  * @returns {string}
  */
-export function signingSource(privatePem) {
+export function signingSource(rec) {
   return [
     '/**',
-    ' * 手元の道具に署名する秘密鍵。**scripts/deploy.mjs が作る。記録しない (.gitignore)。**',
+    ' * 手元の道具に付ける署名。**scripts/deploy.mjs が作る。記録しない (.gitignore)。**',
     ' *',
-    ' * 消したまま送ると、手元の道具は自動で入れ替えなくなる。',
+    ' * 秘密鍵は入っていない。消したまま送ると、手元の道具は自動で入れ替えなくなる。',
     ' */',
-    'function KIT_SIGNING_KEY_() {',
-    '  return ' + JSON.stringify(privatePem) + ';',
+    'function KIT_SIGNATURE_() {',
+    '  return ' + JSON.stringify({ version: rec.version, filesSha: rec.filesSha, signature: rec.signature }) + ';',
     '}',
     '',
   ].join('\n');
+}
+
+/**
+ * src/core/AgentKit.gs の AGENT_KIT_VERSION() が返す字。
+ *
+ * @param {string} sourceText
+ * @returns {string}
+ */
+export function kitVersionOf(sourceText) {
+  const m = /function AGENT_KIT_VERSION\(\)\s*\{\s*return '([^']+)';/.exec(String(sourceText));
+  if (!m) throw new Error('AGENT_KIT_VERSION() の版が読めません');
+  return m[1];
 }
 
 /**
@@ -101,17 +117,18 @@ export function createKeys({ keyPath, publicPath, rotate = false }) {
 }
 
 /**
- * 送る前に src/KitSigning.gs を書く。
+ * 送る前に、渡された中身に署名して src/KitSigning.gs を書く。
  *
  * **鍵が無ければ断る。** そのまま送ると向こうの KitSigning.gs が消え、全員の
  * 自動の入れ替えが黙って止まる。--no-sign (noSign) のときだけ書かずに通す。
  * 公開鍵 (kit/track/kit-key.pem) と組が合わないときも断る。配った道具が
  * 確かめられない署名を付けることになる。
  *
- * @param {{keyPath:string, publicPath:string, outPath:string, noSign?:boolean}} o
- * @returns {{signed:boolean}}
+ * @param {{keyPath:string, publicPath:string, outPath:string, noSign?:boolean, version:string,
+ *   files:Object<string,string>}} o
+ * @returns {{signed:boolean, removed?:boolean}}
  */
-export function prepareSigning({ keyPath, publicPath, outPath, noSign = false }) {
+export function prepareSigning({ keyPath, publicPath, outPath, noSign = false, version, files }) {
   if (noSign) {
     // 手元に前の KitSigning.gs が残っていると、署名しないつもりで古い鍵を送ってしまう。消してから送る
     if (!fs.existsSync(outPath)) return { signed: false };
@@ -119,7 +136,8 @@ export function prepareSigning({ keyPath, publicPath, outPath, noSign = false })
     return { signed: false, removed: true };
   }
   if (!fs.existsSync(keyPath)) {
-    const copy = fs.existsSync(outPath)
+    const old = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
+    const copy = old.includes('PRIVATE KEY')
       ? ' 前に送ったときの ' + outPath + ' に秘密鍵の写しが残っています。失くしたならそこから戻せます。'
       : '';
     throw new Error('署名の秘密鍵がありません (' + keyPath + ')。node scripts/kit-key.mjs で作るか、' +
@@ -130,7 +148,10 @@ export function prepareSigning({ keyPath, publicPath, outPath, noSign = false })
   if (!keysMatch(priv, pub)) {
     throw new Error('秘密鍵と ' + publicPath + ' の組が合いません。配る道具が署名を確かめられなくなるので送りません');
   }
-  const next = signingSource(priv);
+  const filesSha = crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex');
+  const signature = crypto.sign('RSA-SHA256', Buffer.from(kitSignedText(version, files), 'utf8'), priv)
+    .toString('base64');
+  const next = signingSource({ version, filesSha, signature });
   const now = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
   if (now !== next) fs.writeFileSync(outPath, next, { mode: 0o600 });
   return { signed: true };
