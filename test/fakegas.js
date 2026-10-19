@@ -181,6 +181,8 @@ export function createFakeGas() {
       return scriptId;
     },
     getProjectTriggers: () => [],
+    // Web アプリの URL。全画面のリンク (apiAppUrl) が使う
+    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/FAKE/exec' }),
     newTrigger: () => ({
       timeBased: () => ({ everyMinutes: () => ({ create: () => ({}) }) }),
     }),

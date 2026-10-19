@@ -1103,6 +1103,18 @@ function apiWhoAmI() {
 }
 
 /**
+ * この Web アプリの URL を返す (Web App API)。全画面のリンクを作るのに使う。
+ *
+ * 画面は iframe の中で動くため `location` から自分の URL を知れない。
+ * リンクに秘密は入れない (開いた人の権限で読むので、見られない人には何も出ない)。
+ *
+ * @returns {string}
+ */
+function apiAppUrl() {
+  return plainText(ScriptApp.getService().getUrl());
+}
+
+/**
  * 文書のコミットをグラフとして返す (Web App API)。
  *
  * ブランチの作業コピーを選んでいても、その文書全体 (main + 全ブランチ) の

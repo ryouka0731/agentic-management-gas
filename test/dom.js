@@ -69,9 +69,11 @@ function dropLeftovers() {
  * app.js を本当に走らせる。
  *
  * @param {Object<string, *|function>} responses API名 → 返す値、または関数
+ * @param {{location?: object}} [options] location は google.script.url.getLocation が
+ *   返す形 ({parameter, parameters, hash})。既定はパラメータ無し
  * @returns {{calls: object[], respond: function, flush: function}}
  */
-export function mountApp(responses) {
+export function mountApp(responses, options) {
   trackGlobals();
   dropLeftovers();
 
@@ -121,7 +123,11 @@ export function mountApp(responses) {
     return runner;
   }
 
-  window.google = { script: { run: makeRunner(null, null) } };
+  // 開いた URL の ?doc=…&full=1 を読む口。実物と同じく返事はハンドラで受ける
+  const location = (options && options.location) || { parameter: {}, parameters: {}, hash: '' };
+  const url = { getLocation(fn) { fn(location); } };
+
+  window.google = { script: { run: makeRunner(null, null), url } };
 
   // app.js は <script> で包まれている。中身だけを走らせる
   const js = read('src/ui/app.js.html')
@@ -166,6 +172,7 @@ const API_NAMES = [
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
   'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
+  'apiAppUrl',
 ];
 
 /** よく使う既定の応答 */
@@ -191,6 +198,7 @@ export const DEFAULTS = {
   ],
   apiRegisterFiles: { added: [{ fileId: 'NEW1', path: '賃金規程' }], failed: [] },
   apiMainFolderUrl: 'https://drive.google.com/drive/folders/MAIN1',
+  apiAppUrl: 'https://script.google.com/macros/s/APP1/exec',
   apiWorkspace: {
     name: '総務共有', path: '総務共有/agentic-management',
     url: 'https://drive.google.com/drive/folders/PLACE',
