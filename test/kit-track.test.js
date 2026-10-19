@@ -704,11 +704,12 @@ describe('スキルと説明', () => {
     const claude = fs.readFileSync('CLAUDE.md', 'utf8');
     expect(claude).toContain('src/KitSigning.gs');
     expect(claude).toContain('node scripts/kit-key.mjs');
-    // 秘密鍵は番頭に置かない。信頼の起点は鍵を持つ人 (CLAUDE.md)。README の共有の案内は残る
+    // 秘密鍵は番頭に置かない。信頼の起点は鍵を持つ人 (CLAUDE.md)。README もそう書く
     expect(claude).toContain('信頼の起点は「秘密鍵を持つ人');
     const readme = fs.readFileSync('README.md', 'utf8');
-    expect(readme).toContain('開ける人');
-    expect(readme).toContain('共有するのは `agentic-management/` フォルダだけ');
+    expect(readme).toContain('deploy する人の手元にだけある');
+    expect(readme).toContain('--rotate');
+    expect(readme).not.toContain('共有するのは `agentic-management/` フォルダだけ');
     // 古い版に戻さないこと、鍵の無い道具は zip を落とし直すこと
     expect(agents).toContain('古い版には戻しません');
     expect(agents).toContain('zip を落とし直し');
