@@ -138,8 +138,9 @@ function repoDriveId_() {
   }
 
   // 設定はキューの置き場を作るときにも書くので、鍵の中で読み直してから書く。
-  // 取れなければ覚えずに返す (次に読んだときにまた問い合わせるだけ)
-  dbWithLock_(30000, function () {
+  // 取れなければ覚えずに返す (次に読んだときにまた問い合わせるだけ)。
+  // 読むついでに覚えるだけなので待たない (画面からの読み出しを鍵で30秒止めない)
+  dbWithLock_(1500, function () {
     var again = repoConfig();
     if (typeof again.driveId === 'string') return;
     again.driveId = id;
