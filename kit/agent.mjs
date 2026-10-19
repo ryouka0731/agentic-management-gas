@@ -527,7 +527,7 @@ async function confirmInstall(rest) {
     '  ' + path.join(home, 'hooks', 'track-hook.mjs') + ' とスキルも新しくなり、Claude Code は',
     '  そのフックを次の依頼から (どのフォルダでも) 自動で動かします。',
     '自動で入れるのは番頭の署名が合うものだけです。Drive フォルダに書ける人が偽の返事を置いても入れません。',
-    '危険: 署名できるのは番頭の Apps Script を編集できる人 (持ち主) です。その人を信頼することになります。',
+    '危険: 署名できるのは秘密鍵を持つ人 (deploy する人) です。その人を信頼することになります。',
     '  控えと戻し (update rollback) で1つ前に戻せます。',
     '切る: ' + path.join(home, 'config.json') + ' に "autoUpdate": false と書くと、知らせるだけになります。',
   ].join('\n');
