@@ -1125,6 +1125,7 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
     'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
     'debugListWorkingCopies', 'debugFindConvertedCells', 'debugVerifyScrum',
+    'debugVerifySharedDrive',
   ];
 
   for (const name of NAMES) {
