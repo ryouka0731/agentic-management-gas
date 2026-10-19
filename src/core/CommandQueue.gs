@@ -119,11 +119,13 @@ function COMMAND_OPS() {
     history: function (a) { return apiHistory(a.target); },
 
     /*
-     * 手元から自分の様子を見る (#13)。**頼んだ本人のぶんだけ返す。**
+     * 手元から自分の様子を見る (#13)。`by` (命令ファイルを置いた人) から見た様子を返す。
      *
-     * 本人は命令ファイルを置いた人 (commandOwner_)。トリガーは持ち主の権限で走るので、
-     * Session から本人は分からない (画面の api* 関数は呼ばない。呼ぶと持ち主のぶんが返る)。
-     * 分からなければ断る。持ち主や誰かのぶんに倒すと、他人の番を返すことになる
+     * **`by` は誰の見え方を返すかを決めるだけで、権限の仕組みではない。** 結果は queue に置かれ、
+     * 共有している人なら誰でも読める (中身は台帳を読める人に見えているものと同じ)。
+     * トリガーは持ち主の権限で走るので、Session から本人は分からない (画面の api* 関数は
+     * 呼ばない。呼ぶと持ち主のぶんが返る)。分からなければ断る (commandBy_)。持ち主を移された
+     * 命令も断る (commandPersonOf_)
      */
     homeMine: function (a, by) {
       return homeTurnPlain_(homeMyTurn_(commandBy_(by), new Date()));
@@ -183,7 +185,42 @@ function COMMAND_OPS() {
 }
 
 /**
- * 本人のぶんを返す命令の、本人。分からなければ断る。
+ * 置いた人から見た様子を返す命令。この命令だけ、持ち主と最後に書いた人を見比べる (commandPersonOf_)。
+ *
+ * @returns {string[]}
+ */
+function COMMAND_PERSONAL_OPS() {
+  return ['homeMine', 'homeAdvice', 'reportDraft'];
+}
+
+/**
+ * 置いた人から見た様子を返す命令の、置いた人。食い違えば空 (commandBy_ が断る)。
+ *
+ * マイドライブでは命令ファイルの持ち主を同僚へ移せる。移しても書いた人は変わらないので、
+ * 持ち主と最後に書いた人が違えば、誰のぶんかを決めない。見比べるには Drive の拡張サービスが
+ * 要る。無ければ持ち主で決める (読めないまま断ると、拡張サービスの無い番頭で使えなくなる)。
+ *
+ * @param {GoogleAppsScript.Drive.File} file
+ * @param {string} by commandOwner_(file)
+ * @returns {string}
+ */
+function commandPersonOf_(file, by) {
+  var who = String(by || '');
+  if (!who) return '';
+  if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return who;
+  try {
+    var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });
+    var last = String((meta && meta.lastModifyingUser && meta.lastModifyingUser.emailAddress) || '');
+    if (last && last.toLowerCase() !== who.toLowerCase()) return '';
+  } catch (e) {
+    // 見比べられなかったときは決めない。食い違っているかもしれないものを通さない
+    return '';
+  }
+  return who;
+}
+
+/**
+ * 置いた人から見た様子を返す命令の、置いた人。分からなければ断る。
  *
  * @param {string} by 命令を置いた人 (commandOwner_)
  * @returns {string}
@@ -323,7 +360,9 @@ function runCommandFileLocked_(file, queue, done) {
   try {
     var cmd = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
     op = String(cmd && cmd.op ? cmd.op : '');
-    result = { ok: true, op: op, result: runCommand_(cmd, commandOwner_(file)) };
+    var by = commandOwner_(file);
+    if (COMMAND_PERSONAL_OPS().indexOf(op) >= 0) by = commandPersonOf_(file, by);
+    result = { ok: true, op: op, result: runCommand_(cmd, by) };
   } catch (e) {
     result = { ok: false, op: op, error: e.message };
   }
@@ -356,9 +395,9 @@ function commandOwner_(file) {
   } catch (e) {
     // 共有ドライブのファイルは持ち主を持たない。下で最後に書いた人を読む
   }
-  // 使い道は「誰の道具が古いか」(kitRemember_) と「本人のぶんを返す命令の本人」(commandBy_) だけ。
-  // 権限の判断には使わない。最後に書いた人なので、他人の命令を書き換えた人はその人自身になり、
-  // 他人のぶんを取る道にはならない (結果は queue に置かれ、共有している人には読める点は画面と違う)
+  // 使い道は「誰の道具が古いか」(kitRemember_) と「誰から見た様子を返すか」(commandBy_) だけ。
+  // **権限の判断には使わない。** 誰の見え方かを決めるだけで、結果は queue に置かれ、共有している
+  // 人なら誰でも読める (中身は台帳を読める人に見えているものと同じ)
   if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return '';
   try {
     var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });

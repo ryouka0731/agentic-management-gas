@@ -6,7 +6,7 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import {
   checkForUpdate, installFromServer, rollback, kitPrintOf, safeName, readConfig, writeConfig, paths,
-  tickUpdate, dropPending, staleUpdateFiles,
+  tickUpdate, dropPending, staleUpdateFiles, checkFiles,
 } from '../kit/track/update.mjs';
 import { TEST_KEYS, signKit } from './kitkeys.js';
 
@@ -49,9 +49,9 @@ function server(files, version) {
   return { send, calls, print };
 }
 
-/** 欠けると入れない3つ。agent.mjs が無いと戻す命令ごと無くなる。署名を確かめる公開鍵も配る */
+/** 欠けると入れないもの。agent.mjs が無いと戻す命令ごと無くなる (agent.mjs が読み込むものも同じ)。署名を確かめる公開鍵も配る */
 const kit = (agent, more) => ({ 'agent.mjs': b64(agent), 'track/hook.mjs': b64('hook v1'),
-  'track/update.mjs': b64('update v1'), 'track/kit-key.pem': b64(TEST_KEYS.pub), ...(more || {}) });
+  'track/update.mjs': b64('update v1'), 'track/track.mjs': b64('track v1'), 'track/local.mjs': b64('local v1'), 'track/kit-key.pem': b64(TEST_KEYS.pub), ...(more || {}) });
 const quiet = () => {};
 const V1 = kit('v1', { 'track/SKILL.md': b64('skill v1') });
 const V2 = kit('v2', { 'track/SKILL.md': b64('skill v2'), 'new.md': b64('n') });
@@ -117,8 +117,13 @@ describe('入れる', () => {
     delete noUpdate['track/update.mjs'];
     const noHook = kit('x');
     delete noHook['track/hook.mjs'];
+    // agent.mjs が読み込むもの。欠けると agent.mjs ごと動かず、update rollback もできなくなる
+    const noLocal = kit('x');
+    delete noLocal['track/local.mjs'];
+    const noTrack = kit('x');
+    delete noTrack['track/track.mjs'];
     const notString = kit('x', { 'more.md': 5 });
-    for (const files of [{}, 'zz', [b64('a')], null, noAgent, noUpdate, noHook, notString]) {
+    for (const files of [{}, 'zz', [b64('a')], null, noAgent, noUpdate, noHook, noLocal, noTrack, notString]) {
       // 名乗る指紋は届いた中身と合わせる (指紋だけでは防げないことを確かめる)
       const send = async () => ({ ok: true, result: { version: '9', print: kitPrintOf(files), files } });
       await expect(installFromServer({ home: d.home, claude: d.claude, send, now: NOW + 1000 }), JSON.stringify(files))
@@ -126,6 +131,16 @@ describe('入れる', () => {
       expect(tree(d.home), JSON.stringify(files)).toEqual(before);
     }
     expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
+  });
+
+  it('agent.mjs が読み込むもの (track/local.mjs・track/track.mjs) が欠けた中身は、確かめる時点で断る', () => {
+    // 欠けたまま入れると agent.mjs が読み込めずに落ち、update rollback もできなくなる
+    expect(() => checkFiles(kit('x'))).not.toThrow();
+    for (const name of ['track/local.mjs', 'track/track.mjs']) {
+      const files = kit('x');
+      delete files[name];
+      expect(() => checkFiles(files), name).toThrow('欠けています (' + name + ')');
+    }
   });
 
   it('指紋が合わなければ何も変えない', async () => {

@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { hookCommand } from './track.mjs';
-import { readConfig, cleanVersion } from './update.mjs';
+import { readConfig, cleanVersion, compareVersions, paths } from './update.mjs';
 
 /**
  * この道具の版。**番頭の AGENT_KIT_VERSION() と同じでなければならない**
@@ -304,9 +304,13 @@ export function doctor({ config, home, claude, now = Date.now(), version = KIT_V
   const installed = banto ? cleanVersion(banto.kitVersion) : '';
   if (!banto) {
     note('道具の版', version + ' (番頭に作業を載せる仕掛けは入っていません)');
+  } else if (installed && compareVersions(installed, version) > 0) {
+    // 入れた道具は自分で新しくなっている。古いのは今動かしているほう (落とした zip) なので、update では直らない
+    bad('道具の版', '入れた道具は ' + installed + '、いま動かしている道具は ' + version + ' (こちらが古い)',
+      'node "' + path.join(paths(home).kit, 'agent.mjs') + '" を使う (または画面から道具の zip を落とし直す)');
   } else if (installed && installed !== version) {
     bad('道具の版', '入れた道具は ' + installed + '、この道具は ' + version,
-      'node agent.mjs update で入れた道具を新しくする (画面から落とした zip が古ければ落とし直す)');
+      'node agent.mjs update で入れた道具を新しくする');
   } else {
     good('道具の版', version);
   }
