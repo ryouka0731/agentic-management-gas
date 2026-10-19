@@ -5654,6 +5654,7 @@ describe('使い方の図', () => {
     '手元から動かすときの往復',
     '同じ場所が両方で変わったとき',
     'スクラムの1巡り（使う人だけ）',
+    '改善のヒントが出るまで',
   ];
 
   it('どの節にも図がある', () => {
@@ -8608,6 +8609,26 @@ describe('改善のヒント', () => {
     chip.click();
     expect(chip.hidden).toBe(true);
     expect(document.querySelectorAll('#issue-list .row-item').length).toBeGreaterThan(1);
+  });
+
+  it('期限切れだけ: 人が見え方を切り替えたら外れ、集計・捨てたものでは札を出さない', () => {
+    const list = [...DEFAULTS.apiIssueList,
+      { ...DEFAULTS.apiIssueList[0], number: 5, parent: '', dueDate: '2999-12-31' }];
+    mount({ ...withAdvice(ADVICE), apiIssueList: list });
+    const chip = document.getElementById('overdue-only');
+    button('期限切れを見る').click();
+    expect(chip.hidden).toBe(false);
+    document.getElementById('view-tally').click();
+    expect(chip.hidden).toBe(true);
+    document.getElementById('view-list').click();
+    expect(chip.hidden).toBe(true);
+    expect(Array.from(document.querySelectorAll('#issue-list .row-item')).map((r) => r.dataset.number)).toContain('5');
+
+    // 捨てたものへ移っても札は出ない
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    button('期限切れを見る').click();
+    document.getElementById('view-trash').click();
+    expect(chip.hidden).toBe(true);
   });
 
   it('まとめて見る: その言葉で絞ったやることの一覧を開く', () => {

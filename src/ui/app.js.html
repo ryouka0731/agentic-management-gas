@@ -1300,6 +1300,56 @@
     caption: '既定ではオフです。使わないチームは何も変わりません。',
   };
 
+  /** 改善のヒントの出し方 */
+  var ADVICE_DIAGRAM = {
+    title: '改善のヒントが出るまで',
+    desc: '番頭が台帳から本人のぶんを数え、決まった規則に当てて、当たったものを重い順に' +
+      '多くて3件ホームに出す。1件ごとに理由の数字と、次に開く画面のボタンが付く。' +
+      '「今週は出さない」で隠すと、その週はこの端末に出ない。',
+    width: 760,
+    height: 278,
+    lanes: [
+      {
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '数えるもの',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn', label: '使わないもの',
+      },
+    ],
+    boxes: [
+      {
+        x: 10, y: 34, w: 160, h: 70,
+        label: '台帳から数える', sub: '本人のぶん',
+      },
+      {
+        x: 200, y: 34, w: 160, h: 70,
+        label: '規則に当てる', sub: '決まった6つ',
+      },
+      {
+        x: 390, y: 34, w: 160, h: 70,
+        label: 'ホームに出す', sub: '重い順に3件まで', tone: 'strong',
+      },
+      {
+        x: 580, y: 34, w: 170, h: 70,
+        label: 'ボタンで開く', sub: '絞った一覧・ボードなど',
+      },
+    ],
+    arrows: [
+      { d: 'M170 69h24' },
+      { d: 'M360 69h24' },
+      { d: 'M550 69h24' },
+      {
+        d: 'M665 104C665 166 470 166 470 108', soft: true,
+        lx: 568, ly: 184, label: '「今週は出さない」で隠す',
+      },
+    ],
+    notes: [
+      { x: 26, y: 246, text: '自分の担当・自分宛て・自分が作ったもの' },
+      { x: 408, y: 246, text: '他人の数・人の名前・AI への問い合わせ' },
+    ],
+    caption: '当たる規則が無ければ、カードごと出ません。',
+  };
+
   /** 同じ場所が両方で変わったとき */
   var CONFLICT_DIAGRAM = {
     title: '同じ場所が両方で変わったとき',
@@ -2988,7 +3038,7 @@
     setToggle(mineBtn, mineOnly);
     issueFilterEl.value = kind === 'issues-filter' ? arg : '';
     // ヒントから開いた見え方は、次に開いたときの見え方として覚えない
-    setIssueView(views[kind], true, { noSave: true });
+    setIssueView(views[kind], true, { noSave: true, keepOverdue: true });
     switchTab('issues');
   }
 
@@ -6023,10 +6073,13 @@
    * @param {string} view
    * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
    * @param {{noSave: boolean}} [opts] noSave: 次に開いたときの見え方として覚えない。
-   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く
+   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く。
+   *   keepOverdue: 期限切れだけの絞りを残す (改善のヒントから開いたとき)。人が見え方を
+   *   切り替えたら外す。残すと、何で絞られているのか分からないまま件数が減って見える
    */
   function setIssueView(view, quiet, opts) {
     issueView = view;
+    if (!(opts && opts.keepOverdue)) setOverdueOnly(false);
 
     Object.keys(viewBtns).forEach(function (k) {
       viewBtns[k].setAttribute('aria-pressed', String(k === view));
@@ -6043,6 +6096,8 @@
     issueFilterEl.parentNode.hidden = plain;
     issueGroupSel.parentNode.hidden = plain;
     mineBtn.hidden = view === 'trash';
+    // 集計と捨てたものには絞りが効かないので出さない
+    overdueOnlyBtn.hidden = !overdueOnly || plain;
 
     document.getElementById('tally-unit-box').hidden = view !== 'tally';
     document.getElementById('tally-basis-box').hidden = view !== 'tally';
@@ -10027,6 +10082,13 @@
       '手元から使うときは、まず「node agent.mjs scrum」でオンかを確かめます。落とした道具の中に、スプリントの計画・振り返りなどのスキルとチームの役割 (.claude/) と、進め方の読み替え (SCRUM.md) が入っています。',
       'オンにしても、確認依頼の承認と設定の変更は人が画面で行います。',
     ]],
+    ['改善のヒント', [
+      'ホームに、仕事の進め方を良くするヒントが多くて3件出ます。番頭が台帳の数から決まった規則で出すもので、AI に問い合わせてはいません。',
+      '見るのはあなたのぶんだけです (担当のやること・あなた宛ての確認・あなたが作ったやること)。ほかの人の数や名前は出ません。',
+      '出るもの — 確認を3日以上待たせている / 期限切れが3件以上 / 作業中が5件以上 / 見積もりの倍以上かかったものが半分以上 / 同じタグや題名のやることを30日で5件以上作った / 「使い方が分からない」の報告が30日で3件以上 (管理者だけ)',
+      '1件ごとに理由の数字と、次に開く画面のボタンが付きます。「期限切れを見る」で開いた一覧は「期限切れだけ ×」を押すか見え方を切り替えると、絞りが外れます。',
+      '「今週は出さない」を押すと、その週はこの端末に出ません。次の週にまだ当てはまれば、また出ます。',
+    ]],
   ];
 
   function loadHelp() {
@@ -10084,6 +10146,7 @@
       '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
       'つまずきやすい点': CONFLICT_DIAGRAM,
       'スクラムで進める (使う人だけ)': SCRUM_DIAGRAM,
+      '改善のヒント': ADVICE_DIAGRAM,
     };
 
     GUIDE.forEach(function (section) {
