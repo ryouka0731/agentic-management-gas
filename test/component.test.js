@@ -8216,7 +8216,11 @@ describe('文書の全画面と、全画面のリンク', () => {
     btn.click();
     expect(full()).toBe(true);
     expect(btn.textContent).toBe('全画面を閉じる');
-    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    // 字が変わるので押した状態は持たせない (読み上げが二重になる)
+    expect(btn.hasAttribute('aria-pressed')).toBe(false);
+    // 本文の iframe に入った Esc は届かないので、閉じるボタンに置いておく
+    expect(document.activeElement).toBe(btn);
+    expect(btn.title).toContain('Esc');
     key(document.body, 'Escape');
     expect(full()).toBe(false);
     expect(btn.textContent).toBe('全画面');
@@ -8234,6 +8238,42 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(shown(document.getElementById('doc-title'))).toBe(true);
     expect(shown(document.getElementById('doc-full-btn'))).toBe(true);
     expect(shown(document.getElementById('viewer'))).toBe(true);
+  });
+
+  it('ほかのものが受けた Esc では抜けない', () => {
+    mount();
+    openFirst();
+    document.getElementById('doc-full-btn').click();
+    const taken = (e) => e.preventDefault();
+    document.body.addEventListener('keydown', taken);
+    key(document.body, 'Escape');
+    document.body.removeEventListener('keydown', taken);
+    expect(full()).toBe(true);
+    // 引き出しが開いていれば、Esc はそちらを閉じる
+    document.querySelector('.sidebar').classList.add('drawer-open');
+    key(document.body, 'Escape');
+    expect(full()).toBe(true);
+    expect(document.querySelector('.sidebar').classList.contains('drawer-open')).toBe(false);
+    key(document.body, 'Escape');
+    expect(full()).toBe(false);
+  });
+
+  it('Ctrl+K は全画面を抜けてから探す欄へ', () => {
+    mount();
+    openFirst();
+    document.getElementById('doc-full-btn').click();
+    document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(full()).toBe(false);
+    expect(document.activeElement.id).toBe('search-input');
+  });
+
+  it('右のペインを開くなら全画面を抜ける (開いたのに見えない)', () => {
+    mount();
+    openFirst();
+    document.getElementById('doc-full-btn').click();
+    key(document.body, '?');
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    expect(full()).toBe(false);
   });
 
   it('閉じるボタンでも戻る', () => {
@@ -8336,6 +8376,46 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(document.getElementById('branch-select').value).toBe('W1');
     // full が無ければ全画面にはしない
     expect(full()).toBe(false);
+  });
+
+  it('起動のときの一覧を待つあいだに人が移ったら、リンクの文書で奪わない', () => {
+    const pending = [];
+    const app = mountAt({ doc: 'DOC1', full: '1' },
+      { apiListFiles: () => ({ later: (ok) => pending.push(ok) }) });
+    // 起動のときの1回を待つ。同じものを尋ね直さない
+    expect(app.calls.filter((c) => c.name === 'apiListFiles')).toHaveLength(1);
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    pending.forEach((ok) => ok(DEFAULTS.apiListFiles));
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(app.calls.some((c) => c.name === 'apiGetFileHtml')).toBe(false);
+    expect(full()).toBe(false);
+  });
+
+  it('起動のときの一覧が遅れて届いても、移っていなければ開く', () => {
+    const pending = [];
+    mountAt({ doc: 'DOC1', full: '1' }, { apiListFiles: () => ({ later: (ok) => pending.push(ok) }) });
+    pending.forEach((ok) => ok(DEFAULTS.apiListFiles));
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(full()).toBe(true);
+  });
+
+  it('本文の返事を待つあいだに人が移っても、リンクの文書で奪わない', () => {
+    const pending = [];
+    mountAt({ doc: 'DOC1', full: '1' },
+      { apiGetFileHtml: () => ({ later: (ok) => pending.push(ok) }) });
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    pending.forEach((ok) => ok(DEFAULTS.apiGetFileHtml));
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-content').hidden).toBe(true);
+    // 開きかけた文書の題名を、移った先に残さない
+    expect(document.getElementById('doc-title').textContent).toBe('やること');
+    expect(full()).toBe(false);
+  });
+
+  it('一覧が取れなければ、帯で知らせる (ホームでは一覧の欄が見えない)', () => {
+    mountAt({ doc: 'DOC1', full: '1' }, { apiListFiles: () => new Error('混み合っています') });
+    expect(document.getElementById('panel-home').hidden).toBe(false);
+    expect(document.getElementById('snackbar').textContent).toContain('リンクの文書を開けませんでした');
   });
 
   it('一覧に無い id は開かず、ホームのまま知らせる', () => {
