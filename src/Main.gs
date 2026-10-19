@@ -48,10 +48,11 @@ function setupRepo() {
  * 持ち主の権限で呼べる。自己承認の解禁などを塞ぐため、最初にこれを呼ぶ。
  *
  * 持ち主は repoOwners_ が決める (共有ドライブでは管理者 = organizer 全員)。
+ * 大文字小文字は見ない (共有ドライブの役割は小文字で持っている)。
  */
 function assertOwner_() {
-  var me = String(Session.getActiveUser().getEmail() || '');
-  if (!me || repoOwners_().indexOf(me) < 0) {
+  var me = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  if (!me || !repoHasOwner_(me)) {
     throw new Error('この操作は、このアプリの持ち主だけが行えます (共有ドライブでは管理者)');
   }
 }
@@ -2999,7 +3000,7 @@ function debugVerifySharedDrive() {
   var members = driveMembers_(driveId);
   check('持ち主 (organizer) が読めた', members.owners.length > 0, members.owners.join(', '));
   check('自分が持ち主に入っている',
-    members.owners.indexOf(String(Session.getActiveUser().getEmail() || '')) >= 0);
+    members.owners.indexOf(String(Session.getActiveUser().getEmail() || '').toLowerCase()) >= 0);
 
   var queue = commandQueueFolder_();
   var id = 'verify-shared';
