@@ -8561,3 +8561,109 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(document.getElementById('snackbar').textContent).toContain('この文書は見られないか、登録されていません');
   });
 });
+
+describe('改善のヒント', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ADVICE = [
+    { id: 'reviews', title: '確認を待たせています', why: '確かめてほしいと頼まれた依頼のうち 1件が、3日以上そのままです',
+      tip: '先に返すと、頼んだ人が先へ進めます', action: { kind: 'pulls', arg: '1', label: '確認依頼を開く' }, weight: 60 },
+    { id: 'overdue', title: '期限切れが溜まっています', why: 'あなたが担当の期限切れが 3件あります',
+      tip: '期限を見直すか、分けるか、手放しましょう', action: { kind: 'issues-overdue', arg: '', label: '期限切れを見る' }, weight: 50 },
+    { id: 'repeat', title: '同じ作業を繰り返しています', why: '30日で「規定改訂」のやることが 5件できました',
+      tip: 'ひな形にするか、手元の道具で自動化できます', action: { kind: 'issues-filter', arg: '規定改訂', label: 'まとめて見る' }, weight: 20 },
+  ];
+  const withAdvice = (list) => ({ apiHomeSummary: { ...DEFAULTS.apiHomeSummary, advice: list } });
+  const box = () => document.getElementById('home-advice');
+  const button = (label) => Array.from(box().querySelectorAll('button')).find((b) => b.textContent === label);
+
+  it('当たる規則が無ければカードごと出さない', () => {
+    mount();
+    expect(box().children).toHaveLength(0);
+  });
+
+  it('1件ごとに、なぜ (数字) と次にすること (ボタン) を出す', () => {
+    mount(withAdvice(ADVICE));
+    expect(box().querySelector('.home-section-head').textContent).toBe('改善のヒント');
+    expect(box().querySelectorAll('.advice-item')).toHaveLength(3);
+    expect(box().textContent).toContain('あなたが担当の期限切れが 3件あります');
+    expect(box().textContent).toContain('期限を見直すか、分けるか、手放しましょう');
+    expect(button('期限切れを見る')).toBeTruthy();
+    expect(box().querySelectorAll('.advice-hide')).toHaveLength(3);
+  });
+
+  it('期限切れを見る: やることの一覧を、自分の担当の期限切れだけに絞って開く', () => {
+    // 自分の担当で期限がまだ先のもの (#5) と、期限切れでも済んだもの (#6) は出ない
+    mount({ ...withAdvice(ADVICE), apiIssueList: [...DEFAULTS.apiIssueList,
+      { ...DEFAULTS.apiIssueList[0], number: 5, parent: '', dueDate: '2999-12-31' },
+      { ...DEFAULTS.apiIssueList[0], number: 6, parent: '', state: 'closed' }] });
+    button('期限切れを見る').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('mine-btn').getAttribute('aria-checked')).toBe('true');
+    const chip = document.getElementById('overdue-only');
+    expect(chip.hidden).toBe(false);
+    const rows = Array.from(document.querySelectorAll('#issue-list .row-item')).map((r) => r.dataset.number);
+    expect(rows).toEqual(['2']);
+    // 絞りを外せる
+    chip.click();
+    expect(chip.hidden).toBe(true);
+    expect(document.querySelectorAll('#issue-list .row-item').length).toBeGreaterThan(1);
+  });
+
+  it('まとめて見る: その言葉で絞ったやることの一覧を開く', () => {
+    mount(withAdvice(ADVICE));
+    button('まとめて見る').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('issue-filter').value).toBe('規定改訂');
+    expect(document.getElementById('overdue-only').hidden).toBe(true);
+  });
+
+  it('ボード・工程表・確認依頼・要望へも開く', () => {
+    const app = mount(withAdvice([
+      ...ADVICE.slice(0, 1),
+      { ...ADVICE[1], id: 'wip', action: { kind: 'board', arg: '', label: 'ボードを開く' } },
+      { ...ADVICE[1], id: 'estimate', action: { kind: 'gantt', arg: '', label: '工程表を開く' } },
+    ]));
+    button('ボードを開く').click();
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('board').hidden).toBe(false);
+
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    button('工程表を開く').click();
+    expect(document.getElementById('gantt').hidden).toBe(false);
+
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    button('確認依頼を開く').click();
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    expect(app.calls.filter((c) => c.name === 'apiPrPreview').map((c) => c.args[0])).toContain(1);
+
+    mount(withAdvice([{ ...ADVICE[1], id: 'questions', action: { kind: 'report', arg: '', label: '要望・不具合を開く' } }]));
+    button('要望・不具合を開く').click();
+    expect(document.getElementById('panel-report').hidden).toBe(false);
+  });
+
+  it('「今週は出さない」で消え、開き直しても今週は出ない。全部隠したらカードごと消える', () => {
+    mount(withAdvice(ADVICE.slice(0, 2)));
+    box().querySelector('[data-advice="overdue"] .advice-hide').click();
+    expect(box().querySelector('[data-advice="overdue"]')).toBeNull();
+    expect(box().querySelector('[data-advice="reviews"]')).not.toBeNull();
+    expect(window.localStorage.getItem('adviceHidden')).toContain('overdue');
+
+    mount(withAdvice(ADVICE.slice(0, 2)));
+    expect(box().querySelector('[data-advice="overdue"]')).toBeNull();
+    box().querySelector('[data-advice="reviews"] .advice-hide').click();
+    expect(box().children).toHaveLength(0);
+  });
+
+  it('隠したのが前の週なら、また出す', () => {
+    window.localStorage.setItem('adviceHidden', JSON.stringify({ overdue: '2000-W01' }));
+    mount(withAdvice(ADVICE));
+    expect(box().querySelector('[data-advice="overdue"]')).not.toBeNull();
+  });
+
+  it('覚え書きが壊れていても落ちずに出す', () => {
+    window.localStorage.setItem('adviceHidden', '{壊れた');
+    mount(withAdvice(ADVICE));
+    expect(box().querySelectorAll('.advice-item')).toHaveLength(3);
+  });
+});
