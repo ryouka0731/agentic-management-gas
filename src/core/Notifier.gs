@@ -232,7 +232,8 @@ function notifyPrReviewRequested(pr, to) {
 function notifyInquiry(row) {
   var owners = inquiryOwners_();
   for (var i = 0; i < owners.length; i++) {
-    if (String(owners[i]) === String(row.by)) continue;
+    // 大文字小文字は見ない。違うだけで、書いた本人にも知らせが届く
+    if (String(owners[i]).toLowerCase() === String(row.by).toLowerCase()) continue;
     notify(
       owners[i],
       notifySubject_('報告', row.number, 'が届きました'),

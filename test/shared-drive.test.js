@@ -208,6 +208,45 @@ describe('共有ドライブの持ち主と管理者', () => {
     expect(ctx.repoOwners_().length).toBe(2);
   });
 
+  it('アドレスの大文字小文字が違っても、管理者は持ち主・管理者として通る', () => {
+    const members = [
+      { emailAddress: 'Boss@Example.com', role: 'organizer', type: 'user' },
+      { emailAddress: 'Writer@Example.com', role: 'writer', type: 'user' },
+    ];
+    const { ctx, fake } = setupShared({ members });
+    fake._setUser('boss@example.com');
+    expect(() => ctx.assertOwner_()).not.toThrow();
+    expect(ctx.repoIsAdmin_('boss@example.com')).toBe(true);
+    expect(ctx.repoIsAdmin_('WRITER@example.com')).toBe(true);
+    // Session の側が大文字混じりでも通る
+    fake._setUser('BOSS@example.COM');
+    expect(() => ctx.assertOwner_()).not.toThrow();
+  });
+
+  it('報告を書いた本人が持ち主なら、大文字小文字が違っても本人には送らない', () => {
+    const members = [
+      { emailAddress: 'Boss@Example.com', role: 'organizer', type: 'user' },
+      { emailAddress: 'tester@example.com', role: 'organizer', type: 'user' },
+    ];
+    const { ctx, fake } = setupShared({ members });
+    fake._setUser('BOSS@example.com');
+    ctx.inquiryCreate('bug', '動かない', '押しても何も起きない', []);
+    expect(fake._sentMails().map((m) => m.to)).toEqual(['tester@example.com']);
+  });
+
+  it('管理者 (organizer) が1人も居ない読みは失敗として扱い、覚えない', () => {
+    const { ctx, fake } = setupShared();
+    const cache = new Map();
+    fake.CacheService = { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) };
+    fake.Drive = fake._makeDrive({ members: { 'drive-1': MEMBERS.filter((m) => m.role !== 'organizer' || m.type !== 'user') } });
+    expect(ctx.repoOwners_()).toEqual([]);
+    expect(ctx.repoIsAdmin_('writer@example.com')).toBe(false);
+    expect(cache.size).toBe(0);
+    fake.Drive = fake._makeDrive({ members: { 'drive-1': MEMBERS } });
+    expect(ctx.repoOwners_().sort()).toEqual(['boss@example.com', 'tester@example.com']);
+    expect(fake.Drive._calls.permissionsList).toBeGreaterThan(0);
+  });
+
   it('役割は10分覚え、続けて聞かない', () => {
     const { ctx, fake } = setupShared();
     const cache = new Map();

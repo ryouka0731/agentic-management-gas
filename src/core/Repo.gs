@@ -167,6 +167,11 @@ function repoDriveIdSafe_() {
  *
  * **グループは数えない。** 中の人を確かめる手立てが無い。
  * **読めなければ投げずに空。** 誰も持ち主・管理者ではない (安全側)。失敗は覚えない。
+ * **管理者 (organizer) が1人も居ない読みも失敗として扱う。** 共有ドライブには必ず
+ * 1人は居るので、居ないのは読めたのが一部だけということ。覚えると、10分のあいだ
+ * 全員が持ち主でなくなる。
+ * **アドレスは小文字にそろえて持つ。** Drive が返す字と Session の字は大文字小文字が
+ * 違うことがあり、そのまま比べると持ち主が全員締め出される。比べる側も小文字にする。
  * 読めたものは10分覚える。一覧で1行ごとに問い合わせると、行の数だけ待つ。
  *
  * @param {string} driveId
@@ -195,7 +200,7 @@ function driveMembers_(driveId) {
       for (var i = 0; i < list.length; i++) {
         var p = list[i];
         if (p.type !== 'user' || !p.emailAddress) continue;
-        var email = String(p.emailAddress);
+        var email = String(p.emailAddress).toLowerCase();
         if (p.role === 'organizer') out.owners.push(email);
         if (p.role === 'organizer' || p.role === 'fileOrganizer' || p.role === 'writer') out.admins.push(email);
       }
@@ -203,6 +208,10 @@ function driveMembers_(driveId) {
     } while (token);
   } catch (e) {
     Logger.log('共有ドライブの役割が読めませんでした: ' + e.message);
+    return { owners: [], admins: [] };
+  }
+  if (out.owners.length === 0) {
+    Logger.log('共有ドライブの管理者が読めませんでした (一部しか返りませんでした)');
     return { owners: [], admins: [] };
   }
 
@@ -231,6 +240,25 @@ function repoOwners_() {
   if (driveId) return driveMembers_(driveId).owners;
   var owner = repoOwnerEmail();
   return owner ? [owner] : [];
+}
+
+/**
+ * その人が持ち主か。大文字小文字は見ない。
+ *
+ * Drive が返すアドレスと Session のアドレスは字の大小が違うことがある。そのまま
+ * 比べると、共有ドライブの管理者が全員エディタ専用の関数から締め出される。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function repoHasOwner_(email) {
+  var who = String(email || '').toLowerCase();
+  if (!who) return false;
+  var owners = repoOwners_();
+  for (var i = 0; i < owners.length; i++) {
+    if (String(owners[i]).toLowerCase() === who) return true;
+  }
+  return false;
 }
 
 /**
@@ -419,7 +447,7 @@ function repoIsAdmin_(email) {
     return false;
   }
   // 共有ドライブでは、台帳を書き換えられる役割 (投稿者まで) を管理者とする。フォルダの持ち主は無い
-  if (driveId) return driveMembers_(driveId).admins.indexOf(who) >= 0;
+  if (driveId) return driveMembers_(driveId).admins.indexOf(who.toLowerCase()) >= 0;
 
   var owner = repoOwnerEmail();
   if (owner && owner === who) return true;
