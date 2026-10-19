@@ -50,6 +50,9 @@
   var commitBtn = document.getElementById('commit-btn');
   var stashBtn = document.getElementById('stash-btn');
   var openLink = document.getElementById('open-in-docs');
+  var docFullBtn = document.getElementById('doc-full-btn');
+  var docLinkBtn = document.getElementById('doc-link-btn');
+  var docLinkRow = document.getElementById('doc-link-row');
 
   var tabsEl = document.getElementById('tabs');
   var panelHome = document.getElementById('panel-home');
@@ -2578,6 +2581,8 @@
 
     // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
     if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
+    // 文書の全画面も、どこかへ移ったら抜ける。左も上も隠れたまま別の画面が出る
+    if (document.body.classList.contains('doc-full')) setDocFull(false);
 
     panelHome.hidden = name !== 'home';
     panelDocs.hidden = name !== 'docs';
@@ -2621,6 +2626,7 @@
    */
   function updateCrumbs() {
     var inDoc = !!current.fileId && !!DOC_TABS[currentTab];
+    syncDocViewBtns();
 
     crumbBack.hidden = !inDoc;
     crumbSep.hidden = !inDoc;
@@ -3690,8 +3696,13 @@
    *
    * @param {string} fileId 開く版の fileId
    * @param {string} docPath 正式版の論理パス
+   * @param {{full: boolean}} [opts] full なら開いたあと全画面にする (全画面のリンクから)
    */
-  function openDoc(fileId, docPath) {
+  function openDoc(fileId, docPath, opts) {
+    // 前の文書のリンクを残さない
+    docLinkRow.hidden = true;
+    docLinkRow.textContent = '';
+
     var doc = allFiles.filter(function (f) {
       return splitPath(f.path).branch === 'main' && f.path === docPath;
     })[0];
@@ -3713,7 +3724,113 @@
       setDocMode('view');
       refreshStatus();
       switchTab('content');
+      // switchTab は全画面を抜けるので、そのあとで入る
+      if (opts && opts.full) setDocFull(true);
     }, failSnack('開けませんでした: '));
+  }
+
+  /**
+   * 全画面と「リンクをコピー」は、本文を読んでいるときだけ出す。
+   * 直すモードには全画面を出さない (全画面のあいだは上の操作が隠れて、保存できない)。
+   */
+  function syncDocViewBtns() {
+    var show = !!current.fileId && currentTab === 'content' && !viewer.hidden;
+    docFullBtn.hidden = !show;
+    docLinkBtn.hidden = !show;
+  }
+
+  /**
+   * 文書の全画面を出し入れする。
+   *
+   * **ブラウザの Fullscreen API は使わない。** Apps Script の Web アプリは
+   * iframe の中で動き、`allow="fullscreen"` が無いので断られる。body に
+   * `doc-full` を付け、CSS で周りを隠して本文を広げる。
+   *
+   * @param {boolean} on
+   */
+  function setDocFull(on) {
+    if (on && docFullBtn.hidden) return;
+    document.body.classList.toggle('doc-full', on);
+    docFullBtn.setAttribute('aria-pressed', String(on));
+    docFullBtn.textContent = '';
+    docFullBtn.appendChild(makeIcon(on ? 'shrink' : 'expand'));
+    docFullBtn.appendChild(document.createTextNode(on ? '全画面を閉じる' : '全画面'));
+  }
+
+  /**
+   * 全画面で開くリンク。この Web アプリの URL に ?doc=…&full=1 を付ける。
+   *
+   * @param {string} base apiAppUrl
+   * @param {string} fileId
+   * @returns {string}
+   */
+  function docFullLink(base, fileId) {
+    return base + (base.indexOf('?') < 0 ? '?' : '&') +
+      'doc=' + encodeURIComponent(fileId) + '&full=1';
+  }
+
+  /** この Web アプリの URL。変わらないので1回だけ尋ねる */
+  var appUrl = '';
+
+  /**
+   * いま見ている版を全画面で開くリンクを写す。埋め込みの枠では写せないことが
+   * あるので、そのときは選んで写せる欄に出す。
+   */
+  function copyDocLink() {
+    var fileId = current.fileId;
+    if (!fileId) return;
+
+    function give(base) {
+      // 返事を待つあいだに別の文書へ移っていたら写さない (前の文書のリンクになる)
+      if (current.fileId !== fileId) return;
+      var link = docFullLink(base, fileId);
+      function fallback() {
+        docLinkRow.textContent = '';
+        docLinkRow.appendChild(makeCopyRow('全画面で開くリンク。写せなかったので、選んで写してください', link));
+        docLinkRow.hidden = false;
+      }
+      var clip = window.navigator.clipboard;
+      if (!clip || !clip.writeText) { fallback(); return; }
+      clip.writeText(link).then(function () {
+        showSnack('コピーしました', { kind: 'ok' });
+      }, fallback);
+    }
+
+    if (appUrl) { give(appUrl); return; }
+    call('apiAppUrl', [], function (url) {
+      appUrl = String(url || '');
+      if (!appUrl) {
+        showSnack('この画面の URL が分からず、リンクを作れませんでした', { kind: 'ng' });
+        return;
+      }
+      give(appUrl);
+    }, failSnack('リンクを作れませんでした: '));
+  }
+
+  /**
+   * 開いた URL の ?doc=…&full=1 から文書を開く。
+   *
+   * 文書の一覧に**ある fileId のときだけ**開く。一覧は開いた人に見えるものだけ
+   * なので、見られない文書や登録されていない id は開かずにホームのまま知らせる。
+   *
+   * @param {Object<string, string>} p google.script.url.getLocation の parameter
+   */
+  function openFromLink(p) {
+    var fileId = String((p && p.doc) || '');
+    if (!fileId) return;
+    var wantFull = String(p.full || '') === '1';
+
+    function go() {
+      var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
+      if (!f) {
+        showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
+        return;
+      }
+      // 改訂版の作業コピーでも、題名は正式版の名前 (openDoc がそれで版を並べる)
+      openDoc(f.fileId, splitPath(f.path).path, { full: wantFull });
+    }
+    if (allFiles.length) go();
+    else loadFiles(go);
   }
 
   /**
@@ -3781,6 +3898,7 @@
 
     if (editing) loadEditor();
     else editHint.textContent = '';
+    syncDocViewBtns();
   }
 
   /**
@@ -11569,6 +11687,14 @@
   editSaveBtn.addEventListener('click', saveEditor);
   modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
   modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
+  setDocFull(false);
+  docFullBtn.addEventListener('click', function () {
+    setDocFull(!document.body.classList.contains('doc-full'));
+  });
+  docLinkBtn.addEventListener('click', copyDocLink);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.body.classList.contains('doc-full')) setDocFull(false);
+  });
   draftCreateBtn.addEventListener('click', createDraft);
   branchCreateBtn.addEventListener('click', function () {
     if (current.docFileId) {
@@ -14117,5 +14243,10 @@
   // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
   // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
   switchTab('home');
+  // 全画面のリンク (?doc=…&full=1) で開かれたら、その文書を開く。
+  // iframe の中なので location は使えない
+  if (google.script.url && google.script.url.getLocation) {
+    google.script.url.getLocation(function (loc) { openFromLink((loc && loc.parameter) || {}); });
+  }
 })();
 </script>

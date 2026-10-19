@@ -588,6 +588,11 @@ describe('画面に渡せる形か', () => {
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
     ['apiKnownPeople', (ctx) => ctx.apiKnownPeople()],
     ['apiWhoAmI', (ctx) => ctx.apiWhoAmI()],
+    ['apiAppUrl', (ctx) => {
+      const out = ctx.apiAppUrl();
+      if (typeof out !== 'string' || !out) throw new Error('URL が字で返っていない');
+      return out;
+    }],
     ['apiCommitHistory', (ctx, env) => ctx.apiCommitHistory(env.fileId)],
     ['apiDirtyFiles', (ctx) => ctx.apiDirtyFiles('改訂')],
     ['apiIssueArchivedList', (ctx) => ctx.apiIssueArchivedList()],

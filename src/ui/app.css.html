@@ -1404,6 +1404,33 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
+/* 写せなかったときの全画面リンク。本文の上に1行だけ出す (線ではなく面で分ける) */
+.doc-link-row {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-2);
+}
+
+/*
+ * 文書の全画面。ブラウザの Fullscreen API は iframe の中では断られるため、
+ * 周り (左の行き先・掴み手・右のペイン・タブ・本文の上の操作・下の帯) を隠して
+ * 本文を広げる。上には題名と「全画面を閉じる」だけを細く残す
+ */
+body.doc-full .sidebar,
+body.doc-full .resizer,
+body.doc-full .side-panel,
+body.doc-full .tabs,
+body.doc-full .doc-modes,
+body.doc-full .linked-issues,
+body.doc-full .doc-link-row,
+body.doc-full .mobile-nav,
+body.doc-full .nav-scrim,
+body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn),
+body.doc-full .crumbs > :not(h1) { display: none !important; }
+
+body.doc-full .toolbar { padding: var(--sp-1) var(--sp-4); }
+/* 間を空ける .spacer も隠れるので、閉じるボタンを右へ寄せる */
+body.doc-full #doc-full-btn { margin-left: auto; }
+
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
