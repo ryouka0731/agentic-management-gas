@@ -8410,6 +8410,11 @@ describe('文書の全画面と、全画面のリンク', () => {
     // 開きかけた文書の題名を、移った先に残さない
     expect(document.getElementById('doc-title').textContent).toBe('やること');
     expect(full()).toBe(false);
+    // 描かなかった文書を、いま開いている文書として残さない (本文のタブで空の本文になる)
+    document.querySelector('.tab[data-tab="content"]').click();
+    expect(document.getElementById('panel-content').hidden).toBe(true);
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
+    expect(document.getElementById('branch-select').options.length).toBe(0);
   });
 
   it('一覧が取れなければ、帯で知らせる (ホームでは一覧の欄が見えない)', () => {
