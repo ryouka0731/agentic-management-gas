@@ -159,6 +159,9 @@
   };
 
   var allFiles = [];
+  // 画面を切り替えた回数。返事を待つあいだに人が別の画面へ移ったかを見分ける
+  // (全画面のリンクで開くとき、移った先を奪わない)
+  var navCount = 0;
   var currentUser = '';
   var currentTab = 'docs';
   var issueView = 'list';
@@ -1813,6 +1816,8 @@
    * @param {boolean} open
    */
   function setSideOpen(open) {
+    // 全画面では右のペインが隠れている。開くなら抜ける (開いたのに見えない)
+    if (open && document.body.classList.contains('doc-full')) setDocFull(false);
     sidePanel.hidden = !open;
     sideResizer.hidden = !open;
     // 開け閉めのたびに進める。返事を待つあいだに人が右を触ったかを、
@@ -2564,6 +2569,7 @@
    * @param {{pr: number}} [opts] 確認依頼の画面で、先頭の代わりに開く依頼の番号
    */
   function switchTab(name, opts) {
+    navCount++;
     if (DOC_TABS[name] && !current.fileId) name = 'docs';
     currentTab = name;
 
@@ -2652,11 +2658,15 @@
 
   // ===== 文書の一覧 =====
 
-  function loadFiles(then) {
+  /**
+   * @param {function} [then]
+   * @param {function} [onFail] 省くと文書の一覧の欄に出す
+   */
+  function loadFiles(then, onFail) {
     call('apiListFiles', [], function (list) {
       allFiles = list || [];
       if (then) then();
-    }, failInto(docListEl));
+    }, onFail || failInto(docListEl));
   }
 
   /**
@@ -3281,6 +3291,8 @@
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
+      // 全画面では探す欄が隠れている。抜けてから欄へ
+      if (document.body.classList.contains('doc-full')) setDocFull(false);
       if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) searchBox.classList.add('is-open');
       searchInput.focus();
       loadSearchIndex();
@@ -3696,7 +3708,8 @@
    *
    * @param {string} fileId 開く版の fileId
    * @param {string} docPath 正式版の論理パス
-   * @param {{full: boolean}} [opts] full なら開いたあと全画面にする (全画面のリンクから)
+   * @param {{full: boolean, since: number}} [opts] full なら開いたあと全画面にする
+   *   (全画面のリンクから)。since を渡すと、それ以後に画面を切り替えていたら描かない
    */
   function openDoc(fileId, docPath, opts) {
     // 前の文書のリンクを残さない
@@ -3718,6 +3731,8 @@
       // 返事が届くまでに別の版へ移っていたら描かない。描くと、別の文書の本文が
       // いまの題名の下に出る
       if (current.fileId !== fileId) return;
+      // リンクから開いたときは、返事を待つあいだに人が移った先を奪わない
+      if (opts && opts.since !== undefined && navCount !== opts.since) return;
       openLink.href = res.url;
       renderIntoViewer(res.html);
       loadLinkedIssues(fileId);
@@ -3752,10 +3767,14 @@
   function setDocFull(on) {
     if (on && docFullBtn.hidden) return;
     document.body.classList.toggle('doc-full', on);
-    docFullBtn.setAttribute('aria-pressed', String(on));
+    // 押した状態 (aria-pressed) は持たせない。字が「全画面を閉じる」に変わるので、
+    // 両方あると読み上げが「全画面を閉じる 押されています」と二重になる
     docFullBtn.textContent = '';
     docFullBtn.appendChild(makeIcon(on ? 'shrink' : 'expand'));
     docFullBtn.appendChild(document.createTextNode(on ? '全画面を閉じる' : '全画面'));
+    docFullBtn.title = on ? 'Esc でも閉じます' : '';
+    // 本文 (sandbox の iframe) に入った Esc は外へ届かない。閉じるボタンに置いておく
+    if (on) docFullBtn.focus();
   }
 
   /**
@@ -3839,22 +3858,45 @@
    *
    * @param {Object<string, string>} p google.script.url.getLocation の parameter
    */
-  function openFromLink(p) {
+  function openFromLink(p, since) {
     var fileId = String((p && p.doc) || '');
     if (!fileId) return;
     var wantFull = String(p.full || '') === '1';
 
     function go() {
+      // 一覧を待つあいだに人が別の画面へ移っていたら、そちらを奪わない
+      if (navCount !== since) return;
       var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
       if (!f) {
         showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
         return;
       }
       // 改訂版の作業コピーでも、題名は正式版の名前 (openDoc がそれで版を並べる)
-      openDoc(f.fileId, splitPath(f.path).path, { full: wantFull });
+      openDoc(f.fileId, splitPath(f.path).path, { full: wantFull, since: navCount });
     }
-    if (allFiles.length) go();
-    else loadFiles(go);
+    function ng() {
+      if (navCount !== since) return;
+      // 文書の一覧の欄はホームでは見えないので、帯で知らせる
+      showSnack('文書の一覧を取れず、リンクの文書を開けませんでした', { kind: 'ng' });
+    }
+    // 起動のときに尋ねた一覧の返事を待つ (同じものを2回尋ねない)
+    whenStartupFiles(go, ng);
+  }
+
+  /** 起動のときに尋ねた文書の一覧の返事。null は待っているあいだ */
+  var startupFiles = { ok: null, waiters: [] };
+
+  function settleStartupFiles(ok) {
+    startupFiles.ok = ok;
+    var waiters = startupFiles.waiters;
+    startupFiles.waiters = [];
+    waiters.forEach(function (w) { (ok ? w.ok : w.ng)(); });
+  }
+
+  function whenStartupFiles(ok, ng) {
+    if (startupFiles.ok === true) ok();
+    else if (startupFiles.ok === false) ng();
+    else startupFiles.waiters.push({ ok: ok, ng: ng });
   }
 
   /**
@@ -11717,7 +11759,11 @@
   });
   docLinkBtn.addEventListener('click', copyDocLink);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && document.body.classList.contains('doc-full')) setDocFull(false);
+    if (e.key !== 'Escape' || !document.body.classList.contains('doc-full')) return;
+    // ほかのもの (欄・右のペイン・引き出し) が受けた Esc では抜けない。1回の Esc で
+    // 2つ閉じると、閉じたつもりの無いほうまで閉じる
+    if (e.defaultPrevented || !sidePanel.hidden || sidebarEl.classList.contains('drawer-open')) return;
+    setDocFull(false);
   });
   draftCreateBtn.addEventListener('click', createDraft);
   branchCreateBtn.addEventListener('click', function () {
@@ -14263,14 +14309,18 @@
   // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
   // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
   // 返事では画面を切り替えない
-  loadFiles();
+  loadFiles(function () { settleStartupFiles(true); }, function (err) {
+    failInto(docListEl)(err);
+    settleStartupFiles(false);
+  });
   // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
   // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
   switchTab('home');
   // 全画面のリンク (?doc=…&full=1) で開かれたら、その文書を開く。
-  // iframe の中なので location は使えない
+  // iframe の中なので location は使えない。ホームを出した時点から人が移ったら開かない
+  var startupNav = navCount;
   if (google.script.url && google.script.url.getLocation) {
-    google.script.url.getLocation(function (loc) { openFromLink((loc && loc.parameter) || {}); });
+    google.script.url.getLocation(function (loc) { openFromLink((loc && loc.parameter) || {}, startupNav); });
   }
 })();
 </script>

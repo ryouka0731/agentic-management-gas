@@ -4600,6 +4600,9 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
     padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
+  /* 全画面では下の帯を隠すので、そのぶんは空けない */
+  body.doc-full .main { padding-bottom: env(safe-area-inset-bottom); }
+
   .mobile-nav {
     display: flex;
     position: fixed;
