@@ -6048,6 +6048,9 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     const box = document.getElementById('queue-settings');
     expect(box.textContent).toContain('boss@example.com');
     expect(box.textContent).toContain('setupCommandQueue()');
+    // setupCommandQueue() は持ち主にしか動かない。投稿者などの管理者に頼ませない
+    expect(box.querySelector('.row-meta').textContent).toContain('持ち主');
+    expect(box.querySelector('.row-meta').textContent).not.toMatch(/^管理者が/);
     // 札が「止まっています」なのに、本文で「動いています」と言わない
     expect(box.querySelector('p').textContent).not.toContain('動いています');
     expect(box.querySelector('p').textContent).toContain('止まっているようです');

@@ -163,10 +163,21 @@ function repoDriveIdSafe_() {
 }
 
 /**
+ * 1回の実行のあいだだけ覚える共有ドライブの役割 (読めなかったことも含む)。
+ *
+ * 読めなかったものは CacheService に入れない (10分のあいだ全員が持ち主でなくなる)。
+ * ただ何も覚えないと、一覧を1回描くあいだに行の数だけ Drive に問い合わせる。
+ * GAS は実行ごとにグローバルを作り直すので、ここは次の実行には残らない。
+ * テストでは同じ文脈で読み直すときに `{}` へ戻す。
+ */
+var DRIVE_MEMBERS_MEMO_ = {};
+
+/**
  * 共有ドライブのメンバーを、持ち主 (organizer) と管理者 (organizer / fileOrganizer / writer) に分ける。
  *
  * **グループは数えない。** 中の人を確かめる手立てが無い。
- * **読めなければ投げずに空。** 誰も持ち主・管理者ではない (安全側)。失敗は覚えない。
+ * **読めなければ投げずに空。** 誰も持ち主・管理者ではない (安全側)。失敗は CacheService には
+ * 覚えない (その実行のあいだだけ DRIVE_MEMBERS_MEMO_ に覚える)。
  * **管理者 (organizer) が1人も居ない読みも失敗として扱う。** 共有ドライブには必ず
  * 1人は居るので、居ないのは読めたのが一部だけということ。覚えると、10分のあいだ
  * 全員が持ち主でなくなる。
@@ -179,6 +190,20 @@ function repoDriveIdSafe_() {
  */
 function driveMembers_(driveId) {
   var key = 'driveMembers:' + driveId;
+  if (Object.prototype.hasOwnProperty.call(DRIVE_MEMBERS_MEMO_, key)) return DRIVE_MEMBERS_MEMO_[key];
+  var got = driveMembersRead_(driveId, key);
+  DRIVE_MEMBERS_MEMO_[key] = got;
+  return got;
+}
+
+/**
+ * driveMembers_ の本体。CacheService を見て、無ければ Drive に問い合わせる。
+ *
+ * @param {string} driveId
+ * @param {string} key
+ * @returns {{owners: string[], admins: string[]}}
+ */
+function driveMembersRead_(driveId, key) {
   var cache = null;
   try {
     cache = CacheService.getScriptCache();
@@ -449,13 +474,15 @@ function repoIsAdmin_(email) {
   // 共有ドライブでは、台帳を書き換えられる役割 (投稿者まで) を管理者とする。フォルダの持ち主は無い
   if (driveId) return driveMembers_(driveId).admins.indexOf(who.toLowerCase()) >= 0;
 
-  var owner = repoOwnerEmail();
-  if (owner && owner === who) return true;
+  // 大文字小文字は見ない (repoHasOwner_ と同じ)。Drive と Session で字の大小が違うことがある
+  var me = who.toLowerCase();
+  var owner = String(repoOwnerEmail() || '').toLowerCase();
+  if (owner && owner === me) return true;
 
   try {
     var editors = DriveApp.getFolderById(repoConfig().rootId).getEditors();
     for (var i = 0; i < editors.length; i++) {
-      if (String(editors[i].getEmail() || '') === who) return true;
+      if (String(editors[i].getEmail() || '').toLowerCase() === me) return true;
     }
   } catch (e) {
     Logger.log('編集者が分かりませんでした: ' + e.message);

@@ -204,8 +204,23 @@ describe('共有ドライブの持ち主と管理者', () => {
     expect(ctx.repoIsAdmin_('tester@example.com')).toBe(false);
     expect(() => ctx.assertOwner_()).toThrow(/持ち主だけ/);
     expect(cache.size).toBe(0);
+    // 次の実行 (GAS はグローバルを作り直す) では読み直す
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
     fake.Drive = fake._makeDrive({ members: { 'drive-1': MEMBERS } });
     expect(ctx.repoOwners_().length).toBe(2);
+  });
+
+  it('読めなかったことは、その実行のあいだだけ覚えて何度も聞かない', () => {
+    const { ctx, fake } = setupShared();
+    const cache = new Map();
+    fake.CacheService = { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) };
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
+    fake.Drive = fake._makeDrive({ members: {} });
+    expect(ctx.repoIsAdmin_('tester@example.com')).toBe(false);
+    expect(ctx.repoIsAdmin_('writer@example.com')).toBe(false);
+    expect(fake.Drive._calls.permissionsList).toBe(1);
+    // CacheService には入れない
+    expect(cache.size).toBe(0);
   });
 
   it('アドレスの大文字小文字が違っても、管理者は持ち主・管理者として通る', () => {
@@ -242,6 +257,7 @@ describe('共有ドライブの持ち主と管理者', () => {
     expect(ctx.repoOwners_()).toEqual([]);
     expect(ctx.repoIsAdmin_('writer@example.com')).toBe(false);
     expect(cache.size).toBe(0);
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
     fake.Drive = fake._makeDrive({ members: { 'drive-1': MEMBERS } });
     expect(ctx.repoOwners_().sort()).toEqual(['boss@example.com', 'tester@example.com']);
     expect(fake.Drive._calls.permissionsList).toBeGreaterThan(0);
@@ -253,6 +269,8 @@ describe('共有ドライブの持ち主と管理者', () => {
     fake.CacheService = { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) };
     ctx.repoOwners_();
     const n = fake.Drive._calls.permissionsList;
+    // 実行をまたいでも (その実行だけの覚えが消えても) CacheService から引く
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
     ctx.repoOwners_();
     ctx.repoIsAdmin_('writer@example.com');
     expect(fake.Drive._calls.permissionsList).toBe(n);
@@ -304,6 +322,19 @@ describe('実機で確かめる入口 (debugVerifySharedDrive)', () => {
         if (!f.isTrashed()) expect(f.getName().indexOf('verify-shared')).not.toBe(0);
       }
     }
+  });
+
+  it('手で回したキューの時刻を元に戻す (止まったトリガーを隠さない)', () => {
+    const { ctx, fake } = setupShared();
+    const props = fake.PropertiesService.getScriptProperties();
+    // 一度も回っていなければ、無いまま
+    expect(ctx.debugVerifySharedDrive()).toContain('すべて通りました');
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(null);
+    // 前の時刻があれば、その時刻のまま
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    props.setProperty('QUEUE_LAST_RUN', old);
+    expect(ctx.debugVerifySharedDrive()).toContain('すべて通りました');
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(old);
   });
 
   it('前の実行が打ち切られて処理済みの命令が残っていても、次の実行は通る', () => {
