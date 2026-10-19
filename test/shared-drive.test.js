@@ -297,8 +297,20 @@ describe('実機で確かめる入口 (debugVerifySharedDrive)', () => {
     const { ctx } = setupShared();
     const out = ctx.debugVerifySharedDrive();
     expect(out).toContain('すべて通りました');
-    expect(ctx.commandQueueFolder_().getFilesByName('verify-shared.cmd.json').hasNext()).toBe(false);
-    expect(ctx.commandQueueFolder_().getFilesByName('verify-shared.result.json').hasNext()).toBe(false);
+    for (const folder of [ctx.commandQueueFolder_(), ctx.commandDoneFolder_()]) {
+      const it = folder.getFiles();
+      while (it.hasNext()) {
+        const f = it.next();
+        if (!f.isTrashed()) expect(f.getName().indexOf('verify-shared')).not.toBe(0);
+      }
+    }
+  });
+
+  it('前の実行が打ち切られて処理済みの命令が残っていても、次の実行は通る', () => {
+    const { ctx } = setupShared();
+    // 打ち切られた前の実行が残したもの。同じ名前を使うと、命令が処理済みと見られて走らない
+    ctx.commandDoneFolder_().createFile('verify-shared.cmd.json', '{}', 'text/plain');
+    expect(ctx.debugVerifySharedDrive()).toContain('すべて通りました');
   });
 
   it('マイドライブでは「共有ドライブではありません」と言って止まる', () => {
