@@ -2580,8 +2580,7 @@ function debugVerifyPhase2() {
     doc.saveAndClose();
 
     var file = DriveApp.getFileById(mainFileId);
-    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    file.moveTo(DriveApp.getFolderById(repoConfig().mainId));
 
     repoRegisterFile(mainFileId, tag + '.doc');
     liveCacheInvalidate(mainFileId);
@@ -2749,8 +2748,7 @@ function debugVerifyPhase3b() {
     doc.saveAndClose();
 
     var file = DriveApp.getFileById(mainFileId);
-    DriveApp.getFolderById(repoConfig().mainId).addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    file.moveTo(DriveApp.getFolderById(repoConfig().mainId));
 
     repoRegisterFile(mainFileId, tag + '.doc');
     liveCacheInvalidate(mainFileId);

@@ -35,8 +35,7 @@ function repoInit(rootFolderName) {
 
   var db = SpreadsheetApp.create(rootFolderName + ' repo-db');
   var dbFile = DriveApp.getFileById(db.getId());
-  git.addFile(dbFile);
-  DriveApp.getRootFolder().removeFile(dbFile);
+  dbFile.moveTo(git);
 
   var config = {
     rootId: root.getId(),
@@ -94,6 +93,45 @@ function repoParentFolder_() {
     Logger.log('スクリプトの場所が分かりませんでした: ' + e.message);
   }
   return DriveApp.getRootFolder();
+}
+
+/**
+ * 入れ物が置かれている共有ドライブの id。マイドライブなら空。
+ *
+ * Task 3 で repoDriveId_() に置き換える。それまでは設定に書かれた字だけを見る。
+ *
+ * @returns {string}
+ */
+function repoDriveIdOrEmpty_() {
+  try {
+    return String(repoConfig().driveId || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * ゴミ箱へ移す。
+ *
+ * **共有ドライブでは、投稿者の役割では消せない。** 黙って続けると、捨てたはずの改訂版が
+ * 残り続ける。何が要るかを添えて投げる。マイドライブでは今までどおり記録して続ける
+ * (持ち主でない編集者は他人のファイルを消せないが、それで止めたことはない)。
+ *
+ * @param {GoogleAppsScript.Drive.File|GoogleAppsScript.Drive.Folder} item
+ * @returns {boolean} 消せたら true
+ */
+function driveTrash_(item) {
+  try {
+    item.setTrashed(true);
+    return true;
+  } catch (e) {
+    if (repoDriveIdOrEmpty_()) {
+      throw new Error('ゴミ箱へ移せませんでした。共有ドライブで消すには「コンテンツ管理者」以上の' +
+        '役割が要ります (' + e.message + ')');
+    }
+    Logger.log('ゴミ箱へ移せませんでした: ' + e.message);
+    return false;
+  }
 }
 
 /**

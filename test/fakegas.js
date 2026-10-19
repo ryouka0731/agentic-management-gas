@@ -13,6 +13,8 @@ import crypto from 'node:crypto';
  */
 export function createFakeGas() {
   var seq = 0;
+  let trashDenied = false;
+  let sharingDenied = false;
   const nextId = (prefix) => prefix + '-' + (++seq);
 
   const files = new Map();   // id -> file
@@ -30,7 +32,9 @@ export function createFakeGas() {
       _parent: parentId,
       _mime: mime || 'text/plain',
       _trashed: false,
-      _owner: activeUser,
+      _driveId: parentId && folders.has(parentId) ? folders.get(parentId)._driveId : '',
+      moveTo: (folder) => { f._parent = folder.getId(); f._driveId = folder._driveId; return f; },
+      _owner: (parentId && folders.has(parentId) && folders.get(parentId)._driveId) ? '' : activeUser,
       // 共有ドライブのファイルは持ち主が無い (実機は null を返す)
       getOwner: () => (f._owner ? { getEmail: () => f._owner } : null),
       _setOwner: (email) => { f._owner = email; return f; },
@@ -43,9 +47,16 @@ export function createFakeGas() {
       // これを鍵にするキャッシュが当たったり外れたりする
       _updated: new Date(),
       getLastUpdated: () => f._updated,
-      setTrashed: (v) => { f._trashed = v !== false; return f; },
+      setTrashed: (v) => {
+        if (trashDenied) throw new Error('Insufficient permissions for this file');
+        f._trashed = v !== false;
+        return f;
+      },
       isTrashed: () => f._trashed,
-      setSharing: () => f,
+      setSharing: () => {
+        if (sharingDenied) throw new Error('Sharing outside the shared drive is not allowed');
+        return f;
+      },
       getParents: () => {
         const hits = folders.has(f._parent) ? [folders.get(f._parent)] : [];
         let i = 0;
@@ -73,10 +84,17 @@ export function createFakeGas() {
       _name: name,
       _parent: parentId,
       _trashed: false,
-      _owner: 'tester@example.com',
+      _owner: (parentId && folders.has(parentId) && folders.get(parentId)._driveId) ? '' : 'tester@example.com',
+      _driveId: parentId && folders.has(parentId) ? folders.get(parentId)._driveId : '',
+      _markShared: (driveId) => { fo._driveId = driveId; fo._owner = ''; return fo; },
+      moveTo: (folder) => { fo._parent = folder.getId(); fo._driveId = folder._driveId; return fo; },
       getId: () => id,
       getName: () => fo._name,
-      setTrashed: (v) => { fo._trashed = v !== false; return fo; },
+      setTrashed: (v) => {
+        if (trashDenied) throw new Error('Insufficient permissions for this file');
+        fo._trashed = v !== false;
+        return fo;
+      },
       isTrashed: () => fo._trashed,
       createFolder: (n) => makeFolder(n, id),
       createFile: (a, b, c) => (a && typeof a === 'object' && a.getBytes)
@@ -106,7 +124,12 @@ export function createFakeGas() {
         let i = 0;
         return { hasNext: () => i < hits.length, next: () => hits[i++] };
       },
-      addFile: (f) => { f._parent = id; },
+      // 実機の共有ドライブでは、ファイルは親を1つしか持てない。マイドライブの addFile は
+      // 親を増やすが、この疑似GASは移す (removeFile は空実装)。片方だけ呼ぶ書き方は通ってしまう
+      addFile: (f) => {
+        if (fo._driveId) throw new Error('Cannot add a file to multiple parents in a shared drive');
+        f._parent = id;
+      },
       removeFile: () => {},
       getParents: () => {
         const hits = folders.has(fo._parent) ? [folders.get(fo._parent)] : [];
@@ -114,7 +137,7 @@ export function createFakeGas() {
         return { hasNext: () => i < hits.length, next: () => hits[i++] };
       },
       getFoldersByName_unused: null,
-      getOwner: () => ({ getEmail: () => fo._owner }),
+      getOwner: () => (fo._owner ? { getEmail: () => fo._owner } : null),
       _setOwner: (email) => { fo._owner = email; return fo; },
       // 実機と同じく、編集権限の無い人が呼ぶと空を返す。持ち主は入れない
       _editors: [],
@@ -436,6 +459,8 @@ export function createFakeGas() {
     ScriptApp,
     HtmlService,
     /** スクリプトの置き場を決める。渡さなければ「分からない」状態 */
+    _denyTrash: (on) => { trashDenied = !!on; },
+    _denySharing: (on) => { sharingDenied = !!on; },
     _placeScript: (folder) => {
       const f = makeFile('スクリプト', '', folder.getId(), 'application/vnd.google-apps.script');
       scriptId = f.getId();

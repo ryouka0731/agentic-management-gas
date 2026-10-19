@@ -714,11 +714,12 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - **キューの置き場は、ゴミ箱に入っていたら作り直す** (`queueFolderLive_`)。Apps Script は
   ゴミ箱の中のフォルダも開けるので、開けるかだけを見ると命令がゴミ箱に置かれて誰も
   拾わない。`setupCommandQueue()` もゴミ箱の中の ID を返し続けた (実機で踏んだ)
-- **`addFile` と `removeFile` は両方呼ぶ。** Drive のファイルは複数のフォルダに
-  属せるので、`addFile` だけでは `queue/` に残り、`removeFile` だけでは行き先が
-  無くなる。`commandRetire_` に寄せてある。
-  **`test/fakegas.js` の `removeFile` は空実装で、`addFile` が親を移す作りである。**
-  疑似GASのほうが実機より甘いので、片方だけ呼ぶ書き方はテストを通ってしまう
+- **フォルダを移すのは `moveTo` だけ。** `addFile` は共有ドライブで例外になる (ファイルは親を1つしか
+  持てない)。以前は `addFile` と `removeFile` を両方呼ぶ形で、マイドライブでしか動かなかった。
+  `test/fakegas.js` は `_markShared` した場所への `addFile` を投げる。**`removeFile` は空実装で
+  `addFile` が親を移すので、マイドライブのテストだけでは片方だけの書き方が通ってしまう**
+- **共有ドライブでゴミ箱へ移せるのはコンテンツ管理者から。** 人が押した操作は `driveTrash_` で
+  要る役割を添えて断る。片付けのついで (古い zip など) は握って続ける
 - **`button` は地の色も枠も継がない。** 既定の `color: buttontext` は OS の設定で
   決まるため、暗い OS で明るいテーマを選ぶと白い面に白い文字が乗って消える
   (確認依頼の題名だけが見えなかった)。既定の `border` も面と影で段を表す設計を
