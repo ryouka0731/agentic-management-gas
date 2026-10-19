@@ -3726,6 +3726,7 @@
       switchTab('content');
       // switchTab は全画面を抜けるので、そのあとで入る
       if (opts && opts.full) setDocFull(true);
+      prefetchAppUrl();
     }, failSnack('開けませんでした: '));
   }
 
@@ -3771,39 +3772,62 @@
 
   /** この Web アプリの URL。変わらないので1回だけ尋ねる */
   var appUrl = '';
+  var appUrlAsked = false;
 
   /**
-   * いま見ている版を全画面で開くリンクを写す。埋め込みの枠では写せないことが
-   * あるので、そのときは選んで写せる欄に出す。
+   * 文書を開いたときに URL を先に尋ねておく。
+   *
+   * **押してから尋ねると写せない。** ブラウザは押した操作の中でしか書き込みを
+   * 許さず、サーバの返事を待ったあとでは断られて、毎回「選んで写す」欄になる。
+   */
+  function prefetchAppUrl() {
+    if (appUrl || appUrlAsked) return;
+    appUrlAsked = true;
+    call('apiAppUrl', [], function (url) {
+      appUrl = String(url || '');
+    }, function (err) {
+      // 次に開いたとき、または押したときに尋ね直す
+      appUrlAsked = false;
+      failQuiet('リンクの URL は押したときに尋ね直せる')(err);
+    });
+  }
+
+  /** 写せなかったとき・写せないときに、選んで写せる欄にリンクを出す */
+  function showDocLinkRow(link) {
+    docLinkRow.textContent = '';
+    docLinkRow.appendChild(makeCopyRow('全画面で開くリンク。選んで写してください', link));
+    docLinkRow.hidden = false;
+  }
+
+  /**
+   * いま見ている版を全画面で開くリンクを写す。書き込みは押した操作の中で
+   * 同期に呼ぶ。URL がまだ届いていなければ、尋ねてから欄に出す (返事のあとに
+   * 書き込もうとしても断られるので試さない)。
    */
   function copyDocLink() {
     var fileId = current.fileId;
     if (!fileId) return;
 
-    function give(base) {
-      // 返事を待つあいだに別の文書へ移っていたら写さない (前の文書のリンクになる)
-      if (current.fileId !== fileId) return;
-      var link = docFullLink(base, fileId);
-      function fallback() {
-        docLinkRow.textContent = '';
-        docLinkRow.appendChild(makeCopyRow('全画面で開くリンク。写せなかったので、選んで写してください', link));
-        docLinkRow.hidden = false;
-      }
+    if (appUrl) {
+      var link = docFullLink(appUrl, fileId);
       var clip = window.navigator.clipboard;
-      if (!clip || !clip.writeText) { fallback(); return; }
+      if (!clip || !clip.writeText) { showDocLinkRow(link); return; }
       clip.writeText(link).then(function () {
         showSnack('コピーしました', { kind: 'ok' });
-      }, fallback);
+      }, function () {
+        // 返事を待つあいだに別の文書へ移っていたら出さない
+        if (current.fileId === fileId) showDocLinkRow(link);
+      });
+      return;
     }
 
-    if (appUrl) { give(appUrl); return; }
     call('apiAppUrl', [], function (url) {
       appUrl = String(url || '');
       if (!appUrl) {
         showSnack('この画面の URL が分からず、リンクを作れませんでした', { kind: 'ng' });
         return;
       }
-      give(appUrl);
+      if (current.fileId === fileId) showDocLinkRow(docFullLink(appUrl, fileId));
     }, failSnack('リンクを作れませんでした: '));
   }
 
