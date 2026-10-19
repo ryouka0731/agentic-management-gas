@@ -279,7 +279,7 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
-  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
   apiSprintList: [],
   apiImpedimentList: [],
   apiImpedimentComments: [],

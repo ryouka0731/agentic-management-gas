@@ -346,6 +346,26 @@ function commandAlreadyRan_(done, name) {
  *
  * @returns {string} 処理件数の要約
  */
+/**
+ * キューを動かしている人と、最後に回った時刻。
+ *
+ * トリガーは setupCommandQueue() を実行した人の権限で走る。共有ドライブではその人が
+ * 抜けると止まるが、他人のトリガーは見えないので、止まったことに誰も気づかない。
+ * 設定の画面に出し、1時間より前に止まっていれば引き継ぎ方を出す。
+ *
+ * @param {Date} [now]
+ * @returns {{runner: string, lastRun: string, stale: boolean}}
+ */
+function queueStatus_(now) {
+  var props = PropertiesService.getScriptProperties();
+  var runner = String(props.getProperty('QUEUE_RUNNER') || '');
+  var lastRun = String(props.getProperty('QUEUE_LAST_RUN') || '');
+  var at = lastRun ? Date.parse(lastRun) : NaN;
+  var t = (now || new Date()).getTime();
+  var stale = !!runner && (isNaN(at) || t - at > 60 * 60 * 1000);
+  return { runner: runner, lastRun: lastRun, stale: stale };
+}
+
 function processCommandQueue() {
   /*
    * **鍵は命令1件ごとに取る。命令が無いときは取らない。**
@@ -359,6 +379,13 @@ function processCommandQueue() {
    * 鍵の中で守る。重なった2回の起動が同じ命令を数えても、後から鍵を取った
    * ほうは処理済みと見て走らせない。
    */
+  // 回ったことを残す (鍵は取らない。上書きするだけで、ずれても困らない)
+  try {
+    PropertiesService.getScriptProperties().setProperty('QUEUE_LAST_RUN', new Date().toISOString());
+  } catch (e) {
+    Logger.log('回った時刻を残せませんでした: ' + e.message);
+  }
+
   var queue = commandQueueFolder_();
   var done = commandDoneFolder_();
 

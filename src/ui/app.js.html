@@ -12103,6 +12103,7 @@
       settingsEl.textContent = '';
       settingsEl.appendChild(makeScrumSettings());
       settingsEl.appendChild(makeGameSettings());
+      if (settings.canEdit && settings.queue) settingsEl.appendChild(makeQueueSettings());
     });
   }
 
@@ -12175,6 +12176,43 @@
     }
 
     box.appendChild(makeScrumKitGuide());
+    return box;
+  }
+
+  /**
+   * 手元からの命令を受け付ける仕掛け (コマンドキュー) の節。管理者にだけ出す。
+   *
+   * 仕掛けた人の権限で1分ごとに回る。その人が抜けると止まり、他人からは見えない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeQueueSettings() {
+    var q = settings.queue || {};
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'queue-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('手元からの命令の受付 '));
+    head.appendChild(makePill(!q.runner ? '未設定' : q.stale ? '止まっています' : '動いています',
+      !q.runner || q.stale ? 'state' : 'state state-open'));
+    box.appendChild(head);
+
+    var who = document.createElement('p');
+    who.textContent = q.runner
+      ? q.runner + ' さんの権限で1分ごとに動いています。最後に動いたのは ' +
+        (q.lastRun ? new Date(q.lastRun).toLocaleString('ja-JP') : 'まだありません') + '。'
+      : 'まだ仕掛けていません。';
+    box.appendChild(who);
+
+    if (!q.runner || q.stale) {
+      var how = document.createElement('p');
+      how.className = 'row-meta';
+      how.textContent = '管理者が Apps Script のエディタで setupCommandQueue() を実行すると、' +
+        'その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
+      box.appendChild(how);
+    }
     return box;
   }
 

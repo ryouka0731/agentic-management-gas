@@ -2899,6 +2899,11 @@ function setupCommandQueue() {
     .everyMinutes(1)
     .create();
 
+  // 誰の権限で回っているかを残す。他人のトリガーは見えないので、抜けた人のぶんは消せない。
+  // 引き継いだ人がもう一度実行すれば、その人のトリガーで回る (二重に回っても同じ命令は二度走らない)
+  PropertiesService.getScriptProperties()
+    .setProperty('QUEUE_RUNNER', String(Session.getActiveUser().getEmail() || ''));
+
   var queueId = commandQueueFolder_().getId();
   Logger.log('キューのフォルダ: ' + queueId);
 
@@ -3314,21 +3319,29 @@ function apiSearchIndex() {
 
 // ===== 設定 =====
 
+function plainQueueStatus_(st) {
+  return { runner: plainText(st.runner), lastRun: plainText(st.lastRun), stale: !!st.stale };
+}
+
 /**
  * アプリ全体の設定を返す (Web App API)。
  *
  * 変えられるのは管理者だけ。画面は canEdit を見て、切り替えの入口を出すか決める。
  *
  * @returns {{scrumEnabled: boolean, canEdit: boolean, productGoal: string,
- *   definitionOfDone: string}}
+ *   definitionOfDone: string,
+ *   queue: ({runner:string, lastRun:string, stale:boolean}|null)}}
  */
 function apiSettings() {
   var me = String(Session.getActiveUser().getEmail() || '');
+  var admin = repoIsAdmin_(me);
   var texts = scrumTexts();
   return {
     scrumEnabled: scrumEnabled(),
     gameEnabled: gameEnabled(),
-    canEdit: repoIsAdmin_(me),
+    canEdit: admin,
+    // 人のアドレスを含むので、管理者にだけ返す
+    queue: admin ? plainQueueStatus_(queueStatus_()) : null,
     productGoal: plainText(texts.productGoal),
     definitionOfDone: plainText(texts.definitionOfDone),
     // 用語の説明は画面に写しを持たせず、ここから渡す (食い違わないように)
