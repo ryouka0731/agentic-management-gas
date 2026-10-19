@@ -138,6 +138,19 @@ describe('共有ドライブかどうか', () => {
     expect(ctx.repoConfig().driveId).toBe('drive-1');
   });
 
+  it('読むついでに覚えるときは、鍵を長く待たない', () => {
+    const { ctx, fake } = setupShared();
+    const cfg = ctx.repoConfig();
+    delete cfg.driveId;
+    fake.PropertiesService.getScriptProperties().setProperty(ctx.REPO_CONFIG_KEY(), JSON.stringify(cfg));
+    const waits = [];
+    const real = ctx.dbWithLock_;
+    ctx.dbWithLock_ = (ms, fn, onBusy) => { waits.push(ms); return real(ms, fn, onBusy); };
+    expect(ctx.repoDriveId_()).toBe('drive-1');
+    expect(waits.length).toBe(1);
+    expect(waits[0]).toBeLessThanOrEqual(2000);
+  });
+
   it('拡張サービスが無ければマイドライブとして扱い、覚えない (あとで足されたら読み直す)', () => {
     const fake = createFakeGas();
     const drive = fake.DriveApp.createFolder('共有ドライブ')._markShared('drive-1');
