@@ -12206,10 +12206,16 @@
     // 台帳と同じく人が書き換えられる値なので、読めない時刻で Invalid Date と出さない
     var when = !at ? 'まだありません' : isNaN(at.getTime()) ? '不明' : at.toLocaleString('ja-JP');
     var who = document.createElement('p');
+    // 止まっているときに「動いています」と書かない (札と本文が食い違う)
+    var unknownWho = '仕掛けた人は分かりません。setupCommandQueue() を実行し直すと記録されます';
     who.textContent = !known ? 'まだ仕掛けていません。'
-      : (q.runner
-        ? q.runner + ' さんの権限で1分ごとに動いています。'
-        : '1分ごとに動いています (仕掛けた人は分かりません。setupCommandQueue() を実行し直すと記録されます)。') +
+      : (q.stale
+        ? (q.runner
+          ? q.runner + ' さんの権限で動かしていましたが、止まっているようです。'
+          : '止まっているようです (' + unknownWho + ')。')
+        : (q.runner
+          ? q.runner + ' さんの権限で1分ごとに動いています。'
+          : '1分ごとに動いています (' + unknownWho + ')。')) +
         '最後に動いたのは ' + when + '。';
     box.appendChild(who);
 

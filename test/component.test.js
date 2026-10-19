@@ -6048,6 +6048,9 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     const box = document.getElementById('queue-settings');
     expect(box.textContent).toContain('boss@example.com');
     expect(box.textContent).toContain('setupCommandQueue()');
+    // 札が「止まっています」なのに、本文で「動いています」と言わない
+    expect(box.querySelector('p').textContent).not.toContain('動いています');
+    expect(box.querySelector('p').textContent).toContain('止まっているようです');
   });
 
   it('仕掛けた人の記録が無くても、回った時刻があれば動いていると出す', () => {
@@ -6068,6 +6071,8 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     const box = document.getElementById('queue-settings');
     expect(box.querySelector('h2').textContent).toContain('止まっています');
     expect(box.querySelector('.row-meta').textContent).toContain('setupCommandQueue()');
+    expect(box.querySelector('p').textContent).not.toContain('動いています');
+    expect(box.querySelector('p').textContent).toContain('仕掛けた人は分かりません');
   });
 
   it('回った時刻が読めなければ「不明」と出す (Invalid Date と出さない)', () => {
