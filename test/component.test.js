@@ -8844,6 +8844,116 @@ describe('工程表のペインと細かさ', () => {
     }
   });
 
+  /**
+   * 工程表の読み込みを止めておける形で組む。hold() のあとに来た読み込みは
+   * 返事を預かり、release(list) で返す
+   */
+  function openGanttHeld(viewWidth) {
+    const held = [];
+    let holding = false;
+    const app = openGantt({
+      apiIssueList: () => (holding
+        ? { later: (ok) => { held.push(ok); } }
+        : DEFAULTS.apiIssueList),
+    }, viewWidth);
+    return {
+      app,
+      hold() { holding = true; },
+      go() { holding = false; },
+      release(list) { held.shift()(list || DEFAULTS.apiIssueList); },
+    };
+  }
+
+  function reload() {
+    document.getElementById('issue-group').dispatchEvent(new window.Event('change'));
+  }
+
+  it('遅れて届いた古い返事で、新しい工程表を描き直さない', () => {
+    const t = openGanttHeld(900);
+    t.hold();
+    reload();          // 1つ目は待たせる
+    t.go();
+    reload();          // 2つ目はすぐ届く
+    const old = DEFAULTS.apiIssueList.map((i) => Object.assign({}, i, { title: '古い題' }));
+    t.release(old);    // 1つ目が遅れて届く
+
+    expect(document.querySelector('.gantt-title').textContent).not.toContain('古い題');
+    expect(document.querySelectorAll('#gantt .gantt').length).toBe(1);
+  });
+
+  it('待っている間に人が送ったら、その位置を奪わない', () => {
+    const t = openGanttHeld(900);
+    const scroller = document.getElementById('gantt');
+    expect(scroller.scrollLeft).toBeGreaterThan(100);
+
+    t.hold();
+    reload();
+    scroller.scrollLeft = 50;   // 返事を待つ間に人が送った
+    t.release();
+    expect(scroller.scrollLeft).toBe(50);
+  });
+
+  it('描き直しを待つ間に「今日」を押しても、届いたら今日へ送る', () => {
+    const t = openGanttHeld(900);
+    const scroller = document.getElementById('gantt');
+    const atToday = scroller.scrollLeft;
+    scroller.scrollLeft = 5;
+
+    t.hold();
+    reload();
+    document.getElementById('gantt-today').click();
+    t.release();
+    expect(scroller.scrollLeft).toBe(atToday);
+  });
+
+  it('今日が端にあっても、前後に余白の日を足して 1/3 に置ける', () => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const later = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+    openGantt({
+      apiIssueList: [{
+        number: 3, title: '今日から', body: '', state: 'open', assignee: '', assignees: [],
+        labels: '', linkedFileIds: '', linkedPr: '', createdAt: now.toISOString(), closedAt: '',
+        startDate: ymd(now), dueDate: ymd(later), parent: '', plannedHours: 3,
+      }],
+    }, 900);
+
+    const cells = [...document.querySelectorAll('.gantt-day')];
+    const today = cells.findIndex((c) => c.classList.contains('today'));
+    const view = 900 - 220;
+    // 今日の前に、見える幅の 1/3 ぶんの日がある
+    expect(today * 26 + 13).toBeGreaterThanOrEqual(view / 3);
+    // 今日の後ろに、見える幅の 2/3 ぶんの日がある
+    expect((cells.length - today) * 26).toBeGreaterThanOrEqual(view * 2 / 3);
+    const expected = today * 26 + 13 - view / 3;
+    expect(Math.abs(document.getElementById('gantt').scrollLeft - expected)).toBeLessThan(40);
+
+    // 足した日のぶん棒もずれる (棒は今日の列から始まる)
+    const bar = document.querySelector('.gantt-row[data-number="3"] .gantt-bar');
+    expect(bar.style.gridColumn).toBe((today + 1) + ' / span 3');
+  });
+
+  it('週では、字があるのは月曜だけで、月曜にはすべて字がある', () => {
+    openGantt();
+    zoom('week');
+    const cells = [...document.querySelectorAll('.gantt-day')];
+    expect(cells.length).toBeGreaterThan(14);
+    cells.forEach((c) => {
+      const [y, m, d] = c.title.split('/').map(Number);
+      const day = new Date(y, m - 1, d);
+      if (day.getDay() === 1) expect(c.textContent).toBe(String(d));
+      else expect(c.textContent).toBe('');
+    });
+  });
+
+  it('掴み手は触れて動かしてもページを送らない', () => {
+    openGantt();
+    const css = document.querySelector('style').textContent;
+    const rule = css.slice(css.indexOf('.gantt-resizer {'), css.indexOf('}', css.indexOf('.gantt-resizer {')));
+    expect(rule).toContain('touch-action: none');
+  });
+
   it('狭い画面では掴み手を出さず、名前の欄は 140px', () => {
     openGantt();
     const css = document.querySelector('style').textContent;
@@ -8857,6 +8967,34 @@ describe('割合で決まる幅の掴み手', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.style.removeProperty('--graph-pane-w');
+  });
+
+  it('起動の時点で測れるなら、その幅を値にする', () => {
+    const orig = window.Element.prototype.getBoundingClientRect;
+    window.Element.prototype.getBoundingClientRect = function () {
+      const next = this.nextElementSibling;
+      if (next && next.id === 'diff-resizer') {
+        return { left: 0, right: 480, top: 0, bottom: 0, width: 480, height: 0 };
+      }
+      return orig.call(this);
+    };
+    try {
+      mount();
+      expect(document.getElementById('diff-resizer').getAttribute('aria-valuenow')).toBe('480');
+    } finally {
+      window.Element.prototype.getBoundingClientRect = orig;
+    }
+  });
+
+  it('隠れていて測れなかったペインも、掴み手に触れた時に測り直す', () => {
+    mount();
+    const handle = document.getElementById('diff-resizer');
+    expect(handle.hasAttribute('aria-valuenow')).toBe(false);
+
+    handle.previousElementSibling.getBoundingClientRect =
+      () => ({ left: 0, right: 520, top: 0, bottom: 0, width: 520, height: 0 });
+    handle.dispatchEvent(new window.FocusEvent('focus'));
+    expect(handle.getAttribute('aria-valuenow')).toBe('520');
   });
 
   it('既定が割合のペインは、今の幅を測って値にし、矢印でそこから動く', () => {

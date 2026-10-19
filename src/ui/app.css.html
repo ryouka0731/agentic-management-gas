@@ -1971,6 +1971,8 @@ button.row-item, button.commit-item { text-align: left; }
   left: calc(var(--gantt-name-w) + var(--sp-4) / 2 - 5px);
   width: 11px;
   z-index: 5;
+  /* 指で掴んだとき、幅を変える代わりに工程表が横に流れないように */
+  touch-action: none;
 }
 
 @media (max-width: 767px) {

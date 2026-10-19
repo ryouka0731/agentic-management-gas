@@ -191,6 +191,9 @@
 
   /** 工程表の名前の欄の掴み手。初めに1つだけ作る */
   var ganttResizer = null;
+
+  /** 工程表の読み込みの番号。遅れて届いた古い返事で、新しい描画を上書きしない */
+  var ganttLoadSeq = 0;
   var mineOnly = false;
   var archiveKeepDays = 30;
 
@@ -1478,6 +1481,9 @@
     handle.setAttribute('aria-valuemin', String(limit.min));
     handle.setAttribute('aria-valuemax', String(limit.max));
     announce(current());
+
+    // 起動時に隠れていたペインは測れず値を持たない。触れた時に測り直す
+    handle.addEventListener('focus', function () { announce(current()); });
 
     try {
       var saved = Number(window.localStorage.getItem(key));
@@ -8263,7 +8269,11 @@
    */
   function ganttScrollToToday() {
     var chart = ganttEl.querySelector('.gantt');
-    if (!chart || !ganttShown) return;
+    if (!chart || !ganttShown) {
+      // 描き直しを待っている (骨組みしか無い)。届いて描いたときに送る
+      ganttToToday = true;
+      return;
+    }
     // 隠れている器は幅が 0 で送れない。印を残し、見えてから描いたときに送る
     if (!ganttEl.clientWidth) return;
     ganttToToday = false;
@@ -8306,12 +8316,44 @@
     return String(day.getDate());
   }
 
+  /**
+   * 今日を左から 1/3 に置けるよう、前後に余白の日を足す。今日が目盛りの端に
+   * あると、送れる幅が足りず端に張り付いたままになる。
+   * ganttLayout (サーバと画面の両方にある) は変えず、描く側で起点をずらす。
+   * 棒の位置と日付への直し (ganttDateAt) は同じ g を使うので食い違わない
+   *
+   * @param {object} g ganttLayout の結果 (書き換える)
+   * @param {number} col 1日の幅
+   */
+  function ganttPadForToday(g, col) {
+    var DAY = 24 * 60 * 60 * 1000;
+    var nameW = parseFloat(getComputedStyle(ganttEl).getPropertyValue('--gantt-name-w')) || 220;
+    var view = ganttEl.clientWidth - nameW;
+    if (view <= 0) return;  // 隠れていて測れない。見えてから描き直したときに足す
+
+    var lead = Math.max(0, Math.ceil((view / 3 - col / 2) / col) - g.todayOffset);
+    var tail = Math.max(0, Math.ceil(view * 2 / 3 / col) - (g.days - g.todayOffset));
+
+    g.from -= lead * DAY;
+    g.to += tail * DAY;
+    g.days += lead + tail;
+    g.todayOffset += lead;
+    g.rows.forEach(function (r) { r.offset += lead; });
+  }
+
   function loadGantt() {
+    var seq = ++ganttLoadSeq;
     // 描き直しでは、人が送った位置を保つ (中身を消すと 0 に戻る)
     var keepScroll = ganttEl.scrollLeft;
     showSkeleton(ganttEl, 'gantt', 5);
+    ganttShown = null;  // 骨組みの間は送れる工程表が無い (「今日」は届いてから送る)
+    // 待つ間に人が送ったら、その位置を奪わない
+    var waitingScroll = ganttEl.scrollLeft;
 
     call('apiIssueList', [''], function (list) {
+      if (seq !== ganttLoadSeq) return;  // もっと新しい読み込みがある
+      if (ganttEl.scrollLeft !== waitingScroll) keepScroll = ganttEl.scrollLeft;
+
       var issues = list || [];
       ganttEl.textContent = '';
       ganttShown = null;
@@ -8332,6 +8374,7 @@
       }
 
       var COL = GANTT_ZOOMS[ganttZoom] || GANTT_ZOOMS.day;
+      ganttPadForToday(g, COL);
       var chart = document.createElement('div');
       chart.className = 'gantt';
       chart.dataset.zoom = ganttZoom;
@@ -8489,7 +8532,9 @@
         ganttEl.scrollLeft = keepScroll;
         ganttSyncResizer();
       }
-    }, failInto(ganttEl));
+    }, function (err) {
+      if (seq === ganttLoadSeq) failInto(ganttEl)(err);
+    });
   }
 
   /**
