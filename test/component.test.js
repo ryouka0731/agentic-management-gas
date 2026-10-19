@@ -7442,6 +7442,74 @@ describe('ポイント・レベル・週の上位', () => {
     expect(document.querySelector('#home-cards .game-card').textContent).not.toMatch(/\d+ 位中/);
   });
 
+  const BADGES = [
+    { key: 'first', label: 'はじめの一歩', done: true, at: '2026-10-01', left: 0 },
+    { key: 'closed10', label: '10件片づけた', done: false, at: '', left: 7 },
+    { key: 'heavy', label: '重いやることを片づけた', done: false, at: '', left: 1 },
+  ];
+
+  it('称号は得たものを日付つきで並べ、まだのものは薄く「あと N 件」と出す', () => {
+    mount({ apiGameState: Object.assign({}, ON, { badges: BADGES }) });
+    const items = Array.from(document.querySelectorAll('#home-cards .game-badges li'));
+    expect(items).toHaveLength(3);
+    expect(items[0].classList.contains('is-done')).toBe(true);
+    expect(items[0].textContent).toContain('はじめの一歩');
+    expect(items[0].textContent).toContain('10/1');
+    expect(items[1].classList.contains('is-done')).toBe(false);
+    expect(items[1].textContent).toContain('あと 7 件');
+    expect(items[2].textContent).toContain('あと 1 件');
+  });
+
+  it('称号が届かなければ並びを出さない', () => {
+    mount({ apiGameState: ON });
+    expect(document.querySelector('#home-cards .game-badges')).toBeNull();
+  });
+
+  it('先週のチームの合計を、先々週の合計と比べて棒で出す。名前は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { lastWeek: 6, weekBefore: 8 } }) });
+    const bar = document.querySelector('#home-cards .game-team-bar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('6');
+    expect(bar.getAttribute('aria-valuemax')).toBe('8');
+    expect(bar.querySelector('span').style.width).toBe('75%');
+    const team = document.querySelector('#home-cards .game-team');
+    expect(team.textContent).toContain('先週のチーム 6');
+    expect(team.textContent).toContain('先々週 8');
+    expect(team.textContent).not.toContain('今週');
+  });
+
+  it('先々週を超えたら棒は満ちたまま。先々週が0でも割らず、aria は 1/1 にする', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { lastWeek: 3, weekBefore: 0 } }) });
+    const bar = document.querySelector('#home-cards .game-team-bar');
+    expect(bar.querySelector('span').style.width).toBe('100%');
+    expect(bar.getAttribute('aria-valuemax')).toBe('1');
+    expect(bar.getAttribute('aria-valuenow')).toBe('1');
+  });
+
+  it('先々週が出せないときは先週の合計だけ。棒は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { lastWeek: 5, weekBefore: null } }) });
+    const team = document.querySelector('#home-cards .game-team');
+    expect(team.textContent).toContain('先週のチーム 5');
+    expect(team.textContent).not.toContain('先々週');
+    expect(document.querySelector('#home-cards .game-team-bar')).toBeNull();
+  });
+
+  it('先週が出せないとき・チームが届かないときは欄ごと出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { lastWeek: null, weekBefore: 4 } }) });
+    expect(document.querySelector('#home-cards .game-team')).toBeNull();
+  });
+
+  it('チームが null なら出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: null }) });
+    expect(document.querySelector('#home-cards .game-team')).toBeNull();
+  });
+
+  it('ポイントは片づけたものと、ほかの人の確認依頼への返事で付くと書く', () => {
+    mount({ apiGameState: ON });
+    const note = document.querySelector('#home-cards .game-note').textContent;
+    expect(note).toContain('片づけた');
+    expect(note).toContain('確認依頼');
+  });
+
   const SETTINGS_ON = Object.assign({}, DEFAULTS.apiSettings, { gameEnabled: true });
 
   it('自分まわりで順位に参加できる。切り替えは並びのボタンと同じ器に入る', () => {

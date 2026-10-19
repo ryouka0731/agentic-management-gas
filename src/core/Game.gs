@@ -111,17 +111,81 @@ function gameIssuePoints_(row, kids) {
   if (motivationIsHeavy_(row)) n += 2;
   if (motivationWaitedDays_(row) >= CLOSE_LONG_DAYS()) n += 2;
 
-  // 小分けの最後の1つ。いまの子の状態で見る (後で子が開き直されたら消える)
-  var sibs = row.parent ? (kids[String(row.parent)] || []) : [];
-  if (sibs.length && !row.archivedAt) {
-    var last = null;
-    for (var i = 0; i < sibs.length; i++) {
-      if (String(sibs[i].state) !== 'closed') { last = null; break; }
-      if (!last || motivationTime_(sibs[i].closedAt) > motivationTime_(last.closedAt)) last = sibs[i];
-    }
-    if (last && String(last.number) === String(row.number)) n += 1;
-  }
+  if (gameLastOfSplit_(row, kids)) n += 1;
   return n;
+}
+
+/**
+ * 小分けの最後の1つか。いまの子の状態で見る (後で子が開き直されたら消える)。
+ * ポイントの +1 と称号「分けたやることを最後まで」が同じ判定を使う。
+ *
+ * @param {object} row 閉じたやること
+ * @param {Object<string, object[]>} kids motivationChildren_()
+ * @returns {boolean}
+ */
+function gameLastOfSplit_(row, kids) {
+  var sibs = row.parent ? (kids[String(row.parent)] || []) : [];
+  if (!sibs.length || row.archivedAt) return false;
+  var last = null;
+  for (var i = 0; i < sibs.length; i++) {
+    if (String(sibs[i].state) !== 'closed') return false;
+    if (!last || motivationTime_(sibs[i].closedAt) > motivationTime_(last.closedAt)) last = sibs[i];
+  }
+  return !!last && String(last.number) === String(row.number);
+}
+
+/**
+ * 台帳のうち、ポイントと称号に要る表。**表ごとに1回だけ読む。** 既に読んだものは読み直さない。
+ *
+ * @param {{issues?: object[], closers?: Object<string, string>, pulls?: object[], reviews?: object[]}} [pre]
+ * @returns {{issues: object[], closers: Object<string, string>, pulls: object[], reviews: object[]}}
+ */
+function gameLedger_(pre) {
+  var got = pre || {};
+  return {
+    issues: got.issues || dbReadAll('issues'),
+    closers: got.closers || motivationClosers_(),
+    pulls: got.pulls || dbReadAll('pulls'),
+    reviews: got.reviews || dbReadAll('reviews'),
+  };
+}
+
+/**
+ * 確認のポイントが付く返事。**ほかの人の依頼への返事**だけ (自分の依頼への確認は数えない)。
+ * 承認・差し戻し・中身のあるコメントを数え、**同じ依頼には1人1日1点まで** (数稼ぎをさせない)。
+ * ポイントと称号「確認を10件返した」が同じ数え方を使う。
+ *
+ * @param {object[]} pulls
+ * @param {object[]} reviews
+ * @returns {Array<{who: string, day: string}>}
+ */
+function gameReviewCredits_(pulls, reviews) {
+  var authors = {};
+  for (var p = 0; p < pulls.length; p++) authors[String(pulls[p].number)] = String(pulls[p].author || '');
+  var seen = {};
+  var out = [];
+  for (var r = 0; r < reviews.length; r++) {
+    var rv = reviews[r];
+    var state = String(rv.state);
+    if (state === 'comment') {
+      // 台帳から数の 0 で返ることがある。真偽で見ると中身ありの '0' を空と読む
+      var body = rv.body === null || rv.body === undefined ? '' : String(rv.body);
+      if (!body.replace(/^\s+|\s+$/g, '')) continue;
+    } else if (state !== 'approve' && state !== 'request_changes') {
+      continue;
+    }
+    var reviewer = String(rv.reviewer || '');
+    var author = authors[String(rv.prNumber)];
+    // 依頼が見つからない返事は、誰の依頼か分からないので数えない
+    if (!reviewer || author === undefined || reviewer === author) continue;
+    var day = motivationDay_(rv.at);
+    if (!day) continue;
+    var key = String(rv.prNumber) + '|' + reviewer + '|' + day;
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ who: reviewer, day: day });
+  }
+  return out;
 }
 
 /**
@@ -140,7 +204,8 @@ function gamePointsByPerson_(from, to) {
  * 通算と今週を別々に数えると、同じ表を2回ずつ読むことになる。
  *
  * @param {Array<Array<string>>} spans [[from, to], ...] ('' なら端なし)
- * @param {{issues?: object[], closers?: Object<string, string>}} [pre] 既に読んだもの
+ * @param {{issues?: object[], closers?: Object<string, string>, pulls?: object[],
+ *   reviews?: object[]}} [pre] 既に読んだもの
  * @returns {Array<Object<string, number>>} spans と同じ順
  */
 function gamePointsBySpans_(spans, pre) {
@@ -156,44 +221,29 @@ function gamePointsBySpans_(spans, pre) {
     }
   }
 
-  var issues = got.issues || dbReadAll('issues');
+  var led = gameLedger_(got);
+  var issues = led.issues;
   var kids = motivationChildren_(issues);
-  var closers = got.closers || motivationClosers_();
   for (var i = 0; i < issues.length; i++) {
     var row = issues[i];
     if (String(row.state) !== 'closed') continue;
     var day = motivationDay_(row.closedAt);
     if (!day) continue;
-    var who = motivationCredited_(row, closers);
+    var who = motivationCredited_(row, led.closers);
     if (!who.length) continue;
     // 頭数で割る。割らないと人ごとの合計を足しても全体に戻らない
     var share = gameIssuePoints_(row, kids) / who.length;
     for (var w = 0; w < who.length; w++) add(day, who[w], share);
   }
 
-  var pulls = dbReadAll('pulls');
-  var authors = {};
-  for (var p = 0; p < pulls.length; p++) {
-    authors[String(pulls[p].number)] = String(pulls[p].author || '');
-    if (String(pulls[p].state) === 'merged') {
-      add(motivationDay_(pulls[p].mergedAt), String(pulls[p].author || ''), 2);
+  for (var p = 0; p < led.pulls.length; p++) {
+    if (String(led.pulls[p].state) === 'merged') {
+      add(motivationDay_(led.pulls[p].mergedAt), String(led.pulls[p].author || ''), 2);
     }
   }
 
-  // 同じ依頼には1人1回。最初の確認の日で数える
-  var reviews = dbReadAll('reviews');
-  var seen = {};
-  for (var r = 0; r < reviews.length; r++) {
-    var rv = reviews[r];
-    var state = String(rv.state);
-    if (state !== 'approve' && state !== 'request_changes') continue;
-    var reviewer = String(rv.reviewer || '');
-    if (!reviewer || reviewer === authors[String(rv.prNumber)]) continue;
-    var key = String(rv.prNumber) + '|' + reviewer;
-    if (seen[key]) continue;
-    seen[key] = true;
-    add(motivationDay_(rv.at), reviewer, 1);
-  }
+  var credits = gameReviewCredits_(led.pulls, led.reviews);
+  for (var r = 0; r < credits.length; r++) add(credits[r].day, credits[r].who, 1);
 
   // 浮動小数の端数 (1/3 を3回足して 0.9999999999999999) だけ落とす。0.1 刻みに
   // 丸めると、3人で分けた1点が 0.3 ずつになり合計が 0.9 に減る。レベルの境目や
@@ -256,25 +306,130 @@ function gameLevelSeenAck_(email, n) {
 }
 
 /**
- * 本人の合計・今週・レベル・次のレベルまで・参加しているか。**順位は返さない**
- * (上位にいない人に「◯位」を見せると下位の印になる)。
+ * 本人の合計・今週・レベル・次のレベルまで・参加しているか・称号・先週のチーム。
+ * **順位は返さない** (上位にいない人に「◯位」を見せると下位の印になる)。
  *
  * levelFrom はいまのレベルに届いた合計。棒はここから nextAt までの進み具合で描く。
+ *
+ * **台帳は表ごとに1回だけ読む。** 通算・今週・先週・先々週と称号を、同じ読みから数える。
  *
  * @param {string} email
  * @param {Date} now
  * @returns {{total: number, week: number, level: number, levelFrom: number, nextAt: number,
- *   playing: boolean}}
+ *   playing: boolean, badges: object[], team: ({lastWeek: (number|null), weekBefore: (number|null)}|null)}}
  */
 function gameMine_(email, now) {
   var me = String(email || '');
   var span = motivationSpan_(now);
-  var both = gamePointsBySpans_([['', ''], [span.weekStart, span.today]]);
-  var total = both[0][me] || 0;
-  var week = both[1][me] || 0;
+  var led = gameLedger_();
+  var spans = gamePointsBySpans_([['', ''], [span.weekStart, span.today],
+    [gameShiftDay_(span.weekStart, -7), gameShiftDay_(span.weekStart, -1)],
+    [gameShiftDay_(span.weekStart, -14), gameShiftDay_(span.weekStart, -8)]], led);
+  var total = spans[0][me] || 0;
+  var week = spans[1][me] || 0;
   var level = Math.max(gameLevel(total), gameLevelSeen_(me));
   return { total: total, week: week, level: level, levelFrom: gameLevelAt(level),
-    nextAt: gameLevelAt(level + 1), playing: gamePlayers_().indexOf(me) >= 0 };
+    nextAt: gameLevelAt(level + 1), playing: gamePlayers_().indexOf(me) >= 0,
+    badges: gameBadges_(me, led), team: gameTeam_(me, spans[2], spans[3]) };
+}
+
+/**
+ * 'YYYY-MM-DD' を n 日ずらす。
+ *
+ * @param {string} day
+ * @param {number} n
+ * @returns {string}
+ */
+function gameShiftDay_(day, n) {
+  var d = new Date(day + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().substring(0, 10);
+}
+
+/**
+ * 先週と先々週のチームの合計。**名前もアドレスも返さない。** 参加していない人も合計には入る。
+ *
+ * - **終わった週だけ返す。** 今週の合計は動くので、読むたびの差から1人の増えた分が見える
+ * - **週ごとに、見る人のほかに2人以上ポイントのあった週だけ数を出し、そうでなければ null。**
+ *   見る人は自分の点を知っているので、合計から引けば残りがわかる。ほかに1人しかいない週は、
+ *   その人 (参加していない人も含む) の数がそのまま見えてしまう
+ * - **見る人が分からない (空) ときは null。** 全員を「ほかの人」と数えてしまう
+ *
+ * チームは台帳全体 (チームの毎月の目標 teamGoal と同じ範囲)。
+ *
+ * @param {string} me 見る人
+ * @param {Object<string, number>} lastWeek
+ * @param {Object<string, number>} weekBefore
+ * @returns {{lastWeek: (number|null), weekBefore: (number|null)}|null}
+ */
+function gameTeam_(me, lastWeek, weekBefore) {
+  if (!me) return null;
+  function total(o) {
+    var others = 0;
+    var n = 0;
+    for (var e in o) {
+      n += o[e];
+      if (e !== me && o[e] > 0) others++;
+    }
+    return others >= 2 ? Math.round(n * 1e9) / 1e9 : null;
+  }
+  return { lastWeek: total(lastWeek), weekBefore: total(weekBefore) };
+}
+
+/**
+ * 称号の決まり。並びは画面に出す順。n 件目を満たした日を得た日とする。
+ *
+ * @returns {Array<{key: string, label: string, kind: string, n: number}>}
+ */
+function GAME_BADGES() {
+  return [
+    { key: 'first', label: 'はじめの一歩', kind: 'closed', n: 1 },
+    { key: 'closed10', label: '10件片づけた', kind: 'closed', n: 10 },
+    { key: 'closed50', label: '50件片づけた', kind: 'closed', n: 50 },
+    { key: 'closed100', label: '100件片づけた', kind: 'closed', n: 100 },
+    { key: 'heavy', label: '重いやることを片づけた', kind: 'heavy', n: 1 },
+    { key: 'longAwaited', label: '待たせていたものを片づけた', kind: 'longAwaited', n: 1 },
+    { key: 'review10', label: '確認を10件返した', kind: 'review', n: 10 },
+    { key: 'split', label: '分けたやることを最後まで片づけた', kind: 'split', n: 1 },
+  ];
+}
+
+/**
+ * 本人の称号。**本人にだけ見せる。台帳から数え、保存しない** (取り消せば消える)。
+ *
+ * **画面から直に呼べない名前にする (末尾 _)。** アドレスを受けるので、呼べるとほかの人の
+ * 行いを覗ける。apiGameState が開いている本人のアドレスだけを渡す。
+ *
+ * やることは担当が複数でも1人1件と数える (片づけた件数であって、ポイントの取りぶんではない)。
+ *
+ * @param {string} email
+ * @param {object} led gameLedger_()
+ * @returns {Array<{key: string, label: string, done: boolean, at: string, left: number}>}
+ */
+function gameBadges_(email, led) {
+  var me = String(email || '');
+  var days = { closed: [], heavy: [], longAwaited: [], review: [], split: [] };
+  var kids = motivationChildren_(led.issues);
+  for (var i = 0; i < led.issues.length; i++) {
+    var row = led.issues[i];
+    if (String(row.state) !== 'closed') continue;
+    var day = motivationDay_(row.closedAt);
+    if (!day || motivationCredited_(row, led.closers).indexOf(me) < 0) continue;
+    days.closed.push(day);
+    if (motivationIsHeavy_(row)) days.heavy.push(day);
+    if (motivationWaitedDays_(row) >= CLOSE_LONG_DAYS()) days.longAwaited.push(day);
+    if (gameLastOfSplit_(row, kids)) days.split.push(day);
+  }
+  var credits = gameReviewCredits_(led.pulls, led.reviews);
+  for (var r = 0; r < credits.length; r++) if (credits[r].who === me) days.review.push(credits[r].day);
+  for (var k in days) days[k].sort();
+
+  return GAME_BADGES().map(function (b) {
+    var got = days[b.kind];
+    var done = got.length >= b.n;
+    return { key: b.key, label: b.label, done: done, at: done ? got[b.n - 1] : '',
+      left: Math.max(b.n - got.length, 0) };
+  });
 }
 
 /**

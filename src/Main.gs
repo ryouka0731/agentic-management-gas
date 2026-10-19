@@ -3480,8 +3480,8 @@ function apiSetGameEnabled(on) {
 }
 
 /**
- * 本人のポイント・レベル・参加しているか (Web App API)。オフなら {enabled: false}。
- * **順位は返さない。**
+ * 本人のポイント・レベル・参加しているか・称号・先週のチーム (Web App API)。
+ * オフなら {enabled: false}。**順位は返さない。** 称号は本人のぶんだけ、チームは合計だけ。
  *
  * @returns {object}
  */
@@ -3491,7 +3491,15 @@ function apiGameState() {
   var m = gameMine_(me, new Date());
   return { enabled: true, total: plainNumber(m.total), week: plainNumber(m.week),
     level: plainNumber(m.level), levelFrom: plainNumber(m.levelFrom), nextAt: plainNumber(m.nextAt),
-    playing: !!m.playing };
+    playing: !!m.playing,
+    badges: m.badges.map(function (b) {
+      return { key: plainText(b.key), label: plainText(b.label), done: !!b.done, at: plainDay(b.at),
+        left: plainNumber(b.left) };
+    }),
+    // 終わった週だけ。名前もアドレスも入れない。見る人のほかに2人いない週は null
+    // (引き算でその人の数が見える)。見る人が分からなければ丸ごと null
+    team: m.team ? { lastWeek: m.team.lastWeek === null ? null : plainNumber(m.team.lastWeek),
+      weekBefore: m.team.weekBefore === null ? null : plainNumber(m.team.weekBefore) } : null };
 }
 
 /**
