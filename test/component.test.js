@@ -8252,20 +8252,56 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(full()).toBe(false);
   });
 
-  it('リンクに ?doc=…&full=1 が入り、URL は1回だけ尋ねる', async () => {
+  it('リンクに ?doc=…&full=1 が入る。URL は開いたときに1回だけ尋ね、押した中で同期に写す', async () => {
     const copied = [];
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
       value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
     const app = mount();
     openFirst();
-    document.getElementById('doc-link-btn').click();
-    await Promise.resolve();
-    expect(copied.pop()).toBe('https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1');
-    expect(document.getElementById('snackbar').textContent).toContain('コピーしました');
-    document.getElementById('doc-link-btn').click();
-    await Promise.resolve();
-    expect(copied.pop()).toBe('https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1');
+    // 押す前に尋ね終えている (押してから尋ねると、ブラウザが書き込みを断る)
     expect(app.calls.filter((c) => c.name === 'apiAppUrl')).toHaveLength(1);
+    document.getElementById('doc-link-btn').click();
+    // 待たずに書き込まれている = 押した操作の中で呼んだ
+    expect(copied).toEqual(['https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1']);
+    await Promise.resolve();
+    expect(document.getElementById('snackbar').textContent).toContain('コピーしました');
+    // もう一度開き直して押しても、尋ね直さない
+    document.querySelector('.nav-item[data-tab="docs"]').click();
+    document.querySelector('.doc-open').click();
+    document.getElementById('doc-link-btn').click();
+    expect(copied).toHaveLength(2);
+    expect(app.calls.filter((c) => c.name === 'apiAppUrl')).toHaveLength(1);
+  });
+
+  it('URL がまだ届いていなければ、尋ねてから欄に出す (返事のあとには写そうとしない)', () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    let fail = true;
+    const app = mount({ apiAppUrl: () => (fail ? new Error('混み合っています') : DEFAULTS.apiAppUrl) });
+    openFirst();
+    fail = false;
+    document.getElementById('doc-link-btn').click();
+    expect(app.calls.filter((c) => c.name === 'apiAppUrl')).toHaveLength(2);
+    expect(copied).toEqual([]);
+    const row = document.getElementById('doc-link-row');
+    expect(row.hidden).toBe(false);
+    expect(row.querySelector('code').textContent).toBe('https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1');
+  });
+
+  it('先に尋ねて断られても、次に文書を開いたときに尋ね直す', () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    let fail = true;
+    const app = mount({ apiAppUrl: () => (fail ? new Error('混み合っています') : DEFAULTS.apiAppUrl) });
+    openFirst();
+    fail = false;
+    document.querySelector('.nav-item[data-tab="docs"]').click();
+    document.querySelector('.doc-open').click();
+    expect(app.calls.filter((c) => c.name === 'apiAppUrl')).toHaveLength(2);
+    document.getElementById('doc-link-btn').click();
+    expect(copied).toHaveLength(1);
   });
 
   it('写せないときは、選んで写せる欄にリンクを出す', async () => {
