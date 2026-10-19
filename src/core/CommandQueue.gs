@@ -291,6 +291,7 @@ function runCommandFileLocked_(file, queue, done) {
  * 命令ファイルを置いた人。分からなければ空。
  *
  * 共有ドライブのファイルは持ち主を持たず、getOwner() が null を返す。
+ * そのときは最後に書いた人 (lastModifyingUser) を読む。
  *
  * @param {GoogleAppsScript.Drive.File} file
  * @returns {string}
@@ -298,8 +299,16 @@ function runCommandFileLocked_(file, queue, done) {
 function commandOwner_(file) {
   try {
     var owner = file.getOwner();
-    return owner ? String(owner.getEmail() || '') : '';
+    if (owner) return String(owner.getEmail() || '');
   } catch (e) {
+    // 共有ドライブのファイルは持ち主を持たない。下で最後に書いた人を読む
+  }
+  // 使い道は「誰の道具が古いか」(kitRemember_) だけ。書き換えられるので権限の判断には使わない
+  if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return '';
+  try {
+    var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });
+    return String((meta && meta.lastModifyingUser && meta.lastModifyingUser.emailAddress) || '');
+  } catch (e2) {
     return '';
   }
 }
@@ -307,8 +316,8 @@ function commandOwner_(file) {
 /**
  * 命令を queue から引き上げる。
  *
- * **2つ呼ぶ必要がある。** Drive のファイルは複数のフォルダに属せるため、
- * `addFile` だけでは queue に残り、`removeFile` だけでは行き先が無くなる。
+ * **`moveTo` で移す。** 共有ドライブのファイルは親を1つしか持てず、`addFile` は例外になる。
+ * 以前の `addFile` + `removeFile` の組は、マイドライブでしか動かなかった。
  *
  * 実行した命令も、戻ってきた命令も、同じ道で片付ける。片方だけ別扱いに
  * すると、片方が queue に残って毎回の起動で見に来ることになる。
@@ -318,8 +327,7 @@ function commandOwner_(file) {
  * @param {GoogleAppsScript.Drive.Folder} done
  */
 function commandRetire_(file, queue, done) {
-  done.addFile(file);
-  queue.removeFile(file);
+  file.moveTo(done);
 }
 
 /**
@@ -331,6 +339,55 @@ function commandRetire_(file, queue, done) {
  */
 function commandAlreadyRan_(done, name) {
   return done.getFilesByName(name).hasNext();
+}
+
+/**
+ * キューを動かしている人と、最後に回った時刻。
+ *
+ * トリガーは setupCommandQueue() を実行した人の権限で走る。共有ドライブではその人が
+ * 抜けると止まるが、他人のトリガーは見えないので、止まったことに誰も気づかない。
+ * 設定の画面に出し、1時間より前に止まっていれば引き継ぎ方を出す。
+ *
+ * @param {Date} [now]
+ * @returns {{runner: string, lastRun: string, stale: boolean}}
+ */
+function queueStatus_(now) {
+  var props = PropertiesService.getScriptProperties();
+  var runner = String(props.getProperty('QUEUE_RUNNER') || '');
+  var lastRun = String(props.getProperty('QUEUE_LAST_RUN') || '');
+  var runnerAt = String(props.getProperty('QUEUE_RUNNER_AT') || '');
+  var t = (now || new Date()).getTime();
+  // 回った時刻と仕掛けた時刻の新しいほうで決める。仕掛けた直後は最初の1分が来るまで
+  // 回った時刻が無く、それを止まったと読むと、入れたばかりのキューが「止まっています」と
+  // 出る。仕掛け直した直後も同じ (前の人の古い時刻が残っている)。
+  // QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らないので、それより前から
+  // 動いている番頭では空のまま。どちらも無ければ未設定。何か入っているのに時刻が
+  // 1つも読めなければ、回っているか分からないので止まった側に倒す
+  var newest = NaN;
+  [lastRun, runnerAt].forEach(function (v) {
+    var at = v ? Date.parse(v) : NaN;
+    if (!isNaN(at) && (isNaN(newest) || at > newest)) newest = at;
+  });
+  var stale = isNaN(newest) ? !!(runner || lastRun) : t - newest > 60 * 60 * 1000;
+  return { runner: runner, lastRun: lastRun, stale: stale };
+}
+
+/**
+ * 確かめの入口が手で回したキューの時刻を、回す前の値に戻す。
+ *
+ * 手で processCommandQueue() を呼ぶと回った時刻が今になり、止まったトリガーが
+ * 1時間のあいだ「動いています」に見える。確かめた人ほど止まったことに気づけなくなる。
+ *
+ * @param {?string} before 回す前の QUEUE_LAST_RUN (無ければ null)
+ */
+function queueLastRunRestore_(before) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (before === null || before === undefined) props.deleteProperty('QUEUE_LAST_RUN');
+    else props.setProperty('QUEUE_LAST_RUN', before);
+  } catch (e) {
+    Logger.log('回った時刻を戻せませんでした: ' + e.message);
+  }
 }
 
 /**
@@ -353,6 +410,15 @@ function processCommandQueue() {
    */
   var queue = commandQueueFolder_();
   var done = commandDoneFolder_();
+
+  // 回ったことを残す (鍵は取らない。上書きするだけで、ずれても困らない)。
+  // **置き場を開けてから書く。** 先に書くと、Drive に入れなくなった人のトリガーが
+  // 毎分落ちているのに、画面には「動いています」と出る
+  try {
+    PropertiesService.getScriptProperties().setProperty('QUEUE_LAST_RUN', new Date().toISOString());
+  } catch (e) {
+    Logger.log('回った時刻を残せませんでした: ' + e.message);
+  }
 
   // イテレータを回しながらファイルを移動すると取りこぼす。
   // 先に対象を集めてから処理する

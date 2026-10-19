@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
@@ -428,5 +429,108 @@ describe('命令を置いた人', () => {
     ctx.processCommandQueue();
 
     expect(readResult(ctx, 'k2').ok).toBe(true);
+  });
+});
+
+describe('キューを動かしている人', () => {
+  // apiSettings はスクラムの設定も読むので、scrum-api.test.js と同じ読み込み集合を使う
+  const SCRUM_SOURCES = (() => {
+    const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
+    return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]).concat(['src/core/CommandQueue.gs']);
+  })();
+  function setup() {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...SCRUM_SOURCES);
+    ctx.repoInit('agentic-management');
+    return { ctx, fake };
+  }
+
+  it('setupCommandQueue が実行した人を覚え、processCommandQueue が回った時刻を書く', () => {
+    const { ctx } = setup();
+    ctx.setupCommandQueue();
+    ctx.processCommandQueue();
+    const st = ctx.queueStatus_();
+    expect(st.runner).toBe('tester@example.com');
+    expect(st.lastRun).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(st.stale).toBe(false);
+  });
+
+  it('1時間より前に止まっていれば stale', () => {
+    const { ctx } = setup();
+    ctx.setupCommandQueue();
+    ctx.processCommandQueue();
+    const later = new Date(Date.now() + 61 * 60 * 1000);
+    expect(ctx.queueStatus_(later).stale).toBe(true);
+  });
+
+  it('何も仕掛けていなければ stale ではない (未設定)', () => {
+    const { ctx } = setup();
+    expect(ctx.queueStatus_().stale).toBe(false);
+  });
+
+  it('仕掛けた直後 (まだ一度も回っていない) は stale ではない', () => {
+    const { ctx } = setup();
+    ctx.setupCommandQueue();
+    expect(ctx.queueStatus_().lastRun).toBe('');
+    expect(ctx.queueStatus_().stale).toBe(false);
+  });
+
+  it('仕掛けてから2時間、一度も回っていなければ stale', () => {
+    const { ctx, fake } = setup();
+    ctx.setupCommandQueue();
+    const props = fake.PropertiesService.getScriptProperties();
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('回った時刻が古くても、仕掛け直した直後なら stale ではない', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    props.setProperty('QUEUE_RUNNER', 'tester@example.com');
+    props.setProperty('QUEUE_LAST_RUN', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 10 * 60 * 1000).toISOString());
+    expect(ctx.queueStatus_().stale).toBe(false);
+    // 仕掛けた時刻も古ければ stale
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString());
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('置き場を開けなければ回った時刻を書かない (Drive に入れないトリガーを「動いています」と見せない)', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    props.setProperty('QUEUE_LAST_RUN', old);
+    ctx.commandQueueFolder_ = () => { throw new Error('アクセスできません'); };
+    expect(() => ctx.processCommandQueue()).toThrow(/アクセスできません/);
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(old);
+  });
+
+  it('処理済みの置き場を開けなくても回った時刻を書かない', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    ctx.commandDoneFolder_ = () => { throw new Error('アクセスできません'); };
+    expect(() => ctx.processCommandQueue()).toThrow(/アクセスできません/);
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(null);
+  });
+
+  it('前から動いている番頭 (仕掛けた人の記録が無い) でも、回った時刻で決める', () => {
+    const { ctx, fake } = setup();
+    // QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らない
+    ctx.processCommandQueue();
+    const st = ctx.queueStatus_();
+    expect(st.runner).toBe('');
+    expect(st.stale).toBe(false);
+    expect(ctx.queueStatus_(new Date(Date.now() + 61 * 60 * 1000)).stale).toBe(true);
+    // 読めない時刻は、回っているか分からないので止まった側に倒す
+    fake.PropertiesService.getScriptProperties().setProperty('QUEUE_LAST_RUN', 'あとで');
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('apiSettings は管理者にだけ返す', () => {
+    const { ctx, fake } = setup();
+    ctx.setupCommandQueue();
+    expect(ctx.apiSettings().queue.runner).toBe('tester@example.com');
+    fake._setUser('viewer@example.com');
+    expect(ctx.apiSettings().queue).toBe(null);
   });
 });

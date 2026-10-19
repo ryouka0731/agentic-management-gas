@@ -12103,6 +12103,7 @@
       settingsEl.textContent = '';
       settingsEl.appendChild(makeScrumSettings());
       settingsEl.appendChild(makeGameSettings());
+      if (settings.canEdit && settings.queue) settingsEl.appendChild(makeQueueSettings());
     });
   }
 
@@ -12179,6 +12180,57 @@
   }
 
   /**
+   * 手元からの命令を受け付ける仕掛け (コマンドキュー) の節。管理者にだけ出す。
+   *
+   * 仕掛けた人の権限で1分ごとに回る。その人が抜けると止まり、他人からは見えない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeQueueSettings() {
+    var q = settings.queue || {};
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'queue-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('手元からの命令の受付 '));
+    // 仕掛けた人 (runner) は setupCommandQueue() を実行し直すまで入らない。前から
+    // 動いている番頭では空なので、回った時刻 (lastRun) があれば動いているとみなす
+    var known = !!(q.runner || q.lastRun);
+    head.appendChild(makePill(!known ? '未設定' : q.stale ? '止まっています' : '動いています',
+      !known || q.stale ? 'state' : 'state state-open'));
+    box.appendChild(head);
+
+    var at = q.lastRun ? new Date(q.lastRun) : null;
+    // 台帳と同じく人が書き換えられる値なので、読めない時刻で Invalid Date と出さない
+    var when = !at ? 'まだありません' : isNaN(at.getTime()) ? '不明' : at.toLocaleString('ja-JP');
+    var who = document.createElement('p');
+    // 止まっているときに「動いています」と書かない (札と本文が食い違う)
+    var unknownWho = '仕掛けた人は分かりません。setupCommandQueue() を実行し直すと記録されます';
+    who.textContent = !known ? 'まだ仕掛けていません。'
+      : (q.stale
+        ? (q.runner
+          ? q.runner + ' さんの権限で動かしていましたが、止まっているようです。'
+          : '止まっているようです (' + unknownWho + ')。')
+        : (q.runner
+          ? q.runner + ' さんの権限で1分ごとに動いています。'
+          : '1分ごとに動いています (' + unknownWho + ')。')) +
+        '最後に動いたのは ' + when + '。';
+    box.appendChild(who);
+
+    if (!known || q.stale) {
+      var how = document.createElement('p');
+      how.className = 'row-meta';
+      // setupCommandQueue() は assertOwner_ で持ち主だけに通す。投稿者などの管理者には動かない
+      how.textContent = '持ち主 (共有ドライブでは管理者の役割の人) が Apps Script のエディタで ' +
+        'setupCommandQueue() を実行すると、その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
+      box.appendChild(how);
+    }
+    return box;
+  }
+
+  /**
    * ポイント・レベル・週の上位の切り替え。既定はオフ。管理者だけ切り替えられる。
    *
    * @returns {HTMLElement}
@@ -12232,7 +12284,7 @@
   }
 
   /**
-   * プロダクトゴールか完了の定義を、読む・直す欄。直せるのは持ち主だけ。
+   * プロダクトゴールか完了の定義を、読む・直す欄。直せるのは管理者だけ。
    *
    * @param {string} kind
    * @param {string} label
