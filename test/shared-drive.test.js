@@ -76,9 +76,13 @@ describe('共有ドライブで消す', () => {
   it('投稿者が改訂版を捨てようとすると、要る役割を添えて断る。改訂版は残す', () => {
     const { ctx, fake } = setupShared();
     makeBranch(fake, ctx);
-    fake._denyTrash(true);
+    const work = ctx.dbReadAll('files').filter((r) => String(r.path).indexOf('branches/見直し/') === 0);
+    expect(work.length).toBeGreaterThan(0);
+    // フォルダだけ断る。ファイルが先に消されるなら、作業コピーが消えてしまう
+    fake._denyTrashFor((item) => typeof item.createFolder === 'function');
     expect(() => ctx.branchDelete('見直し')).toThrow('コンテンツ管理者');
     expect(ctx.dbFindOne('branches', 'name', '見直し').state).toBe('open');
+    for (const r of work) expect(fake.DriveApp.getFileById(r.fileId).isTrashed()).toBe(false);
   });
 
   it('マイドライブでは今までどおり、消せなくても改訂版を閉じる', () => {
