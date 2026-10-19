@@ -302,6 +302,13 @@
             <button class="seg" id="view-trash" aria-pressed="false">捨てたもの</button>
           </div>
 
+          <div class="segmented" id="gantt-zoom" role="group" aria-label="工程表の細かさ" hidden>
+            <button class="seg" type="button" data-zoom="day" aria-pressed="true">日</button>
+            <button class="seg" type="button" data-zoom="week" aria-pressed="false">週</button>
+            <button class="seg" type="button" data-zoom="month" aria-pressed="false">月</button>
+          </div>
+          <button class="btn" id="gantt-today" type="button" hidden>今日</button>
+
           <label class="tally-switch" id="tally-unit-box" hidden>
             <span class="row-meta">区切り</span>
             <select id="tally-unit" aria-label="集計の区切り"></select>
