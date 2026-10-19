@@ -579,7 +579,18 @@ describe('画面に渡せる形か', () => {
       if (!out.length) throw new Error('検索の一覧が空のまま検査されている');
       return out;
     }],
-    ['apiGameState', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameState(); }],
+    ['apiGameState', (ctx) => {
+      ctx.apiSetGameEnabled(true);
+      closedToday(ctx);
+      // チームの合計は2人から出る
+      const other = ctx.apiIssueCreate('ほかの人', '', []).number;
+      ctx.apiIssueUpdate(other, { assignee: 'b@example.com' });
+      ctx.issueClose(other, null);
+      const out = ctx.apiGameState();
+      if (!out.badges.some((b) => b.done && b.at)) throw new Error('得た称号が空のまま検査されている');
+      if (!out.team) throw new Error('チームの合計が空のまま検査されている');
+      return out;
+    }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
     ['apiGameJoin', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameJoin(true); }],
     ['apiGameLevelSeen', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameLevelSeen(1); }],

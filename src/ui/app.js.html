@@ -9309,11 +9309,74 @@
       card.appendChild(list);
     }
 
+    var team = makeGameTeam(game.team);
+    if (team) card.appendChild(team);
+    var badges = makeGameBadges(game.badges);
+    if (badges) card.appendChild(badges);
+
     var note = document.createElement('p');
     note.className = 'row-meta game-note';
     note.textContent = '片づけたものの重さで付きます。人事の評価には使いません。月曜にゼロから数え直します';
     card.appendChild(note);
     return card;
+  }
+
+  /**
+   * チームの今週の合計を、先週の合計を目標に棒で見せる。**名前は出さない。**
+   * サーバが 2人未満のチームでは null を返す (1人だと本人の数がそのまま見える)。
+   *
+   * @param {{week: number, lastWeek: number}|null|undefined} team
+   * @returns {HTMLElement|null}
+   */
+  function makeGameTeam(team) {
+    if (!team) return null;
+    var week = Number(team.week || 0);
+    var last = Number(team.lastWeek || 0);
+    var box = document.createElement('div');
+    box.className = 'game-team';
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = 'チームの今週 ' + pointWords(week) + ' ・ 先週 ' + pointWords(last);
+    box.appendChild(head);
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar game-team-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', '先週の合計までの進み具合');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(pointWords(last)));
+    bar.setAttribute('aria-valuenow', String(pointWords(Math.min(week, last))));
+    var fill = document.createElement('span');
+    // 先週が0なら割らない。今週に1つでもあれば満ちたとする
+    var ratio = last > 0 ? week / last : (week > 0 ? 1 : 0);
+    fill.style.width = Math.min(100, Math.max(0, Math.round(ratio * 100))) + '%';
+    bar.appendChild(fill);
+    box.appendChild(bar);
+    return box;
+  }
+
+  /**
+   * 本人の称号。得たものは得た日を添え、まだのものは薄く「あと N 件」と出す (次の目標が見える)。
+   *
+   * @param {Array<{key: string, label: string, done: boolean, at: string, left: number}>} badges
+   * @returns {HTMLElement|null}
+   */
+  function makeGameBadges(badges) {
+    if (!badges || !badges.length) return null;
+    var list = document.createElement('ul');
+    list.className = 'game-badges';
+    list.setAttribute('aria-label', '称号');
+    badges.forEach(function (b) {
+      var li = document.createElement('li');
+      if (b.done) {
+        li.className = 'is-done';
+        var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(b.at || ''));
+        li.textContent = b.label + (m ? ' (' + Number(m[1]) + '/' + Number(m[2]) + ')' : '');
+      } else {
+        li.textContent = b.label + ' ・ あと ' + Number(b.left || 0) + ' 件';
+      }
+      list.appendChild(li);
+    });
+    return list;
   }
 
   /**
