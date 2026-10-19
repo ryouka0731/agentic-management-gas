@@ -9735,11 +9735,83 @@
       card.appendChild(list);
     }
 
+    var team = makeGameTeam(game.team);
+    if (team) card.appendChild(team);
+    var badges = makeGameBadges(game.badges);
+    if (badges) card.appendChild(badges);
+
     var note = document.createElement('p');
     note.className = 'row-meta game-note';
-    note.textContent = '片づけたものの重さで付きます。人事の評価には使いません。月曜にゼロから数え直します';
+    note.textContent = '片づけたものの重さと、ほかの人の確認依頼への返事で付きます。人事の評価には使いません。' +
+      '月曜にゼロから数え直します';
     card.appendChild(note);
     return card;
+  }
+
+  /**
+   * 先週のチームの合計を、先々週の合計と比べて棒で見せる。**名前は出さない。**
+   * 終わった週だけを使う (今週の合計は動くので、読むたびの差で1人の増えた分が見える)。
+   * サーバは、見る人のほかに2人いない週を null で返す (引き算でその人の数が見える)。
+   * 先週が null なら欄ごと出さず、先々週が null なら先週の合計だけ出して棒は出さない。
+   *
+   * @param {{lastWeek: (number|null), weekBefore: (number|null)}|null|undefined} team
+   * @returns {HTMLElement|null}
+   */
+  function makeGameTeam(team) {
+    function has(v) { return v !== null && v !== undefined && v !== ''; }
+    if (!team || !has(team.lastWeek)) return null;
+    var week = Number(team.lastWeek) || 0;
+    var hasBefore = has(team.weekBefore);
+    var before = hasBefore ? (Number(team.weekBefore) || 0) : 0;
+    var box = document.createElement('div');
+    box.className = 'game-team';
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '先週のチーム ' + pointWords(week) + (hasBefore ? ' ・ 先々週 ' + pointWords(before) : '');
+    box.appendChild(head);
+    if (!hasBefore) return box;
+
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar game-team-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', '先々週の合計に比べた先週の合計');
+    // 先々週が0なら割らない。先週に1つでもあれば満ちたとし、aria も 1/1 にそろえる
+    var max = before > 0 ? pointWords(before) : 1;
+    var now = before > 0 ? pointWords(Math.min(week, before)) : (week > 0 ? 1 : 0);
+    bar.setAttribute('aria-valuemin', 0);
+    bar.setAttribute('aria-valuemax', max);
+    bar.setAttribute('aria-valuenow', now);
+    var fill = document.createElement('span');
+    var ratio = before > 0 ? week / before : now;
+    fill.style.width = Math.min(100, Math.max(0, Math.round(ratio * 100))) + '%';
+    bar.appendChild(fill);
+    box.appendChild(bar);
+    return box;
+  }
+
+  /**
+   * 本人の称号。得たものは得た日を添え、まだのものは薄く「あと N 件」と出す (次の目標が見える)。
+   *
+   * @param {Array<{key: string, label: string, done: boolean, at: string, left: number}>} badges
+   * @returns {HTMLElement|null}
+   */
+  function makeGameBadges(badges) {
+    if (!badges || !badges.length) return null;
+    var list = document.createElement('ul');
+    list.className = 'game-badges';
+    list.setAttribute('aria-label', '称号');
+    badges.forEach(function (b) {
+      var li = document.createElement('li');
+      if (b.done) {
+        li.className = 'is-done';
+        var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(b.at || ''));
+        li.textContent = b.label + (m ? ' (' + Number(m[1]) + '/' + Number(m[2]) + ')' : '');
+      } else {
+        li.textContent = b.label + ' ・ あと ' + Number(b.left || 0) + ' 件';
+      }
+      list.appendChild(li);
+    });
+    return list;
   }
 
   /**
