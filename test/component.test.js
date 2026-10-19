@@ -6041,6 +6041,21 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(toggle.disabled).toBe(false);
   });
 
+  it('キューが止まっていれば、引き継ぎ方を出す', () => {
+    mount({ apiSettings: Object.assign({}, ON, {
+      queue: { runner: 'boss@example.com', lastRun: '2026-10-19T00:00:00.000Z', stale: true } }) });
+    document.querySelector('[data-tab="settings"]').click();
+    const box = document.getElementById('queue-settings');
+    expect(box.textContent).toContain('boss@example.com');
+    expect(box.textContent).toContain('setupCommandQueue()');
+  });
+
+  it('管理者でなければキューの節を出さない', () => {
+    mount({ apiSettings: Object.assign({}, ON, { canEdit: false, queue: null }) });
+    document.querySelector('[data-tab="settings"]').click();
+    expect(document.getElementById('queue-settings')).toBe(null);
+  });
+
   it('持ち主でなければ、切り替えの入口は出さず、頼む先を書く', () => {
     mount({ apiSettings: Object.assign({}, ON, { scrumEnabled: false, canEdit: false }) });
     document.querySelector('[data-tab="settings"]').click();

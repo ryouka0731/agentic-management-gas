@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
@@ -428,5 +429,52 @@ describe('命令を置いた人', () => {
     ctx.processCommandQueue();
 
     expect(readResult(ctx, 'k2').ok).toBe(true);
+  });
+});
+
+describe('キューを動かしている人', () => {
+  // apiSettings はスクラムの設定も読むので、scrum-api.test.js と同じ読み込み集合を使う
+  const SCRUM_SOURCES = (() => {
+    const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
+    return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]).concat(['src/core/CommandQueue.gs']);
+  })();
+  function setup() {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...SCRUM_SOURCES);
+    ctx.repoInit('agentic-management');
+    return { ctx, fake };
+  }
+
+  it('setupCommandQueue が実行した人を覚え、processCommandQueue が回った時刻を書く', () => {
+    const { ctx } = setup();
+    ctx.setupCommandQueue();
+    ctx.processCommandQueue();
+    const st = ctx.queueStatus_();
+    expect(st.runner).toBe('tester@example.com');
+    expect(st.lastRun).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(st.stale).toBe(false);
+  });
+
+  it('1時間より前に止まっていれば stale', () => {
+    const { ctx } = setup();
+    ctx.setupCommandQueue();
+    ctx.processCommandQueue();
+    const later = new Date(Date.now() + 61 * 60 * 1000);
+    expect(ctx.queueStatus_(later).stale).toBe(true);
+  });
+
+  it('一度も回っていなければ stale。仕掛けた人がいなければ stale ではない', () => {
+    const { ctx } = setup();
+    expect(ctx.queueStatus_().stale).toBe(false);
+    ctx.setupCommandQueue();
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('apiSettings は管理者にだけ返す', () => {
+    const { ctx, fake } = setup();
+    ctx.setupCommandQueue();
+    expect(ctx.apiSettings().queue.runner).toBe('tester@example.com');
+    fake._setUser('viewer@example.com');
+    expect(ctx.apiSettings().queue).toBe(null);
   });
 });

@@ -721,6 +721,10 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - **キューの置き場は、ゴミ箱に入っていたら作り直す** (`queueFolderLive_`)。Apps Script は
   ゴミ箱の中のフォルダも開けるので、開けるかだけを見ると命令がゴミ箱に置かれて誰も
   拾わない。`setupCommandQueue()` もゴミ箱の中の ID を返し続けた (実機で踏んだ)
+- **キューは仕掛けた人の権限で回る** (`QUEUE_RUNNER`)。共有ドライブでその人が抜けると止まり、
+  他人のトリガーは見えない。`processCommandQueue` が回った時刻 (`QUEUE_LAST_RUN`) を残し、設定の
+  画面が1時間より前なら引き継ぎ方を出す (管理者が `setupCommandQueue()` を実行する)。人のアドレスを
+  含むので `apiSettings` は管理者にだけ返す
 - **フォルダを移すのは `moveTo` だけ。** `addFile` は共有ドライブで例外になる (ファイルは親を1つしか
   持てない)。以前は `addFile` と `removeFile` を両方呼ぶ形で、マイドライブでしか動かなかった。
   `test/fakegas.js` は `_markShared` した場所への `addFile` を投げる。**`removeFile` は空実装で
