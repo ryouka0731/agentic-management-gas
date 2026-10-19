@@ -168,7 +168,9 @@ function gameReviewCredits_(pulls, reviews) {
     var rv = reviews[r];
     var state = String(rv.state);
     if (state === 'comment') {
-      if (!String(rv.body || '').replace(/^\s+|\s+$/g, '')) continue;
+      // 台帳から数の 0 で返ることがある。真偽で見ると中身ありの '0' を空と読む
+      var body = rv.body === null || rv.body === undefined ? '' : String(rv.body);
+      if (!body.replace(/^\s+|\s+$/g, '')) continue;
     } else if (state !== 'approve' && state !== 'request_changes') {
       continue;
     }
@@ -304,31 +306,31 @@ function gameLevelSeenAck_(email, n) {
 }
 
 /**
- * 本人の合計・今週・レベル・次のレベルまで・参加しているか・称号・チームの今週。
+ * 本人の合計・今週・レベル・次のレベルまで・参加しているか・称号・先週のチーム。
  * **順位は返さない** (上位にいない人に「◯位」を見せると下位の印になる)。
  *
  * levelFrom はいまのレベルに届いた合計。棒はここから nextAt までの進み具合で描く。
  *
- * **台帳は表ごとに1回だけ読む。** 通算・今週・先週と称号を、同じ読みから数える。
+ * **台帳は表ごとに1回だけ読む。** 通算・今週・先週・先々週と称号を、同じ読みから数える。
  *
  * @param {string} email
  * @param {Date} now
  * @returns {{total: number, week: number, level: number, levelFrom: number, nextAt: number,
- *   playing: boolean, badges: object[], team: {week: (number|null), lastWeek: (number|null)}}}
+ *   playing: boolean, badges: object[], team: ({lastWeek: (number|null), weekBefore: (number|null)}|null)}}
  */
 function gameMine_(email, now) {
   var me = String(email || '');
   var span = motivationSpan_(now);
   var led = gameLedger_();
-  var last = gameShiftDay_(span.weekStart, -7);
   var spans = gamePointsBySpans_([['', ''], [span.weekStart, span.today],
-    [last, gameShiftDay_(span.weekStart, -1)]], led);
+    [gameShiftDay_(span.weekStart, -7), gameShiftDay_(span.weekStart, -1)],
+    [gameShiftDay_(span.weekStart, -14), gameShiftDay_(span.weekStart, -8)]], led);
   var total = spans[0][me] || 0;
   var week = spans[1][me] || 0;
   var level = Math.max(gameLevel(total), gameLevelSeen_(me));
   return { total: total, week: week, level: level, levelFrom: gameLevelAt(level),
     nextAt: gameLevelAt(level + 1), playing: gamePlayers_().indexOf(me) >= 0,
-    badges: gameBadges_(me, led), team: gameTeam_(me, spans[1], spans[2]) };
+    badges: gameBadges_(me, led), team: gameTeam_(me, spans[2], spans[3]) };
 }
 
 /**
@@ -345,20 +347,23 @@ function gameShiftDay_(day, n) {
 }
 
 /**
- * チームの今週と先週の合計。**名前もアドレスも返さない。** 参加していない人も合計には入る。
+ * 先週と先々週のチームの合計。**名前もアドレスも返さない。** 参加していない人も合計には入る。
  *
- * **週ごとに、見る人のほかに2人以上ポイントのあった週だけ数を出し、そうでなければ null。**
- * 見る人は自分の点を知っているので、合計から引けば残りがわかる。ほかに1人しかいない週は、
- * その人 (参加していない人も含む) の数がそのまま見えてしまう。人数を週をまたいで数えると、
- * 4週で2人いても1週の中では1人ということがあり、同じく漏れる。
+ * - **終わった週だけ返す。** 今週の合計は動くので、読むたびの差から1人の増えた分が見える
+ * - **週ごとに、見る人のほかに2人以上ポイントのあった週だけ数を出し、そうでなければ null。**
+ *   見る人は自分の点を知っているので、合計から引けば残りがわかる。ほかに1人しかいない週は、
+ *   その人 (参加していない人も含む) の数がそのまま見えてしまう
+ * - **見る人が分からない (空) ときは null。** 全員を「ほかの人」と数えてしまう
+ *
  * チームは台帳全体 (チームの毎月の目標 teamGoal と同じ範囲)。
  *
  * @param {string} me 見る人
- * @param {Object<string, number>} thisWeek
  * @param {Object<string, number>} lastWeek
- * @returns {{week: (number|null), lastWeek: (number|null)}}
+ * @param {Object<string, number>} weekBefore
+ * @returns {{lastWeek: (number|null), weekBefore: (number|null)}|null}
  */
-function gameTeam_(me, thisWeek, lastWeek) {
+function gameTeam_(me, lastWeek, weekBefore) {
+  if (!me) return null;
   function total(o) {
     var others = 0;
     var n = 0;
@@ -368,7 +373,7 @@ function gameTeam_(me, thisWeek, lastWeek) {
     }
     return others >= 2 ? Math.round(n * 1e9) / 1e9 : null;
   }
-  return { week: total(thisWeek), lastWeek: total(lastWeek) };
+  return { lastWeek: total(lastWeek), weekBefore: total(weekBefore) };
 }
 
 /**

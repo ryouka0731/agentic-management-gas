@@ -582,15 +582,16 @@ describe('画面に渡せる形か', () => {
     ['apiGameState', (ctx) => {
       ctx.apiSetGameEnabled(true);
       closedToday(ctx);
-      // チームの合計は、見る人のほかに2人動いた週だけ出る
+      // チームの合計は終わった週の、見る人のほかに2人動いた週だけ出る
       ['b@example.com', 'c@example.com'].forEach((who) => {
         const other = ctx.apiIssueCreate('ほかの人', '', []).number;
         ctx.apiIssueUpdate(other, { assignee: who });
         ctx.issueClose(other, null);
+        ctx.dbUpdate('issues', 'number', other, { closedAt: new Date(Date.now() - 7 * 86400000) });
       });
       const out = ctx.apiGameState();
       if (!out.badges.some((b) => b.done && b.at)) throw new Error('得た称号が空のまま検査されている');
-      if (!out.team || out.team.week === null) throw new Error('チームの合計が空のまま検査されている');
+      if (!out.team || out.team.lastWeek === null) throw new Error('チームの合計が空のまま検査されている');
       return out;
     }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],
