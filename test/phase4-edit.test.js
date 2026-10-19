@@ -7,7 +7,7 @@ import { createFakeGas } from './fakegas.js';
  */
 
 const SOURCES = [
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/core/Settings.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js',
   'src/core/Hash.js',
   'src/core/HashGas.gs',
@@ -560,7 +560,13 @@ describe('画面に渡せる形か', () => {
         reviewers: 'tester@example.com', createdAt: new Date() });
       const due = ctx.apiIssueCreate('期限が来た', '', []).number;
       ctx.dbUpdate('issues', 'number', due, { assignee: 'tester@example.com', dueDate: new Date() });
+      // 改善のヒントの行も型を検査する。期限切れを溜める
+      for (let k = 0; k < 3; k++) {
+        const late = ctx.apiIssueCreate('遅れ' + k, '', []).number;
+        ctx.dbUpdate('issues', 'number', late, { assignee: 'tester@example.com', dueDate: new Date('2020-01-01T00:00:00Z') });
+      }
       const out = ctx.apiHomeSummary();
+      if (!out.advice.length) throw new Error('改善のヒントが空のまま検査されている');
       if (!out.recent.length) throw new Error('最近の動きが空のまま検査されている');
       if (!out.myTurn.reviews.items.length) throw new Error('確かめてほしいが空のまま検査されている');
       if (!out.myTurn.due.items.length) throw new Error('期限のやることが空のまま検査されている');

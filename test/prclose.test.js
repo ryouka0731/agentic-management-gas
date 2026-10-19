@@ -22,14 +22,14 @@ const SOURCES = [
   'src/core/Archive.js',
   'src/core/Tag.gs',
   'src/core/Staleness.js',
-  'src/core/Issue.gs',
+  'src/core/Issue.gs', 'src/core/Inquiry.gs',
   'src/core/Project.gs',
   'src/core/Brand.js',
   'src/core/Notifier.gs',
   'src/core/Plain.js',
   'src/core/Member.gs',
   'src/core/Mention.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
+  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
 ];
 
 /*
