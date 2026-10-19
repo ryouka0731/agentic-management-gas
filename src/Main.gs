@@ -2905,6 +2905,11 @@ function setupCommandQueue() {
   PropertiesService.getScriptProperties()
     .setProperty('QUEUE_RUNNER', String(Session.getActiveUser().getEmail() || ''));
 
+  // 仕掛けた時刻も残す。最初の1分が来るまで回った時刻が無く、それだけで見ると
+  // 入れたばかりのキューが「止まっています」と出る (queueStatus_)
+  PropertiesService.getScriptProperties()
+    .setProperty('QUEUE_RUNNER_AT', new Date().toISOString());
+
   var queueId = commandQueueFolder_().getId();
   Logger.log('キューのフォルダ: ' + queueId);
 
@@ -2933,6 +2938,8 @@ function debugVerifyCommandQueue() {
 
   var id = 'verify-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
   var queue = commandQueueFolder_();
+  // 手で回すと回った時刻が今になる。終わったら戻す (止まったトリガーを隠さない)
+  var lastRunBefore = PropertiesService.getScriptProperties().getProperty('QUEUE_LAST_RUN');
 
   try {
     queue.createFile(
@@ -2965,6 +2972,8 @@ function debugVerifyCommandQueue() {
   } catch (e) {
     failed++;
     log.push('EXCEPTION ' + e.message);
+  } finally {
+    queueLastRunRestore_(lastRunBefore);
   }
 
   var summary = (failed === 0) ? 'すべて PASS' : failed + ' 件 FAIL';
@@ -3006,16 +3015,19 @@ function debugVerifySharedDrive() {
   // 名前は毎回変える。同じ名前だと、打ち切られて残った処理済みの命令を commandAlreadyRan_ が
   // 見て、次の実行で命令が走らず、何度やっても「結果を書いた」が通らない
   var id = 'verify-shared-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  // 手で回すと回った時刻が今になり、止まったトリガーが1時間「動いています」に見える。
+  // 終わったら戻す
+  var lastRunBefore = PropertiesService.getScriptProperties().getProperty('QUEUE_LAST_RUN');
   try {
     queue.createFile(id + '.cmd.json', JSON.stringify({ op: 'listFiles', args: {} }), MimeType.PLAIN_TEXT);
     processCommandQueue();
     var res = queue.getFilesByName(id + '.result.json');
     check('命令を処理して結果を書いた (親が1つの移動が通った)', res.hasNext());
     check('命令は queue-done へ移った', commandDoneFolder_().getFilesByName(id + '.cmd.json').hasNext());
-    check('キューが回った時刻を残した', !!queueStatus_().lastRun);
   } catch (e) {
     check('命令を通す', false, e.message);
   } finally {
+    queueLastRunRestore_(lastRunBefore);
     var leftovers = [queue.getFilesByName(id + '.cmd.json'), queue.getFilesByName(id + '.result.json'),
       commandDoneFolder_().getFilesByName(id + '.cmd.json')];
     for (var i = 0; i < leftovers.length; i++) {

@@ -1317,8 +1317,8 @@ function plainQueueStatus_(st) {
     if (!q.runner || q.stale) {
       var how = document.createElement('p');
       how.className = 'row-meta';
-      how.textContent = '管理者が Apps Script のエディタで setupCommandQueue() を実行すると、' +
-        'その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
+      how.textContent = '持ち主 (共有ドライブでは管理者の役割の人) が Apps Script のエディタで ' +
+        'setupCommandQueue() を実行すると、その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
       box.appendChild(how);
     }
     return box;
@@ -1330,7 +1330,7 @@ function plainQueueStatus_(st) {
 ```
 - **キューは仕掛けた人の権限で回る** (`QUEUE_RUNNER`)。共有ドライブでその人が抜けると止まり、
   他人のトリガーは見えない。`processCommandQueue` が回った時刻 (`QUEUE_LAST_RUN`) を残し、設定の
-  画面が1時間より前なら引き継ぎ方を出す (管理者が `setupCommandQueue()` を実行する)。人のアドレスを
+  画面が1時間より前なら引き継ぎ方を出す (持ち主 = 共有ドライブでは管理者の役割の人が `setupCommandQueue()` を実行する)。人のアドレスを
   含むので `apiSettings` は管理者にだけ返す
 ```
 

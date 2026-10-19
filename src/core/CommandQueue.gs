@@ -355,13 +355,39 @@ function queueStatus_(now) {
   var props = PropertiesService.getScriptProperties();
   var runner = String(props.getProperty('QUEUE_RUNNER') || '');
   var lastRun = String(props.getProperty('QUEUE_LAST_RUN') || '');
-  var at = lastRun ? Date.parse(lastRun) : NaN;
+  var runnerAt = String(props.getProperty('QUEUE_RUNNER_AT') || '');
   var t = (now || new Date()).getTime();
-  // 回った時刻を先に見る。QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らない
-  // ので、それより前から動いている番頭では空のまま。仕掛けた人で決めると、動いて
-  // いるのに「未設定」と出る。読めない時刻は、回っているか分からないので止まった側に倒す
-  var stale = lastRun ? (isNaN(at) || t - at > 60 * 60 * 1000) : !!runner;
+  // 回った時刻と仕掛けた時刻の新しいほうで決める。仕掛けた直後は最初の1分が来るまで
+  // 回った時刻が無く、それを止まったと読むと、入れたばかりのキューが「止まっています」と
+  // 出る。仕掛け直した直後も同じ (前の人の古い時刻が残っている)。
+  // QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らないので、それより前から
+  // 動いている番頭では空のまま。どちらも無ければ未設定。何か入っているのに時刻が
+  // 1つも読めなければ、回っているか分からないので止まった側に倒す
+  var newest = NaN;
+  [lastRun, runnerAt].forEach(function (v) {
+    var at = v ? Date.parse(v) : NaN;
+    if (!isNaN(at) && (isNaN(newest) || at > newest)) newest = at;
+  });
+  var stale = isNaN(newest) ? !!(runner || lastRun) : t - newest > 60 * 60 * 1000;
   return { runner: runner, lastRun: lastRun, stale: stale };
+}
+
+/**
+ * 確かめの入口が手で回したキューの時刻を、回す前の値に戻す。
+ *
+ * 手で processCommandQueue() を呼ぶと回った時刻が今になり、止まったトリガーが
+ * 1時間のあいだ「動いています」に見える。確かめた人ほど止まったことに気づけなくなる。
+ *
+ * @param {?string} before 回す前の QUEUE_LAST_RUN (無ければ null)
+ */
+function queueLastRunRestore_(before) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (before === null || before === undefined) props.deleteProperty('QUEUE_LAST_RUN');
+    else props.setProperty('QUEUE_LAST_RUN', before);
+  } catch (e) {
+    Logger.log('回った時刻を戻せませんでした: ' + e.message);
+  }
 }
 
 /**
@@ -382,15 +408,17 @@ function processCommandQueue() {
    * 鍵の中で守る。重なった2回の起動が同じ命令を数えても、後から鍵を取った
    * ほうは処理済みと見て走らせない。
    */
-  // 回ったことを残す (鍵は取らない。上書きするだけで、ずれても困らない)
+  var queue = commandQueueFolder_();
+  var done = commandDoneFolder_();
+
+  // 回ったことを残す (鍵は取らない。上書きするだけで、ずれても困らない)。
+  // **置き場を開けてから書く。** 先に書くと、Drive に入れなくなった人のトリガーが
+  // 毎分落ちているのに、画面には「動いています」と出る
   try {
     PropertiesService.getScriptProperties().setProperty('QUEUE_LAST_RUN', new Date().toISOString());
   } catch (e) {
     Logger.log('回った時刻を残せませんでした: ' + e.message);
   }
-
-  var queue = commandQueueFolder_();
-  var done = commandDoneFolder_();
 
   // イテレータを回しながらファイルを移動すると取りこぼす。
   // 先に対象を集めてから処理する

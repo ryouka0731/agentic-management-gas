@@ -39,6 +39,16 @@ describe('誰が管理者か', () => {
     expect(ctx.repoIsAdmin_('')).toBe(false);
   });
 
+  it('マイドライブでも大文字小文字は見ない (持ち主・編集者とも)', () => {
+    const { ctx, fake, root } = setup();
+    // Drive が返す字と Session の字は大小が違うことがある。assertOwner_ は見ないので揃える
+    root._setOwner('Tester@Example.com');
+    expect(ctx.repoIsAdmin_('tester@example.com')).toBe(true);
+    root._addEditor('Editor@Example.com');
+    fake._setUser('Editor@Example.com');
+    expect(ctx.repoIsAdmin_('editor@example.com')).toBe(true);
+  });
+
   it('Drive が読めなくても、投げずに管理者ではないと答える', () => {
     const { ctx, fake } = setup();
     fake._setUser('editor@example.com');

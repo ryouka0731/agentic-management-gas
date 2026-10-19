@@ -463,11 +463,54 @@ describe('キューを動かしている人', () => {
     expect(ctx.queueStatus_(later).stale).toBe(true);
   });
 
-  it('一度も回っていなければ stale。仕掛けた人がいなければ stale ではない', () => {
+  it('何も仕掛けていなければ stale ではない (未設定)', () => {
     const { ctx } = setup();
     expect(ctx.queueStatus_().stale).toBe(false);
+  });
+
+  it('仕掛けた直後 (まだ一度も回っていない) は stale ではない', () => {
+    const { ctx } = setup();
     ctx.setupCommandQueue();
+    expect(ctx.queueStatus_().lastRun).toBe('');
+    expect(ctx.queueStatus_().stale).toBe(false);
+  });
+
+  it('仕掛けてから2時間、一度も回っていなければ stale', () => {
+    const { ctx, fake } = setup();
+    ctx.setupCommandQueue();
+    const props = fake.PropertiesService.getScriptProperties();
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
     expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('回った時刻が古くても、仕掛け直した直後なら stale ではない', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    props.setProperty('QUEUE_RUNNER', 'tester@example.com');
+    props.setProperty('QUEUE_LAST_RUN', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 10 * 60 * 1000).toISOString());
+    expect(ctx.queueStatus_().stale).toBe(false);
+    // 仕掛けた時刻も古ければ stale
+    props.setProperty('QUEUE_RUNNER_AT', new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString());
+    expect(ctx.queueStatus_().stale).toBe(true);
+  });
+
+  it('置き場を開けなければ回った時刻を書かない (Drive に入れないトリガーを「動いています」と見せない)', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    props.setProperty('QUEUE_LAST_RUN', old);
+    ctx.commandQueueFolder_ = () => { throw new Error('アクセスできません'); };
+    expect(() => ctx.processCommandQueue()).toThrow(/アクセスできません/);
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(old);
+  });
+
+  it('処理済みの置き場を開けなくても回った時刻を書かない', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    ctx.commandDoneFolder_ = () => { throw new Error('アクセスできません'); };
+    expect(() => ctx.processCommandQueue()).toThrow(/アクセスできません/);
+    expect(props.getProperty('QUEUE_LAST_RUN')).toBe(null);
   });
 
   it('前から動いている番頭 (仕掛けた人の記録が無い) でも、回った時刻で決める', () => {
