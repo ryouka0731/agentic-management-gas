@@ -50,6 +50,9 @@
   var commitBtn = document.getElementById('commit-btn');
   var stashBtn = document.getElementById('stash-btn');
   var openLink = document.getElementById('open-in-docs');
+  var docFullBtn = document.getElementById('doc-full-btn');
+  var docLinkBtn = document.getElementById('doc-link-btn');
+  var docLinkRow = document.getElementById('doc-link-row');
 
   var tabsEl = document.getElementById('tabs');
   var panelHome = document.getElementById('panel-home');
@@ -156,6 +159,12 @@
   };
 
   var allFiles = [];
+  // 画面を切り替えた回数。返事を待つあいだに人が別の画面へ移ったかを見分ける
+  // (全画面のリンクで開くとき、移った先を奪わない)
+  var navCount = 0;
+  // 文書を開こうとした回数。遅れて届いた返事が、そのあとの新しい選択を上書き
+  // しないように見分ける
+  var docGen = 0;
   var currentUser = '';
   var currentTab = 'docs';
   var issueView = 'list';
@@ -1810,6 +1819,8 @@
    * @param {boolean} open
    */
   function setSideOpen(open) {
+    // 全画面では右のペインが隠れている。開くなら抜ける (開いたのに見えない)
+    if (open && document.body.classList.contains('doc-full')) setDocFull(false);
     sidePanel.hidden = !open;
     sideResizer.hidden = !open;
     // 開け閉めのたびに進める。返事を待つあいだに人が右を触ったかを、
@@ -2561,6 +2572,7 @@
    * @param {{pr: number}} [opts] 確認依頼の画面で、先頭の代わりに開く依頼の番号
    */
   function switchTab(name, opts) {
+    navCount++;
     if (DOC_TABS[name] && !current.fileId) name = 'docs';
     currentTab = name;
 
@@ -2578,6 +2590,8 @@
 
     // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
     if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
+    // 文書の全画面も、どこかへ移ったら抜ける。左も上も隠れたまま別の画面が出る
+    if (document.body.classList.contains('doc-full')) setDocFull(false);
 
     panelHome.hidden = name !== 'home';
     panelDocs.hidden = name !== 'docs';
@@ -2621,6 +2635,7 @@
    */
   function updateCrumbs() {
     var inDoc = !!current.fileId && !!DOC_TABS[currentTab];
+    syncDocViewBtns();
 
     crumbBack.hidden = !inDoc;
     crumbSep.hidden = !inDoc;
@@ -2646,11 +2661,15 @@
 
   // ===== 文書の一覧 =====
 
-  function loadFiles(then) {
+  /**
+   * @param {function} [then]
+   * @param {function} [onFail] 省くと文書の一覧の欄に出す
+   */
+  function loadFiles(then, onFail) {
     call('apiListFiles', [], function (list) {
       allFiles = list || [];
       if (then) then();
-    }, failInto(docListEl));
+    }, onFail || failInto(docListEl));
   }
 
   /**
@@ -3275,6 +3294,8 @@
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
+      // 全画面では探す欄が隠れている。抜けてから欄へ
+      if (document.body.classList.contains('doc-full')) setDocFull(false);
       if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) searchBox.classList.add('is-open');
       searchInput.focus();
       loadSearchIndex();
@@ -3690,11 +3711,21 @@
    *
    * @param {string} fileId 開く版の fileId
    * @param {string} docPath 正式版の論理パス
+   * @param {{full: boolean, since: number}} [opts] full なら開いたあと全画面にする
+   *   (全画面のリンクから)。since を渡すと、それ以後に画面を切り替えていたら描かない
    */
-  function openDoc(fileId, docPath) {
+  function openDoc(fileId, docPath, opts) {
+    // 前の文書のリンクを残さない
+    docLinkRow.hidden = true;
+    docLinkRow.textContent = '';
+
     var doc = allFiles.filter(function (f) {
       return splitPath(f.path).branch === 'main' && f.path === docPath;
     })[0];
+
+    // 描かずにやめたとき・開けなかったときに戻すため、前に開いていた文書を控える
+    var prev = { fileId: current.fileId, docFileId: current.docFileId, docPath: current.docPath };
+    var gen = ++docGen;
 
     current.docPath = docPath;
     current.docFileId = doc ? doc.fileId : fileId;
@@ -3703,17 +3734,198 @@
     titleEl.textContent = docPath;
     renderVersionSelect();
 
+    // 開きかけた文書をいまの文書として残さない。残すと本文のタブで空の本文が出る。
+    // あとから別の文書を開いていたら、そちらのものなので触らない
+    function restore() {
+      if (gen !== docGen) return;
+      current.fileId = prev.fileId;
+      current.docFileId = prev.docFileId;
+      current.docPath = prev.docPath;
+      renderVersionSelect();
+      updateCrumbs();
+    }
+
     call('apiGetFileHtml', [fileId], function (res) {
-      // 返事が届くまでに別の版へ移っていたら描かない。描くと、別の文書の本文が
-      // いまの題名の下に出る
-      if (current.fileId !== fileId) return;
+      // 返事が届くまでに別の文書・版を開き直していたら描かない。描くと、別の文書の
+      // 本文がいまの題名の下に出る
+      if (gen !== docGen || current.fileId !== fileId) return;
+      // リンクから開いたときは、返事を待つあいだに人が移った先を奪わない
+      if (opts && opts.since !== undefined && navCount !== opts.since) {
+        restore();
+        return;
+      }
       openLink.href = res.url;
       renderIntoViewer(res.html);
       loadLinkedIssues(fileId);
       setDocMode('view');
       refreshStatus();
       switchTab('content');
-    }, failSnack('開けませんでした: '));
+      // switchTab は全画面を抜けるので、そのあとで入る
+      if (opts && opts.full) setDocFull(true);
+      prefetchAppUrl();
+    }, function (err) {
+      restore();
+      failSnack('開けませんでした: ')(err);
+    });
+  }
+
+  /**
+   * 全画面と「リンクをコピー」は、本文を読んでいるときだけ出す。
+   * 直すモードには全画面を出さない (全画面のあいだは上の操作が隠れて、保存できない)。
+   */
+  function syncDocViewBtns() {
+    var show = !!current.fileId && currentTab === 'content' && !viewer.hidden;
+    docFullBtn.hidden = !show;
+    docLinkBtn.hidden = !show;
+  }
+
+  /**
+   * 文書の全画面を出し入れする。
+   *
+   * **ブラウザの Fullscreen API は使わない。** Apps Script の Web アプリは
+   * iframe の中で動き、`allow="fullscreen"` が無いので断られる。body に
+   * `doc-full` を付け、CSS で周りを隠して本文を広げる。
+   *
+   * @param {boolean} on
+   */
+  function setDocFull(on) {
+    if (on && docFullBtn.hidden) return;
+    // 右のペインと引き出しは全画面で隠れる。開いたまま隠すと、最初の Esc が
+    // 見えないものを閉じるだけになる
+    if (on && !sidePanel.hidden) closeSide();
+    if (on && sidebarEl.classList.contains('drawer-open')) setNavDrawer(false);
+    document.body.classList.toggle('doc-full', on);
+    // 押した状態 (aria-pressed) は持たせない。字が「全画面を閉じる」に変わるので、
+    // 両方あると読み上げが「全画面を閉じる 押されています」と二重になる
+    docFullBtn.textContent = '';
+    docFullBtn.appendChild(makeIcon(on ? 'shrink' : 'expand'));
+    docFullBtn.appendChild(document.createTextNode(on ? '全画面を閉じる' : '全画面'));
+    docFullBtn.title = on ? 'Esc でも閉じます' : '';
+    // 本文 (sandbox の iframe) に入った Esc は外へ届かない。閉じるボタンに置いておく
+    if (on) docFullBtn.focus();
+  }
+
+  /**
+   * 全画面で開くリンク。この Web アプリの URL に ?doc=…&full=1 を付ける。
+   *
+   * @param {string} base apiAppUrl
+   * @param {string} fileId
+   * @returns {string}
+   */
+  function docFullLink(base, fileId) {
+    return base + (base.indexOf('?') < 0 ? '?' : '&') +
+      'doc=' + encodeURIComponent(fileId) + '&full=1';
+  }
+
+  /** この Web アプリの URL。変わらないので1回だけ尋ねる */
+  var appUrl = '';
+  var appUrlAsked = false;
+
+  /**
+   * 文書を開いたときに URL を先に尋ねておく。
+   *
+   * **押してから尋ねると写せない。** ブラウザは押した操作の中でしか書き込みを
+   * 許さず、サーバの返事を待ったあとでは断られて、毎回「選んで写す」欄になる。
+   */
+  function prefetchAppUrl() {
+    if (appUrl || appUrlAsked) return;
+    appUrlAsked = true;
+    call('apiAppUrl', [], function (url) {
+      appUrl = String(url || '');
+    }, function (err) {
+      // 次に開いたとき、または押したときに尋ね直す
+      appUrlAsked = false;
+      failQuiet('リンクの URL は押したときに尋ね直せる')(err);
+    });
+  }
+
+  /** 写せなかったとき・写せないときに、選んで写せる欄にリンクを出す */
+  function showDocLinkRow(link) {
+    docLinkRow.textContent = '';
+    docLinkRow.appendChild(makeCopyRow('全画面で開くリンク。選んで写してください', link));
+    docLinkRow.hidden = false;
+  }
+
+  /**
+   * いま見ている版を全画面で開くリンクを写す。書き込みは押した操作の中で
+   * 同期に呼ぶ。URL がまだ届いていなければ、尋ねてから欄に出す (返事のあとに
+   * 書き込もうとしても断られるので試さない)。
+   */
+  function copyDocLink() {
+    var fileId = current.fileId;
+    if (!fileId) return;
+
+    if (appUrl) {
+      var link = docFullLink(appUrl, fileId);
+      var clip = window.navigator.clipboard;
+      if (!clip || !clip.writeText) { showDocLinkRow(link); return; }
+      clip.writeText(link).then(function () {
+        showSnack('コピーしました', { kind: 'ok' });
+      }, function () {
+        // 返事を待つあいだに別の文書へ移っていたら出さない
+        if (current.fileId === fileId) showDocLinkRow(link);
+      });
+      return;
+    }
+
+    call('apiAppUrl', [], function (url) {
+      appUrl = String(url || '');
+      if (!appUrl) {
+        showSnack('この画面の URL が分からず、リンクを作れませんでした', { kind: 'ng' });
+        return;
+      }
+      if (current.fileId === fileId) showDocLinkRow(docFullLink(appUrl, fileId));
+    }, failSnack('リンクを作れませんでした: '));
+  }
+
+  /**
+   * 開いた URL の ?doc=…&full=1 から文書を開く。
+   *
+   * 文書の一覧に**ある fileId のときだけ**開く。一覧は開いた人に見えるものだけ
+   * なので、見られない文書や登録されていない id は開かずにホームのまま知らせる。
+   *
+   * @param {Object<string, string>} p google.script.url.getLocation の parameter
+   */
+  function openFromLink(p, since) {
+    var fileId = String((p && p.doc) || '');
+    if (!fileId) return;
+    var wantFull = String(p.full || '') === '1';
+    var genAt = docGen;
+
+    function go() {
+      // 一覧を待つあいだに人が別の画面へ移った・別の文書を開いたなら、そちらを奪わない
+      if (navCount !== since || docGen !== genAt) return;
+      var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
+      if (!f) {
+        showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
+        return;
+      }
+      // 改訂版の作業コピーでも、題名は正式版の名前 (openDoc がそれで版を並べる)
+      openDoc(f.fileId, splitPath(f.path).path, { full: wantFull, since: navCount });
+    }
+    function ng() {
+      if (navCount !== since || docGen !== genAt) return;
+      // 文書の一覧の欄はホームでは見えないので、帯で知らせる
+      showSnack('文書の一覧を取れず、リンクの文書を開けませんでした', { kind: 'ng' });
+    }
+    // 起動のときに尋ねた一覧の返事を待つ (同じものを2回尋ねない)
+    whenStartupFiles(go, ng);
+  }
+
+  /** 起動のときに尋ねた文書の一覧の返事。null は待っているあいだ */
+  var startupFiles = { ok: null, waiters: [] };
+
+  function settleStartupFiles(ok) {
+    startupFiles.ok = ok;
+    var waiters = startupFiles.waiters;
+    startupFiles.waiters = [];
+    waiters.forEach(function (w) { (ok ? w.ok : w.ng)(); });
+  }
+
+  function whenStartupFiles(ok, ng) {
+    if (startupFiles.ok === true) ok();
+    else if (startupFiles.ok === false) ng();
+    else startupFiles.waiters.push({ ok: ok, ng: ng });
   }
 
   /**
@@ -3781,6 +3993,7 @@
 
     if (editing) loadEditor();
     else editHint.textContent = '';
+    syncDocViewBtns();
   }
 
   /**
@@ -10958,13 +11171,25 @@
       document.body.appendChild(area);
       area.select();
 
+      // execCommand は断られても例外にならず false を返す。true のときだけ写せた
+      var ok = false;
       try {
-        document.execCommand('copy');
-        showSnack('写しました', { kind: 'ok' });
+        ok = document.execCommand('copy') === true;
       } catch (e) {
-        showSnack('写せませんでした。字を選んで手で写してください', { kind: 'ng' });
+        ok = false;
       }
       area.remove();
+      if (ok) {
+        showSnack('写しました', { kind: 'ok' });
+        return;
+      }
+      // 字を選んだままにして、手で写せるようにする
+      var range = document.createRange();
+      range.selectNodeContents(text);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
     });
     line.appendChild(btn);
 
@@ -11569,6 +11794,20 @@
   editSaveBtn.addEventListener('click', saveEditor);
   modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
   modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
+  setDocFull(false);
+  docFullBtn.addEventListener('click', function () {
+    setDocFull(!document.body.classList.contains('doc-full'));
+  });
+  docLinkBtn.addEventListener('click', copyDocLink);
+  // 本文の iframe は sandbox (allow-scripts 無し) なので、その中の Esc は聞けない。
+  // 入ったときに閉じるボタンへ置き、ボタンは常に見えている
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !document.body.classList.contains('doc-full')) return;
+    // ほかのもの (欄・右のペイン・引き出し) が受けた Esc では抜けない。1回の Esc で
+    // 2つ閉じると、閉じたつもりの無いほうまで閉じる
+    if (e.defaultPrevented || !sidePanel.hidden || sidebarEl.classList.contains('drawer-open')) return;
+    setDocFull(false);
+  });
   draftCreateBtn.addEventListener('click', createDraft);
   branchCreateBtn.addEventListener('click', function () {
     if (current.docFileId) {
@@ -14113,9 +14352,18 @@
   // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
   // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
   // 返事では画面を切り替えない
-  loadFiles();
+  loadFiles(function () { settleStartupFiles(true); }, function (err) {
+    failInto(docListEl)(err);
+    settleStartupFiles(false);
+  });
   // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
   // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
   switchTab('home');
+  // 全画面のリンク (?doc=…&full=1) で開かれたら、その文書を開く。
+  // iframe の中なので location は使えない。ホームを出した時点から人が移ったら開かない
+  var startupNav = navCount;
+  if (google.script.url && google.script.url.getLocation) {
+    google.script.url.getLocation(function (loc) { openFromLink((loc && loc.parameter) || {}, startupNav); });
+  }
 })();
 </script>
