@@ -3003,7 +3003,9 @@ function debugVerifySharedDrive() {
     members.owners.indexOf(String(Session.getActiveUser().getEmail() || '').toLowerCase()) >= 0);
 
   var queue = commandQueueFolder_();
-  var id = 'verify-shared';
+  // 名前は毎回変える。同じ名前だと、打ち切られて残った処理済みの命令を commandAlreadyRan_ が
+  // 見て、次の実行で命令が走らず、何度やっても「結果を書いた」が通らない
+  var id = 'verify-shared-' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
   try {
     queue.createFile(id + '.cmd.json', JSON.stringify({ op: 'listFiles', args: {} }), MimeType.PLAIN_TEXT);
     processCommandQueue();
