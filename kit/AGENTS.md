@@ -107,6 +107,24 @@ node agent.mjs issue-say 12 "根拠の通達を確認しました"
 node agent.mjs issue-close 12
 ```
 
+### 自分の様子を見る
+
+**頼んだ本人のぶんだけ返ります** (本人は命令を置いた人。番頭が分からないときは
+`命令を置いた人が分かりません` で断られます)。返事は JSON ではなく、そのまま読める字で出ます。
+
+```sh
+node agent.mjs mine              # あなたの番 (確かめてほしい確認依頼・戻ってきたもの・期限が近いやること)
+node agent.mjs advice            # 改善のヒント
+node agent.mjs search 規程 第3条  # 題名で探す (番号は #12 のように)。一覧を取って手元で絞る
+node agent.mjs report            # 今日の日報の下書き (画面で選んでいる形)
+node agent.mjs report today      # 形を選ぶ (three / today / plain / custom)
+node agent.mjs doctor            # 番頭に頼まずに点検する。直すことがあれば直し方が出る
+```
+
+作業を始める前に `node agent.mjs mine` で自分の番を見ると、待たせている確認依頼や
+期限切れに先に気づけます。返事が来ない・遅いと感じたら、まず `node agent.mjs doctor` を
+実行して、出た直し方を利用者に伝えてください (`doctor` は番頭に何も頼まないので、すぐ返ります)。
+
 ## コードの変更を添える
 
 **この道具はコードの版管理をしません。** そこは git がやります。ここでできるのは
