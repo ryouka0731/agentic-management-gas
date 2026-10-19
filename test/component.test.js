@@ -8276,6 +8276,22 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(full()).toBe(false);
   });
 
+  it('全画面に入るとき、開いている右のペインと引き出しを閉じる (隠れたまま残さない)', () => {
+    mount();
+    openFirst();
+    // 右のペインを開いてから全画面へ
+    key(document.body, '?');
+    expect(document.getElementById('side-panel').hidden).toBe(false);
+    document.querySelector('.sidebar').classList.add('drawer-open');
+    document.getElementById('doc-full-btn').click();
+    expect(full()).toBe(true);
+    expect(document.getElementById('side-panel').hidden).toBe(true);
+    expect(document.querySelector('.sidebar').classList.contains('drawer-open')).toBe(false);
+    // 最初の Esc で全画面を抜ける (見えないものを閉じるだけにならない)
+    key(document.body, 'Escape');
+    expect(full()).toBe(false);
+  });
+
   it('閉じるボタンでも戻る', () => {
     mount();
     openFirst();
@@ -8347,7 +8363,7 @@ describe('文書の全画面と、全画面のリンク', () => {
   it('写せないときは、選んで写せる欄にリンクを出す', async () => {
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
       value: { writeText: () => Promise.reject(new Error('NotAllowedError')) } });
-    mount();
+    mount({ apiListFiles: DEFAULTS.apiListFiles.concat([{ fileId: 'DOC2', path: '賃金規程.doc', type: 'doc' }]) });
     openFirst();
     document.getElementById('doc-link-btn').click();
     await Promise.resolve();
@@ -8357,8 +8373,32 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(row.querySelector('code').textContent).toBe('https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1');
     // 別の文書へ移ったら前のリンクを残さない
     document.querySelector('.nav-item[data-tab="docs"]').click();
-    document.querySelector('.doc-open').click();
+    document.querySelectorAll('.doc-open')[1].click();
+    expect(document.getElementById('doc-title').textContent).toBe('賃金規程.doc');
     expect(row.hidden).toBe(true);
+    expect(row.textContent).toBe('');
+  });
+
+  it('欄の「写す」は、写せたときだけ写しましたと言う', async () => {
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined });
+    const had = Object.prototype.hasOwnProperty.call(document, 'execCommand');
+    try {
+      mount();
+      openFirst();
+      document.getElementById('doc-link-btn').click();
+      const row = document.getElementById('doc-link-row');
+      const copyBtn = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === '写す');
+      // 断られると例外ではなく false が返る
+      document.execCommand = () => false;
+      copyBtn.click();
+      expect(document.getElementById('snackbar').textContent).toContain('写せませんでした');
+      expect(String(window.getSelection())).toBe('https://script.google.com/macros/s/APP1/exec?doc=DOC1&full=1');
+      document.execCommand = () => true;
+      copyBtn.click();
+      expect(document.querySelector('#snackbar .snackbar-text').textContent).toBe('写しました');
+    } finally {
+      if (!had) delete document.execCommand;
+    }
   });
 
   it('リンクで開くと、その文書が全画面で開く', () => {
@@ -8421,6 +8461,96 @@ describe('文書の全画面と、全画面のリンク', () => {
     mountAt({ doc: 'DOC1', full: '1' }, { apiListFiles: () => new Error('混み合っています') });
     expect(document.getElementById('panel-home').hidden).toBe(false);
     expect(document.getElementById('snackbar').textContent).toContain('リンクの文書を開けませんでした');
+  });
+
+  it('本文が取れなければ、前に開いていた文書に戻す', () => {
+    const app = mount();
+    openFirst();
+    app.respond('apiGetFileHtml', () => new Error('混み合っています'));
+    const sel = document.getElementById('branch-select');
+    sel.value = 'W1';
+    sel.dispatchEvent(new window.Event('change'));
+    expect(document.getElementById('snackbar').textContent).toContain('開けませんでした');
+    expect(document.getElementById('doc-title').textContent).toBe('就業規則.doc');
+    expect(sel.value).toBe('DOC1');
+    // 戻した文書の履歴を引く
+    document.querySelector('.tab[data-tab="history"]').click();
+    expect(app.calls.filter((c) => c.name === 'apiCommitGraph').pop().args[0]).toBe('DOC1');
+  });
+
+  it('リンクの本文が取れなければ、開きかけた文書を残さない', () => {
+    mountAt({ doc: 'DOC1', full: '1' }, { apiGetFileHtml: () => new Error('混み合っています') });
+    expect(document.getElementById('panel-home').hidden).toBe(false);
+    expect(document.getElementById('doc-title').textContent).toBe('ホーム');
+    document.querySelector('.tab[data-tab="content"]').click();
+    expect(document.getElementById('panel-docs').hidden).toBe(false);
+  });
+
+  it('リンクの本文を待つあいだに人が同じ文書を開き直したら、遅れた返事で戻さない', () => {
+    const pending = [];
+    mountAt({ doc: 'DOC1', full: '1' },
+      { apiGetFileHtml: () => ({ later: (ok) => pending.push(ok) }) });
+    document.querySelector('.nav-item[data-tab="docs"]').click();
+    document.querySelector('.doc-open').click();
+    expect(pending).toHaveLength(2);
+    // リンクの返事が先に届いても、人が開いたほうを消さない
+    pending[0](DEFAULTS.apiGetFileHtml);
+    pending[1](DEFAULTS.apiGetFileHtml);
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(document.getElementById('doc-title').textContent).toBe('就業規則.doc');
+    // 人が開いたものなので、全画面にはしない
+    expect(full()).toBe(false);
+  });
+
+  it('同じ文書を開き直したら、先の遅れた返事で本文を上書きしない', () => {
+    const app = mount();
+    openFirst();
+    const pending = [];
+    app.respond('apiGetFileHtml', () => ({ later: (ok) => pending.push(ok) }));
+    const sel = document.getElementById('branch-select');
+    sel.dispatchEvent(new window.Event('change'));
+    sel.dispatchEvent(new window.Event('change'));
+    pending[1](Object.assign({}, DEFAULTS.apiGetFileHtml, { html: '<p>新しい第1条</p>\n' }));
+    pending[0](Object.assign({}, DEFAULTS.apiGetFileHtml, { html: '<p>古い第1条</p>\n' }));
+    const doc = document.getElementById('viewer').srcdoc;
+    expect(doc).toContain('新しい第1条');
+    expect(doc).not.toContain('古い第1条');
+  });
+
+  it('リンクの本文が遅れて取れなかったとき、そのあと人が開いた文書を消さない', () => {
+    const pending = [];
+    mountAt({ doc: 'DOC1', full: '1' },
+      { apiGetFileHtml: () => ({ later: (ok, ng) => pending.push([ok, ng]) }) });
+    document.querySelector('.nav-item[data-tab="docs"]').click();
+    document.querySelector('.doc-open').click();
+    pending[0][1](new Error('混み合っています'));
+    pending[1][0](DEFAULTS.apiGetFileHtml);
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(document.getElementById('doc-title').textContent).toBe('就業規則.doc');
+  });
+
+  it('リンクの一覧を待つあいだに人が別の文書を開いたら、リンクの文書で上書きしない', () => {
+    const lists = [];
+    const html = [];
+    mountAt({ doc: 'W1', full: '1' }, {
+      apiListFiles: () => ({ later: (ok) => lists.push(ok) }),
+      apiGetFileHtml: () => ({ later: (ok) => html.push(ok) }),
+    });
+    // 探す欄から文書を開く (画面はまだ切り替わらない)
+    const input = document.getElementById('search-input');
+    input.focus();
+    input.dispatchEvent(new window.Event('focus'));
+    input.value = '就業';
+    input.dispatchEvent(new window.Event('input'));
+    document.querySelector('#search-results [data-kind="doc"]').click();
+    // 探す欄の一覧が先に届き、人の文書を開き始める
+    lists[1](DEFAULTS.apiListFiles);
+    // 起動のときの一覧が遅れて届く。リンクの W1 で上書きしない
+    lists[0](DEFAULTS.apiListFiles);
+    expect(html).toHaveLength(1);
+    html[0](DEFAULTS.apiGetFileHtml);
+    expect(document.getElementById('branch-select').value).toBe('DOC1');
+    expect(full()).toBe(false);
   });
 
   it('一覧に無い id は開かず、ホームのまま知らせる', () => {
