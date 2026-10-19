@@ -342,11 +342,6 @@ function commandAlreadyRan_(done, name) {
 }
 
 /**
- * キューを1回処理する。時間主導トリガーから呼ばれる。
- *
- * @returns {string} 処理件数の要約
- */
-/**
  * キューを動かしている人と、最後に回った時刻。
  *
  * トリガーは setupCommandQueue() を実行した人の権限で走る。共有ドライブではその人が
@@ -362,10 +357,18 @@ function queueStatus_(now) {
   var lastRun = String(props.getProperty('QUEUE_LAST_RUN') || '');
   var at = lastRun ? Date.parse(lastRun) : NaN;
   var t = (now || new Date()).getTime();
-  var stale = !!runner && (isNaN(at) || t - at > 60 * 60 * 1000);
+  // 回った時刻を先に見る。QUEUE_RUNNER は setupCommandQueue() を実行し直すまで入らない
+  // ので、それより前から動いている番頭では空のまま。仕掛けた人で決めると、動いて
+  // いるのに「未設定」と出る。読めない時刻は、回っているか分からないので止まった側に倒す
+  var stale = lastRun ? (isNaN(at) || t - at > 60 * 60 * 1000) : !!runner;
   return { runner: runner, lastRun: lastRun, stale: stale };
 }
 
+/**
+ * キューを1回処理する。時間主導トリガーから呼ばれる。
+ *
+ * @returns {string} 処理件数の要約
+ */
 function processCommandQueue() {
   /*
    * **鍵は命令1件ごとに取る。命令が無いときは取らない。**

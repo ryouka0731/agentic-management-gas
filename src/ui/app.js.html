@@ -12195,18 +12195,25 @@
     var head = document.createElement('h2');
     head.className = 'view-title';
     head.appendChild(document.createTextNode('手元からの命令の受付 '));
-    head.appendChild(makePill(!q.runner ? '未設定' : q.stale ? '止まっています' : '動いています',
-      !q.runner || q.stale ? 'state' : 'state state-open'));
+    // 仕掛けた人 (runner) は setupCommandQueue() を実行し直すまで入らない。前から
+    // 動いている番頭では空なので、回った時刻 (lastRun) があれば動いているとみなす
+    var known = !!(q.runner || q.lastRun);
+    head.appendChild(makePill(!known ? '未設定' : q.stale ? '止まっています' : '動いています',
+      !known || q.stale ? 'state' : 'state state-open'));
     box.appendChild(head);
 
+    var at = q.lastRun ? new Date(q.lastRun) : null;
+    // 台帳と同じく人が書き換えられる値なので、読めない時刻で Invalid Date と出さない
+    var when = !at ? 'まだありません' : isNaN(at.getTime()) ? '不明' : at.toLocaleString('ja-JP');
     var who = document.createElement('p');
-    who.textContent = q.runner
-      ? q.runner + ' さんの権限で1分ごとに動いています。最後に動いたのは ' +
-        (q.lastRun ? new Date(q.lastRun).toLocaleString('ja-JP') : 'まだありません') + '。'
-      : 'まだ仕掛けていません。';
+    who.textContent = !known ? 'まだ仕掛けていません。'
+      : (q.runner
+        ? q.runner + ' さんの権限で1分ごとに動いています。'
+        : '1分ごとに動いています (仕掛けた人は分かりません。setupCommandQueue() を実行し直すと記録されます)。') +
+        '最後に動いたのは ' + when + '。';
     box.appendChild(who);
 
-    if (!q.runner || q.stale) {
+    if (!known || q.stale) {
       var how = document.createElement('p');
       how.className = 'row-meta';
       how.textContent = '管理者が Apps Script のエディタで setupCommandQueue() を実行すると、' +
@@ -12270,7 +12277,7 @@
   }
 
   /**
-   * プロダクトゴールか完了の定義を、読む・直す欄。直せるのは持ち主だけ。
+   * プロダクトゴールか完了の定義を、読む・直す欄。直せるのは管理者だけ。
    *
    * @param {string} kind
    * @param {string} label
