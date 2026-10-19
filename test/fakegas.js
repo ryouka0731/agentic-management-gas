@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 export function createFakeGas() {
   var seq = 0;
   let trashDenied = false;
+  let trashPredicate = null;
   let sharingDenied = false;
   const nextId = (prefix) => prefix + '-' + (++seq);
 
@@ -48,7 +49,7 @@ export function createFakeGas() {
       _updated: new Date(),
       getLastUpdated: () => f._updated,
       setTrashed: (v) => {
-        if (trashDenied) throw new Error('Insufficient permissions for this file');
+        if (trashDenied || (trashPredicate && trashPredicate(f))) throw new Error('Insufficient permissions for this file');
         f._trashed = v !== false;
         return f;
       },
@@ -91,7 +92,7 @@ export function createFakeGas() {
       getId: () => id,
       getName: () => fo._name,
       setTrashed: (v) => {
-        if (trashDenied) throw new Error('Insufficient permissions for this file');
+        if (trashDenied || (trashPredicate && trashPredicate(fo))) throw new Error('Insufficient permissions for this file');
         fo._trashed = v !== false;
         return fo;
       },
@@ -460,6 +461,8 @@ export function createFakeGas() {
     HtmlService,
     /** スクリプトの置き場を決める。渡さなければ「分からない」状態 */
     _denyTrash: (on) => { trashDenied = !!on; },
+    /** 品物ごとに断る。predicate(item) が true のものだけ。null で解除 */
+    _denyTrashFor: (predicate) => { trashPredicate = predicate || null; },
     _denySharing: (on) => { sharingDenied = !!on; },
     _placeScript: (folder) => {
       const f = makeFile('スクリプト', '', folder.getId(), 'application/vnd.google-apps.script');
