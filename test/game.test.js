@@ -191,12 +191,12 @@ describe('称号', () => {
 });
 
 describe('チームの今週', () => {
-  it('全員の今週と先週の合計だけ。参加していない人も入る。名前もアドレスも入らない', () => {
+  it('見る人のほかに2人以上が動いた週だけ合計を出す。参加していない人も入る。名前もアドレスも入らない', () => {
     const { ctx } = setup();
     closed(ctx, 'a', { assignee: 'a@example.com' });
     closed(ctx, 'b', { assignee: 'b@example.com', points: 5 });
-    closed(ctx, '先週', { assignee: 'a@example.com', closedAt: new Date('2026-10-06T02:00:00Z') });
-    closed(ctx, '先週の日曜', { assignee: 'c@example.com', closedAt: new Date('2026-10-11T02:00:00Z') });
+    closed(ctx, '先週a', { assignee: 'a@example.com', closedAt: new Date('2026-10-06T02:00:00Z') });
+    closed(ctx, '先週の日曜c', { assignee: 'c@example.com', closedAt: new Date('2026-10-11T02:00:00Z') });
     closed(ctx, '先々週', { assignee: 'c@example.com', closedAt: new Date('2026-10-01T02:00:00Z') });
     ctx.gameSetPlaying_('a@example.com', true);
     const team = ctx.gameMine_('tester@example.com', NOW).team;
@@ -204,13 +204,26 @@ describe('チームの今週', () => {
     expect(JSON.stringify(team)).not.toMatch(/@|example/);
   });
 
-  it('この4週に動いた人が2人未満なら出さない (1人だと本人の数がそのまま見える)', () => {
+  it('漏れ: 自分が0点でほかに1人だけなら、その人の数になるので出さない', () => {
     const { ctx } = setup();
     closed(ctx, 'a', { assignee: 'a@example.com' });
-    closed(ctx, '昔', { assignee: 'b@example.com', closedAt: new Date('2026-09-01T02:00:00Z') });
-    expect(ctx.gameMine_('a@example.com', NOW).team).toBeNull();
-    closed(ctx, '3週前', { assignee: 'b@example.com', closedAt: new Date('2026-09-21T02:00:00Z') });
-    expect(ctx.gameMine_('a@example.com', NOW).team).toEqual({ week: 1, lastWeek: 0 });
+    expect(ctx.gameMine_('tester@example.com', NOW).team).toEqual({ week: null, lastWeek: null });
+  });
+
+  it('漏れ: 自分の点を引くとほかの1人の数になる週は出さない', () => {
+    const { ctx } = setup();
+    closed(ctx, '自分', { assignee: 'tester@example.com' });
+    closed(ctx, 'a', { assignee: 'a@example.com', points: 5 });
+    expect(ctx.gameMine_('tester@example.com', NOW).team.week).toBeNull();
+  });
+
+  it('漏れ: 先週ほかに1人しか動いていなければ、先週だけ出さない', () => {
+    const { ctx } = setup();
+    closed(ctx, 'a', { assignee: 'a@example.com' });
+    closed(ctx, 'b', { assignee: 'b@example.com' });
+    closed(ctx, '先週a', { assignee: 'a@example.com', closedAt: new Date('2026-10-06T02:00:00Z') });
+    closed(ctx, '先週の自分', { assignee: 'tester@example.com', closedAt: new Date('2026-10-07T02:00:00Z') });
+    expect(ctx.gameMine_('tester@example.com', NOW).team).toEqual({ week: 2, lastWeek: null });
   });
 });
 
@@ -452,12 +465,13 @@ describe('ゲームの API', () => {
     const { ctx } = setup();
     closed(ctx, 'x', { assignee: 'tester@example.com', closedAt: new Date() });
     closed(ctx, 'y', { assignee: 'b@example.com', closedAt: new Date() });
+    closed(ctx, 'z', { assignee: 'c@example.com', closedAt: new Date() });
     expect(ctx.apiGameState()).toEqual({ enabled: false });
     ctx.apiSetGameEnabled(true);
     const st = ctx.apiGameState();
     expect(st.badges[0]).toMatchObject({ key: 'first', label: 'はじめの一歩', done: true, left: 0 });
     expect(st.badges[0].at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(st.team).toEqual({ week: 2, lastWeek: 0 });
+    expect(st.team).toEqual({ week: 3, lastWeek: null });
     expect(JSON.stringify(st)).not.toMatch(/b@example/);
   });
 

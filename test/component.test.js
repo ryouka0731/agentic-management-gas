@@ -7475,9 +7475,25 @@ describe('ポイント・レベル・週の上位', () => {
     expect(team.textContent).toContain('先週 8');
   });
 
-  it('先週を超えたら棒は満ちたまま。先週が0でも割らない', () => {
+  it('先週を超えたら棒は満ちたまま。先週が0でも割らず、aria は 1/1 にする', () => {
     mount({ apiGameState: Object.assign({}, ON, { team: { week: 3, lastWeek: 0 } }) });
-    expect(document.querySelector('#home-cards .game-team-bar span').style.width).toBe('100%');
+    const bar = document.querySelector('#home-cards .game-team-bar');
+    expect(bar.querySelector('span').style.width).toBe('100%');
+    expect(bar.getAttribute('aria-valuemax')).toBe('1');
+    expect(bar.getAttribute('aria-valuenow')).toBe('1');
+  });
+
+  it('先週が出せないときは今週の合計だけ。棒は出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { week: 5, lastWeek: null } }) });
+    const team = document.querySelector('#home-cards .game-team');
+    expect(team.textContent).toContain('チームの今週 5');
+    expect(team.textContent).not.toContain('先週');
+    expect(document.querySelector('#home-cards .game-team-bar')).toBeNull();
+  });
+
+  it('今週が出せないときはチームの欄ごと出さない', () => {
+    mount({ apiGameState: Object.assign({}, ON, { team: { week: null, lastWeek: 4 } }) });
+    expect(document.querySelector('#home-cards .game-team')).toBeNull();
   });
 
   it('チームが届かなければ (2人未満) 出さない', () => {
