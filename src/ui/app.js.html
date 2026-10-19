@@ -162,6 +162,9 @@
   // 画面を切り替えた回数。返事を待つあいだに人が別の画面へ移ったかを見分ける
   // (全画面のリンクで開くとき、移った先を奪わない)
   var navCount = 0;
+  // 文書を開こうとした回数。遅れて届いた返事が、そのあとの新しい選択を上書き
+  // しないように見分ける
+  var docGen = 0;
   var currentUser = '';
   var currentTab = 'docs';
   var issueView = 'list';
@@ -3760,8 +3763,9 @@
       return splitPath(f.path).branch === 'main' && f.path === docPath;
     })[0];
 
-    // 描かずにやめたとき (opts.since) に戻すため、前に開いていた文書を控える
+    // 描かずにやめたとき・開けなかったときに戻すため、前に開いていた文書を控える
     var prev = { fileId: current.fileId, docFileId: current.docFileId, docPath: current.docPath };
+    var gen = ++docGen;
 
     current.docPath = docPath;
     current.docFileId = doc ? doc.fileId : fileId;
@@ -3770,17 +3774,24 @@
     titleEl.textContent = docPath;
     renderVersionSelect();
 
+    // 開きかけた文書をいまの文書として残さない。残すと本文のタブで空の本文が出る。
+    // あとから別の文書を開いていたら、そちらのものなので触らない
+    function restore() {
+      if (gen !== docGen) return;
+      current.fileId = prev.fileId;
+      current.docFileId = prev.docFileId;
+      current.docPath = prev.docPath;
+      renderVersionSelect();
+      updateCrumbs();
+    }
+
     call('apiGetFileHtml', [fileId], function (res) {
-      // 返事が届くまでに別の版へ移っていたら描かない。描くと、別の文書の本文が
-      // いまの題名の下に出る
-      if (current.fileId !== fileId) return;
+      // 返事が届くまでに別の文書・版を開き直していたら描かない。描くと、別の文書の
+      // 本文がいまの題名の下に出る
+      if (gen !== docGen || current.fileId !== fileId) return;
       // リンクから開いたときは、返事を待つあいだに人が移った先を奪わない
-      // 開きかけた文書をいまの文書として残さない。残すと本文のタブで空の本文が出る
       if (opts && opts.since !== undefined && navCount !== opts.since) {
-        current.fileId = prev.fileId;
-        current.docFileId = prev.docFileId;
-        current.docPath = prev.docPath;
-        renderVersionSelect();
+        restore();
         return;
       }
       openLink.href = res.url;
@@ -3792,7 +3803,10 @@
       // switchTab は全画面を抜けるので、そのあとで入る
       if (opts && opts.full) setDocFull(true);
       prefetchAppUrl();
-    }, failSnack('開けませんでした: '));
+    }, function (err) {
+      restore();
+      failSnack('開けませんでした: ')(err);
+    });
   }
 
   /**
@@ -3816,6 +3830,10 @@
    */
   function setDocFull(on) {
     if (on && docFullBtn.hidden) return;
+    // 右のペインと引き出しは全画面で隠れる。開いたまま隠すと、最初の Esc が
+    // 見えないものを閉じるだけになる
+    if (on && !sidePanel.hidden) closeSide();
+    if (on && sidebarEl.classList.contains('drawer-open')) setNavDrawer(false);
     document.body.classList.toggle('doc-full', on);
     // 押した状態 (aria-pressed) は持たせない。字が「全画面を閉じる」に変わるので、
     // 両方あると読み上げが「全画面を閉じる 押されています」と二重になる
@@ -3912,10 +3930,11 @@
     var fileId = String((p && p.doc) || '');
     if (!fileId) return;
     var wantFull = String(p.full || '') === '1';
+    var genAt = docGen;
 
     function go() {
-      // 一覧を待つあいだに人が別の画面へ移っていたら、そちらを奪わない
-      if (navCount !== since) return;
+      // 一覧を待つあいだに人が別の画面へ移った・別の文書を開いたなら、そちらを奪わない
+      if (navCount !== since || docGen !== genAt) return;
       var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
       if (!f) {
         showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
@@ -3925,7 +3944,7 @@
       openDoc(f.fileId, splitPath(f.path).path, { full: wantFull, since: navCount });
     }
     function ng() {
-      if (navCount !== since) return;
+      if (navCount !== since || docGen !== genAt) return;
       // 文書の一覧の欄はホームでは見えないので、帯で知らせる
       showSnack('文書の一覧を取れず、リンクの文書を開けませんでした', { kind: 'ng' });
     }
@@ -11285,13 +11304,25 @@
       document.body.appendChild(area);
       area.select();
 
+      // execCommand は断られても例外にならず false を返す。true のときだけ写せた
+      var ok = false;
       try {
-        document.execCommand('copy');
-        showSnack('写しました', { kind: 'ok' });
+        ok = document.execCommand('copy') === true;
       } catch (e) {
-        showSnack('写せませんでした。字を選んで手で写してください', { kind: 'ng' });
+        ok = false;
       }
       area.remove();
+      if (ok) {
+        showSnack('写しました', { kind: 'ok' });
+        return;
+      }
+      // 字を選んだままにして、手で写せるようにする
+      var range = document.createRange();
+      range.selectNodeContents(text);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
     });
     line.appendChild(btn);
 
@@ -11901,6 +11932,8 @@
     setDocFull(!document.body.classList.contains('doc-full'));
   });
   docLinkBtn.addEventListener('click', copyDocLink);
+  // 本文の iframe は sandbox (allow-scripts 無し) なので、その中の Esc は聞けない。
+  // 入ったときに閉じるボタンへ置き、ボタンは常に見えている
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || !document.body.classList.contains('doc-full')) return;
     // ほかのもの (欄・右のペイン・引き出し) が受けた Esc では抜けない。1回の Esc で
