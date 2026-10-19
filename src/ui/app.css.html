@@ -4424,6 +4424,18 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 }
 .home-head .side-close { position: static; }
 .home-turn-group + .home-turn-group { box-shadow: inset 0 1px 0 var(--line); }
+/* 改善のヒント。1件ごとに、なぜ (数字) と次にすること */
+.advice-item {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.advice-item:last-child { box-shadow: none; }
+.advice-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--ink); }
+.advice-why,
+.advice-tip { margin: 0; font-size: 13px; color: var(--ink-2); }
+.advice-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
 .home-sub {
   display: flex;
   align-items: center;
