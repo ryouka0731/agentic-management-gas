@@ -328,6 +328,17 @@ function branchDelete(name) {
       '先に取り下げるか反映してから捨ててください');
   }
 
+  // **フォルダを先に消す。** 共有ドライブで役割が足りないと、ここで止まり何も消えない。
+  // 先にファイルを消すと、消えた作業コピーを持つ「開いた」改訂版が残る。
+  // フォルダがもう無いとき (getFolderById が投げる) は、今までどおり記録して続ける
+  var folder = null;
+  try {
+    folder = DriveApp.getFolderById(row.workingFolderId);
+  } catch (e2) {
+    Logger.log('作業フォルダが見つかりません: ' + e2.message);
+  }
+  if (folder) driveTrash_(folder);
+
   var files = dbReadAll('files');
   var prefix = 'branches/' + name + '/';
   for (var i = 0; i < files.length; i++) {
@@ -337,12 +348,6 @@ function branchDelete(name) {
     } catch (e) {
       Logger.log('作業コピーを削除できません: ' + e.message);
     }
-  }
-
-  try {
-    DriveApp.getFolderById(row.workingFolderId).setTrashed(true);
-  } catch (e2) {
-    Logger.log('作業フォルダを削除できません: ' + e2.message);
   }
 
   dbUpdate('branches', 'name', name, { state: 'deleted' });

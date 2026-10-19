@@ -307,8 +307,8 @@ function commandOwner_(file) {
 /**
  * 命令を queue から引き上げる。
  *
- * **2つ呼ぶ必要がある。** Drive のファイルは複数のフォルダに属せるため、
- * `addFile` だけでは queue に残り、`removeFile` だけでは行き先が無くなる。
+ * **`moveTo` で移す。** 共有ドライブのファイルは親を1つしか持てず、`addFile` は例外になる。
+ * 以前の `addFile` + `removeFile` の組は、マイドライブでしか動かなかった。
  *
  * 実行した命令も、戻ってきた命令も、同じ道で片付ける。片方だけ別扱いに
  * すると、片方が queue に残って毎回の起動で見に来ることになる。
@@ -318,8 +318,7 @@ function commandOwner_(file) {
  * @param {GoogleAppsScript.Drive.Folder} done
  */
 function commandRetire_(file, queue, done) {
-  done.addFile(file);
-  queue.removeFile(file);
+  file.moveTo(done);
 }
 
 /**

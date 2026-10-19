@@ -157,14 +157,30 @@ function agentKitBuild_() {
     if (old[i].getName() === name) continue;
     if (!/-agent-kit-.*\.zip$/.test(old[i].getName())) continue;
 
-    old[i].setTrashed(true);
+    try {
+      old[i].setTrashed(true);
+    } catch (e) {
+      // 片付けのついで。消せなくても新しい zip は配れる
+      console.warn('古い道具の zip を消せませんでした: ' + e.message);
+    }
   }
 
   var same = folder.getFilesByName(name);
-  while (same.hasNext()) same.next().setTrashed(true);
+  while (same.hasNext()) {
+    try {
+      same.next().setTrashed(true);
+    } catch (e3) {
+      console.warn('古い道具の zip を消せませんでした: ' + e3.message);
+    }
+  }
 
   var file = folder.createFile(zip);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e4) {
+    // 共有ドライブでは外への共有を組織が止めていることがある。メンバーはそのまま落とせる
+    console.warn('道具の zip を「リンクを知っている全員」に共有できませんでした: ' + e4.message);
+  }
   return file;
 }
 
