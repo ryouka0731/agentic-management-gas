@@ -291,6 +291,7 @@ function runCommandFileLocked_(file, queue, done) {
  * 命令ファイルを置いた人。分からなければ空。
  *
  * 共有ドライブのファイルは持ち主を持たず、getOwner() が null を返す。
+ * そのときは最後に書いた人 (lastModifyingUser) を読む。
  *
  * @param {GoogleAppsScript.Drive.File} file
  * @returns {string}
@@ -298,8 +299,16 @@ function runCommandFileLocked_(file, queue, done) {
 function commandOwner_(file) {
   try {
     var owner = file.getOwner();
-    return owner ? String(owner.getEmail() || '') : '';
+    if (owner) return String(owner.getEmail() || '');
   } catch (e) {
+    // 共有ドライブのファイルは持ち主を持たない。下で最後に書いた人を読む
+  }
+  // 使い道は「誰の道具が古いか」(kitRemember_) だけ。書き換えられるので権限の判断には使わない
+  if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return '';
+  try {
+    var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });
+    return String((meta && meta.lastModifyingUser && meta.lastModifyingUser.emailAddress) || '');
+  } catch (e2) {
     return '';
   }
 }
