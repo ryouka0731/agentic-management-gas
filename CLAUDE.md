@@ -554,24 +554,23 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
   `track/hook.mjs` / `track/update.mjs` の欠けが1つでもあれば、控えも取らずに全体を断る。名乗った指紋と
   合っていても通さない (空の中身でも指紋は合う)
 - **道具の署名** (`kitSignature_` / `verifyKit`)。秘密鍵は `$BANTO_SIGNING_KEY` か
-  `~/.config/softbanto/kit-signing-key.pem` にだけ置き、**リポジトリにも Drive にも置かない**。作るのは
-  `node scripts/kit-key.mjs` (公開鍵は `kit/track/kit-key.pem` に書かれ、道具と一緒に配る)。
-  `src/KitSigning.gs` は `npm run deploy` が送る直前に秘密鍵から作るもので、記録しない (.gitignore)。
-  **鍵が無いと deploy は断る** (そのまま送ると向こうの KitSigning.gs が消え、全員の自動更新が黙って止まる)。
-  承知で送るなら `--no-sign` (手元の `src/KitSigning.gs` を消してから送る)。公開鍵と組が合わないときも断る。
-  **秘密鍵を失うと**、利用者は zip を落とし直すまで自動で新しくならない。作り直しは `--rotate` で、同じく
-  落とし直しが要る (新しい鍵は今の鍵で署名されていないので、道具は受け入れない)。
+  `~/.config/softbanto/kit-signing-key.pem` にだけ置き、**リポジトリにも Drive にも番頭にも置かない**。
+  `npm run deploy` が送る直前に手元で中身に署名し、**署名と、署名した版・中身の指紋だけ**を
+  `src/KitSigning.gs` (`KIT_SIGNATURE_`。記録しない) に書く。番頭は記録が今の版と中身に合うときだけ返す
+  (版を上げて送り直さなければ空になり、手元の道具は知らせるだけになる)。
+  作るのは `node scripts/kit-key.mjs` (公開鍵は `kit/track/kit-key.pem`)。
+  **鍵が無いと deploy は断る。** 承知で送るなら `--no-sign`。公開鍵と組が合わないときも断る。
+  **秘密鍵を失うと**、利用者は zip を落とし直すまで自動で新しくならない。作り直しは `--rotate`。
   確かめる鍵は必ず今入っている道具のもの (最初は落とした zip のもの)。届いた中身の鍵では確かめない
-- **秘密鍵を読めるのは「スクリプトを開ける人」全員である。** Apps Script のプロジェクトの編集者だけでなく
-  閲覧者も、スクリプトの入ったフォルダを編集できる人も `src/KitSigning.gs` を読める。鍵を替えても、古い版の
-  スクリプトに古い鍵が残る。**共有するのは `agentic-management/` フォルダだけにし、スクリプトの入ったフォルダは
-  共有しない。** 信頼の起点は「スクリプトを開ける人」
+- **信頼の起点は「秘密鍵を持つ人 (deploy する人)」。** スクリプトを開ける人が `KIT_FILES` を書き換えても
+  署名は合わない。以前 (1.8.0 を配った @151 まで) は番頭が秘密鍵を持って署名していたので、**それより前の
+  版のスクリプトには秘密鍵が残っている**。スクリプトを他の人と共有する前に `--rotate` を検討する
 - **自動では古い版に戻さない** (`compareVersions`)。署名が本物でも、前に配った返事を流し直されうる。
   `config.kitVersion` より古いものは自動では断る。戻すのは人が頼む `update rollback` だけ
 - **版の字は Claude が読む。** `kitVersion` の返事には署名が無いので、記録 (`update-log.json`) と合図
   (`hook.mjs` の `describeLog`) には `^[0-9A-Za-z.+-]{1,32}$` に合う字だけを出す。変わったファイルの名前も
   同じく絞り、20件までにする
-- **番頭で署名に失敗しても `kitFiles` は落とさない** (`kitSignature_` が握って空を返す)。落とすと全員が
+- **記録が無い・合わないときも `kitFiles` は落とさない** (`kitSignature_` は空を返す)。落とすと全員が
   中身を受け取れなくなる
 - **署名する文の式も2か所にある** (`kitSignedText_` と `kitSignedText`)。`test/kit-signing.test.js` が揃っているかを見ている
 - **指紋の式は2か所にある** (`kitPrint_` と `kitPrintOf`)。片方だけ変えると、手元が毎日入れ替えを繰り返す。

@@ -14,8 +14,9 @@ import { trackInstall } from '../kit/track/track.mjs';
 import { onPrompt } from '../kit/track/hook.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import {
-  signingKeyPath, signingSource, keysMatch, createKeys, prepareSigning,
+  signingKeyPath, signingSource, keysMatch, createKeys, prepareSigning, kitVersionOf,
 } from '../scripts/kit-key.mjs';
+import { kitFilesMap } from '../scripts/build-kit.mjs';
 
 const NOW = Date.parse('2026-10-15T00:00:00Z');
 const DAY = 86400000;
@@ -260,20 +261,48 @@ describe('入れるとき (track install)', () => {
 
 describe('番頭が署名する (kitFiles)', () => {
   const SOURCES = ['src/core/Hash.js', 'src/core/HashGas.gs', 'src/KitFiles.gs', 'src/core/AgentKit.gs'];
+  const sha = (files) => crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex');
 
-  it('秘密鍵が無ければ署名は空', () => {
+  /** deploy が書くのと同じ記録を持たせる */
+  function withRecord(fake, ctxFiles, version) {
+    fake.KIT_SIGNATURE_ = () => ({
+      version, filesSha: sha(ctxFiles), signature: signKit(version, ctxFiles, TEST_KEYS.priv),
+    });
+  }
+
+  it('記録が無ければ署名は空', () => {
     const ctx = loadGasWith(createFakeGas(), ...SOURCES);
     expect(ctx.kitSignature_('1', { a: 'b' })).toBe('');
   });
 
-  it('秘密鍵があれば、手元が確かめられる署名を付ける', () => {
+  it('記録した署名を返し、手元はそれを確かめられる', () => {
     const fake = createFakeGas();
-    fake.KIT_SIGNING_KEY_ = () => TEST_KEYS.priv;
+    const files = loadGasWith(createFakeGas(), ...SOURCES).KIT_FILES();
+    withRecord(fake, files, '1.8.0');
     const ctx = loadGasWith(fake, ...SOURCES);
-    const files = ctx.KIT_FILES();
-    const signature = ctx.kitSignature_('1.8.0', files);
+    const signature = ctx.kitSignature_('1.8.0', ctx.KIT_FILES());
     expect(verifyKit({ version: '1.8.0', files, signature }, TEST_KEYS.pub)).toBe(true);
-    expect(verifyKit({ version: '1.8.0', files, signature }, OTHER_KEYS.pub)).toBe(false);
+  });
+
+  it('中身が1字違えば空', () => {
+    const fake = createFakeGas();
+    const files = { 'agent.mjs': b64('v1') };
+    withRecord(fake, files, '1.8.0');
+    const ctx = loadGasWith(fake, ...SOURCES);
+    expect(ctx.kitSignature_('1.8.0', { 'agent.mjs': b64('v2') })).toBe('');
+  });
+
+  it('版が違えば空 (版を上げて署名を作り直さずに送ったとき)', () => {
+    const fake = createFakeGas();
+    const files = { 'agent.mjs': b64('v1') };
+    withRecord(fake, files, '1.8.0');
+    const ctx = loadGasWith(fake, ...SOURCES);
+    expect(ctx.kitSignature_('1.9.0', files)).toBe('');
+  });
+
+  it('番頭は秘密鍵を持たない', () => {
+    const src = fs.readFileSync('src/core/AgentKit.gs', 'utf8');
+    expect(src).not.toMatch(/KIT_SIGNING_KEY_|computeRsaSha256Signature/);
   });
 });
 
@@ -285,11 +314,13 @@ describe('署名の鍵の扱い (scripts/kit-key.mjs)', () => {
     expect(signingKeyPath({}, '/h')).toBe(path.join('/h', '.config', 'softbanto', 'kit-signing-key.pem'));
   });
 
-  it('KitSigning.gs は秘密鍵を返す関数1つで、GAS で読める', () => {
+  it('KitSigning.gs は署名の記録を返す関数1つで、秘密鍵を含まない', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-sig-src-'));
-    fs.writeFileSync(path.join(dir, 'KitSigning.gs'), signingSource(TEST_KEYS.priv));
+    const rec = { version: '1.8.0', filesSha: 'ab'.repeat(32), signature: 'c2ln' };
+    fs.writeFileSync(path.join(dir, 'KitSigning.gs'), signingSource(rec));
     const ctx = loadGasWith({}, path.relative(process.cwd(), path.join(dir, 'KitSigning.gs')));
-    expect(ctx.KIT_SIGNING_KEY_()).toBe(TEST_KEYS.priv);
+    expect(ctx.KIT_SIGNATURE_()).toEqual(rec);
+    expect(signingSource(rec)).not.toContain('PRIVATE KEY');
   });
 
   it('秘密鍵と公開鍵の組が合うかを見る', () => {
@@ -321,20 +352,42 @@ describe('署名の鍵の扱い (scripts/kit-key.mjs)', () => {
     const keyPath = path.join(t, 'k.pem');
     const publicPath = path.join(t, 'kit-key.pem');
     const outPath = path.join(t, 'KitSigning.gs');
+    const base = { keyPath, publicPath, outPath, version: '1.8.0', files: { 'agent.mjs': b64('v1') } };
 
-    expect(() => prepareSigning({ keyPath, publicPath, outPath })).toThrow('秘密鍵');
+    expect(() => prepareSigning(base)).toThrow('秘密鍵');
     expect(fs.existsSync(outPath)).toBe(false);
-    expect(prepareSigning({ keyPath, publicPath, outPath, noSign: true })).toEqual({ signed: false });
+    expect(prepareSigning({ ...base, noSign: true })).toEqual({ signed: false });
     expect(fs.existsSync(outPath)).toBe(false);
 
     fs.writeFileSync(keyPath, TEST_KEYS.priv);
     fs.writeFileSync(publicPath, OTHER_KEYS.pub);
-    expect(() => prepareSigning({ keyPath, publicPath, outPath })).toThrow('合いません');
+    expect(() => prepareSigning(base)).toThrow('合いません');
     expect(fs.existsSync(outPath)).toBe(false);
+  });
 
+  it('prepareSigning は渡された中身に署名し、公開鍵で確かめられる記録を書く', () => {
+    const t = tmp();
+    const keyPath = path.join(t, 'k.pem');
+    const publicPath = path.join(t, 'kit-key.pem');
+    const outPath = path.join(t, 'KitSigning.gs');
+    fs.writeFileSync(keyPath, TEST_KEYS.priv);
     fs.writeFileSync(publicPath, TEST_KEYS.pub);
-    expect(prepareSigning({ keyPath, publicPath, outPath })).toEqual({ signed: true });
-    expect(fs.readFileSync(outPath, 'utf8')).toBe(signingSource(TEST_KEYS.priv));
+    const files = { 'agent.mjs': b64('v1') };
+    expect(prepareSigning({ keyPath, publicPath, outPath, version: '1.8.0', files })).toEqual({ signed: true });
+    const rec = loadGasWith({}, path.relative(process.cwd(), outPath)).KIT_SIGNATURE_();
+    expect(rec.version).toBe('1.8.0');
+    expect(verifyKit({ version: '1.8.0', files, signature: rec.signature }, TEST_KEYS.pub)).toBe(true);
+    expect(fs.readFileSync(outPath, 'utf8')).not.toContain('PRIVATE KEY');
+  });
+
+  it('版を AgentKit.gs から読む。読めなければ投げる', () => {
+    expect(kitVersionOf("function AGENT_KIT_VERSION() {\n  return '1.8.0';\n}")).toBe('1.8.0');
+    expect(() => kitVersionOf('function x() {}')).toThrow('AGENT_KIT_VERSION');
+  });
+
+  it('kitFilesMap は KIT_FILES() と同じ並び・同じ中身', () => {
+    const ctx = loadGasWith(createFakeGas(), 'src/KitFiles.gs');
+    expect(JSON.stringify(kitFilesMap())).toBe(JSON.stringify(ctx.KIT_FILES()));
   });
 
   it('KitSigning.gs は記録しない', () => {
@@ -413,16 +466,6 @@ describe('署名の手直し', () => {
     expect(readConfig(d.home).kitVersion).toBe('1');
   });
 
-  it('番頭で署名に失敗しても、kitFiles は空の署名で中身を返す', () => {
-    const errors = [];
-    const fake = createFakeGas();
-    fake.console = { ...console, error: (...a) => errors.push(a.join(' ')) };
-    fake.KIT_SIGNING_KEY_ = () => 'not a key';
-    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs', 'src/KitFiles.gs', 'src/core/AgentKit.gs');
-    expect(ctx.kitSignature_('1', { a: 'b' })).toBe('');
-    expect(errors.length).toBe(1);
-  });
-
   it('鍵を持たない道具には、zip を落とし直すよう知らせる', async () => {
     const d = dirs();
     writeConfig(d.home, { queueDir: '/q' });
@@ -443,9 +486,10 @@ describe('署名の手直し', () => {
     const keyPath = path.join(t, 'k.pem');
     const publicPath = path.join(t, 'kit-key.pem');
     const outPath = path.join(t, 'KitSigning.gs');
-    fs.writeFileSync(outPath, signingSource(TEST_KEYS.priv));
-    expect(() => prepareSigning({ keyPath, publicPath, outPath })).toThrow(outPath);
-    expect(prepareSigning({ keyPath, publicPath, outPath, noSign: true })).toEqual({ signed: false, removed: true });
+    const base = { keyPath, publicPath, outPath, version: '1', files: {} };
+    fs.writeFileSync(outPath, signingSource({ version: '1', filesSha: '', signature: '' }));
+    expect(() => prepareSigning(base)).toThrow('秘密鍵');
+    expect(prepareSigning({ ...base, noSign: true })).toEqual({ signed: false, removed: true });
     expect(fs.existsSync(outPath)).toBe(false);
   });
 
@@ -490,6 +534,9 @@ describe('署名の手直し', () => {
     const dir = path.join(t, 'scripts dir');
     fs.mkdirSync(dir);
     fs.copyFileSync('scripts/kit-key.mjs', path.join(dir, 'kit-key.mjs'));
+    // kit-key.mjs は ../kit/track/update.mjs を読む。道のりごと写す
+    fs.mkdirSync(path.join(t, 'kit', 'track'), { recursive: true });
+    fs.copyFileSync('kit/track/update.mjs', path.join(t, 'kit', 'track', 'update.mjs'));
     const keyPath = path.join(t, 'conf', 'k.pem');
     const out = execFileSync(process.execPath, [path.join(dir, 'kit-key.mjs')], { encoding: 'utf8',
       env: { ...process.env, HOME: t, BANTO_SIGNING_KEY: keyPath } });
