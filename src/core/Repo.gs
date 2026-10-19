@@ -48,6 +48,7 @@ function repoInit(rootFolderName) {
 
   PropertiesService.getScriptProperties()
     .setProperty(REPO_CONFIG_KEY(), JSON.stringify(config));
+  repoDriveId_(); // 共有ドライブなら覚える
 
   // スキーマ定義済みのシートをすべて先に作っておく
   var schema = DB_SCHEMA();
@@ -96,18 +97,139 @@ function repoParentFolder_() {
 }
 
 /**
+ * Drive の拡張サービス (v3) が使えるか。
+ *
+ * appsscript.json で足してあるが、足す前に作ったデプロイや、組織が止めている環境もある。
+ * 使えなければマイドライブとして扱う。
+ *
+ * @returns {boolean}
+ */
+function driveApiAvailable_() {
+  try {
+    return typeof Drive !== 'undefined' && !!Drive.Files && !!Drive.Permissions;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * 入れ物が置かれている共有ドライブの id。マイドライブなら空。
  *
- * Task 3 で repoDriveId_() に置き換える。それまでは設定に書かれた字だけを見る。
+ * **共有ドライブとマイドライブの分かれ目はここだけ。** `if (driveId)` を散らさない。
+ *
+ * 設定 (`repoConfig().driveId`) に覚える。空文字も「マイドライブ」として覚え、毎回
+ * 問い合わせない。拡張サービスが無いときと問い合わせに失敗したときは覚えない
+ * (あとで足されたら読み直す)。設定が読めなければ投げる (repoConfig と同じ)。
  *
  * @returns {string}
  */
-function repoDriveIdOrEmpty_() {
+function repoDriveId_() {
+  var config = repoConfig();
+  if (typeof config.driveId === 'string') return config.driveId;
+  if (!driveApiAvailable_()) return '';
+
+  var id;
   try {
-    return String(repoConfig().driveId || '');
+    var meta = Drive.Files.get(config.rootId, { fields: 'driveId', supportsAllDrives: true });
+    id = String((meta && meta.driveId) || '');
+  } catch (e) {
+    Logger.log('共有ドライブか分かりませんでした: ' + e.message);
+    return '';
+  }
+
+  // 設定はキューの置き場を作るときにも書くので、鍵の中で読み直してから書く。
+  // 取れなければ覚えずに返す (次に読んだときにまた問い合わせるだけ)
+  dbWithLock_(30000, function () {
+    var again = repoConfig();
+    if (typeof again.driveId === 'string') return;
+    again.driveId = id;
+    PropertiesService.getScriptProperties().setProperty(REPO_CONFIG_KEY(), JSON.stringify(again));
+  }, function () {});
+  return id;
+}
+
+/**
+ * repoDriveId_ を、設定が読めないときに空で返す形。消す・断るの判断に使う。
+ *
+ * @returns {string}
+ */
+function repoDriveIdSafe_() {
+  try {
+    return repoDriveId_();
   } catch (e) {
     return '';
   }
+}
+
+/**
+ * 共有ドライブのメンバーを、持ち主 (organizer) と管理者 (organizer / fileOrganizer / writer) に分ける。
+ *
+ * **グループは数えない。** 中の人を確かめる手立てが無い。
+ * **読めなければ投げずに空。** 誰も持ち主・管理者ではない (安全側)。失敗は覚えない。
+ * 読めたものは10分覚える。一覧で1行ごとに問い合わせると、行の数だけ待つ。
+ *
+ * @param {string} driveId
+ * @returns {{owners: string[], admins: string[]}}
+ */
+function driveMembers_(driveId) {
+  var key = 'driveMembers:' + driveId;
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {
+    cache = null;
+  }
+
+  var out = { owners: [], admins: [] };
+  try {
+    var token = '';
+    do {
+      var res = Drive.Permissions.list(driveId, {
+        supportsAllDrives: true, pageSize: 100, pageToken: token || undefined,
+        fields: 'nextPageToken,permissions(emailAddress,role,type)',
+      });
+      var list = (res && res.permissions) || [];
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        if (p.type !== 'user' || !p.emailAddress) continue;
+        var email = String(p.emailAddress);
+        if (p.role === 'organizer') out.owners.push(email);
+        if (p.role === 'organizer' || p.role === 'fileOrganizer' || p.role === 'writer') out.admins.push(email);
+      }
+      token = (res && res.nextPageToken) || '';
+    } while (token);
+  } catch (e) {
+    Logger.log('共有ドライブの役割が読めませんでした: ' + e.message);
+    return { owners: [], admins: [] };
+  }
+
+  try {
+    if (cache) cache.put(key, JSON.stringify(out), 600);
+  } catch (e2) {
+    Logger.log('役割を覚えられませんでした: ' + e2.message);
+  }
+  return out;
+}
+
+/**
+ * このアプリの持ち主。マイドライブでは入れ物の持ち主1人、共有ドライブでは管理者 (organizer) 全員。
+ *
+ * エディタ専用の関数・報告の知らせ・報告から作るやることの担当が見る。
+ *
+ * @returns {string[]} 分からなければ空
+ */
+function repoOwners_() {
+  var driveId;
+  try {
+    driveId = repoDriveId_();
+  } catch (e) {
+    return [];
+  }
+  if (driveId) return driveMembers_(driveId).owners;
+  var owner = repoOwnerEmail();
+  return owner ? [owner] : [];
 }
 
 /**
@@ -125,7 +247,7 @@ function driveTrash_(item) {
     item.setTrashed(true);
     return true;
   } catch (e) {
-    if (repoDriveIdOrEmpty_()) {
+    if (repoDriveIdSafe_()) {
       throw new Error('ゴミ箱へ移せませんでした。共有ドライブで消すには「コンテンツ管理者」以上の' +
         '役割が要ります (' + e.message + ')');
     }
@@ -269,6 +391,8 @@ function repoOwnerEmail() {
 /**
  * その人がこのアプリの管理者か。
  *
+ * **共有ドライブでは** organizer / fileOrganizer / writer (driveMembers_)。
+ *
  * **管理者 = 持ち主 + 入れ物のフォルダを編集できる人。** 以前は持ち主1人だけが
  * 設定や他人の依頼の取り下げを行えたため、持ち主が休むと誰も直せなかった。
  * フォルダを編集できる人は台帳も直接書き換えられるので、画面の操作でも同じ
@@ -286,6 +410,15 @@ function repoOwnerEmail() {
 function repoIsAdmin_(email) {
   var who = String(email || '');
   if (!who) return false;
+
+  var driveId;
+  try {
+    driveId = repoDriveId_();
+  } catch (e) {
+    return false;
+  }
+  // 共有ドライブでは、台帳を書き換えられる役割 (投稿者まで) を管理者とする。フォルダの持ち主は無い
+  if (driveId) return driveMembers_(driveId).admins.indexOf(who) >= 0;
 
   var owner = repoOwnerEmail();
   if (owner && owner === who) return true;
@@ -390,7 +523,7 @@ function repoEnsureMainBranch() {
       baseSha: '',
       state: 'open',
       workingFolderId: repoConfig().mainId,
-      createdBy: repoOwnerEmail(),
+      createdBy: repoOwners_()[0] || '',
       createdAt: new Date(),
     });
     return true;

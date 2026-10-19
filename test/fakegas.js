@@ -33,6 +33,7 @@ export function createFakeGas() {
       _parent: parentId,
       _mime: mime || 'text/plain',
       _trashed: false,
+      _createdBy: activeUser,
       _driveId: parentId && folders.has(parentId) ? folders.get(parentId)._driveId : '',
       moveTo: (folder) => { f._parent = folder.getId(); f._driveId = folder._driveId; return f; },
       _owner: (parentId && folders.has(parentId) && folders.get(parentId)._driveId) ? '' : activeUser,
@@ -421,6 +422,42 @@ export function createFakeGas() {
     };
   }
 
+  /**
+   * Drive の拡張サービス (v3) を模す。既定では返さない (足していない環境でも
+   * マイドライブとして動くことを確かめるため)。
+   */
+  function makeDrive({ members = {}, pageSize = 100 } = {}) {
+    const calls = { filesGet: 0, permissionsList: 0 };
+    return {
+      _calls: calls,
+      Files: {
+        get: (id, opts) => {
+          calls.filesGet++;
+          const item = files.get(id) || folders.get(id);
+          if (!item) throw new Error('File not found: ' + id);
+          const out = {};
+          if (item._driveId) out.driveId = item._driveId;
+          if (opts && /lastModifyingUser/.test(String(opts.fields || ''))) {
+            out.lastModifyingUser = { emailAddress: item._createdBy || '' };
+          }
+          return out;
+        },
+      },
+      Permissions: {
+        list: (driveId, opts) => {
+          calls.permissionsList++;
+          if (!Object.prototype.hasOwnProperty.call(members, driveId)) throw new Error('File not found: ' + driveId);
+          const all = members[driveId];
+          const start = opts && opts.pageToken ? Number(opts.pageToken) : 0;
+          const page = all.slice(start, start + pageSize);
+          const res = { permissions: page };
+          if (start + pageSize < all.length) res.nextPageToken = String(start + pageSize);
+          return res;
+        },
+      },
+    };
+  }
+
   /*
    * スライドの要素。{shape: '字'} / {group: [要素]} / {table: [['a','b']]} /
    * {image: true}。elements を書かなければ shapes を図形として並べる
@@ -471,6 +508,7 @@ export function createFakeGas() {
     },
     _setKitFile: (name, text) => { kitFiles.set(name, text); },
     _makeTasks: makeTasks,
+    _makeDrive: makeDrive,
     DriveApp,
     SpreadsheetApp,
     PropertiesService,

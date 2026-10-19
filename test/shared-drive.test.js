@@ -27,17 +27,23 @@ function withZip(fake) {
   return fake;
 }
 
+const MEMBERS = [
+  { emailAddress: 'tester@example.com', role: 'organizer', type: 'user' },
+  { emailAddress: 'boss@example.com', role: 'organizer', type: 'user' },
+  { emailAddress: 'manager@example.com', role: 'fileOrganizer', type: 'user' },
+  { emailAddress: 'writer@example.com', role: 'writer', type: 'user' },
+  { emailAddress: 'reader@example.com', role: 'reader', type: 'user' },
+  { emailAddress: 'team@example.com', role: 'organizer', type: 'group' },
+];
+
 /** スクリプトを共有ドライブに置き、そこに入れ物を作る */
-function setupShared() {
+function setupShared({ members = MEMBERS, pageSize } = {}) {
   const fake = withZip(createFakeGas());
+  fake.Drive = fake._makeDrive({ members: { 'drive-1': members }, pageSize });
   const drive = fake.DriveApp.createFolder('共有ドライブ')._markShared('drive-1');
   fake._placeScript(drive);
   const ctx = loadGasWith(fake, ...SOURCES);
   ctx.repoInit('agentic-management');
-  // Task 3 で repoInit が自分で入れるようになったら消す
-  const cfg = ctx.repoConfig();
-  cfg.driveId = 'drive-1';
-  fake.PropertiesService.getScriptProperties().setProperty(ctx.REPO_CONFIG_KEY(), JSON.stringify(cfg));
   return { ctx, fake, drive };
 }
 
@@ -101,5 +107,135 @@ describe('共有ドライブで道具の zip を作る', () => {
     const { ctx, fake } = setupShared();
     fake._denySharing(true);
     expect(ctx.agentKitBuild_().getName()).toMatch(/-agent-kit-.*\.zip$/);
+  });
+});
+
+describe('共有ドライブかどうか', () => {
+  it('入れ物を作ったときに driveId を覚える', () => {
+    const { ctx } = setupShared();
+    expect(ctx.repoConfig().driveId).toBe('drive-1');
+  });
+
+  it('マイドライブなら今のまま。2回目からは問い合わせない', () => {
+    const fake = createFakeGas();
+    fake.Drive = fake._makeDrive({});
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    expect(ctx.repoDriveId_()).toBe('');
+    const n = fake.Drive._calls.filesGet;
+    ctx.repoDriveId_();
+    ctx.repoIsAdmin_('tester@example.com');
+    expect(fake.Drive._calls.filesGet).toBe(n);
+    expect(ctx.repoOwners_()).toEqual(['tester@example.com']);
+  });
+
+  it('設定に driveId が無い (前からある番頭) と、最初に読んだときに埋める', () => {
+    const { ctx, fake } = setupShared();
+    const cfg = ctx.repoConfig();
+    delete cfg.driveId;
+    fake.PropertiesService.getScriptProperties().setProperty(ctx.REPO_CONFIG_KEY(), JSON.stringify(cfg));
+    expect(ctx.repoDriveId_()).toBe('drive-1');
+    expect(ctx.repoConfig().driveId).toBe('drive-1');
+  });
+
+  it('拡張サービスが無ければマイドライブとして扱い、覚えない (あとで足されたら読み直す)', () => {
+    const fake = createFakeGas();
+    const drive = fake.DriveApp.createFolder('共有ドライブ')._markShared('drive-1');
+    fake._placeScript(drive);
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    expect(ctx.repoDriveId_()).toBe('');
+    expect('driveId' in ctx.repoConfig()).toBe(false);
+  });
+});
+
+describe('共有ドライブの持ち主と管理者', () => {
+  it('持ち主は管理者 (organizer) 全員。グループは数えない', () => {
+    const { ctx } = setupShared();
+    expect(ctx.repoOwners_().sort()).toEqual(['boss@example.com', 'tester@example.com']);
+  });
+
+  it('管理者はコンテンツ管理者と投稿者まで。閲覧者とグループは違う', () => {
+    const { ctx } = setupShared();
+    for (const who of ['tester@example.com', 'boss@example.com', 'manager@example.com', 'writer@example.com']) {
+      expect(ctx.repoIsAdmin_(who)).toBe(true);
+    }
+    expect(ctx.repoIsAdmin_('reader@example.com')).toBe(false);
+    expect(ctx.repoIsAdmin_('team@example.com')).toBe(false);
+  });
+
+  it('エディタ専用の関数は、どの管理者 (organizer) でも動く。投稿者には動かない', () => {
+    const { ctx, fake } = setupShared();
+    fake._setUser('boss@example.com');
+    expect(() => ctx.debugEnableSelfApprove()).not.toThrow();
+    ctx.debugDisableSelfApprove();
+    fake._setUser('writer@example.com');
+    expect(() => ctx.debugEnableSelfApprove()).toThrow(/持ち主だけ/);
+  });
+
+  it('全頁を読む', () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({ emailAddress: 'w' + i + '@example.com', role: 'writer', type: 'user' }));
+    many.push({ emailAddress: 'last@example.com', role: 'organizer', type: 'user' });
+    const { ctx } = setupShared({ members: many, pageSize: 100 });
+    expect(ctx.repoOwners_()).toEqual(['last@example.com']);
+  });
+
+  // loadGasWith は fake そのものを文脈にする (ctx === fake)。読み込んだあとに fake.Drive や
+  // fake.CacheService を差し替えれば、そのまま効く
+  it('役割が読めなければ誰も持ち主ではない。失敗は覚えない', () => {
+    const { ctx, fake } = setupShared();
+    const cache = new Map();
+    fake.CacheService = { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) };
+    fake.Drive = fake._makeDrive({ members: {} });
+    expect(ctx.repoOwners_()).toEqual([]);
+    expect(ctx.repoIsAdmin_('tester@example.com')).toBe(false);
+    expect(() => ctx.assertOwner_()).toThrow(/持ち主だけ/);
+    expect(cache.size).toBe(0);
+    fake.Drive = fake._makeDrive({ members: { 'drive-1': MEMBERS } });
+    expect(ctx.repoOwners_().length).toBe(2);
+  });
+
+  it('役割は10分覚え、続けて聞かない', () => {
+    const { ctx, fake } = setupShared();
+    const cache = new Map();
+    fake.CacheService = { getScriptCache: () => ({ get: (k) => cache.get(k) || null, put: (k, v) => cache.set(k, v) }) };
+    ctx.repoOwners_();
+    const n = fake.Drive._calls.permissionsList;
+    ctx.repoOwners_();
+    ctx.repoIsAdmin_('writer@example.com');
+    expect(fake.Drive._calls.permissionsList).toBe(n);
+  });
+});
+
+describe('共有ドライブの報告', () => {
+  it('知らせは持ち主全員に届き、書いた本人には送らない。やることの担当は空', () => {
+    const { ctx, fake } = setupShared();
+    fake._setUser('writer@example.com');
+    ctx.inquiryCreate('bug', '動かない', '押しても何も起きない', []);
+    const to = fake._sentMails().map((m) => m.to).sort();
+    expect(to).toEqual(['boss@example.com', 'tester@example.com']);
+    const issue = ctx.dbReadAll('issues').find((r) => String(r.title).indexOf('[報告 #') === 0);
+    expect(String(issue.assignee || '')).toBe('');
+  });
+
+  it('マイドライブでは今までどおり持ち主1人が担当になる', () => {
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    fake._setUser('writer@example.com');
+    ctx.inquiryCreate('bug', '動かない', '押しても何も起きない', []);
+    const issue = ctx.dbReadAll('issues').find((r) => String(r.title).indexOf('[報告 #') === 0);
+    expect(String(issue.assignee)).toBe('tester@example.com');
+  });
+});
+
+describe('共有ドライブで命令を置いた人', () => {
+  it('持ち主が無いので、最後に書いた人を読む', () => {
+    const { ctx, fake } = setupShared();
+    const queue = ctx.commandQueueFolder_();
+    fake._setUser('writer@example.com');
+    const f = queue.createFile('t2.cmd.json', '{}', 'text/plain');
+    fake._setUser('tester@example.com');
+    expect(ctx.commandOwner_(f)).toBe('writer@example.com');
   });
 });

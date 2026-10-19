@@ -46,12 +46,13 @@ function setupRepo() {
  * エディタで動かすつもりの関数 (debug* / setupCommandQueue) も例外ではない。
  * 今は持ち主しか開けない設定だが、executeAs: ME で共有すると、利用者の誰もが
  * 持ち主の権限で呼べる。自己承認の解禁などを塞ぐため、最初にこれを呼ぶ。
+ *
+ * 持ち主は repoOwners_ が決める (共有ドライブでは管理者 = organizer 全員)。
  */
 function assertOwner_() {
   var me = String(Session.getActiveUser().getEmail() || '');
-  var owner = repoOwnerEmail();
-  if (!owner || !me || owner !== me) {
-    throw new Error('この操作は、このアプリの持ち主だけが行えます');
+  if (!me || repoOwners_().indexOf(me) < 0) {
+    throw new Error('この操作は、このアプリの持ち主だけが行えます (共有ドライブでは管理者)');
   }
 }
 
