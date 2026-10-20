@@ -50,8 +50,6 @@ function genBlocks(rnd, opts) {
 
 /** 記法に使う字を全部含む */
 const ALL = 'ab あ  *~[]()<>|\\#-._&"\'1';
-/** 下の「既知の不具合」に当たる字 (* ~ \ ]) を除いたもの */
-const SAFE = 'ab あ  [()<>|#-._&"\'1';
 
 describe('正規化 HTML の往復', () => {
   it('serializeBlocks → parseBlocks → serializeBlocks でバイト単位に変わらない', () => {
@@ -79,7 +77,7 @@ describe('Markdown の往復', () => {
     for (const seed of [3, 99, 2024]) {
       const rnd = rng(seed);
       for (let t = 0; t < 500; t++) {
-        const html = g.serializeBlocks(genBlocks(rnd, { alphabet: SAFE, boldItalic: false }));
+        const html = g.serializeBlocks(genBlocks(rnd, { alphabet: ALL, boldItalic: true }));
         const md = g.blocksToMd(g.parseBlocks(html));
         expect({ md, html: g.serializeBlocks(g.mdToBlocks(md)) }).toEqual({ md, html });
       }
@@ -87,42 +85,101 @@ describe('Markdown の往復', () => {
   });
 
   /*
-   * 既知の不具合 (このテストを足したときに見つけた。src は直していない)。
+   * 以前の読み方の不具合 (このテストを足したときに見つけ、mdParseInline_ で直した)。
    *
-   * mdTakeDecorated_ が閉じの記号を indexOf で探すため、(1) 太字と斜体を重ねた
+   * mdTakeDecorated_ が閉じの記号を indexOf で探していたため、(1) 太字と斜体を重ねた
    * `***x***` の閉じを内側の `**` と取り違え、(2) 逃がした記号 `\*` / `\~` を閉じと
-   * 読み、(3) リンクの字の中の `](` でリンクを切る。apiSaveMarkdown はこの読み方で
+   * 読み、(3) リンクの字の中の `](` でリンクを切っていた。apiSaveMarkdown はこの読み方で
    * Docs に書き戻すので、Markdown で何も触っていない段落の装飾が変わり、字に * が
-   * 混ざる。it.fails は「正しい答え」を書いておき、今は落ちることを確かめている。
-   * 直したら it に戻す。
+   * 混ざっていた。
    */
   const back = (runs) => g.mdToBlocks(g.blocksToMd([{ type: 'paragraph', runs }]))[0].runs;
 
-  it.fails('[既知の不具合] 太字と斜体を重ねた字が戻らない (***重要***)', () => {
+  it('[直した] 太字と斜体を重ねた字が戻らない (***重要***)', () => {
     expect(back([{ text: '重要', bold: true, italic: true }])).toEqual([{ text: '重要', bold: true, italic: true }]);
   });
 
-  it.fails('[既知の不具合] 装飾の最後の字が逃がした記号だと、そこで閉じたと読む (**a\\***)', () => {
+  it('[直した] 装飾の最後の字が逃がした記号だと、そこで閉じたと読む (**a\\***)', () => {
     expect(back([{ text: 'a*', bold: true }])).toEqual([{ text: 'a*', bold: true }]);
   });
 
-  it.fails('[既知の不具合] 取り消し線の最後の ~ も同じく閉じと読む', () => {
+  it('[直した] 取り消し線の最後の ~ も同じく閉じと読む', () => {
     expect(back([{ text: '1 ~', strike: true }])).toEqual([{ text: '1 ~', strike: true }]);
   });
 
-  it.fails('[既知の不具合] リンクの字に ]( が入るとリンクが切れる', () => {
+  it('[直した] リンクの字に ]( が入るとリンクが切れる', () => {
     expect(back([{ text: 'a](b', link: 'https://e.test/' }])).toEqual([{ text: 'a](b', link: 'https://e.test/' }]);
   });
+});
 
-  it('記法の字をすべて含む乱数の文書では、いまは往復が崩れることがある (上の不具合の現れ)', () => {
-    const rnd = rng(7);
-    let broken = 0;
-    for (let t = 0; t < 300; t++) {
-      const html = g.serializeBlocks(genBlocks(rnd, { alphabet: ALL, boldItalic: true }));
-      if (g.serializeBlocks(g.mdToBlocks(g.blocksToMd(g.parseBlocks(html)))) !== html) broken++;
+describe('Markdown を読む: 装飾の境目と入れ子', () => {
+  const ATTRS = ['bold', 'italic', 'underline', 'strike', 'link'];
+  /** 5つの装飾の組み合わせ全部 (32通り) */
+  const combos = Array.from({ length: 32 }, (_, n) => ATTRS.filter((_, i) => n & (1 << i)));
+  const runOf = (text, attrs) => {
+    const r = { text };
+    for (const a of attrs) r[a] = a === 'link' ? 'https://e.test/(x)' : true;
+    return r;
+  };
+  /** 段落を書いて読み戻し、正規化 HTML で比べる (続きの同じ装飾は1つにまとまる) */
+  const same = (runs) => {
+    const want = g.serializeBlocks([{ type: 'paragraph', runs }]);
+    const md = g.blocksToMd([{ type: 'paragraph', runs }]);
+    expect({ md, html: g.serializeBlocks(g.mdToBlocks(md)) }).toEqual({ md, html: want });
+  };
+  /** 端に記法の字が来る字 */
+  const EDGES = ['重要', '*', '**a**', '~', 'a~', '\\', 'a\\', '[', ']', 'a](b', '](', '<u>', '</u>', '|', '*重要*', ' 空白 '];
+
+  it('5つの装飾のどの組み合わせでも、端に記法の字が来ても戻る', () => {
+    for (const attrs of combos) for (const text of EDGES) same([runOf(text, attrs)]);
+  });
+
+  it('隣り合う2つの装飾 (組み合わせ全部) が混ざらない', () => {
+    for (const a of combos) for (const b of combos) {
+      same([runOf('前*', a), runOf('後', b)]);
+      same([runOf('あ', a), runOf('~い\\', b)]);
     }
-    // 直したら 0 になる。そのときはこのテストを消し、上の往復を ALL で回す
-    expect(broken).toBeGreaterThan(0);
+  });
+
+  it('太字と斜体を重ねた字のあとに、斜体だけ・太字だけが続いても戻る', () => {
+    same([{ text: '重要', bold: true, italic: true }, { text: '注', italic: true }]);
+    same([{ text: '重要', bold: true, italic: true }, { text: '注', bold: true }]);
+    same([{ text: '注', italic: true }, { text: '重要', bold: true, italic: true }]);
+    same([{ text: '注', bold: true }, { text: '重要', bold: true, italic: true }, { text: '了' }]);
+  });
+
+  it('リンクの字の ]( は逃がして書き、読むと字に戻る', () => {
+    const md = g.blocksToMd([{ type: 'paragraph', runs: [{ text: 'a](b', link: 'https://e.test/' }] }]);
+    expect(md).toBe('[a\\](b](https://e.test/)\n');
+    // ]( の無いリンクの書き方は変わらない (既にある文書の Markdown を動かさない)
+    expect(g.blocksToMd([{ type: 'paragraph', runs: [{ text: '[注]', link: 'u' }] }])).toBe('[\\[注]](u)\n');
+  });
+
+  it('閉じの無い記号は字のまま残す', () => {
+    const read = (md) => g.mergeRuns(g.mdToBlocks(md)[0].runs);
+    for (const text of ['a **b', '*', '**', '***', 'a*', '~~a', '~', '<u>x', '[x]', '[](u)', '[x](u', 'a ** b', '~~~', '*~*']) {
+      expect(read(text)).toEqual([{ text }]);
+    }
+    // 閉じのある所だけ装飾にする
+    expect(read('**a** **b')).toEqual([{ text: 'a', bold: true }, { text: ' **b' }]);
+    // 空白だけの太字は書く側が出す形 (`** **`) なので装飾として読む
+    expect(read('a** **b')).toEqual([{ text: 'a' }, { text: ' ', bold: true }, { text: 'b' }]);
+  });
+
+  it('人が書いた入れ子も読む', () => {
+    const read = (md) => g.mergeRuns(g.mdToBlocks(md)[0].runs);
+    expect(read('**太字 *斜体* 太字**')).toEqual([
+      { text: '太字 ', bold: true }, { text: '斜体', bold: true, italic: true }, { text: ' 太字', bold: true },
+    ]);
+    expect(read('[**規程**](https://e.test/)')).toEqual([{ text: '規程', bold: true, link: 'https://e.test/' }]);
+  });
+
+  it('閉じの無い記号が長く並んでも、すぐ読み終わり字を落とさない', () => {
+    for (const text of ['*'.repeat(3000), '~'.repeat(3000), '['.repeat(3000), '<u>'.repeat(1000)]) {
+      const t0 = Date.now();
+      expect(g.mergeRuns(g.mdToBlocks('x' + text)[0].runs)).toEqual([{ text: 'x' + text }]);
+      expect(Date.now() - t0).toBeLessThan(2000);
+    }
   });
 });
 
@@ -152,9 +209,9 @@ describe('Markdown: 行頭と表の枝', () => {
     expect(g.mdToBlocks('<u>a')[0].runs).toEqual([{ text: '<u>a' }]);
   });
 
-  // 既知の不具合: 閉じの無い ** を「中身の無い斜体 (*と*)」と読み、2字とも消える。
-  // 人が Markdown で「a **b」と書いて保存すると、文書には「a b」が入る
-  it.fails('[既知の不具合] 閉じの無い ** が消える', () => {
+  // 以前は閉じの無い ** を「中身の無い斜体 (*と*)」と読み、2字とも消えていた。
+  // 人が Markdown で「a **b」と書いて保存すると、文書には「a b」が入っていた
+  it('[直した] 閉じの無い ** が消える', () => {
     // mdToRuns_ は続きの字をまとめないので、正規化してから比べる
     expect(g.mergeRuns(g.mdToBlocks('a **b')[0].runs)).toEqual([{ text: 'a **b' }]);
   });
