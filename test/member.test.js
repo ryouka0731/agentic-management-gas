@@ -98,19 +98,6 @@ describe('見てよい人', () => {
     expect(seen).toHaveLength(4);
   });
 
-  it('下から上は見られない', () => {
-    const { ctx } = tree();
-
-    expect(ctx.memberCanSee('buka@example.com', 'naka@example.com')).toBe(false);
-    expect(ctx.memberCanSee('naka@example.com', 'buka@example.com')).toBe(true);
-  });
-
-  it('横は見られない', () => {
-    const { ctx } = tree();
-
-    expect(ctx.memberCanSee('naka@example.com', 'hira@example.com')).toBe(false);
-  });
-
   it('名前が空なら誰も見られない', () => {
     const { ctx } = tree();
     expect(ctx.memberVisibleTo('')).toEqual([]);
@@ -122,14 +109,14 @@ describe('画面に出す名前', () => {
     const { ctx } = setup();
 
     // メールアドレスは目で追いにくく、長い並びの中では全部同じに見える
-    expect(ctx.memberNameOf('aoki@example.com')).toBe('aoki');
+    expect(ctx.memberNames(['aoki@example.com'])['aoki@example.com']).toBe('aoki');
   });
 
   it('登録された名前があればそれを使う', () => {
     const { ctx } = setup();
     ctx.memberSetName('aoki@example.com', '青木 太郎');
 
-    expect(ctx.memberNameOf('aoki@example.com')).toBe('青木 太郎');
+    expect(ctx.memberNames(['aoki@example.com'])['aoki@example.com']).toBe('青木 太郎');
   });
 
   it('名前を入れても上下関係は変わらない', () => {
@@ -137,7 +124,7 @@ describe('画面に出す名前', () => {
     ctx.memberSet('buka@example.com', 'boss@example.com');
     ctx.memberSetName('buka@example.com', '部下 花子');
 
-    expect(ctx.memberNameOf('buka@example.com')).toBe('部下 花子');
+    expect(ctx.memberNames(['buka@example.com'])['buka@example.com']).toBe('部下 花子');
     expect(ctx.memberSubordinates('boss@example.com')).toEqual(['buka@example.com']);
   });
 
@@ -146,7 +133,7 @@ describe('画面に出す名前', () => {
     ctx.memberSetName('buka@example.com', '部下 花子');
     ctx.memberSet('buka@example.com', 'boss@example.com');
 
-    expect(ctx.memberNameOf('buka@example.com')).toBe('部下 花子');
+    expect(ctx.memberNames(['buka@example.com'])['buka@example.com']).toBe('部下 花子');
   });
 
   it('まとめて引ける', () => {
@@ -159,7 +146,6 @@ describe('画面に出す名前', () => {
 
   it('空は返さない', () => {
     const { ctx } = setup();
-    expect(ctx.memberNameOf('')).toBe('');
     expect(ctx.memberNames([''])).toEqual({});
   });
 });

@@ -179,16 +179,6 @@ function ganttDaysForEffort(planned) {
 }
 
 /**
- * 棒の日数を予定工数 (人日) に直す。
- *
- * @param {number} days
- * @returns {number}
- */
-function ganttEffortForDays(days) {
-  return Math.max(1, Math.round(Number(days) || 1));
-}
-
-/**
  * 予定工数と棒の長さが食い違っているかを見る。
  *
  * 半日きざみで入れた値を、掴んでいないのに書き換えてしまわないため、
