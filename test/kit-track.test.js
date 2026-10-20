@@ -672,6 +672,8 @@ describe('スキルと説明', () => {
     const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
     expect(agents).toContain('`banto-track-setup`');
     expect(agents).toContain('`--yes` を付ける前に必ず読む');
+    // 確かめてから入れる、の決まりそのものは毎回読む AGENTS.md に残す
+    expect(agents).toContain('入れる前に利用者に確かめ、ok をもらってから `--yes` を付ける');
     expect(agents).not.toContain('agent.mjs agent ');
     const t = fs.readFileSync('kit/.claude/skills/banto-track-setup/SKILL.md', 'utf8');
     expect(t).toContain('# 番頭に作業を載せる');
