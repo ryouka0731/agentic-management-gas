@@ -3913,7 +3913,8 @@ describe('使われ方のボード', () => {
       .map((h) => h.textContent);
 
     expect(heads).toEqual([
-      'よく使っている人', 'よく押されている操作', 'よく開かれている画面', '日ごと',
+      'よく使っている人', 'よく押されている操作', 'よく開かれている画面',
+      'この期間に開かれなかった画面', '曜日ごと', '日ごと',
     ]);
   });
 
@@ -4003,6 +4004,198 @@ describe('使われ方のボード', () => {
 
     expect([...document.querySelectorAll('#usage .tally-card')]
       .map((c) => c.textContent).join(' ')).toContain('山田 太郎');
+  });
+});
+
+describe('使われ方を前の期間と比べる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const SUMMARY = {
+    from: '2026-08-12', to: '2026-09-10', total: 30, who: '',
+    byTarget: [
+      { kind: 'action', target: 'issue-create-btn', count: 12 },
+      { kind: 'action', target: 'row-open', count: 6 },
+      { kind: 'view', target: 'issues', count: 9 },
+      { kind: 'view', target: 'usage', count: 3 },
+    ],
+    byDay: [{ day: '2026-09-10', count: 30 }],
+    byUser: [{ who: 'me@example.com', count: 30 }],
+    byWeekday: [10, 0, 5, 0, 0, 0, 15],
+    prev: {
+      total: 20,
+      byTarget: [
+        { kind: 'action', target: 'issue-create-btn', count: 10 },
+        { kind: 'action', target: 'row-open', count: 8 },
+        { kind: 'view', target: 'issues', count: 9 },
+      ],
+    },
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign({ apiUsageSummary: SUMMARY }, over || {}));
+    document.querySelector('[data-tab="usage"]').click();
+    return app;
+  }
+
+  function countCard() {
+    return [...document.querySelectorAll('#usage .tally-card')]
+      .find((c) => c.textContent.includes('数えた回数'));
+  }
+
+  function blockOf(title) {
+    return [...document.querySelectorAll('#usage .tally-block')]
+      .find((b) => b.querySelector('h3').textContent === title);
+  }
+
+  it('回数に前の期間との増減を添える', () => {
+    openBoard();
+    // 20 → 30 は 50% 増
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('↑ 50%');
+  });
+
+  it('減ったときは下向きで出す', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      prev: { total: 40, byTarget: [] },
+    }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('↓ 25%');
+  });
+
+  it('前の期間が0なら、割合を出さずにそう言う', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      prev: { total: 0, byTarget: [] },
+    }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('前の期間は記録なし');
+  });
+
+  it('前の期間を持たない返事でも描ける', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, { prev: undefined, byWeekday: undefined }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('前の期間は記録なし');
+    expect(blockOf('曜日ごと').querySelectorAll('.usage-row')).toHaveLength(7);
+  });
+
+  it('順位表にも前の期間との差を小さく添える', () => {
+    openBoard();
+    const deltas = [...blockOf('よく押されている操作').querySelectorAll('.usage-delta')]
+      .map((d) => d.textContent);
+    expect(deltas).toEqual(['+2', '−2']);
+
+    const views = [...blockOf('よく開かれている画面').querySelectorAll('.usage-delta')]
+      .map((d) => d.textContent);
+    // 前に無かった場所は、そのまま増えたぶん
+    expect(views).toEqual(['±0', '+3']);
+  });
+
+  it('この期間に開かれなかった画面を、左の行き先から並べる', () => {
+    openBoard();
+    const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
+      .map((c) => c.textContent);
+
+    expect(names).toContain('ホーム');
+    expect(names).toContain('文書');
+    expect(names).toContain('設定');
+    expect(names).not.toContain('やること');
+    expect(names).not.toContain('使われ方');
+    // スクラムがオフのあいだは、出ない画面を数えない
+    expect(names).not.toContain('スプリント');
+    expect(names).not.toContain('障害物');
+  });
+
+  it('スクラムがオンなら、その画面も並べる', () => {
+    openBoard({ apiSettings: {
+      scrumEnabled: true, gameEnabled: false, canEdit: true, queue: null,
+      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {},
+    } });
+    const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
+      .map((c) => c.textContent);
+    expect(names).toContain('スプリント');
+  });
+
+  it('全部開かれていればそう言う', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      byTarget: ['home', 'docs', 'issues', 'branches', 'pulls', 'sprint', 'impediments',
+        'help', 'usage', 'report', 'settings']
+        .map((t) => ({ kind: 'view', target: t, count: 1 })),
+    }) });
+    const block = blockOf('この期間に開かれなかった画面');
+    expect(block.querySelectorAll('.chip')).toHaveLength(0);
+    expect(block.textContent).toContain('どの画面も開かれていました');
+  });
+
+  it('曜日ごとに月曜から7本の棒で出す', () => {
+    openBoard();
+    const rows = [...blockOf('曜日ごと').querySelectorAll('.usage-row')];
+    expect(rows.map((r) => r.querySelector('.usage-name').textContent))
+      .toEqual(['月', '火', '水', '木', '金', '土', '日']);
+    expect(rows[6].querySelector('.usage-bar').style.width).toBe('100%');
+    expect(rows[6].querySelector('.usage-count').textContent).toBe('15');
+  });
+});
+
+describe('使われ方を CSV で保存する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ROWS = {
+    from: '2026-08-12', to: '2026-09-10', who: '',
+    rows: [
+      { day: '2026-09-09', kind: 'view', target: 'issues', user: 'me@example.com', count: 3 },
+      { day: '2026-09-10', kind: 'action', target: 'issue-create-btn', user: '', count: 2 },
+      { day: '2026-09-10', kind: 'action', target: '-x', user: '', count: 1 },
+    ],
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign({
+      apiUsageSummary: {
+        from: '2026-08-12', to: '2026-09-10', total: 5, who: '',
+        byTarget: [{ kind: 'view', target: 'issues', count: 5 }],
+        byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+      },
+      apiUsageRows: ROWS,
+    }, over || {}));
+    document.querySelector('[data-tab="usage"]').click();
+    return app;
+  }
+
+  it('今見ている期間と対象で頼む', () => {
+    const app = openBoard();
+    document.getElementById('usage-days').value = '7';
+    document.getElementById('usage-csv-btn').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiUsageRows').pop().args)
+      .toEqual([7, '']);
+  });
+
+  it('保存できないときは、字をそのまま見せて写せるようにする', () => {
+    openBoard();
+    document.getElementById('usage-csv-btn').click();
+
+    const code = document.querySelector('#usage .copy-row code');
+    expect(code).toBeTruthy();
+    const lines = code.textContent.replace(/^\uFEFF/, '').split('\r\n');
+    expect(lines[0]).toBe('日,種類,場所,名前,人,回数');
+    expect(lines[1]).toBe('2026-09-09,画面,issues,やること,me@example.com,3');
+    expect(lines[2]).toBe('2026-09-10,操作,issue-create-btn,やることを作る,,2');
+    // 表計算で式として読まれないようにする
+    expect(lines[3]).toBe("2026-09-10,操作,'-x,'-x,,1");
+  });
+
+  it('保存できるならファイルとして落とす', () => {
+    const made = [];
+    const orig = window.URL.createObjectURL;
+    const origRevoke = window.URL.revokeObjectURL;
+    const origClick = window.HTMLAnchorElement.prototype.click;
+    window.URL.createObjectURL = () => 'blob:usage';
+    window.URL.revokeObjectURL = () => {};
+    window.HTMLAnchorElement.prototype.click = function () { made.push(this.download); };
+    try {
+      openBoard();
+      document.getElementById('usage-csv-btn').click();
+    } finally {
+      window.URL.createObjectURL = orig;
+      window.URL.revokeObjectURL = origRevoke;
+      window.HTMLAnchorElement.prototype.click = origClick;
+    }
+    expect(made).toEqual(['usage-2026-08-12_2026-09-10.csv']);
   });
 });
 

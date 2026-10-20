@@ -170,7 +170,7 @@ const API_NAMES = [
   'apiPeopleNames', 'apiPeopleSetName',
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
-  'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
+  'apiUsageRecord', 'apiUsageSummary', 'apiUsageRows', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
   'apiAppUrl',
 ];
@@ -214,7 +214,9 @@ export const DEFAULTS = {
   apiUsageSummary: {
     from: '2026-08-12', to: '2026-09-10', total: 0,
     byTarget: [], byDay: [], byUser: [],
+    byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
   },
+  apiUsageRows: { from: '2026-08-12', to: '2026-09-10', who: '', rows: [] },
   apiTemplateList: [
     { name: '作業の段取り', body: '## やること\n\n- [ ] \n', builtin: true, mine: false },
     { name: '週報', body: '## 今週\n', builtin: false, mine: true },
