@@ -176,6 +176,12 @@ body {
   background: var(--bg);
   font-size: 14px;
   line-height: 1.7;
+  /* 日本語を語の切れ目で折り返す (「確認依頼」が「確認依」「頼」に割れない)。
+     効くのは lang="ja" の和文だけで、対応していないブラウザでは今の割り方のまま。
+     1語が器より長いときだけ語の中で割る (break-word は最小幅を変えないので並びは崩れない)。
+     コードと差分は等幅で break-all のまま (下の .diff-line など) */
+  word-break: auto-phrase;
+  overflow-wrap: break-word;
 }
 
 .layout { display: flex; height: 100vh; }
@@ -3023,7 +3029,9 @@ button.gantt-name:hover { color: var(--accent); }
   margin-top: var(--sp-2);
   font-size: 11px;
   color: var(--ink-2);
-  word-break: break-all;
+  /* 文なので語の切れ目で割る。長い URL だけは語の中でも割る */
+  word-break: auto-phrase;
+  overflow-wrap: anywhere;
 }
 
 
