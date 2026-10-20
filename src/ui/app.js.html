@@ -165,9 +165,49 @@
   // 画面を切り替えた回数。返事を待つあいだに人が別の画面へ移ったかを見分ける
   // (全画面のリンクで開くとき、移った先を奪わない)
   var navCount = 0;
-  // 文書を開こうとした回数。遅れて届いた返事が、そのあとの新しい選択を上書き
-  // しないように見分ける
-  var docGen = 0;
+
+  /*
+   * 返事が「最後に頼んだぶん」かを見分ける。続けて2回頼むと、先に頼んだぶんの返事が
+   * あとから届いて新しい描画を上書きする (届く順は頼んだ順と限らない)。
+   * 以前は画面ごとに番号の数え方を書いていて (docGen / usageGen / pullsSeq …)、
+   * 書き忘れた一覧だけが古い返事で描き直されていた。**見分け方はここだけにする。**
+   *
+   *   var still = latest('issues');   // 頼み直す。前に頼んだぶんは古くなる
+   *   call('apiIssueList', [''], still.only(render), still.only(failInto(el)));
+   *
+   * 頼み直さずに見張るだけなら latestSoFar(key)。開いているものが同じか・まだその
+   * 画面かといった別の見方は、これと並べて書く (置き換えない)。
+   */
+  var latestAsked = Object.create(null);
+
+  /**
+   * 頼み直す。前に頼んだぶんの返事は、これ以降 still() が false になる。
+   *
+   * @param {string} key 何の返事か ('issues' など)
+   * @returns {function(): boolean} still。.only(fn) は still() のときだけ fn を呼ぶ
+   */
+  function latest(key) {
+    latestAsked[key] = (latestAsked[key] || 0) + 1;
+    return latestSoFar(key);
+  }
+
+  /**
+   * 頼み直さずに、いまの頼みが最後のままかを見張る。
+   *
+   * @param {string} key
+   * @returns {function(): boolean}
+   */
+  function latestSoFar(key) {
+    var mine = latestAsked[key] || 0;
+    function still() { return (latestAsked[key] || 0) === mine; }
+    still.only = function (fn) {
+      return function () {
+        if (still()) return fn.apply(this, arguments);
+      };
+    };
+    return still;
+  }
+
   var currentUser = '';
   var currentTab = 'docs';
   var issueView = 'list';
@@ -195,8 +235,6 @@
   /** 工程表の名前の欄の掴み手。初めに1つだけ作る */
   var ganttResizer = null;
 
-  /** 工程表の読み込みの番号。遅れて届いた古い返事で、新しい描画を上書きしない */
-  var ganttLoadSeq = 0;
   var mineOnly = false;
   // 自分の担当の期限切れだけ。改善のヒントから開いたときだけ立つ (overdueOnlyBtn で外す)
   var overdueOnly = false;
@@ -3545,11 +3583,7 @@
   var searchResults = document.getElementById('search-results');
   var searchIndexRows = null;
   var searchIndexAt = 0;
-  // 一覧を古くした回数。取りに行ってから返事までのあいだに古くなったら、
-  // 届いたものは使うが「取ったばかり」とは扱わない
-  var searchIndexGen = 0;
   var searchActive = -1;
-  var searchSeq = 0;
   var searchLoading = false;
   var searchError = '';
   // 候補の全体の枠。searchFilter の TOTAL と同じ数 (あちらは手元の道具の写しなので触らない)
@@ -3615,19 +3649,21 @@
     if (searchIndexRows && Date.now() - searchIndexAt < 60000) return;
     if (searchLoading) return;
     searchLoading = true;
-    var seq = ++searchSeq;
-    var gen = searchIndexGen;
+    var still = latest('searchIndex');
+    // 取りに行ってから返事までのあいだに一覧が古くなったら、届いたものは使うが
+    // 「取ったばかり」とは扱わない
+    var fresh = latestSoFar('searchIndexStale');
     call('apiSearchIndex', [], function (rows) {
       searchLoading = false;
-      if (seq !== searchSeq) return;
+      if (!still()) return;
       searchIndexRows = rows || [];
       // 待つあいだに一覧を動かす操作があった。中身はその前のものなので、次に欄へ入ったとき取り直す
-      searchIndexAt = gen === searchIndexGen ? Date.now() : 0;
+      searchIndexAt = fresh() ? Date.now() : 0;
       searchError = '';
       if (document.activeElement === searchInput || searchBox.classList.contains('is-open')) renderSearch();
     }, function (err) {
       searchLoading = false;
-      if (seq !== searchSeq) return;
+      if (!still()) return;
       searchError = '探せませんでした: ' + ((err && err.message) || err);
       if (document.activeElement !== searchInput && !searchBox.classList.contains('is-open')) return;
       if (searchInput.value.replace(/\s+/g, '')) showSearchMessage(searchError);
@@ -3641,7 +3677,7 @@
    */
   function searchIndexStale() {
     searchIndexAt = 0;
-    searchIndexGen++;
+    latest('searchIndexStale');
   }
 
   /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
@@ -4221,7 +4257,10 @@
    * 何がいくつあるかが見えないと、次に何をすればよいか分からない。
    */
   function loadOverview() {
+    // 何かを動かすたびに取り直すので、先に頼んだぶんの返事で古い数に戻さない
+    var still = latest('overview');
     call('apiOverview', [], function (result) {
+      if (!still()) return;
       var o = result || { openIssues: 0, branches: 0, openPrs: 0, docs: 0 };
       document.getElementById('flow-issues').textContent = o.openIssues;
       document.getElementById('flow-branches').textContent = o.branches;
@@ -4261,7 +4300,8 @@
 
     // 描かずにやめたとき・開けなかったときに戻すため、前に開いていた文書を控える
     var prev = { fileId: current.fileId, docFileId: current.docFileId, docPath: current.docPath };
-    var gen = ++docGen;
+    // 遅れて届いた返事が、そのあとに開いた文書を上書きしないように見分ける
+    var still = latest('doc');
 
     current.docPath = docPath;
     current.docFileId = doc ? doc.fileId : fileId;
@@ -4273,7 +4313,7 @@
     // 開きかけた文書をいまの文書として残さない。残すと本文のタブで空の本文が出る。
     // あとから別の文書を開いていたら、そちらのものなので触らない
     function restore() {
-      if (gen !== docGen) return;
+      if (!still()) return;
       current.fileId = prev.fileId;
       current.docFileId = prev.docFileId;
       current.docPath = prev.docPath;
@@ -4284,7 +4324,7 @@
     call('apiGetFileHtml', [fileId], function (res) {
       // 返事が届くまでに別の文書・版を開き直していたら描かない。描くと、別の文書の
       // 本文がいまの題名の下に出る
-      if (gen !== docGen || current.fileId !== fileId) return;
+      if (!still() || current.fileId !== fileId) return;
       // リンクから開いたときは、返事を待つあいだに人が移った先を奪わない
       if (opts && opts.since !== undefined && navCount !== opts.since) {
         restore();
@@ -4426,11 +4466,11 @@
     var fileId = String((p && p.doc) || '');
     if (!fileId) return;
     var wantFull = String(p.full || '') === '1';
-    var genAt = docGen;
+    var docStill = latestSoFar('doc');
 
     function go() {
       // 一覧を待つあいだに人が別の画面へ移った・別の文書を開いたなら、そちらを奪わない
-      if (navCount !== since || docGen !== genAt) return;
+      if (navCount !== since || !docStill()) return;
       var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
       if (!f) {
         showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
@@ -4440,7 +4480,7 @@
       openDoc(f.fileId, splitPath(f.path).path, { full: wantFull, since: navCount });
     }
     function ng() {
-      if (navCount !== since || docGen !== genAt) return;
+      if (navCount !== since || !docStill()) return;
       // 文書の一覧の欄はホームでは見えないので、帯で知らせる
       showSnack('文書の一覧を取れず、リンクの文書を開けませんでした', { kind: 'ng' });
     }
@@ -4900,9 +4940,12 @@
   // ===== 改訂中の版 (横断) =====
 
   function loadBranches() {
+    // 捨てたあとにも取り直すので、先に頼んだぶんの返事で捨てた版を描き戻さない
+    var still = latest('branches');
     showSkeleton(branchListEl, 'list', 3);
 
     call('apiBranchList', [], function (list) {
+      if (!still()) return;
       var branches = list || [];
       branchListEl.textContent = '';
 
@@ -4996,7 +5039,7 @@
 
         branchListEl.appendChild(row);
       });
-    }, failInto(branchListEl));
+    }, still.only(failInto(branchListEl)));
   }
 
   /**
@@ -5505,8 +5548,6 @@
     }[state] || state;
   }
 
-  var pullsSeq = 0;
-
   /**
    * 確認依頼の一覧を出し、1件を開く。
    *
@@ -5516,12 +5557,12 @@
    * @param {number} [selectNumber] 先頭の代わりに開く依頼の番号
    */
   function loadPulls(selectNumber) {
-    var mine = ++pullsSeq;
+    var still = latest('pulls');
     showSkeleton(prListEl, 'list', 4);
     prDetail.textContent = '';
 
     call('apiPrList', [], function (list) {
-      if (mine !== pullsSeq || panelPulls.hidden) return;
+      if (!still() || panelPulls.hidden) return;
       var prs = list || [];
       var pick = null;
       prListEl.textContent = '';
@@ -5584,7 +5625,7 @@
       if (selectNumber && !pick) showSnack('確認依頼 #' + selectNumber + ' が見つかりません', { kind: 'ng' });
       (pick || prListEl.firstChild).click();
     }, function (err) {
-      if (mine !== pullsSeq) return;
+      if (!still()) return;
       failInto(prListEl)(err);
     });
   }
@@ -5913,15 +5954,13 @@
     }, failInto(container));
   }
 
-  var prDetailSeq = 0;
-
   function showPrDetail(pr) {
     // 続けて押したとき、前の依頼の返事で後の依頼の中身を上書きしない
-    var mine = ++prDetailSeq;
+    var still = latest('prDetail');
     showSkeleton(prDetail, 'block');
 
     call('apiPrPreview', [pr.number], function (preview) {
-      if (mine !== prDetailSeq) return;
+      if (!still()) return;
       prDetail.textContent = '';
 
       var head = document.createElement('div');
@@ -6100,7 +6139,7 @@
       prDetail.appendChild(prBody);
       views.conversation();
     }, function (err) {
-      if (mine !== prDetailSeq) return;
+      if (!still()) return;
       failInto(prDetail)(err);
     });
   }
@@ -6912,9 +6951,11 @@
   }
 
   function loadIssues() {
+    // 続けて取り直したとき、先に頼んだぶんの返事で新しい一覧を描き直さない
+    var still = latest('issues');
     showSkeleton(issueListEl, 'list', 4);
 
-    call('apiIssueList', [''], renderIssueList, failInto(issueListEl));
+    call('apiIssueList', [''], still.only(renderIssueList), still.only(failInto(issueListEl)));
   }
 
   /**
@@ -7891,9 +7932,12 @@
   var trashFocus = null;
 
   function loadTrash() {
+    var still = latest('trash');
     showSkeleton(trashListEl, 'list', 3);
 
     call('apiIssueArchivedList', [], function (list) {
+      // 古い返事では指す先も使わない (新しいほうの返事が使う)
+      if (!still()) return;
       var rows = list || [];
       var focus = trashFocus;
       trashFocus = null;
@@ -7977,6 +8021,7 @@
         }
       });
     }, function (err) {
+      if (!still()) return;
       // 取れなくても指す先は捨てる。残すと、後で自分で開いたときに古い行を指す
       trashFocus = null;
       failInto(trashListEl)(err);
@@ -8838,7 +8883,8 @@
   }
 
   function loadGantt() {
-    var seq = ++ganttLoadSeq;
+    // 遅れて届いた古い返事で、新しい描画を上書きしない
+    var still = latest('gantt');
     // 描き直しでは、人が送った位置を保つ (中身を消すと 0 に戻る)
     var keepScroll = ganttEl.scrollLeft;
     showSkeleton(ganttEl, 'gantt', 5);
@@ -8847,7 +8893,7 @@
     var waitingScroll = ganttEl.scrollLeft;
 
     call('apiIssueList', [''], function (list) {
-      if (seq !== ganttLoadSeq) return;  // もっと新しい読み込みがある
+      if (!still()) return;  // もっと新しい読み込みがある
       if (ganttEl.scrollLeft !== waitingScroll) keepScroll = ganttEl.scrollLeft;
 
       var issues = list || [];
@@ -9029,7 +9075,7 @@
         ganttSyncResizer();
       }
     }, function (err) {
-      if (seq === ganttLoadSeq) failInto(ganttEl)(err);
+      if (still()) failInto(ganttEl)(err);
     });
   }
 
@@ -9122,9 +9168,12 @@
     fillSelect(tallyBasisSel, TALLY_BASES, 'due');
     fillTallyWho();
 
+    // 区切りや対象を続けて選び直したとき、前の選び方の集計で上書きしない
+    var still = latest('tally');
     showSkeleton(tallyEl, 'list', 3);
 
     call('apiTallyEffort', [tallyUnitSel.value, tallyBasisSel.value, tallyWhoSel.value], function (result) {
+      if (!still()) return;
       var res = result || { periods: [], people: [], total: {}, hidden: 0 };
       tallyEl.textContent = '';
       issueCountEl.textContent = 'チーム全体 ' + res.total.count + '件 / 予定 ' +
@@ -9168,7 +9217,7 @@
           '「数え方」を変えると入ることがあります。';
         tallyEl.appendChild(note);
       }
-    }, failInto(tallyEl));
+    }, still.only(failInto(tallyEl)));
   }
 
   /**
@@ -9380,20 +9429,23 @@
   ];
 
   function loadBoard() {
+    // カードを動かすたびに取り直すので、先に頼んだぶんの返事で新しい板を描き直さない
+    var still = latest('board');
     showSkeleton(boardEl, 'board');
 
     // 絞り込みに使うため、やることの中身も持っておく
     if (!lastIssues.length) {
       call('apiIssueList', [''],
-        function (list) { lastIssues = list || []; },
+        still.only(function (list) { lastIssues = list || []; }),
         failQuiet('知らせなくてよい'));
     }
 
     call('apiProjectBoard', [], function (result) {
+      if (!still()) return;
       // 描くときに列を絞り込むので、写しを控える (言葉の表し方が変わったら写しから描き直す)
       lastBoard = JSON.stringify(result || {});
       renderBoard(result);
-    }, failInto(boardEl));
+    }, still.only(failInto(boardEl)));
   }
 
   /** 最後に届いた apiProjectBoard の返り (JSON の字)。まだ無ければ '' */
@@ -11381,9 +11433,12 @@
    * いることがあり、自分のぶんしか見えないと誰も助け合えない。
    */
   function loadReports() {
+    // 送ったり返したりするたびに取り直すので、先に頼んだぶんの返事で描き直さない
+    var still = latest('reports');
     showSkeleton(reportListEl, 'list', 3);
 
     call('apiInquiryList', [], function (list) {
+      if (!still()) return;
       var rows = list || [];
       reportListEl.textContent = '';
       setCount('count-reports', rows.filter(function (r) {
@@ -11452,7 +11507,7 @@
       var keep = reportShown &&
         shown.filter(function (r) { return r.number === reportShown; })[0];
       openReport(keep ? keep.number : (shown[0] && shown[0].number));
-    }, failInto(reportListEl));
+    }, still.only(failInto(reportListEl)));
   }
 
   /**
@@ -11479,6 +11534,8 @@
    */
   function openReport(number) {
     reportShown = number || null;
+    // 続けて開いたとき・閉じたとき、前の話の返事で中身を上書きしない
+    var still = latest('reportThread');
 
     var items = reportListEl.querySelectorAll('.row-item');
     for (var i = 0; i < items.length; i++) {
@@ -11493,9 +11550,9 @@
     showSkeleton(reportDetail, 'block');
 
     call('apiInquiryThread', [number], function (thread) {
-      if (!thread) return;
+      if (!still() || !thread) return;
       renderReportThread(thread.inquiry, thread.replies || []);
-    }, failInto(reportDetail));
+    }, still.only(failInto(reportDetail)));
   }
 
   /**
@@ -12306,13 +12363,11 @@
    * (サーバ側の apiUsageSummary が絞る。工数の集計と同じ)。
    */
   /**
-   * 期間か対象を選び直すたびに進める。届いた返事がこれと違えば古いので捨てる。
+   * 期間か対象を選び直すたびに頼み直す。届いた返事が最後のぶんでなければ捨てる。
    * 捨てないと、選び直したあとに前の期間のまとめや CSV が出る。
    */
-  var usageGen = 0;
-
   function loadUsage() {
-    var gen = ++usageGen;
+    var still = latest('usage');
     fillSelect(usageDaysSel, USAGE_SPANS, '30');
 
     // いま溜めているぶんも含めて見たい
@@ -12320,7 +12375,7 @@
     showSkeleton(usageEl, 'list', 4);
 
     call('apiUsageSummary', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
-      if (gen !== usageGen) return;
+      if (!still()) return;
       var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
       fillUsageWho(data.byUser || []);
       usageEl.textContent = '';
@@ -12348,7 +12403,7 @@
       usageEl.appendChild(makeUsageWeekdays(data.byWeekday || [0, 0, 0, 0, 0, 0, 0]));
       usageEl.appendChild(makeUsageDays(data.byDay));
     }, function (err) {
-      if (gen === usageGen) failInto(usageEl)(err);
+      if (still()) failInto(usageEl)(err);
     });
   }
 
@@ -12779,12 +12834,12 @@
    * サーバは本人と部下のぶんだけを返す (apiUsageRows)。
    */
   function saveUsageCsv() {
-    var gen = usageGen;
+    var still = latestSoFar('usage');
     usageCsvBtn.disabled = true;
     call('apiUsageRows', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
       usageCsvBtn.disabled = false;
       // 頼んだあとに期間か対象を選び直していたら、今見ている範囲の CSV ではない
-      if (gen !== usageGen) return;
+      if (!still()) return;
       var data = res || { from: '', to: '', rows: [] };
       var text = usageCsv(data.rows || []);
       var saved = usageDownload('usage-' + data.from + '_' + data.to + '.csv', text);
@@ -12909,13 +12964,24 @@
     bellBtn.setAttribute('aria-expanded', 'false');
   }
 
+  /** 返事を待っている頼みのどれかが、新しい知らせを前に出すものか */
+  var noticeLoud = false;
+
   /**
    * 知らせを取ってくる。
    *
    * @param {boolean} [quiet] 初回は前からあるぶんで驚かせない
    */
   function loadNotices(quiet) {
+    // 1分ごとと開いたときの両方で取るので、前に頼んだぶんの返事で読んだ印を戻さない
+    var still = latest('notices');
+    // 知らせて出す頼み (1分ごと) の返事を捨てても、知らせることは後の返事に引き継ぐ。
+    // 引き継がないと、待つあいだにベルを開いた返事が見た番号だけ進め、新しい知らせが出ない
+    if (!quiet) noticeLoud = true;
     call('apiNotifications', [30], function (res) {
+      if (!still()) return;
+      var loud = noticeLoud;
+      noticeLoud = false;
       var data = res || { items: [], unread: 0 };
       renderNotices(data.items);
 
@@ -12934,7 +13000,7 @@
         if (n.id > seenNoticeId) seenNoticeId = n.id;
       });
 
-      if (quiet || !fresh.length) return;
+      if (!loud || !fresh.length) return;
 
       showSnack(fresh[0].title, { kind: 'ok' });
       fresh.forEach(popDesktop);
@@ -14489,14 +14555,6 @@
 
   // ----- スプリント -----
 
-  /**
-   * 返事の取り違えを防ぐ番号。
-   *
-   * スプリントを素早く切り替えると、前に頼んだぶんの返事があとから届いて
-   * 選び直したものを上書きする。最後に頼んだぶんの返事だけを描く。
-   */
-  var sprintLoadSeq = 0;
-
   /** 最後に描いた apiScrumView の返り。言葉の表し方が変わったら、ここから描き直す */
   var lastSprintView = null;
 
@@ -14505,12 +14563,15 @@
 
   /**
    * スプリントの画面を描く。
+   *
+   * 素早く切り替えると、前に頼んだぶんの返事があとから届いて選び直したものを
+   * 上書きする。最後に頼んだぶんの返事だけを描く。
    */
   function loadSprint() {
-    var seq = ++sprintLoadSeq;
+    var still = latest('sprint');
     showSkeleton(sprintViewEl, 'list', 3);
     call('apiScrumView', [scrumSprint], function (view) {
-      if (seq !== sprintLoadSeq) return;
+      if (!still()) return;
       var v = view || {};
       scrumSprints = v.sprints || [];
       scrumSprint = v.sprint || '';
@@ -14519,7 +14580,7 @@
       renderSprint(v);
     }, function (err) {
       // 失敗の返事も、最後に頼んだぶんでなければ描かない
-      if (seq === sprintLoadSeq) failInto(sprintViewEl)(err);
+      if (still()) failInto(sprintViewEl)(err);
     });
   }
 
@@ -15592,10 +15653,12 @@
    * 障害物の画面を描く。
    */
   function loadImpediments() {
+    var still = latest('impediments');
     showSkeleton(impedimentsEl, 'list', 3);
     call('apiImpedimentList', [], function (list) {
+      if (!still()) return;
       renderImpediments(list || []);
-    }, failInto(impedimentsEl));
+    }, still.only(failInto(impedimentsEl)));
   }
 
   /**
