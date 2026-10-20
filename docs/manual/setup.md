@@ -16,7 +16,7 @@ npm ci
 ```
 
 `package-lock.json` を消して `npm install` し直さないこと。npm 10.9 には vitest 4 の peer 解決で落ちる不具合がある
-(詳しくは [CLAUDE.md](../../CLAUDE.md) の「テストの測り方と、測れないもの」)。
+(詳しくは [docs/dev/testing.md](../dev/testing.md) の「テストの測り方と、測れないもの」)。
 
 ## 2. Apps Script のプロジェクトを作って送る
 
