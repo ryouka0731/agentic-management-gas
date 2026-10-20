@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-init` /
-`js-settings` / `js-scrum` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -108,3 +108,23 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   隠す（見出しは本文の中にあるので無くても辿れる）
 - **一覧の器 (`.history-list`) は確認依頼と共用している。** あちらの 320px 固定を
   被ると、見出しだけが広がって列がずれる
+
+## 楽しい演出 (`js-fun`)
+
+自分の設定の「楽しい演出」(`fun.combo` / `fun.words` / `fun.cheer`) をオンにした人の画面にだけ出す。**3つとも既定はオフ。**
+項目の定義は `PREFS_SCHEMA()` (`PREF_FUN_KINDS_`) が持ち、画面は `prefs.effective.fun` を `funOn(kind)` で読むだけ。
+
+- **何に反応するかの表はそれぞれ1つ。** 言葉は `FUN_KEYWORDS()`、済ませた操作のお祝いは `FUN_CHEERS()`
+  (成功した api の名前で引く。`call()` の成功の枝から `funCheerAfter` を呼ぶ。`searchIndexChangedBy` と同じ形で、
+  呼ぶ場所ごとに書かない。失敗の枝からは呼ばない)、節目は `FUN_MILESTONES()`、段は `FUN_GRADES()`。
+  どれも関数にしてある (`call()` が読み込みの途中で呼ばれても引けるように。`var` は並び順で初期化される)
+- 聞き手は `document` に1つ (`input` / `compositionend` を捕まえる段で聞く)。対象は `textarea` と `type=text` だけで、
+  探す欄・絞り込み (`type=search`)・合言葉・数の欄では出さない。変換中 (`isComposing` と `insertCompositionText`) は
+  数えず、`compositionend` で字数ぶん数える。`deleteContent*` で途切れる (5回以上続けていたら COMBO BREAK)。1.5秒で数え直す
+- **打った字・カーソル・フォーカスに触らない。** 欄の値を書き換えず、`preventDefault` もしない
+- 重ね (`#fun-layer`) は初めて要るときに1枚だけ作る。`pointer-events: none`・`aria-hidden`・`inert`。字は `textContent`
+  だけ。粒は canvas に描き、上限 150、粒が無くなったら rAF を止める。描けない環境 (jsdom) では粒を出さない
+- `prefers-reduced-motion: reduce` では短い字の札 (`.fun-badge`) だけ。粒・枠の光・跳ねる動きは出さない。音は無い
+- 色はトークンだけ (`.fun-tone-<accent|success|warn|danger|merged>` が `color` を置き、影や枠は `currentColor`)。
+  粒の色も `getComputedStyle` でトークンから読む
+- 試すのは `test/component/fun.test.js`
