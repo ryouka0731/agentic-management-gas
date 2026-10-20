@@ -85,7 +85,7 @@ npm run deploy -- "何を変えたか"     # kit/ の焼き直し → 署名 →
 - ランタイムコードに `import` / `export` / `require` を書かない (GAS で動かなくなる)。テストは
   `test/harness.js` が `node:vm` でソースを評価する
 - 配る道具の本体は `kit/`。`src/KitFiles.gs` は手で直さない
-- 守るべき決めごととその理由は **[CLAUDE.md](CLAUDE.md)** にまとめてある。構成とテストの詳細は
+- 守るべき決めごととその理由は **[CLAUDE.md](CLAUDE.md)** と、そこから場所ごとに分けた [docs/dev/](docs/dev/) にまとめてある。構成とテストの詳細は
   [開発の手引き](docs/manual/development.md)
 
 ## 制約
