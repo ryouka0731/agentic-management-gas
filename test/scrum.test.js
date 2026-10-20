@@ -123,6 +123,33 @@ describe('やることを PBI として扱う', () => {
     expect(() => ctx.issueUpdate(made.number, { sprint: 'nai' })).toThrow(/作業期間/);
     expect(() => ctx.issueUpdate(made.number, { points: -1 })).toThrow(/大きさ/);
     expect(() => ctx.issueUpdate(made.number, { points: 'たくさん' })).toThrow(/大きさ/);
+    // 空白だけは Number では 0 になるが、数ではない
+    expect(() => ctx.issueUpdate(made.number, { points: '  ' })).toThrow(/大きさ/);
+  });
+
+  it('欄を整えて入れる (空は空・数は数・基準は4000字まで)', () => {
+    const { ctx } = setup();
+    const made = ctx.issueCreate('x', '', []);
+
+    ctx.issueUpdate(made.number, { points: ' 2.5 ', sprint: null, acceptance: 'あ'.repeat(4001) });
+    let row = ctx.issueGet(made.number);
+    expect(Number(row.points)).toBe(2.5);
+    expect(String(row.sprint)).toBe('');
+    expect(String(row.acceptance).length).toBe(4000);
+
+    ctx.issueUpdate(made.number, { points: null });
+    row = ctx.issueGet(made.number);
+    expect(String(row.points)).toBe('');
+  });
+
+  it('スクラムを読まない構成では、スクラムの欄を直させない', () => {
+    // Scrum.gs が無い構成。オンかどうかを確かめる口が無いのでオフとして断る
+    const ctx = loadGasWith(createFakeGas(), ...ISSUE_SOURCES);
+    ctx.repoInit('agentic-management');
+    const made = ctx.issueCreate('x', '', []);
+
+    expect(() => ctx.issueUpdate(made.number, { points: 3 })).toThrow('「期間で進める」はオフです');
+    expect(ctx.issueUpdate(made.number, { title: 'y' }).title).toBe('y');
   });
 
   it('オフのあいだは、スクラムの欄を直させない', () => {

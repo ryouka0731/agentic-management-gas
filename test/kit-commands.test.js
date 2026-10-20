@@ -218,6 +218,30 @@ describe('手元の道具の命令', () => {
       .toEqual({ op: 'reportDraft', args: { kind: 'today' } });
   }, 30000);
 
+  // 入口 (main) の振り分けを固定する。使い方・知らない操作・使い方の誤りは命令を置かない
+  it('使い方・知らない操作・使い方の誤りは命令を置かず、終わりの番号で分ける', async () => {
+    const help = await run(['--help']);
+    expect(help.code).toBe(0);
+    expect(help.cmd).toBeNull();
+    expect(help.out).toContain('はじめてなら、まず agent setup を実行する');
+
+    const setup = await run(['setup']);
+    expect(setup.code).toBe(0);
+    expect(setup.cmd).toBeNull();
+
+    const unknown = await run(['nanika']);
+    expect(unknown.code).toBe(2);
+    expect(unknown.cmd).toBeNull();
+    expect(unknown.err).toContain('知らない操作です: nanika');
+    expect(unknown.err).toContain('はじめてなら、まず agent setup を実行する');
+    expect(unknown.out).toBe('');
+
+    const wrong = await run(['search']);
+    expect(wrong.code).toBe(2);
+    expect(wrong.cmd).toBeNull();
+    expect(wrong.err).toBe('探す語を渡してください (例: node agent.mjs search 規程 第3条)\n');
+  }, 30000);
+
   it('mine は自分の番を読める形で出す', async () => {
     const r = await run(['mine'], {
       reviews: { items: [{ number: 3, title: '規程の改訂' }], total: 1 },
@@ -398,7 +422,7 @@ describe('道具の版', () => {
     const fake = createFakeGas();
     const ctx = loadGasWith(fake, 'src/core/AgentKit.gs');
     expect(local.KIT_VERSION).toBe(ctx.AGENT_KIT_VERSION());
-    expect(local.KIT_VERSION).toBe('1.11.0');
+    expect(local.KIT_VERSION).toBe('1.11.1');
   });
 });
 
@@ -481,6 +505,81 @@ describe('doctor (番頭に頼まずに点検する)', () => {
     const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
     expect(r.text).not.toContain('直すこと');
     expect(r.ok).toBe(true);
+  });
+
+  // 点検の字を丸ごと固定する。点検を1つずつの関数に分けたとき、並びや字が変わらないことを見る
+  it('点検の字と並びが変わらない (設定に入れ先が無い・フックだけ足りない・書けない・待っている)', () => {
+    const d = dirs();
+    const clean = (s) => s.split(d.home).join('<home>').split(d.queue).join('<queue>');
+
+    const noDir = local.doctor({ config: { from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(noDir.ok).toBe(false);
+    expect(clean(noDir.text)).toBe([
+      '手元の道具の点検 (番頭には何も頼みません)', '',
+      '[よし] 設定: x',
+      '[直す] 入れ先: 設定に queueDir がありません',
+      '[情報] 道具の版: ' + local.KIT_VERSION + ' (番頭に作業を載せる仕掛けは入っていません)',
+      '',
+      '直すこと:',
+      '  1. 設定 (x) に queueDir を書く',
+    ].join('\n'));
+
+    fs.writeFileSync(path.join(d.home, 'config.json'), JSON.stringify({ queueDir: d.queue }));
+    const hook = (kind) => 'node "' + path.join(d.home, 'hooks', 'track-hook.mjs') + '" ' + kind;
+    fs.writeFileSync(path.join(d.claude, 'settings.json'), JSON.stringify({ hooks: {
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: hook('prompt') }] }],
+      Stop: 'こわれた',
+    } }));
+    fs.mkdirSync(path.join(d.claude, 'skills', 'banto-track'), { recursive: true });
+    const empty = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(clean(empty.text)).toBe([
+      '手元の道具の点検 (番頭には何も頼みません)', '',
+      '[よし] 設定: x',
+      '[よし] 入れ先: <queue>',
+      '[情報] 返事: 手がかりがありません。node agent.mjs files で確かめられます (返るまで最大1分)',
+      '[よし] 道具の版: ' + local.KIT_VERSION,
+      '[直す] フック: settings.json にフックがありません ',
+      '',
+      '直すこと:',
+      '  1. node agent.mjs track install でフックとスキルを入れ直す',
+    ].join('\n'));
+
+    touch(path.join(d.queue, 'kit-1-a.cmd.json'), 2 * 60 * 1000);
+    touch(path.join(d.queue, 'kit-0-b.result.json'), 10 * 60 * 1000);
+    touch(path.join(d.queue, 'kit-0-b.cmd.json'), 60 * 60 * 1000);
+    fs.writeFileSync(path.join(d.claude, 'settings.json'), '{こわれた');
+    fs.rmSync(path.join(d.claude, 'skills', 'banto-track'), { recursive: true });
+    const waiting = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(clean(waiting.text)).toBe([
+      '手元の道具の点検 (番頭には何も頼みません)', '',
+      '[よし] 設定: x',
+      '[よし] 入れ先: <queue>',
+      '[情報] 最後の返事: 10分前',
+      '[情報] 返事: 命令が 1件、返事を待っています (1分ほどで返ります)',
+      '[よし] 道具の版: ' + local.KIT_VERSION,
+      '[直す] フック: settings.json にフックがありません スキルがありません',
+      '',
+      '直すこと:',
+      '  1. node agent.mjs track install でフックとスキルを入れ直す',
+    ].join('\n'));
+
+    fs.rmSync(path.join(d.queue, 'kit-1-a.cmd.json'));
+    fs.rmSync(path.join(d.home, 'config.json'));
+    const answered = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(answered.ok).toBe(true);
+    expect(answered.text).toContain('[よし] 返事: 待っている命令はありません');
+
+    if (process.getuid && process.getuid() !== 0) {
+      fs.chmodSync(d.queue, 0o500);
+      try {
+        const locked = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+        expect(clean(locked.text)).toContain('[直す] 入れ先: <queue> に書けません');
+        expect(locked.text).toContain('Drive の共有で編集者になっているか');
+        expect(locked.text).not.toContain('返事');
+      } finally {
+        fs.chmodSync(d.queue, 0o700);
+      }
+    }
   });
 
   it('agent.mjs doctor は命令を置かずに点検する', async () => {

@@ -133,6 +133,66 @@
   /** 使い方の絞り込みを外から当てる。loadHelp が組むまでは何もしない */
   var guideFilterApply = function () {};
 
+  /** 使い方の絞り込みの欄。中の input が最初の子 */
+  function guideFilterBox() {
+    var filterBox = document.createElement('label');
+    filterBox.className = 'filter-box guide-filter';
+    var filterInput = document.createElement('input');
+    filterInput.id = 'guide-filter';
+    filterInput.type = 'search';
+    filterInput.placeholder = '使い方の中を絞る';
+    filterInput.setAttribute('aria-label', '使い方の節を絞り込む');
+    filterBox.appendChild(filterInput);
+    return filterBox;
+  }
+
+  /**
+   * 使い方の1節 (見出し・図・箇条書き) を本文に足す。
+   *
+   * @param {object} section GUIDE の1節
+   * @param {object} [figure] その節の図の spec
+   * @returns {{head: HTMLElement, parts: HTMLElement[]}} parts は絞り込みで一緒に隠すもの
+   */
+  function guideBuildSection(section, figure) {
+    var parts = [];
+    var h = document.createElement('h2');
+    // 画面の部品 (guide-filter / guide-link など) とぶつけないよう、見出しは guide-sec- で始める。
+    // 数える場所の名前 (guide-<id>) とも分ける。見出しを押しても数えない (usageTargetOf)
+    h.id = 'guide-sec-' + section.id;
+    h.dataset.guideHead = section.id;
+    h.tabIndex = -1;
+    var text = document.createElement('span');
+    text.className = 'guide-head-text';
+    text.textContent = section.title;
+    h.appendChild(text);
+    // 管理者向けの節も隠さない。誰に頼めばよいかが分かるように
+    if (section.admin) {
+      var pill = makePill('管理者', 'chip');
+      pill.title = 'このアプリの管理者がする操作です';
+      h.appendChild(pill);
+    }
+    guideEl.appendChild(h);
+    parts.push(h);
+
+    if (figure) {
+      var fig = makeDiagram(figure);
+      guideEl.appendChild(fig);
+      parts.push(fig);
+    }
+
+    var ul = document.createElement('ul');
+    section.lines.forEach(function (line) {
+      var li = document.createElement('li');
+      // {key} を含む行は、言葉の表し方が変わったら applyTerms が埋め直す
+      li.textContent = termIn(line);
+      if (line.indexOf('{') >= 0) li.setAttribute('data-term', line);
+      ul.appendChild(li);
+    });
+    guideEl.appendChild(ul);
+    parts.push(ul);
+    return { head: h, parts: parts };
+  }
+
   /**
    * 使い方を開き、その節へ送る。「?」と探す (Ctrl+K) から呼ぶ。
    *
@@ -177,14 +237,8 @@
     guideEl.appendChild(top);
 
     // 絞り込みは本文の上に置く。長い頁を送って探させない
-    var filterBox = document.createElement('label');
-    filterBox.className = 'filter-box guide-filter';
-    var filterInput = document.createElement('input');
-    filterInput.id = 'guide-filter';
-    filterInput.type = 'search';
-    filterInput.placeholder = '使い方の中を絞る';
-    filterInput.setAttribute('aria-label', '使い方の節を絞り込む');
-    filterBox.appendChild(filterInput);
+    var filterBox = guideFilterBox();
+    var filterInput = filterBox.firstChild;
     guideEl.insertBefore(filterBox, top);
 
     var empty = document.createElement('p');
@@ -241,43 +295,10 @@
     };
 
     GUIDE.forEach(function (section) {
-      var parts = [];
-      var h = document.createElement('h2');
-      // 画面の部品 (guide-filter / guide-link など) とぶつけないよう、見出しは guide-sec- で始める。
-      // 数える場所の名前 (guide-<id>) とも分ける。見出しを押しても数えない (usageTargetOf)
-      h.id = 'guide-sec-' + section.id;
-      h.dataset.guideHead = section.id;
-      h.tabIndex = -1;
-      var text = document.createElement('span');
-      text.className = 'guide-head-text';
-      text.textContent = section.title;
-      h.appendChild(text);
-      // 管理者向けの節も隠さない。誰に頼めばよいかが分かるように
-      if (section.admin) {
-        var pill = makePill('管理者', 'chip');
-        pill.title = 'このアプリの管理者がする操作です';
-        h.appendChild(pill);
-      }
-      guideEl.appendChild(h);
-      parts.push(h);
+      var built = guideBuildSection(section, figures[section.title]);
+      var h = built.head;
+      var parts = built.parts;
       var tocBtn = addToc(section, h);
-
-      if (figures[section.title]) {
-        var fig = makeDiagram(figures[section.title]);
-        guideEl.appendChild(fig);
-        parts.push(fig);
-      }
-
-      var ul = document.createElement('ul');
-      section.lines.forEach(function (line) {
-        var li = document.createElement('li');
-        // {key} を含む行は、言葉の表し方が変わったら applyTerms が埋め直す
-        li.textContent = termIn(line);
-        if (line.indexOf('{') >= 0) li.setAttribute('data-term', line);
-        ul.appendChild(li);
-      });
-      guideEl.appendChild(ul);
-      parts.push(ul);
 
       guideSections.push({
         id: section.id, head: h, parts: parts, toc: tocBtn,

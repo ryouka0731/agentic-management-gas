@@ -123,6 +123,52 @@ describe('writeHtmlToSheet', () => {
     expect(ctx.renderSheet(ss.getId())).toContain('3.14<');
   });
 
+  describe('sheetWriteBlock_ が書く行列', () => {
+    /** 今の中身を持ち、書いたものを控えるだけのシート */
+    function sheetOf(raw, shown, formulas) {
+      const wrote = [];
+      return {
+        wrote,
+        getDataRange: () => ({
+          getValues: () => raw, getDisplayValues: () => shown, getFormulas: () => formulas,
+        }),
+        getRange: (r, c, h, w) => ({ setValues: (m) => wrote.push({ r, c, h, w, m }) }),
+      };
+    }
+    const cell = (value, formula) => (formula ? { value, formula } : { value });
+
+    it('空のシートに空の表なら何も書かない', () => {
+      const { ctx } = setup(...SRC);
+      const sheet = sheetOf([], [], []);
+      ctx.sheetWriteBlock_(sheet, { rows: [] });
+      expect(sheet.wrote).toEqual([]);
+    });
+
+    it('同じ数式は数式のまま、同じ表示は生の値のまま、違えば書いた値。はみ出しは空で消す', () => {
+      const { ctx } = setup(...SRC);
+      const sheet = sheetOf(
+        [[2, 3.14159, 'x'], ['a', 'b', 'c']],
+        [['2', '3.14', 'x'], ['a', 'b', 'c']],
+        [['=1+1', '', ''], ['', '', '']],
+      );
+      ctx.sheetWriteBlock_(sheet, { rows: [
+        [cell('2', '=1+1'), cell('3.14'), cell('y')],
+        [cell('=2*2', '=2*2'), cell(null)],
+      ] });
+      expect(sheet.wrote).toEqual([{ r: 1, c: 1, h: 2, w: 3, m: [
+        ['=1+1', 3.14159, 'y'],
+        ['=2*2', '', ''],
+      ] }]);
+    });
+
+    it('数式を外した値・今より広い表も書く', () => {
+      const { ctx } = setup(...SRC);
+      const sheet = sheetOf([[2]], [['2']], [['=1+1']]);
+      ctx.sheetWriteBlock_(sheet, { rows: [[cell('2'), cell('新')], [cell('下')]] });
+      expect(sheet.wrote[0].m).toEqual([['2', '新'], ['下', '']]);
+    });
+  });
+
   it('変えたセルは書いた値になり、消した行は残らない', () => {
     const { ctx } = setup(...SRC);
     const { ss } = rounded(ctx);
