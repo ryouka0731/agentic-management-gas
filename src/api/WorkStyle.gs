@@ -1,5 +1,5 @@
 /**
- * 仕事のスタンス診断の入口 (Web App API)。定義は src/core/WorkStyle.js、覚え方は src/core/WorkStyle.gs。
+ * 仕事のスタンス診断の入口 (Web App API)。定義は src/core/WorkStyleTypes.js、覚え方は src/core/WorkStyle.gs。
  *
  * どれも開いている本人のぶんだけを読み書きする。ほかの人の結果を名指しで読む入口は作らない
  * (見せてよいものは apiWorkStyleTeam が型の名前だけ返す)。
