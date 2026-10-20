@@ -297,6 +297,9 @@
     el.textContent = name ? name.charAt(0).toUpperCase() : '?';
 
     var label = who ? (name + ' (' + who + ')') : '担当なし';
+    // 仕事のスタンス診断の型は、本人が「チームに見せる」を選んだ人だけ添える (点数は出さない)
+    var style = who ? personStyleText(who) : '';
+    if (style) label += ' · ' + style;
     el.setAttribute('aria-label', label);
     attachHint(el, label);
     return el;

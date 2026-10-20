@@ -176,6 +176,14 @@ function PREF_GROUPS_() {
           label: f.label, help: f.help, def: false };
       });
     },
+    style: function () {
+      // 仕事のスタンス診断の結果を、ほかの人の画面に出すか。既定はオフ (結果は本人にだけ見える)。
+      // 見せるのは型の名前と絵だけで、点数は見せない (workStyleShared_)
+      return [{ key: 'style.share', scope: 'me', type: 'bool', section: '仕事のスタンス診断',
+        label: '診断の型の名前をチームに見せる',
+        help: 'オンにすると、ほかの人の画面であなたの顔に型の名前が添えられます。点数や答えは誰にも見せません',
+        def: false }];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -194,7 +202,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;

@@ -36,6 +36,7 @@
 | `fun.combo` | 楽しい演出: 打つと盛り上がる | bool | オフ | |
 | `fun.words` | 楽しい演出: 言葉に反応する | bool | オフ | |
 | `fun.cheer` | 楽しい演出: 済ませたらお祝い | bool | オフ | |
+| `style.share` | 仕事のスタンス診断: 診断の型の名前をチームに見せる | bool | オフ | 見せるのは型の名前と絵だけ。[仕事のスタンス診断](work-style.md) |
 | `notify.review` | 通知メール: 確認を頼まれた・確認依頼が出た | bool | オン | |
 | `notify.result` | 通知メール: 反映した・取り下げた | bool | オン | |
 | `notify.inquiry` | 通知メール: 報告とその返事 | bool | オン | |

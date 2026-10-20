@@ -1,0 +1,618 @@
+  // ===== 仕事のスタンス診断 =====
+  //
+  // 問い・軸・型・おすすめはサーバ (src/core/WorkStyle.js) が唯一の定義で、apiWorkStyle で受け取って描く。
+  // 画面は数えない (答えを送り、型はサーバが決める)。
+  //
+  // - 遊びの診断。人の評価や配置には使わない、と最初と結果の両方に書く
+  // - 結果は本人にだけ見える。「型の名前をチームに見せる」(自分の設定 style.share) をオンにした人だけ、
+  //   ほかの人の画面で顔に型の名前が添えられる (点数は出さない)
+  // - おすすめの設定は開くだけで、切り替えない (オンにするかは本人が決める)
+  // - 共有は字の札を写すか、画像に描いて保存するだけ。チャットの API は呼ばない
+
+  /** チームに見せている人の型。小文字のアドレス → {name, emoji}。apiWorkStyleTeam で埋める */
+  var peopleStyles = {};
+
+  /**
+   * 顔に添える型の名前。見せていない人は空。
+   *
+   * @param {string} email
+   * @returns {string}
+   */
+  function personStyleText(email) {
+    var s = peopleStyles[String(email || '').toLowerCase()];
+    return s ? s.emoji + ' ' + s.name : '';
+  }
+
+  /** 答えの途中。開き直しても消えないよう、診断の画面を閉じるまで持つ */
+  var styleAnswers = {};
+
+  /**
+   * 診断を右のパネルで開く。結果があれば結果、無ければ問い。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openWorkStyle(sourceEl) {
+    closeMe();
+    var box = openSideView('仕事のスタンス診断', sourceEl || null, null);
+    box.classList.add('style-view');
+    showSkeleton(box, 'list', 2);
+    var still = latest('workStyle');
+    call('apiWorkStyle', [], still.only(function (res) {
+      if (!box.isConnected) return;
+      box.textContent = '';
+      if (!res) {
+        box.textContent = '診断を読めませんでした';
+        return;
+      }
+      if (res.mine) drawStyleResult(box, res, res.mine);
+      else drawStyleQuestions(box, res);
+    }), still.only(failInto(box)));
+  }
+
+  /**
+   * 断り書き。最初と結果の両方に出す。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeStyleDisclaimer() {
+    var p = document.createElement('p');
+    p.className = 'style-note';
+    p.textContent = 'これは遊びの診断です。人の評価や配置には使いません。医学的・心理学的な検査でもありません。' +
+      '結果はあなたにだけ見えます。「型の名前をチームに見せる」をオンにしたときだけ、型の名前がほかの人に見えます (点数は見せません)。';
+    return p;
+  }
+
+  /**
+   * 問いを並べる。全部答えると「結果を見る」が押せる。
+   *
+   * @param {HTMLElement} box
+   * @param {object} res apiWorkStyle
+   */
+  function drawStyleQuestions(box, res) {
+    box.textContent = '';
+    var lead = document.createElement('p');
+    lead.textContent = (res.questions || []).length + '問に答えると、あなたの仕事のスタンスを16の型のどれかで返します。' +
+      '深く考えず、ふだんの自分に近いものを選んでください。何度でもやり直せます。';
+    box.appendChild(lead);
+    box.appendChild(makeStyleDisclaimer());
+
+    var form = document.createElement('form');
+    form.className = 'style-form';
+    var questions = res.questions || [];
+    var scale = res.scale || [];
+
+    var count = document.createElement('p');
+    count.className = 'row-meta style-count';
+    count.setAttribute('aria-live', 'polite');
+
+    var submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'btn btn-primary';
+    submit.id = 'style-submit';
+    submit.textContent = '結果を見る';
+
+    function answered() {
+      return questions.filter(function (q) { return styleAnswers[q.id] >= 1; }).length;
+    }
+    function sync() {
+      var n = answered();
+      var left = questions.length - n;
+      count.textContent = n + ' / ' + questions.length + ' 問に答えました' + (left ? ' (あと ' + left + ' 問)' : '');
+      submit.disabled = left > 0;
+      if (left > 0) attachHint(submit, 'あと ' + left + ' 問に答えると押せます');
+      else attachHint(submit, '答えを送って、型を決めます');
+    }
+
+    questions.forEach(function (q, at) {
+      var set = document.createElement('fieldset');
+      set.className = 'style-q';
+      var legend = document.createElement('legend');
+      legend.textContent = (at + 1) + '. ' + q.text;
+      set.appendChild(legend);
+      var row = document.createElement('div');
+      row.className = 'style-scale';
+      scale.forEach(function (s) {
+        var label = document.createElement('label');
+        label.className = 'style-choice';
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'style-' + q.id;
+        input.value = String(s.value);
+        input.checked = styleAnswers[q.id] === s.value;
+        input.addEventListener('change', function () {
+          styleAnswers[q.id] = s.value;
+          sync();
+        });
+        label.appendChild(input);
+        var text = document.createElement('span');
+        text.textContent = s.label;
+        label.appendChild(text);
+        row.appendChild(label);
+      });
+      set.appendChild(row);
+      form.appendChild(set);
+    });
+
+    var foot = document.createElement('div');
+    foot.className = 'style-foot';
+    foot.appendChild(count);
+    foot.appendChild(submit);
+    form.appendChild(foot);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (answered() < questions.length) return;
+      submit.disabled = true;
+      var answers = {};
+      questions.forEach(function (q) { answers[q.id] = styleAnswers[q.id]; });
+      call('apiWorkStyleSave', [answers], function (mine) {
+        submit.disabled = false;
+        if (!mine || !box.isConnected) return;
+        styleAnswers = {};
+        drawStyleResult(box, res, mine);
+        showSnack('あなたは「' + mine.name + '」でした', { kind: 'ok' });
+      }, failEnable(submit, '結果を出せませんでした: '));
+    });
+
+    box.appendChild(form);
+    sync();
+  }
+
+  /**
+   * 軸の1本。左右の極の名前と、どちらへどれだけ寄ったかの印。
+   *
+   * @param {object} x 結果の axes の1つ
+   * @returns {HTMLElement}
+   */
+  function makeStyleAxis(x) {
+    var row = document.createElement('div');
+    row.className = 'style-axis';
+    var head = document.createElement('div');
+    head.className = 'style-axis-head';
+    var name = document.createElement('strong');
+    name.textContent = x.label;
+    head.appendChild(name);
+    var lean = document.createElement('span');
+    lean.className = 'row-meta';
+    lean.textContent = x.lean === 'どちらとも言えない' ? x.pole + ' (どちらとも言えない)' : x.pole + ' (' + x.lean + ')';
+    head.appendChild(lean);
+    row.appendChild(head);
+
+    var line = document.createElement('div');
+    line.className = 'style-axis-line';
+    var left = document.createElement('span');
+    left.textContent = x.left;
+    var right = document.createElement('span');
+    right.textContent = x.right;
+    var track = document.createElement('span');
+    track.className = 'style-axis-track';
+    track.setAttribute('role', 'img');
+    track.setAttribute('aria-label', x.label + ': ' + x.left + ' と ' + x.right + ' のうち、' + x.pole + ' 寄り (' + x.lean + ')');
+    var mark = document.createElement('span');
+    mark.className = 'style-axis-mark';
+    // 左の極に寄るほど点は正。左端 0% 〜 右端 100%
+    var max = Number(x.max) || 1;
+    var at = Math.max(0, Math.min(100, (max - Number(x.score || 0)) / (2 * max) * 100));
+    mark.style.left = at + '%';
+    track.appendChild(mark);
+    line.appendChild(left);
+    line.appendChild(track);
+    line.appendChild(right);
+    row.appendChild(line);
+    return row;
+  }
+
+  /**
+   * 見出し付きの箇条書き。
+   *
+   * @param {string} title
+   * @param {string[]} items
+   * @returns {HTMLElement}
+   */
+  function makeStyleList(title, items) {
+    var sec = document.createElement('section');
+    sec.className = 'style-sec';
+    var h = document.createElement('h3');
+    h.className = 'view-label';
+    h.textContent = title;
+    sec.appendChild(h);
+    var ul = document.createElement('ul');
+    (items || []).forEach(function (t) {
+      var li = document.createElement('li');
+      li.textContent = t;
+      ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    return sec;
+  }
+
+  /**
+   * おすすめの使い方で画面を開く。key はサーバの WORK_STYLE_VIEWS_ と同じ。
+   *
+   * @param {string} key
+   */
+  function styleGo(key) {
+    if (key === 'help') {
+      switchTab('help');
+      return;
+    }
+    var views = { board: 'board', gantt: 'gantt', list: 'list' };
+    if (!views[key]) return;
+    // おすすめから開いた見え方は、次に開いたときの見え方として覚えない
+    setIssueView(views[key], true, { noSave: true });
+    switchTab('issues');
+  }
+
+  /**
+   * おすすめの使い方。設定は開くだけで、切り替えない。
+   *
+   * @param {object[]} uses
+   * @returns {HTMLElement}
+   */
+  function makeStyleUses(uses) {
+    var sec = document.createElement('section');
+    sec.className = 'style-sec';
+    var h = document.createElement('h3');
+    h.className = 'view-label';
+    h.textContent = '番頭の使い方のおすすめ';
+    sec.appendChild(h);
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '設定は開くだけで、変えるのはあなたです。合わないと思ったら、そのままにしてください。';
+    sec.appendChild(note);
+    (uses || []).forEach(function (u) {
+      var row = document.createElement('div');
+      row.className = 'style-use';
+      var text = document.createElement('div');
+      var name = document.createElement('strong');
+      name.textContent = u.label;
+      text.appendChild(name);
+      var why = document.createElement('div');
+      why.className = 'row-meta';
+      why.textContent = u.why + ' (「' + u.from + '」向き)';
+      text.appendChild(why);
+      row.appendChild(text);
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn';
+      go.dataset.track = 'style-use-' + u.kind;
+      go.textContent = u.kind === 'pref' ? '設定で見る' : '開く';
+      go.addEventListener('click', function () {
+        if (u.kind === 'pref') openPrefAt(u.key);
+        else styleGo(u.key);
+      });
+      row.appendChild(go);
+      sec.appendChild(row);
+    });
+    return sec;
+  }
+
+  /**
+   * 字を写す。写せなければ el の字を選んだままにして、手で写せるようにする。
+   *
+   * @param {string} value
+   * @param {HTMLElement} el 写せなかったときに選ぶもの
+   */
+  function styleCopy(value, el) {
+    if (copyPlainText(value)) {
+      showSnack('札を写しました。社内チャットに貼ってください', { kind: 'ok' });
+      return;
+    }
+    selectTextOf(el);
+    showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
+  }
+
+  /**
+   * 字を折り返して描く。
+   *
+   * @returns {number} 次の行の y
+   */
+  function styleWrapText(ctx, text, x, y, width, lineHeight, maxLines) {
+    var line = '';
+    var lines = 0;
+    var chars = Array.from(String(text || ''));
+    for (var i = 0; i < chars.length; i++) {
+      var next = line + chars[i];
+      if (line && ctx.measureText(next).width > width) {
+        ctx.fillText(line, x, y);
+        y += lineHeight;
+        lines++;
+        line = chars[i];
+        if (maxLines && lines >= maxLines) return y;
+      } else {
+        line = next;
+      }
+    }
+    if (line) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+    }
+    return y;
+  }
+
+  /**
+   * 札を画像に描く。色は地のトークンから読む。外からは何も取ってこない。
+   *
+   * @param {object} mine 結果
+   * @returns {HTMLCanvasElement|null} 描けない環境では null
+   */
+  function styleCardCanvas(mine) {
+    var canvas = document.createElement('canvas');
+    var ctx = null;
+    try {
+      ctx = canvas.getContext ? canvas.getContext('2d') : null;
+    } catch (e) {
+      ctx = null;
+    }
+    if (!ctx) return null;
+    canvas.width = 1200;
+    canvas.height = 630;
+    var css = getComputedStyle(document.documentElement);
+    var tok = function (name) { return String(css.getPropertyValue(name) || '').trim(); };
+    var font = getComputedStyle(document.body).fontFamily || 'sans-serif';
+
+    ctx.fillStyle = tok('--surface-raised') || tok('--bg');
+    ctx.fillRect(0, 0, 1200, 630);
+    ctx.fillStyle = tok('--accent');
+    ctx.fillRect(0, 0, 24, 630);
+
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = tok('--ink-2');
+    ctx.font = '600 30px ' + font;
+    ctx.fillText('わたしの仕事のスタンス', 80, 64);
+
+    ctx.fillStyle = tok('--ink');
+    ctx.font = '800 72px ' + font;
+    styleWrapText(ctx, mine.emoji + ' ' + mine.name, 80, 116, 1040, 84, 1);
+
+    ctx.font = '400 32px ' + font;
+    var y = styleWrapText(ctx, mine.oneLine, 80, 230, 1040, 46, 2);
+
+    ctx.fillStyle = tok('--accent');
+    ctx.font = '700 28px ' + font;
+    ctx.fillText('強み', 80, y + 20);
+    ctx.fillStyle = tok('--ink');
+    ctx.font = '400 28px ' + font;
+    y += 64;
+    (mine.strengths || []).slice(0, 3).forEach(function (s) {
+      y = styleWrapText(ctx, '・' + s, 80, y, 1040, 40, 1);
+    });
+
+    ctx.fillStyle = tok('--ink-2');
+    ctx.font = '400 22px ' + font;
+    var lines = String(mine.card || '').split('\n');
+    ctx.fillText(lines[lines.length - 1] || '', 80, 570);
+    return canvas;
+  }
+
+  /**
+   * 札を画像にして、その場に出し、保存を試みる。保存を断られても画像は残す (右の押しで保存できる)。
+   *
+   * @param {object} mine
+   * @param {HTMLElement} host 画像を出す場所
+   */
+  function styleSaveImage(mine, host) {
+    var canvas = styleCardCanvas(mine);
+    if (!canvas) {
+      showSnack('この端末では画像にできません。札の字を写してください', { kind: 'ng' });
+      return;
+    }
+    var url = '';
+    try {
+      url = canvas.toDataURL('image/png');
+    } catch (e) {
+      url = '';
+    }
+    if (!url) {
+      showSnack('画像にできませんでした。札の字を写してください', { kind: 'ng' });
+      return;
+    }
+    host.textContent = '';
+    var img = document.createElement('img');
+    img.className = 'style-card-img';
+    img.src = url;
+    img.alt = '仕事のスタンスの札: ' + mine.name;
+    host.appendChild(img);
+    var hint = document.createElement('p');
+    hint.className = 'row-meta';
+    hint.textContent = '保存されないときは、画像を右の押しで保存するか、長押ししてください。';
+    host.appendChild(hint);
+    try {
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = '仕事のスタンス.png';
+      a.hidden = true;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      // 枠の中では保存を断られることがある。画像は出してあるので、そこから保存できる
+    }
+  }
+
+  /**
+   * 共有の節。チームに見せる切り替え・字の札・画像。
+   *
+   * @param {object} res apiWorkStyle
+   * @param {object} mine
+   * @returns {HTMLElement}
+   */
+  function makeStyleShare(res, mine) {
+    var sec = document.createElement('section');
+    sec.className = 'style-sec';
+    var h = document.createElement('h3');
+    h.className = 'view-label';
+    h.textContent = '共有する';
+    sec.appendChild(h);
+
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.id = 'style-share';
+    toggle.className = 'btn toggle-btn';
+    toggle.textContent = '型の名前をチームに見せる';
+    setToggle(toggle, !!res.share);
+    attachHint(toggle, 'オンにすると、ほかの人の画面であなたの顔に型の名前が添えられます。点数や答えは見せません。' +
+      '設定の「自分の設定」でも切り替えられます');
+    toggle.addEventListener('click', function () {
+      var want = !res.share;
+      setToggle(toggle, want);
+      toggle.disabled = true;
+      var seq = ++prefsSeq;
+      call('apiPrefSet', ['style.share', want], function (prefsRes) {
+        toggle.disabled = false;
+        if (prefsRes) applyPrefs(prefsRes, seq);
+        res.share = want;
+        var me = String(currentUser || '').toLowerCase();
+        if (me) {
+          if (want) peopleStyles[me] = { name: mine.name, emoji: mine.emoji };
+          else delete peopleStyles[me];
+        }
+        showSnack(want ? '型の名前をチームに見せます' : '型の名前を見せるのをやめました', { kind: 'ok' });
+      }, function (err) {
+        setToggle(toggle, !!res.share);
+        failEnable(toggle, '切り替えられませんでした: ')(err);
+      });
+    });
+    sec.appendChild(toggle);
+
+    var about = document.createElement('p');
+    about.className = 'row-meta';
+    about.textContent = '下の札を写して、社内チャット (Google Chat や Slack など) に貼れます。番頭からチャットへは何も送りません。';
+    sec.appendChild(about);
+
+    var card = document.createElement('pre');
+    card.className = 'style-card-text';
+    card.id = 'style-card-text';
+    card.textContent = mine.card;
+    sec.appendChild(card);
+
+    var row = document.createElement('div');
+    row.className = 'style-actions';
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn btn-primary';
+    copy.id = 'style-copy';
+    copy.appendChild(makeIcon('copy'));
+    copy.appendChild(document.createTextNode('共有用の札をコピー'));
+    copy.addEventListener('click', function () { styleCopy(mine.card, card); });
+    row.appendChild(copy);
+
+    var imageHost = document.createElement('div');
+    imageHost.className = 'style-image';
+    var image = document.createElement('button');
+    image.type = 'button';
+    image.className = 'btn';
+    image.id = 'style-image';
+    image.appendChild(makeIcon('save'));
+    image.appendChild(document.createTextNode('画像で保存'));
+    image.addEventListener('click', function () { styleSaveImage(mine, imageHost); });
+    row.appendChild(image);
+    sec.appendChild(row);
+    sec.appendChild(imageHost);
+    return sec;
+  }
+
+  /**
+   * 結果を描く。
+   *
+   * @param {HTMLElement} box
+   * @param {object} res apiWorkStyle
+   * @param {object} mine 結果 (apiWorkStyle の mine か apiWorkStyleSave の返り)
+   */
+  function drawStyleResult(box, res, mine) {
+    box.textContent = '';
+    res.mine = mine;
+    var head = document.createElement('div');
+    head.className = 'style-head';
+    var emoji = document.createElement('span');
+    emoji.className = 'style-emoji';
+    emoji.setAttribute('aria-hidden', 'true');
+    emoji.textContent = mine.emoji;
+    head.appendChild(emoji);
+    var title = document.createElement('div');
+    var kicker = document.createElement('div');
+    kicker.className = 'row-meta';
+    kicker.textContent = 'あなたの仕事のスタンス';
+    title.appendChild(kicker);
+    var name = document.createElement('h3');
+    name.className = 'style-name';
+    name.textContent = mine.name;
+    title.appendChild(name);
+    head.appendChild(title);
+    box.appendChild(head);
+
+    var one = document.createElement('p');
+    one.className = 'style-one';
+    one.textContent = mine.oneLine;
+    box.appendChild(one);
+
+    var axes = document.createElement('section');
+    axes.className = 'style-sec style-axes';
+    (mine.axes || []).forEach(function (x) { axes.appendChild(makeStyleAxis(x)); });
+    box.appendChild(axes);
+
+    box.appendChild(makeStyleList('強み', mine.strengths));
+    box.appendChild(makeStyleList('気をつけたいこと', mine.cautions));
+    box.appendChild(makeStyleList('ひとこと', (mine.axes || []).map(function (x) { return x.pole + ': ' + x.tip; })));
+    box.appendChild(makeStyleUses(mine.uses));
+    box.appendChild(makeStyleShare(res, mine));
+
+    var claude = document.createElement('p');
+    claude.className = 'row-meta';
+    claude.textContent = '手元の Claude を使っているなら、「node agent.mjs style」で、この型に合わせた手伝い方に切り替わります。';
+    box.appendChild(claude);
+
+    box.appendChild(makeStyleDisclaimer());
+
+    var foot = document.createElement('div');
+    foot.className = 'style-actions';
+    var again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'btn';
+    again.id = 'style-again';
+    again.textContent = 'もう一度診断する';
+    again.addEventListener('click', function () {
+      styleAnswers = {};
+      drawStyleQuestions(box, res);
+      if (box.scrollIntoView) box.scrollIntoView({ block: 'start' });
+    });
+    foot.appendChild(again);
+    var forget = document.createElement('button');
+    forget.type = 'button';
+    forget.className = 'btn';
+    forget.id = 'style-forget';
+    forget.textContent = '結果を消す';
+    forget.addEventListener('click', function () {
+      openConfirmStrip(box, '診断の結果を消します。チームに見せる設定も切ります。', '消す', function () {
+        forget.disabled = true;
+        call('apiWorkStyleForget', [], function () {
+          forget.disabled = false;
+          res.mine = null;
+          res.share = false;
+          var me = String(currentUser || '').toLowerCase();
+          if (me) delete peopleStyles[me];
+          showSnack('診断の結果を消しました', { kind: 'ok' });
+          if (box.isConnected) drawStyleQuestions(box, res);
+        }, failEnable(forget, '消せませんでした: '));
+      });
+    });
+    foot.appendChild(forget);
+    box.appendChild(foot);
+  }
+
+  /**
+   * 自分まわりの「仕事のスタンス診断」。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeStyleButton() {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.id = 'me-style';
+    btn.appendChild(makeIcon('compass'));
+    btn.appendChild(document.createTextNode('仕事のスタンス診断'));
+    attachHint(btn, '20問で、あなたの仕事の進め方の型を返します。遊びの診断で、結果はあなたにだけ見えます');
+    btn.addEventListener('click', function () { openWorkStyle(btn); });
+    return btn;
+  }
