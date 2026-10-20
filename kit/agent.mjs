@@ -392,8 +392,16 @@ function showView(view, result, rest) {
   try {
     return view.show(result, rest);
   } catch (e) {
-    return JSON.stringify(result, null, 2);
+    return dump(result);
   }
+}
+
+/**
+ * 返事の JSON を字にする。既定は1行に詰める (読むのは Claude で、字下げのぶんだけ読む量が増える)。
+ * 人が目で追うときは --pretty で字下げする。
+ */
+function dump(value) {
+  return process.argv.includes('--pretty') ? JSON.stringify(value, null, 2) : JSON.stringify(value);
 }
 
 /** 送る前に断る使い方の誤り (終わりの番号を 2 にする) */
@@ -751,6 +759,7 @@ function usage() {
   lines.push('');
   lines.push('はじめてなら、まず agent setup を実行する');
   lines.push('キューの場所は .agentkit.json か --queue か AGENTKIT_QUEUE で渡す');
+  lines.push('結果の JSON は1行で出る。人が読むなら --pretty を付けると字下げする');
 
   return lines.join('\n');
 }
@@ -794,6 +803,7 @@ async function main() {
   const given = process.argv.slice(3);
   for (let i = 0; i < given.length; i++) {
     if (given[i] === '--queue') { i++; continue; }
+    if (given[i] === '--pretty') continue;
     rest.push(given[i]);
   }
   let args;
@@ -809,7 +819,7 @@ async function main() {
   const res = await send(config.queueDir, entry.op, args);
 
   if (view && res.ok) process.stdout.write(showView(view, res.result, rest) + '\n');
-  else process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+  else process.stdout.write(dump(res) + '\n');
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();
 }
