@@ -46,6 +46,9 @@ function DB_SCHEMA() {
     impediment_comments: ['id', 'impedimentNumber', 'body', 'by', 'at', 'editedAt'],
     // 画面や命令からの変更の前と後。誰がいつ何を変えたかを辿るため
     change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
+    // 集中のしかた (Focus.gs)。自分の設定でオンにした人の「今から始める」の記録。本人にだけ見せる
+    focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
+      'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind'],
   };
 }
 
