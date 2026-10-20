@@ -734,7 +734,7 @@ describe('やることの中身と操作', () => {
 
   it('左のメニューはすべて見出しの下にある (先頭のホームだけは見出しを持たない)', () => {
     const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
-    const sections = (sidebar.match(/<h2>/g) || []).length;
+    const sections = (sidebar.match(/<h2[ >]/g) || []).length;
     const home = (sidebar.match(/nav-section nav-home/g) || []).length;
     expect(home).toBe(1);
     expect(sections).toBe((sidebar.match(/nav-section/g) || []).length - home);
