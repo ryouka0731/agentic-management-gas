@@ -16,6 +16,14 @@ import { APP, PAGE_WITHOUT_APP, ROOT, appSourceMap } from './ui-source.js';
  */
 let source = null;
 
+/** 画面の JS が投げて、誰も受け止めなかった例外 */
+const uncaught = [];
+
+/** 拾った例外を返して空にする */
+export function takeUncaught() {
+  return uncaught.splice(0, uncaught.length);
+}
+
 function compiled() {
   if (source) return source;
   // 本文は画面の JS を除いた wiki.html、JS は wiki.html の include の順につないだもの
@@ -161,6 +169,10 @@ export function mountApp(responses, options) {
   const url = { getLocation(fn) { fn(location); } };
 
   window.google = { script: { run: makeRunner(null, null), url } };
+
+  // 画面の聞き手や返事のハンドラが投げた例外は、jsdom が console に出すだけでテストは通って
+  // しまう (集計の表が描けずに落ちていたのに、気づかれなかった)。拾っておき、mount.js が落とす
+  window.addEventListener('error', (e) => { uncaught.push(e.error || new Error(e.message)); });
 
   // 毎回呼び直すので、画面の JS の中の状態は組むたびに新しく作られる
   compiled().run(window, document, window.google);
