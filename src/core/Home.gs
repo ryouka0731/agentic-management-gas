@@ -49,18 +49,38 @@ function homeActivity_(email, now) {
     if (me && who.indexOf(me) >= 0) mine[day] = (mine[day] || 0) + 1;
   }
 
+  homeActivityCommits_(add);
+  homeActivityIssues_(add);
+  var authors = homeActivityPulls_(add);
+  homeActivityReviews_(add, authors);
+
+  return homeActivityWeeks_(first, span.today, mine, team);
+}
+
+/** 草: 記録を書いた人のものとして数える */
+function homeActivityCommits_(add) {
   var commits = dbReadAll('commits');
   for (var c = 0; c < commits.length; c++) {
     add(commits[c].timestamp, [String(commits[c].author || '')]);
   }
+}
 
+/** 草: 完了したやることを、担当 (空なら閉じた人) のものとして数える */
+function homeActivityIssues_(add) {
   var closers = motivationClosers_();
   var issues = dbReadAll('issues');
   for (var i = 0; i < issues.length; i++) {
     if (String(issues[i].state) !== 'closed') continue;
     add(issues[i].closedAt, motivationCredited_(issues[i], closers));
   }
+}
 
+/**
+ * 草: 依頼を出したことと反映したことを、出した人のものとして数える。
+ *
+ * @returns {object} {番号: 出した人}。判断を数えるときに使う
+ */
+function homeActivityPulls_(add) {
   var pulls = dbReadAll('pulls');
   var authors = {};
   for (var p = 0; p < pulls.length; p++) {
@@ -69,7 +89,11 @@ function homeActivity_(email, now) {
     add(pulls[p].createdAt, [author]);
     if (String(pulls[p].state) === 'merged') add(pulls[p].mergedAt, [author]);
   }
+  return authors;
+}
 
+/** 草: 承認と差し戻しを、判断した人のものとして数える */
+function homeActivityReviews_(add, authors) {
   var reviews = dbReadAll('reviews');
   for (var r = 0; r < reviews.length; r++) {
     var state = String(reviews[r].state);
@@ -79,14 +103,17 @@ function homeActivity_(email, now) {
     if (!reviewer || reviewer === authors[String(reviews[r].prNumber)]) continue;
     add(reviews[r].at, [reviewer]);
   }
+}
 
+/** 草: 日ごとの数を週ごとに並べる。今日より後は数を持たない */
+function homeActivityWeeks_(first, today, mine, team) {
   var weeks = [];
   var meTotal = 0;
   for (var w = 0; w < HOME_WEEKS(); w++) {
     var days = [];
     for (var d = 0; d < 7; d++) {
       var day = homeAddDay_(first, w * 7 + d);
-      var future = day > span.today;
+      var future = day > today;
       var m = future ? 0 : (mine[day] || 0);
       meTotal += m;
       days.push({ day: day, me: m, team: future ? 0 : (team[day] || 0), future: future });
@@ -144,23 +171,7 @@ function homeTables_() {
  *   toReview のうち自分が前に判断したものの {番号: 判断した時刻} (もう一度回ってきたもの)
  */
 function homeReviewQueue_(me, pulls, reviews) {
-  var byNumber = {};
-  for (var p = 0; p < pulls.length; p++) byNumber[String(pulls[p].number)] = pulls[p];
-
-  // 依頼ごと・人ごとの最後の判断
-  var latest = {};
-  for (var r = 0; r < reviews.length; r++) {
-    var rv = reviews[r];
-    var state = String(rv.state);
-    if (state !== 'approve' && state !== 'request_changes') continue;
-    var pr = byNumber[String(rv.prNumber)];
-    if (!pr) continue;
-    var old = Number(rv.id) <= (Number(pr.staleReviewId) || 0);
-    if (state === 'approve' && old) state = 'stale';
-    var key = String(rv.prNumber);
-    latest[key] = latest[key] || {};
-    latest[key][String(rv.reviewer)] = { state: state, old: old, at: rv.at };
-  }
+  var latest = homeLatestDecisions_(pulls, reviews);
 
   var toReview = [];
   var returned = [];
@@ -174,18 +185,53 @@ function homeReviewQueue_(me, pulls, reviews) {
     // 差し戻したあとで中身が変わったら、差し戻した人にもう一度回す。回さないと、
     // 直してもらった依頼が誰の番にも出ない (書いた人の「戻ってきた」は差し戻しが残る限り出す)
     var mine = decided[me];
-    if (String(one.author) !== me && prReviewers(one).indexOf(me) >= 0 &&
-        (!mine || mine.state === 'stale' || (mine.state === 'request_changes' && mine.old))) {
+    if (homeIsMyTurnToReview_(me, one, mine)) {
       toReview.push(one);
       if (mine) mineAt[String(one.number)] = mine.at;
     }
-    if (String(one.author) === me) {
-      for (var who in decided) {
-        if (decided[who].state === 'request_changes') { returned.push(one); break; }
-      }
-    }
+    if (String(one.author) === me && homeHasRequestChanges_(decided)) returned.push(one);
   }
   return { toReview: toReview, returned: returned, mineAt: mineAt };
+}
+
+/**
+ * 依頼ごと・人ごとの最後の判断。承認と差し戻しだけを見る。
+ *
+ * @returns {object} {番号: {確認者: {state, old, at}}}。古い承認は state が 'stale'
+ */
+function homeLatestDecisions_(pulls, reviews) {
+  var byNumber = {};
+  for (var p = 0; p < pulls.length; p++) byNumber[String(pulls[p].number)] = pulls[p];
+
+  var latest = {};
+  for (var r = 0; r < reviews.length; r++) {
+    var rv = reviews[r];
+    var state = String(rv.state);
+    if (state !== 'approve' && state !== 'request_changes') continue;
+    var pr = byNumber[String(rv.prNumber)];
+    if (!pr) continue;
+    var old = Number(rv.id) <= (Number(pr.staleReviewId) || 0);
+    if (state === 'approve' && old) state = 'stale';
+    var key = String(rv.prNumber);
+    latest[key] = latest[key] || {};
+    latest[key][String(rv.reviewer)] = { state: state, old: old, at: rv.at };
+  }
+  return latest;
+}
+
+/** 自分が確認者で、判断が無いか古くなった依頼か (自分が出したものは除く) */
+function homeIsMyTurnToReview_(me, pr, mine) {
+  if (String(pr.author) === me || prReviewers(pr).indexOf(me) < 0) return false;
+  if (!mine || mine.state === 'stale') return true;
+  return mine.state === 'request_changes' && mine.old;
+}
+
+/** 誰かの差し戻しが残っているか */
+function homeHasRequestChanges_(decided) {
+  for (var who in decided) {
+    if (decided[who].state === 'request_changes') return true;
+  }
+  return false;
 }
 
 /**
