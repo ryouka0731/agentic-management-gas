@@ -422,10 +422,11 @@ function apiPrefSet(key, value) {
   var item = prefItem_(key);
   if (!item) throw new Error('知らない設定です: ' + key);
   var reset = value === null || value === undefined;
-  if (!reset && item.type === 'char' && !prefValid_(item, value, currentEmail_())) {
-    throw new Error('そのキャラは選べません。最初からいるキャラか、推しの頁で作った自分のキャラを選んでください');
-  }
+  // 検査は1回だけ (oshi.char の検査は台帳を読むので、2回呼ぶと2回読む)
   if (!reset && !prefValid_(item, value, currentEmail_())) {
+    if (item.type === 'char') {
+      throw new Error('そのキャラは選べません。最初からいるキャラか、推しの頁で作った自分のキャラを選んでください');
+    }
     throw new Error('「' + item.label + '」に入れられない値です' +
       (item.type === 'int' ? ' (' + item.min + '〜' + item.max + ' の整数)' : '') +
       (item.type === 'steps' ? ' (' + item.min + '〜' + item.max + ' の整数を小さい順に3つ)' : ''));

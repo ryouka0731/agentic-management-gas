@@ -145,6 +145,19 @@ describe('推し', () => {
     expect(bubble().hidden).toBe(true);
   });
 
+  it('キーボードで吹き出しの中に入っているあいだは消さず、出たらまた数え始める', () => {
+    vi.useFakeTimers();
+    mountOshi(ON);
+    closeOneIssue();
+    const close = bubble().querySelector('.oshi-close');
+    close.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    vi.advanceTimersByTime(7000);
+    expect(bubble().hidden).toBe(false);
+    close.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    vi.advanceTimersByTime(7000);
+    expect(bubble().hidden).toBe(true);
+  });
+
   it('断られたときは叱らず「しんぱい」する', () => {
     mountOshi(ON, { apiIssueClose: new Error('混み合っています') });
     closeOneIssue();
@@ -433,6 +446,34 @@ describe('キャラを選ぶ', () => {
     expect(names(app)).toContain('apiPrefSet');
     expect(checked()).toEqual(['builtin:kuroha']);
     expect(document.getElementById('snackbar').textContent).toContain('選べませんでした');
+  });
+
+  it('矢印のキーで選び直せる。押せる場所は選んでいるカード1つだけ (Tab で一覧を素通りできる)', () => {
+    const app = mountOshi({ 'oshi.on': true, 'oshi.home': false });
+    openSettings();
+    const tabbable = () => cards().filter((b) => b.tabIndex === 0).map((b) => b.dataset.char);
+    expect(tabbable()).toEqual(['builtin:kuroha']);
+    const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    key(cards()[0], 'ArrowRight');
+    expect(app.calls.filter((c) => c.name === 'apiPrefSet').map((c) => c.args)).toEqual([['oshi.char', 'builtin:taku']]);
+    expect(checked()).toEqual(['builtin:taku']);
+    expect(document.activeElement.dataset.char).toBe('builtin:taku');
+    expect(tabbable()).toEqual(['builtin:taku']);
+    // 先頭から戻ると末尾へ回る
+    key(cards()[1], 'ArrowUp');
+    key(cards()[0], 'ArrowLeft');
+    expect(document.activeElement.dataset.char).toBe('mine:1');
+    expect(checked()).toEqual(['mine:1']);
+    key(cards()[2], 'ArrowDown');
+    expect(document.activeElement.dataset.char).toBe('builtin:kuroha');
+  });
+
+  it('推しがオフでも、選んである自分のキャラは選んだしるしで出す (取りには行かない)', () => {
+    const app = mountOshi({ 'oshi.char': 'mine:1' });
+    openSettings();
+    expect(cards().map((b) => b.dataset.char)).toEqual(['builtin:kuroha', 'builtin:taku', 'mine:1']);
+    expect(checked()).toEqual(['mine:1']);
+    expect(names(app)).not.toContain('apiOshiGet');
   });
 
   it('推しがオフなら、選び方は出るが絵も自分のキャラも取りに行かない', () => {

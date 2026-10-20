@@ -55,7 +55,7 @@ describe('推しにほめてもらう', () => {
     await waitFor(e2e, () => e2e.rows('oshi_images').length === 1);
     const row = e2e.rows('oshi_images')[0];
     expect(row).toMatchObject({ who: 'tester@example.com', state: 'celebrate', mime: 'image/png', charId: 1 });
-    expect(e2e.ctx.objectExists(row.sha, 'png')).toBe(true);
+    expect(e2e.ctx.objectsFolder_().getFilesByName(e2e.ctx.oshiObjectName_(row.sha, 'png')).hasNext()).toBe(true);
 
     // 4. やることを済ませる → 推しがほめる
     go('issues'); await e2e.settle();

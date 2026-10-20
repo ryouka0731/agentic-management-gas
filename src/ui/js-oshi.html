@@ -437,6 +437,15 @@
       oshiBubbleTimer = null;
     });
     el.addEventListener('mouseleave', function () { if (!el.hidden) oshiHideLater(); });
+    // キーボードで中に入った人 (閉じるボタンに Tab で来た人) にも同じく。出たらまた数え始める
+    el.addEventListener('focusin', function () {
+      if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
+      oshiBubbleTimer = null;
+    });
+    el.addEventListener('focusout', function (e) {
+      if (el.hidden || (e.relatedTarget && el.contains(e.relatedTarget))) return;
+      oshiHideLater();
+    });
 
     document.body.appendChild(el);
     return el;
@@ -1327,6 +1336,11 @@
       ((d && d.mine) || []).forEach(function (c) {
         out.push({ value: 'mine:' + c.charId, name: oshiMineName(c), kind: 'mine', mine: c });
       });
+      // オフのあいだは自分のキャラを取りに行かない。それでも選んであるものは、選んだしるしで出す
+      // (出さないと、どれも選ばれていないように見える)
+      if (!d && /^mine:/.test(String(current)) && !out.some(function (o) { return o.value === current; })) {
+        out.push({ value: current, name: '自分のキャラ', kind: 'mine', mine: null });
+      }
       return out;
     }
     function draw(d) {
@@ -1334,9 +1348,28 @@
       choices(d).forEach(function (ch) {
         var b = makeOshiChoice(ch);
         cards.appendChild(b);
-        if (oshiOn()) oshiChoiceFigure(b, ch);
+        if (oshiOn() && (ch.kind === 'builtin' || ch.mine)) oshiChoiceFigure(b, ch);
       });
+      roving();
     }
+    function cardList() { return Array.prototype.slice.call(cards.querySelectorAll('.oshi-choice')); }
+    /** Tab で入れるのは選んでいるカード1つだけ (選んでいるものが無ければ先頭)。中は矢印で動く */
+    function roving() {
+      var list = cardList();
+      var on = list.filter(function (el) { return el.dataset.char === current; })[0] || list[0];
+      list.forEach(function (el) { el.tabIndex = el === on ? 0 : -1; });
+    }
+    cards.addEventListener('keydown', function (e) {
+      var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      var list = cardList();
+      var at = list.indexOf(e.target && e.target.closest ? e.target.closest('.oshi-choice') : null);
+      if (at < 0 || !list.length) return;
+      e.preventDefault();
+      var next = list[(at + step + list.length) % list.length];
+      next.focus();
+      next.click();
+    });
     /** ふつうの顔の絵。描き直して外れたカードには差し込まない */
     function oshiChoiceFigure(b, ch) {
       var fig = b.querySelector('.oshi-choice-fig');
@@ -1384,6 +1417,7 @@
           Array.prototype.forEach.call(cards.querySelectorAll('.oshi-choice'), function (el) {
             el.setAttribute('aria-checked', el.dataset.char === current ? 'true' : 'false');
           });
+          roving();
         });
       });
       return b;
