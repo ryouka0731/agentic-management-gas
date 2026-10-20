@@ -392,8 +392,34 @@ function showView(view, result, rest) {
   try {
     return view.show(result, rest);
   } catch (e) {
-    return JSON.stringify(result, null, 2);
+    return dump(result);
   }
+}
+
+/** --pretty が付いていたか。main() の最初に takePretty で1回だけ決める */
+let PRETTY = false;
+
+/**
+ * 引数から --pretty を抜く。どこに書いても (操作の前でも後でも) 効く。
+ * `--` より後ろはデータなので、そこにある --pretty は抜かずに残す。
+ *
+ * @param {string[]} argv process.argv
+ * @returns {{argv: string[], pretty: boolean}}
+ */
+function takePretty(argv) {
+  const end = argv.indexOf('--');
+  const head = end < 0 ? argv : argv.slice(0, end);
+  const tail = end < 0 ? [] : argv.slice(end);
+  const kept = head.filter((a) => a !== '--pretty');
+  return { argv: kept.concat(tail), pretty: kept.length !== head.length };
+}
+
+/**
+ * 返事の JSON を字にする。既定は1行に詰める (読むのは Claude で、字下げのぶんだけ読む量が増える)。
+ * 人が目で追うときは --pretty で字下げする。
+ */
+function dump(value) {
+  return PRETTY ? JSON.stringify(value, null, 2) : JSON.stringify(value);
 }
 
 /** 送る前に断る使い方の誤り (終わりの番号を 2 にする) */
@@ -751,11 +777,16 @@ function usage() {
   lines.push('');
   lines.push('はじめてなら、まず agent setup を実行する');
   lines.push('キューの場所は .agentkit.json か --queue か AGENTKIT_QUEUE で渡す');
+  lines.push('結果の JSON は1行で出る。人が読むなら --pretty を付けると字下げする');
 
   return lines.join('\n');
 }
 
 async function main() {
+  // 抜いた残りを process.argv にする。--queue の値も track / update の引数も、ここから読む
+  const taken = takePretty(process.argv);
+  process.argv = taken.argv;
+  PRETTY = taken.pretty;
   const name = process.argv[2];
   if (!name || name === '--help' || name === '-h') {
     process.stdout.write(usage() + '\n');
@@ -809,7 +840,7 @@ async function main() {
   const res = await send(config.queueDir, entry.op, args);
 
   if (view && res.ok) process.stdout.write(showView(view, res.result, rest) + '\n');
-  else process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+  else process.stdout.write(dump(res) + '\n');
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();
 }
