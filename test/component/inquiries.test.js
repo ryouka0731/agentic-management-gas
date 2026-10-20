@@ -603,3 +603,193 @@ describe('済んだ報告の見え方', () => {
     expect(app).toBeTruthy();
   });
 });
+
+describe('写真を添える', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openForm() {
+    const app = mount({ apiInquiryList: [] });
+    document.querySelector('[data-tab="report"]').click();
+    document.getElementById('report-btn').click();
+    return app;
+  }
+
+  /** 選んだことにする (input.files は書き換えられないので、生えている物を差し替える) */
+  function choose(files) {
+    const pick = document.querySelector('#side-body .shot-input');
+    Object.defineProperty(pick, 'files', { value: files, configurable: true });
+    pick.dispatchEvent(new window.Event('change'));
+  }
+
+  const png = (name, size) => {
+    const f = new window.File(['x'], name || 'a.png', { type: 'image/png' });
+    if (size) Object.defineProperty(f, 'size', { value: size });
+    return f;
+  };
+  // FileReader はあとから読み終わる。並ぶまで待つ (並ばなければ1秒で諦める)
+  const read = async (n) => {
+    for (let i = 0; i < 100; i++) {
+      if (n === undefined ? i > 3 : document.querySelectorAll('#side-body .shot-item').length >= n) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  it('選んだ写真が並び、外せる。送ると一緒に届く', async () => {
+    const app = openForm();
+    choose([png('a.png'), png('b.png')]);
+    await read(2);
+
+    const items = document.querySelectorAll('#side-body .shot-item');
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelector('img').alt).toBe('添えた写真 1枚目');
+    expect(items[0].querySelector('img').src).toMatch(/^data:image\/png/);
+
+    items[0].querySelector('.btn-danger').click();
+    expect(document.querySelectorAll('#side-body .shot-item')).toHaveLength(1);
+
+    const inputs = document.querySelectorAll('#side-body input:not([type=file]), #side-body textarea');
+    inputs[0].value = 'a';
+    inputs[1].value = 'b';
+    inputs[2].value = 'c';
+    document.querySelector('#side-body form .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiInquiryCreate').pop().args[3]).toHaveLength(1);
+  });
+
+  it('写真でないものは黙って外し、大きすぎるものと5枚目は断る', async () => {
+    openForm();
+    choose([new window.File(['x'], 'memo.txt', { type: 'text/plain' })]);
+    await read();
+    expect(document.querySelectorAll('#side-body .shot-item')).toHaveLength(0);
+
+    choose([png('big.png', 6 * 1024 * 1024)]);
+    expect(document.getElementById('snackbar').textContent).toContain('写真は1枚5MBまでです');
+
+    choose([png('1.png'), png('2.png'), png('3.png'), png('4.png')]);
+    await read(4);
+    expect(document.querySelectorAll('#side-body .shot-item')).toHaveLength(4);
+    choose([png('5.png')]);
+    expect(document.getElementById('snackbar').textContent).toContain('写真は4枚までです');
+  });
+
+  it('貼り付けた画像も入る。画像でないものは貼り付けのまま通す', async () => {
+    openForm();
+    const form = document.querySelector('#side-body form');
+    const paste = new window.Event('paste', { cancelable: true, bubbles: true });
+    paste.clipboardData = {
+      items: [
+        { type: 'text/plain', getAsFile: () => null },
+        { type: 'image/png', getAsFile: () => png('shot.png') },
+      ],
+    };
+    form.dispatchEvent(paste);
+    await read(1);
+
+    expect(paste.defaultPrevented).toBe(true);
+    expect(document.querySelectorAll('#side-body .shot-item')).toHaveLength(1);
+
+    const text = new window.Event('paste', { cancelable: true, bubbles: true });
+    text.clipboardData = { items: [{ type: 'text/plain', getAsFile: () => null }] };
+    form.dispatchEvent(text);
+    expect(text.defaultPrevented).toBe(false);
+  });
+
+  it('種類を選び直すと、尋ね方も変わる。知らない種類は不具合の尋ね方に倒す', () => {
+    openForm();
+    const sel = document.querySelector('#side-body select');
+    sel.value = 'other';
+    sel.dispatchEvent(new window.Event('change'));
+    const labels = () => [...document.querySelectorAll('#side-body label')]
+      .map((l) => l.firstChild.textContent);
+    expect(labels()).toContain('くわしく');
+
+    const odd = document.createElement('option');
+    odd.value = 'unknown';
+    sel.appendChild(odd);
+    sel.value = 'unknown';
+    sel.dispatchEvent(new window.Event('change'));
+    expect(labels()).toContain('何をしましたか');
+  });
+});
+
+describe('報告の返信を直す・消す', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const Q = {
+    number: 3, kind: 'bug', kindLabel: 'うまく動かない', title: '棒が伸びない',
+    body: '@other@example.com さん、棒が伸びません', by: 'me@example.com', state: 'open',
+    context: '', answer: '', at: '2026-09-09T00:00:00.000Z', answeredAt: '',
+    mine: true, canClose: true, replyCount: 1,
+  };
+  const REPLY = {
+    id: 9, inquiryNumber: 3, body: 'こちらでも起きます', by: 'me@example.com',
+    at: '2026-09-09T01:00:00.000Z', editedAt: '2026-09-09T02:00:00.000Z', canEdit: true,
+  };
+
+  function open(over) {
+    const app = mount(Object.assign({
+      apiInquiryList: [Q],
+      apiInquiryThread: { inquiry: Q, replies: [REPLY] },
+      apiInquiryReplyEdit: { ok: true },
+      apiInquiryReplyDelete: '返信を消しました',
+    }, over || {}));
+    document.querySelector('[data-tab="report"]').click();
+    return app;
+  }
+
+  const mine = () => [...document.querySelectorAll('#report-detail .comment')].pop();
+
+  it('直したものには印が出る。直すと今の中身が入って開き、送ると開き直す', () => {
+    const app = open();
+    expect(mine().textContent).toContain('直しました');
+
+    mine().querySelector('.comment-tools .icon-btn').click();
+    const area = document.querySelector('#side-body textarea');
+    expect(area.value).toBe('こちらでも起きます');
+    area.value = '直りました';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiInquiryReplyEdit').pop().args).toEqual([9, '直りました']);
+    expect(document.getElementById('snackbar').textContent).toContain('返信を直しました');
+    expect(app.calls.filter((c) => c.name === 'apiInquiryThread').length).toBeGreaterThan(1);
+  });
+
+  it('消すのは確かめてから。消したらサーバの文を帯で出す', () => {
+    const app = open();
+    mine().querySelector('.comment-tools .btn-danger').click();
+    expect(app.calls.some((c) => c.name === 'apiInquiryReplyDelete')).toBe(false);
+
+    [...document.querySelectorAll('.confirm-strip .btn')].find((b) => b.textContent === '消す').click();
+    expect(app.calls.filter((c) => c.name === 'apiInquiryReplyDelete').pop().args).toEqual([9]);
+    expect(document.getElementById('snackbar').textContent).toContain('返信を消しました');
+  });
+
+  it('本文の @ は名簿の人に結び付けて印を付ける', () => {
+    open();
+    const tag = document.querySelector('#report-detail .comment .comment-body .mention');
+    expect(tag.textContent).toBe('@other@example.com');
+    expect(tag.title).toBe('other@example.com');
+    expect(tag.classList.contains('me')).toBe(false);
+  });
+
+  it('解決にしたものは、「まだ解決していない」で戻せる', () => {
+    const app = open({
+      apiInquiryList: [Object.assign({}, Q, { state: 'done', closedBy: 'other@example.com' })],
+      apiInquiryThread: { inquiry: Object.assign({}, Q, { state: 'done', closedBy: 'other@example.com' }), replies: [] },
+    });
+    document.getElementById('report-open-btn').click();
+    expect(document.querySelector('#report-detail .row-meta').textContent).toContain('解決 (鈴木 花子)');
+    [...document.querySelectorAll('#report-detail .pr-actions .btn')]
+      .find((b) => b.textContent.indexOf('まだ解決していない') > -1).click();
+    expect(app.calls.some((c) => c.name === 'apiInquiryReopen')).toBe(true);
+  });
+
+  it('話が取れなければ、その欄に理由を出す', () => {
+    open({ apiInquiryThread: new Error('読めませんでした') });
+    expect(document.getElementById('report-detail').textContent).toContain('エラー: 読めませんでした');
+  });
+
+  it('一覧が取れなければ、一覧の欄に理由を出す', () => {
+    open({ apiInquiryList: new Error('混み合っています') });
+    expect(document.getElementById('report-list').textContent).toContain('エラー: 混み合っています');
+  });
+});

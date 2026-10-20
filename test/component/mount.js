@@ -1,4 +1,11 @@
-import { mountApp, DEFAULTS } from '../dom.js';
+import { afterEach } from 'vitest';
+import { mountApp, DEFAULTS, takeUncaught } from '../dom.js';
+
+// 画面が投げたまま誰も受け止めなかった例外があれば、そのテストを落とす
+afterEach(() => {
+  const errors = takeUncaught();
+  if (errors.length) throw errors[0];
+});
 
 /**
  * 画面を実際に動かして確かめる (test/component/*.test.js の共通の口)。

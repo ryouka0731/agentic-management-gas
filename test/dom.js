@@ -1,4 +1,7 @@
-import { APP, PAGE_WITHOUT_APP } from './ui-source.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { APP, PAGE_WITHOUT_APP, ROOT, appSourceMap } from './ui-source.js';
 
 /*
  * 組む元 (wiki.html / app.css.html / 画面の JS) は 1 ファイルの中で 1 回だけ読む。
@@ -13,6 +16,14 @@ import { APP, PAGE_WITHOUT_APP } from './ui-source.js';
  */
 let source = null;
 
+/** 画面の JS が投げて、誰も受け止めなかった例外 */
+const uncaught = [];
+
+/** 拾った例外を返して空にする */
+export function takeUncaught() {
+  return uncaught.splice(0, uncaught.length);
+}
+
 function compiled() {
   if (source) return source;
   // 本文は画面の JS を除いた wiki.html、JS は wiki.html の include の順につないだもの
@@ -22,8 +33,21 @@ function compiled() {
     .replace(/<\/html>[\s\S]*$/, '');
   const js = APP;
 
-  // eslint-disable-next-line no-new-func
-  source = { html, run: new Function('window', 'document', 'google', js) };
+  // 名前の付いたファイルとして読み、行を元の部分ファイルへ戻す地図を添える。
+  // new Function で読むと名前が無く、画面の JS がカバレッジに1行も数えられなかった
+  // カバレッジはファイル名の中身をディスクから読み直すので、つないだものを実際に書いて置く
+  const map = Buffer.from(JSON.stringify(appSourceMap())).toString('base64');
+  const code = js + '\n//# sourceMappingURL=data:application/json;base64,' + map + '\n';
+  const file = path.join(ROOT, 'coverage-ui', 'app.joined.js');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // テストのファイルは並んで走るので、途中まで書いたものを読まれないよう別名で書いてから置き換える
+  if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== code) {
+    const tmp = file + '.' + process.pid + '.' + Math.random().toString(36).slice(2);
+    fs.writeFileSync(tmp, code);
+    fs.renameSync(tmp, file);
+  }
+  const run = vm.compileFunction(code, ['window', 'document', 'google'], { filename: file });
+  source = { html, run };
   return source;
 }
 
@@ -88,8 +112,10 @@ function dropLeftovers() {
  * 画面の JS を本当に走らせる。
  *
  * @param {Object<string, *|function>} responses API名 → 返す値、または関数
- * @param {{location?: object}} [options] location は google.script.url.getLocation が
- *   返す形 ({parameter, parameters, hash})。既定はパラメータ無し
+ * @param {{location?: object, transport?: function, names?: string[]}} [options] location は
+ *   google.script.url.getLocation が返す形 ({parameter, parameters, hash})。既定はパラメータ無し。
+ *   transport(name, args, onSuccess, onFailure) を渡すと、表の代わりにそれが返事を運ぶ
+ *   (test/e2e/fullstack.js が本物のサーバへつなぐのに使う)。names は呼べる api の名前を足す
  * @returns {{calls: object[], respond: function, flush: function}}
  */
 export function mountApp(responses, options) {
@@ -112,10 +138,15 @@ export function mountApp(responses, options) {
       withFailureHandler(fn) { return makeRunner(onSuccess, fn); },
     };
 
-    const names = new Set([...Object.keys(table), ...API_NAMES]);
+    const names = new Set([...Object.keys(table), ...API_NAMES, ...((options && options.names) || [])]);
     names.forEach((name) => {
       runner[name] = function (...args) {
         calls.push({ name, args });
+
+        if (options && options.transport) {
+          options.transport(name, args, onSuccess, onFailure);
+          return;
+        }
 
         let value = table[name];
         if (typeof value === 'function') value = value(...args);
@@ -145,6 +176,10 @@ export function mountApp(responses, options) {
   const url = { getLocation(fn) { fn(location); } };
 
   window.google = { script: { run: makeRunner(null, null), url } };
+
+  // 画面の聞き手や返事のハンドラが投げた例外は、jsdom が console に出すだけでテストは通って
+  // しまう (集計の表が描けずに落ちていたのに、気づかれなかった)。拾っておき、mount.js が落とす
+  window.addEventListener('error', (e) => { uncaught.push(e.error || new Error(e.message)); });
 
   // 毎回呼び直すので、画面の JS の中の状態は組むたびに新しく作られる
   compiled().run(window, document, window.google);

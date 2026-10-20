@@ -193,9 +193,9 @@ function branchAddFile(name, fileId) {
  */
 function branchAddFileLocked_(name, fileId) {
   var branch = dbFindOne('branches', 'name', name);
-  if (!branch) throw new Error('改訂版が見つかりません: ' + name);
+  if (!branch) throw new Error('改訂版が見つかりません: 「' + name + '」');
   if (String(branch.state) !== 'open') {
-    throw new Error('この改訂版は既に閉じられています: ' + name);
+    throw new Error('この改訂版は既に閉じられています: 「' + name + '」');
   }
 
   var mainRow = dbFindOne('files', 'fileId', fileId);
@@ -254,7 +254,7 @@ function branchCreateLocked_(name, fileId) {
     );
   }
   if (dbFindOne('branches', 'name', name)) {
-    throw new Error('同じ名前の改訂版が既にあります: ' + name);
+    throw new Error('同じ名前の改訂版が既にあります: 「' + name + '」');
   }
 
   var mainRow = dbFindOne('files', 'fileId', fileId);
@@ -323,7 +323,7 @@ function branchDelete(name) {
   if (name === 'main') throw new Error('正式版は捨てられません');
 
   var row = dbFindOne('branches', 'name', name);
-  if (!row) throw new Error('改訂版が見つかりません: ' + name);
+  if (!row) throw new Error('改訂版が見つかりません: 「' + name + '」');
 
   // この版から出ている・この版へ向かう依頼が開いていたら捨てない。捨てても
   // 依頼は開いたまま残り、反映すると状態が deleted から merged に書き換わって

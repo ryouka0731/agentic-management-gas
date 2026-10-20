@@ -258,6 +258,19 @@
     attachPeopleList(form);
   }
 
+  /**
+   * 依頼の本文から、対象を辿るためにサーバが末尾に書く印 ([target-file:…]) を外す。
+   *
+   * 印は人が書いたものではない。外さないと、補足を書かなかった依頼にも
+   * 「[target-file:1AbC…]」とだけ出て、「(補足なし)」が出なかった。
+   *
+   * @param {string} body
+   * @returns {string}
+   */
+  function prBodyText(body) {
+    return String(body || '').replace(/\s*\[target-file:[^\]]*\]\s*$/, '');
+  }
+
   function renderConversation(pr, container) {
     var first = document.createElement('div');
     first.className = 'comment';
@@ -265,7 +278,7 @@
 
     var body = document.createElement('div');
     body.className = 'comment-body';
-    body.textContent = pr.body || '(補足なし)';
+    body.textContent = prBodyText(pr.body) || '(補足なし)';
     first.appendChild(body);
     container.appendChild(first);
 
