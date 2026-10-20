@@ -11,7 +11,7 @@ const SOURCES = [
   'src/core/Template.gs',
   'src/core/Member.gs',
   'src/core/Archive.js',
-  'src/core/Staleness.js',
+  'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Issue.gs',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',

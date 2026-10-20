@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mountApp, DEFAULTS } from './dom.js';
+import { mountApp, DEFAULTS, prefsFixture } from './dom.js';
 import { ui } from './ui-source.js';
 
 /**
@@ -3913,7 +3913,8 @@ describe('使われ方のボード', () => {
       .map((h) => h.textContent);
 
     expect(heads).toEqual([
-      'よく使っている人', 'よく押されている操作', 'よく開かれている画面', '日ごと',
+      'よく使っている人', 'よく押されている操作', 'よく開かれている画面',
+      'この期間に開かれなかった画面', '曜日ごと', '日ごと',
     ]);
   });
 
@@ -4003,6 +4004,245 @@ describe('使われ方のボード', () => {
 
     expect([...document.querySelectorAll('#usage .tally-card')]
       .map((c) => c.textContent).join(' ')).toContain('山田 太郎');
+  });
+});
+
+describe('使われ方を前の期間と比べる', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const SUMMARY = {
+    from: '2026-08-12', to: '2026-09-10', total: 30, who: '',
+    byTarget: [
+      { kind: 'action', target: 'issue-create-btn', count: 12 },
+      { kind: 'action', target: 'row-open', count: 6 },
+      { kind: 'view', target: 'issues', count: 9 },
+      { kind: 'view', target: 'usage', count: 3 },
+    ],
+    byDay: [{ day: '2026-09-10', count: 30 }],
+    byUser: [{ who: 'me@example.com', count: 30 }],
+    byWeekday: [10, 0, 5, 0, 0, 0, 15],
+    prev: {
+      total: 20,
+      byTarget: [
+        { kind: 'action', target: 'issue-create-btn', count: 10 },
+        { kind: 'action', target: 'row-open', count: 8 },
+        { kind: 'view', target: 'issues', count: 9 },
+      ],
+    },
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign({ apiUsageSummary: SUMMARY }, over || {}));
+    document.querySelector('[data-tab="usage"]').click();
+    return app;
+  }
+
+  function countCard() {
+    return [...document.querySelectorAll('#usage .tally-card')]
+      .find((c) => c.textContent.includes('数えた回数'));
+  }
+
+  function blockOf(title) {
+    return [...document.querySelectorAll('#usage .tally-block')]
+      .find((b) => b.querySelector('h3').textContent === title);
+  }
+
+  it('回数に前の期間との増減を添える', () => {
+    openBoard();
+    // 20 → 30 は 50% 増
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('↑ 50%');
+  });
+
+  it('減ったときは下向きで出す', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      prev: { total: 40, byTarget: [] },
+    }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('↓ 25%');
+  });
+
+  it('前の期間が0なら、割合を出さずにそう言う', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      prev: { total: 0, byTarget: [] },
+    }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('前の期間は記録なし');
+  });
+
+  it('前の期間を持たない返事でも描ける', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, { prev: undefined, byWeekday: undefined }) });
+    expect(countCard().querySelector('.usage-delta').textContent).toBe('前の期間は記録なし');
+    expect(blockOf('曜日ごと').querySelectorAll('.usage-row')).toHaveLength(7);
+  });
+
+  it('順位表にも前の期間との差を小さく添える', () => {
+    openBoard();
+    const deltas = [...blockOf('よく押されている操作').querySelectorAll('.usage-delta')]
+      .map((d) => d.textContent);
+    expect(deltas).toEqual(['+2', '−2']);
+
+    const views = [...blockOf('よく開かれている画面').querySelectorAll('.usage-delta')]
+      .map((d) => d.textContent);
+    // 前に無かった場所は、そのまま増えたぶん
+    expect(views).toEqual(['±0', '+3']);
+  });
+
+  it('この期間に開かれなかった画面を、左の行き先から並べる', () => {
+    openBoard();
+    const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
+      .map((c) => c.textContent);
+
+    expect(names).toContain('ホーム');
+    expect(names).toContain('文書');
+    expect(names).toContain('設定');
+    expect(names).not.toContain('やること');
+    expect(names).not.toContain('使われ方');
+    // スクラムがオフのあいだは、出ない画面を数えない
+    expect(names).not.toContain('スプリント');
+    expect(names).not.toContain('障害物');
+  });
+
+  it('スクラムがオンなら、その画面も並べる', () => {
+    openBoard({ apiSettings: {
+      scrumEnabled: true, gameEnabled: false, canEdit: true, queue: null,
+      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {},
+    } });
+    const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
+      .map((c) => c.textContent);
+    expect(names).toContain('スプリント');
+  });
+
+  it('全部開かれていればそう言う', () => {
+    openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+      byTarget: ['home', 'docs', 'issues', 'branches', 'pulls', 'sprint', 'impediments',
+        'help', 'usage', 'report', 'settings']
+        .map((t) => ({ kind: 'view', target: t, count: 1 })),
+    }) });
+    const block = blockOf('この期間に開かれなかった画面');
+    expect(block.querySelectorAll('.chip')).toHaveLength(0);
+    expect(block.textContent).toContain('どの画面も開かれていました');
+  });
+
+  it('曜日ごとに月曜から7本の棒で出す', () => {
+    openBoard();
+    const rows = [...blockOf('曜日ごと').querySelectorAll('.usage-row')];
+    expect(rows.map((r) => r.querySelector('.usage-name').textContent))
+      .toEqual(['月', '火', '水', '木', '金', '土', '日']);
+    expect(rows[6].querySelector('.usage-bar').style.width).toBe('100%');
+    expect(rows[6].querySelector('.usage-count').textContent).toBe('15');
+  });
+});
+
+describe('使われ方を CSV で保存する', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const ROWS = {
+    from: '2026-08-12', to: '2026-09-10', who: '',
+    rows: [
+      { day: '2026-09-09', kind: 'view', target: 'issues', user: 'me@example.com', count: 3 },
+      { day: '2026-09-10', kind: 'action', target: 'issue-create-btn', user: '', count: 2 },
+      { day: '2026-09-10', kind: 'action', target: '-x', user: '', count: 1 },
+    ],
+  };
+
+  function openBoard(over) {
+    const app = mount(Object.assign({
+      apiUsageSummary: {
+        from: '2026-08-12', to: '2026-09-10', total: 5, who: '',
+        byTarget: [{ kind: 'view', target: 'issues', count: 5 }],
+        byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+      },
+      apiUsageRows: ROWS,
+    }, over || {}));
+    document.querySelector('[data-tab="usage"]').click();
+    return app;
+  }
+
+  it('今見ている期間と対象で頼む', () => {
+    const app = openBoard();
+    document.getElementById('usage-days').value = '7';
+    document.getElementById('usage-csv-btn').click();
+
+    expect(app.calls.filter((c) => c.name === 'apiUsageRows').pop().args)
+      .toEqual([7, '']);
+  });
+
+  it('保存できないときは、字をそのまま見せて写せるようにする', () => {
+    openBoard();
+    document.getElementById('usage-csv-btn').click();
+
+    const code = document.querySelector('#usage .copy-row code');
+    expect(code).toBeTruthy();
+    const lines = code.textContent.replace(/^\uFEFF/, '').split('\r\n');
+    expect(lines[0]).toBe('日,種類,場所,名前,人,回数');
+    expect(lines[1]).toBe('2026-09-09,画面,issues,やること,me@example.com,3');
+    expect(lines[2]).toBe('2026-09-10,操作,issue-create-btn,やることを作る,,2');
+    // 表計算で式として読まれないようにする
+    expect(lines[3]).toBe("2026-09-10,操作,'-x,'-x,,1");
+  });
+
+  it('見られない人のぶんが入っていないことを添える', () => {
+    openBoard();
+    document.getElementById('usage-csv-btn').click();
+
+    expect(document.querySelector('#usage .usage-export').textContent)
+      .toContain('見られない人のぶんは入っていません');
+  });
+
+  it('期間を変えたあとに届いた古い CSV は出さない', () => {
+    let late = null;
+    openBoard({ apiUsageRows: () => ({ later: (ok) => { late = ok; } }) });
+    document.getElementById('usage-csv-btn').click();
+
+    document.getElementById('usage-days').value = '7';
+    document.getElementById('usage-days')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+    late(ROWS);
+
+    expect(document.querySelector('#usage .usage-export')).toBeNull();
+    expect(document.getElementById('usage-csv-btn').disabled).toBe(false);
+  });
+
+  it('期間を変えたあとに届いた古いまとめで描き直さない', () => {
+    const lates = [];
+    openBoard({
+      apiUsageSummary: (days) => (days === 90
+        ? { later: (ok) => { lates.push(ok); } }
+        : {
+          from: '2026-09-04', to: '2026-09-10', total: 7, who: '',
+          byTarget: [{ kind: 'view', target: 'issues', count: 7 }],
+          byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+        }),
+    });
+    const sel = document.getElementById('usage-days');
+    sel.value = '90';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    sel.value = '7';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    lates[0]({
+      from: '2026-06-13', to: '2026-09-10', total: 999, who: '',
+      byTarget: [], byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+    });
+    expect(document.getElementById('usage').textContent).toContain('7回');
+    expect(document.getElementById('usage').textContent).not.toContain('999回');
+  });
+
+  it('保存できるならファイルとして落とす', () => {
+    const made = [];
+    const orig = window.URL.createObjectURL;
+    const origRevoke = window.URL.revokeObjectURL;
+    const origClick = window.HTMLAnchorElement.prototype.click;
+    window.URL.createObjectURL = () => 'blob:usage';
+    window.URL.revokeObjectURL = () => {};
+    window.HTMLAnchorElement.prototype.click = function () { made.push(this.download); };
+    try {
+      openBoard();
+      document.getElementById('usage-csv-btn').click();
+    } finally {
+      window.URL.createObjectURL = orig;
+      window.URL.revokeObjectURL = origRevoke;
+      window.HTMLAnchorElement.prototype.click = origClick;
+    }
+    expect(made).toEqual(['usage-2026-08-12_2026-09-10.csv']);
   });
 });
 
@@ -9456,5 +9696,240 @@ describe('割合で決まる幅の掴み手', () => {
     handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
     expect(document.documentElement.style.getPropertyValue('--graph-pane-w')).toBe('516px');
     expect(handle.getAttribute('aria-valuenow')).toBe('516');
+  });
+});
+
+describe('設定の一覧 (#18)', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  function openSettings(over) {
+    const app = mount(over);
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    return app;
+  }
+  const field = (key) => document.querySelector('[data-pref="' + key + '"]');
+  const sets = (app) => app.calls.filter((c) => c.name === 'apiPrefSet').map((c) => c.args);
+  const change = (el, v) => { el.value = String(v); el.dispatchEvent(new window.Event('change', { bubbles: true })); };
+
+  it('自分の設定とチームの設定に分かれ、スクラム・ポイント・キューはチームの設定に入る', () => {
+    openSettings();
+    const mine = document.getElementById('settings-mine');
+    const team = document.getElementById('settings-team');
+    expect(mine.querySelector('h2').textContent).toBe('自分の設定');
+    expect(team.querySelector('h2').textContent).toBe('チームの設定');
+    expect(mine.contains(field('start.tab'))).toBe(true);
+    expect(team.contains(field('home.dueDays'))).toBe(true);
+    expect(team.contains(document.getElementById('scrum-toggle'))).toBe(true);
+    expect(team.contains(document.getElementById('game-toggle'))).toBe(true);
+  });
+
+  it('届いた一覧から欄を組む (トグル・数・選択・3つの数)', () => {
+    openSettings();
+    const toggle = field('notify.review').querySelector('button[role="switch"]');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    const due = field('home.dueDays').querySelector('input[type="number"]');
+    expect(due.value).toBe('3');
+    expect(due.min).toBe('1');
+    expect(due.max).toBe('14');
+    expect(field('home.dueDays').textContent).toContain('1〜14');
+    const sel = field('start.tab').querySelector('select');
+    expect([...sel.options].map((o) => o.value)).toEqual(['home', 'issues', 'pulls']);
+    expect(sel.value).toBe('home');
+    const steps = field('stale.steps').querySelectorAll('input[type="number"]');
+    expect([...steps].map((i) => i.value)).toEqual(['7', '14', '30']);
+  });
+
+  it('トグルを押すと、その項目だけを書く', () => {
+    const app = openSettings();
+    field('notify.review').querySelector('button[role="switch"]').click();
+    expect(sets(app)).toEqual([['notify.review', false]]);
+    expect(field('notify.review').querySelector('button[role="switch"]').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('数と選択は変えたときに書く。3つの数はまとめて送る', () => {
+    const app = openSettings();
+    change(field('home.dueDays').querySelector('input'), 5);
+    change(field('start.tab').querySelector('select'), 'issues');
+    change(field('stale.steps').querySelectorAll('input')[2], 60);
+    expect(sets(app)).toEqual([['home.dueDays', 5], ['start.tab', 'issues'], ['stale.steps', [7, 14, 60]]]);
+  });
+
+  it('範囲の外の数は送らず、元の値に戻す', () => {
+    const app = openSettings();
+    const due = field('home.dueDays').querySelector('input');
+    change(due, 99);
+    expect(sets(app)).toEqual([]);
+    expect(due.value).toBe('3');
+    const steps = field('stale.steps').querySelectorAll('input');
+    change(steps[0], 20);
+    expect(sets(app)).toEqual([]);
+    expect(steps[0].value).toBe('7');
+  });
+
+  it('書けなかったらトグルを元に戻し、押せるようにする', () => {
+    openSettings({ apiPrefSet: new Error('混み合っています') });
+    const toggle = field('notify.review').querySelector('button[role="switch"]');
+    toggle.click();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.disabled).toBe(false);
+  });
+
+  it('書けなかったら数も元に戻す', () => {
+    openSettings({ apiPrefSet: new Error('混み合っています') });
+    const due = field('home.dueDays').querySelector('input');
+    change(due, 5);
+    expect(due.value).toBe('3');
+  });
+
+  it('決めた項目にだけ「既定に戻す」を出し、押すと null を送る', () => {
+    const app = openSettings({ apiPrefs: prefsFixture({ values: { 'home.dueDays': 6 } }) });
+    expect(field('start.tab').querySelector('.pref-reset').hidden).toBe(true);
+    const reset = field('home.dueDays').querySelector('.pref-reset');
+    expect(reset.hidden).toBe(false);
+    reset.click();
+    expect(sets(app)).toEqual([['home.dueDays', null]]);
+    expect(field('home.dueDays').querySelector('input').value).toBe('3');
+    expect(field('home.dueDays').querySelector('.pref-reset').hidden).toBe(true);
+  });
+
+  it('管理者でなければ、チームの設定は今の値を読むだけ', () => {
+    openSettings({ apiPrefs: prefsFixture({ canEditTeam: false, values: { 'stale.steps': [3, 10, 20] } }) });
+    const team = document.getElementById('settings-team');
+    expect(field('home.dueDays').querySelector('input')).toBeNull();
+    expect(field('home.dueDays').textContent).toContain('3');
+    expect(field('stale.steps').textContent).toContain('3 / 10 / 20');
+    expect(field('usage.enabled').querySelector('button')).toBeNull();
+    expect(field('usage.enabled').textContent).toContain('オン');
+    expect(team.textContent).toContain('管理者');
+    // 自分の設定は誰でも変えられる
+    expect(field('start.tab').querySelector('select')).not.toBeNull();
+  });
+
+  it('確認を頼まれた知らせを止めた人には断りを出す', () => {
+    openSettings();
+    expect(document.getElementById('settings-mine').textContent).not.toContain('確認を頼まれても知らせが届きません');
+    field('notify.review').querySelector('button[role="switch"]').click();
+    expect(document.getElementById('settings-mine').textContent).toContain('確認を頼まれても知らせが届きません');
+  });
+
+  it('チームの毎月の目標を設定から変えられる', () => {
+    const app = openSettings({ apiPrefs: prefsFixture({ teamGoal: 8 }),
+      apiSetTeamGoal: (n) => ({ weekClosed: 0, weekMerged: 0, monthClosed: 0, goal: n, canEditGoal: true }) });
+    const input = document.querySelector('#team-goal-field input');
+    expect(input.value).toBe('8');
+    change(input, 12);
+    expect(app.calls.filter((c) => c.name === 'apiSetTeamGoal').map((c) => c.args)).toEqual([[12]]);
+  });
+
+  it('最初に出す画面は自分の設定に従う', () => {
+    mount({ apiPrefs: prefsFixture({ values: { 'start.tab': 'issues' } }) });
+    expect(document.getElementById('panel-issues').hidden).toBe(false);
+    expect(document.getElementById('panel-home').hidden).toBe(true);
+  });
+
+  it('文書のリンクから開いたときは、最初に出す画面を使わない', () => {
+    mountApp(Object.assign({}, DEFAULTS, { apiPrefs: prefsFixture({ values: { 'start.tab': 'issues' } }) }),
+      { location: { parameter: { doc: 'DOC1', full: '1' }, parameters: {}, hash: '' } });
+    expect(document.getElementById('panel-issues').hidden).toBe(true);
+  });
+
+  it('設定が届く前に人が移っていたら、最初の画面で奪わない', () => {
+    let reply;
+    const app = mount({ apiPrefs: { later: (ok) => { reply = ok; } } });
+    document.querySelector('.nav-item[data-tab="pulls"]').click();
+    reply(prefsFixture({ values: { 'start.tab': 'issues' } }));
+    expect(document.getElementById('panel-pulls').hidden).toBe(false);
+    expect(app.calls.some((c) => c.name === 'apiPrefs')).toBe(true);
+  });
+
+  it('ホームに出さないと決めたものは出さない', () => {
+    mount({
+      apiPrefs: prefsFixture({ values: { 'home.cards.advice': false, 'home.cards.recent': false,
+        'home.cards.game': false, 'home.cards.team': false } }),
+      apiGameState: { enabled: true, total: 3, week: 1, level: 1, levelFrom: 0, nextAt: 5, playing: false, badges: [], team: null },
+    });
+    expect(document.getElementById('home-advice').hidden).toBe(true);
+    expect(document.getElementById('home-recent').hidden).toBe(true);
+    expect(document.getElementById('home-turn').hidden).toBe(false);
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+    expect(document.querySelector('#home-cards .team-progress')).toBeNull();
+  });
+
+  it('ホームのカードは既定ですべて出る', () => {
+    mount({ apiGameState: { enabled: true, total: 3, week: 1, level: 1, levelFrom: 0, nextAt: 5, playing: false, badges: [], team: null } });
+    expect(document.getElementById('home-recent').hidden).toBe(false);
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+    expect(document.querySelector('#home-cards .team-progress')).not.toBeNull();
+  });
+
+  it('設定で止めたらホームのカードもすぐ消える', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    field('home.cards.recent').querySelector('button[role="switch"]').click();
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    expect(document.getElementById('home-recent').hidden).toBe(true);
+  });
+
+  it('使われ方を止めていれば、画面からも送らない', () => {
+    const app = mount({ apiPrefs: prefsFixture({ values: { 'usage.self': false } }) });
+    document.getElementById('bell-btn').click();
+    document.querySelector('[data-tab="issues"]').click();
+    window.dispatchEvent(new window.Event('pagehide'));
+    expect(app.calls.some((c) => c.name === 'apiUsageRecord')).toBe(false);
+  });
+
+  it('使われ方を止めていなければ送る', () => {
+    const app = mount();
+    document.getElementById('bell-btn').click();
+    window.dispatchEvent(new window.Event('pagehide'));
+    expect(app.calls.some((c) => c.name === 'apiUsageRecord')).toBe(true);
+  });
+});
+
+describe('設定の一覧 (#18) レビューの指摘', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const GAME = { enabled: true, total: 3, week: 1, level: 2, levelFrom: 0, nextAt: 5, playing: false, badges: [], team: null };
+
+  it('設定が届くまでポイントのカードを出さず、見たレベルも覚えない', () => {
+    let reply;
+    const app = mount({ apiPrefs: { later: (ok) => { reply = ok; } }, apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(false);
+    reply(prefsFixture());
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(true);
+  });
+
+  it('ポイントのカードを隠した人のレベルは、見たことにしない', () => {
+    const app = mount({ apiPrefs: prefsFixture({ values: { 'home.cards.game': false } }), apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(false);
+  });
+
+  it('設定が取れなくても、ポイントのカードは出す', () => {
+    mount({ apiPrefs: new Error('混み合っています'), apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+  });
+
+  it('遅れて届いた古い書き込みの返事で、新しい設定を上書きしない', () => {
+    const replies = [];
+    mount({ apiPrefSet: (key, value) => ({ later: (ok) => replies.push(() => ok(prefsFixture({ values: { [key]: value } }))) }) });
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    document.querySelector('[data-pref="notify.review"] button[role="switch"]').click();
+    document.querySelector('[data-pref="home.cards.recent"] button[role="switch"]').click();
+    // 後から頼んだほうが先に届き、先に頼んだほうが遅れて届く
+    replies[1]();
+    replies[0]();
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    expect(document.getElementById('home-recent').hidden).toBe(true);
+  });
+
+  it('起動のときは管理者かを尋ねず、設定の画面だけが尋ねる', () => {
+    const app = mount();
+    const first = app.calls.filter((c) => c.name === 'apiPrefs');
+    expect(first.length).toBe(1);
+    expect(first[0].args).toEqual([]);
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrefs').pop().args).toEqual([{ team: true }]);
   });
 });

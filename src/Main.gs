@@ -1471,9 +1471,11 @@ function apiPrCommits(number) {
  * 動いている apiPrList / apiBranchList と同じく、明示的に文字列へ直す。
  *
  * @param {object} row issues 行
+ * @param {number[]} [steps] 「動きなし」の段階。一覧では staleSteps_() を1回だけ読んで渡す
  * @returns {object}
  */
-function issueToPlain_(row) {
+function issueToPlain_(row, steps) {
+  var stale = stalenessOf(row, new Date(), steps || staleSteps_());
   return {
     number: plainId(row.number),
     title: plainText(row.title),
@@ -1498,8 +1500,8 @@ function issueToPlain_(row) {
     archivedAt: plainDate(row.archivedAt),
     daysLeft: row.archivedAt ? archiveDaysLeft(row.archivedAt, new Date()) : '',
     updatedAt: plainDate(row.updatedAt),
-    staleDays: stalenessOf(row, new Date()).days,
-    staleLevel: stalenessOf(row, new Date()).level,
+    staleDays: stale.days,
+    staleLevel: stale.level,
     // エージェンティックスクラム (既定はオフ)。オフのときは空のまま届く
     sprint: plainText(row.sprint),
     points: plainNumber(row.points),
@@ -1516,7 +1518,8 @@ function issueToPlain_(row) {
 function apiIssueList(state) {
   var rows = issueList(state || null);
   var out = [];
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  var steps = staleSteps_();
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -1902,9 +1905,10 @@ function apiTallyEffort(unit, basis, who) {
 
   var rows = issueList(null);
   var plain = [];
+  var steps = staleSteps_();
 
   for (var i = 0; i < rows.length; i++) {
-    var one = issueToPlain_(rows[i]);
+    var one = issueToPlain_(rows[i], steps);
     var who = one.assignees;
 
     if (!who.length) {
@@ -2175,7 +2179,10 @@ function apiKitStatus() {
 /**
  * 使われ方を記録する (Web App API)。
  *
- * 誰が押したかは受け取らないし、残さない。日と場所と回数だけを数える。
+ * 日・場所・回数に加えて、押した人も残す (人ごとに見られるようにするため)。
+ * 押した人は画面から受け取らず、サーバ側で決める (名乗りを詐称できるため)。
+ * 人ごとの数を見られるのは本人と部下だけ (apiUsageSummary)。
+ * 押した順番と時刻は残さない。
  *
  * @param {Array<{kind:string, target:string, count:number}>} rows
  * @returns {number}
@@ -2207,6 +2214,25 @@ function apiUsageSummary(days, who) {
   var res = usageSummary(days, null, target);
   res.byUser = res.byUser.filter(function (u) { return allowed.indexOf(u.who) >= 0; });
   return res;
+}
+
+/**
+ * CSV にするための、日・場所・人ごとの数を返す (Web App API)。
+ *
+ * 本人と部下のぶんだけを返す。ほかの人の行は入れない (usageRows)。
+ *
+ * @param {number} days
+ * @param {string} [who] 空なら全員ぶん
+ * @returns {{from:string, to:string, who:string, rows:object[]}}
+ */
+function apiUsageRows(days, who) {
+  var me = Session.getActiveUser().getEmail();
+  var allowed = memberVisibleTo(me);
+  var target = String(who || '');
+  if (target && allowed.indexOf(target) < 0) {
+    throw new Error('その人の使われ方は見られません');
+  }
+  return usageRows(days, null, target, allowed);
 }
 
 /**
@@ -2314,8 +2340,9 @@ function apiIssuePurge(number) {
 function apiIssueArchivedList() {
   var rows = issueListArchived();
   var out = [];
+  var steps = staleSteps_();
 
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -2400,7 +2427,8 @@ function apiIssueCreateBranch(number, fileId) {
 function apiIssuesForFile(fileId) {
   var rows = issuesForFile(fileId);
   var out = [];
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  var steps = staleSteps_();
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -3317,10 +3345,11 @@ function apiHomeSummary() {
   var now = new Date();
   var tables = homeTables_();
   var turn = homeMyTurn_(me, now, tables);
-  // 改善のヒントは無くてもホームは使える。落ちてもほかの区画は返す
+  // 改善のヒントは無くてもホームは使える。落ちてもほかの区画は返す。
+  // ホームに出さないと決めた人のぶんは数えない (表をいくつも読むので)
   var advice = [];
   try {
-    advice = homeAdvice_(me, now, tables);
+    if (prefGet_('home.cards.advice', me)) advice = homeAdvice_(me, now, tables);
   } catch (e) {
     Logger.log('改善のヒントを出せませんでした: ' + e.message);
   }

@@ -12,7 +12,7 @@ const SOURCES = [
   'src/core/Usage.gs', 'src/core/Issue.gs', 'src/core/IssueComment.gs',
   'src/core/Project.gs', 'src/core/Mention.js', 'src/core/Inquiry.gs', 'src/core/Brand.js',
   'src/core/Notifier.gs', 'src/core/Tally.js', 'src/core/Plain.js',
-  'src/core/Settings.gs', 'src/core/Scrum.gs', 'src/core/ScrumView.js',
+  'src/core/Settings.gs', 'src/core/Prefs.gs', 'src/core/Scrum.gs', 'src/core/ScrumView.js',
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
 ];
 
