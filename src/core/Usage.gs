@@ -42,10 +42,27 @@ function USAGE_KINDS() {
  *
  * 画面から見られるのは直近90日までなので、その倍を残せば足りる。
  *
+ * **これは既定値。** チームの設定 usage.keepDays で変えられるので、残す日数は
+ * usageKeepDays_() で読む。
+ *
  * @returns {number}
  */
 function USAGE_KEEP_DAYS() {
   return 180;
+}
+
+/**
+ * 残す日数 (チームの設定。決めていなければ USAGE_KEEP_DAYS())。
+ *
+ * @returns {number}
+ */
+function usageKeepDays_() {
+  // 読めなければ既定の日数 (短く倒して行を消すことはしない)
+  try {
+    return prefGet_('usage.keepDays');
+  } catch (e) {
+    return USAGE_KEEP_DAYS();
+  }
 }
 
 /**
@@ -96,6 +113,17 @@ function usageRecord(rows) {
   if (!list.length) return 0;
 
   if (list.length > USAGE_MAX_KEYS()) list = list.slice(0, USAGE_MAX_KEYS());
+
+  // チームで止めたとき・本人が止めたときは数えない。鍵も取らない
+  // 設定が読めないときは数え続ける (止めたつもりの無い人の記録を黙って落とさない)
+  var who = Session.getActiveUser().getEmail();
+  var on = true;
+  try {
+    on = prefGet_('usage.enabled') !== false && prefGet_('usage.self', who) !== false;
+  } catch (e) {
+    on = true;
+  }
+  if (!on) return 0;
 
   // 数えられなくても操作は続けられる。取れなければ諦める
   return dbWithLock_(5000, function () {
@@ -194,7 +222,7 @@ function usageWithinKeep_(values, today) {
   var end = new Date(
     Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   var from = usageDay(new Date(
-    end.getFullYear(), end.getMonth(), end.getDate() - USAGE_KEEP_DAYS() + 1));
+    end.getFullYear(), end.getMonth(), end.getDate() - usageKeepDays_() + 1));
 
   var out = [];
   for (var i = 0; i < values.length; i++) {
