@@ -6,7 +6,7 @@
 
 | | 誰か | できること |
 |---|---|---|
-| 持ち主 | 入れ物のフォルダの持ち主。共有ドライブでは、共有ドライブの管理者 (`organizer`) 全員 | エディタで動かす関数 (`setupCommandQueue` / `debug*`)。報告の知らせを受け取り、報告から積まれるやることの担当になる |
+| 持ち主 | 入れ物のフォルダの持ち主。共有ドライブでは、共有ドライブの管理者 (`organizer`) 全員 | エディタで動かす関数 (`setupCommandQueue` / `debug*`)。報告の知らせを受け取る。報告から積まれるやることの担当になる (持ち主が複数のとき・分からないときは担当なし) |
 | 管理者 | 持ち主 + 入れ物のフォルダを編集できる人。共有ドライブでは `organizer` / `fileOrganizer` / `writer` の役割の人 | チームの設定 (目標・期間で進める・ポイント・改善のヒントなど)、上下関係と他人の表示名、他人の改訂版を捨てる・確認依頼を取り下げる・報告を閉じる・下書きを消す |
 
 - 持ち主1人だけだと、休んだときに誰も設定を直せない。フォルダを編集できる人は台帳も直接書き換えられるので、画面の操作でも同じ扱いにしている
@@ -42,7 +42,7 @@
 `ME` ならその抜け道は塞がるが、**切り替える前に次を片付けること。**
 
 - **末尾が `_` でない関数は、すべて画面の `google.script.run` から呼べる。** `ME` では利用者の誰もが、それを持ち主の権限で
-  呼べることになる。エディタ専用の関数 (`setupRepo` / `debug*` / `setupCommandQueue`) は持ち主以外を断るが、`dbUpdate`
+  呼べることになる。エディタ専用の関数 (`debug*` / `setupCommandQueue`) は持ち主以外を断り、`setupRepo` は初期化済みなら断るが、`dbUpdate`
   などの中の関数は塞いでいない。中の関数を画面から呼べない形に組み替える計画を先に立てる
 - `executeAs: ME` では `Session.getActiveUser().getEmail()` が空を返す環境がある。そうなると記録の作者と確認した人が
   空になり、自己承認の禁止が誤作動する。**別のアカウントで開き、自分の顔に「利用者を特定できていません」と出ないか確かめる**
@@ -100,14 +100,14 @@
 | `debugRenderDoc()` / `debugLiveHtml()` | 描画とキャッシュの確かめ (`DEBUG_FILE_ID` の文書で) |
 | `debugRegisterFile()` | `DEBUG_FILE_ID` の文書を登録する (開発時の入口。ふだんは画面から登録する) |
 | `debugEnableSelfApprove()` / `debugDisableSelfApprove()` | 上の「自己承認」 |
-| `memberSet(email, manager)` / `memberSetName(email, name)` | 上下関係と表示名 ([人と工数](people-and-effort.md)) |
+| `memberSet(email, manager, name)` / `memberSetName(email, name)` | 上下関係と表示名 ([人と工数](people-and-effort.md)) |
 
 エディタ用の関数を足したら、最初に `assertOwner_()` を呼び、`test/phase4-edit.test.js` の「エディタ専用の関数は、
 持ち主以外には動かない」に名前を足す。
 
 ## スクリプトプロパティ
 
-人が手で書くものは `DEBUG_FILE_ID` / `DEBUG_WRITE_FILE_ID` (確かめるときだけ) と `ALLOW_SELF_APPROVE` だけ。ほかは番頭が書く。
+人が手で書くものは `DEBUG_FILE_ID` / `DEBUG_FILE_PATH` (`debugRegisterFile` の道のり。省くと文書の名前) / `DEBUG_WRITE_FILE_ID` (確かめるときだけ) と `ALLOW_SELF_APPROVE` だけ。ほかは番頭が書く。
 
 | 鍵 | 内容 |
 |---|---|
@@ -116,11 +116,10 @@
 | `SCRUM_ENABLED` / `SCRUM_PRODUCT_GOAL` / `SCRUM_DEFINITION_OF_DONE` | 期間で進める |
 | `GAME_ENABLED` / `GAME_PLAYERS` | ポイントとレベルのオン・オフと、週の上位に参加している人 |
 | `TEAM_MONTHLY_GOAL` | チームの毎月の目標 |
-| `GOOGLE_TASKS_LIST_ID` | Google ToDo の送り先 |
 | `QUEUE_RUNNER` / `QUEUE_RUNNER_AT` / `QUEUE_LAST_RUN` | キューを動かしている人・仕掛けた時刻・最後に回った時刻 |
 | `KIT_PRINT:<アドレス>` | その人の道具の指紋 (画面に「道具の更新あり」を出すため) |
 | `ARCHIVE_HOUSEKEPT_ON` / `ARCHIVE_HOUSEKEPT_RUNNING` | 1日1回の片付けの印 |
 
 一度出した番号 (やること・確認依頼など) も覚えていて、表が空になっても戻さない。
 
-本人の UserProperties に置くものもある: 日報の形と自分の形 (`REPORT_KIND:` / `REPORT_CUSTOM:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)。
+本人の UserProperties に置くものもある: 日報の形と自分の形 (`REPORT_KIND:` / `REPORT_CUSTOM:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)、Google ToDo の送り先のリスト (`GOOGLE_TASKS_LIST_ID`)。

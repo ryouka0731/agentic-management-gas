@@ -42,8 +42,8 @@ Drive / メールアドレス / トリガー / メール送信 / ToDo) が入っ
 GAS エディタ (`clasp open-script`) で関数の一覧から **`setupRepo`** を選び、一度だけ実行する。
 
 - 初回は Google の「アクセスを承認」が出る。文書・表・スライド・Drive・メールに触るための許可
-- **スクリプトと同じフォルダに** 入れ物 `agentic-management/` (`main/` `branches/` `.git/objects/`) と台帳の
-  スプレッドシート `agentic-management repo-db` ができる。スクリプトの置き場が分からないときだけマイドライブの直下に落ちる
+- **スクリプトと同じフォルダに** 入れ物 `agentic-management/` (`main/` `branches/` `.git/objects/`) ができ、
+  台帳のスプレッドシート `agentic-management repo-db` はその `.git/` の中に置かれる。スクリプトの置き場が分からないときだけマイドライブの直下に落ちる
 - 二度目の実行は「リポジトリは既に初期化されています」で断る (作り直すと、これまでの記録が見えなくなるため)
 
 ## 4. 手元から動かすなら (`setupCommandQueue`)

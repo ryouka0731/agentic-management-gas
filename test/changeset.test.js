@@ -515,7 +515,7 @@ describe('コードは書き戻さない', () => {
     });
 
     expect(() => ctx.prMerge(pr.number, {}))
-      .toThrow('対象ファイルを特定できません');
+      .toThrow('対象の文書を特定できません');
     expect(fake).toBeTruthy();
   });
 
@@ -728,7 +728,7 @@ describe('台帳に main の行が無いリポジトリ', () => {
     const { ctx, a } = withoutMainRow();
 
     // 作業コピーが branches/main/… になり、正式版と見分けが付かなくなる
-    expect(() => ctx.branchCreate('main', a)).toThrow('正式版の名前');
+    expect(() => ctx.branchCreate('main', a)).toThrow('正式版に使っている名前');
     expect(ctx.dbFindOne('branches', 'name', 'main')).toBeNull();
   });
 });

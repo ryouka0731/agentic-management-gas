@@ -264,7 +264,7 @@ describe('Phase 2 統合: 承認のゲート', () => {
 
   it('自己承認は既定で拒否される', () => {
     expect(() => env.ctx.prReview(env.pr.number, 'approve', ''))
-      .toThrow(/自分が作成したPRは承認できません/);
+      .toThrow(/自分が出した確認依頼は承認できません/);
   });
 
   it('ALLOW_SELF_APPROVE が true のときだけ自己承認できる', () => {
@@ -312,7 +312,7 @@ describe('Phase 2 統合: 承認のゲート', () => {
     env.ctx.prReview(env.pr.number, 'approve', '');
     env.fake._setUser('tester@example.com');
     env.ctx.prMerge(env.pr.number, []);
-    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/既にマージ済み/);
+    expect(() => env.ctx.prMerge(env.pr.number, [])).toThrow(/既に反映済み/);
   });
 });
 
@@ -569,7 +569,7 @@ describe('Phase 2 統合: ブランチの後始末', () => {
 
   it('main ブランチは削除できない', () => {
     const { ctx } = setup();
-    expect(() => ctx.branchDelete('main')).toThrow(/main ブランチは削除できません/);
+    expect(() => ctx.branchDelete('main')).toThrow(/正式版は捨てられません/);
   });
 });
 
@@ -829,7 +829,7 @@ describe('改訂版どうしの確認依頼', () => {
     ctx.prCreate('ひとつめ', '', '積み増し', mainFileId, '土台');
 
     expect(() => ctx.prCreate('ふたつめ', '', '積み増し', mainFileId, '土台'))
-      .toThrow(/未クローズのPR/);
+      .toThrow(/閉じていない確認依頼/);
   });
 
   it('反映先の版に書き戻す。正式版は変わらない', () => {

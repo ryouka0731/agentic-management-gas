@@ -33,6 +33,7 @@
 ```js
 memberSet('buka@example.com', 'naka@example.com');  // 登録・付け替え
 memberSet('buka@example.com', '');                  // 関係を外す
+memberSet('buka@example.com', 'naka@example.com', '部下 一郎');  // 名前も一緒に
 ```
 
 ## 画面に出す名前

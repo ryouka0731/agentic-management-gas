@@ -153,7 +153,7 @@ describe('コマンドキュー', () => {
     enqueue(ctx, 'cmd1', { op: 'commit', args: { fileId: fileId, message: 'x' } });
 
     ctx.processCommandQueue();
-    expect(readResult(ctx, 'cmd1').error).toContain('mainは保護されています');
+    expect(readResult(ctx, 'cmd1').error).toContain('正式版は直接なおせません');
   });
 
   it('ブランチのファイルはキュー経由で編集できる', () => {

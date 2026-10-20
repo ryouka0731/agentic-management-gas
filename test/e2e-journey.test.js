@@ -65,9 +65,9 @@ describe('初めて使う人の一連の流れ', () => {
 
     // 2. 正式版は自分では直せない
     expect(() => ctx.apiCommit(docId, 'こっそり直す', null))
-      .toThrow(/保護されています/);
+      .toThrow(/正式版は直接なおせません/);
     expect(() => ctx.apiSaveMarkdown(docId, '# 勝手に\n'))
-      .toThrow(/保護されています/);
+      .toThrow(/正式版は直接なおせません/);
 
     // 3. 改訂版を作る。記録が無くてもここで詰まらない
     const draft = ctx.apiBranchCreate('第2条の見直し (法務確認あり)', docId);

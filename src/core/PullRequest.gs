@@ -70,9 +70,9 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
   }
 
   var branch = dbFindOne('branches', 'name', sourceBranch);
-  if (!branch) throw new Error('ブランチが見つかりません: ' + sourceBranch);
+  if (!branch) throw new Error('改訂版が見つかりません: ' + sourceBranch);
   if (String(branch.state) !== 'open') {
-    throw new Error('このブランチは既に閉じられています: ' + sourceBranch);
+    throw new Error('この改訂版は既に閉じられています: ' + sourceBranch);
   }
 
   // 反映先。既定は正式版だが、改訂版どうしでも出せる。長い改訂を
@@ -105,7 +105,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     // fast-forward でコピーを採用する案は fileId が変わるため採らない
     if (String(targetRow.type) === 'slide') {
       throw new Error(
-        'Slidesはマージに対応していません。履歴とdiffは見られますが、' +
+        'スライドは反映に対応していません。履歴と差分は見られますが、' +
         '反映はSlides上で直接行ってください'
       );
     }
@@ -138,7 +138,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
 
       var st = String(existing[i].state);
       if (st === 'open' || st === 'approved') {
-        throw new Error('この組み合わせには未クローズのPRがあります: #' + existing[i].number);
+        throw new Error('この組み合わせには閉じていない確認依頼があります: #' + existing[i].number);
       }
     }
 
@@ -186,7 +186,7 @@ function prList() {
  */
 function prGet(number) {
   var row = dbFindOne('pulls', 'number', number);
-  if (!row) throw new Error('PRが見つかりません: #' + number);
+  if (!row) throw new Error('確認依頼が見つかりません: #' + number);
   return row;
 }
 
@@ -317,11 +317,11 @@ function prSourceChanged_(branch, fileId) {
 function prPreviewMerge(number, wantFileId) {
   var pr = prGet(number);
   var branch = dbFindOne('branches', 'name', pr.sourceBranch);
-  if (!branch) throw new Error('ブランチが見つかりません: ' + pr.sourceBranch);
+  if (!branch) throw new Error('改訂版が見つかりません: ' + pr.sourceBranch);
 
   // 対象を指定しなければ1つ目を見る。変更セットの全件は prPreviewAll
   var mainFileId = String(wantFileId || '') || prTargetFiles(pr)[0];
-  if (!mainFileId) throw new Error('PRの対象ファイルを特定できません');
+  if (!mainFileId) throw new Error('確認依頼の対象の文書を特定できません');
 
   var into = prTargetBranch(pr);
   var intoFileId = prTargetBranchFileId(pr, mainFileId);
@@ -332,7 +332,7 @@ function prPreviewMerge(number, wantFileId) {
   var oursHtml = intoHead ? (objectGet(intoHead.blobSha) || '') : '';
 
   var workFileId = branchWorkingFileId(pr.sourceBranch, mainFileId);
-  if (!workFileId) throw new Error('ブランチの作業コピーが見つかりません');
+  if (!workFileId) throw new Error('改訂版の作業コピーが見つかりません');
   var branchHead = headCommit(workFileId, pr.sourceBranch);
   var theirsHtml = branchHead ? (objectGet(branchHead.blobSha) || '') : '';
 
@@ -516,7 +516,7 @@ function prReview(number, state, body) {
   prAssertReviewLength_(body);
 
   var pr = prGet(number);
-  if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
+  if (String(pr.state) === 'merged') throw new Error('この確認依頼は既に反映済みです');
   // 下で状態を書き換えるため、取り下げたものに通すと open / approved に
   // 生き返り、同じ組の依頼が2つ開く
   if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
@@ -530,7 +530,7 @@ function prReview(number, state, body) {
       .getProperty('ALLOW_SELF_APPROVE');
     if (String(allow) !== 'true') {
       throw new Error(
-        '自分が作成したPRは承認できません。' +
+        '自分が出した確認依頼は承認できません。' +
         '1人で検証する場合はスクリプトプロパティ ALLOW_SELF_APPROVE を true にしてください'
       );
     }
@@ -792,7 +792,7 @@ function prPreviewAll(number) {
   if (!targets.length && prHasPatches(number)) {
     return { files: [], clean: true, problems: [] };
   }
-  if (!targets.length) throw new Error('PRの対象ファイルを特定できません');
+  if (!targets.length) throw new Error('確認依頼の対象の文書を特定できません');
 
   var out = [];
   var clean = true;
@@ -831,8 +831,8 @@ function prPreviewAll(number) {
 function prMerge(number, choices, previewSha) {
   return dbWithLock_(60000, function () {
         var pr = prGet(number);
-        if (String(pr.state) === 'merged') throw new Error('このPRは既にマージ済みです');
-        if (String(pr.state) === 'closed') throw new Error('このPRは閉じられています');
+        if (String(pr.state) === 'merged') throw new Error('この確認依頼は既に反映済みです');
+        if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
 
         /*
          * **見比べたものを反映する。** 見比べてから押すまでに反映先か改訂版が
@@ -892,7 +892,7 @@ function prMerge(number, choices, previewSha) {
          * 無いだけで、決めたこと自体は残す。
          */
         if (!targets.length && !prHasPatches(number)) {
-          throw new Error('PRの対象ファイルを特定できません');
+          throw new Error('確認依頼の対象の文書を特定できません');
         }
 
         var into = prTargetBranch(pr);
@@ -948,7 +948,7 @@ function prMerge(number, choices, previewSha) {
 
           if (problems.length > 0) {
             throw new Error(
-              path + ' のマージ結果を書き戻せません:\n' + problems.join('\n'));
+              path + ' の反映結果を書き戻せません:\n' + problems.join('\n'));
           }
 
           plan.push({
@@ -1196,7 +1196,7 @@ function reviewDelete(id) {
  */
 function prSetReviewers(number, emails) {
   var pr = prGet(number);
-  if (String(pr.state) === 'merged') throw new Error('このPRは既に反映済みです');
+  if (String(pr.state) === 'merged') throw new Error('この確認依頼は既に反映済みです');
 
   var seen = {};
   var list = [];
