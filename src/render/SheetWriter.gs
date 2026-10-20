@@ -83,38 +83,57 @@ function writeHtmlToSheet(fileId, html) {
  */
 function sheetWriteBlock_(sheet, block) {
   var range = sheet.getDataRange();
-  var rawNow = range.getValues();
-  var shownNow = range.getDisplayValues();
-  var formulaNow = range.getFormulas();
+  var now = {
+    raw: range.getValues(),
+    shown: range.getDisplayValues(),
+    formula: range.getFormulas(),
+  };
 
-  var height = Math.max(block.rows.length, rawNow.length);
-  var width = 0;
-  for (var w = 0; w < block.rows.length; w++) {
-    if (block.rows[w].length > width) width = block.rows[w].length;
-  }
-  for (var x = 0; x < rawNow.length; x++) {
-    if (rawNow[x].length > width) width = rawNow[x].length;
-  }
+  var height = Math.max(block.rows.length, now.raw.length);
+  var width = Math.max(sheetMaxWidth_(block.rows), sheetMaxWidth_(now.raw));
   if (!height || !width) return;
 
   var matrix = [];
   for (var r = 0; r < height; r++) {
     var line = [];
     for (var c = 0; c < width; c++) {
-      var want = (block.rows[r] && block.rows[r][c]) || null;
-      var wantFormula = want && want.formula ? String(want.formula) : '';
-      var wantValue = want ? String(want.value == null ? '' : want.value) : '';
-
-      var had = r < rawNow.length && c < rawNow[r].length;
-      var hadFormula = had ? String(formulaNow[r][c] || '') : '';
-      var same = had && hadFormula === wantFormula &&
-        (wantFormula || String(shownNow[r][c]) === wantValue);
-
-      if (same) line.push(hadFormula || rawNow[r][c]);
-      // 数式があれば数式を書く。setValues は '=' 始まりを数式として解釈する
-      else line.push(wantFormula || wantValue);
+      line.push(sheetCellToWrite_(now, r, c, sheetWantCell_(block.rows[r], c)));
     }
     matrix.push(line);
   }
   sheet.getRange(1, 1, height, width).setValues(matrix);
+}
+
+/** 行の並びのうち、いちばん長い行の長さ */
+function sheetMaxWidth_(rows) {
+  var width = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].length > width) width = rows[i].length;
+  }
+  return width;
+}
+
+/** 書きたいセルの数式と表示値。セルが無ければ両方とも空 */
+function sheetWantCell_(row, c) {
+  var want = (row && row[c]) || null;
+  if (!want) return { formula: '', value: '' };
+  return {
+    formula: want.formula ? String(want.formula) : '',
+    value: String(want.value == null ? '' : want.value),
+  };
+}
+
+/**
+ * 1つのセルに書くもの。表示値も数式も今と同じなら、いまの生の値 (数式が
+ * あれば数式) を書き直す。違えば書きたいものを書く。
+ */
+function sheetCellToWrite_(now, r, c, want) {
+  var had = r < now.raw.length && c < now.raw[r].length;
+  var hadFormula = had ? String(now.formula[r][c] || '') : '';
+  var same = had && hadFormula === want.formula &&
+    (want.formula || String(now.shown[r][c]) === want.value);
+
+  if (same) return hadFormula || now.raw[r][c];
+  // 数式があれば数式を書く。setValues は '=' 始まりを数式として解釈する
+  return want.formula || want.value;
 }

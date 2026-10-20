@@ -118,6 +118,16 @@ describe('確認依頼を取り下げる', () => {
     expect(() => ctx.prClose(pr.number)).toThrow('既に取り下げられています');
   });
 
+  it('取り下げたものは反映できない', () => {
+    const { ctx, mainFileId } = setup();
+    const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
+    ctx.prClose(pr.number);
+
+    // 承認の数を見る前に断る。取り下げたものを押し切って反映させない
+    expect(() => ctx.prMerge(pr.number, [])).toThrow('この確認依頼は取り下げられています');
+    expect(ctx.prGet(pr.number).state).toBe('closed');
+  });
+
   it('取り下げたものに確認を書いても生き返らない', () => {
     const { ctx, mainFileId } = setup();
     const pr = ctx.prCreate('第2条を追加', '', '改訂', mainFileId);
