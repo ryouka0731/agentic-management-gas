@@ -3509,7 +3509,6 @@ function apiSettings() {
     definitionOfDone: plainText(texts.definitionOfDone),
     // 用語の説明は画面に写しを持たせず、ここから渡す (食い違わないように)
     glossary: SCRUM_GLOSSARY(),
-    glossaryAliases: SCRUM_GLOSSARY_ALIASES(),
   };
 }
 
@@ -3520,7 +3519,7 @@ function apiSettings() {
  * @returns {object} 切り替えたあとの apiSettings()
  */
 function apiSetScrumEnabled(on) {
-  repoAssertAdmin_('エージェンティックスクラムの切り替え');
+  repoAssertAdmin_('「期間で進める」の切り替え');
   scrumSetEnabled_(!!on);
   return apiSettings();
 }
@@ -3611,7 +3610,7 @@ function apiGameJoin(on) {
  * @returns {object} 書いたあとの apiSettings()
  */
 function apiSetScrumText(kind, text) {
-  repoAssertAdmin_('プロダクトゴールと完了の定義を書くこと');
+  repoAssertAdmin_('目指すところと終わったと言える条件を書くこと');
   scrumSetText_(kind, text);
   return apiSettings();
 }
@@ -3719,7 +3718,7 @@ function apiScrumView(sprintName) {
     summary: summary,
     velocity: scrumVelocity(sprints, issues, today, moves),
     burndown: target ? scrumBurndown(target, issues, today, moves)
-      : { days: [], remaining: [], ideal: [], notice: 'スプリントがまだありません。' },
+      : { days: [], remaining: [], ideal: [], notice: '作業期間がまだありません。' },
     roadmap: scrumRoadmap(sprints, issues),
     texts: scrumTexts(),
   };

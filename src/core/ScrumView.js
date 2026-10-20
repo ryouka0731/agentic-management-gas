@@ -250,7 +250,7 @@ function scrumBurndown(sprint, issues, today, moves) {
   var start = scrumDayOf_(sprint && sprint.startDate);
   var end = scrumDayOf_(sprint && sprint.endDate);
   if (!start || !end || end < start) {
-    return { days: [], remaining: [], ideal: [], notice: 'スプリントの期間 (始まりと終わり) が決まっていません。' };
+    return { days: [], remaining: [], ideal: [], notice: '作業期間の始まりと終わりが決まっていません。' };
   }
 
   var days = [];
@@ -339,7 +339,7 @@ function scrumRoadmap(sprints, issues) {
     rows: rows,
     unknown: unknown,
     unplanned: unplanned,
-    notice: names.length ? '' : 'スプリントがまだありません。スプリントを作ると、ここに帯が出ます。',
+    notice: names.length ? '' : '作業期間がまだありません。作業期間を作ると、ここに帯が出ます。',
   };
 }
 
@@ -400,59 +400,52 @@ function scrumSummary(sprints, issues, impediments, today, moves) {
 }
 
 /**
- * スクラムの用語と説明。同じ言葉の説明が画面ごとに違うと、それ自体が混乱の
+ * スクラムまわりの言葉の説明。同じ言葉の説明が画面ごとに違うと、それ自体が混乱の
  * もとになるため、ここを唯一の源泉にする。この道具の言葉 (やること・進捗ボード
  * の列・優先度) に合わせてある。
+ *
+ * **key は TERMS() (Terms.js) の key。** 見出しの字は人ごとの言葉の表し方で変わるので、
+ * 字では引かない。説明の文は一般の言葉に固定する (サーバの文は一般の言葉。設計の 4)。
+ * roadmap と carryover は TERMS() に無い (どちらの表し方でも同じ言葉) が、説明はここに置く。
  *
  * @returns {Object<string, string>}
  */
 function SCRUM_GLOSSARY() {
   return {
-    'ストーリーポイント':
-      'そのやること1つの相対的な大きさ。時間ではない。ベロシティは、終えたストーリーポイントの合計。',
-    'ベロシティ':
-      'チームが1スプリントで終えたストーリーポイントの合計。次のスプリントで積める量の目安になる。',
-    'バーンダウン':
-      'スプリントの残りが日を追ってどう減ったかの記録。線が下がりきればスプリントの目標に届く。',
-    'ロードマップ':
-      'どのやることを、どのスプリントで扱う予定かの一覧。',
-    'スプリント':
+    points:
+      'そのやること1つの相対的な大きさ。時間ではない。ほかのやることと比べて決める。',
+    velocity:
+      'チームが1つの作業期間で終えた大きさの合計。次の作業期間で積める量の目安になる。',
+    burndown:
+      '作業期間の残りが日を追ってどう減ったかの記録。線が下がりきれば、その期間の目標に届く。',
+    roadmap:
+      'どのやることを、どの作業期間で扱う予定かの一覧。',
+    sprint:
       '区切られた作業の期間。この単位で計画し、終わりに成果を確かめる。',
-    'スプリントゴール':
-      'そのスプリントで目指すこと。やることを積むときの判断の拠り所にする。',
-    'プロダクトゴール':
-      'このプロダクトが目指す先。スプリントゴールはここに向かう一歩になる。',
-    '完了の定義':
-      'どのやることにも当てはまる「終わった」と言える条件。受入基準とは別に、全体で共有する。',
-    '障害物':
+    sprintGoal:
+      'その作業期間で目指すこと。やることを積むときの判断の拠り所にする。',
+    productGoal:
+      'この取り組み全体が目指す先。作業期間ごとの目標は、ここに向かう一歩になる。',
+    definitionOfDone:
+      'どのやることにも当てはまる「終わった」と言える条件。やることごとの「できたと言える条件」とは別に、全体で共有する。',
+    impediment:
       'チームの進みを妨げているもの。気づいた人が書き出し、取り除けたら解決済みにする。',
-    '受入基準':
-      'そのやることが「終わった」と言える条件。1行に1つ書く。',
-    '持ち越し':
-      'スプリントの終わりまでに終えられず、次に回したストーリーポイント。',
+    acceptance:
+      'そのやることが「できた」と言える条件。1行に1つ書く。',
+    carryover:
+      '作業期間の終わりまでに終えられず、次に回した大きさ。',
   };
 }
 
 /**
- * 画面の見出し語 → 用語集のキー。見出しの字を変えても説明が消えないように別名で繋ぐ。
+ * 言葉の説明を返す。key は TERMS() の key (と roadmap / carryover)。知らない key なら空文字。
  *
- * @returns {Object<string, string>}
- */
-function SCRUM_GLOSSARY_ALIASES() {
-  return { 'ポイント': 'ストーリーポイント' };
-}
-
-/**
- * 用語の説明を返す。別名も解く。知らない語なら空文字。
- *
- * @param {string} term
+ * @param {string} key
  * @returns {string}
  */
-function scrumGlossaryOf(term) {
-  var key = String(term == null ? '' : term).replace(/^\s+|\s+$/g, '');
-  if (!key) return '';
-  var aliases = SCRUM_GLOSSARY_ALIASES();
-  if (Object.prototype.hasOwnProperty.call(aliases, key)) key = aliases[key];
+function scrumGlossaryOf(key) {
+  var k = String(key == null ? '' : key).replace(/^\s+|\s+$/g, '');
+  if (!k) return '';
   var all = SCRUM_GLOSSARY();
-  return Object.prototype.hasOwnProperty.call(all, key) ? all[key] : '';
+  return Object.prototype.hasOwnProperty.call(all, k) ? all[k] : '';
 }

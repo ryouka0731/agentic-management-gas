@@ -154,7 +154,7 @@ function issueScrumFieldsCheck_(patch, before) {
   if (!any) return;
 
   if (typeof scrumAssertEnabled_ !== 'function') {
-    throw new Error('エージェンティックスクラムはオフです');
+    throw new Error('「期間で進める」はオフです');
   }
   scrumAssertEnabled_();
 
@@ -169,7 +169,7 @@ function issueScrumFieldsCheck_(patch, before) {
     } else {
       var n = Number(raw);
       if (!isFinite(n) || n < 0 || String(raw).replace(/^\s+|\s+$/g, '') === '') {
-        throw new Error('ポイントは0以上の数で入れてください: ' + raw);
+        throw new Error('大きさは0以上の数で入れてください: ' + raw);
       }
       patch.points = n;
     }

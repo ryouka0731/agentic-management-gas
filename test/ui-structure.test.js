@@ -425,7 +425,7 @@ describe('入力の置き場所', () => {
   });
 
   it('何の入力かを見出しに出す', () => {
-    expect(js).toContain('sideTitle.textContent = title;');
+    expect(js).toContain('termText(sideTitle, title);');
     ['変更を記録する', 'やることを作る', '確認を依頼する'].forEach((t) => {
       expect(js).toContain(t);
     });
@@ -734,7 +734,7 @@ describe('やることの中身と操作', () => {
 
   it('左のメニューはすべて見出しの下にある (先頭のホームだけは見出しを持たない)', () => {
     const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
-    const sections = (sidebar.match(/<h2>/g) || []).length;
+    const sections = (sidebar.match(/<h2[ >]/g) || []).length;
     const home = (sidebar.match(/nav-section nav-home/g) || []).length;
     expect(home).toBe(1);
     expect(sections).toBe((sidebar.match(/nav-section/g) || []).length - home);

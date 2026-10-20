@@ -81,7 +81,7 @@ describe('スプリントごとに束ねる', () => {
       { number: 6, sprint: '__proto__' }, { number: 7, sprint: '__proto__' },
     ];
     const groups = gas.groupIssues(issues, 'sprint', {});
-    expect(groups.map((g) => g.label)).toEqual(['(未定)', '__proto__', 'constructor', 'sprint001', 'sprint002', 'スプリント未定']);
+    expect(groups.map((g) => g.label)).toEqual(['(未定)', '__proto__', 'constructor', 'sprint001', 'sprint002', '作業期間未定']);
     expect(groups.map((g) => g.issues.map((i) => i.number))).toEqual([[4], [6, 7], [3], [5], [1], [2]]);
   });
 });
