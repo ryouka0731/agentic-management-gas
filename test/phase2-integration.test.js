@@ -914,3 +914,55 @@ describe('分かれ目が違う版どうしを見比べる', () => {
     expect(ctx.prMergeBase_(newer, 'main')).toBe(String(newer.baseSha));
   });
 });
+
+describe('起点の選び方の分かれ道 (prMergeBase_)', () => {
+  /**
+   * 台帳と記録を差し替えて、起点の選び方だけを見る。
+   * commitHistory は新しいものから並ぶので、後ろにあるほうが古い。
+   */
+  function stubbed({ bases = {}, rows = {}, chains = {}, files = [] } = {}) {
+    const ctx = loadGasWith(createFakeGas(), ...SOURCES);
+    ctx.branchBaseSha = (name) => bases[name] || '';
+    ctx.dbFindOne = (table, key, value) => rows[value] || null;
+    ctx.commitHistory = (fileId) => (chains[fileId] || []).map((sha) => ({ sha }));
+    ctx.dbReadAll = () => files;
+    return ctx;
+  }
+
+  it('正式版へは自分の分かれ目 (文書ごと・古い形)', () => {
+    const ctx = stubbed({ bases: { 見直し: 'm1' } });
+    expect(ctx.prMergeBase_({ name: '見直し', baseSha: 'old' }, 'main', 'f')).toBe('m1');
+    expect(ctx.prMergeBase_({ name: '見直し', baseSha: 'old' }, 'main')).toBe('old');
+  });
+
+  it('片方しか分からない・同じなら、分かるほう', () => {
+    expect(stubbed({ bases: { 先: 'y1' } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('y1');
+    expect(stubbed({ bases: { 見直し: 'm1' } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('m1');
+    expect(stubbed({ bases: { 見直し: 's', 先: 's' } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('s');
+    // 古い形は反映先の行の baseSha を見る。行が無ければ空
+    expect(stubbed({ rows: { 先: { baseSha: 'y2' } } }).prMergeBase_({ name: '見直し', baseSha: '' }, '先')).toBe('y2');
+    expect(stubbed().prMergeBase_({ name: '見直し', baseSha: 'm2' }, '先')).toBe('m2');
+  });
+
+  it('文書の並びで古いほうを選ぶ', () => {
+    const bases = { 見直し: 'a', 先: 'b' };
+    expect(stubbed({ bases, chains: { f: ['b', 'x', 'a'] } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('a');
+    expect(stubbed({ bases, chains: { f: ['a', 'x', 'b'] } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('b');
+    // 並びに見当たらなければ自分の分かれ目
+    expect(stubbed({ bases, chains: { f: ['a'] } }).prMergeBase_({ name: '見直し' }, '先', 'f')).toBe('a');
+  });
+
+  it('対象が分からない古い呼び方は、正式版の文書を順に当たる', () => {
+    const ctx = stubbed({
+      rows: { 先: { baseSha: 'b' } },
+      files: [
+        { fileId: 'w', path: 'branches/先/x.doc' },
+        { fileId: 'p', path: 'p.doc' },
+        { fileId: 'q', path: 'q.doc' },
+      ],
+      // 作業コピーの並びは見ない。最初の正式版の文書に両方が無ければ次を当たる
+      chains: { w: ['b', 'a'], p: ['a'], q: ['a', 'b'] },
+    });
+    expect(ctx.prMergeBase_({ name: '見直し', baseSha: 'a' }, '先')).toBe('b');
+  });
+});
