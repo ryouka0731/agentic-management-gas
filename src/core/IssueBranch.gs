@@ -28,7 +28,7 @@ function issueBranchName(number, title) {
 function issueCreateBranch(number, fileId) {
   var issue = issueGet(number);
   if (String(issue.state) === 'closed') {
-    throw new Error('クローズ済みのIssueからはブランチを作れません: #' + number);
+    throw new Error('完了したやることからは改訂版を作れません: #' + number);
   }
   return branchCreate(issueBranchName(number, issue.title), fileId);
 }

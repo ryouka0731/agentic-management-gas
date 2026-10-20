@@ -1,7 +1,7 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /**
  * Phase 4a (コマンドキュー) の統合テスト。
@@ -433,11 +433,8 @@ describe('命令を置いた人', () => {
 });
 
 describe('キューを動かしている人', () => {
-  // apiSettings はスクラムの設定も読むので、scrum-api.test.js と同じ読み込み集合を使う
-  const SCRUM_SOURCES = (() => {
-    const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-    return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]).concat(['src/core/CommandQueue.gs']);
-  })();
+  // apiSettings はスクラムの設定も読むので、API を動かすテストと同じ読み込み集合 (sources.js) を使う
+  const SCRUM_SOURCES = APP_SOURCES.concat(['src/core/CommandQueue.gs']);
   function setup() {
     const fake = createFakeGas();
     const ctx = loadGasWith(fake, ...SCRUM_SOURCES);

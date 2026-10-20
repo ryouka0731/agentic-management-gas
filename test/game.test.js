@@ -1,17 +1,13 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * ポイント・レベル・週の上位。利用者の判断で入れた。守り (重さで付ける・
  * 上位3人だけ・週ごと・既定オフ・参加は本人が選ぶ) を固定する。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1])
-    .concat(['src/core/Motivation.gs', 'src/core/Game.gs']);
-})();
+const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs', 'src/core/Game.gs']);
 
 function setup() {
   const fake = createFakeGas();

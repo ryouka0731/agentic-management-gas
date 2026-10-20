@@ -1383,7 +1383,7 @@ function apiStashMainDrift(fileId) {
   if (branchOfPath_(row.path) !== 'main') {
     throw new Error('正式版の文書にだけ使えます');
   }
-  return commitFile(fileId, 'main', 'mainへの直接編集を退避', null);
+  return commitFile(fileId, 'main', '正式版への直接編集を退避', null);
 }
 
 /**
@@ -2703,7 +2703,7 @@ function debugVerifyPhase2() {
       rejected = e3.message;
     }
     check('古いHEADでのコミットが拒否された',
-      rejected.indexOf('HEADが進んでいます') >= 0, rejected);
+      rejected.indexOf('ほかの記録が先に入りました') >= 0, rejected);
 
     var accepted = true;
     var acceptedMsg = '';

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * スクラムの言葉を一般の言葉にする (#21)。TERMS() が唯一の定義。
@@ -48,10 +49,7 @@ describe('TERMS', () => {
 });
 
 describe('言葉の表し方は自分の設定', () => {
-  const SOURCES = (() => {
-    const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-    return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-  })();
+  const SOURCES = APP_SOURCES;
 
   it('terms.style は plain / scrum で、既定は plain', async () => {
     const { loadGasWith } = await import('./harness.js');
