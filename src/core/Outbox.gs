@@ -54,15 +54,6 @@ function OUTBOX_VERBS() {
 }
 
 /**
- * 頼みごとの状態。
- *
- * @returns {string[]}
- */
-function OUTBOX_STATES() {
-  return ['open', 'taken', 'done', 'failed'];
-}
-
-/**
  * 引数として使える字か。
  *
  * **通す字を並べる形にはしない。** この道具のブランチ名は日本語である

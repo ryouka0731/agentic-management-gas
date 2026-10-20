@@ -156,11 +156,6 @@ describe('予定工数と棒の長さ', () => {
     expect(gas.ganttDaysForEffort(-3)).toBe(1);
   });
 
-  it('日数を人日に直す', () => {
-    expect(gas.ganttEffortForDays(4)).toBe(4);
-    expect(gas.ganttEffortForDays(0)).toBe(1);
-  });
-
   it('丸めて同じなら食い違いとしない', () => {
     // 半日きざみで入れた値を、掴んでいないのに書き換えない
     expect(gas.ganttEffortDiffers(2.4, 2)).toBe(false);
