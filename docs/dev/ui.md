@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-oshi` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -78,7 +78,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **サーバ側と UI 側の両方にある関数がある**。`google.script.run` の往復を
   減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**:
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
-  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill`
+  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
+  `oshiGreetingOf`
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
   図が消える。図の座標は手で置いているため、`test/component/settings-usage-guide.test.js` の
@@ -175,3 +176,35 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   トークンの色で描き、その場に `<img>` で出してから保存を試みる (枠の中では保存が黙って断られることがある)。描けない環境 (jsdom) ではそう言う
 - 断り書き (遊びの診断・評価や配置には使わない・医学的なものではない) は、問いと結果の両方に出す
 - 試すのは `test/component/style.test.js` (返事は本物の api で作る) と `test/e2e/work-style.test.js`
+
+## 推し (`js-oshi`)
+
+自分の設定の「推し」(`oshi.on`、既定はオフ) をオンにした人の画面にだけ出す。自分で作ったキャラクターの絵を上げると、
+済ませたときに左下の吹き出しでほめ、ホームであいさつし (`oshi.home`)、活動に合わせて育つ。手引きは `docs/manual/oshi.md`。
+
+- **表情・口調・場面・せりふ・頼み文・育ちの段・上限は `src/core/Oshi.js` が唯一の定義。** 画面は `apiOshiGet` の返事を
+  使い、写しを持たない (手引きも頼み文を写さない。`test/oshi.test.js` が見ている)。せりふを足すときは `OSHI_LINES()` の
+  全部の口調に足す (どの口調も全部の場面を持つことをテストが見ている)
+- 画面が持つのは「成功した api の名前 → 場面」の表 `OSHI_CALL_EVENTS()` だけ。`FUN_CHEERS` と同じく `call()` の
+  成功の枝から `oshiAfter` を呼ぶ。失敗の枝からは `oshiAfterFail` を呼び、**表に当たる (人が押した) 操作だけ**
+  「しんぱい」を出す (裏で取るだけの呼び出しの失敗では出さない)。**キャラクターは叱らない**
+- 画像は1枚ずつ `apiOshiImage(state)` で取り、中身の指紋ごとに画面が覚える (`oshiImgs`)。サーバはキャッシュに置かない
+  (CacheService は1つ 100KB まで)。絵が無い表情は、育ちの段の絵 → ふつうの絵 → 名前の頭文字の順に代える
+- 上げる前に画面で長い辺 512px に縮める (canvas が使えるときだけ。GIF は縮めない)。上限・形式はサーバの値で見て、
+  サーバも同じ値で断る (先頭のバイトで中身の形式も見る)
+- 吹き出しは1つ (`#oshi-bubble`)。字は `textContent`、絵は自分の推しの data URL だけ。押せば閉じ、6秒で消える。
+  動きを減らす設定では CSS がふわっと出る動きを止める。「久しぶり」は端末に最後に開いた日 (`oshiLastSeen`) だけを覚え、
+  連続日数は数えない
+- **最初からいるキャラ (クロハ)**。自分の絵が無い表情には、その絵を出す (自分の設定 `oshi.useDefault`、既定オン。
+  形は `oshi.style` = `chibi` / `normal`、既定は 2頭身)。名前と口調の既定は `OSHI_DEFAULT()` (`Oshi.js`)、まだ決めて
+  いない人にだけ効く (`oshiProfile_`。使わない設定の人は名前なし・丁寧のまま)
+  - 絵の本物は `assets/oshi-default/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の
+    data URL にして `src/core/OshiDefaultNormal.gs` / `src/core/OshiDefaultChibi.gs` に焼く (`build-kit.mjs` → `KitFiles.gs`
+    と同じ形。**焼いたものは手で直さない**。1つ 600KB まで)。`npm run deploy` が送る前に焼き直し、
+    `test/oshi-default.test.js` が assets と一致しているかを見ている。表情と形の並びは `Oshi.js` から読む
+  - **最初のページには入れない。** 全部で 1MB 近くあるので、吹き出し・カード・頁が要るときに
+    `apiOshiDefaultImage(style, state)` で1枚ずつ取り、画面が `'形:表情'` ごとに覚える (`oshiDefaultImgs`。取りに行っている
+    最中の同じ絵は待ち合わせる)。使わない設定の人は1度も取らない。形と表情は定義にあるものだけを通す
+  - テストで読むときは `OSHI_DEFAULT_SOURCES` (`test/sources.js`) を足す。大きいので `APP_SOURCES` には入れていない
+  - 実在の人の名前を既定にしない (名前・口調は架空のもので、利用者が変えられる)。既定のキャラの絵は利用者が用意したもの (2026-10-21)
+- 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`

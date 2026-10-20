@@ -11,6 +11,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { writeKitSource, kitFilesMap } from './build-kit.mjs';
+import { writeOshiDefaultSources } from './build-oshi-default.mjs';
 import { prepareSigning, kitVersionOf, signingKeyPath, PUBLIC_KEY, SIGNING_SOURCE } from './kit-key.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,6 +63,8 @@ function main() {
   if (writeKitSource()) {
     process.stdout.write('src/KitFiles.gs を作り直しました\n');
   }
+  // 推しの最初からいるキャラの絵は assets/oshi-default/ が本物。同じく焼き直してから送る
+  for (const f of writeOshiDefaultSources()) process.stdout.write(f + ' を作り直しました\n');
 
   // 中身に手元で署名し、署名だけを src/KitSigning.gs (記録しない) に書く。無いまま送ると向こうの
   // KitSigning.gs が消え、全員の道具が黙って自動で新しくならなくなるので断る

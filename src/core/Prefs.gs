@@ -216,6 +216,26 @@ function PREF_GROUPS_() {
         help: 'オンにすると、ほかの人の画面であなたの顔に型の名前が添えられます。点数や答えは誰にも見せません',
         def: false }];
     },
+    oshi: function () {
+      // 推し。既定はオフ。中身 (表情・せりふ・頼み文) は Oshi.js、画面は js-oshi が持つ
+      return [
+        { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し',
+          label: '推しに応援してもらう',
+          help: '自分で作ったキャラクターの絵を上げると、済ませたときにほめてくれます。オンにすると、右上の自分の顔から開く欄に「推し」が出ます',
+          def: false },
+        { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し',
+          label: 'ホームであいさつする', help: '推しがオンのとき、ホームに推しのカードを出します', def: true },
+        { key: 'oshi.useDefault', scope: 'me', type: 'bool', section: '推し',
+          label: '最初からいるキャラを使う',
+          help: '自分の絵を入れていない表情には、最初からいるキャラ (' + OSHI_DEFAULT().name +
+            ') の絵を出します。自分の絵だけにしたいときは外してください',
+          def: true },
+        { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し',
+          label: '最初からいるキャラの絵', help: '2頭身か、等身か。自分で入れた絵は変わりません',
+          options: OSHI_STYLES().map(function (s) { return { value: s.key, label: s.label }; }),
+          def: OSHI_STYLES()[0].key },
+      ];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -234,7 +254,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -476,6 +496,8 @@ function apiPrefs(opts) {
       fun: fun,
       focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
         remind: plainText(byKey['focus.remind']) },
+      oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
+        useDefault: byKey['oshi.useDefault'] !== false, style: plainText(byKey['oshi.style']) },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),

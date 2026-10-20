@@ -221,6 +221,8 @@ const API_NAMES = [
   'apiUsageRecord', 'apiUsageSummary', 'apiUsageRows', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
   'apiAppUrl', 'apiWorkStyle', 'apiWorkStyleSave', 'apiWorkStyleForget', 'apiWorkStyleTeam',
+  'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
+  'apiOshiForget', 'apiOshiDefaultImage',
 ];
 
 /**
@@ -250,6 +252,11 @@ export function prefsFixture(over) {
       def: 'end' },
     { key: 'focus.sound', scope: 'me', type: 'bool', section: '集中のしかた', label: '集中の音', help: '', def: false },
     { key: 'style.share', scope: 'me', type: 'bool', section: '仕事のスタンス診断', label: '診断の型の名前をチームに見せる', help: '', def: false },
+    { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し', label: '推しに応援してもらう', help: '', def: false },
+    { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し', label: 'ホームであいさつする', help: '', def: true },
+    { key: 'oshi.useDefault', scope: 'me', type: 'bool', section: '推し', label: '最初からいるキャラを使う', help: '', def: true },
+    { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し', label: '最初からいるキャラの絵', help: '',
+      options: [{ value: 'chibi', label: '2頭身' }, { value: 'normal', label: '等身' }], def: 'chibi' },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
     { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方', label: '自分の使われ方を記録する', help: '', def: true },
     { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方', label: '使われ方を記録する', help: '', def: true },
@@ -280,6 +287,8 @@ export function prefsFixture(over) {
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
       focus: { start: v('focus.start') === true, sound: v('focus.sound') === true, remind: v('focus.remind') },
+      oshi: { on: v('oshi.on') === true, home: v('oshi.home') !== false,
+        useDefault: v('oshi.useDefault') !== false, style: v('oshi.style') },
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
     },
