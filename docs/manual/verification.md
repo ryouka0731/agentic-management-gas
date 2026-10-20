@@ -35,5 +35,5 @@
 同じシナリオは疑似GASの統合テスト (`test/phase2-integration.test.js` など) にも落としてあり、以後は `npx vitest run` で
 後戻りを見つけられる。
 
-実機で見つかって直したものの例は [CLAUDE.md](../../CLAUDE.md) の「落とし穴」にある (Docs に空の字を入れると断られる、
+実機で見つかって直したものの例は [docs/dev/pitfalls.md](../dev/pitfalls.md) と [docs/dev/command-queue.md](../dev/command-queue.md) の「落とし穴」にある (Docs に空の字を入れると断られる、
 ゴミ箱の中のキューの置き場、など)。

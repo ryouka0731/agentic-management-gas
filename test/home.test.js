@@ -88,6 +88,19 @@ describe('草', () => {
     expect(act.meTotal).toBe(0);
   });
 
+  it('本人が分からなければチームのぶんだけ数える。書いた人の無い依頼も落ちない', () => {
+    const { ctx } = setup();
+    ctx.dbAppend('commits', { sha: 'a1', author: '', timestamp: new Date('2026-10-14T01:00:00Z') });
+    ctx.dbAppend('pulls', { number: 1, state: 'merged',
+      createdAt: new Date('2026-10-14T01:00:00Z'), mergedAt: new Date('2026-10-14T02:00:00Z') });
+    // 確認者の無い判断・承認でも差し戻しでもないものは数えない
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: '', state: 'approve', at: new Date('2026-10-14T01:00:00Z'), id: 1 });
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: 'b@example.com', state: 'request_changes', at: new Date('2026-10-14T01:00:00Z'), id: 2 });
+    const act = ctx.homeActivity_('', NOW);
+    expect(cell(act, '2026-10-14')).toMatchObject({ me: 0, team: 4 });
+    expect(act.meTotal).toBe(0);
+  });
+
   it('アドレスを受ける関数は画面から直に呼べない。API は本人のぶんだけ返す', () => {
     const { ctx } = setup();
     expect(typeof ctx.homeActivity_).toBe('function');
@@ -145,6 +158,31 @@ describe('あなたの番', () => {
     pr(ctx, 3, { author: ME, reviewers: 'b@example.com', staleReviewId: 3 });
     ctx.dbAppend('reviews', { prNumber: 3, reviewer: 'b@example.com', state: 'request_changes', at: new Date(), id: 3 });
     expect(ctx.homeMyTurn_(ME, NOW).returned.items.map((x) => x.number)).toEqual([3]);
+  });
+
+  it('判断の並べ方 (homeReviewQueue_): 無い依頼への判断は見ない。もう一度回ってきたものは前に判断した時刻を添える', () => {
+    const { ctx } = setup();
+    const at = new Date('2026-10-12T01:00:00Z');
+    const pulls = [
+      { number: 1, state: 'open', author: 'b@example.com', reviewers: ME, staleReviewId: 5 },
+      { number: 2, state: 'approved', author: 'b@example.com', reviewers: ME },
+      { number: 3, state: 'open', author: ME, reviewers: 'b@example.com' },
+      { number: 4, state: 'closed', author: ME, reviewers: 'b@example.com' },
+    ];
+    const reviews = [
+      { prNumber: 9, reviewer: ME, state: 'approve', id: 1, at },
+      { prNumber: 1, reviewer: ME, state: 'approve', id: 2, at },
+      { prNumber: 2, reviewer: ME, state: 'approve', id: 6, at },
+      { prNumber: 2, reviewer: ME, state: 'comment', id: 7, at },
+      { prNumber: 3, reviewer: 'b@example.com', state: 'approve', id: 8, at },
+      { prNumber: 3, reviewer: 'c@example.com', state: 'request_changes', id: 9, at },
+      { prNumber: 4, reviewer: 'c@example.com', state: 'request_changes', id: 10, at },
+    ];
+    const q = ctx.homeReviewQueue_(ME, pulls, reviews);
+    expect(q.toReview.map((x) => x.number)).toEqual([1]);
+    expect(Object.keys(q.mineAt)).toEqual(['1']);
+    expect(q.mineAt['1']).toBe(at);
+    expect(q.returned.map((x) => x.number)).toEqual([3]);
   });
 
   it('期限のやること: 自分の担当の未完了で、期限切れか3日以内。期限の早い順。今日は期限切れではない', () => {

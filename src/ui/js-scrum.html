@@ -180,8 +180,7 @@
         action: 'create', label: termIn('{sprint}を作る') };
     }
 
-    var sp = null;
-    sprints.forEach(function (one) { if (one.name === v.sprint) sp = one; });
+    var sp = scrumByName(sprints, v.sprint);
     if (!sp) {
       return { phase: 'plan', title: termIn('見る{sprint}を選びましょう'),
         why: termIn('上の「{sprint}」から選ぶと、進み具合が出ます。'), action: '', label: '' };
@@ -189,6 +188,34 @@
 
     var start = tokyoDay(sp.startDate);
     var end = tokyoDay(sp.endDate);
+    var unready = scrumStepUnready(sp, start, end);
+    if (unready) return unready;
+
+    var row = scrumByName(v.velocity || [], sp.name);
+    var n = { planned: row ? row.planned : 0, done: row ? row.completed : 0, average: scrumAverageOf(v.summary) };
+    return scrumStepByDay(n, today, start, end) || scrumStepRunning(v.summary, n);
+  }
+
+  /**
+   * 名前の合うものを返す。同じ名前が2つあれば後のもの (台帳は手で書き換えられる)。
+   *
+   * @param {object[]} list
+   * @param {string} name
+   * @returns {object|null}
+   */
+  function scrumByName(list, name) {
+    var hit = null;
+    list.forEach(function (one) { if (one.name === name) hit = one; });
+    return hit;
+  }
+
+  /** これまでの平均。無ければ '' (0 とは分ける。0 は「平均は0」と言う) */
+  function scrumAverageOf(summary) {
+    return summary && summary.average !== '' && summary.average !== undefined ? summary.average : '';
+  }
+
+  /** 期間と目標が決まっていなければ、それを決める一手。決まっていれば null */
+  function scrumStepUnready(sp, start, end) {
     if (!start || !end) {
       return { phase: 'plan', title: '始まりと終わりの日を決めましょう',
         why: termIn('期間が決まると、毎日どれだけ残っているか ({burndown}) を描けます。'),
@@ -199,41 +226,46 @@
         why: '何のための期間かが決まっていると、積むやることを選びやすくなります。',
         action: 'edit', label: termIn('この{sprint}を直す') };
     }
+    return null;
+  }
 
-    var row = null;
-    (v.velocity || []).forEach(function (r) { if (r.name === sp.name) row = r; });
-    var planned = row ? row.planned : 0;
-    var done = row ? row.completed : 0;
-    var average = v.summary && v.summary.average !== '' && v.summary.average !== undefined
-      ? v.summary.average : '';
-
+  /**
+   * 終わった・まだ積んでいない・始まる前の一手。どれでもなければ null。
+   *
+   * @param {{planned: number, done: number, average: *}} n
+   */
+  function scrumStepByDay(n, today, start, end) {
+    var averageNote = n.average !== '' ? termIn('これまでの平均は{points} ') + n.average + ' です。' : '';
     if (today > end) {
       return { phase: 'review', title: termIn('{sprint}が終わりました'),
-        why: termIn('できたもの ({points} ') + done + ' / ' + planned + ') を見せ合い、次に良くすることを1つ決めてから、' +
+        why: termIn('できたもの ({points} ') + n.done + ' / ' + n.planned + ') を見せ合い、次に良くすることを1つ決めてから、' +
           termIn('次の{sprint}を作りましょう。'),
         action: 'create', label: termIn('次の{sprint}を作る') };
     }
-    if (!planned) {
+    if (!n.planned) {
       return { phase: 'plan', title: 'やることを積みましょう',
         why: termIn('やることを開いて「直す」から、この{sprint}と{points} (ほかのやることと比べた大きさ) を入れます。') +
-          (average !== '' ? termIn('これまでの平均は{points} ') + average + ' です。' : ''),
+          averageNote,
         action: 'issues', label: 'やることを開く' };
     }
     if (today < start) {
       return { phase: 'plan', title: start + ' に始まります',
-        why: termIn('始まるまでに、積んだ量 ({points} ') + planned + ') が多すぎないか見直しましょう。' +
-          (average !== '' ? termIn('これまでの平均は{points} ') + average + ' です。' : ''),
+        why: termIn('始まるまでに、積んだ量 ({points} ') + n.planned + ') が多すぎないか見直しましょう。' + averageNote,
         action: 'issues', label: 'やることを開く' };
     }
+    return null;
+  }
 
-    var open = (v.summary && v.summary.openImpediments) || 0;
+  /** 走っている最中の一手。困りごとが先、次に残り、無ければ見せ合う */
+  function scrumStepRunning(summary, n) {
+    var open = (summary && summary.openImpediments) || 0;
     if (open) {
       return { phase: 'run', title: termIn('{impediment}が ') + open + '件あります',
         why: '進みを妨げているものを先に片付けると、ほかが進みます。誰が何をするかを書き込みましょう。',
         action: 'impediments', label: termIn('{impediment}を見る') };
     }
-    if (done < planned) {
-      return { phase: 'run', title: termIn('進めましょう (残りの{points} ') + (planned - done) + ')',
+    if (n.done < n.planned) {
+      return { phase: 'run', title: termIn('進めましょう (残りの{points} ') + (n.planned - n.done) + ')',
         why: termIn('手を付けたら進捗ボードで「In Progress」へ、終わったら完了にします。進みを妨げるものは「{impediment}」に書きます。'),
         action: 'board', label: '進捗ボードを開く' };
     }
@@ -869,51 +901,61 @@
    * @returns {{name: string, startDate: string, endDate: string, days: number, basis: string}}
    */
   function scrumSuggestSprint(sprints, today) {
-    var last = null;
-    (sprints || []).forEach(function (sp) {
-      if (!tokyoDay(sp.endDate)) return;
-      if (!last || tokyoDay(sp.endDate) > tokyoDay(last.endDate)) last = sp;
-    });
-
-    var name = '';
-    var taken = {};
-    (sprints || []).forEach(function (sp) { taken[sp.name] = true; });
-    var base = last || (sprints && sprints.length ? sprints[sprints.length - 1] : null);
-    var m = base ? /^(.*?)(\d+)$/.exec(String(base.name)) : null;
-    if (m) {
-      var n = Number(m[2]);
-      do {
-        n++;
-        var digits = String(n);
-        while (digits.length < m[2].length) digits = '0' + digits;
-        name = m[1] + digits;
-      } while (taken[name]);
-    }
-    // 番号で終わらない名前しか無いとき (または1つも無いとき) は sprintNNN の空きを使う。
-    // 空のまま開くと、必須の欄が空でいきなりエラーになる
-    if (!name) {
-      var k = 1;
-      do {
-        var three = String(k);
-        while (three.length < 3) three = '0' + three;
-        name = 'sprint' + three;
-        k++;
-      } while (taken[name]);
-    }
-
-    var days = 14;
-    var basis = 'はじめは2週間を入れてあります';
-    if (last && tokyoDay(last.startDate)) {
-      var len = scrumDaysBetween(tokyoDay(last.startDate), tokyoDay(last.endDate)) + 1;
-      if (len >= 1 && len <= 60) {
-        days = len;
-        basis = last.name + ' と同じ ' + len + '日間を入れてあります';
-      }
-    }
+    var list = sprints || [];
+    var last = scrumLatestSprint(list);
+    var name = scrumNextName(list, last || (list.length ? list[list.length - 1] : null));
+    var len = scrumSprintLength(last);
     var start = last ? scrumAddDays(tokyoDay(last.endDate), 1) : today;
     // 前のスプリントがずっと前に終わっていたら、今日から始める
     if (start < today && last && scrumDaysBetween(start, today) > 7) start = today;
-    return { name: name, startDate: start, endDate: scrumAddDays(start, days - 1), days: days, basis: basis };
+    return { name: name, startDate: start, endDate: scrumAddDays(start, len.days - 1), days: len.days, basis: len.basis };
+  }
+
+  /** いちばん遅く終わるスプリント。終わりの日が読めるものだけを比べる */
+  function scrumLatestSprint(list) {
+    var last = null;
+    list.forEach(function (sp) {
+      if (!tokyoDay(sp.endDate)) return;
+      if (!last || tokyoDay(sp.endDate) > tokyoDay(last.endDate)) last = sp;
+    });
+    return last;
+  }
+
+  /** n を width 桁まで 0 で埋める (あふれたら伸ばす) */
+  function scrumPadNumber(n, width) {
+    var digits = String(n);
+    while (digits.length < width) digits = '0' + digits;
+    return digits;
+  }
+
+  /**
+   * 次の名前。base の続き番号で、使われていないもの。
+   *
+   * 番号で終わらない名前しか無いとき (または1つも無いとき) は sprintNNN の空きを使う。
+   * 空のまま開くと、必須の欄が空でいきなりエラーになる
+   */
+  function scrumNextName(list, base) {
+    var taken = {};
+    list.forEach(function (sp) { taken[sp.name] = true; });
+    var m = base ? /^(.*?)(\d+)$/.exec(String(base.name)) : null;
+    var prefix = m ? m[1] : 'sprint';
+    var width = m ? m[2].length : 3;
+    var n = m ? Number(m[2]) : 0;
+    var name = '';
+    do {
+      n++;
+      name = prefix + scrumPadNumber(n, width);
+    } while (taken[name]);
+    return name;
+  }
+
+  /** 長さは前のスプリントと同じ (読めない・60日を超えるなら2週間) */
+  function scrumSprintLength(last) {
+    if (last && tokyoDay(last.startDate)) {
+      var len = scrumDaysBetween(tokyoDay(last.startDate), tokyoDay(last.endDate)) + 1;
+      if (len >= 1 && len <= 60) return { days: len, basis: last.name + ' と同じ ' + len + '日間を入れてあります' };
+    }
+    return { days: 14, basis: 'はじめは2週間を入れてあります' };
   }
 
   /**
@@ -927,39 +969,51 @@
    */
   function sprintFormProblems(v, sprints, editing) {
     var out = { name: '', startDate: '', endDate: '', overlap: '' };
-    if (!editing) {
-      var name = String(v.name || '').replace(/^\s+|\s+$/g, '');
-      if (!name) out.name = '名前を入れてください';
-      else if (name.length > 40) out.name = '名前は40字までにしてください';
-      else if (/[\/\\,\n\r\t]/.test(name)) out.name = '/ \\ , は名前に使えません';
-      else if ((sprints || []).some(function (sp) { return sp.name === name; })) {
-        out.name = '「' + name + '」は既にあります。別の名前にしてください';
-      }
-    }
+    if (!editing) out.name = sprintNameProblem(v.name, sprints || []);
 
     var start = String(v.startDate || '');
     var end = String(v.endDate || '');
+    sprintDayProblems(start, end, out);
+    if (start && end && !out.startDate && !out.endDate) {
+      out.overlap = sprintOverlapNote(start, end, sprints || [], editing);
+    }
+    return out;
+  }
+
+  /** 名前の誤り (無ければ '') */
+  function sprintNameProblem(raw, sprints) {
+    var name = String(raw || '').replace(/^\s+|\s+$/g, '');
+    if (!name) return '名前を入れてください';
+    if (name.length > 40) return '名前は40字までにしてください';
+    if (/[\/\\,\n\r\t]/.test(name)) return '/ \\ , は名前に使えません';
+    if (sprints.some(function (sp) { return sp.name === name; })) {
+      return '「' + name + '」は既にあります。別の名前にしてください';
+    }
+    return '';
+  }
+
+  /** 始まりと終わりの日の誤りを out に書く */
+  function sprintDayProblems(start, end, out) {
     if (start && !tokyoDay(start)) out.startDate = '暦にある日を選んでください';
     if (end && !tokyoDay(end)) out.endDate = '暦にある日を選んでください';
     if (!start && end) out.startDate = '終わりの日を入れるなら、始まりの日も入れてください';
     if (start && end && !out.startDate && !out.endDate && end < start) {
       out.endDate = '終わりの日は、始まりの日 (' + start + ') と同じか後にしてください';
     }
+  }
 
-    if (start && end && !out.startDate && !out.endDate) {
-      var hits = (sprints || []).filter(function (sp) {
-        if (sp.name === editing) return false;
-        var s2 = tokyoDay(sp.startDate);
-        var e2 = tokyoDay(sp.endDate);
-        return s2 && e2 && start <= e2 && s2 <= end;
-      });
-      if (hits.length) {
-        out.overlap = hits.map(function (sp) {
-          return sp.name + ' (' + sp.startDate + ' 〜 ' + sp.endDate + ')';
-        }).join('、') + ' と期間が重なっています。同じやることを2つに積まないよう気を付けてください';
-      }
-    }
-    return out;
+  /** 期間の重なる (直しているもの以外の) スプリント。注意の言葉で返す (無ければ '') */
+  function sprintOverlapNote(start, end, sprints, editing) {
+    var hits = sprints.filter(function (sp) {
+      if (sp.name === editing) return false;
+      var s2 = tokyoDay(sp.startDate);
+      var e2 = tokyoDay(sp.endDate);
+      return s2 && e2 && start <= e2 && s2 <= end;
+    });
+    if (!hits.length) return '';
+    return hits.map(function (sp) {
+      return sp.name + ' (' + sp.startDate + ' 〜 ' + sp.endDate + ')';
+    }).join('、') + ' と期間が重なっています。同じやることを2つに積まないよう気を付けてください';
   }
 
   /**
