@@ -129,7 +129,7 @@ function templateSaveLocked_(name, body) {
       name: clean,
       body: body,
       builtin: false,
-      createdBy: Session.getActiveUser().getEmail(),
+      createdBy: currentEmail_(),
       createdAt: new Date(),
     });
   }
@@ -149,7 +149,7 @@ function templateDelete(name) {
     throw new Error('用意されている下書きは消せません: ' + name);
   }
 
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
 
   if (String(row.createdBy) !== String(me) && !repoIsAdmin_(me)) {
     throw new Error('自分が作った下書きだけ消せます');

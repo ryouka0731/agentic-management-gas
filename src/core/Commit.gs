@@ -176,7 +176,7 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
 
         objectPut(blobSha, html);
 
-        var author = Session.getActiveUser().getEmail();
+        var author = currentEmail_();
         var timestamp = new Date();
         var sha = commitSha_(headSha, blobSha, author, message, timestamp);
 

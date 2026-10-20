@@ -103,7 +103,7 @@ function issueCreate(title, body, linkedFileIds, labels) {
   dbAppendNumbered('issues', 'number', row);
   issueHistory_(row.number, 'create', []);
   // 改善のヒントが覚えている「自分が作ったもの」に足す (Home.gs を読まない構成でも動くように)
-  if (typeof adviceNoteMade_ === 'function') adviceNoteMade_(Session.getActiveUser().getEmail(), row.number);
+  if (typeof adviceNoteMade_ === 'function') adviceNoteMade_(currentEmail_(), row.number);
   return row;
 }
 

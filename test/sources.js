@@ -16,7 +16,7 @@
  * - KIT_SOURCES:   配る道具。中身が大きいので、要るテストだけが足す
  */
 export const ISSUE_SOURCES = [
-  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/Repo.gs',
+  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/Plain.js', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs', 'src/core/Template.gs', 'src/core/Member.gs', 'src/core/Issue.gs',
   'src/core/IssueTree.js',
@@ -25,7 +25,7 @@ export const ISSUE_SOURCES = [
 ];
 
 export const CORE_SOURCES = [
-  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/Repo.gs',
+  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/ObjectStore.gs', 'src/core/Normalize.js', 'src/core/Markdown.js',
   'src/core/Graph.js', 'src/core/Diff.js', 'src/core/Merge.js', 'src/core/Commit.gs',
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/render/DocRenderer.gs',

@@ -542,6 +542,9 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 **`Session.getEffectiveUser()` は常に開いている本人になる**。持ち主として扱うと
 誰もが持ち主になる。`inquiryOwners_()` はリポジトリの入れ物の持ち主を見る。
 
+開いている本人のアドレスは **`currentEmail_()` (`src/core/CurrentUser.gs`) だけで読む** (取れなければ ''。
+小文字で比べる所は `currentEmailLower_()`)。`Session.getActiveUser()` を直に書くと `test/sources.test.js` が落ちる。
+
 **共有ドライブには持ち主が無い。** 持ち主は `repoOwners_()` が決め、共有ドライブでは管理者
 (`organizer`) 全員になる。`repoOwnerEmail()` を直に呼んで持ち主を決めない。
 

@@ -58,7 +58,7 @@ function setupRepo() {
  * 大文字小文字は見ない (共有ドライブの役割は小文字で持っている)。
  */
 function assertOwner_() {
-  var me = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  var me = currentEmailLower_();
   if (!me || !repoHasOwner_(me)) {
     throw new Error('この操作は、このアプリの持ち主だけが行えます (共有ドライブでは管理者)');
   }
@@ -91,7 +91,7 @@ function setupCommandQueue() {
   // 誰の権限で回っているかを残す。他人のトリガーは見えないので、抜けた人のぶんは消せない。
   // 引き継いだ人がもう一度実行すれば、その人のトリガーで回る (二重に回っても同じ命令は二度走らない)
   PropertiesService.getScriptProperties()
-    .setProperty('QUEUE_RUNNER', String(Session.getActiveUser().getEmail() || ''));
+    .setProperty('QUEUE_RUNNER', currentEmail_());
 
   // 仕掛けた時刻も残す。最初の1分が来るまで回った時刻が無く、それだけで見ると
   // 入れたばかりのキューが「止まっています」と出る (queueStatus_)

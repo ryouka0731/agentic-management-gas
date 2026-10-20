@@ -176,7 +176,7 @@ function apiImpedimentReopen(number) {
  * @returns {object[]}
  */
 function apiImpedimentComments(number) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return impedimentComments(number).map(function (row) {
     return plainTalk(row, me, 'impedimentNumber');
   });
@@ -190,7 +190,7 @@ function apiImpedimentComments(number) {
  * @returns {object}
  */
 function apiImpedimentComment(number, body) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return plainTalk(impedimentCommentAdd(number, body), me, 'impedimentNumber');
 }
 

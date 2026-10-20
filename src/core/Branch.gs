@@ -223,7 +223,7 @@ function branchAddFileLocked_(name, fileId) {
     path: path,
     type: mainRow.type,
     registeredAt: new Date(),
-    registeredBy: Session.getActiveUser().getEmail(),
+    registeredBy: currentEmail_(),
     baseSha: head.sha,
   };
   dbAppend('files', row);
@@ -290,7 +290,7 @@ function branchCreateLocked_(name, fileId) {
     baseSha: head.sha,
     state: 'open',
     workingFolderId: workFolder.getId(),
-    createdBy: Session.getActiveUser().getEmail(),
+    createdBy: currentEmail_(),
     createdAt: new Date(),
   };
   dbAppend('branches', row);
@@ -301,7 +301,7 @@ function branchCreateLocked_(name, fileId) {
     path: branchPath_(name, mainRow.path),
     type: mainRow.type,
     registeredAt: new Date(),
-    registeredBy: Session.getActiveUser().getEmail(),
+    registeredBy: currentEmail_(),
     baseSha: head.sha,
   });
 
