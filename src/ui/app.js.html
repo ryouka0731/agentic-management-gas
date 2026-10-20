@@ -1427,9 +1427,9 @@
   /** ホームの見方 */
   var HOME_DIAGRAM = {
     title: 'ホームの見方',
-    desc: 'ホームには、あなたの番・改善のヒント・ポイントと称号が上に、草と最近の動きが下に並ぶ。' +
-      '見えるのはあなたのぶんとチームの合計だけで、ほかの人の草や名前は出ない。' +
-      '各カードの行を押すと、そのものを開く。',
+    desc: 'ホームには、あなたの番・改善のヒント・ポイントとレベルが上に、草・最近の動き・チームの前進が下に並ぶ。' +
+      'どれを出すかは自分の設定で選べる。見えるのはあなたのぶんとチームの合計だけで、ほかの人の草や名前は出ない。' +
+      'ポイントとレベルは、管理者がオンにしたときだけ出る。',
     width: 760,
     height: 278,
     lanes: [
@@ -1451,22 +1451,26 @@
       },
       {
         x: 514, y: 30, w: 232, h: 70,
-        label: 'ポイントと称号', sub: '称号は本人にだけ',
+        label: 'ポイントとレベル', sub: '管理者がオンにしたとき',
       },
       {
-        x: 14, y: 116, w: 356, h: 64,
+        x: 14, y: 116, w: 232, h: 64,
         label: '草', sub: 'あなた / チームの合計',
       },
       {
-        x: 390, y: 116, w: 356, h: 64,
+        x: 264, y: 116, w: 232, h: 64,
         label: '最近の動き', sub: '人の名前は出さない',
+      },
+      {
+        x: 514, y: 116, w: 232, h: 64,
+        label: 'チームの前進', sub: '毎月の目標まで',
       },
     ],
     notes: [
       { x: 26, y: 246, text: '自分のぶん・チームの合計' },
       { x: 408, y: 246, text: '他人の草・連続日数・人の名前' },
     ],
-    caption: '行を押すと、そのものを開きます。ホームから片づけると、あなたの番から外れます。',
+    caption: '出すカードは、設定の「自分の設定」で選べます。行を押すと、そのものを開きます。',
   };
 
   /** 文書と工程表の見え方 */
@@ -1564,7 +1568,7 @@
   /** 設定でできること */
   var SETTINGS_DIAGRAM = {
     title: '設定でできること',
-    desc: '設定は自分の設定とチームの設定に分かれる。自分の設定は誰でも変えられ、最初の画面・' +
+    desc: '設定は自分の設定とチームの設定に分かれる。自分の設定は誰でも変えられ、最初に出す画面・' +
       'ホームのカード・通知・自分の使われ方を決める。チームの設定は管理者だけが変えられ、' +
       'そうでない人には今の値が読めるだけ。',
     width: 760,
@@ -1588,7 +1592,7 @@
       },
       {
         x: 26, y: 176, w: 326, h: 48,
-        label: 'ホームのカード・自分の使われ方',
+        label: 'ホームに出すもの・自分の使われ方',
       },
       {
         x: 408, y: 40, w: 326, h: 56,
@@ -1600,7 +1604,7 @@
       },
       {
         x: 408, y: 176, w: 326, h: 48,
-        label: '動きなしの段階・スクラムなど',
+        label: '毎月の目標・スクラム・ポイントなど',
       },
     ],
     caption: '管理者でない人にも、チームの設定の今の値は見えます。変えたいときは管理者に頼んでください。',
@@ -3531,6 +3535,8 @@
   var searchSeq = 0;
   var searchLoading = false;
   var searchError = '';
+  // 候補の全体の枠。searchFilter の TOTAL と同じ数 (あちらは手元の道具の写しなので触らない)
+  var SEARCH_TOTAL = 20;
   var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '障害物', guide: '使い方' };
 
   /**
@@ -3538,14 +3544,16 @@
    *
    * **searchFilter には混ぜない。** あれは手元の道具 (kit/track/local.mjs) と同じ答えを
    * 返す写しで、種類を足すと両方を直して道具を配り直すことになる。並べ方は同じ
-   * searchRank で決め、種類の並びの最後に5件まで足す。
+   * searchRank で決め、種類の並びの最後に5件まで足す。全体の枠 (SEARCH_TOTAL) は
+   * 超えない (余った枠だけを使う)。
    *
    * @param {string} query
+   * @param {number} room 残っている枠
    * @returns {?{kind: string, items: object[]}}
    */
-  function guideSearchGroup(query) {
+  function guideSearchGroup(query, room) {
     var words = searchNormalize(query).split(/\s+/).filter(Boolean);
-    if (!words.length) return null;
+    if (!words.length || room <= 0) return null;
     var items = [];
     GUIDE.forEach(function (g, at) {
       var item = { kind: 'guide', key: g.id, number: 0, title: g.title, state: '', archived: false };
@@ -3561,7 +3569,7 @@
     });
     if (!items.length) return null;
     items.sort(function (a, b) { return a.rank - b.rank || a.at - b.at; });
-    return { kind: 'guide', items: items.slice(0, 5) };
+    return { kind: 'guide', items: items.slice(0, Math.min(5, room)) };
   }
   /**
    * 状態の札。**それぞれの一覧と同じ言葉にする。** 違う言葉だと、開いた先で同じものだと分からない。
@@ -3663,19 +3671,24 @@
   function renderSearch() {
     var q = searchInput.value;
     if (!q.replace(/\s+/g, '')) { hideSearchResults(); return; }
-    if (!searchIndexRows) {
-      // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
-      showSearchMessage(searchLoading || !searchError ? '探しています…' : searchError);
-      return;
-    }
-    var groups = searchFilter(searchIndexRows, q);
-    var guideGroup = guideSearchGroup(q);
+    // 一覧がまだ無いとき (取りに行っている・取れなかった) も、使い方の節は手元にあるので出す。
+    // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
+    var pending = searchIndexRows ? '' : (searchLoading || !searchError ? '探しています…' : searchError);
+    var groups = pending ? [] : searchFilter(searchIndexRows, q);
+    var used = groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+    var guideGroup = guideSearchGroup(q, SEARCH_TOTAL - used);
     if (guideGroup) groups = groups.concat([guideGroup]);
-    if (!groups.length) { showSearchMessage('見つかりませんでした'); return; }
+    if (!groups.length) { showSearchMessage(pending || '見つかりませんでした'); return; }
 
     searchResults.textContent = '';
     searchActive = -1;
     searchInput.removeAttribute('aria-activedescendant');
+    if (pending) {
+      var wait = document.createElement('p');
+      wait.className = 'search-empty row-meta';
+      wait.textContent = pending;
+      searchResults.appendChild(wait);
+    }
     var n = 0;
     groups.forEach(function (g) {
       var head = document.createElement('div');
@@ -10558,12 +10571,14 @@
     ] },
     { id: 'home', title: 'ホームの見方', lines: [
       'ホームは開いたときに最初に出る画面です。最初に出す画面は、設定の「自分の設定」で変えられます。',
-      'あなたの番 — あなたが動く番のもの。確認を頼まれた依頼・担当のやること・期限が近いものが種類ごとに並びます。押すとそのものを開きます。',
+      'カードは6つあります。どれを出すかは、設定の「自分の設定」の「ホームに出すもの」で選べます。',
+      'あなたの番 — あなたが動く番のもの。確認を頼まれた依頼・担当のやること・期限が近いものが種類ごとに並びます。押すとそのものを開きます。「期限が近い」とみなす日数は、管理者がチームの設定で決めます。',
       '改善のヒント — 仕事の進め方を良くするヒントが多くて3件出ます。何を見て出すかは「改善のヒント」の節にあります。',
       '草 (アクティビティ) — 日ごとに動いた数を色の濃さで並べたもの。「あなた」と「チーム」を切り替えられます。見えるのはあなたのぶんとチームの合計だけで、ほかの人の草は出ません。連続日数も出しません。',
-      'ポイントと称号 — 片づけたものの重さと、ほかの人の確認依頼への返事でポイントが付き、レベルが上がります。称号はあなたにだけ見えます。人事の評価には使いません。月曜にゼロから数え直します。',
+      'ポイントとレベル — 管理者がチームの設定でオンにしたときだけ出ます (既定はオフ)。片づけたものの重さと、ほかの人の確認依頼への返事でポイントが付き、レベルが上がります。称号はあなたにだけ見えます。人事の評価には使いません。月曜にゼロから数え直します。',
       '週の上位には、自分まわり (上の帯の自分の顔) で「週の上位に参加する」を選んだ人だけが載ります。既定では参加しません。',
       '最近の動き — チームで最近あったこと。誰がしたかの名前は出しません。',
+      'チームの前進 — 今週片づけた数と、チームの毎月の目標までの進み具合。人ごとには出しません。',
     ] },
     { id: 'view', title: '文書と工程表の見え方', lines: [
       '文書を開いて「読む」にしているとき、上の帯に「全画面」と「リンクをコピー」が出ます。',
@@ -10635,17 +10650,17 @@
       '場所ごとの合計は誰でも見られます。人ごとの数は本人と部下のぶんだけが見えます (上長として登録されている人には、その下の人のぶんも)。',
       '前の期間との比較 — 同じ長さの直前の期間に比べて、どれだけ増えたか減ったかを添えます。前の期間に記録が無ければそう出ます。',
       '曜日ごと — 月曜から日曜までの7本の棒で、どの曜日によく使われているかを見ます。時刻は残していないので、時間帯は分かりません。',
-      'この期間に一度も開かれなかった画面も並びます。',
-      'CSV で保存 — 今見ている期間と対象の数を CSV で落とせます。落とせないときは、字をそのまま写せる形で出します。',
-      '止め方 — 自分のぶんは、設定の「自分の設定」で記録しないようにできます。チーム全体の記録は、管理者が「チームの設定」で止められます。',
-      '使い方の節を開いた回数も数えています (目次・絞り込み・「?」で開いたときだけ。送って通り過ぎただけでは数えません)。読まれていない節を見つけるためです。',
+      'この期間に開かれなかった画面 — 左の行き先のうち、この期間に一度も開かれなかったものが並びます。',
+      'CSV で保存 — 今見ている期間と対象の、日・場所・人ごとの数を CSV で落とせます。見られない人のぶんは入っていないので、画面の合計とは合わないことがあります。落とせないときは、字をそのまま写せる形で出します。',
+      '止め方 — 自分のぶんは、設定の「自分の設定」で「自分の使われ方を記録する」を外すと数えません。チーム全体の記録は、管理者が「チームの設定」で止められます。残す日数もそこで決めます (画面で直近90日まで見るので、90日より短くはできません)。',
+      '使い方の節を開いた回数も数えています (目次・絞り込み・「?」・探すで開いたときだけ。送って通り過ぎただけでは数えません)。読まれていない節を見つけるためです。',
     ] },
     { id: 'settings', title: '設定でできること', lines: [
       '左の「設定」は、自分の設定とチームの設定の2つに分かれています。',
-      '自分の設定 — 誰でも、自分のぶんだけ変えられます。開いたときに最初に出す画面・ホームに出すカード・通知メールの種類・自分の使われ方を記録するかを決めます。どの端末で開いても同じになります。',
-      '通知メールは種類ごとに止められます (確認の依頼・反映や取り下げの結果・報告とその返事・名指し・やることのやりとり)。全部止めることもできますが、確認を頼まれた知らせを止めると、頼まれても気づけません。',
+      '自分の設定 — 誰でも、自分のぶんだけ変えられます。開いたときに最初に出す画面・ホームに出すもの・通知メール・自分の使われ方を記録するかを決めます。どの端末で開いても同じになります。',
+      '通知メールは種類ごとに止められます (確認を頼まれた・確認依頼が出た / 反映した・取り下げた / 報告とその返事 / 名指しされた / やることのやりとり)。全部止めることもできます。確認を頼まれた知らせを止めると、設定の画面に断りが出ます。そのあいだは、ホームの「あなたの番」と画面の中の知らせ (鈴) で確かめてください。',
       'チームの設定 — 全員に効く設定です。変えられるのは管理者だけで、ほかの人には今の値が見えるだけです。',
-      'チームの設定で決めるもの — 改善のヒントの規則ごとのオン・オフと数、「動きなし」と出るまでの日数、「期限が近い」とみなす日数、使われ方を記録するかと残す日数、日報の既定の形、チームの月の目標、エージェンティックスクラムのオン・オフ。',
+      'チームの設定で決めるもの — チームの毎月の目標、改善のヒントの規則ごとのオン・オフと数、「動きなし」の段階の日数、「期限が近い」とみなす日数、使われ方を記録するかと残す日数、日報の形の既定、エージェンティックスクラムとポイントとレベルのオン・オフ。',
       '変えたい項目がチームの設定なら、管理者 (このアプリの持ち主と、入れ物のフォルダを編集できる人) に頼んでください。',
       '「既定に戻す」を押すと、その項目は最初の値に戻ります。',
     ] },
@@ -10667,8 +10682,10 @@
     if (!section) { switchTab('help'); return; }
     switchTab('help');
     guideFilterApply('');
-    var h = document.getElementById('guide-' + id);
+    var h = document.getElementById('guide-sec-' + id);
     if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    // 読み上げも開いた節から始める。送るのは上で済ませたので、ここでは動かさない
+    if (h) h.focus({ preventScroll: true });
     usageCount('view', 'guide-' + id);
   }
 
@@ -10762,7 +10779,11 @@
     GUIDE.forEach(function (section) {
       var parts = [];
       var h = document.createElement('h2');
-      h.id = 'guide-' + section.id;
+      // 画面の部品 (guide-filter / guide-link など) とぶつけないよう、見出しは guide-sec- で始める。
+      // 数える場所の名前 (guide-<id>) とも分ける。見出しを押しても数えない (usageTargetOf)
+      h.id = 'guide-sec-' + section.id;
+      h.dataset.guideHead = section.id;
+      h.tabIndex = -1;
       var text = document.createElement('span');
       text.className = 'guide-head-text';
       text.textContent = section.title;
@@ -12149,6 +12170,8 @@
     var el = target;
 
     while (el && el !== document) {
+      // 使い方の見出しは押す物ではない。数えると、節を開いた数 (guide-<id>) と紛れる
+      if (el.dataset && el.dataset.guideHead) return '';
       if (el.id && /^[A-Za-z0-9:_-]{1,60}$/.test(el.id)) return el.id;
 
       if (el.dataset && el.dataset.tab) return 'tab-' + el.dataset.tab;
