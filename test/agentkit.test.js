@@ -568,7 +568,7 @@ describe('エージェンティックスクラム (手元の道具)', () => {
   it('スキルは CSV を直に読み書きせず、まずオンかを確かめる', () => {
     const dir = 'kit/.claude/skills';
     // AGENTS.md から分けた、スクラムと関係の無い説明。ここに足すときは、本当にスクラムと関係が無いかを確かめる
-    const notScrum = ['banto-patch', 'banto-setup', 'banto-track-setup', 'banto-work'];
+    const notScrum = ['banto-patch', 'banto-setup', 'banto-track-setup', 'banto-work', 'banto-writing'];
     for (const name of notScrum) expect(fs.existsSync(path.join(dir, name, 'SKILL.md')), name).toBe(true);
     for (const name of fs.readdirSync(dir).filter((n) => !notScrum.includes(n))) {
       const text = fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8');
