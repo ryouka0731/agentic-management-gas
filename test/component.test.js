@@ -5461,9 +5461,10 @@ describe('使い方の目次', () => {
     const toc = openHelp();
     const heads = [...document.querySelectorAll('#guide h2')];
 
-    // 節を足して目次に載らないと、そこだけ辿り着けない
+    // 節を足して目次に載らないと、そこだけ辿り着けない。
+    // 見出しの横の札 (管理者) は目次には載せない
     expect(items(toc).map((b) => b.textContent))
-      .toEqual(heads.map((h) => h.textContent));
+      .toEqual(heads.map((h) => h.querySelector('.guide-head-text').textContent));
   });
 
   it('本文の隣に置く', () => {
@@ -5536,14 +5537,16 @@ describe('使い方の目次', () => {
 
     // 色だけでは気づけない人がいるので aria-current でも示す。
     // 示すのは必ず1つ。0個だと目次が死んで見え、2個だとどちらか分からない
-    [0, 1100, 4000].forEach(function (at) {
+    // 底は節の数から決める (節を足すたびに直さなくてよいように)
+    const far = heads.length * 500;
+    [0, 1100, far].forEach(function (at) {
       expect(scrollTo(at).filter((v) => v === 'true')).toHaveLength(1);
     });
 
     expect(scrollTo(0)[0]).toBe('true');
     expect(scrollTo(1100)[2]).toBe('true');
     expect(scrollTo(1100)[0]).toBe('false');
-    expect(scrollTo(4000)[list.length - 1]).toBe('true');
+    expect(scrollTo(far)[list.length - 1]).toBe('true');
   });
 
   it('送っても上に残す', () => {
@@ -5650,11 +5653,15 @@ describe('使い方の図', () => {
     '文書が変わっていく道のり',
     '言葉どうしのつながり',
     '基本の流れ（押す順に）',
+    'ホームの見方',
+    '文書と工程表の見え方',
     'はじめての設定（最初の一人だけ）',
     '手元から動かすときの往復',
     '同じ場所が両方で変わったとき',
     'スクラムの1巡り（使う人だけ）',
     '改善のヒントが出るまで',
+    '使われ方で数えるもの',
+    '設定でできること',
   ];
 
   it('どの節にも図がある', () => {
@@ -5736,8 +5743,8 @@ describe('使い方の図', () => {
     });
     expect(figures[0].querySelector('figcaption').textContent)
       .toContain('正式版は直接なおしません');
-    expect(figures[4].querySelector('figcaption').textContent)
-      .toContain('Node.js 18');
+    const kit = figures.find((f) => f.querySelector('title').textContent === '手元から動かすときの往復');
+    expect(kit.querySelector('figcaption').textContent).toContain('Node.js 18');
   });
 
   it('描いたものが枠から出ない', () => {
@@ -5806,6 +5813,251 @@ describe('使い方の図', () => {
     // 幅に合わせて縮めると字が潰れて読めない図になる
     expect(css).toMatch(/\.diagram\s*\{[^}]*overflow-x:\s*auto/);
     expect(css).toMatch(/\.diagram svg\s*\{[^}]*min-width:\s*680px/);
+  });
+});
+
+describe('使い方を強くする', () => {
+  let seen;
+  let before;
+  beforeEach(() => {
+    window.localStorage.clear();
+    seen = [];
+    // jsdom は位置を持たないので、寄せた先だけを控える。ほかのテストが置いた控えは戻す
+    before = Object.getOwnPropertyDescriptor(window.Element.prototype, 'scrollIntoView');
+    window.Element.prototype.scrollIntoView = function () { seen.push(this.id); };
+  });
+  afterEach(() => {
+    if (before) Object.defineProperty(window.Element.prototype, 'scrollIntoView', before);
+    else delete window.Element.prototype.scrollIntoView;
+  });
+
+  function openHelp(over) {
+    const app = mount(over);
+    document.querySelector('.nav-item[data-tab="help"]').click();
+    return app;
+  }
+
+  function filter(text) {
+    const input = document.getElementById('guide-filter');
+    input.value = text;
+    input.dispatchEvent(new window.Event('input'));
+    return input;
+  }
+
+  const shownHeads = () => [...document.querySelectorAll('#guide h2')]
+    .filter((h) => !h.hidden).map((h) => h.id);
+  const shownToc = () => [...document.querySelectorAll('#guide-toc .guide-toc-item')]
+    .filter((b) => !b.hidden).map((b) => b.textContent);
+
+  /** 溜めた数を送らせて、使い方の節を開いた数だけを取り出す */
+  function guideViews(app) {
+    document.querySelector('.nav-item[data-tab="usage"]').click();
+    const out = {};
+    app.calls.filter((c) => c.name === 'apiUsageRecord').forEach((c) => {
+      c.args[0].forEach((r) => {
+        if (r.kind === 'view' && /^guide-/.test(r.target)) out[r.target] = (out[r.target] || 0) + r.count;
+      });
+    });
+    return out;
+  }
+
+  it('節はどれも英数の名前を持ち、新しい4つの節がある', () => {
+    openHelp();
+    const ids = [...document.querySelectorAll('#guide h2')].map((h) => h.id);
+
+    ids.forEach((id) => expect(id).toMatch(/^guide-[a-z]+$/));
+    expect(new Set(ids).size).toBe(ids.length);
+    ['guide-home', 'guide-view', 'guide-usage', 'guide-settings'].forEach((id) => {
+      expect(ids).toContain(id);
+    });
+  });
+
+  it('新しい節は、決めた中身に触れている', () => {
+    openHelp();
+    const text = (id) => {
+      const h = document.getElementById(id);
+      let el = h.nextElementSibling;
+      while (el && el.tagName !== 'UL') el = el.nextElementSibling;
+      return el.textContent;
+    };
+
+    ['あなたの番', '改善のヒント', '草', 'ポイント', '称号', '最近の動き']
+      .forEach((w) => expect(text('guide-home')).toContain(w));
+    ['全画面', 'リンクをコピー', '幅', '日・週・月', '今日']
+      .forEach((w) => expect(text('guide-view')).toContain(w));
+    ['数えない', '本人と部下', '止め', 'CSV', '曜日', '前の期間']
+      .forEach((w) => expect(text('guide-usage')).toContain(w));
+    ['自分の設定', 'チームの設定', '通知', '止め']
+      .forEach((w) => expect(text('guide-settings')).toContain(w));
+  });
+
+  it('管理者向けの節には札を付ける。隠しはしない', () => {
+    openHelp();
+    const setup = document.getElementById('guide-setup');
+
+    expect(setup.hidden).toBe(false);
+    expect(setup.querySelector('.chip').textContent).toBe('管理者');
+    // 札は管理者向けの節だけ
+    expect(document.querySelectorAll('#guide h2 .chip')).toHaveLength(1);
+  });
+
+  it('絞り込みは本文の上にあり、見出しと行で絞る。目次も同じく絞る', () => {
+    openHelp();
+    const input = document.getElementById('guide-filter');
+    const firstHead = document.querySelector('#guide h2');
+
+    expect(input.getAttribute('aria-label')).toBeTruthy();
+    expect(input.compareDocumentPosition(firstHead) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 行にしか無い語 (setupRepo) でも当たる。全角・大文字でもそろえて比べる
+    filter('ＳＥＴＵＰＲＥＰＯ');
+    expect(shownHeads()).toEqual(['guide-setup']);
+    expect(shownToc()).toEqual(['はじめての設定 (最初の一人だけ)']);
+
+    // 図と箇条書きも一緒に隠れる
+    const figures = [...document.querySelectorAll('#guide .diagram')].filter((f) => !f.hidden);
+    expect(figures).toHaveLength(1);
+    const lists = [...document.querySelectorAll('#guide > ul')].filter((u) => !u.hidden);
+    expect(lists).toHaveLength(1);
+
+    filter('');
+    expect(shownHeads()).toHaveLength(document.querySelectorAll('#guide h2').length);
+  });
+
+  it('何も当たらなければ「見つかりません」と出す', () => {
+    openHelp();
+    const empty = document.getElementById('guide-empty');
+
+    expect(empty.hidden).toBe(true);
+    filter('ありえない言葉ぞぞぞ');
+    expect(shownHeads()).toEqual([]);
+    expect(empty.hidden).toBe(false);
+    expect(empty.textContent).toContain('見つかりません');
+
+    filter('');
+    expect(empty.hidden).toBe(true);
+  });
+
+  it('目次から送った節と、絞り込みで1件になった節を数える。打ち足しで数え直さない', () => {
+    const app = openHelp();
+    const toc = [...document.querySelectorAll('#guide-toc .guide-toc-item')];
+    const advice = toc.find((b) => b.textContent === '改善のヒント');
+
+    advice.click();
+    expect(seen).toContain('guide-advice');
+
+    // 1件になってから打ち足しても同じ節なら1回
+    filter('setupr');
+    filter('setupre');
+    filter('setuprepo');
+    // 2件以上や0件は数えない
+    filter('正式版');
+    filter('ぞぞぞ');
+
+    expect(guideViews(app)).toEqual({ 'guide-advice': 1, 'guide-setup': 1 });
+  });
+
+  it('送って通り過ぎただけの節は数えない', () => {
+    const app = openHelp();
+    const guide = document.getElementById('guide');
+
+    [...document.querySelectorAll('#guide h2')].forEach((h, i) => {
+      Object.defineProperty(h, 'offsetTop', { value: 40 + i * 500 });
+    });
+    [0, 1100, 4000].forEach((to) => {
+      guide.scrollTop = to;
+      guide.dispatchEvent(new window.Event('scroll'));
+    });
+
+    expect(guideViews(app)).toEqual({});
+  });
+
+  it('主な画面の見出しに「?」があり、押すとその節を開く', () => {
+    const cases = [
+      ['home', 'home'], ['docs', 'flow'], ['issues', 'pitfalls'],
+      ['pulls', 'flow'], ['usage', 'usage'], ['settings', 'settings'],
+    ];
+    cases.forEach(([tab, id]) => {
+      mount();
+      document.querySelector('.nav-item[data-tab="' + tab + '"]').click();
+      const btn = document.querySelector('.guide-link');
+
+      expect(btn.hidden, tab).toBe(false);
+      expect(btn.dataset.guide, tab).toBe(id);
+      // 字が「?」だけなので、読み上げには何の使い方かを言う
+      expect(btn.getAttribute('aria-label'), tab).toContain('使い方');
+      expect(btn.tagName).toBe('BUTTON');
+
+      seen = [];
+      btn.click();
+      expect(document.getElementById('panel-help').hidden, tab).toBe(false);
+      expect(seen, tab).toEqual(['guide-' + id]);
+    });
+  });
+
+  it('工程表では工程表の節を開く', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="issues"]').click();
+    document.getElementById('view-gantt').click();
+    const btn = document.querySelector('.guide-link');
+
+    expect(btn.dataset.guide).toBe('view');
+    document.getElementById('view-list').click();
+    expect(btn.dataset.guide).toBe('pitfalls');
+  });
+
+  it('節の無い画面では「?」を出さない', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="help"]').click();
+    expect(document.querySelector('.guide-link').hidden).toBe(true);
+  });
+
+  it('「?」で開いた節を数え、絞り込みが残っていても見せる', () => {
+    const app = openHelp();
+    filter('ぞぞぞ');
+
+    document.querySelector('.nav-item[data-tab="usage"]').click();
+    document.querySelector('.guide-link').click();
+
+    expect(document.getElementById('guide-usage').hidden).toBe(false);
+    expect(document.getElementById('guide-filter').value).toBe('');
+    expect(guideViews(app)['guide-usage']).toBe(1);
+  });
+
+  it('探す (Ctrl+K) に使い方の節が「使い方」として出て、選ぶとその節を開く', () => {
+    const app = mount();
+    const input = document.getElementById('search-input');
+    input.focus();
+    input.dispatchEvent(new window.Event('focus'));
+    input.value = '改善';
+    input.dispatchEvent(new window.Event('input'));
+
+    const box = document.getElementById('search-results');
+    const heads = [...box.querySelectorAll('.search-group-head')].map((h) => h.textContent);
+    expect(heads).toContain('使い方');
+    const row = [...box.querySelectorAll('.search-row')].find((r) => r.dataset.kind === 'guide');
+    expect(row.textContent).toContain('改善のヒント');
+
+    row.click();
+    expect(document.getElementById('panel-help').hidden).toBe(false);
+    expect(seen).toEqual(['guide-advice']);
+    expect(guideViews(app)['guide-advice']).toBe(1);
+  });
+
+  it('使われ方では節の見出しで読む', () => {
+    mount({
+      apiUsageSummary: {
+        from: '2026-08-12', to: '2026-09-10', total: 3,
+        byTarget: [{ kind: 'view', target: 'guide-advice', count: 3 }],
+        byDay: [{ day: '2026-09-10', count: 3 }], byUser: [],
+      },
+    });
+    document.querySelector('.nav-item[data-tab="usage"]').click();
+
+    const text = document.getElementById('usage').textContent;
+    expect(text).toContain('使い方: 改善のヒント');
+    expect(text).not.toContain('guide-advice');
   });
 });
 
