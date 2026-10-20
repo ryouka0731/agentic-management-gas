@@ -687,7 +687,7 @@ describe('スキルと説明', () => {
 
   it('自動更新は「書き換えるだけ」ではないと書いてある (フックが次の依頼で自動で動く)', () => {
     expect(fs.readFileSync('kit/AGENTS.md', 'utf8')).not.toContain('書き換えるだけで');
-    for (const file of ['kit/.claude/skills/banto-track-setup/SKILL.md', 'CLAUDE.md']) {
+    for (const file of ['kit/.claude/skills/banto-track-setup/SKILL.md', 'docs/dev/kit.md']) {
       const t = fs.readFileSync(file, 'utf8');
       expect(t, file).not.toContain('書き換えるだけで');
       expect(t, file).toContain('track-hook.mjs');
@@ -702,7 +702,7 @@ describe('スキルと説明', () => {
   });
 
   it('署名が合うものしか自動で入れないこと、残る信頼の先、手で頼む update は待つことを書いてある', () => {
-    for (const file of ['kit/AGENTS.md', 'CLAUDE.md', 'docs/superpowers/specs/2026-10-15-kit-track-design.md']) {
+    for (const file of ['kit/AGENTS.md', 'docs/dev/kit.md', 'docs/superpowers/specs/2026-10-15-kit-track-design.md']) {
       const t = fs.readFileSync(file, 'utf8');
       expect(t, file).toContain('署名');
       expect(t, file).toContain('持ち主');
@@ -717,10 +717,11 @@ describe('スキルと説明', () => {
     expect(agents).not.toContain('偽物は防げません');
     expect(agents).not.toContain('この変更では入れていない');
     expect(agents).toContain('バックグラウンド');
-    const claude = fs.readFileSync('CLAUDE.md', 'utf8');
+    // 開発の決まりのうち道具の節は CLAUDE.md から docs/dev/kit.md に分けた
+    const claude = fs.readFileSync('docs/dev/kit.md', 'utf8');
     expect(claude).toContain('src/KitSigning.gs');
     expect(claude).toContain('node scripts/kit-key.mjs');
-    // 秘密鍵は番頭に置かない。信頼の起点は鍵を持つ人 (CLAUDE.md)。README もそう書く
+    // 秘密鍵は番頭に置かない。信頼の起点は鍵を持つ人 (docs/dev/kit.md)。README もそう書く
     expect(claude).toContain('信頼の起点は「秘密鍵を持つ人');
     const readme = fs.readFileSync('README.md', 'utf8');
     expect(readme).toContain('deploy する人の手元にだけある');
