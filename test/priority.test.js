@@ -23,7 +23,7 @@ const SOURCES = [
   'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs',
   'src/core/Member.gs',
-  'src/core/Issue.gs', 'src/core/Inquiry.gs',
+  'src/core/Issue.gs', 'src/core/IssueTree.js', 'src/core/Inquiry.gs',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',
