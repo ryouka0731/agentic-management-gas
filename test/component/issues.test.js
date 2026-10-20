@@ -1165,6 +1165,33 @@ describe('表示する名前', () => {
       .toEqual(['me@example.com', '山田 一郎']);
   });
 
+  it('名前を決めても、次に組んだ画面には前の名前が残らない', () => {
+    // 疑似の google.script.run が返事の写しを渡しているかを見る。同じ物を渡すと
+    // 画面が書き込んだ名前が DEFAULTS に残り、後のテストに漏れる
+    openHelp();
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('表示する名前')).click();
+    document.querySelector('#side-body input').value = '山田 一郎';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    openHelp();
+    expect(document.getElementById('whoami').textContent).toContain('山田 太郎');
+  });
+
+  it('遅らせた返事も写しで渡す', () => {
+    const shared = { 'me@example.com': '山田 太郎' };
+    let deliver;
+    mount({ apiPeopleNames: { later: (ok) => { deliver = ok; } } });
+    deliver(shared);
+    [...document.querySelectorAll('[data-tab="help"]')][0].click();
+    [...document.querySelectorAll('#guide .btn')]
+      .find((b) => b.textContent.includes('表示する名前')).click();
+    document.querySelector('#side-body input').value = '山田 一郎';
+    document.querySelector('#side-body form .btn-primary').click();
+
+    expect(shared['me@example.com']).toBe('山田 太郎');
+  });
+
   it('いまの名前とアドレスの両方を示す', () => {
     openHelp();
 
