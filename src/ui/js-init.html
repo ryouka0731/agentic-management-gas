@@ -1,0 +1,439 @@
+  // ===== 初期化 =====
+
+  var navTargets = document.querySelectorAll('[data-tab]');
+  for (var i = 0; i < navTargets.length; i++) {
+    (function (btn) {
+      var icon = TAB_ICONS[btn.dataset.tab];
+      if (icon && btn.classList.contains('nav-item')) {
+        btn.insertBefore(makeIcon(icon), btn.firstChild);
+      } else if (icon && btn.classList.contains('tab')) {
+        btn.insertBefore(makeIcon(icon), btn.firstChild);
+      }
+      btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
+    })(navTargets[i]);
+  }
+
+  [[commitBtn, 'check'], [stashBtn, 'archive'], [branchCreateBtn, 'git-branch'],
+   [draftCreateBtn, 'git-branch'], [bulkCommitBtn, 'check'],
+   [issueCreateBtn, 'plus'], [editSaveBtn, 'save'],
+   [viewBtns.list, 'circle-dot'], [viewBtns.board, 'columns'], [viewBtns.gantt, 'calendar'],
+   [modeEditBtn, 'pencil'], [modeViewBtn, 'file-text'], [crumbBack, 'back']]
+    .forEach(function (pair) {
+      if (pair[0]) pair[0].insertBefore(makeIcon(pair[1]), pair[0].firstChild);
+    });
+
+  crumbBack.addEventListener('click', function () {
+    current.fileId = null;
+    switchTab('docs');
+  });
+
+  branchSelect.addEventListener('change', function () {
+    openDoc(branchSelect.value, current.docPath);
+  });
+
+  commitBtn.addEventListener('click', doCommit);
+  stashBtn.addEventListener('click', stashMainDrift);
+  editSaveBtn.addEventListener('click', saveEditor);
+  modeViewBtn.addEventListener('click', function () { setDocMode('view'); });
+  modeEditBtn.addEventListener('click', function () { setDocMode('edit'); });
+  setDocFull(false);
+  docFullBtn.addEventListener('click', function () {
+    setDocFull(!document.body.classList.contains('doc-full'));
+  });
+  docLinkBtn.addEventListener('click', copyDocLink);
+  // 本文の iframe は sandbox (allow-scripts 無し) なので、その中の Esc は聞けない。
+  // 入ったときに閉じるボタンへ置き、ボタンは常に見えている
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !document.body.classList.contains('doc-full')) return;
+    // ほかのもの (欄・右のペイン・引き出し) が受けた Esc では抜けない。1回の Esc で
+    // 2つ閉じると、閉じたつもりの無いほうまで閉じる
+    if (e.defaultPrevented || !sidePanel.hidden || sidebarEl.classList.contains('drawer-open')) return;
+    setDocFull(false);
+  });
+  draftCreateBtn.addEventListener('click', createDraft);
+  branchCreateBtn.addEventListener('click', function () {
+    if (current.docFileId) {
+      switchTab('drafts');
+      createDraft();
+      return;
+    }
+    showSnack('先に文書を選んでください。文書を開くと改訂版を作れます');
+    switchTab('docs');
+  });
+  /**
+   * 画面にずっと居る要素に補足を付ける。
+   *
+   * 作られては消える要素は、作るところで付ける。
+   */
+  function applyHints() {
+    var byTab = {
+      content: 'tab:content', history: 'tab:history', drafts: 'tab:drafts',
+    };
+    var byNav = {
+      docs: 'nav:docs', issues: 'nav:issues', branches: 'nav:branches',
+      pulls: 'nav:pulls', help: 'nav:help', report: 'nav:report',
+      usage: 'nav:usage', settings: 'nav:settings', sprint: 'nav:sprint',
+      impediments: 'nav:impediments',
+    };
+
+    var targets = document.querySelectorAll('[data-tab]');
+    for (var i = 0; i < targets.length; i++) {
+      var el = targets[i];
+      var key = el.classList.contains('tab')
+        ? byTab[el.dataset.tab] : byNav[el.dataset.tab];
+      if (key) hint(el, key);
+    }
+
+    hint(branchChip, 'chip:official');
+    hint(dirtyBadge, 'badge:dirty');
+    hint(document.getElementById('branch-switch'), 'select:branch');
+    hint(openLink, 'link:file');
+    hint(themeBtn, 'act:theme');
+    hint(bellBtn, 'act:bell');
+    hint(meBtn, 'act:me');
+
+    hint(viewBtns.list, 'seg:list');
+    hint(viewBtns.board, 'seg:board');
+    hint(viewBtns.gantt, 'seg:gantt');
+    hint(viewBtns.trash, 'seg:trash');
+    hint(viewBtns.tally, 'seg:tally');
+    hint(document.getElementById('tally-unit-box'), 'tally:unit');
+    hint(document.getElementById('tally-basis-box'), 'tally:basis');
+    hint(document.getElementById('tally-who-box'), 'tally:who');
+    hint(issueGroupSel.parentNode, 'group:issue');
+    hint(mineBtn, 'filter:mine');
+    hint(reportOpenBtn, 'filter:open');
+
+    hint(document.querySelector('.graph-col-graph'), 'col:graph');
+    hint(document.querySelector('.graph-col-desc'), 'col:desc');
+    hint(document.querySelector('.graph-col-sha'), 'col:sha');
+
+    hint(document.getElementById('sprint-select').parentNode, 'select:sprint');
+    hint(document.getElementById('sprint-edit-btn'), 'act:sprint-edit');
+    hint(document.getElementById('sprint-create-btn'), 'act:sprint-create');
+    hint(document.getElementById('impediment-create-btn'), 'act:impediment-create');
+  }
+
+  attachHint(bulkCommitBtn,
+    '改訂中の版をすべて見て、まだ記録していない変更を探します。' +
+    '見つかったものを選んで、ひとつの説明でまとめて記録します');
+  attachHint(document.getElementById('branch-create-btn'),
+    '正式版をコピーして、直す用の版を作ります。正式版には影響しません');
+  attachHint(commitBtn,
+    'いまの中身をその時点として残します。あとから見比べて戻せます');
+  attachHint(stashBtn,
+    '正式版を直接なおしてしまったとき、その変更を別の版に移して逃がします');
+
+  bulkCommitBtn.addEventListener('click', bulkCommit);
+  issueCreateBtn.addEventListener('click', createIssue);
+  themeBtn.addEventListener('click', cycleTheme);
+  sideClose.addEventListener('click', closeSide);
+
+  guidelineToggle.addEventListener('click', function () {
+    var open = guidelineBody.hidden;
+    guidelineBody.hidden = !open;
+    guidelineToggle.setAttribute('aria-expanded', String(open));
+    guidelineToggle.querySelector('.guideline-mark').textContent = open ? '▾' : '▸';
+
+    try {
+      window.localStorage.setItem('guideline', open ? 'open' : 'closed');
+    } catch (e) { /* 覚えられなくても開閉はできる */ }
+  });
+
+  /**
+   * はじめの案内を出す / しまう。
+   *
+   * 一度しまうと二度と出せない案内は、しまうのをためらわせる。
+   * 使い方の頁からいつでも出し直せるようにしておく。
+   *
+   * @param {boolean} on
+   */
+  function setGuideline(on) {
+    guidelineEl.hidden = !on;
+
+    try {
+      window.localStorage.setItem('guidelineHidden', on ? '' : '1');
+    } catch (e) { /* 覚えられなくても表示は切り替わる */ }
+  }
+
+  /**
+   * はじめの案内に、始めるための入口を置く。
+   *
+   * 文書を登録するのと、手元から動かす道具を取るのは、どちらも最初に
+   * 一度やること。
+   */
+  (function fillGuidelineExtra() {
+    var host = document.getElementById('guideline-extra');
+
+    var lead = document.createElement('span');
+    lead.className = 'row-meta';
+    lead.textContent = '最初にやること';
+    host.appendChild(lead);
+
+    var add = document.createElement('button');
+    add.className = 'btn';
+    add.appendChild(makeIcon('plus'));
+    add.appendChild(document.createTextNode('文書を登録する'));
+    attachHint(add, '入れ物に入れた文書を、この道具で管理できるようにします');
+    add.addEventListener('click', function () { addDocs(add); });
+    host.appendChild(add);
+
+    host.appendChild(makeKitButton('手元から動かす道具を落とす'));
+
+    var note = document.createElement('span');
+    note.className = 'row-meta';
+    note.textContent = 'Claude や Codex から操作する場合だけ';
+    host.appendChild(note);
+  }());
+
+  document.getElementById('guideline-hide').addEventListener('click', function () {
+    setGuideline(false);
+    showSnack('案内をしまいました。「使い方」からいつでも出せます');
+  });
+
+  try {
+    if (window.localStorage.getItem('guideline') === 'closed') guidelineToggle.click();
+    if (window.localStorage.getItem('guidelineHidden') === '1') setGuideline(false);
+  } catch (e) { /* 既定は開いたまま */ }
+  issueGroupSel.addEventListener('change', reloadIssueView);
+  tallyUnitSel.addEventListener('change', loadTally);
+  tallyBasisSel.addEventListener('change', loadTally);
+  tallyWhoSel.addEventListener('change', loadTally);
+  usageDaysSel.addEventListener('change', loadUsage);
+  usageWhoSel.addEventListener('change', loadUsage);
+  usageCsvBtn.addEventListener('click', saveUsageCsv);
+
+  call('apiTallyScope', [], function (res) {
+    tallyScope = res || { me: '', canSee: [], isManager: false };
+  }, failQuiet('自分のぶんだけになる'));
+  issueFilterEl.addEventListener('input', reloadIssueView);
+
+  dropRootEl.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    dropRootEl.classList.add('over');
+  });
+  dropRootEl.addEventListener('dragleave', function () {
+    dropRootEl.classList.remove('over');
+  });
+  dropRootEl.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropRootEl.classList.remove('over');
+
+    var moving = Number(e.dataTransfer.getData('text/plain'));
+    if (moving) setIssueParent(moving, '');
+  });
+  Object.keys(viewBtns).forEach(function (k) {
+    viewBtns[k].addEventListener('click', function () { setIssueView(k); });
+  });
+
+  document.getElementById('doc-add-btn')
+    .addEventListener('click', function () { addDocs(this); });
+
+  document.getElementById('report-btn')
+    .addEventListener('click', function () { createReport(this); });
+
+  reportFilterEl.addEventListener('input', loadReports);
+  setToggle(reportOpenBtn, reportOpenOnly);
+  reportOpenBtn.addEventListener('click', function () {
+    reportOpenOnly = !reportOpenOnly;
+    setToggle(reportOpenBtn, reportOpenOnly);
+    loadReports();
+  });
+
+  makeResizable(document.getElementById('report-resizer'),
+    '--report-pane-w', 'reportPaneWidth',
+    function (e) {
+      var box = document.querySelector('#panel-report .graph-split')
+        .getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 260, max: 1200 });
+
+  setToggle(mineBtn, mineOnly);
+  document.getElementById('tasks-btn').addEventListener('click', function () {
+    openTasks(this);
+  });
+  loadTasksState();
+
+  meBtn.addEventListener('click', function () {
+    var open = mePanel.hidden;
+
+    if (open) drawMe();
+    mePanel.hidden = !open;
+    meBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.getElementById('me-close').addEventListener('click', closeMe);
+  drawMe();
+
+  bellBtn.appendChild(makeIcon('bell'));
+  bellBtn.insertBefore(bellBtn.lastChild, bellCount);
+
+  bellBtn.addEventListener('click', function () {
+    var open = noticePanel.hidden;
+    noticePanel.hidden = !open;
+    bellBtn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      renderDesktopButton();
+      loadNotices(true);
+    }
+  });
+
+  document.getElementById('notice-close').addEventListener('click', function () {
+    noticePanel.hidden = true;
+    bellBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  document.getElementById('notice-read-all').addEventListener('click', function () {
+    call('apiNotificationsRead', [[]], function () { loadNotices(true); });
+  });
+
+  document.getElementById('notice-desktop').addEventListener('click', function () {
+    // 許可を求められるのは人が押した直後だけ
+    try {
+      window.Notification.requestPermission().then(function () {
+        renderDesktopButton();
+      });
+    } catch (e) {
+      renderDesktopButton();
+    }
+  });
+
+  loadNotices(true);
+  window.setInterval(function () { loadNotices(false); }, 60000);
+
+  mineBtn.addEventListener('click', function () {
+    mineOnly = !mineOnly;
+    setToggle(mineBtn, mineOnly);
+    reloadIssueView();
+  });
+
+  overdueOnlyBtn.addEventListener('click', function () {
+    setOverdueOnly(false);
+    reloadIssueView();
+  });
+
+  diffExpandBtn.addEventListener('click', function () {
+    setDiffFull(!diffPane.classList.contains('full'));
+  });
+  setDiffFull(false);
+
+  // どこにいても Escape で入力を閉じられる。広げた差分もここで畳む
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!sidePanel.hidden) closeSide();
+    else if (diffPane.classList.contains('full')) setDiffFull(false);
+  });
+
+  call('apiWhoAmI', [], function (who) {
+    currentUser = (who || {}).activeUser || '';
+    drawMe();
+  }, failQuiet('判定できなければ従来どおり押せる'));
+
+  call('apiKitStatus', [], function (s) {
+    kitOutdated = Boolean(s && s.outdated);
+    if (kitOutdated) drawMe();
+  }, failQuiet('道具の更新の札が出ないだけで、使うのに困らない'));
+
+  call('apiPeopleNames', [],
+    function (map) { peopleNames = map || {}; },
+    failQuiet('アドレスの手前で出る'));
+
+  call('apiTemplateList', [],
+    function (list) { templates = list || []; },
+    failQuiet('差し込めないだけで書ける'));
+
+  call('apiTagList', [],
+    function (list) { tags = list || []; },
+    failQuiet('選べないだけで手で書ける'));
+
+  call('apiKnownPeople', [],
+    function (list) { roster = list || []; },
+    failQuiet('呼べないだけで書き込みはできる'));
+
+  call('apiArchiveKeepDays', [],
+    function (days) { archiveKeepDays = Number(days) || 30; },
+    failQuiet('既定の30日で表示する'));
+
+  makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
+    function (e) { return e.clientX; }, { min: 180, max: 560 });
+
+  call('apiIssuePriorities', [], function (list) {
+    if (list && list.length) priorities = list;
+  }, failQuiet('取れなくても同じ並びを持っている'));
+
+  // 右端のペインなので、左へ引くほど広がる
+  makeResizable(sideResizer, '--side-pane-w', 'sidePaneWidth',
+    function (e) { return window.innerWidth - e.clientX; },
+    { min: 280, max: 900 });
+
+  // 工程表の名前の欄。工程表を描くたびに中へ入れ直すので、ここで1つだけ作る
+  ganttResizer = document.createElement('div');
+  ganttResizer.className = 'resizer gantt-resizer';
+  ganttResizer.id = 'gantt-resizer';
+  ganttResizer.setAttribute('role', 'separator');
+  ganttResizer.setAttribute('aria-orientation', 'vertical');
+  ganttResizer.setAttribute('tabindex', '0');
+  ganttResizer.setAttribute('aria-label', '名前の欄の幅を変える (二度押しで元に戻す)');
+  makeResizable(ganttResizer, '--gantt-name-w', 'ganttNameW',
+    function (e) {
+      // 名前の欄は左に貼り付いている。その左端から測り、掴み手は欄と日の並びの
+      // 間 (gap の真ん中) にあるので、そのぶんを引く
+      var name = ganttEl.querySelector('.gantt-head .gantt-name');
+      var head = ganttEl.querySelector('.gantt-head');
+      var gap = (head && parseFloat(getComputedStyle(head).columnGap)) || 0;
+      var left = (name || ganttEl).getBoundingClientRect().left;
+      return e.clientX - left - gap / 2;
+    }, { min: 120, max: 480 });
+  ganttEl.addEventListener('scroll', ganttSyncResizer);
+
+  markGanttZoom();
+  document.querySelectorAll('#gantt-zoom [data-zoom]').forEach(function (b) {
+    b.addEventListener('click', function () { setGanttZoom(b.dataset.zoom); });
+  });
+  document.getElementById('gantt-today').addEventListener('click', ganttScrollToToday);
+
+  makeResizable(document.getElementById('pr-resizer'), '--pr-pane-w', 'prPaneWidth',
+    function (e) {
+      var box = document.querySelector('#panel-pulls .graph-split').getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 280, max: 1200 });
+
+  makeResizable(diffResizer, '--graph-pane-w', 'graphPaneWidth',
+    function (e) {
+      var box = document.querySelector('.graph-split').getBoundingClientRect();
+      return e.clientX - box.left;
+    }, { min: 280, max: 1200 });
+  applyTheme(readTheme());
+
+  try {
+    var savedView = window.localStorage.getItem('issueView');
+    if (savedView && viewBtns[savedView]) issueView = savedView;
+  } catch (e) { /* 既定の一覧でよい */ }
+  setIssueView(issueView);
+
+  // 出入りは画面全体で見る。要素ごとに見ると、押した拍子に一覧が
+  // 描き直されたときに「離れた」が来ず、出たまま残る
+  document.addEventListener('pointerover', function (e) { trackHint(e.target); });
+  document.addEventListener('focusin', function (e) { trackHint(e.target); });
+  document.addEventListener('focusout', hideHint);
+
+  // 押したら引っ込める。多くの場合その先で画面が描き直される
+  document.addEventListener('pointerdown', hideHint);
+
+  // どこがよく使われているかを数える。誰が押したかは数えない
+  document.addEventListener('click', function (e) {
+    usageCount('action', usageTargetOf(e.target));
+  }, true);
+
+  window.setInterval(usageFlush, 60000);
+  window.addEventListener('pagehide', usageFlush);
+
+  document.addEventListener('pointermove', function (e) {
+    // 出ているあいだだけ見る。相手が居なくなっていたらしまう
+    if (!hintHost) return;
+    if (!hintHostOf(e.target) || !document.body.contains(hintHost)) hideHint();
+  });
+
+  // 巻き取られると、測った位置とずれる。出したままにしない
+  document.addEventListener('scroll', hideHint, true);
+  window.addEventListener('resize', hideHint);
+

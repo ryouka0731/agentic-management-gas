@@ -1,0 +1,832 @@
+  // ===== 前進を見せる (意欲づけ) =====
+  //
+  // 文献 (docs/superpowers/plans/2026-10-07-motivation.md) に沿う。小さな前進を
+  // 日々実感できることがいちばん効く。点数や人ごとの順位は配らない (予告された
+  // 報酬は内発的動機を下げ、職場のランキングは晒しと受け取られる)。見せるのは
+  // チームの前進と、本人にだけ見える最初の一歩。どれも自分で止められる。
+
+  var homeCardsEl = document.getElementById('home-cards');
+
+  /**
+   * 前進の知らせを出すか (本人が決める)。この端末のこのブラウザに覚える。
+   * 覚えられないブラウザでも、開いているあいだは止めたことを守る (見た目だけ
+   * 変わって知らせが出続けると、止めたのに止まらない)。
+   */
+  var progressNotesMemory = null;
+  function progressNotesOn() {
+    if (progressNotesMemory !== null) return progressNotesMemory;
+    try { return window.localStorage.getItem('progressNotes') !== 'off'; } catch (e) { return true; }
+  }
+
+  /**
+   * 終えたとき・反映したときに、何が起きたかを添えて知らせる。
+   *
+   * 完了では、先に印だけの帯を出し、apiCloseFeedback の返事で「小分けの残り」
+   * 「◯週間越し」「大きいもの」「今週チームで何件目か」のどれか1つに差し替える
+   * (closeFeedbackText)。ポイントとレベルはオンのときだけ添える。反映では、今週
+   * チームで何件を正式版にしたかを添える。人と比べる物差しにはしない。
+   *
+   * ホームのカードの描き直しは、ホームを開いているときだけ (reloadHomeIfShown)。
+   *
+   * @param {string} kind 'close' | 'merge'
+   * @param {string} text 基本の知らせ
+   * @param {number} [number] 完了にしたやること。あれば apiCloseFeedback で添えを求める
+   */
+  function celebrateProgress(kind, text, number) {
+    if (!progressNotesOn()) {
+      showSnack(text, { kind: 'ok' });
+      reloadHomeIfShown();
+      return;
+    }
+    if (kind === 'close' && number) {
+      // 先に印だけの帯を出す。返事を待つあいだも、終えたことはすぐ伝わる
+      var firstBar = showSnack(text, { kind: 'ok', mark: {} });
+      call('apiCloseFeedback', [number], function (fb) {
+        // 帯を差し替えないときも、ホームのあなたの番からは外す
+        reloadHomeIfShown();
+        // 返事を待つあいだに止められていたら、素の帯のまま
+        if (!progressNotesOn() || !fb) return;
+        // 閉じられたか、別の帯に替わっていたら、新しいほうを上書きしない
+        if (document.getElementById('snackbar') !== firstBar) return;
+        var opts = { kind: 'ok', mark: {} };
+        if (fb.parent && (fb.kind === 'parentStep' || fb.kind === 'parentDone')) {
+          opts.mark = { done: fb.parent.done, total: fb.parent.total };
+        }
+        if (fb.kind === 'parentDone') {
+          opts.action = { label: '#' + fb.parent.number + ' も完了にする', run: function () {
+            call('apiIssueClose', [fb.parent.number], function () {
+              celebrateProgress('close', '#' + fb.parent.number + ' を完了にしました', fb.parent.number);
+              refreshIssueViews();
+            });
+          } };
+        }
+        showSnack(closeFeedbackText(text, fb), opts);
+        // 帯に出したときだけ「見せた」と伝える。捨てた返事のぶんは次の完了でまた知らせる
+        if (fb.levelUp) {
+          call('apiGameLevelSeen', [fb.levelUp], null,
+            failQuiet('覚えられなくても、次の完了でもう一度知らせるだけ'));
+        }
+      }, function (err) {
+        failQuiet('前進の知らせが出なくても、終えたことは伝わっている')(err);
+        reloadHomeIfShown();
+      });
+      return;
+    }
+    call('apiProgress', [], function (p) {
+      // 返事を待つあいだに止められていたら、素の知らせにする
+      if (!progressNotesOn()) {
+        showSnack(text, { kind: 'ok' });
+        return;
+      }
+      var more = '';
+      if (p && kind === 'merge' && p.weekMerged) more = '。今週チームで ' + p.weekMerged + ' 件を正式版にしました';
+      showSnack(text + more, { kind: 'ok' });
+      reloadHomeIfShown();
+    }, function () {
+      // 前進が数えられなくても、終えたこと自体は伝える
+      showSnack(text, { kind: 'ok' });
+    });
+  }
+
+  /**
+   * ホームを開いているときだけ、カードとあなたの番を描き直す。ほかの画面で完了に
+   * するたびに api を呼ぶことになる。ホームへ戻ったときは loadHome が描き直す。
+   * あなたの番も取り直す (取り直さないと、片づけたものが残って見える)。
+   */
+  function reloadHomeIfShown() {
+    if (panelHome.hidden) return;
+    loadHomeCards();
+    loadHomeSummary();
+  }
+
+  /**
+   * ポイントを見せる形にする。小数は1桁まで (割り算の端数を 0.9000000000000004 と出さない)。
+   *
+   * @param {number} x
+   * @returns {number}
+   */
+  function pointWords(x) {
+    return Math.round(Number(x || 0) * 10) / 10;
+  }
+
+  /**
+   * 日数を「3週間」「10日」の言い方にする。
+   *
+   * @param {number} days
+   * @returns {string}
+   */
+  function spanWords(days) {
+    return days >= 14 && days % 7 < 4 ? Math.round(days / 7) + '週間' : days + '日';
+  }
+
+  /**
+   * 完了したときの帯の文。apiCloseFeedback の返りから組む。
+   *
+   * @param {string} base 「#3 を完了にしました」
+   * @param {object} fb
+   * @returns {string}
+   */
+  function closeFeedbackText(base, fb) {
+    var more = '';
+    if (fb.kind === 'parentDone') {
+      more = '。#' + fb.parent.number + ' ' + fb.parent.title + ' の小分けが全部終わりました';
+    } else if (fb.kind === 'parentStep') {
+      more = '。#' + fb.parent.number + ' ' + fb.parent.title + ' はあと ' +
+        (fb.parent.total - fb.parent.done) + ' つ';
+    } else if (fb.kind === 'longAwaited') {
+      more = '。' + spanWords(fb.days) + '越しのものが片づきました';
+    } else if (fb.kind === 'heavy') {
+      more = '。大きいものが1つ終わりました';
+    } else if (fb.weekClosed) {
+      more = '。今週チームで ' + fb.weekClosed + ' 件目です';
+      if (fb.goal && fb.monthClosed === fb.goal) more += '。今月の目標に届きました';
+    }
+    if (fb.points) more += ' (+' + pointWords(fb.points) + ')';
+    if (fb.levelUp) more += '。レベル ' + fb.levelUp + ' になりました';
+    return base + more;
+  }
+
+  /** 自分まわりに置く、前進の知らせの切り替え */
+  function makeProgressToggle() {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'progress-toggle';
+    btn.className = 'btn toggle-btn';
+    btn.textContent = '前進の知らせを出す';
+    setToggle(btn, progressNotesOn());
+    attachHint(btn, '完了や反映のときに「今週チームで何件目か」を添えます。ホームのチームの前進とはじめの5歩もここで出し入れします。' +
+      'この端末のこのブラウザにだけ覚えます');
+    btn.addEventListener('click', function () {
+      var on = !progressNotesOn();
+      // 覚えられたらブラウザの値に従う (別のタブで切り替えても揃う)。覚えられない
+      // ブラウザでだけ、開いているあいだのメモで守る
+      try {
+        window.localStorage.setItem('progressNotes', on ? 'on' : 'off');
+        progressNotesMemory = null;
+      } catch (e) {
+        progressNotesMemory = on;
+      }
+      setToggle(btn, on);
+      loadHomeCards();
+    });
+    return btn;
+  }
+
+  // 別のタブで切り替えたら、このタブのカードも揃える
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'progressNotes') loadHomeCards();
+  });
+
+  /** ホームの「チームの前進」と「はじめの5歩」 */
+  function loadHomeCards() {
+    if (!homeCardsEl) return;
+    if (!progressNotesOn()) {
+      homeCardsEl.textContent = '';
+      homeLine.today = null;
+      renderHomeLine();
+      return;
+    }
+    // 前進が取れなければ描かない。ほかの4つは、どれが取れなくても空で補って描く
+    // (任意のカード1枚のために、ホーム全体を消さない)
+    call('apiProgress', [], function (p) {
+      var got = {};
+      var names = [
+        ['apiMyMilestones', 'steps', [], 'はじめの5歩が出なくても使える'],
+        ['apiMyToday', 'today', [], '今日の一覧が出なくても使える'],
+        ['apiGameState', 'game', { enabled: false }, 'ポイントが出なくても使える'],
+        ['apiGameTop', 'top', [], '週の上位が出なくても使える'],
+        // 取れなかったときは null のまま渡す。控えのひな形は使わず、今の形 (✅今日) で写す
+        ['apiReportParts', 'report', null, '日報の形が取れなくても今の形で写せる']
+      ];
+      var left = names.length;
+      names.forEach(function (n) {
+        function done(v) {
+          got[n[1]] = v || n[2];
+          left -= 1;
+          if (left > 0) return;
+          // 返事を待つあいだに止められていたら描かない
+          if (!progressNotesOn()) return;
+          renderHomeCards(p || {}, got.steps, got.today, got.game, got.top, got.report);
+        }
+        var quiet = failQuiet(n[3]);
+        call(n[0], [], done, function (err) { quiet(err); done(null); });
+      });
+    }, function (err) {
+      failQuiet('前進が出なくても使える')(err);
+      homeLine.today = null;
+      renderHomeLine();
+    });
+  }
+
+  function renderHomeCards(p, steps, today, game, top, report) {
+    homeCardsLast = [p, steps, today, game, top, report];
+    homeCardsEl.textContent = '';
+    // カードはそれぞれ見出しを持つ。まとめの見出しは置かない (同じ形の見出しが重なる)
+    homeCardsEl.appendChild(makeTodayCard(today || [], report || null));
+    homeLine.today = todayItemsOf(today || [], report || null).length;
+    renderHomeLine();
+    // 設定が届くまでは描かない (隠した人に一瞬出て、見たレベルまで覚えてしまう)
+    var g = prefsSettled && homeCardOn('game') ? makeGameCard(game || {}, top || []) : null;
+    if (g) {
+      homeCardsEl.appendChild(g);
+      // 見せたレベルを覚える。覚えないと、次の完了で同じレベルに「なりました」と言う
+      if (game.level > 0) {
+        call('apiGameLevelSeen', [game.level], null,
+          failQuiet('覚えられなくても、次の完了で一度多く知らせるだけ'));
+      }
+    }
+    if (homeCardOn('team')) homeCardsEl.appendChild(makeTeamProgressCard(p));
+    var first = makeFirstStepsCard(steps);
+    if (first) homeCardsEl.appendChild(first);
+  }
+
+  /**
+   * 自分のレベルと、今週の上位3人。オフなら出さない。
+   *
+   * **上位にいない人に自分の順位を見せない** (「◯位」が下位の印になる)。
+   * 自分の今週の点だけを見せる。
+   *
+   * @param {object} game apiGameState
+   * @param {Array} top apiGameTop
+   * @returns {HTMLElement|null}
+   */
+  function makeGameCard(game, top) {
+    if (!game.enabled) return null;
+    var card = document.createElement('section');
+    card.className = 'home-card game-card';
+    card.setAttribute('aria-label', 'ポイントとレベル');
+    card.appendChild(homeHead('ポイントとレベル'));
+
+    var level = document.createElement('div');
+    level.className = 'game-level';
+    level.textContent = 'レベル ' + game.level + ' ・ 今週 ' + pointWords(game.week) + ' ・ 次のレベルまで ' +
+      pointWords(Math.max(game.nextAt - game.total, 0));
+    card.appendChild(level);
+
+    // いまのレベルの中での進み具合を描く。合計 / 次の境目にすると、レベル2で
+    // 16/30 = 53% と出て、あと少しに見える (実際は 15 から 30 のうち 1)
+    var from = Number(game.levelFrom || 0);
+    var span = game.nextAt - from;
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', '次のレベルまでの進み具合');
+    bar.setAttribute('aria-valuemin', String(from));
+    bar.setAttribute('aria-valuemax', String(game.nextAt));
+    bar.setAttribute('aria-valuenow', String(pointWords(Math.max(game.total, from))));
+    var fill = document.createElement('span');
+    fill.style.width = (span > 0
+      ? Math.min(100, Math.max(0, Math.round((game.total - from) / span * 100))) : 0) + '%';
+    bar.appendChild(fill);
+    card.appendChild(bar);
+
+    if (top.length) {
+      var title = document.createElement('div');
+      title.className = 'row-meta';
+      title.textContent = '今週の上位 (参加している人だけ)';
+      card.appendChild(title);
+      var list = document.createElement('ol');
+      list.className = 'game-top';
+      top.forEach(function (r) {
+        var li = document.createElement('li');
+        if (r.me) li.className = 'is-me';
+        li.textContent = r.rank + '. ' + r.name + ' ' + pointWords(r.points);
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+    }
+
+    var team = makeGameTeam(game.team);
+    if (team) card.appendChild(team);
+    var badges = makeGameBadges(game.badges);
+    if (badges) card.appendChild(badges);
+
+    var note = document.createElement('p');
+    note.className = 'row-meta game-note';
+    note.textContent = '片づけたものの重さと、ほかの人の確認依頼への返事で付きます。人事の評価には使いません。' +
+      '月曜にゼロから数え直します';
+    card.appendChild(note);
+    return card;
+  }
+
+  /**
+   * 先週のチームの合計を、先々週の合計と比べて棒で見せる。**名前は出さない。**
+   * 終わった週だけを使う (今週の合計は動くので、読むたびの差で1人の増えた分が見える)。
+   * サーバは、見る人のほかに2人いない週を null で返す (引き算でその人の数が見える)。
+   * 先週が null なら欄ごと出さず、先々週が null なら先週の合計だけ出して棒は出さない。
+   *
+   * @param {{lastWeek: (number|null), weekBefore: (number|null)}|null|undefined} team
+   * @returns {HTMLElement|null}
+   */
+  function makeGameTeam(team) {
+    function has(v) { return v !== null && v !== undefined && v !== ''; }
+    if (!team || !has(team.lastWeek)) return null;
+    var week = Number(team.lastWeek) || 0;
+    var hasBefore = has(team.weekBefore);
+    var before = hasBefore ? (Number(team.weekBefore) || 0) : 0;
+    var box = document.createElement('div');
+    box.className = 'game-team';
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '先週のチーム ' + pointWords(week) + (hasBefore ? ' ・ 先々週 ' + pointWords(before) : '');
+    box.appendChild(head);
+    if (!hasBefore) return box;
+
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar game-team-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', '先々週の合計に比べた先週の合計');
+    // 先々週が0なら割らない。先週に1つでもあれば満ちたとし、aria も 1/1 にそろえる
+    var max = before > 0 ? pointWords(before) : 1;
+    var now = before > 0 ? pointWords(Math.min(week, before)) : (week > 0 ? 1 : 0);
+    bar.setAttribute('aria-valuemin', 0);
+    bar.setAttribute('aria-valuemax', max);
+    bar.setAttribute('aria-valuenow', now);
+    var fill = document.createElement('span');
+    var ratio = before > 0 ? week / before : now;
+    fill.style.width = Math.min(100, Math.max(0, Math.round(ratio * 100))) + '%';
+    bar.appendChild(fill);
+    box.appendChild(bar);
+    return box;
+  }
+
+  /**
+   * 本人の称号。得たものは得た日を添え、まだのものは薄く「あと N 件」と出す (次の目標が見える)。
+   *
+   * @param {Array<{key: string, label: string, done: boolean, at: string, left: number}>} badges
+   * @returns {HTMLElement|null}
+   */
+  function makeGameBadges(badges) {
+    if (!badges || !badges.length) return null;
+    var list = document.createElement('ul');
+    list.className = 'game-badges';
+    list.setAttribute('aria-label', '称号');
+    badges.forEach(function (b) {
+      var li = document.createElement('li');
+      if (b.done) {
+        li.className = 'is-done';
+        var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(b.at || ''));
+        li.textContent = b.label + (m ? ' (' + Number(m[1]) + '/' + Number(m[2]) + ')' : '');
+      } else {
+        li.textContent = b.label + ' ・ あと ' + Number(b.left || 0) + ' 件';
+      }
+      list.appendChild(li);
+    });
+    return list;
+  }
+
+  /**
+   * 自分まわりに置く、週の上位に参加するかの切り替え。既定は不参加。
+   *
+   * @param {object} state apiGameState
+   * @returns {HTMLElement}
+   */
+  function makeGameJoinToggle(state) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'game-join-toggle';
+    btn.className = 'btn toggle-btn';
+    btn.textContent = '週の上位に参加する';
+    setToggle(btn, !!state.playing);
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      var want = btn.getAttribute('aria-checked') !== 'true';
+      setToggle(btn, want);
+      call('apiGameJoin', [want], function (res) {
+        btn.disabled = false;
+        // 空の返事ではオフに倒さない。押したとおりに見せておく
+        setToggle(btn, res ? !!res.playing : want);
+        reloadHomeIfShown();
+      }, function (err) {
+        setToggle(btn, !want);
+        failEnable(btn, '切り替えられませんでした: ')(err);
+      });
+    });
+    return btn;
+  }
+
+  /**
+   * 日報の「✅今日」の節の形にする。
+   *
+   * @param {Array<{kind: string, number: number, title: string}>} items
+   * @returns {string}
+   */
+  function todayReportText(items) {
+    return ['✅今日'].concat(items.map(function (x) {
+      return x.kind === 'pull'
+        ? '- 確認依頼 #' + x.number + ' ' + x.title + ' を' + OFFICIAL + 'に反映'
+        : '- #' + x.number + ' ' + x.title;
+    })).join('\n');
+  }
+
+  /** 日報のひな形の控え。**本体はサーバの REPORT_TEMPLATES()**。取れなかったときだけ使う */
+  var REPORT_FALLBACK = [
+    { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
+    { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
+    { key: 'plain', name: '見出し無し', body: '{今日}' },
+  ];
+
+  /**
+   * 箇条を1行ずつ `- ` で並べる。無ければ `- 特になし`。
+   *
+   * @param {Array} items
+   * @param {function(object): string} fmt
+   * @returns {string}
+   */
+  function reportLines(items, fmt) {
+    return items && items.length ? items.map(fmt).join('\n') : '- 特になし';
+  }
+
+  /**
+   * 日報の形に中身を当てはめる。**知らない差し込みはそのまま残す** (消すと書いたものが黙って消える)。
+   *
+   * @param {string} template
+   * @param {{today: object[], tomorrow: object[], troubles: object[], date: string, name: string}} parts
+   * @returns {string}
+   */
+  function reportFill(template, parts) {
+    var map = {
+      '今日': reportLines(parts.today, function (x) {
+        return x.kind === 'pull'
+          ? '- 確認依頼 #' + x.number + ' ' + x.title + ' を' + OFFICIAL + 'に反映'
+          : '- #' + x.number + ' ' + x.title;
+      }),
+      '明日': reportLines(parts.tomorrow, function (x) {
+        return '- #' + x.number + ' ' + x.title +
+          (x.due ? ' (期限 ' + Number(x.due.substring(5, 7)) + '/' + Number(x.due.substring(8, 10)) + ')' : '');
+      }),
+      '困りごと': reportLines(parts.troubles, function (x) { return '- ' + x.title; }),
+      '日付': parts.date || '',
+      '名前': parts.name || '',
+    };
+    return String(template).replace(/\{(今日|明日|困りごと|日付|名前)\}/g, function (m, k) { return map[k]; });
+  }
+
+  /**
+   * いま選んでいる形の本文。自分の形が空なら 3節。
+   *
+   * @param {{templates: object[], kind: string, custom: string}} report
+   * @returns {string}
+   */
+  function reportTemplateOf(report) {
+    if (report.kind === 'custom' && report.custom) return report.custom;
+    var list = report.templates && report.templates.length ? report.templates : REPORT_FALLBACK;
+    var hit = list.filter(function (t) { return t.key === report.kind; })[0];
+    return (hit || list[0]).body;
+  }
+
+  /**
+   * 今日片づけたものとして並べる一覧。日報の中身が取れたらそちら (並べたものと
+   * 写すものを揃える)、取れなければ apiMyToday。上の1行の数もここから数える。
+   *
+   * @param {Array} items apiMyToday
+   * @param {?object} report apiReportParts
+   * @returns {Array}
+   */
+  function todayItemsOf(items, report) {
+    return report && report.parts && Array.isArray(report.parts.today) ? report.parts.today : items;
+  }
+
+  /**
+   * 今日片づけたもの。**本人にだけ見える。** 件数は大きく出さず、題名を並べる
+   * (件数を追わせると簡単なものから手を付ける)。
+   *
+   * 「日報にコピー」は件数に関わらず出す (3節は明日と困りごとだけでも使う)。
+   * 日報の中身が取れなかったとき (`report` が null) は、今の形 (✅今日) で写す。
+   * 中身が取れたときは、並べるのも `report.parts.today` から (並べたものと写すものを揃える)。
+   *
+   * @param {Array<{kind: string, number: number, title: string}>} items
+   * @param {?{parts: object, templates: object[], kind: string, custom: string}} report apiReportParts
+   * @returns {HTMLElement}
+   */
+  function makeTodayCard(items, report) {
+    items = todayItemsOf(items, report);
+    var card = document.createElement('section');
+    card.className = 'home-card my-today';
+    card.setAttribute('aria-label', '今日片づけたもの');
+    card.appendChild(homeHead('今日片づけたもの', [privatePill()]));
+
+    if (!items.length) {
+      var none = document.createElement('p');
+      none.className = 'my-today-none';
+      none.textContent = '今日はこれから。片づけたものがここに並びます';
+      card.appendChild(none);
+    } else {
+      var list = document.createElement('ul');
+      list.className = 'my-today-list';
+      items.forEach(function (x) {
+        var li = document.createElement('li');
+        li.textContent = (x.kind === 'pull' ? '確認依頼 #' : '#') + x.number + ' ' + x.title;
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'my-today-actions';
+    card.appendChild(actions);
+
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn';
+    copy.textContent = '日報にコピー';
+    actions.appendChild(copy);
+
+    var pick = null;
+    if (report) {
+      // 選んだ形と自分の形はこのカードの中で書き換える。返事そのものは触らない
+      report = { parts: report.parts || {}, templates: report.templates || [],
+        kind: String(report.kind || ''), custom: String(report.custom || '') };
+      var choices = (report.templates && report.templates.length ? report.templates : REPORT_FALLBACK)
+        .map(function (t) { return [t.key, t.name]; })
+        .concat([['custom', '自分の形']]);
+      pick = document.createElement('select');
+      pick.className = 'report-kind';
+      pick.setAttribute('aria-label', '日報の形');
+      choices.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c[0];
+        opt.textContent = c[1];
+        pick.appendChild(opt);
+      });
+      // 写すのと同じ形を見せる。知らない形と、空の自分の形は 3節 で写るので 3節 を選んでおく
+      var known = choices.some(function (c) { return c[0] === report.kind; });
+      if (!known || (report.kind === 'custom' && !report.custom)) report.kind = choices[0][0];
+      pick.value = report.kind;
+
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn';
+      edit.textContent = '自分の形を直す';
+      edit.addEventListener('click', function () { openReportCustomForm(report, pick, edit); });
+
+      pick.addEventListener('change', function () {
+        // まだ書いていない自分の形を選んだら、書く欄を開く。選んだだけにすると、
+        // 欄は「自分の形」なのに 3節 で写る
+        if (pick.value === 'custom' && !report.custom) {
+          pick.value = report.kind;
+          openReportCustomForm(report, pick, edit);
+          return;
+        }
+        report.kind = pick.value;
+        call('apiSetReportKind', [pick.value], null, failSnack('日報の形を覚えられませんでした: '));
+      });
+      actions.appendChild(pick);
+      actions.appendChild(edit);
+    }
+
+    copy.addEventListener('click', function () {
+      var text = report ? reportFill(reportTemplateOf(report), report.parts) : todayReportText(items);
+      // 埋め込みの枠では写せないことがある。そのときは選んで写せる欄を出す
+      function fallback() {
+        var area = card.querySelector('textarea') || document.createElement('textarea');
+        area.readOnly = true;
+        area.className = 'my-today-copy';
+        area.value = text;
+        area.setAttribute('aria-label', '日報に貼る文');
+        if (!area.parentNode) card.appendChild(area);
+        area.select();
+      }
+      var clip = window.navigator.clipboard;
+      if (!clip || !clip.writeText) { fallback(); return; }
+      clip.writeText(text).then(function () {
+        showSnack('日報の形で写しました', { kind: 'ok' });
+      }, fallback);
+    });
+    return card;
+  }
+
+  /**
+   * 自分の形を書く欄。書くたびに、今日の中身を当てはめた見本を下に出す。
+   * 保存すると「自分の形」を選んだことにする (書いたのに使われないと迷う)。
+   * 選んだことはサーバが同じ1回で覚える (2回に分けると、2回目だけ落ちたとき食い違う)。
+   *
+   * @param {object} report apiReportParts (書き換える)
+   * @param {HTMLSelectElement} pick 形を選ぶ欄
+   * @param {HTMLElement} btn 開いたボタン
+   */
+  function openReportCustomForm(report, pick, btn) {
+    var form = openInlineForm('日報の形', [{
+      name: 'body',
+      label: '形 (使える差し込み: {今日} {明日} {困りごと} {日付} {名前})',
+      multiline: true,
+      value: report.custom || reportTemplateOf(report),
+      note: '2000字まで。知らない {…} はそのまま残ります',
+    }], '保存する', function (v) {
+      var body = String(v.body || '');
+      if (body.length > 2000) {
+        showSnack('日報の形は2000字までです (いま ' + body.length + ' 字)', { kind: 'ng' });
+        return;
+      }
+      call('apiSetReportCustom', [body], function (res) {
+        report.custom = body;
+        // 空の形は選ばれない。自分の形を選んだまま空にしたら先頭の形 (3節) に戻す
+        // (サーバも同じ1回でそう覚える)。戻さないと、欄は「自分の形」なのに 3節 で写る
+        if (body) report.kind = (res && res.kind) || 'custom';
+        else if (report.kind === 'custom') report.kind = pick.options[0].value;
+        pick.value = report.kind;
+      }, failSnack('日報の形を保存できませんでした: '));
+    }, btn);
+
+    var area = form.querySelector('textarea');
+    var head = document.createElement('div');
+    head.className = 'row-meta';
+    head.textContent = '見本 (今日の中身で)';
+    var preview = document.createElement('pre');
+    preview.className = 'report-preview';
+    function show() {
+      preview.textContent = reportFill(area.value, report.parts);
+      // 送る前に止める。送ってから断ると、欄はもう閉じていて書いたものが消える
+      setFieldMessage(area, area.value.length > 2000
+        ? '2000字までです (いま ' + area.value.length + ' 字)' : '', 'error');
+    }
+    area.addEventListener('input', show);
+    show();
+    var actions = form.querySelector('.inline-form-actions');
+    form.insertBefore(head, actions);
+    form.insertBefore(preview, actions);
+  }
+
+  /**
+   * チームの前進。今週の数と、今月の目標までの進み具合。人ごとには出さない。
+   *
+   * @param {object} p apiProgress の返り
+   * @returns {HTMLElement}
+   */
+  function makeTeamProgressCard(p) {
+    var card = document.createElement('section');
+    card.className = 'home-card team-progress';
+    card.setAttribute('aria-label', 'チームの前進');
+    card.appendChild(homeHead('チームの前進'));
+
+    var line = document.createElement('div');
+    line.className = 'team-progress-line';
+    // 0 件のときに「0 件」と並べると責めているように読める。これからだと伝える
+    line.textContent = (p.weekClosed || p.weekMerged)
+      ? '今週 ' + (p.weekClosed || 0) + ' 件のやることを終え、' + (p.weekMerged || 0) + ' 件を正式版にしました'
+      : '今週はこれからです。終えたやることや正式版にした文書が、ここで数えられます';
+    card.appendChild(line);
+
+    if (p.goal) {
+      var done = p.monthClosed || 0;
+      var pct = Math.min(100, Math.round(done * 100 / p.goal));
+      var goal = document.createElement('div');
+      goal.className = 'team-goal';
+      var label = document.createElement('span');
+      label.className = 'row-meta';
+      label.textContent = '今月の目標 ' + done + ' / ' + p.goal + ' 件';
+      goal.appendChild(label);
+      if (done >= p.goal) goal.appendChild(makePill('届きました', 'state state-open', 'check'));
+      var bar = document.createElement('div');
+      bar.className = 'scrum-progress';
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', String(p.goal));
+      bar.setAttribute('aria-valuenow', String(done));
+      bar.setAttribute('aria-label', '今月の目標までの進み具合');
+      var fill = document.createElement('span');
+      fill.style.width = pct + '%';
+      bar.appendChild(fill);
+      goal.appendChild(bar);
+      card.appendChild(goal);
+    }
+
+    if (p.canEditGoal) {
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn team-goal-edit';
+      edit.textContent = p.goal ? '目標を直す' : '今月の目標を決める';
+      attachHint(edit, 'チームで毎月終えたいやることの件数です。人ごとには割り振りません');
+      edit.addEventListener('click', function () {
+        openInlineForm('チームの毎月の目標', [
+          { name: 'goal', label: '毎月終えたいやることの件数', value: p.goal || '',
+            placeholder: '例: 10', note: 'チームに1つだけの目標です。人ごとには割り振りません。0 で消します' },
+        ], '決める', function (v) {
+          call('apiSetTeamGoal', [Number(v.goal || 0)], function () {
+            showSnack('チームの目標を決めました', { kind: 'ok' });
+            loadHomeCards();
+          });
+        }, edit);
+      });
+      card.appendChild(edit);
+    }
+    return card;
+  }
+
+  /**
+   * はじめの5歩。本人にだけ見える。全部できたら出さない。閉じたら覚える。
+   *
+   * 数を集めさせる印にはしない (予告された報酬は内発的動機を下げる)。できたことに
+   * ✓ を付け、次の一歩の入口を出すだけにする。
+   *
+   * @param {object[]} steps apiMyMilestones の返り
+   * @returns {HTMLElement|null}
+   */
+  function makeFirstStepsCard(steps) {
+    if (!steps.length || steps.every(function (s) { return s.done; })) return null;
+    try { if (window.localStorage.getItem('firstStepsHidden') === '1') return null; } catch (e) { /* 覚えていなければ出す */ }
+
+    var card = document.createElement('section');
+    card.className = 'home-card first-steps';
+    card.setAttribute('aria-label', 'はじめの5歩');
+
+    var doneCount = steps.filter(function (s) { return s.done; }).length;
+    var hide = document.createElement('button');
+    hide.type = 'button';
+    hide.className = 'side-close';
+    hide.textContent = '×';
+    hide.setAttribute('aria-label', 'はじめの5歩を閉じる');
+    hide.addEventListener('click', function () {
+      try { window.localStorage.setItem('firstStepsHidden', '1'); } catch (e) { /* 覚えられなくても今は閉じる */ }
+      card.remove();
+    });
+    card.appendChild(homeHead('はじめの5歩 (' + doneCount + ' / ' + steps.length + ')', [privatePill(), hide]));
+
+    var list = document.createElement('ol');
+    list.className = 'first-steps-list';
+    var nextShown = false;
+    steps.forEach(function (step, i) {
+      var li = document.createElement('li');
+      li.className = 'first-step' + (step.done ? ' is-done' : '');
+      var mark = document.createElement('span');
+      mark.className = 'scrum-cycle-num';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = step.done ? '✓' : String(i + 1);
+      li.appendChild(mark);
+      var body = document.createElement('span');
+      body.className = 'first-step-body';
+      var title = document.createElement('strong');
+      title.textContent = (step.done ? '済み: ' : '') + step.label;
+      body.appendChild(title);
+      // 次の一歩だけ、やり方と入口を出す (全部並べると、どれからやるか迷う)
+      if (!step.done && !nextShown) {
+        nextShown = true;
+        li.classList.add('is-next');
+        var hint = document.createElement('span');
+        hint.className = 'row-meta';
+        hint.textContent = step.hint;
+        body.appendChild(hint);
+        var go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'btn';
+        go.textContent = 'やってみる';
+        go.addEventListener('click', function () { switchTab(step.tab); });
+        body.appendChild(go);
+      }
+      li.appendChild(body);
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+    return card;
+  }
+
+  // ===== キーボード =====
+  //
+  // よく使う操作は、マウスに手を伸ばさずにできるようにする。字を打っている
+  // ところ (入力欄) では効かせない。何が使えるかは「?」で出す。
+
+  var SHORTCUTS = [
+    ['Ctrl+K / ⌘K', '文書・やること・確認依頼を探す'],
+    ['/', '絞り込みの欄に移る (やることの一覧・ボード)'],
+    ['N', 'やることを作る'],
+    ['?', 'キーボードで使える操作を出す'],
+    ['Esc', '右の欄や小窓を閉じる'],
+  ];
+
+  /** キーボードで使える操作の一覧を、右の欄に出す */
+  function openShortcutHelp() {
+    var box = openSideView('キーボードで使える操作', null);
+    var list = document.createElement('dl');
+    list.className = 'shortcut-list';
+    SHORTCUTS.forEach(function (pair) {
+      var dt = document.createElement('dt');
+      var kbd = document.createElement('kbd');
+      kbd.textContent = pair[0];
+      dt.appendChild(kbd);
+      list.appendChild(dt);
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      list.appendChild(dd);
+    });
+    box.appendChild(list);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    var typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if (typing) return;
+
+    if (e.key === '?') {
+      e.preventDefault();
+      openShortcutHelp();
+    } else if (e.key === '/') {
+      e.preventDefault();
+      if (panelIssues.hidden) switchTab('issues');
+      issueFilterEl.focus();
+    } else if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      createIssue();
+    }
+  });
+

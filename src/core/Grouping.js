@@ -33,7 +33,7 @@ function groupIssues(issues, by, docNames) {
     }
 
     if (by === 'assignee') {
-      // 2人で持つ仕事は、両方の束に出す。画面 (app.js.html) と同じ。以前はここだけ
+      // 2人で持つ仕事は、両方の束に出す。画面 (js-board.html) と同じ。以前はここだけ
       // 'a,b' を1つの束にしていた (乱数が偏っていてテストが見落とした)
       var who = issue.assignees || String(issue.assignee || '').split(',')
         .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
