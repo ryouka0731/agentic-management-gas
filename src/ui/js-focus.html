@@ -433,6 +433,14 @@
       a.src.stop(t + Math.max(0.05, fade || 0) + 0.05);
     } catch (e) { /* 既に止まっている */ }
     a.src = null;
+    // 下げ終わったら音の仕組みごと休ませる (鳴らしていなくても、動いたままだと電池を食う)。
+    // そのあいだに鳴らし直していたら (focusAudio が替わっている) 休ませない。鳴らすときに resume する
+    setTimeout(function () {
+      if (focusAudio !== a || a.src) return;
+      try {
+        if (a.ctx && a.ctx.suspend && a.ctx.state !== 'suspended') a.ctx.suspend();
+      } catch (e) { /* 休ませられなくても困らない */ }
+    }, (Math.max(0.05, fade || 0) + 0.1) * 1000);
   }
 
   /** @param {number} v 0〜1 */
@@ -510,7 +518,9 @@
       showSnack('いまは #' + focusSession.issueNumber + ' に集中しています。終えてから始めてください', { kind: 'ng' });
       return;
     }
-    var openedAt = Date.now();
+    // 開いた時刻はサーバの時計で覚えてもらう (始めるボーナス・電光石火。画面の時計は送らない)
+    call('apiFocusOpen', [issue.number], null,
+      failQuiet('開いた時刻を覚えられなくても始められる (始めるボーナスが付かないだけ)'));
     var dock = focusDock();
     dock.textContent = '';
     dock.className = 'focus-dock is-setup';
@@ -644,7 +654,7 @@
         focusSoundPlay(choice);
       }
       var failed = failEnable(go, '始められませんでした: ');
-      call('apiFocusStart', [issue.number, minutes, step.value, new Date(openedAt).toISOString()], function (res) {
+      call('apiFocusStart', [issue.number, minutes, step.value], function (res) {
         if (!res) return;
         focusRun(res, issue.title);
         if (!funOn('cheer')) {
@@ -808,6 +818,8 @@
       startMs: Date.parse(s.startedAt) || Date.now(),
       firstStep: s.firstStep || '',
       provedAt: s.provedAt || '',
+      // firstStep だけで「始めた」ものは、台帳の手 (ポイントになる) をまだ確かめに行く
+      proofKind: s.proofKind || '',
       proving: false,
     };
     focusMarksShown = 0;
@@ -1087,6 +1099,18 @@
   // ----- 番頭の中の手で「始めた」を確かめる -----
 
   /**
+   * 集中しているやることを完了にする呼び出しか。そうなら集中を「やりきった」で終え、SUPER COMPLETE!! を出すので、
+   * ふつうの完了のお祝い (CLEAR!) は出さない (js-fun の funCheerAfter が見る。2つ重ねない)。
+   *
+   * @param {string} name
+   * @param {Array} args
+   * @returns {boolean}
+   */
+  function focusClosesSession(name, args) {
+    return !!focusSession && name === 'apiIssueClose' && Number((args || [])[0]) === Number(focusSession.issueNumber);
+  }
+
+  /**
    * call() が成功したあとに呼ぶ (app.js の call)。集中しているやることへの手なら確かめに行く。
    * そのやることを完了にしたなら、集中を「やりきった」で終える。
    *
@@ -1103,7 +1127,8 @@
         focusEndAs('done');
         return;
       }
-      if (s.provedAt || s.proving) return;
+      if (s.proving) return;
+      if (s.provedAt && s.proofKind !== 'firstStep') return;
       var kind = '';
       if (name === 'apiIssueComment' && same) kind = 'comment';
       else if (name === 'apiIssueUpdate' && same) kind = 'edit';
@@ -1126,7 +1151,13 @@
     s.proving = true;
     call('apiFocusProve', [s.id, kind], function (res) {
       s.proving = false;
-      if (!res || !res.fresh || focusSession !== s) return;
+      if (!res || focusSession !== s) return;
+      if (res.session && res.session.proofKind) s.proofKind = res.session.proofKind;
+      if (!res.fresh) {
+        // 最初の一手で始めていたものに、台帳の手が付いた (ポイントはここから)
+        if (res.credited && res.points) showSnack('手を動かしました (+' + res.points + ')', { kind: 'ok' });
+        return;
+      }
       s.provedAt = res.session.provedAt;
       focusDrawProof();
       if (funOn('cheer')) funBanner('NICE START!', 'small', 'success', null);
@@ -1186,6 +1217,8 @@
    * @param {HTMLElement} [sourceEl]
    */
   function openFocusRecord(sourceEl) {
+    // 集中の画面は右のペインを隠すので、記録を開くときは戻す (開いたのに何も出ない、にしない)
+    focusSetMode(false);
     var box = openSideView('集中の記録', sourceEl, null);
     box.classList.add('focus-record');
     var wait = document.createElement('p');

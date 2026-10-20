@@ -115,7 +115,7 @@ describe('集中のしかた', () => {
     expect([...document.querySelectorAll('#side-panel .focus-start-btn')].map((b) => b.textContent)).toEqual(['今から始める']);
   });
 
-  it('長さを選び、最初の一手を書いて始める。開いた時刻を添えて送る', () => {
+  it('長さを選び、最初の一手を書いて始める。開いた時刻はサーバに覚えてもらい、画面の時計は送らない', () => {
     const app = mountFocus(ON);
     openIssues();
     q('#issue-list [aria-label="#2 を今から始める"]').click();
@@ -128,8 +128,9 @@ describe('集中のしかた', () => {
     dock().querySelector('.focus-step-field input').value = '席に戻ったら第3条を開く';
     dock().querySelector('.focus-go').click();
     const args = callsOf(app, 'apiFocusStart')[0];
-    expect(args.slice(0, 3)).toEqual([2, 45, '席に戻ったら第3条を開く']);
-    expect(args[3]).toBe('2026-10-21T00:00:00.000Z');
+    expect(args).toEqual([2, 45, '席に戻ったら第3条を開く']);
+    // 開いたときに1回だけ知らせる (時刻はサーバの時計で決まる)
+    expect(callsOf(app, 'apiFocusOpen')).toEqual([[2]]);
     expect(dock().classList.contains('is-running')).toBe(true);
     expect(dock().querySelector('.focus-first').textContent).toBe('最初の一手: 席に戻ったら第3条を開く');
     // 一手を書いたので、その場で「始めた」
@@ -180,6 +181,26 @@ describe('集中のしかた', () => {
     expect(q('#snackbar').textContent).toContain('(+2)');
   });
 
+  it('最初の一手で始めたあとも、やりとりを書くと確かめに行く (ポイントは台帳の手で付く)。二度目は行かない', () => {
+    const app = mountFocus(ON, {
+      apiIssueComment: { id: 1, issueNumber: 2, body: 'x', by: 'me@example.com', at: new Date().toISOString() },
+      apiFocusProve: (id, kind) => ({ session: session({ id, provedAt: new Date().toISOString(), proofKind: kind }),
+        fresh: false, credited: true, points: 1 }),
+    });
+    startFromRow(null, 25, '第3条を開く');
+    expect(dock().querySelector('.focus-proved').textContent).toBe('始めた');
+    const say = () => {
+      q('#issue-list .row-open').click();
+      document.querySelector('#side-panel .comment-form textarea').value = '読んだ';
+      document.querySelector('#side-panel .comment-form .btn-primary').click();
+    };
+    say();
+    expect(callsOf(app, 'apiFocusProve')).toEqual([[7, 'comment']]);
+    expect(q('#snackbar').textContent).toContain('(+1)');
+    say();
+    expect(callsOf(app, 'apiFocusProve').length).toBe(1);
+  });
+
   it('別のやることへの手では確かめに行かない。確かめられなければ印は出ない', () => {
     const app = mountFocus(ON, {
       apiIssueUpdate: { number: 1 },
@@ -206,10 +227,18 @@ describe('集中のしかた', () => {
 
     vi.advanceTimersByTime(10 * 60000);
     expect(up.hidden).toBe(false);
+    // 大きな字は後のものが前のものを消すので、出たものを全部拾う
+    const seen = new window.MutationObserver(() => {});
+    seen.observe(document.body, { childList: true, subtree: true });
     up.querySelector('.focus-done').click();
+    const shown = seen.takeRecords().flatMap((r) => [...r.addedNodes])
+      .filter((el) => el.classList && el.classList.contains('fun-banner')).map((el) => el.textContent);
+    seen.disconnect();
     expect(callsOf(app, 'apiIssueClose')).toEqual([[2]]);
     expect(callsOf(app, 'apiFocusEnd')).toEqual([[7, 'done']]);
     expect(banners()).toContain('SUPER COMPLETE!!');
+    // お祝いは1つだけ (ふつうの完了の CLEAR! を重ねない)
+    expect(shown).toEqual(['SUPER COMPLETE!!']);
     expect(dock()).toBe(null);
     expect(document.title).toBe(base);
   });
@@ -259,6 +288,18 @@ describe('集中のしかた', () => {
     toggle.click();
     dock().querySelector('.focus-stop').click();
     expect(document.body.classList.contains('focus-mode')).toBe(false);
+  });
+
+  it('集中の画面のまま記録と技の図鑑を開くと、集中の画面を戻す (右のペインが隠れたままにしない)', () => {
+    mountFocus(ON);
+    startFromRow(null, 25);
+    dock().querySelector('.focus-mode-toggle').click();
+    expect(document.body.classList.contains('focus-mode')).toBe(true);
+    q('#me-btn').click();
+    q('.focus-record-btn').click();
+    expect(document.body.classList.contains('focus-mode')).toBe(false);
+    expect(document.querySelector('#side-panel .focus-record')).toBeTruthy();
+    expect(document.getElementById('side-panel').hidden).toBe(false);
   });
 
   it('集中の画面は CSS で横の帯・右のペイン・知らせの数を隠す', async () => {
@@ -347,6 +388,8 @@ describe('集中のしかた', () => {
         this.src = src;
         return src;
       }
+      suspend() { this.state = 'suspended'; this.suspended = (this.suspended || 0) + 1; }
+      resume() { this.state = 'running'; }
       createGain() {
         const p = { value: 0, setValueAtTime() {}, linearRampToValueAtTime: (v) => { p.last = v; }, cancelScheduledValues() {}, setTargetAtTime() {} };
         return { gain: p, connect() {} };
@@ -382,5 +425,9 @@ describe('集中のしかた', () => {
     expect(ctx.buf.len).toBe(Math.round(8000 * 60 / 150) * 4);
     dock().querySelector('.focus-stop').click();
     expect(ctx.src.stopped).toBe(true);
+    // 下げ終わったら音の仕組みを休ませる (動いたままにしない)
+    expect(ctx.suspended || 0).toBe(0);
+    vi.advanceTimersByTime(3000);
+    expect(ctx.suspended).toBe(1);
   });
 });

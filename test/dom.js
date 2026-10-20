@@ -207,7 +207,7 @@ const API_NAMES = [
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
   'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiSetReportKind', 'apiSetReportCustom', 'apiSearchIndex',
   'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
-  'apiFocusStart', 'apiFocusProve', 'apiFocusExtend', 'apiFocusEnd', 'apiFocusMine',
+  'apiFocusOpen', 'apiFocusStart', 'apiFocusProve', 'apiFocusExtend', 'apiFocusEnd', 'apiFocusMine',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
   'apiKnownPeople', 'apiIssueArchive', 'apiIssueRestore', 'apiIssuePurge',
   'apiIssueArchivedList', 'apiArchiveKeepDays', 'apiIssuePriorities', 'apiIssueReopen', 'apiReviewEdit', 'apiReviewDelete', 'apiPrSetReviewers', 'apiInquiryCreate', 'apiInquiryList', 'apiInquiryKinds', 'apiInquiryThread', 'apiInquiryReply',

@@ -515,6 +515,8 @@
    */
   function funCheerAfter(name, args) {
     if (!funOn('cheer')) return;
+    // 集中しているやることの完了は、集中の終わり (apiFocusEnd) の SUPER COMPLETE!! だけにする (js-focus)
+    if (focusClosesSession(name, args)) return;
     // 飾りが落ちても、本来の返事の扱い (call の ok) は止めない
     try {
       funCheer(name, args);

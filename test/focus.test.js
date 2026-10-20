@@ -36,15 +36,36 @@ describe('始める', () => {
     const { ctx, fake } = setup();
     const n = issue(ctx);
     fake._setUser('Tester@Example.com');
-    const a = ctx.apiFocusStart(n, 25, '', new Date(Date.now() - 5000).toISOString());
+    ctx.apiFocusOpen(n);
+    const a = ctx.apiFocusStart(n, 25, '', '');
     const b = ctx.apiFocusStart(n, 45, '', '');
     expect([a.id, b.id]).toEqual([1, 2]);
     const rows = ctx.dbReadAll('focus_sessions');
     expect(rows[1].who).toBe('tester@example.com');
     expect(Number(rows[1].plannedMinutes)).toBe(45);
     expect(a.title).toBe('やること');
-    // 開いた時刻は始めた時刻より前 (5秒前)
-    expect(Date.parse(a.startedAt) - Date.parse(a.openedAt)).toBeGreaterThanOrEqual(4000);
+    // 開いた時刻はサーバが覚えた時刻 (apiFocusOpen)。使ったら消すので、開き直さずに始めた2つ目は空
+    expect(a.openedAt).not.toBe('');
+    expect(Date.parse(a.openedAt)).toBeLessThanOrEqual(Date.parse(a.startedAt));
+    expect(b.openedAt).toBe('');
+  });
+
+  it('画面が送る開いた時刻は信じない (時計は画面の持ち物で、ボーナスを作れてしまう)', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const out = ctx.apiFocusStart(n, 25, '', new Date(Date.now() - 5000).toISOString());
+    expect(out.openedAt).toBe('');
+    // 別のやることを開いた時刻も使わない
+    const m = issue(ctx, '別のもの');
+    ctx.apiFocusOpen(m);
+    expect(ctx.apiFocusStart(n, 25, '', '').openedAt).toBe('');
+  });
+
+  it('開くのも、自分の設定でオンの人だけ・無い番号は断る', () => {
+    const { ctx } = setup({ on: false });
+    expect(() => ctx.apiFocusOpen(issue(ctx))).toThrow('集中のしかた');
+    const on = setup();
+    expect(() => on.ctx.apiFocusOpen(999)).toThrow('#999');
   });
 
   it('次を始めると、終えていない前の記録は「終えないまま次を始めた」(left) になる', () => {
@@ -58,13 +79,13 @@ describe('始める', () => {
     expect(rows[1].endedAt).toBeFalsy();
   });
 
-  it('開いた時刻が先・1時間より前・読めないときは、始めた時刻に倒す', () => {
+  it('開いた時刻が先・1時間より前・読めないときは、空 (分からない) にする', () => {
     const { ctx } = setup();
     const n = issue(ctx);
     const now = new Date();
-    ['2099-01-01T00:00:00Z', new Date(now.getTime() - 2 * 3600000).toISOString(), 'きのう'].forEach((opened) => {
+    ['2099-01-01T00:00:00Z', new Date(now.getTime() - 2 * 3600000).toISOString(), 'きのう', ''].forEach((opened) => {
       const row = ctx.focusStart_(ME, n, 25, '', opened, now);
-      expect(row.openedAt.getTime()).toBe(now.getTime());
+      expect(row.openedAt).toBe('');
     });
   });
 
@@ -84,6 +105,16 @@ describe('始める', () => {
     const n = issue(ctx);
     expect(() => ctx.apiFocusStart(n, 25, '', '')).toThrow('集中のしかた');
     expect(ctx.dbReadAll('focus_sessions')).toEqual([]);
+  });
+
+  it('オフにしたら、確かめる・延ばす・終えるも断る', () => {
+    const { ctx } = setup();
+    const s = startedAgo(ctx, issue(ctx));
+    ctx.apiPrefSet('focus.start', false);
+    expect(() => ctx.apiFocusProve(s.id, 'comment')).toThrow('集中のしかた');
+    expect(() => ctx.apiFocusExtend(s.id, 10)).toThrow('集中のしかた');
+    expect(() => ctx.apiFocusEnd(s.id, 'stopped')).toThrow('集中のしかた');
+    expect(ctx.dbFindOne('focus_sessions', 'id', s.id).endedAt).toBeFalsy();
   });
 
   it('最初の一手を書いたら、その時点で「始めた」になる', () => {
@@ -215,11 +246,106 @@ describe('始めたことを確かめる (番頭の中の手で)', () => {
   });
 });
 
+describe('確かめる範囲 (決めた長さまで・12時間まで)', () => {
+  it('決めた長さ (と延ばした分) を過ぎてからの手では確かめない', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const s = startedAgo(ctx, n, { ago: 30 * 60000, minutes: 25 });
+    ctx.issueCommentAdd(n, '時間を過ぎてから書いた');
+    expect(ctx.apiFocusProve(s.id, 'comment').fresh).toBe(false);
+    ctx.apiFocusExtend(s.id, 10);
+    expect(ctx.apiFocusProve(s.id, 'comment').fresh).toBe(true);
+  });
+
+  it('12時間より前に始めたまま置いてあるものは、確かめる・延ばす・終えるで「終えないまま」(left) になる', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const a = startedAgo(ctx, n, { ago: 13 * 3600000, minutes: 180 });
+    ctx.dbUpdate('focus_sessions', 'id', a.id, { extendedMinutes: 0 });
+    ctx.issueCommentAdd(n, 'あとで書いた');
+    const got = ctx.apiFocusProve(a.id, 'comment');
+    expect(got.fresh).toBe(false);
+    expect(got.points).toBe(0);
+    expect(got.session.result).toBe('left');
+    expect(got.session.provedAt).toBe('');
+
+    const b = ctx.focusStart_(ME, n, 25, '', '', new Date(Date.now() - 13 * 3600000));
+    expect(() => ctx.apiFocusExtend(b.id, 10)).toThrow('終わっています');
+    expect(ctx.dbFindOne('focus_sessions', 'id', b.id).result).toBe('left');
+
+    const c = ctx.focusStart_(ME, n, 25, '', '', new Date(Date.now() - 13 * 3600000));
+    expect(ctx.apiFocusEnd(c.id, 'stopped').result).toBe('left');
+  });
+});
+
+describe('終わった (done) はサーバが確かめる', () => {
+  it('やることが完了になっていなければ「やめた」(stopped) として残す', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const s = startedAgo(ctx, n);
+    expect(ctx.apiFocusEnd(s.id, 'done').result).toBe('stopped');
+    const m = issue(ctx, '完了にするもの');
+    const t = startedAgo(ctx, m);
+    ctx.issueClose(m, null);
+    expect(ctx.apiFocusEnd(t.id, 'done').result).toBe('done');
+  });
+});
+
+describe('鍵の中で大きな表を読まない', () => {
+  it('確かめる・終えるとき、やりとり・履歴・記録・ボードの表は鍵の外で読む', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const s = startedAgo(ctx, n);
+    ctx.issueCommentAdd(n, '書いた');
+    const real = ctx.dbReadAll;
+    const inLock = [];
+    let watching = false;
+    ctx.dbReadAll = (name) => {
+      if (watching && ctx.dbLockDepth_ > 0 && ['issue_comments', 'change_log', 'commits', 'project_items'].indexOf(name) >= 0) {
+        inLock.push(name);
+      }
+      return real(name);
+    };
+    const watch = (fn) => { watching = true; try { return fn(); } finally { watching = false; } };
+    try {
+      expect(watch(() => ctx.apiFocusProve(s.id, 'move')).fresh).toBe(true);
+      expect(watch(() => ctx.apiFocusEnd(s.id, 'stopped')).result).toBe('stopped');
+      const m = issue(ctx, '二つ目');
+      ctx.projectMove(m, 'Backlog', 0);
+      // 始めるときも、ボードの置き場は鍵の外で読む
+      const t = watch(() => startedAgo(ctx, m));
+      ctx.issueCommentAdd(m, '書いた');
+      expect(watch(() => ctx.apiFocusEnd(t.id, 'stopped')).proofKind).toBe('comment');
+    } finally {
+      ctx.dbReadAll = real;
+    }
+    expect(inLock).toEqual([]);
+  });
+
+  it('鍵を取るまでに確かめられていたら、上書きしない', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    const s = startedAgo(ctx, n);
+    ctx.issueCommentAdd(n, '書いた');
+    const real = ctx.dbWithLock_;
+    ctx.dbWithLock_ = (ms, fn) => {
+      ctx.dbWithLock_ = real;
+      // 鍵を取る直前に、別の画面が先に確かめた形
+      ctx.dbUpdate('focus_sessions', 'id', s.id, { provedAt: new Date(), proofKind: 'edit' });
+      return real(ms, fn);
+    };
+    const got = ctx.apiFocusProve(s.id, 'comment');
+    expect(got.fresh).toBe(false);
+    expect(got.session.proofKind).toBe('edit');
+  });
+});
+
 describe('本人のぶんだけ', () => {
   it('ほかの人の記録は確かめる・延ばす・終えるのどれも断る', () => {
     const { ctx, fake } = setup();
     const s = startedAgo(ctx, issue(ctx));
     fake._setUser(OTHER);
+    ctx.apiPrefSet('focus.start', true);
     expect(() => ctx.apiFocusProve(s.id, 'comment')).toThrow('ほかの人の集中の記録');
     expect(() => ctx.apiFocusExtend(s.id, 10)).toThrow('ほかの人の集中の記録');
     expect(() => ctx.apiFocusEnd(s.id, 'stopped')).toThrow('ほかの人の集中の記録');
@@ -264,7 +390,9 @@ describe('延ばす・終える・続いているもの', () => {
 
   it('終わり方は done / stopped だけ。二度押しは前のまま返す', () => {
     const { ctx } = setup();
-    const s = startedAgo(ctx, issue(ctx));
+    const n = issue(ctx);
+    const s = startedAgo(ctx, n);
+    ctx.issueClose(n, null);
     expect(() => ctx.apiFocusEnd(s.id, 'left')).toThrow('終わり方');
     const a = ctx.apiFocusEnd(s.id, 'done');
     const b = ctx.apiFocusEnd(s.id, 'stopped');
@@ -296,54 +424,95 @@ describe('ポイント (台帳から数える・参加している人だけ)', (
     ctx.apiGameJoin(true);
   }
 
-  it('確かめた始めは1点、開いてから1分のうちに始めたら +1', () => {
+  /** 始めたあとにやりとりを書いて確かめる */
+  function proveByComment(ctx, n, s) {
+    ctx.issueCommentAdd(n, '書いた');
+    return ctx.apiFocusProve(s.id, 'comment');
+  }
+
+  it('最初の一手だけでは点にならない。始めたあとの台帳の手で1点、開いてから1分のうちに始めたら +1', () => {
     const { ctx } = setup();
     joined(ctx);
     const n = issue(ctx);
-    const out = ctx.apiFocusStart(n, 25, '第3条を開く', new Date(Date.now() - 5000).toISOString());
-    expect(out.points).toBe(2);
+    ctx.apiFocusOpen(n);
+    const out = ctx.apiFocusStart(n, 25, '第3条を開く', '');
+    // 一手を書けば「始めた」にはなる (技・数のため) が、点は付かない
+    expect(out.provedAt).not.toBe('');
+    expect(out.points).toBe(0);
+    expect(ctx.gamePointsByPerson_('', '')[ME]).toBeUndefined();
+    const got = proveByComment(ctx, n, out);
+    expect(got.fresh).toBe(false);
+    expect(got.credited).toBe(true);
+    expect(got.points).toBe(2);
+    expect(got.session.proofKind).toBe('comment');
     expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(2);
+    // 二度目は何もしない
+    expect(proveByComment(ctx, n, out).points).toBe(0);
+  });
+
+  it('開いた時刻が分からなければボーナスは無い (画面の時計は使わない)', () => {
+    const { ctx } = setup();
+    joined(ctx);
+    const n = issue(ctx);
+    const s = ctx.apiFocusStart(n, 25, '', new Date().toISOString());
+    expect(proveByComment(ctx, n, s).points).toBe(1);
   });
 
   it('ゆっくり始めたらボーナスは無い。やることの開始日に始めたら付く', () => {
     const { ctx } = setup();
     joined(ctx);
     const slow = issue(ctx, 'ゆっくり');
-    ctx.focusStart_(ME, slow, 25, '一手', new Date(Date.now() - 600000).toISOString(), new Date());
+    proveByComment(ctx, slow, ctx.focusStart_(ME, slow, 25, '', new Date(Date.now() - 600000), new Date()));
     expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(1);
     const planned = issue(ctx, '今日から');
     ctx.dbUpdate('issues', 'number', planned, { startDate: ctx.motivationDay_(new Date()) });
-    ctx.focusStart_(ME, planned, 25, '一手', new Date(Date.now() - 600000).toISOString(), new Date());
-    expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(1 + 2);
+    const s = ctx.focusStart_(ME, planned, 25, '', '', new Date());
+    proveByComment(ctx, planned, s);
+    expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(2); // 1日2点まで
+    expect(ctx.focusCredits_(ctx.dbReadAll('focus_sessions'), ctx.dbReadAll('issues'))
+      .map((c) => c.points)).toEqual([1, 1]); // 2つ目は2点のところ、上限で1点
   });
 
   it('同じやることには1人1日1回まで (始め直して稼げない)。確かめていない始めは数えない', () => {
     const { ctx } = setup();
     joined(ctx);
     const n = issue(ctx);
-    for (let i = 0; i < 4; i++) ctx.apiFocusStart(n, 25, '一手' + i, new Date().toISOString());
-    ctx.apiFocusStart(issue(ctx, '書かずに始めた'), 25, '', new Date().toISOString());
+    for (let i = 0; i < 3; i++) proveByComment(ctx, n, ctx.apiFocusStart(n, 25, '', ''));
+    ctx.apiFocusStart(issue(ctx, '書かずに始めた'), 25, '', '');
+    expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(1);
+  });
+
+  it('1人1日2点まで: いくつのやることで始めても、その日は2点で止まる', () => {
+    const { ctx } = setup();
+    joined(ctx);
+    const got = [];
+    for (let i = 0; i < 5; i++) {
+      const n = issue(ctx, 'やること' + i);
+      ctx.apiFocusOpen(n);
+      got.push(proveByComment(ctx, n, ctx.apiFocusStart(n, 25, '', '')).points);
+    }
     expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(2);
-    // 2回目以降の始めの返事は 0 点 (もう数えた)
-    expect(ctx.apiFocusStart(n, 25, 'もう一度', new Date().toISOString()).points).toBe(0);
+    expect(got).toEqual([2, 0, 0, 0, 0]);
   });
 
   it('週の上位に参加していない人・ゲームがオフのときは、ポイントにしない', () => {
     const { ctx } = setup();
     const n = issue(ctx);
     ctx.apiSetGameEnabled(true);
-    expect(ctx.apiFocusStart(n, 25, '一手', new Date().toISOString()).points).toBe(0);
+    expect(proveByComment(ctx, n, ctx.apiFocusStart(n, 25, '', '')).points).toBe(0);
     expect(ctx.gamePointsByPerson_('', '')[ME]).toBeUndefined();
     ctx.apiGameJoin(true);
     ctx.apiSetGameEnabled(false);
-    expect(ctx.apiFocusStart(issue(ctx), 25, '一手', new Date().toISOString()).points).toBe(0);
+    const m = issue(ctx);
+    expect(proveByComment(ctx, m, ctx.apiFocusStart(m, 25, '', '')).points).toBe(0);
   });
 
   it('やることを消すと、集中の記録もポイントも消える', () => {
     const { ctx } = setup();
     joined(ctx);
     const n = issue(ctx);
-    ctx.apiFocusStart(n, 25, '一手', new Date().toISOString());
+    proveByComment(ctx, n, ctx.apiFocusStart(n, 25, '', ''));
+    expect(ctx.gamePointsByPerson_('', '')[ME]).toBe(1);
     ctx.issueArchive(n);
     ctx.issuePurge(n);
     expect(ctx.dbReadAll('focus_sessions')).toEqual([]);
@@ -376,7 +545,11 @@ describe('技の図鑑 (本人だけ・台帳から数える)', () => {
     ctx.issueCommentAdd(n, '書いた');
     ctx.apiFocusProve(slow.id, 'comment');
     expect(badges(ctx).lightning.done).toBe(false);
+    // 開いた時刻が分からない始めでは付けない (画面の時計は使わない)
     ctx.apiFocusStart(n, 25, 'すぐ書いた', new Date(Date.now() - 3000).toISOString());
+    expect(badges(ctx).lightning.done).toBe(false);
+    ctx.apiFocusOpen(n);
+    ctx.apiFocusStart(n, 25, 'すぐ書いた', '');
     expect(badges(ctx).lightning.done).toBe(true);
     expect(badges(ctx).lightning.label).toBe('電光石火');
   });
@@ -405,12 +578,16 @@ describe('技の図鑑 (本人だけ・台帳から数える)', () => {
     ctx.apiFocusEnd(a.id, 'stopped');
     expect(badges(ctx).comeback.done).toBe(false);
     expect(badges(ctx).finish.done).toBe(false);
-    const b = startedAgo(ctx, n);
+    const bn = issue(ctx, '完了にするもの');
+    const b = startedAgo(ctx, bn);
+    ctx.issueClose(bn, null);
     ctx.apiFocusEnd(b.id, 'done');
     expect(badges(ctx).finish.done).toBe(true);
     expect(badges(ctx).comeback.done).toBe(false);
-    const c = startedAgo(ctx, n);
+    const cn = issue(ctx, '延ばしてから完了にするもの');
+    const c = startedAgo(ctx, cn);
     ctx.apiFocusExtend(c.id);
+    ctx.issueClose(cn, null);
     ctx.apiFocusEnd(c.id, 'done');
     expect(badges(ctx).comeback.done).toBe(true);
   });
@@ -437,7 +614,9 @@ describe('自分の数 (今週・始めるまでの時間)', () => {
   it('今週に始めた・確かめた・やりきった数。先週のものは入らない', () => {
     const { ctx } = setup();
     const n = issue(ctx);
-    const a = startedAgo(ctx, n, { step: '一手' });
+    const done = issue(ctx, '完了にするもの');
+    const a = startedAgo(ctx, done, { step: '一手' });
+    ctx.issueClose(done, null);
     ctx.apiFocusEnd(a.id, 'done');
     startedAgo(ctx, n);
     ctx.dbAppend('focus_sessions', { id: 80, issueNumber: n, who: ME, startedAt: new Date(Date.now() - 8 * 86400000),
