@@ -53,6 +53,21 @@ describe('画面とサーバで同じ答えになる', () => {
     }
   });
 
+  it('term / termFill (スクラムまわりの言葉)', () => {
+    // 言葉の表は TERMS() が唯一の定義。画面の写しが1語でもずれると、同じ人に2つの言葉が混ざる
+    const core = loadGas('src/core/Terms.js');
+    const view = ui(['TERMS', 'term', 'termFill']);
+    expect(same(view.TERMS(), core.TERMS())).toBe(true);
+    const keys = Object.keys(core.TERMS()).concat(['', 'x', 'constructor', '__proto__', 'toString']);
+    for (const style of ['plain', 'scrum', '', undefined, 'x']) {
+      for (const k of keys) {
+        expect(view.term(k, style)).toBe(core.term(k, style));
+        const text = 'あ{' + k + '}い{' + pick(keys) + '}';
+        expect(view.termFill(text, style)).toBe(core.termFill(text, style));
+      }
+    }
+  });
+
   it('diffPairs', () => {
     const core = loadGas('src/core/Diff.js');
     const view = ui(['diffPairs']);
@@ -138,7 +153,9 @@ describe('画面とサーバで同じ答えになる', () => {
     };
     // 箱は1回だけ作る (wouldCycle と同じ理由)
     // 束の見出しの人の名前は、画面では表示名に直す。比べるのは束ね方なので、そのまま返す
-    const view = ui(['groupIssues'], { allFiles, splitPath, personName: (x) => x });
+    // 言葉は一般の言葉 (設定が届く前と同じ)。サーバの見出しも一般の言葉に固定してある
+    const view = ui(['groupIssues', 'TERMS', 'term', 'termFill', 'termStyleNow', 'termIn'],
+      { allFiles, splitPath, personName: (x) => x, prefs: null });
     for (let t = 0; t < 2000; t++) {
       const issues = Array.from({ length: rnd(6) }, (_, i) => ({
         number: i + 1,
