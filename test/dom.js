@@ -1,4 +1,7 @@
-import { APP, PAGE_WITHOUT_APP } from './ui-source.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { APP, PAGE_WITHOUT_APP, ROOT, appSourceMap } from './ui-source.js';
 
 /*
  * 組む元 (wiki.html / app.css.html / 画面の JS) は 1 ファイルの中で 1 回だけ読む。
@@ -22,8 +25,21 @@ function compiled() {
     .replace(/<\/html>[\s\S]*$/, '');
   const js = APP;
 
-  // eslint-disable-next-line no-new-func
-  source = { html, run: new Function('window', 'document', 'google', js) };
+  // 名前の付いたファイルとして読み、行を元の部分ファイルへ戻す地図を添える。
+  // new Function で読むと名前が無く、画面の JS がカバレッジに1行も数えられなかった
+  // カバレッジはファイル名の中身をディスクから読み直すので、つないだものを実際に書いて置く
+  const map = Buffer.from(JSON.stringify(appSourceMap())).toString('base64');
+  const code = js + '\n//# sourceMappingURL=data:application/json;base64,' + map + '\n';
+  const file = path.join(ROOT, 'coverage-ui', 'app.joined.js');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // テストのファイルは並んで走るので、途中まで書いたものを読まれないよう別名で書いてから置き換える
+  if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== code) {
+    const tmp = file + '.' + process.pid + '.' + Math.random().toString(36).slice(2);
+    fs.writeFileSync(tmp, code);
+    fs.renameSync(tmp, file);
+  }
+  const run = vm.compileFunction(code, ['window', 'document', 'google'], { filename: file });
+  source = { html, run };
   return source;
 }
 
