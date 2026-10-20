@@ -1242,10 +1242,13 @@ describe('遅れて届いた返事の見分け方', () => {
 });
 
 describe('日本語の折り返し', () => {
-  const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+  // コメントにした宣言はブラウザが読まないので、外してから見る
+  const css = fs.readFileSync('src/ui/app.css.html', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 規則が無くなったときに空の字で通ってしまわないよう、見つからなければ落とす
   const rule = (sel) => {
     const i = css.indexOf('\n' + sel + ' {');
-    return i < 0 ? '' : css.slice(i, css.indexOf('}', i));
+    expect(i, sel + ' の規則が見つからない').toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf('}', i));
   };
 
   it('文は語の切れ目で割る (「確認依頼」を「確認依」「頼」に割らない)', () => {
@@ -1259,6 +1262,11 @@ describe('日本語の折り返し', () => {
   });
 
   it('文の欄で break-all を使わない', () => {
-    expect(rule('.report-context .comment-body')).not.toMatch(/break-all/);
+    const body = rule('.report-context .comment-body');
+    expect(body).toMatch(/word-break:\s*auto-phrase/);
+    expect(body).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(body).not.toMatch(/break-all/);
+    // もっと広い .comment-body に break-all が当たると、こちらの指定を上書きしうる
+    expect(css).not.toMatch(/(^|[\s,}])\.comment-body\s*\{[^}]*break-all/);
   });
 });
