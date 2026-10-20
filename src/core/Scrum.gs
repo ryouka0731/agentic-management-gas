@@ -78,7 +78,7 @@ function scrumDayOrEmpty_(v) {
 function sprintGet(name) {
   scrumAssertEnabled_();
   var row = dbFindOne('sprints', 'name', String(name || ''));
-  if (!row) throw new Error('スプリントが見つかりません: ' + name);
+  if (!row) throw new Error('作業期間が見つかりません: ' + name);
   return row;
 }
 
@@ -105,7 +105,7 @@ function sprintCreate(fields) {
   var f = fields || {};
   var name = String(f.name || '').replace(/^\s+|\s+$/g, '');
   if (!/^[^\/\\\n\r\t,]{1,40}$/.test(name)) {
-    throw new Error('スプリントの名前を入れてください (40字まで、/ \\ と , は使えません)');
+    throw new Error('作業期間の名前を入れてください (40字まで、/ \\ と , は使えません)');
   }
 
   var start = scrumDay_(f.startDate);
@@ -114,7 +114,7 @@ function sprintCreate(fields) {
 
   // あるか見てから書くので鍵の中で行う。分けると同じ名前が2つ並ぶ
   return dbWithLock_(30000, function () {
-    if (dbFindOne('sprints', 'name', name)) throw new Error('そのスプリントは既にあります: ' + name);
+    if (dbFindOne('sprints', 'name', name)) throw new Error('その作業期間は既にあります: ' + name);
 
     var row = {
       name: name,
@@ -196,7 +196,7 @@ function impedimentCreate(fields) {
 function impedimentGet(number) {
   scrumAssertEnabled_();
   var row = dbFindOne('impediments', 'number', number);
-  if (!row) throw new Error('障害物が見つかりません: #' + number);
+  if (!row) throw new Error('困りごとが見つかりません: #' + number);
   return row;
 }
 
@@ -258,7 +258,7 @@ function impedimentResolve(number, resolution) {
   // どちらも「未解決」と読み、後の解決策が先の解決策を黙って上書きする
   return dbWithLock_(30000, function () {
     var before = impedimentGet(number);
-    if (String(before.state) === 'resolved') throw new Error('この障害物は既に解決しています');
+    if (String(before.state) === 'resolved') throw new Error('この困りごとは既に解決しています');
 
     var patch = {
       state: 'resolved', resolvedAt: new Date(), resolution: text.substring(0, 4000), updatedAt: new Date(),

@@ -206,7 +206,7 @@ describe('ロードマップ', () => {
 
   it('スプリントが1つも無ければ、理由を添える', () => {
     const r = v.scrumRoadmap([], [issue(1, '', 3, '')]);
-    expect(r.notice).toContain('スプリント');
+    expect(r.notice).toContain('作業期間');
   });
 });
 
@@ -228,9 +228,20 @@ describe('要約', () => {
 });
 
 describe('用語の説明', () => {
-  it('知っている語の説明を返す', () => {
-    expect(v.scrumGlossaryOf('ベロシティ')).toContain('スプリント');
-    expect(v.scrumGlossaryOf('ポイント')).toBe(v.scrumGlossaryOf('ストーリーポイント'));
+  it('TERMS の key で引く。見出しの字では引かない (表し方で字が変わる)', () => {
+    expect(v.scrumGlossaryOf('velocity')).toContain('作業期間');
+    expect(v.scrumGlossaryOf('ベロシティ')).toBe('');
     expect(v.scrumGlossaryOf('知らない語')).toBe('');
+    expect(v.scrumGlossaryOf('constructor')).toBe('');
+  });
+
+  it('説明は TERMS の言葉をすべて覆い、一般の言葉で書く (サーバの文は一般の言葉)', () => {
+    const t = loadGas('src/core/Terms.js');
+    const all = v.SCRUM_GLOSSARY();
+    Object.keys(t.TERMS()).filter((k) => k !== 'feature')
+      .forEach((k) => expect(all[k], k).toBeTruthy());
+    Object.values(all).forEach((text) => {
+      expect(text).not.toMatch(/スプリント|ベロシティ|バーンダウン|障害物|完了の定義|プロダクトゴール|受入基準|受け入れ条件|ストーリーポイント/);
+    });
   });
 });
