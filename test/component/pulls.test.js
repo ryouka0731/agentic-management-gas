@@ -797,3 +797,171 @@ describe('見比べたものを反映する', () => {
     expect(calls[0].args[2]).toBe('P1');
   });
 });
+
+describe('確認依頼の、うまくいかないとき・変わった形', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const PR = DEFAULTS.apiPrList[0];
+  const btn = (text) => [...document.querySelectorAll('#pr-detail .btn')]
+    .find((b) => b.textContent.indexOf(text) >= 0);
+  const open = (over) => {
+    const app = mount(over);
+    document.querySelector('[data-tab="pulls"]').click();
+    return app;
+  };
+  const snack = () => document.getElementById('snackbar').textContent;
+
+  it('1件も無ければ、どこから出すのかを言う', () => {
+    open({ apiPrList: [] });
+    expect(document.getElementById('pr-list').textContent).toContain('確認依頼はありません');
+  });
+
+  it('一覧が取れなければ、一覧の欄に理由を出す', () => {
+    open({ apiPrList: new Error('混み合っています') });
+    expect(document.getElementById('pr-list').textContent).toBe('エラー: 混み合っています');
+  });
+
+  it('中身が取れなければ、中身の欄に理由を出す', () => {
+    open({ apiPrPreview: new Error('読めませんでした') });
+    expect(document.getElementById('pr-detail').textContent).toBe('エラー: 読めませんでした');
+  });
+
+  it('ホームから番号で開くとき、見つからなければそう言って先頭を開く', () => {
+    mount({
+      apiHomeSummary: Object.assign({}, DEFAULTS.apiHomeSummary, {
+        myTurn: Object.assign({}, DEFAULTS.apiHomeSummary.myTurn, {
+          reviews: { items: [{ number: 42, title: '消えた依頼' }], total: 1 },
+        }),
+      }),
+    });
+    const item = [...document.querySelectorAll('#home-turn button, #home-turn a')]
+      .find((b) => b.textContent.indexOf('消えた依頼') >= 0);
+    item.click();
+    expect(snack()).toContain('確認依頼 #42 が見つかりません');
+    expect(document.getElementById('pr-detail').textContent).toContain('#1 第2条の改訂');
+  });
+
+  it('反映できない中身があれば、理由を出して反映を押させない', () => {
+    open({
+      apiPrPreview: Object.assign({}, DEFAULTS.apiPrPreview, {
+        approvals: 1, problems: ['画像を取り出せません'],
+      }),
+    });
+    expect(document.querySelector('#pr-detail .confirm-strip').textContent)
+      .toBe('反映できません: 画像を取り出せません');
+    expect(btn('に反映する').disabled).toBe(true);
+    expect(btn('に反映する').title).toBe('反映できない内容が含まれています');
+  });
+
+  it('食い違いの片側が消えていれば「(削除)」と出し、選んだ解き方を送る', () => {
+    const app = open({
+      apiPrPreview: Object.assign({}, DEFAULTS.apiPrPreview, {
+        clean: false, approvals: 1, previewSha: 'P1',
+        conflicts: [{ ours: ['<p>第2条 9時</p>'], theirs: [] }],
+      }),
+      apiPrMerge: { ok: true },
+    });
+    const block = document.querySelector('#pr-detail .conflict-block');
+    expect(block.textContent).toContain('(削除)');
+    expect(document.querySelector('#pr-detail .row-meta').textContent).toContain('同じ場所が両方で変わっています');
+    block.querySelector('select').value = 'both';
+
+    btn('に反映する').click();
+    [...document.querySelectorAll('.confirm-strip .btn')].find((b) => b.textContent === '反映する').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrMerge').pop().args).toEqual([1, ['both'], 'P1']);
+  });
+
+  it('反映に失敗したら、理由を出して押し直せるようにする', () => {
+    open({
+      apiPrPreview: Object.assign({}, DEFAULTS.apiPrPreview, { approvals: 1 }),
+      apiPrMerge: new Error('開いたあとで中身が変わっています'),
+    });
+    btn('に反映する').click();
+    [...document.querySelectorAll('.confirm-strip .btn')].find((b) => b.textContent === '反映する').click();
+    expect(snack()).toContain('反映できませんでした: 開いたあとで中身が変わっています');
+    expect(btn('に反映する').disabled).toBe(false);
+  });
+
+  it('承認に失敗したら、押し直せるようにする', () => {
+    open({ apiPrReview: new Error('混み合っています') });
+    btn('承認する').click();
+    expect(snack()).toContain('混み合っています');
+    expect(btn('承認する').disabled).toBe(false);
+  });
+
+  it('承認したら中身を取り直す', () => {
+    const app = open({ apiPrReview: { ok: true } });
+    const before = app.calls.filter((c) => c.name === 'apiPrPreview').length;
+    btn('承認する').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrReview').pop().args).toEqual([1, 'approve', '']);
+    expect(app.calls.filter((c) => c.name === 'apiPrPreview').length).toBe(before + 1);
+  });
+
+  it('やりとりが取れなければ、その欄に理由を出す。コメントは空なら送らない', () => {
+    const app = open({ apiPrReviews: new Error('読めません') });
+    expect(document.getElementById('pr-detail').textContent).toContain('エラー: 読めません');
+
+    app.respond('apiPrReviews', []);
+    document.querySelector('[data-tab="pulls"]').click();
+    document.querySelector('#pr-detail .comment-form .btn-primary').click();
+    expect(app.calls.some((c) => c.name === 'apiPrReview')).toBe(false);
+  });
+
+  it('コメントを送れなかったら、押し直せるようにする', () => {
+    open({ apiPrReview: new Error('混み合っています') });
+    const form = document.querySelector('#pr-detail .comment-form');
+    form.querySelector('textarea').value = '一言';
+    form.querySelector('.btn-primary').click();
+    expect(form.querySelector('.btn-primary').disabled).toBe(false);
+    expect(snack()).toContain('混み合っています');
+  });
+
+  it('記録が無ければそう言い、取れなければ理由を出す。複数の文書ならどの文書の記録かも出す', () => {
+    const app = open({ apiPrCommits: [] });
+    const tab = (t) => [...document.querySelectorAll('#pr-detail .pr-tab')].find((b) => b.textContent === t);
+    tab('変更の記録').click();
+    expect(document.getElementById('pr-detail').textContent).toContain('記録はありません');
+
+    app.respond('apiPrCommits', [
+      { sha: 'aaaaaaa111', message: '規程を直す', author: 'me@example.com', path: '就業規則.doc' },
+      { sha: 'bbbbbbb222', message: '細則を直す', author: 'me@example.com', path: '細則.doc' },
+    ]);
+    tab('変更の記録').click();
+    expect(document.getElementById('pr-detail').textContent).toContain('aaaaaaa · me@example.com · 就業規則.doc');
+
+    app.respond('apiPrCommits', new Error('読めません'));
+    tab('変更の記録').click();
+    expect(document.getElementById('pr-detail').textContent).toContain('エラー: 読めません');
+  });
+
+  it('頼む相手を決めると一覧に出る。決められなければ書いたまま開き直す', () => {
+    const app = open({ apiPrSetReviewers: ['other@example.com'] });
+    document.querySelector('#pr-detail .reviewer-row .icon-btn').click();
+    const input = document.querySelector('#side-body input');
+    expect(input.value).toBe('me@example.com');
+    input.value = 'other@example.com';
+    document.querySelector('#side-body form .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrSetReviewers').pop().args).toEqual([1, ['other@example.com']]);
+
+    app.respond('apiPrSetReviewers', new Error('知らない人です'));
+    document.querySelector('#pr-detail .reviewer-row .icon-btn').click();
+    document.querySelector('#side-body input').value = 'nobody';
+    document.querySelector('#side-body form .btn-primary').click();
+    expect(snack()).toContain('知らない人です');
+    expect(document.querySelector('#side-body input').value).toBe('nobody');
+  });
+
+  it('続けて別の依頼を押したら、前の依頼の返事で中身を上書きしない', () => {
+    let first = null;
+    open({
+      apiPrList: [PR, Object.assign({}, PR, { number: 2, title: '第3条の改訂' })],
+      apiPrPreview: (n) => (n === 1 ? { later: (ok) => { first = ok; } } : DEFAULTS.apiPrPreview),
+    });
+    const rows = document.querySelectorAll('#pr-list .row-item');
+    rows[1].click();
+    expect(document.getElementById('pr-detail').textContent).toContain('#2 第3条の改訂');
+    first(DEFAULTS.apiPrPreview);
+    expect(document.getElementById('pr-detail').textContent).toContain('#2 第3条の改訂');
+    expect(rows[1].getAttribute('aria-current')).toBe('true');
+  });
+});

@@ -1935,3 +1935,149 @@ describe('送れなかった入力は消さない', () => {
     expect(document.getElementById('side-panel').hidden).toBe(true);
   });
 });
+
+describe('やることの、まだ通していなかった道', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const $ = (s) => document.querySelector(s);
+  const snack = () => (document.getElementById('snackbar') || { textContent: '' }).textContent;
+  const btnIn = (root, text) => [...document.querySelectorAll(root + ' .btn')]
+    .find((b) => b.textContent.indexOf(text) >= 0);
+  const BASE = { ...DEFAULTS.apiIssueList[0], parent: '' };
+
+  function openView(issue, over) {
+    const app = mount(Object.assign({ apiIssueList: [issue || BASE] }, over || {}));
+    $('[data-tab="issues"]').click();
+    $('#issue-list .row-item .row-open').click();
+    return app;
+  }
+
+  it('補足のマークダウンを、見出し・線・引用・番号・箇条・字の飾り・リンクまで組む', () => {
+    openView({ ...BASE, body: [
+      '# 大見出し', '---', '> 引用した文', '1. 一つ目', '2. 二つ目', '- 箇条',
+      '`コード` と *斜め* と [手引き](https://example.com/a)', '',
+    ].join('\n') });
+    const md = $('#side-body .md');
+    expect(md.querySelector('h3').textContent).toBe('大見出し');
+    expect(md.querySelector('hr')).toBeTruthy();
+    expect(md.querySelector('blockquote').textContent).toBe('引用した文');
+    expect(md.querySelectorAll('ol li')).toHaveLength(2);
+    expect(md.querySelectorAll('ul li')).toHaveLength(1);
+    expect(md.querySelector('code').textContent).toBe('コード');
+    expect(md.querySelector('em').textContent).toBe('斜め');
+    const a = md.querySelector('a');
+    expect(a.href).toBe('https://example.com/a');
+    expect(a.target).toBe('_blank');
+    expect(a.rel).toBe('noopener');
+  });
+
+  it('完了したものは、読む形から「完了を取り消す」で戻せる', () => {
+    const app = openView({ ...BASE, state: 'closed' }, { apiIssueReopen: { ok: true } });
+    btnIn('#side-body', '完了を取り消す').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueReopen').pop().args).toEqual([2]);
+    expect(snack()).toContain('#2 をやることに戻しました');
+    expect($('#side-panel').hidden).toBe(true);
+  });
+
+  it('読む形から捨てられる。確かめてから捨て、戻せる日数を言う', () => {
+    const app = openView(BASE, { apiIssueArchive: { ok: true }, apiArchiveKeepDays: 14 });
+    $('#side-body .btn-danger[aria-label="#2 を捨てる"]').click();
+    expect($('.confirm-strip').textContent).toContain('14日のうちなら');
+    btnIn('.confirm-strip', '捨てる').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueArchive').pop().args).toEqual([2]);
+    expect(snack()).toContain('#2 を捨てました');
+  });
+
+  it('直す形からも、完了にする・完了を取り消す・捨てるができる', () => {
+    const app = openView(BASE, { apiIssueClose: { ok: true }, apiIssueArchive: { ok: true } });
+    $('#side-edit').click();
+    btnIn('#side-body', '完了にする').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueClose').pop().args).toEqual([2]);
+
+    openView({ ...BASE, state: 'closed' }, { apiIssueReopen: { ok: true } });
+    $('#side-edit').click();
+    btnIn('#side-body', '完了を取り消す').click();
+    expect(snack()).toContain('をやることに戻しました');
+
+    const third = openView(BASE, { apiIssueArchive: { ok: true } });
+    $('#side-edit').click();
+    $('#side-body .btn-danger').click();
+    btnIn('.confirm-strip', '捨てる').click();
+    expect(third.calls.some((c) => c.name === 'apiIssueArchive')).toBe(true);
+  });
+
+  it('自分の書き込みは直せて消せる', () => {
+    const app = openView(BASE, {
+      apiIssueComments: [{ id: 5, issueNumber: 2, body: '確認します', by: 'me@example.com',
+        at: '2026-09-09T00:00:00.000Z', editedAt: '', canEdit: true }],
+      apiIssueCommentEdit: { ok: true },
+      apiIssueCommentDelete: '書き込みを消しました',
+    });
+    $('#side-body .comment .comment-tools .icon-btn').click();
+    const area = $('#side-body form textarea');
+    expect(area.value).toBe('確認します');
+    area.value = '確認しました';
+    $('#side-body form .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueCommentEdit').pop().args).toEqual([5, '確認しました']);
+    expect(snack()).toContain('直しました');
+
+    $('#side-body .comment .comment-tools .btn-danger').click();
+    btnIn('.confirm-strip', '消す').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueCommentDelete').pop().args).toEqual([5]);
+    expect(snack()).toContain('書き込みを消しました');
+  });
+
+  it('書き込みが空なら送らない。送れなければ押し直せる', () => {
+    const app = openView(BASE, { apiIssueComment: new Error('混み合っています') });
+    const send = btnIn('#side-body .comment-form', '書き込む');
+    send.click();
+    expect(app.calls.some((c) => c.name === 'apiIssueComment')).toBe(false);
+    $('#side-body .comment-form textarea').value = '一言';
+    send.click();
+    expect(send.disabled).toBe(false);
+    expect(snack()).toContain('混み合っています');
+  });
+
+  it('タグの候補は Escape で閉じ、当たるものが無ければ出さない', () => {
+    mount();
+    $('[data-tab="issues"]').click();
+    $('#issue-create-btn').click();
+    const input = $('#side-body .tag-input');
+    const box = $('#side-body .tag-suggest');
+    const type = (v) => {
+      input.value = v;
+      input.selectionStart = v.length;
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    };
+    type('#');
+    expect(box.hidden).toBe(false);
+    expect(box.textContent).toContain('よく使うもの');
+    const esc = new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+    input.dispatchEvent(esc);
+    expect(box.hidden).toBe(true);
+    // 右のペインまでは閉じない (Escape を止めている)
+    expect($('#side-panel').hidden).toBe(false);
+
+    type('#存在しないタグ');
+    expect(box.hidden).toBe(true);
+  });
+
+  it('自分の下書きは消せる。残した下書きはその場で差し込める', () => {
+    const app = mount({ apiTemplateDelete: '下書きを消しました', apiTemplateSave: { name: '週次', body: '## 今週\n' } });
+    $('[data-tab="issues"]').click();
+    $('#issue-create-btn').click();
+    $('#side-body .template-bar .chip-off').click();
+    expect(app.calls.filter((c) => c.name === 'apiTemplateDelete').pop().args).toEqual(['週報']);
+    expect(snack()).toContain('下書きを消しました');
+
+    const body = $('#side-body textarea[name="body"]');
+    body.value = '## 今週\n';
+    btnIn('#side-body .template-bar', '下書きにする').click();
+    $('#side-body form input').value = '週次';
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('下書き「週次」を残しました');
+
+    $('#issue-create-btn').click();
+    expect([...document.querySelectorAll('#side-body .template-use')].map((b) => b.textContent)).toContain('週次');
+  });
+});

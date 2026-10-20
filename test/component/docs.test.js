@@ -1080,3 +1080,212 @@ describe('文書の全画面と、全画面のリンク', () => {
     expect(document.getElementById('snackbar').textContent).toContain('この文書は見られないか、登録されていません');
   });
 });
+
+describe('文書のまわりの、うまくいかないとき・空のとき', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const $ = (s) => document.querySelector(s);
+  const snack = () => (document.getElementById('snackbar') || { textContent: '' }).textContent;
+  const btnIn = (root, text) => [...document.querySelectorAll(root + ' .btn')]
+    .find((b) => b.textContent.indexOf(text) >= 0);
+
+  function openDoc(over) {
+    const app = mount(over);
+    $('.nav-item[data-tab="docs"]').click();
+    $('.doc-open').click();
+    return app;
+  }
+
+  it('Markdown が取れなければ、欄を空にして理由を出す', () => {
+    openDoc({ apiGetMarkdown: new Error('読めませんでした') });
+    $('#mode-edit').click();
+    expect($('#editor').value).toBe('');
+    expect($('#mode-hint').textContent).toBe('エラー: 読めませんでした');
+  });
+
+  it('保存に失敗したら、帯で知らせて押し直せるようにする', () => {
+    openDoc({
+      apiGetMarkdown: { markdown: '# 第1条\n', branch: '見直し', editable: true, baseSha: 'A' },
+      apiSaveMarkdown: new Error('書き戻せません'),
+    });
+    $('#mode-edit').click();
+    $('#edit-save-btn').click();
+    expect(snack()).toContain('書き戻せません');
+    expect($('#edit-save-btn').disabled).toBe(false);
+    expect($('#mode-hint').textContent).toBe('');
+  });
+
+  it('正式版を直接直した分は、確かめてから退避する。失敗したら押し直せる', () => {
+    const app = openDoc({
+      apiFileStatus: { dirty: true, headSha: 'a', branch: 'main' },
+      apiStashMainDrift: new Error('混み合っています'),
+    });
+    expect($('#stash-btn').hidden).toBe(false);
+    $('#stash-btn').click();
+    expect(app.calls.some((c) => c.name === 'apiStashMainDrift')).toBe(false);
+    btnIn('.confirm-strip', '退避する').click();
+    expect(snack()).toContain('混み合っています');
+    expect($('#stash-btn').disabled).toBe(false);
+  });
+
+  it('文書に結び付いたやることを本文の上に出す。無ければ出さない', () => {
+    openDoc({ apiIssuesForFile: [{ number: 4, title: '第1条を直す' }] });
+    expect($('#linked-issues').hidden).toBe(false);
+    expect($('#linked-issues').textContent).toBe('やること #4 第1条を直す');
+
+    openDoc({ apiIssuesForFile: [] });
+    expect($('#linked-issues').hidden).toBe(true);
+  });
+
+  it('記録がまだ無ければ、どうすれば残るかを言う。取れなければ理由を出す', () => {
+    const app = openDoc({ apiCommitGraph: { rows: [], laneCount: 1, branches: [] } });
+    $('.tab[data-tab="history"]').click();
+    expect($('#panel-history').textContent).toContain('まだ記録がありません');
+
+    app.respond('apiCommitGraph', new Error('読めません'));
+    $('.tab[data-tab="content"]').click();
+    $('.tab[data-tab="history"]').click();
+    expect($('#panel-history').textContent).toContain('エラー: 読めません');
+  });
+
+  it('差分が取れなければ、差分の欄に理由を出す', () => {
+    openDoc({ apiCommitDiff: new Error('差分を作れません') });
+    $('.tab[data-tab="history"]').click();
+    expect($('#panel-history').textContent).toContain('エラー: 差分を作れません');
+  });
+
+  it('この文書の改訂版が無ければ、そこから作れる', () => {
+    openDoc({ apiListFiles: [{ fileId: 'DOC1', path: '就業規則.doc', type: 'doc' }] });
+    $('.tab[data-tab="drafts"]').click();
+    expect($('#draft-list').textContent).toContain('この文書の改訂版はありません');
+    btnIn('#draft-list', 'この文書の改訂版を作る').click();
+    expect($('#side-title').textContent).toBe('この文書の改訂版を作る');
+  });
+
+  it('改訂中の版が1つも無ければそう言う。一覧が取れなければ理由を出す', () => {
+    const app = mount({ apiBranchList: [DEFAULTS.apiBranchList[0]] });
+    $('.nav-item[data-tab="branches"]').click();
+    expect($('#branch-list').textContent).toContain('改訂中の版はありません');
+
+    app.respond('apiBranchList', new Error('混み合っています'));
+    $('.nav-item[data-tab="home"]').click();
+    $('.nav-item[data-tab="branches"]').click();
+    expect($('#branch-list').textContent).toBe('エラー: 混み合っています');
+  });
+
+  it('改訂版を捨てたら、帯で知らせて一覧を取り直す', () => {
+    const app = mount({ apiBranchDelete: { ok: true } });
+    $('.nav-item[data-tab="branches"]').click();
+    const lists = app.calls.filter((c) => c.name === 'apiBranchList').length;
+    $('#branch-list .btn-danger').click();
+    btnIn('.confirm-strip', '捨てる').click();
+    expect(app.calls.filter((c) => c.name === 'apiBranchDelete').pop().args).toEqual(['見直し']);
+    expect(snack()).toContain('改訂版を捨てました');
+    expect(app.calls.filter((c) => c.name === 'apiBranchList').length).toBeGreaterThan(lists);
+  });
+
+  it('文書を足す: 候補が取れなければ理由を、足せなければ断りを出す', () => {
+    const app = mount({ apiBranchAddable: new Error('読めません') });
+    $('.nav-item[data-tab="branches"]').click();
+    btnIn('#branch-list', '文書を足す').click();
+    expect(snack()).toContain('候補を取れませんでした: 読めません');
+
+    app.respond('apiBranchAddable', [{ fileId: 'DOC2', path: '賃金規程.doc' }]);
+    app.respond('apiBranchAddFile', new Error('その文書はこの改訂版に入っています'));
+    btnIn('#branch-list', '文書を足す').click();
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('足せませんでした: その文書はこの改訂版に入っています');
+  });
+
+  it('確認依頼: 改訂版に文書が無い・正式版が見つからなければ、そう言って欄を開かない', () => {
+    mount({
+      apiListFiles: [
+        { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
+        { fileId: 'W9', path: 'branches/見直し/消えた規程.doc', type: 'doc' },
+      ],
+    });
+    $('.nav-item[data-tab="branches"]').click();
+    const row = [...document.querySelectorAll('#branch-list .row-item')]
+      .find((r) => r.textContent.indexOf('見直し') >= 0);
+    [...row.querySelectorAll('.btn')].find((b) => b.textContent === '確認を依頼する').click();
+    expect(snack()).toContain('正式版の文書が見つかりません');
+    expect($('#side-panel').hidden).toBe(true);
+
+    const other = [...document.querySelectorAll('#branch-list .row-item')]
+      .find((r) => r.textContent.indexOf('土台') >= 0);
+    [...other.querySelectorAll('.btn')].find((b) => b.textContent === '確認を依頼する').click();
+    expect(snack()).toContain('対象の文書が見つかりません');
+  });
+
+  it('依頼できなければ、理由を帯で出して書いたまま開き直す', () => {
+    mount({ apiPrCreate: new Error('この組み合わせには閉じていない確認依頼があります: #1') });
+    $('.nav-item[data-tab="branches"]').click();
+    btnIn('#branch-list', '確認を依頼する').click();
+    $('#side-body input[name="title"]').value = '第2条の改訂';
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('依頼できませんでした: この組み合わせには閉じていない確認依頼があります');
+    expect($('#side-body input[name="title"]').value).toBe('第2条の改訂');
+  });
+
+  it('まとめて記録: 改訂中の版が無い・変更が無いときはそう言う。一部できなければ件数と理由を出す', () => {
+    const app = mount({ apiBranchList: [DEFAULTS.apiBranchList[0]] });
+    $('.nav-item[data-tab="branches"]').click();
+    $('#bulk-commit-btn').click();
+    expect(snack()).toContain('改訂中の版がありません');
+
+    app.respond('apiBranchList', DEFAULTS.apiBranchList);
+    app.respond('apiDirtyFiles', []);
+    $('#bulk-commit-btn').click();
+    expect(snack()).toContain('記録していない変更はありません');
+
+    app.respond('apiDirtyFiles', (name) => (name === '見直し'
+      ? [{ fileId: 'W1', path: 'branches/見直し/就業規則.doc' }]
+      : new Error('読めません')));
+    app.respond('apiCommitMany', { committed: [], failed: [{ path: 'branches/見直し/就業規則.doc', error: '進んでいます' }] });
+    $('#bulk-commit-btn').click();
+    // 読めなかった版があっても、読めたぶんで尋ねる
+    expect(document.querySelectorAll('#side-body .bulk-row')).toHaveLength(1);
+    $('#side-body input[name="message"]').value = 'まとめて';
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('0件記録しました / 1件できませんでした: branches/見直し/就業規則.doc 進んでいます');
+  });
+
+  it('まとめて記録: 全部外したら送らない。版の一覧が取れなければ押し直せる', () => {
+    const app = mount({ apiDirtyFiles: [{ fileId: 'W1', path: 'branches/見直し/就業規則.doc' }] });
+    $('.nav-item[data-tab="branches"]').click();
+    $('#bulk-commit-btn').click();
+    document.querySelectorAll('#side-body .bulk-row input').forEach((b) => { b.checked = false; });
+    $('#side-body input[name="message"]').value = 'まとめて';
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('対象が選ばれていません');
+    expect(app.calls.some((c) => c.name === 'apiCommitMany')).toBe(false);
+
+    app.respond('apiBranchList', new Error('混み合っています'));
+    $('#bulk-commit-btn').click();
+    expect($('#bulk-commit-btn').disabled).toBe(false);
+  });
+
+  it('手元に頼む: 頼めることが取れない・無ければそう言う', () => {
+    const app = mount({ apiOutboxVerbs: new Error('読めません') });
+    $('.nav-item[data-tab="pulls"]').click();
+    [...document.querySelectorAll('#pr-detail .pr-tab')].find((b) => b.textContent === '手元への頼みごと').click();
+    btnIn('#pr-detail', '手元に頼む').click();
+    expect(snack()).toContain('頼めることを取れませんでした: 読めません');
+
+    app.respond('apiOutboxVerbs', [['merge', '取り込む']]);
+    btnIn('#pr-detail', '手元に頼む').click();
+    expect(snack()).toContain('頼めることがありません');
+
+    app.respond('apiOutboxVerbs', [['diff', '差分']]);
+    app.respond('apiOutboxAdd', new Error('使えない字が入っています'));
+    btnIn('#pr-detail', '手元に頼む').click();
+    $('#side-body form .btn-primary').click();
+    expect(snack()).toContain('頼めませんでした: 使えない字が入っています');
+  });
+
+  it('この画面の URL が分からなければ、リンクを作れないと言う', () => {
+    openDoc({ apiAppUrl: '' });
+    $('#doc-link-btn').click();
+    expect(snack()).toContain('この画面の URL が分からず、リンクを作れませんでした');
+  });
+});

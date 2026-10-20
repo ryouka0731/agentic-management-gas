@@ -985,3 +985,156 @@ describe('工程表のペインと細かさ', () => {
     expect(css).toMatch(/@media \(max-width: 767px\) \{[^}]*\.gantt \{ --gantt-name-w: 140px; \}/);
   });
 });
+
+describe('ボードと工程表の、まだ通していなかった道', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const $ = (s) => document.querySelector(s);
+  const snack = () => (document.getElementById('snackbar') || { textContent: '' }).textContent;
+  const ISSUES = [
+    { ...DEFAULTS.apiIssueList[0], number: 2, parent: '', assignees: ['me@example.com', 'other@example.com'],
+      assignee: 'me@example.com,other@example.com', labels: '規定改訂, 会議', state: 'open',
+      startDate: '2026-09-01T00:00:00.000Z', dueDate: '2026-09-30T00:00:00.000Z' },
+    { ...DEFAULTS.apiIssueList[1], number: 1, parent: '', assignees: [], assignee: '', labels: '', state: 'closed' },
+  ];
+
+  function group(by) {
+    const sel = $('#issue-group');
+    sel.value = by;
+    sel.dispatchEvent(new window.Event('change'));
+  }
+  const heads = () => [...document.querySelectorAll('#issue-list .group-head, #issue-list .issue-group-head, #issue-list h3')]
+    .map((h) => h.textContent);
+
+  it.each([
+    ['assignee', ['山田 太郎', '鈴木 花子', '担当なし']],
+    ['state', ['未完了', '完了']],
+    ['label', ['規定改訂', '会議', 'ラベルなし']],
+  ])('一覧を %s ごとにまとめる。2人で持つものは両方の束に出す', (by, want) => {
+    mount({ apiIssueList: ISSUES });
+    $('.nav-item[data-tab="issues"]').click();
+    group(by);
+    const text = $('#issue-list').textContent;
+    want.forEach((w) => expect(text).toContain(w));
+  });
+
+  function pointer(type, x) {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    ev.clientX = x;
+    ev.pointerId = 1;
+    return ev;
+  }
+
+  function withPointer(fn) {
+    const capture = window.Element.prototype.setPointerCapture;
+    const release = window.Element.prototype.releasePointerCapture;
+    window.Element.prototype.setPointerCapture = () => {};
+    window.Element.prototype.releasePointerCapture = () => {};
+    try { return fn(); } finally {
+      window.Element.prototype.setPointerCapture = capture;
+      window.Element.prototype.releasePointerCapture = release;
+    }
+  }
+
+  function openGantt(over) {
+    const app = mount(Object.assign({ apiIssueList: [ISSUES[0]] }, over || {}));
+    $('.nav-item[data-tab="issues"]').click();
+    $('#view-gantt').click();
+    const bar = $('.gantt-row[data-number="2"] .gantt-bar');
+    // 幅 200px の棒として扱う (端は 10px)
+    bar.getBoundingClientRect = () => ({ left: 100, right: 300, width: 200, top: 0, bottom: 20, height: 20 });
+    return { app, bar };
+  }
+
+  it('棒に指を置くと、端では幅を変える形、中では掴む形になる', () => {
+    const { bar } = openGantt();
+    bar.dispatchEvent(pointer('pointermove', 102));
+    expect(bar.style.cursor).toBe('ew-resize');
+    bar.dispatchEvent(pointer('pointermove', 200));
+    expect(bar.style.cursor).toBe('grab');
+  });
+
+  it('真ん中を掴んで動かすと、始まりと期限が一緒に動く', () => withPointer(() => {
+    const { app, bar } = openGantt({ apiIssueUpdate: { ok: true } });
+    const col = parseFloat(document.querySelector('.gantt').style.getPropertyValue('--gantt-col')) || 26;
+    bar.dispatchEvent(pointer('pointerdown', 200));
+    bar.dispatchEvent(pointer('pointermove', 200 + col * 2));
+    bar.dispatchEvent(pointer('pointerup', 200 + col * 2));
+    const patch = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1];
+    expect(patch.startDate).toBeTruthy();
+    expect(patch.dueDate).toBeTruthy();
+    expect(snack()).toContain('#2 の期間を');
+  }));
+
+  it('左の端を掴むと始まりだけ動き、期限より後ろへは行かない', () => withPointer(() => {
+    const { app, bar } = openGantt({ apiIssueUpdate: { ok: true } });
+    bar.dispatchEvent(pointer('pointerdown', 101));
+    bar.dispatchEvent(pointer('pointermove', 5000));
+    bar.dispatchEvent(pointer('pointerup', 5000));
+    const patch = app.calls.filter((c) => c.name === 'apiIssueUpdate').pop().args[1];
+    expect(patch.startDate).toBe(patch.dueDate);
+  }));
+
+  it('動かさずに離したら、押したのだと解して中身を開く', () => withPointer(() => {
+    const { app, bar } = openGantt();
+    bar.dispatchEvent(pointer('pointerdown', 200));
+    bar.dispatchEvent(pointer('pointerup', 201));
+    expect(app.calls.some((c) => c.name === 'apiIssueUpdate')).toBe(false);
+    expect($('#side-title').textContent).toBe('やること #2');
+  }));
+
+  it('期間を変えられなければ、理由を出して描き直す', () => withPointer(() => {
+    const { app, bar } = openGantt({ apiIssueUpdate: new Error('混み合っています') });
+    const lists = app.calls.filter((c) => c.name === 'apiIssueList').length;
+    bar.dispatchEvent(pointer('pointerdown', 299));
+    bar.dispatchEvent(pointer('pointermove', 400));
+    bar.dispatchEvent(pointer('pointerup', 400));
+    expect(snack()).toContain('混み合っています');
+    expect(app.calls.filter((c) => c.name === 'apiIssueList').length).toBeGreaterThan(lists);
+  }));
+
+  it('工程表に出せるものが無ければ、そう言う', () => {
+    mount({ apiIssueList: [] });
+    $('.nav-item[data-tab="issues"]').click();
+    $('#view-gantt').click();
+    expect($('#gantt').textContent).toContain('やることがありません');
+  });
+
+  it('ボードのカードは Enter でも開ける。ほかのキーでは開かない', () => {
+    mount();
+    $('.nav-item[data-tab="issues"]').click();
+    $('#view-board').click();
+    const card = $('.board-card');
+    card.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    expect($('#side-panel').hidden).toBe(true);
+    card.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect($('#side-title').textContent).toBe('やること #2');
+  });
+
+  it('カードを掴んで列の上を通ると落とす位置の線が出て、外れると消える', () => {
+    mount();
+    $('.nav-item[data-tab="issues"]').click();
+    $('#view-board').click();
+    const col = document.querySelectorAll('.board-column')[1];
+    const over = new window.Event('dragover', { bubbles: true, cancelable: true });
+    over.clientY = 0;
+    col.dispatchEvent(over);
+    expect(col.classList.contains('drop-target')).toBe(true);
+    expect(col.querySelector('.drop-indicator')).toBeTruthy();
+
+    const leave = new window.Event('dragleave', { bubbles: true });
+    col.dispatchEvent(leave);
+    expect(col.classList.contains('drop-target')).toBe(false);
+  });
+
+  it('番号の無いものを落としても何も頼まない', () => {
+    const app = mount();
+    $('.nav-item[data-tab="issues"]').click();
+    $('#view-board').click();
+    const col = document.querySelectorAll('.board-column')[1];
+    const drop = new window.Event('drop', { bubbles: true, cancelable: true });
+    drop.dataTransfer = { getData: () => '' };
+    col.dispatchEvent(drop);
+    expect(app.calls.some((c) => c.name === 'apiProjectMove')).toBe(false);
+  });
+});
