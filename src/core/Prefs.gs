@@ -1,0 +1,425 @@
+/**
+ * 設定の画面で変えられる項目。
+ *
+ * **`PREFS_SCHEMA()` が唯一の定義である。** 画面は `apiPrefs()` で一覧と今の値を
+ * 受け取り、それをもとに欄を組む。画面に写すと、足したときに「選べるのに保存
+ * できない」項目が出る (ISSUE_PRIORITIES と同じ考え方)。
+ *
+ * - team: チームの設定。管理者だけが変える。スクリプトプロパティ `PREF:<key>`
+ * - me: 自分の設定。本人だけが変える。スクリプトプロパティ `MYPREF:<小文字のアドレス>` に JSON
+ *   **UserProperties には置かない。** 通知は送る側の権限で走り、キューは持ち主の権限で走る。
+ *   どちらも受け取る人の UserProperties を読めない (KIT_PRINT: と同じ事情)
+ *
+ * 読むのは prefGet_ だけ、書くのは apiPrefSet だけ。**未設定・読めない・範囲の外なら
+ * 既定値 (= 今の動き) を返す。** 既定値は今の定義 (ADVICE_RULES / STALE_STEPS など) から
+ * 取り、ここに数を写さない。
+ *
+ * 設計: docs/superpowers/specs/2026-10-20-guide-usage-settings-design.md の 1。
+ */
+
+/**
+ * 通知メールの種類。notify(to, subject, body, kind) の kind。
+ *
+ * @returns {Array<{key: string, label: string}>}
+ */
+function NOTIFY_KINDS() {
+  return [
+    { key: 'review', label: '確認を頼まれた・確認依頼が出た' },
+    { key: 'result', label: '反映した・取り下げた' },
+    { key: 'inquiry', label: '報告とその返事' },
+    { key: 'mention', label: '名指しされた' },
+    { key: 'comment', label: 'やることのやりとり' },
+  ];
+}
+
+/**
+ * 最初に出せる画面。左の行き先と同じ並び。スクラムの画面はオンのときだけ選べる。
+ *
+ * @returns {Array<{value: string, label: string, scrum?: boolean}>}
+ */
+function PREF_START_TABS_() {
+  return [
+    { value: 'home', label: 'ホーム' },
+    { value: 'docs', label: '文書' },
+    { value: 'issues', label: 'やること' },
+    { value: 'branches', label: '改訂中の版' },
+    { value: 'pulls', label: '確認依頼' },
+    { value: 'sprint', label: 'スプリント', scrum: true },
+    { value: 'impediments', label: '障害物', scrum: true },
+    { value: 'help', label: '使い方' },
+    { value: 'usage', label: '使われ方' },
+    { value: 'report', label: '要望・不具合' },
+    { value: 'settings', label: '設定' },
+  ];
+}
+
+/**
+ * ホームのカード。key は home.cards.<key>。
+ *
+ * @returns {Array<{key: string, label: string}>}
+ */
+function PREF_HOME_CARDS_() {
+  return [
+    { key: 'turn', label: 'あなたの番' },
+    { key: 'advice', label: '改善のヒント' },
+    { key: 'activity', label: '草 (アクティビティ)' },
+    { key: 'game', label: 'ポイントとレベル' },
+    { key: 'recent', label: '最近の動き' },
+    { key: 'team', label: 'チームの前進' },
+  ];
+}
+
+/** 改善のヒントで変えられる数の範囲と名前 */
+function PREF_ADVICE_TUNABLE_() {
+  return {
+    min: { min: 1, max: 50, label: '出す件数の下限' },
+    days: { min: 1, max: 90, label: '数える日数' },
+    limit: { min: 1, max: 20, label: '同時に進めてよい数' },
+  };
+}
+
+/**
+ * 項目を、key の先頭の語ごとに組む。prefGet_ は要る組だけを組む
+ * (通知のたびに改善のヒントの規則まで組まない)。
+ *
+ * @returns {Object<string, function(): object[]>}
+ */
+function PREF_GROUPS_() {
+  return {
+    advice: function () {
+      var range = PREF_ADVICE_TUNABLE_();
+      var out = [];
+      ADVICE_RULES().forEach(function (r) {
+        out.push({ key: 'advice.' + r.id + '.on', scope: 'team', type: 'bool', section: '改善のヒント',
+          label: r.title, help: '「' + r.title + '」のヒントを出す', def: true });
+        (r.tunable || []).forEach(function (name) {
+          var t = range[name];
+          out.push({ key: 'advice.' + r.id + '.' + name, scope: 'team', type: 'int', section: '改善のヒント',
+            label: r.title + ': ' + t.label, help: '', min: t.min, max: t.max, def: r[name] });
+        });
+      });
+      return out;
+    },
+    stale: function () {
+      return [{ key: 'stale.steps', scope: 'team', type: 'steps', section: 'やること',
+        label: '「動きなし」の段階 (日)',
+        help: '最後に動いてからこの日数がたつと、やることの見た目が段階ごとに傷みます。小さい順に3つ',
+        min: 1, max: 180, def: STALE_STEPS() }];
+    },
+    home: function () {
+      var out = [{ key: 'home.dueDays', scope: 'team', type: 'int', section: 'ホーム',
+        label: '「期限が近い」とみなす日数', help: 'あなたの番に、今日からこの日数のうちに期限が来るものを出します',
+        min: 1, max: 14, def: HOME_DUE_DAYS() }];
+      PREF_HOME_CARDS_().forEach(function (c) {
+        out.push({ key: 'home.cards.' + c.key, scope: 'me', type: 'bool', section: 'ホームに出すもの',
+          label: c.label, help: '', def: true });
+      });
+      return out;
+    },
+    usage: function () {
+      return [
+        { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方',
+          label: '使われ方を記録する', help: '止めると、誰のぶんも数えません', def: true },
+        { key: 'usage.keepDays', scope: 'team', type: 'int', section: '使われ方',
+          label: '使われ方を残す日数', help: '画面で直近90日まで見るので、90日より短くはできません',
+          min: 90, max: 365, def: USAGE_KEEP_DAYS() },
+        { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方',
+          label: '自分の使われ方を記録する', help: '止めると、あなたが押したものは数えません', def: true },
+      ];
+    },
+    report: function () {
+      return [{ key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報',
+        label: '日報の形の既定', help: '自分の形を選んでいない人の日報は、この形で写します',
+        options: REPORT_TEMPLATES().map(function (t) { return { value: t.key, label: t.name }; }),
+        def: REPORT_TEMPLATES()[0].key }];
+    },
+    start: function () {
+      var scrum = scrumEnabled();
+      return [{ key: 'start.tab', scope: 'me', type: 'enum', section: '開いたとき',
+        label: '最初に出す画面', help: '文書のリンクから開いたときは、その文書を出します',
+        options: PREF_START_TABS_().filter(function (t) { return scrum || !t.scrum; })
+          .map(function (t) { return { value: t.value, label: t.label }; }),
+        def: 'home' }];
+    },
+    notify: function () {
+      return NOTIFY_KINDS().map(function (k) {
+        return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
+          label: k.label, help: '', def: true };
+      });
+    },
+  };
+}
+
+/**
+ * 変えられる項目の一覧。**唯一の定義。**
+ *
+ * @returns {Array<{key: string, scope: string, type: string, section: string, label: string,
+ *   help: string, min?: number, max?: number, options?: object[], def: *}>}
+ */
+function PREFS_SCHEMA() {
+  var groups = PREF_GROUPS_();
+  var out = [];
+  ['start', 'home', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+    out = out.concat(groups[g]());
+  });
+  return out;
+}
+
+/**
+ * key の項目。無ければ null。
+ *
+ * @param {string} key
+ * @returns {object|null}
+ */
+function prefItem_(key) {
+  var k = String(key || '');
+  var build = PREF_GROUPS_()[k.split('.')[0]];
+  if (!build) return null;
+  var list = build();
+  for (var i = 0; i < list.length; i++) if (list[i].key === k) return list[i];
+  return null;
+}
+
+/**
+ * 値が項目の型と範囲に合うか。
+ *
+ * @param {object} item
+ * @param {*} v
+ * @returns {boolean}
+ */
+function prefValid_(item, v) {
+  if (!item) return false;
+  function intIn(n) {
+    return typeof n === 'number' && isFinite(n) && Math.floor(n) === n && n >= item.min && n <= item.max;
+  }
+  if (item.type === 'bool') return typeof v === 'boolean';
+  if (item.type === 'int') return intIn(v);
+  if (item.type === 'enum') {
+    return typeof v === 'string' && (item.options || []).some(function (o) { return o.value === v; });
+  }
+  if (item.type === 'steps') {
+    if (!Array.isArray(v) || v.length !== 3) return false;
+    for (var i = 0; i < v.length; i++) {
+      if (!intIn(v[i])) return false;
+      if (i > 0 && !(v[i] > v[i - 1])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** 自分の設定の鍵。アドレスの大文字小文字で別の人にしない */
+function prefMineKey_(email) {
+  return 'MYPREF:' + String(email || '').toLowerCase();
+}
+
+/** チームの設定の鍵 */
+function prefTeamKey_(key) {
+  return 'PREF:' + key;
+}
+
+/**
+ * JSON を読む。読めなければ undefined (人がエディタで書き換えうる)。
+ *
+ * @param {*} raw
+ * @returns {*}
+ */
+function prefParse_(raw) {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  try {
+    return JSON.parse(String(raw));
+  } catch (e) {
+    return undefined;
+  }
+}
+
+/**
+ * スクリプトプロパティを1つ読む口。一覧のように何度も読むところは、写しを1回取って渡す
+ * (prefReader_)。
+ *
+ * @returns {function(string): *}
+ */
+function prefReaderLive_() {
+  var props = PropertiesService.getScriptProperties();
+  return function (k) { return props.getProperty(k); };
+}
+
+/**
+ * スクリプトプロパティの写しを1回だけ取って読む口。
+ *
+ * @returns {function(string): *}
+ */
+function prefReader_() {
+  var all = PropertiesService.getScriptProperties().getProperties() || {};
+  return function (k) { return Object.prototype.hasOwnProperty.call(all, k) ? all[k] : null; };
+}
+
+/**
+ * 設定の値を返す。**読むのはここだけ。** 無い・読めない・範囲の外なら既定値。
+ *
+ * @param {string} key
+ * @param {string} [email] 自分の設定のとき、誰の設定か。省略すると開いている本人
+ * @param {function(string): *} [read] prefReader_()。省略すると1つずつ読む
+ * @returns {*}
+ */
+function prefGet_(key, email, read) {
+  var item = prefItem_(key);
+  if (!item) throw new Error('知らない設定です: ' + key);
+  return prefValueOf_(item, email, read || prefReaderLive_()).value;
+}
+
+/**
+ * 値と、それが決めた値か (既定値でないか)。
+ *
+ * @param {object} item
+ * @param {string} [email]
+ * @param {function(string): *} read
+ * @returns {{value: *, custom: boolean}}
+ */
+function prefValueOf_(item, email, read) {
+  var v;
+  if (item.scope === 'me') {
+    var who = String(email || Session.getActiveUser().getEmail() || '');
+    var mine = who ? prefParse_(read(prefMineKey_(who))) : undefined;
+    if (mine && typeof mine === 'object' && !Array.isArray(mine) &&
+        Object.prototype.hasOwnProperty.call(mine, item.key)) v = mine[item.key];
+  } else {
+    v = prefParse_(read(prefTeamKey_(item.key)));
+  }
+  if (v !== undefined && prefValid_(item, v)) return { value: v, custom: true };
+  return { value: item.def, custom: false };
+}
+
+/**
+ * 「動きなし」の段階。stalenessOf に渡す。
+ *
+ * @returns {number[]}
+ */
+function staleSteps_() {
+  return prefGet_('stale.steps');
+}
+
+/**
+ * 設定を1つ書く (Web App API)。**書くのはここだけ。** null で既定に戻す (消す)。
+ * チームの設定は管理者だけ。自分の設定は開いている本人のぶんだけ。
+ * 変更の履歴 (change_log) には残さない。
+ *
+ * @param {string} key
+ * @param {*} value
+ * @returns {object} 書いたあとの apiPrefs()
+ */
+function apiPrefSet(key, value) {
+  var item = prefItem_(key);
+  if (!item) throw new Error('知らない設定です: ' + key);
+  var reset = value === null || value === undefined;
+  if (!reset && !prefValid_(item, value)) {
+    throw new Error('「' + item.label + '」に入れられない値です' +
+      (item.type === 'int' ? ' (' + item.min + '〜' + item.max + ' の整数)' : '') +
+      (item.type === 'steps' ? ' (' + item.min + '〜' + item.max + ' の整数を小さい順に3つ)' : ''));
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  if (item.scope === 'team') {
+    repoAssertAdmin_('チームの設定を変えること');
+    if (reset) props.deleteProperty(prefTeamKey_(item.key));
+    else props.setProperty(prefTeamKey_(item.key), JSON.stringify(value));
+    return apiPrefs();
+  }
+
+  var me = String(Session.getActiveUser().getEmail() || '');
+  if (!me) throw new Error('誰の設定か分かりません');
+  // 自分の設定は1つの JSON に全部入っている。続けて2つ切り替えたとき、読んで書くあいだに
+  // もう一方が書くと片方が消えるので、鍵の中で読み書きする
+  dbWithLock_(10000, function () {
+    var mine = prefParse_(props.getProperty(prefMineKey_(me)));
+    if (!mine || typeof mine !== 'object' || Array.isArray(mine)) mine = {};
+    if (reset) delete mine[item.key];
+    else mine[item.key] = value;
+    if (Object.keys(mine).length) props.setProperty(prefMineKey_(me), JSON.stringify(mine));
+    else props.deleteProperty(prefMineKey_(me));
+  });
+  return apiPrefs();
+}
+
+/**
+ * 設定の一覧と今の値 (Web App API)。自分の設定は開いている本人のぶんだけ。
+ *
+ * effective は画面がすぐ使う形にまとめたもの (最初の画面・ホームのカード・使われ方を数えるか・
+ * 止めた通知の種類)。
+ *
+ * @returns {object}
+ */
+function apiPrefs() {
+  var me = String(Session.getActiveUser().getEmail() || '');
+  var read = prefReader_();
+  var items = PREFS_SCHEMA().map(function (p) {
+    var got = prefValueOf_(p, me, read);
+    return {
+      key: plainText(p.key),
+      scope: plainText(p.scope),
+      type: plainText(p.type),
+      section: plainText(p.section),
+      label: plainText(p.label),
+      help: plainText(p.help),
+      min: plainNumber(p.min),
+      max: plainNumber(p.max),
+      options: (p.options || []).map(function (o) {
+        return { value: plainText(o.value), label: plainText(o.label) };
+      }),
+      def: prefPlainValue_(p, p.def),
+      value: prefPlainValue_(p, got.value),
+      custom: !!got.custom,
+    };
+  });
+  var byKey = {};
+  items.forEach(function (p) { byKey[p.key] = p.value; });
+
+  var cards = {};
+  PREF_HOME_CARDS_().forEach(function (c) { cards[c.key] = byKey['home.cards.' + c.key] !== false; });
+
+  return {
+    canEditTeam: repoIsAdmin_(me),
+    items: items,
+    teamGoal: plainNumber(teamGoal()),
+    effective: {
+      startTab: plainText(byKey['start.tab']),
+      homeCards: cards,
+      usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
+      notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
+        .map(function (k) { return plainText(k.key); }),
+    },
+  };
+}
+
+/**
+ * 値を画面に渡せる形にする。
+ *
+ * @param {object} item
+ * @param {*} v
+ * @returns {*}
+ */
+function prefPlainValue_(item, v) {
+  if (item.type === 'bool') return !!v;
+  if (item.type === 'int') return plainNumber(v);
+  if (item.type === 'steps') return (v || []).map(function (n) { return plainNumber(n); });
+  return plainText(v);
+}
+
+/**
+ * 通知メールの宛先から、その種類を止めた人を外す。kind が無い・知らない種類なら
+ * 外さない (今までどおり送る)。宛先はカンマで並べてもよい。
+ *
+ * @param {string} to
+ * @param {string} [kind]
+ * @returns {string} 残った宛先 (カンマ区切り)。全員止めていれば空
+ */
+function notifyRecipients_(to, kind) {
+  var list = String(to || '').split(',').map(function (s) { return s.replace(/^\s+|\s+$/g, ''); })
+    .filter(function (s) { return !!s; });
+  var item = kind ? prefItem_('notify.' + kind) : null;
+  if (!item) return list.join(',');
+  var read = prefReaderLive_();
+  return list.filter(function (who) {
+    return prefValueOf_(item, who, read).value !== false;
+  }).join(',');
+}
