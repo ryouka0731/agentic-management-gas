@@ -3,8 +3,11 @@
  *
  * - 自分のキャラは1人 OSHI_MINE_MAX 人まで。人ごとの番号 (`charId`) で分ける
  * - 名前・口調・自分のせりふは台帳の `oshi` に、キャラごとに1行
- * - 表情ごとの画像は、中身を objects/ (中身の指紋の名前) に、どの人のどのキャラのどの表情かを台帳の `oshi_images` に置く
- *   (台帳のセルには上限があり、画像は入らない)
+ * - 表情ごとの画像は、中身を objects/ (`oshi-<中身の指紋>.<拡張子>`。oshiObjectName_) に、どの人のどのキャラのどの表情かを
+ *   台帳の `oshi_images` に置く (台帳のセルには上限があり、画像は入らない)
+ * - **推しの画像は文書の履歴の画像と別の名前で置く。** 履歴の画像も `<sha>.<ext>` で置かれるので、同じ名前だと
+ *   同じバイトの推しの画像を外したとき、履歴が要る画像までゴミ箱へ移してしまう
+ * - Drive のファイルを触るのは鍵の外 (鍵の中では台帳の行を書き、片付ける中身の指紋を集めるだけ)
  * - `charId` は後から足した列。それより前の行は空で、その人の1人目 (1) として読む (oshiCharIdOf_)
  * - 最初からいるキャラ (OSHI_BUILTINS) は台帳に置かない。名前・口調は決まっていて、絵は焼いたファイルにある
  * - どのキャラを使うかは自分の設定 oshi.char、自分のキャラの絵が無い表情に出す最初からいるキャラは oshi.fallback
@@ -176,15 +179,30 @@ function oshiCharCreate_(email, name, tone) {
     if (ids.length >= OSHI_MINE_MAX()) {
       throw new Error('自分のキャラは' + OSHI_MINE_MAX() + '人までです。作り直すときは、使わないキャラを消してください');
     }
-    var props = PropertiesService.getScriptProperties();
-    var key = 'OSHI_CHAR_HIGH:' + who;
-    var high = Number(props.getProperty(key));
-    if (!isFinite(high) || high < 0) high = 0;
-    var id = Math.max(high, ids.length ? ids[ids.length - 1] : 0) + 1;
+    var id = oshiCharHighNote_(who, ids) + 1;
     dbAppendNumbered('oshi', 'id', { who: who, name: n, tone: t, lines: '{}', updatedAt: new Date(), charId: id });
-    props.setProperty(key, String(id));
+    PropertiesService.getScriptProperties().setProperty('OSHI_CHAR_HIGH:' + who, String(id));
     return { id: id, name: n, tone: t };
   });
+}
+
+/**
+ * 出した番号の最大を、いまある番号 (charId の列を足す前の1人目の 1 も) と合わせて覚え直し、その値を返す。
+ * 作る前と消す前に呼ぶ。**前の形の1人目は oshiCharCreate_ を通っていないので覚えが無い。** 覚えずに消すと、
+ * 次に作るキャラが 1 を受け取り、oshi.char が指していた消したキャラにすり替わる。鍵の中で呼ぶ。
+ *
+ * @param {string} who 小文字のアドレス
+ * @param {number[]} ids いまある番号
+ * @returns {number}
+ */
+function oshiCharHighNote_(who, ids) {
+  var props = PropertiesService.getScriptProperties();
+  var key = 'OSHI_CHAR_HIGH:' + who;
+  var high = Number(props.getProperty(key));
+  if (!isFinite(high) || high < 0) high = 0;
+  var top = Math.max(high, ids.length ? ids[ids.length - 1] : 0);
+  if (top > high) props.setProperty(key, String(top));
+  return top;
 }
 
 /**
@@ -284,8 +302,14 @@ function oshiParseImage_(dataUrl) {
   if (Math.floor(data.length * 3 / 4) > lim.maxBytes + 2) {
     throw new Error('画像は1枚' + Math.round(lim.maxBytes / 1024 / 1024) + 'MBまでにしてください');
   }
-  var bytes = Utilities.base64Decode(data);
-  if (!bytes.length) throw new Error('画像として読めませんでした');
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(data);
+  } catch (e) {
+    // 形は base64 でも、並びが壊れていると復号で投げる。そのままの英語を見せない
+    throw new Error('画像として読めませんでした');
+  }
+  if (!bytes || !bytes.length) throw new Error('画像として読めませんでした');
   if (bytes.length > lim.maxBytes) {
     throw new Error('画像は1枚' + Math.round(lim.maxBytes / 1024 / 1024) + 'MBまでにしてください');
   }
@@ -296,8 +320,10 @@ function oshiParseImage_(dataUrl) {
 /**
  * 表情の画像を置く。同じ表情が既にあれば差し替える。
  *
- * 中身を objects/ に置くのは、検査を通って鍵を取ってから (先に置くと、断ったときや鍵が取れなかったときに
- * どこからも指されない中身が残る)。差し替えた前の中身は、ほかに指す行が無ければゴミ箱へ移す。
+ * 中身を objects/ に置くのは、検査を通り、鍵の中で行を書いてから (先に置くと、断ったときや鍵が取れなかったときに
+ * どこからも指されない中身が残る)。置くのも片付けるのも鍵の外 (Drive を鍵の中に相乗りさせない)。
+ * 行を先に書くので、ほぼ同時に片付ける側はこの行を見て、同じ中身をゴミ箱へ移さない。
+ * 差し替えた前の中身は、ほかに指す行が無ければゴミ箱へ移す。
  *
  * @param {string} email
  * @param {number} id 自分のキャラの番号
@@ -313,38 +339,92 @@ function oshiSetImage_(email, id, state, dataUrl) {
   var blob = Utilities.newBlob(img.bytes, img.mime, 'oshi.' + img.ext);
   var sha = sha256HexBytes(blob);
 
-  return dbWithLock_(30000, function () {
+  var drop = [];
+  var got = dbWithLock_(30000, function () {
     oshiAssertMine_(who, id);
     var old = oshiImageRows_(who, id)[String(state)] || null;
-    objectPutBlob(sha, blob, img.ext);
     var row = { who: who, state: String(state), sha: sha, mime: img.mime, updatedAt: new Date(), charId: id };
     if (old) {
       row.id = old.id;
       dbUpdate('oshi_images', 'id', old.id, row);
-      if (String(old.sha) !== sha) oshiDropObject_(String(old.sha), String(old.mime));
+      if (String(old.sha) !== sha || String(old.mime) !== img.mime) drop.push({ sha: String(old.sha), mime: String(old.mime) });
     } else {
       dbAppendNumbered('oshi_images', 'id', row);
     }
     return { charId: id, state: row.state, sha: sha, mime: img.mime };
   });
+  oshiObjectPut_(sha, blob, img.ext);
+  oshiDropObjects_(drop);
+  return got;
 }
 
 /**
- * どの行からも指されていない中身をゴミ箱へ移す。片付けのついでなので、移せなくても続ける
- * (共有ドライブでは役割によって移せない)。
+ * 推しの画像の中身のファイル名。文書の履歴の画像 (`<sha>.<ext>`。DocRenderer の imageExt_) と重ならない名前にする。
  *
  * @param {string} sha
- * @param {string} mime
+ * @param {string} ext
+ * @returns {string}
  */
-function oshiDropObject_(sha, mime) {
-  var ext = OSHI_IMAGE_LIMITS().mimes[mime];
-  if (!ext || !/^[0-9a-f]{64}$/.test(sha)) return;
-  var still = dbReadAll('oshi_images').some(function (r) { return String(r.sha) === sha; });
-  if (still) return;
-  try {
-    var it = objectsFolder_().getFilesByName(objectPath_(sha, ext));
-    if (it.hasNext()) it.next().setTrashed(true);
-  } catch (e) { /* 残っても、どこからも指されないだけ */ }
+function oshiObjectName_(sha, ext) {
+  return 'oshi-' + objectPath_(sha, ext);
+}
+
+/**
+ * 推しの画像の中身を objects/ に置く。同じ名前が既にあれば何もしない。鍵の外で呼ぶ。
+ *
+ * @param {string} sha
+ * @param {GoogleAppsScript.Base.Blob} blob
+ * @param {string} ext
+ */
+function oshiObjectPut_(sha, blob, ext) {
+  var name = oshiObjectName_(sha, ext);
+  var folder = objectsFolder_();
+  if (folder.getFilesByName(name).hasNext()) return;
+  folder.createFile(blob.copyBlob().setName(name));
+}
+
+/**
+ * 推しの画像の中身のファイル。この形にする前の行は中身を `<sha>.<ext>` に置いたので、無ければそちらを見る。
+ *
+ * @param {string} sha
+ * @param {string} ext
+ * @returns {GoogleAppsScript.Drive.File|null}
+ */
+function oshiObjectFile_(sha, ext) {
+  var folder = objectsFolder_();
+  var it = folder.getFilesByName(oshiObjectName_(sha, ext));
+  if (it.hasNext()) return it.next();
+  var legacy = folder.getFilesByName(objectPath_(sha, ext));
+  return legacy.hasNext() ? legacy.next() : null;
+}
+
+/**
+ * どの行からも指されていない推しの画像の中身をゴミ箱へ移す。**鍵の外で呼ぶ** (鍵の中では指紋を集めるだけ)。
+ * 指されているかは、鍵を出たあとに読み直して確かめる (そのあいだに同じ中身を入れ直した人がいるかもしれない)。
+ * 片付けのついでなので、移せなくても続ける (共有ドライブでは役割によって移せない)。
+ *
+ * **移すのは `oshi-<sha>.<ext>` だけ。** この形にする前の行の中身 (`<sha>.<ext>`) は、文書の履歴の画像と
+ * 名前が同じで、どちらのものか見分けられないので移さない (残っても、どこからも指されないだけ)。
+ *
+ * @param {{sha: string, mime: string}[]} list
+ */
+function oshiDropObjects_(list) {
+  if (!list || !list.length) return;
+  var rows = null;
+  list.forEach(function (o) {
+    var sha = String(o.sha);
+    var ext = OSHI_IMAGE_LIMITS().mimes[String(o.mime)];
+    if (!ext || !/^[0-9a-f]{64}$/.test(sha)) return;
+    try {
+      if (!rows) rows = dbReadAll('oshi_images');
+      var still = rows.some(function (r) {
+        return String(r.sha) === sha && OSHI_IMAGE_LIMITS().mimes[String(r.mime)] === ext;
+      });
+      if (still) return;
+      var it = objectsFolder_().getFilesByName(oshiObjectName_(sha, ext));
+      if (it.hasNext()) it.next().setTrashed(true);
+    } catch (e) { /* 残っても、どこからも指されないだけ */ }
+  });
 }
 
 /**
@@ -359,13 +439,16 @@ function oshiClearImage_(email, id, state) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
-  return dbWithLock_(30000, function () {
+  var drop = [];
+  var done = dbWithLock_(30000, function () {
     var old = oshiImageRows_(who, id)[String(state)];
     if (!old) return false;
     dbDelete('oshi_images', 'id', old.id);
-    oshiDropObject_(String(old.sha), String(old.mime));
+    drop.push({ sha: String(old.sha), mime: String(old.mime) });
     return true;
   });
+  oshiDropObjects_(drop);
+  return done;
 }
 
 /**
@@ -380,21 +463,38 @@ function oshiClearImage_(email, id, state) {
 function oshiCharDelete_(email, id) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
-  return dbWithLock_(30000, function () {
+  var drop = [];
+  var n = dbWithLock_(30000, function () {
     oshiAssertMine_(who, id);
-    var n = 0;
-    // 同じ表情の行が2つ残っていることもある (手で書き足した行)。そのキャラの行は全部消す
-    dbReadAll('oshi_images').forEach(function (r) {
-      if (oshiWho_(r.who) !== who || oshiCharIdOf_(r) !== id) return;
-      dbDelete('oshi_images', 'id', r.id);
-      oshiDropObject_(String(r.sha), String(r.mime));
-      n++;
-    });
-    dbReadAll('oshi').forEach(function (r) {
-      if (oshiWho_(r.who) === who && oshiCharIdOf_(r) === id) dbDelete('oshi', 'id', r.id);
-    });
-    return n;
+    return oshiCharDeleteRows_(who, id, drop);
   });
+  oshiDropObjects_(drop);
+  return n;
+}
+
+/**
+ * 自分のキャラ1人ぶんの行を消す。**鍵の中で呼ぶ。** 片付ける中身は drop に集めるだけで、Drive は触らない。
+ * 消す前に出した番号の覚えを合わせる (前の形の1人目を消しても、その番号を次に回さない)。
+ *
+ * @param {string} who 小文字のアドレス
+ * @param {number} id
+ * @param {{sha: string, mime: string}[]} drop
+ * @returns {number} 消した画像の数
+ */
+function oshiCharDeleteRows_(who, id, drop) {
+  oshiCharHighNote_(who, oshiMineIds_(who));
+  var n = 0;
+  // 同じ表情の行が2つ残っていることもある (手で書き足した行)。そのキャラの行は全部消す
+  dbReadAll('oshi_images').forEach(function (r) {
+    if (oshiWho_(r.who) !== who || oshiCharIdOf_(r) !== id) return;
+    dbDelete('oshi_images', 'id', r.id);
+    drop.push({ sha: String(r.sha), mime: String(r.mime) });
+    n++;
+  });
+  dbReadAll('oshi').forEach(function (r) {
+    if (oshiWho_(r.who) === who && oshiCharIdOf_(r) === id) dbDelete('oshi', 'id', r.id);
+  });
+  return n;
 }
 
 /**
@@ -407,12 +507,15 @@ function oshiCharDelete_(email, id) {
 function oshiForget_(email) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
-  return dbWithLock_(30000, function () {
-    var n = 0;
-    oshiMineIds_(who).forEach(function (id) { n += oshiCharDelete_(who, id); });
+  var drop = [];
+  var n = dbWithLock_(30000, function () {
+    var count = 0;
+    oshiMineIds_(who).forEach(function (id) { count += oshiCharDeleteRows_(who, id, drop); });
     PropertiesService.getUserProperties().deleteProperty('OSHI_STAGE_MAX:' + who);
-    return n;
+    return count;
   });
+  oshiDropObjects_(drop);
+  return n;
 }
 
 /**
@@ -429,10 +532,10 @@ function oshiImageData_(email, id, state) {
   if (!row) return null;
   var ext = OSHI_IMAGE_LIMITS().mimes[String(row.mime)];
   if (!ext || !/^[0-9a-f]{64}$/.test(String(row.sha))) return null;
-  var it = objectsFolder_().getFilesByName(objectPath_(String(row.sha), ext));
-  if (!it.hasNext()) return null;
+  var file = oshiObjectFile_(String(row.sha), ext);
+  if (!file) return null;
   // 100KB を超えうるのでキャッシュに置かない (CacheService の上限)。画面が中身の指紋ごとに覚える
-  var bytes = it.next().getBlob().getBytes();
+  var bytes = file.getBlob().getBytes();
   return {
     charId: id,
     state: String(row.state),

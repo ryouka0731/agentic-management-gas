@@ -27,6 +27,8 @@ const WEBP = Buffer.concat([Buffer.from('RIFF', 'latin1'), Buffer.from([1, 0, 0,
 const url = (mime, buf) => 'data:' + mime + ';base64,' + buf.toString('base64');
 /** 自分のキャラを1人作って番号を返す */
 const make = (ctx, name, tone) => ctx.apiOshiCharCreate(name || '', tone || 'polite').charId;
+/** 推しの画像の中身が objects/ にあるか (推しの画像は文書の履歴の画像と別の名前で置く) */
+const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' + sha + '.' + ext).hasNext();
 
 describe('定義 (Oshi.js)', () => {
   it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
@@ -110,7 +112,7 @@ describe('画像を置く', () => {
     const got = ctx.apiOshiSetImage(c, 'praise', url('image/png', PNG));
     expect(got.state).toBe('praise');
     expect(got.sha).toMatch(/^[0-9a-f]{64}$/);
-    expect(ctx.objectExists(got.sha, 'png')).toBe(true);
+    expect(oshiHas(ctx, got.sha, 'png')).toBe(true);
     ctx.apiOshiSetImage(c, 'idle', url('image/jpeg', JPG));
     ctx.apiOshiSetImage(c, 'cheer', url('image/gif', GIF));
     ctx.apiOshiSetImage(c, 'worry', url('image/webp', WEBP));
@@ -137,8 +139,8 @@ describe('画像を置く', () => {
     const b = ctx.apiOshiSetImage(c, 'praise', url('image/jpeg', JPG));
     expect(ctx.dbReadAll('oshi_images').length).toBe(1);
     expect(ctx.dbReadAll('oshi_images')[0].sha).toBe(b.sha);
-    expect(ctx.objectExists(a.sha, 'png')).toBe(false);
-    expect(ctx.objectExists(b.sha, 'jpg')).toBe(true);
+    expect(oshiHas(ctx, a.sha, 'png')).toBe(false);
+    expect(oshiHas(ctx, b.sha, 'jpg')).toBe(true);
     expect(fake).toBeTruthy();
   });
 
@@ -167,7 +169,7 @@ describe('画像を置く', () => {
     fake.LockService.getScriptLock = () => ({ tryLock: () => false, releaseLock() {} });
     expect(() => ctx.apiOshiSetImage(c, 'praise', url('image/png', PNG))).toThrow('混み合っています');
     const sha = ctx.sha256HexBytes(ctx.Utilities.newBlob(Array.from(PNG), 'image/png', 'x'));
-    expect(ctx.objectExists(sha, 'png')).toBe(false);
+    expect(oshiHas(ctx, sha, 'png')).toBe(false);
   });
 
   it('外す・まるごと消すの道がある', () => {
@@ -178,7 +180,7 @@ describe('画像を置く', () => {
     ctx.apiOshiSetProfile(c, 'ルナ', 'genki');
     expect(ctx.apiOshiClearImage(c, 'praise')).toEqual({ charId: c, state: 'praise', removed: true });
     expect(ctx.apiOshiClearImage(c, 'praise')).toEqual({ charId: c, state: 'praise', removed: false });
-    expect(ctx.objectExists(a.sha, 'png')).toBe(false);
+    expect(oshiHas(ctx, a.sha, 'png')).toBe(false);
     expect(ctx.apiOshiForget()).toEqual({ removed: 1 });
     expect(ctx.dbReadAll('oshi_images')).toEqual([]);
     expect(ctx.dbReadAll('oshi')).toEqual([]);
@@ -447,7 +449,7 @@ describe('最初からいるキャラ', () => {
     }
     const all = JSON.stringify(b);
     expect(all).toContain('僕');
-    expect(all).toContain('AI');
+    expect(all).toContain('道具');
     expect(all).toContain('余白');
   });
 
@@ -532,7 +534,7 @@ describe('自分のキャラを何人も', () => {
       mine: ['ソラのせりふ'], lines: pure.OSHI_LINES().cool.done });
 
     expect(ctx.apiOshiCharDelete(a)).toEqual({ charId: a, removed: 1 });
-    expect(ctx.objectExists(pa.sha, 'png')).toBe(false);
+    expect(oshiHas(ctx, pa.sha, 'png')).toBe(false);
     const left = ctx.apiOshiGet().mine;
     expect(left.map((m) => m.charId)).toEqual([b]);
     expect(left[0].images.map((i) => i.state).sort()).toEqual(['idle', 'praise']);
@@ -547,7 +549,7 @@ describe('自分のキャラを何人も', () => {
     const got = ctx.apiOshiSetImage(a, 'praise', url('image/png', PNG));
     ctx.apiOshiSetImage(b, 'praise', url('image/png', PNG));
     ctx.apiOshiCharDelete(a);
-    expect(ctx.objectExists(got.sha, 'png')).toBe(true);
+    expect(oshiHas(ctx, got.sha, 'png')).toBe(true);
     expect(ctx.apiOshiImage(b, 'praise').dataUrl).toBe(url('image/png', PNG));
   });
 
@@ -657,5 +659,96 @@ describe('charId の列を足す前の行', () => {
     expect(ctx.apiOshiGet().mine).toEqual([expect.objectContaining({ charId: 1, name: '', tone: 'polite' })]);
     ctx.apiOshiSetProfile(1, 'ルナ', 'polite');
     expect(ctx.apiOshiGet().mine[0].name).toBe('ルナ');
+  });
+});
+
+describe('文書の履歴の画像と取り違えない', () => {
+  /** 文書の履歴が同じバイトの画像を objects/ に置いた (DocRenderer と同じ置き方) */
+  const commitImage = (ctx) => {
+    const blob = ctx.Utilities.newBlob(Array.from(PNG), 'image/png', 'x');
+    const sha = ctx.sha256HexBytes(blob);
+    ctx.objectPutBlob(sha, blob, 'png');
+    return sha;
+  };
+
+  it('同じバイトの推しの画像を差し替え・外し・キャラごと消し・全部消しても、履歴の画像は残る', () => {
+    const { ctx } = setup();
+    const sha = commitImage(ctx);
+    const c = make(ctx);
+    expect(ctx.apiOshiSetImage(c, 'praise', url('image/png', PNG)).sha).toBe(sha);
+    ctx.apiOshiSetImage(c, 'praise', url('image/jpeg', JPG));
+    expect(ctx.objectExists(sha, 'png')).toBe(true);
+    ctx.apiOshiSetImage(c, 'praise', url('image/png', PNG));
+    ctx.apiOshiClearImage(c, 'praise');
+    expect(ctx.objectExists(sha, 'png')).toBe(true);
+    ctx.apiOshiSetImage(c, 'idle', url('image/png', PNG));
+    ctx.apiOshiCharDelete(c);
+    expect(ctx.objectExists(sha, 'png')).toBe(true);
+    const d = make(ctx);
+    ctx.apiOshiSetImage(d, 'idle', url('image/png', PNG));
+    ctx.apiOshiForget();
+    expect(ctx.objectExists(sha, 'png')).toBe(true);
+  });
+
+  it('この形にする前の行 (中身が <sha>.<ext>) は読めて、外しても消しても中身をゴミ箱へ移さない', () => {
+    const { ctx } = setup();
+    const sha = commitImage(ctx);
+    // 前の形で書かれた推しの行 (中身は履歴の画像と同じ名前)
+    ctx.dbAppendNumbered('oshi_images', 'id', { who: 'tester@example.com', state: 'praise', sha, mime: 'image/png', updatedAt: new Date(), charId: 1 });
+    ctx.dbAppendNumbered('oshi_images', 'id', { who: 'tester@example.com', state: 'idle', sha, mime: 'image/png', updatedAt: new Date(), charId: 1 });
+    expect(ctx.apiOshiImage(1, 'praise').dataUrl).toBe(url('image/png', PNG));
+    ctx.apiOshiSetImage(1, 'praise', url('image/jpeg', JPG));
+    ctx.apiOshiClearImage(1, 'praise');
+    ctx.apiOshiCharDelete(1);
+    expect(ctx.objectExists(sha, 'png')).toBe(true);
+  });
+});
+
+describe('鍵の中で Drive を触らない', () => {
+  it('置く・差し替える・外す・消す・全部消すのどれも、鍵を持っているあいだはファイルを触らない', () => {
+    const { ctx, fake } = setup();
+    const c = make(ctx);
+    const inLock = [];
+    const realFolder = ctx.objectsFolder_;
+    const realGet = fake.DriveApp.getFolderById;
+    ctx.objectsFolder_ = () => { if (ctx.dbLockDepth_ > 0) inLock.push('objectsFolder_'); return realFolder(); };
+    fake.DriveApp.getFolderById = (id) => { if (ctx.dbLockDepth_ > 0) inLock.push('getFolderById'); return realGet.call(fake.DriveApp, id); };
+    try {
+      const a = ctx.apiOshiSetImage(c, 'praise', url('image/png', PNG));
+      ctx.apiOshiSetImage(c, 'praise', url('image/jpeg', JPG));
+      ctx.apiOshiSetImage(c, 'idle', url('image/gif', GIF));
+      ctx.apiOshiClearImage(c, 'idle');
+      const d = make(ctx);
+      ctx.apiOshiSetImage(d, 'idle', url('image/webp', WEBP));
+      ctx.apiOshiCharDelete(c);
+      ctx.apiOshiForget();
+      // ゴミ箱へ移すことはしている (鍵の外で)
+      expect(oshiHas(ctx, a.sha, 'png')).toBe(false);
+    } finally {
+      ctx.objectsFolder_ = realFolder;
+      fake.DriveApp.getFolderById = realGet;
+    }
+    expect(inLock).toEqual([]);
+  });
+});
+
+describe('壊れた画像と番号', () => {
+  it('形は base64 でも読めない中身なら、ふつうの言葉で断る', () => {
+    const { ctx } = setup();
+    const c = make(ctx);
+    const realDecode = ctx.Utilities.base64Decode;
+    ctx.Utilities.base64Decode = () => { throw new Error('Invalid argument: base64'); };
+    try {
+      expect(() => ctx.apiOshiSetImage(c, 'praise', 'data:image/png;base64,iVBO=w==')).toThrow('画像として読めませんでした');
+    } finally {
+      ctx.Utilities.base64Decode = realDecode;
+    }
+  });
+
+  it('前の形の1人目 (番号を覚えていない) を消しても、次のキャラに 1 を回さない', () => {
+    const { ctx } = setup();
+    ctx.dbAppendNumbered('oshi', 'id', { who: 'tester@example.com', name: 'むかし', tone: 'genki', lines: '{}', updatedAt: new Date() });
+    ctx.apiOshiCharDelete(1);
+    expect(make(ctx, 'あたらしい')).toBe(2);
   });
 });
