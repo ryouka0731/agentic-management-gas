@@ -1267,9 +1267,9 @@ describe('使われ方で見えるもの', () => {
     fake._setUser('boss@example.com');
     const res = ctx.apiUsageRows(30, '');
     expect(res.rows.map((r) => r.user).sort())
-      .toEqual(['', 'boss@example.com', 'tester@example.com']);
-    // 見られない人のぶんも数は残す。足せば画面の合計に戻る
-    expect(res.rows.reduce((n, r) => n + r.count, 0)).toBe(6);
+      .toEqual(['boss@example.com', 'tester@example.com']);
+    // 見られない人 (other) が1人だけなので、数を残すとその人の記録が読める
+    expect(res.rows.reduce((n, r) => n + r.count, 0)).toBe(4);
   });
 
   it('CSV でも、見てはいけない人には絞り込めない', () => {

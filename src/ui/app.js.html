@@ -11863,7 +11863,14 @@
    * 全員ぶん。人ごとの数と絞り込みは、本人と部下のぶんだけ届く
    * (サーバ側の apiUsageSummary が絞る。工数の集計と同じ)。
    */
+  /**
+   * 期間か対象を選び直すたびに進める。届いた返事がこれと違えば古いので捨てる。
+   * 捨てないと、選び直したあとに前の期間のまとめや CSV が出る。
+   */
+  var usageGen = 0;
+
   function loadUsage() {
+    var gen = ++usageGen;
     fillSelect(usageDaysSel, USAGE_SPANS, '30');
 
     // いま溜めているぶんも含めて見たい
@@ -11871,6 +11878,7 @@
     showSkeleton(usageEl, 'list', 4);
 
     call('apiUsageSummary', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      if (gen !== usageGen) return;
       var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
       fillUsageWho(data.byUser || []);
       usageEl.textContent = '';
@@ -11897,7 +11905,9 @@
       usageEl.appendChild(makeUsageUnseen(views));
       usageEl.appendChild(makeUsageWeekdays(data.byWeekday || [0, 0, 0, 0, 0, 0, 0]));
       usageEl.appendChild(makeUsageDays(data.byDay));
-    }, failInto(usageEl));
+    }, function (err) {
+      if (gen === usageGen) failInto(usageEl)(err);
+    });
   }
 
   /**
@@ -12178,6 +12188,8 @@
     for (var i = 0; i < items.length; i++) {
       var tab = items[i].dataset.tab;
       if (!scrumOn() && items[i].closest('#nav-scrum')) continue;
+      // 隠れている行き先は押せないので、開かれなくて当然
+      if (items[i].closest('[hidden]')) continue;
       if (seen[tab]) continue;
       missing.push(usageViewName(tab));
     }
@@ -12322,12 +12334,15 @@
   /**
    * 今見ている期間と対象の数を CSV で保存する。
    *
-   * 人の列はサーバが本人と部下のぶんだけにして返す (apiUsageRows)。
+   * サーバは本人と部下のぶんだけを返す (apiUsageRows)。
    */
   function saveUsageCsv() {
+    var gen = usageGen;
     usageCsvBtn.disabled = true;
     call('apiUsageRows', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
       usageCsvBtn.disabled = false;
+      // 頼んだあとに期間か対象を選び直していたら、今見ている範囲の CSV ではない
+      if (gen !== usageGen) return;
       var data = res || { from: '', to: '', rows: [] };
       var text = usageCsv(data.rows || []);
       var saved = usageDownload('usage-' + data.from + '_' + data.to + '.csv', text);
@@ -12337,6 +12352,10 @@
 
       var wrap = document.createElement('div');
       wrap.className = 'tally-block usage-export';
+      var note = document.createElement('div');
+      note.className = 'row-meta';
+      note.textContent = '見られない人のぶんは入っていません (画面の合計とは合わないことがあります)';
+      wrap.appendChild(note);
       wrap.appendChild(makeCopyRow(saved
         ? 'ファイルが保存されないときは、ここから写して表計算に貼ってください'
         : '保存できなかったので、字のまま出します。写して表計算に貼ってください', text));

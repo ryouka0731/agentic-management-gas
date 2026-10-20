@@ -4179,6 +4179,53 @@ describe('使われ方を CSV で保存する', () => {
     expect(lines[3]).toBe("2026-09-10,操作,'-x,'-x,,1");
   });
 
+  it('見られない人のぶんが入っていないことを添える', () => {
+    openBoard();
+    document.getElementById('usage-csv-btn').click();
+
+    expect(document.querySelector('#usage .usage-export').textContent)
+      .toContain('見られない人のぶんは入っていません');
+  });
+
+  it('期間を変えたあとに届いた古い CSV は出さない', () => {
+    let late = null;
+    openBoard({ apiUsageRows: () => ({ later: (ok) => { late = ok; } }) });
+    document.getElementById('usage-csv-btn').click();
+
+    document.getElementById('usage-days').value = '7';
+    document.getElementById('usage-days')
+      .dispatchEvent(new window.Event('change', { bubbles: true }));
+    late(ROWS);
+
+    expect(document.querySelector('#usage .usage-export')).toBeNull();
+    expect(document.getElementById('usage-csv-btn').disabled).toBe(false);
+  });
+
+  it('期間を変えたあとに届いた古いまとめで描き直さない', () => {
+    const lates = [];
+    openBoard({
+      apiUsageSummary: (days) => (days === 90
+        ? { later: (ok) => { lates.push(ok); } }
+        : {
+          from: '2026-09-04', to: '2026-09-10', total: 7, who: '',
+          byTarget: [{ kind: 'view', target: 'issues', count: 7 }],
+          byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+        }),
+    });
+    const sel = document.getElementById('usage-days');
+    sel.value = '90';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    sel.value = '7';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    lates[0]({
+      from: '2026-06-13', to: '2026-09-10', total: 999, who: '',
+      byTarget: [], byDay: [], byUser: [], byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
+    });
+    expect(document.getElementById('usage').textContent).toContain('7回');
+    expect(document.getElementById('usage').textContent).not.toContain('999回');
+  });
+
   it('保存できるならファイルとして落とす', () => {
     const made = [];
     const orig = window.URL.createObjectURL;

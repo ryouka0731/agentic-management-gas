@@ -500,16 +500,14 @@ describe('CSV にする行', () => {
     ]);
   });
 
-  it('見られない人の列は空にして、数は残す', () => {
+  it('見られない人のぶんは入れない', () => {
     const { ctx } = setup();
     put(ctx, '2026-09-10', 'action', 'b', 2, 'aoki@example.com');
-    put(ctx, '2026-09-10', 'action', 'b', 5, 'ito@example.com');
-    put(ctx, '2026-09-10', 'action', 'b', 1, 'ueda@example.com');
+    put(ctx, '2026-09-10', 'view', 'docs', 5, 'ito@example.com');
 
+    // 見られない人が1人だと、名前を空にしても、その人の日ごと・場所ごとの記録がそのまま読める
     const res = ctx.usageRows(30, new Date(2026, 8, 10), '', ['aoki@example.com']);
-    // 見られない2人は1行にまとめる。人ごとに分けると、空欄でも人数が分かる
     expect(res.rows).toEqual([
-      { day: '2026-09-10', kind: 'action', target: 'b', user: '', count: 6 },
       { day: '2026-09-10', kind: 'action', target: 'b', user: 'aoki@example.com', count: 2 },
     ]);
   });

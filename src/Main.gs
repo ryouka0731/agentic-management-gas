@@ -2215,8 +2215,7 @@ function apiUsageSummary(days, who) {
 /**
  * CSV にするための、日・場所・人ごとの数を返す (Web App API)。
  *
- * 人の列は apiUsageSummary と同じく本人と部下だけ。ほかの人のぶんは人の
- * 列を空にして数だけ残す (usageRows)。
+ * 本人と部下のぶんだけを返す。ほかの人の行は入れない (usageRows)。
  *
  * @param {number} days
  * @param {string} [who] 空なら全員ぶん

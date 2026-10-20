@@ -216,6 +216,9 @@ function usageWithinKeep_(values, today) {
  * @returns {{from:string, to:string, prevFrom:string, prevTo:string}}
  */
 function usageSpan_(days, today) {
+  // 日の境目は usageDay (東京) と、ここでの new Date(y, m, d) の両方で決まる。
+  // 後者は実行環境の時刻帯で動くので、appsscript.json の timeZone が
+  // Asia/Tokyo であることを前提にしている。変えると期間が1日ずれる
   var span = Math.max(1, Math.min(365, Number(days) || 30));
   var end = today || new Date();
   var y = end.getFullYear();
@@ -358,10 +361,10 @@ function usageSummary(days, today, who) {
 /**
  * CSV にするための、日・場所・人ごとの数。
  *
- * **人の列は、見る人が見られる人 (`visible`) だけにする。** それ以外の人は
- * 空にして、同じ日・同じ場所のぶんを1行にまとめる。人ごとに空の行を
- * 分けると、名前が無くても何人いたかが読めてしまう。数は落とさないので、
- * 足せば画面の「数えた回数」に戻る。
+ * **見る人が見られる人 (`visible`) 以外の行は入れない。** 名前を空にして
+ * 数だけ残す形にすると、見られない人が1人のとき、その人の日ごと・場所ごとの
+ * 記録がそのまま読める。そのため足しても画面の「数えた回数」と合わない
+ * ことがある (画面にもそう書く)。
  *
  * @param {number} [days]
  * @param {Date} [today]
@@ -385,7 +388,7 @@ function usageRows(days, today, who, visible) {
 
     var user = String(rows[i].user || '');
     if (target && user !== target) continue;
-    if (allowed.indexOf(user) < 0) user = '';
+    if (allowed.indexOf(user) < 0) continue;
 
     var kind = String(rows[i].kind);
     var place = String(rows[i].target);
