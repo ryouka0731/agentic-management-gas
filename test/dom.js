@@ -139,7 +139,9 @@ export function mountApp(responses, options) {
         // 返事を遅らせる。{ later: (ok, ng) => ... } を返すと、ハンドラを
         // 受け取って好きな時に返せる。返事が届く順を入れ替えるのに使う
         if (value && typeof value.later === 'function') {
-          value.later(onSuccess || (() => {}), onFailure || (() => {}));
+          // 遅らせた返事も同じく写しを渡す (下の即時の返事と同じ理由)
+          const ok = onSuccess ? (v) => onSuccess(v === undefined ? null : structuredClone(v)) : () => {};
+          value.later(ok, onFailure || (() => {}));
           return;
         }
         // 実物は返事を運ぶときに写しを作る。同じ物を渡すと、画面が返事に書き込んだ
