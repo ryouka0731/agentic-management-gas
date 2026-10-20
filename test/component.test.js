@@ -4096,8 +4096,8 @@ describe('使われ方を前の期間と比べる', () => {
     expect(names).not.toContain('やること');
     expect(names).not.toContain('使われ方');
     // スクラムがオフのあいだは、出ない画面を数えない
-    expect(names).not.toContain('スプリント');
-    expect(names).not.toContain('障害物');
+    expect(names).not.toContain('作業期間');
+    expect(names).not.toContain('困りごと');
   });
 
   it('スクラムがオンなら、その画面も並べる', () => {
@@ -4107,7 +4107,7 @@ describe('使われ方を前の期間と比べる', () => {
     } });
     const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
       .map((c) => c.textContent);
-    expect(names).toContain('スプリント');
+    expect(names).toContain('作業期間');
   });
 
   it('全部開かれていればそう言う', () => {
@@ -6228,7 +6228,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
   const ON = {
     scrumEnabled: true, canEdit: true, productGoal: '紙の稟議をなくす', definitionOfDone: '',
-    glossary: { 'ベロシティ': '1スプリントで終えたポイントの合計。' }, glossaryAliases: {},
+    glossary: { velocity: '1つの作業期間で終えた大きさの合計。' }, glossaryAliases: {},
   };
   const VIEW = {
     sprint: 'sprint001',
@@ -6260,7 +6260,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     // 名前は状態で変えない。状態はトグルの形 (role=switch / aria-checked) で示す
     expect(toggle.getAttribute('role')).toBe('switch');
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(toggle.textContent).toBe('エージェンティックスクラムを使う');
+    expect(toggle.textContent).toBe('「期間で進める」を使う');
     app.respond('apiSettings', ON);
     toggle.click();
 
@@ -6268,7 +6268,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(document.getElementById('nav-scrum').hidden).toBe(false);
     const after = document.getElementById('scrum-toggle');
     expect(after.getAttribute('aria-checked')).toBe('true');
-    expect(after.textContent).toBe('エージェンティックスクラムを使う');
+    expect(after.textContent).toBe('「期間で進める」を使う');
   });
 
   it('切り替えに失敗したら、トグルの形を元に戻す', () => {
@@ -6363,7 +6363,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     const view = document.getElementById('sprint-view');
     // 結論のカードを先に置く (集計の画面と同じ順)
     const cards = [...view.querySelectorAll('.scrum-summary .tally-card')].map((c) => c.textContent);
-    expect(cards[0]).toContain('今のスプリント');
+    expect(cards[0]).toContain('今の作業期間');
     expect(cards[0]).toContain('sprint001');
     expect(cards[1]).toContain('2 / 5');
     expect(view.textContent).toContain('申請の流れ');
@@ -6376,12 +6376,12 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     mount({ apiSettings: ON, apiScrumView: VIEW });
     document.querySelector('[data-tab="sprint"]').click();
 
-    const btn = document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]');
+    const btn = document.querySelector('.term-help-btn[aria-label="期間ごとに終えた量 とは"]');
     const note = btn.parentNode.querySelector('.term-help-text');
     expect(note.hidden).toBe(true);
     btn.click();
     expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain('終えたポイント');
+    expect(note.textContent).toContain('終えた大きさ');
   });
 
   it('スプリントを作れる', () => {
@@ -6415,7 +6415,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
     expect(app.calls.filter((c) => c.name === 'apiImpedimentResolve')[0].args).toEqual([3, '代理が承認']);
     // ほかを開いていなければ、解決したあとの詳細に戻る
-    expect(document.getElementById('side-title').textContent).toBe('障害物 #3');
+    expect(document.getElementById('side-title').textContent).toBe('困りごと #3');
     expect(document.getElementById('side-body').textContent).toContain('解決済み');
   });
 
@@ -6426,9 +6426,9 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
     // 空の表と「?」だけ並べても、何をすればよいか分からない
     const blank = document.querySelector('#sprint-view .blank-state');
-    expect(blank.textContent).toContain('スプリントがまだありません');
+    expect(blank.textContent).toContain('作業期間がまだありません');
     blank.querySelector('.btn-primary').click();
-    expect(document.getElementById('side-body').textContent).toContain('スプリントゴール');
+    expect(document.getElementById('side-body').textContent).toContain('この期間の目標');
   });
 
   it('スプリントを素早く切り替えても、前の返事で描き直さない', () => {
@@ -6567,7 +6567,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     document.querySelector('[data-tab="sprint"]').click();
 
     expect(document.getElementById('sprint-edit-btn').disabled).toBe(true);
-    expect(document.getElementById('sprint-view').textContent).not.toContain('「このスプリントを直す」から');
+    expect(document.getElementById('sprint-view').textContent).not.toContain('「この作業期間を直す」から');
   });
 
   it('ホバーで出る説明が、ほかの画面と同じ仕組みで付く', () => {
@@ -6594,10 +6594,10 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     hinted(document.querySelector('.roadmap-open'), 'roadmap-open');
 
     // 用語の「?」は、ブラウザ既定の吹き出し (title) ではなく同じ仕組みで出す
-    const help = document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]');
+    const help = document.querySelector('.term-help-btn[aria-label="期間ごとに終えた量 とは"]');
     hinted(help, 'term-help');
     expect(help.getAttribute('title')).toBeNull();
-    expect(help.dataset.hint).toContain('終えたポイント');
+    expect(help.dataset.hint).toContain('終えた大きさ');
 
     document.querySelector('[data-tab="impediments"]').click();
     hinted(document.getElementById('impediment-create-btn'), 'impediment-create-btn');
@@ -6679,7 +6679,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       expect(heads[0]).toContain('sprint001');
       expect(heads[0]).toContain('3pt');
       expect(heads[1]).toContain('sprint002');
-      expect(heads[2]).toContain('スプリント未定');
+      expect(heads[2]).toContain('作業期間未定');
     });
 
     it('設定が一覧より遅れて届いても、届いたら札を付けて描き直す', () => {
@@ -6745,7 +6745,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       document.querySelector('[data-tab="sprint"]').click();
 
       expect(current()).toEqual(['進める']);
-      expect(nextTitle()).toContain('残り 3ポイント');
+      expect(nextTitle()).toContain('残りの大きさ 3');
       document.querySelector('.scrum-next .btn-primary').click();
       expect(document.getElementById('panel-issues').hidden).toBe(false);
       expect(document.getElementById('view-board').getAttribute('aria-pressed')).toBe('true');
@@ -6756,7 +6756,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
         completed: 2, openImpediments: 2, average: '' } }) });
       document.querySelector('[data-tab="sprint"]').click();
 
-      expect(nextTitle()).toContain('障害物が 2件');
+      expect(nextTitle()).toContain('困りごとが 2件');
       document.querySelector('.scrum-next .btn-primary').click();
       expect(document.getElementById('panel-impediments').hidden).toBe(false);
     });
@@ -6768,7 +6768,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       document.querySelector('[data-tab="sprint"]').click();
 
       expect(current()).toEqual(['計画する']);
-      expect(nextTitle()).toContain('ゴール');
+      expect(nextTitle()).toContain('この期間の目標');
       document.querySelector('.scrum-next .btn-primary').click();
       expect(document.getElementById('side-title').textContent).toContain('sprint001 を直す');
     });
@@ -6783,7 +6783,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       // 読み上げの「いまの段」は1つ
       expect(document.querySelectorAll('.scrum-cycle-step[aria-current="step"]')).toHaveLength(1);
       expect(nextTitle()).toContain('終わりました');
-      expect(document.querySelector('.scrum-next .btn-primary').textContent).toBe('次のスプリントを作る');
+      expect(document.querySelector('.scrum-next .btn-primary').textContent).toBe('次の作業期間を作る');
     });
 
     it('済んだ段には印を付ける (色だけに頼らない)', () => {
@@ -6805,11 +6805,11 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
       const btn = document.getElementById('sprint-edit-btn');
       expect(btn.disabled).toBe(true);
-      expect(btn.dataset.hint).toContain('まずスプリントを作る');
+      expect(btn.dataset.hint).toContain('まず作業期間を作る');
       // 押せないボタンには焦点が当たらない。理由は見える字でも隣に出す
       const reason = document.getElementById('sprint-edit-reason');
       expect(reason.hidden).toBe(false);
-      expect(reason.textContent).toContain('まずスプリントを作る');
+      expect(reason.textContent).toContain('まず作業期間を作る');
     });
 
     it('スプリントの入力欄は、必須・見本・決まりを入れる前に見せる', () => {
@@ -6977,17 +6977,44 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     });
   });
 
+  it('言葉の表し方: 既定は一般の言葉。スクラムの言葉を選ぶと、その場で言い換える', () => {
+    const app = mount({ apiSettings: ON, apiScrumView: VIEW });
+    const navLabel = () => document.querySelector('[data-tab="sprint"] .nav-label').textContent;
+    expect(navLabel()).toBe('作業期間');
+    expect(document.querySelector('#nav-scrum h2').textContent).toBe('期間で進める');
+    expect(document.getElementById('sprint-create-btn').textContent).toBe('作業期間を作る');
+    document.querySelector('[data-tab="sprint"]').click();
+    expect(document.getElementById('sprint-view').textContent).toContain('今の作業期間');
+
+    // 設定の画面で切り替える (書いたあとの apiPrefs が届く)
+    app.respond('apiPrefSet', prefsFixture({ values: { 'terms.style': 'scrum' } }));
+    document.querySelector('[data-tab="settings"]').click();
+    const select = [...document.querySelectorAll('#settings select')]
+      .find((el) => [...el.options].some((o) => o.value === 'scrum'));
+    select.value = 'scrum';
+    select.dispatchEvent(new window.Event('change'));
+    expect(app.calls.filter((c) => c.name === 'apiPrefSet').pop().args).toEqual(['terms.style', 'scrum']);
+    expect(navLabel()).toBe('スプリント');
+    expect(document.getElementById('sprint-create-btn').textContent).toBe('スプリントを作る');
+    expect(document.getElementById('settings').textContent).toContain('エージェンティックスクラム');
+
+    document.querySelector('[data-tab="sprint"]').click();
+    expect(document.getElementById('sprint-view').textContent).toContain('今のスプリント');
+    // 用語の「?」もスクラムの言葉で名乗る
+    expect(document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]')).not.toBeNull();
+  });
+
   it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
     mount();
     document.querySelector('[data-tab="issues"]').click();
     document.getElementById('issue-create-btn').click();
-    expect(document.getElementById('side-body').textContent).not.toContain('ストーリーポイント');
+    expect(document.getElementById('side-body').textContent).not.toContain('できたと言える条件');
 
     mount({ apiSettings: ON });
     document.querySelector('[data-tab="issues"]').click();
     document.getElementById('issue-create-btn').click();
-    expect(document.getElementById('side-body').textContent).toContain('ストーリーポイント');
-    expect(document.getElementById('side-body').textContent).toContain('受入基準');
+    expect(document.getElementById('side-body').textContent).toContain('ほかのやることと比べて選ぶ');
+    expect(document.getElementById('side-body').textContent).toContain('できたと言える条件');
   });
 });
 
