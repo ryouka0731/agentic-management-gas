@@ -1767,3 +1767,33 @@ describe('設定の一覧 (#18) レビューの指摘', () => {
     expect(app.calls.filter((c) => c.name === 'apiPrefs').pop().args).toEqual([{ team: true }]);
   });
 });
+
+describe('使い方の、まだ通していなかった道', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  const help = () => document.getElementById('panel-help');
+
+  it('誰として認識しているかを出す。分からなければ警告し、取れなければ出さない', () => {
+    mount({ apiWhoAmI: { activeUser: '', effectiveUser: '', sameUser: true } });
+    document.querySelector('.nav-item[data-tab="help"]').click();
+    expect(help().textContent).toContain('警告: 利用者を特定できていません');
+
+    mount({ apiWhoAmI: new Error('取れません') });
+    document.querySelector('.nav-item[data-tab="help"]').click();
+    expect(help().textContent).not.toContain('として認識しています');
+    expect(help().textContent).not.toContain('警告: 利用者を特定できていません');
+  });
+
+  it('送ると、いま読んでいる節が目次の現在地になる', () => {
+    mount();
+    document.querySelector('.nav-item[data-tab="help"]').click();
+    const guide = document.getElementById('guide');
+    const heads = [...guide.querySelectorAll('[id^="guide-sec-"]')];
+    heads.forEach((h, i) => Object.defineProperty(h, 'offsetTop', { value: i * 1000, configurable: true }));
+    guide.scrollTop = 2000;
+    guide.dispatchEvent(new window.Event('scroll'));
+    const current = [...document.querySelectorAll('#guide-toc [aria-current="true"]')];
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent).toBe(heads[2].querySelector('.guide-head-text').textContent);
+  });
+});

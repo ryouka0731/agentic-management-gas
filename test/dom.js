@@ -112,8 +112,10 @@ function dropLeftovers() {
  * 画面の JS を本当に走らせる。
  *
  * @param {Object<string, *|function>} responses API名 → 返す値、または関数
- * @param {{location?: object}} [options] location は google.script.url.getLocation が
- *   返す形 ({parameter, parameters, hash})。既定はパラメータ無し
+ * @param {{location?: object, transport?: function, names?: string[]}} [options] location は
+ *   google.script.url.getLocation が返す形 ({parameter, parameters, hash})。既定はパラメータ無し。
+ *   transport(name, args, onSuccess, onFailure) を渡すと、表の代わりにそれが返事を運ぶ
+ *   (test/e2e/fullstack.js が本物のサーバへつなぐのに使う)。names は呼べる api の名前を足す
  * @returns {{calls: object[], respond: function, flush: function}}
  */
 export function mountApp(responses, options) {
@@ -136,10 +138,15 @@ export function mountApp(responses, options) {
       withFailureHandler(fn) { return makeRunner(onSuccess, fn); },
     };
 
-    const names = new Set([...Object.keys(table), ...API_NAMES]);
+    const names = new Set([...Object.keys(table), ...API_NAMES, ...((options && options.names) || [])]);
     names.forEach((name) => {
       runner[name] = function (...args) {
         calls.push({ name, args });
+
+        if (options && options.transport) {
+          options.transport(name, args, onSuccess, onFailure);
+          return;
+        }
 
         let value = table[name];
         if (typeof value === 'function') value = value(...args);
