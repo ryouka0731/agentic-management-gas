@@ -478,6 +478,13 @@ describe('画面に渡せる形か', () => {
     return env;
   }
 
+  /** 診断の答え (全部の問いに 4) */
+  function styleAnswers(ctx) {
+    const out = {};
+    ctx.STYLE_QUESTIONS().forEach((q) => { out[q.id] = 4; });
+    return out;
+  }
+
   /** 自分の担当で今日閉じたやること */
   function closedToday(ctx) {
     const n = ctx.apiIssueCreate('今日閉じた', '', []).number;
@@ -570,6 +577,23 @@ describe('画面に渡せる形か', () => {
       const out = ctx.apiGameState();
       if (!out.badges.some((b) => b.done && b.at)) throw new Error('得た称号が空のまま検査されている');
       if (!out.team || out.team.lastWeek === null) throw new Error('チームの合計が空のまま検査されている');
+      return out;
+    }],
+    // 仕事のスタンス診断。結果があるとき (軸・おすすめ・札・日付) を検査する
+    ['apiWorkStyle', (ctx) => {
+      ctx.apiWorkStyleSave(styleAnswers(ctx));
+      ctx.apiPrefSet('style.share', true);
+      const out = ctx.apiWorkStyle();
+      if (!out.mine || !out.mine.uses.length || !out.mine.takenAt) throw new Error('診断の結果が空のまま検査されている');
+      return out;
+    }],
+    ['apiWorkStyleSave', (ctx) => ctx.apiWorkStyleSave(styleAnswers(ctx))],
+    ['apiWorkStyleForget', (ctx) => { ctx.apiWorkStyleSave(styleAnswers(ctx)); return ctx.apiWorkStyleForget(); }],
+    ['apiWorkStyleTeam', (ctx) => {
+      ctx.apiWorkStyleSave(styleAnswers(ctx));
+      ctx.apiPrefSet('style.share', true);
+      const out = ctx.apiWorkStyleTeam();
+      if (!Object.keys(out).length) throw new Error('チームに見せる型が空のまま検査されている');
       return out;
     }],
     ['apiGameTop', (ctx) => { ctx.apiSetGameEnabled(true); ctx.apiGameJoin(true); return ctx.apiGameTop(); }],

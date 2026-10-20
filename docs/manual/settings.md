@@ -39,6 +39,7 @@
 | `focus.start` | 集中のしかた: 今から始める | bool | オフ | |
 | `focus.remind` | 集中のしかた: 時間の知らせ | enum | `end` | 終わったときだけ / 30分ごと / 45分ごと / 60分ごと / 90分ごと |
 | `focus.sound` | 集中のしかた: 集中の音 | bool | オフ | |
+| `style.share` | 仕事のスタンス診断: 診断の型の名前をチームに見せる | bool | オフ | 見せるのは型の名前と絵だけ。[仕事のスタンス診断](work-style.md) |
 | `notify.review` | 通知メール: 確認を頼まれた・確認依頼が出た | bool | オン | |
 | `notify.result` | 通知メール: 反映した・取り下げた | bool | オン | |
 | `notify.inquiry` | 通知メール: 報告とその返事 | bool | オン | |

@@ -220,7 +220,7 @@ const API_NAMES = [
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
   'apiUsageRecord', 'apiUsageSummary', 'apiUsageRows', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
-  'apiAppUrl',
+  'apiAppUrl', 'apiWorkStyle', 'apiWorkStyleSave', 'apiWorkStyleForget', 'apiWorkStyleTeam',
 ];
 
 /**
@@ -249,6 +249,7 @@ export function prefsFixture(over) {
       options: [{ value: 'end', label: '終わったときだけ' }, { value: '30', label: '30分ごと' }, { value: '60', label: '60分ごと' }],
       def: 'end' },
     { key: 'focus.sound', scope: 'me', type: 'bool', section: '集中のしかた', label: '集中の音', help: '', def: false },
+    { key: 'style.share', scope: 'me', type: 'bool', section: '仕事のスタンス診断', label: '診断の型の名前をチームに見せる', help: '', def: false },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
     { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方', label: '自分の使われ方を記録する', help: '', def: true },
     { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方', label: '使われ方を記録する', help: '', def: true },
@@ -459,6 +460,9 @@ export const DEFAULTS = {
     { kind: 'inquiry', number: 5, key: '', title: '棒が伸びない', state: 'open', archived: false },
   ],
   apiGameState: { enabled: false },
+  // 仕事のスタンス診断。中身はテストがサーバの定義から作って差し替える (test/component/style.test.js)
+  apiWorkStyle: { questions: [], scale: [], axes: [], mine: null, share: false },
+  apiWorkStyleTeam: {},
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),
   apiGameLevelSeen: null,

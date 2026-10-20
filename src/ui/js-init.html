@@ -337,6 +337,10 @@
     function (map) { peopleNames = map || {}; },
     failQuiet('アドレスの手前で出る'));
 
+  call('apiWorkStyleTeam', [],
+    function (map) { peopleStyles = map || {}; },
+    failQuiet('顔に型の名前が添えられないだけ'));
+
   call('apiTemplateList', [],
     function (list) { templates = list || []; },
     failQuiet('差し込めないだけで書ける'));

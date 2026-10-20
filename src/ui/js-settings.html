@@ -472,6 +472,41 @@
     team.appendChild(makeGameSettings());
     if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
     settingsEl.appendChild(team);
+    prefFocusPending();
+  }
+
+  /** 開いたら印を付ける設定の名前 (診断のおすすめから開いたとき)。描いたら空に戻す */
+  var prefFocusKey = '';
+
+  /**
+   * 設定の画面を開き、その項目に印を付ける。**切り替えはしない** (オンにするかは本人が決める)。
+   *
+   * @param {string} key PREFS_SCHEMA の key
+   */
+  function openPrefAt(key) {
+    prefFocusKey = String(key || '');
+    switchTab('settings');
+  }
+
+  /** 描いた設定の画面で、頼まれた項目へ送って印を付ける */
+  function prefFocusPending() {
+    var key = prefFocusKey;
+    if (!key) return;
+    prefFocusKey = '';
+    var hit = Array.prototype.filter.call(settingsEl.querySelectorAll('[data-pref]'), function (el) {
+      return el.dataset.pref === key;
+    })[0];
+    if (!hit) {
+      showSnack('その設定は、いまの画面にはありません', { kind: 'ng' });
+      return;
+    }
+    Array.prototype.forEach.call(settingsEl.querySelectorAll('.pref-focus'), function (el) {
+      el.classList.remove('pref-focus');
+    });
+    hit.classList.add('pref-focus');
+    if (hit.scrollIntoView) hit.scrollIntoView({ block: 'center' });
+    var control = hit.querySelector('button, select, input');
+    if (control) control.focus();
   }
 
   /**

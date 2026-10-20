@@ -74,9 +74,12 @@
 - 誰の道具が古いかは**スクリプトプロパティ** (`KIT_PRINT:<email>`) に覚える。手元からの命令は持ち主の
   トリガーで走るので、利用者本人の UserProperties には書けない
 - `kit/track/hook.mjs` は ~/.banto/hooks に写して単体で動かす。**ほかのファイルを import しない**
-- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft`) は、命令を置いた人 (`by`) から見た様子を返す**
+- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft` / `workStyle`) は、命令を置いた人 (`by`) から見た様子を返す**
   (`commandBy_`。分からなければ断る。持ち主と最後に書いた人が食い違えば断る `commandPersonOf_`)。**`by` は誰の
   見え方かを決めるだけで、権限の仕組みではない。** 結果は queue に置かれ、共有している人なら誰でも読める (台帳と
   同じ中身)。画面の `api*` を呼ばない (トリガーは持ち主の権限で走るので、持ち主のぶんが返る)
 - **`kit/track/local.mjs` の `searchFilter` / `reportFill` は画面の写し**、`KIT_VERSION` は `AGENT_KIT_VERSION()` の写し。
   `test/kit-commands.test.js` が揃っているかを見ている (版を上げるときは2か所)。`doctor` は番頭に何も頼まない
+- **`style` (命令 `workStyle`) の手伝い方の言葉は番頭の `WORK_STYLE_AXES()` の `support` が本体。** スキル `banto-style` の表は
+  それを具体的な動きにしたもので、食い違ったら返事の行に従うと書いてある。極を足したら表にも足す
+  (`test/kit-commands.test.js` の「番頭の軸と極を全部挙げている」が見ている)。返事は囲いに入れて出す (VIEWS)

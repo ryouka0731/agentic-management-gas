@@ -16,7 +16,7 @@ import { readConfig, cleanVersion, compareVersions, paths } from './update.mjs';
  * この道具の版。**番頭の AGENT_KIT_VERSION() と同じでなければならない**
  * (test/kit-commands.test.js が見ている)。doctor が入れた道具の版と比べる。
  */
-export const KIT_VERSION = '1.11.1';
+export const KIT_VERSION = '1.12.0';
 
 /** 画面の OFFICIAL と同じ言葉 */
 const OFFICIAL = '正式版';
@@ -199,6 +199,26 @@ export function formatAdvice(list) {
     lines.push('  ' + a.why);
     lines.push('  ' + a.tip);
   }
+  return lines.join('\n');
+}
+
+/**
+ * 仕事のスタンス診断 (workStyle の返事)。手伝い方の合わせ方はスキル banto-style が決める。
+ *
+ * @param {object} r
+ * @returns {string}
+ */
+export function formatStyle(r) {
+  if (!r.taken) return 'まだ診断していません。' + (r.howTo || '');
+  const lines = [(r.emoji ? r.emoji + ' ' : '') + '仕事のスタンス: ' + r.name, r.oneLine || ''];
+  lines.push('');
+  lines.push('軸ごとの型と、手伝い方の合わせ方');
+  for (const a of r.axes || []) lines.push('- ' + a.label + ': ' + a.pole + ' → ' + a.support);
+  if ((r.strengths || []).length) {
+    lines.push('');
+    lines.push('強み: ' + r.strengths.join(' / '));
+  }
+  if ((r.cautions || []).length) lines.push('気をつけたいこと: ' + r.cautions.join(' / '));
   return lines.join('\n');
 }
 
