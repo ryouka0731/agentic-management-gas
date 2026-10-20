@@ -20,7 +20,7 @@ const SOURCES = [
   'src/core/PullPatch.gs',
   'src/core/Outbox.gs',
   'src/core/Archive.js',
-  'src/core/Staleness.js',
+  'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs',
   'src/core/Member.gs',
   'src/core/Issue.gs', 'src/core/Inquiry.gs',

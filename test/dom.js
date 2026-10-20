@@ -154,7 +154,7 @@ const API_NAMES = [
   'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiOutboxList', 'apiOutboxVerbs', 'apiOutboxAdd', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
-  'apiSettings', 'apiSetScrumEnabled', 'apiSetScrumText', 'apiSprintList', 'apiSprintCreate',
+  'apiSettings', 'apiPrefs', 'apiPrefSet', 'apiSetScrumEnabled', 'apiSetScrumText', 'apiSprintList', 'apiSprintCreate',
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
@@ -170,10 +170,58 @@ const API_NAMES = [
   'apiPeopleNames', 'apiPeopleSetName',
   'apiIssueComments', 'apiIssueComment', 'apiIssueCommentEdit', 'apiIssueCommentDelete',
   'apiTemplateList', 'apiTemplateSave', 'apiTemplateDelete',
-  'apiUsageRecord', 'apiUsageSummary', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
+  'apiUsageRecord', 'apiUsageSummary', 'apiUsageRows', 'apiAgentKit', 'apiKitStatus', 'apiWorkspace',
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
   'apiAppUrl',
 ];
+
+/**
+ * apiPrefs の既定の返り。サーバの PREFS_SCHEMA から一部を写した形 (画面は届いた一覧から欄を組む)。
+ * 値は全部既定のまま。
+ */
+export function prefsFixture(over) {
+  const items = [
+    { key: 'start.tab', scope: 'me', type: 'enum', section: '開いたとき', label: '最初に出す画面', help: '',
+      options: [{ value: 'home', label: 'ホーム' }, { value: 'issues', label: 'やること' }, { value: 'pulls', label: '確認依頼' }],
+      def: 'home' },
+    { key: 'home.cards.turn', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'あなたの番', help: '', def: true },
+    { key: 'home.cards.advice', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '改善のヒント', help: '', def: true },
+    { key: 'home.cards.activity', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '草 (アクティビティ)', help: '', def: true },
+    { key: 'home.cards.game', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'ポイントとレベル', help: '', def: true },
+    { key: 'home.cards.recent', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '最近の動き', help: '', def: true },
+    { key: 'home.cards.team', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'チームの前進', help: '', def: true },
+    { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
+    { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方', label: '自分の使われ方を記録する', help: '', def: true },
+    { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方', label: '使われ方を記録する', help: '', def: true },
+    { key: 'advice.wip.on', scope: 'team', type: 'bool', section: '改善のヒント', label: '抱えすぎています', help: '', def: true },
+    { key: 'home.dueDays', scope: 'team', type: 'int', section: 'ホーム', label: '「期限が近い」とみなす日数', help: '',
+      min: 1, max: 14, def: 3 },
+    { key: 'stale.steps', scope: 'team', type: 'steps', section: 'やること', label: '「動きなし」の段階 (日)', help: '',
+      min: 1, max: 180, def: [7, 14, 30] },
+    { key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報', label: '日報の形の既定', help: '',
+      options: [{ value: 'three', label: '3節' }, { value: 'today', label: '今日だけ' }], def: 'three' },
+  ].map((p) => Object.assign({ min: '', max: '', options: [] }, p, { value: p.def, custom: false }));
+  const values = (over && over.values) || {};
+  items.forEach((p) => {
+    if (Object.prototype.hasOwnProperty.call(values, p.key)) {
+      p.value = values[p.key];
+      p.custom = true;
+    }
+  });
+  const v = (k) => items.filter((p) => p.key === k)[0].value;
+  return {
+    canEditTeam: over && 'canEditTeam' in over ? over.canEditTeam : true,
+    items,
+    teamGoal: (over && over.teamGoal) || 0,
+    effective: {
+      startTab: v('start.tab'),
+      homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
+        .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
+      usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
+      notifyOff: v('notify.review') === false ? ['review'] : [],
+    },
+  };
+}
 
 /** よく使う既定の応答 */
 export const DEFAULTS = {
@@ -214,7 +262,9 @@ export const DEFAULTS = {
   apiUsageSummary: {
     from: '2026-08-12', to: '2026-09-10', total: 0,
     byTarget: [], byDay: [], byUser: [],
+    byWeekday: [0, 0, 0, 0, 0, 0, 0], prev: { total: 0, byTarget: [] },
   },
+  apiUsageRows: { from: '2026-08-12', to: '2026-09-10', who: '', rows: [] },
   apiTemplateList: [
     { name: '作業の段取り', body: '## やること\n\n- [ ] \n', builtin: true, mine: false },
     { name: '週報', body: '## 今週\n', builtin: false, mine: true },
@@ -288,6 +338,9 @@ export const DEFAULTS = {
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
   apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiPrefs: prefsFixture(),
+  // 書いた値を返す (null で既定に戻す)
+  apiPrefSet: (key, value) => prefsFixture({ values: value === null ? {} : { [key]: value } }),
   apiSprintList: [],
   apiImpedimentList: [],
   apiImpedimentComments: [],

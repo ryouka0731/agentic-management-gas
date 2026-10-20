@@ -42,10 +42,27 @@ function USAGE_KINDS() {
  *
  * 画面から見られるのは直近90日までなので、その倍を残せば足りる。
  *
+ * **これは既定値。** チームの設定 usage.keepDays で変えられるので、残す日数は
+ * usageKeepDays_() で読む。
+ *
  * @returns {number}
  */
 function USAGE_KEEP_DAYS() {
   return 180;
+}
+
+/**
+ * 残す日数 (チームの設定。決めていなければ USAGE_KEEP_DAYS())。
+ *
+ * @returns {number}
+ */
+function usageKeepDays_() {
+  // 読めなければ既定の日数 (短く倒して行を消すことはしない)
+  try {
+    return prefGet_('usage.keepDays');
+  } catch (e) {
+    return USAGE_KEEP_DAYS();
+  }
 }
 
 /**
@@ -96,6 +113,17 @@ function usageRecord(rows) {
   if (!list.length) return 0;
 
   if (list.length > USAGE_MAX_KEYS()) list = list.slice(0, USAGE_MAX_KEYS());
+
+  // チームで止めたとき・本人が止めたときは数えない。鍵も取らない
+  // 設定が読めないときは数え続ける (止めたつもりの無い人の記録を黙って落とさない)
+  var who = Session.getActiveUser().getEmail();
+  var on = true;
+  try {
+    on = prefGet_('usage.enabled') !== false && prefGet_('usage.self', who) !== false;
+  } catch (e) {
+    on = true;
+  }
+  if (!on) return 0;
 
   // 数えられなくても操作は続けられる。取れなければ諦める
   return dbWithLock_(5000, function () {
@@ -194,7 +222,7 @@ function usageWithinKeep_(values, today) {
   var end = new Date(
     Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   var from = usageDay(new Date(
-    end.getFullYear(), end.getMonth(), end.getDate() - USAGE_KEEP_DAYS() + 1));
+    end.getFullYear(), end.getMonth(), end.getDate() - usageKeepDays_() + 1));
 
   var out = [];
   for (var i = 0; i < values.length; i++) {
@@ -209,20 +237,62 @@ function usageWithinKeep_(values, today) {
 }
 
 /**
+ * 見る期間と、同じ長さで直前の期間を決める。
+ *
+ * @param {number} [days] 省略すると30日。1年で止める
+ * @param {Date} [today]
+ * @returns {{from:string, to:string, prevFrom:string, prevTo:string}}
+ */
+function usageSpan_(days, today) {
+  // 日の境目は usageDay (東京) と、ここでの new Date(y, m, d) の両方で決まる。
+  // 後者は実行環境の時刻帯で動くので、appsscript.json の timeZone が
+  // Asia/Tokyo であることを前提にしている。変えると期間が1日ずれる
+  var span = Math.max(1, Math.min(365, Number(days) || 30));
+  var end = today || new Date();
+  var y = end.getFullYear();
+  var m = end.getMonth();
+  var d = end.getDate();
+
+  return {
+    from: usageDay(new Date(y, m, d - span + 1)),
+    to: usageDay(end),
+    prevFrom: usageDay(new Date(y, m, d - span * 2 + 1)),
+    prevTo: usageDay(new Date(y, m, d - span)),
+  };
+}
+
+/**
+ * 'yyyy-MM-dd' が何曜日か。月曜を0、日曜を6とする。
+ *
+ * 字から決める。台帳の Date の時刻 (東京の0時) を使うと、動いている場所の
+ * 時刻帯によって前の日の曜日になる。
+ *
+ * @param {string} day
+ * @returns {number} 読めなければ -1
+ */
+function usageWeekday_(day) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day));
+  if (!m) return -1;
+  var w = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay();
+  return (w + 6) % 7;
+}
+
+/**
  * 使われ方をまとめる。
+ *
+ * 前の期間 (`prev`) は同じ長さで直前の期間。増えたか減ったかを見るため。
+ * 曜日ごと (`byWeekday`) は月曜から日曜までの7つ。
  *
  * @param {number} [days] 何日ぶんを見るか。省略すると30日
  * @param {Date} [today]
  * @returns {{from:string, to:string, total:number, byTarget:object[],
- *   byDay:object[]}}
+ *   byDay:object[], byUser:object[], byWeekday:number[],
+ *   prev:{total:number, byTarget:object[]}}}
  */
 function usageSummary(days, today, who) {
-  var span = Math.max(1, Math.min(365, Number(days) || 30));
-  var end = today || new Date();
-  var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - span + 1);
-
-  var from = usageDay(start);
-  var to = usageDay(end);
+  var range = usageSpan_(days, today);
+  var from = range.from;
+  var to = range.to;
   var target = String(who || '');
 
   var rows = dbReadAll('usage');
@@ -233,9 +303,28 @@ function usageSummary(days, today, who) {
   var byUser = {};
   var userOrder = [];
   var total = 0;
+  var byWeekday = [0, 0, 0, 0, 0, 0, 0];
+  var prevByTarget = {};
+  var prevOrder = [];
+  var prevTotal = 0;
 
   for (var i = 0; i < rows.length; i++) {
     var day = usageDayOf_(rows[i].day);
+
+    if (day >= range.prevFrom && day <= range.prevTo) {
+      if (target && String(rows[i].user || '') !== target) continue;
+      var prevKey = String(rows[i].kind) + ':' + String(rows[i].target);
+      if (!prevByTarget[prevKey]) {
+        prevByTarget[prevKey] = {
+          kind: String(rows[i].kind), target: String(rows[i].target), count: 0,
+        };
+        prevOrder.push(prevKey);
+      }
+      var prevCount = Number(rows[i].count) || 0;
+      prevByTarget[prevKey].count += prevCount;
+      prevTotal += prevCount;
+      continue;
+    }
     if (day < from || day > to) continue;
 
     var user = String(rows[i].user || '');
@@ -267,7 +356,13 @@ function usageSummary(days, today, who) {
     }
     byDay[day].count += count;
     total += count;
+
+    var weekday = usageWeekday_(day);
+    if (weekday >= 0) byWeekday[weekday] += count;
   }
+
+  var prevTargets = prevOrder.map(function (k) { return prevByTarget[k]; });
+  prevTargets.sort(function (a, b) { return b.count - a.count; });
 
   var targets = order.map(function (k) { return byTarget[k]; });
   targets.sort(function (a, b) { return b.count - a.count; });
@@ -286,5 +381,62 @@ function usageSummary(days, today, who) {
     byTarget: targets,
     byDay: daily,
     byUser: users,
+    byWeekday: byWeekday,
+    prev: { total: prevTotal, byTarget: prevTargets },
   };
+}
+
+/**
+ * CSV にするための、日・場所・人ごとの数。
+ *
+ * **見る人が見られる人 (`visible`) 以外の行は入れない。** 名前を空にして
+ * 数だけ残す形にすると、見られない人が1人のとき、その人の日ごと・場所ごとの
+ * 記録がそのまま読める。そのため足しても画面の「数えた回数」と合わない
+ * ことがある (画面にもそう書く)。
+ *
+ * @param {number} [days]
+ * @param {Date} [today]
+ * @param {string} [who] 空なら全員ぶん
+ * @param {string[]} visible 人の列に出してよい人
+ * @returns {{from:string, to:string, who:string,
+ *   rows:Array<{day:string, kind:string, target:string, user:string, count:number}>}}
+ */
+function usageRows(days, today, who, visible) {
+  var range = usageSpan_(days, today);
+  var target = String(who || '');
+  var allowed = visible || [];
+
+  var rows = dbReadAll('usage');
+  var at = {};
+  var out = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    var day = usageDayOf_(rows[i].day);
+    if (day < range.from || day > range.to) continue;
+
+    var user = String(rows[i].user || '');
+    if (target && user !== target) continue;
+    if (allowed.indexOf(user) < 0) continue;
+
+    var kind = String(rows[i].kind);
+    var place = String(rows[i].target);
+    var key = day + '\t' + kind + '\t' + place + '\t' + user;
+
+    if (!Object.prototype.hasOwnProperty.call(at, key)) {
+      at[key] = out.length;
+      out.push({ day: day, kind: kind, target: place, user: user, count: 0 });
+    }
+    out[at[key]].count += Number(rows[i].count) || 0;
+  }
+
+  out.sort(function (a, b) {
+    var ka = [a.day, a.kind, a.target, a.user];
+    var kb = [b.day, b.kind, b.target, b.user];
+    for (var k = 0; k < ka.length; k++) {
+      if (ka[k] !== kb[k]) return ka[k] < kb[k] ? -1 : 1;
+    }
+    return 0;
+  });
+
+  return { from: range.from, to: range.to, who: target, rows: out };
 }

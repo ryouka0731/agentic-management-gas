@@ -6,7 +6,7 @@ import { createFakeGas } from './fakegas.js';
 const SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs',
   'src/core/Repo.gs', 'src/core/Plain.js', 'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Tag.gs', 'src/core/Issue.gs',
+  'src/core/Staleness.js', 'src/core/Prefs.gs', 'src/core/Tag.gs', 'src/core/Issue.gs',
   'src/core/IssueComment.gs', 'src/core/Project.gs', 'src/core/Mention.js',
   'src/core/Member.gs', 'src/core/Brand.js', 'src/core/Inquiry.gs',
   'src/core/Notifier.gs',
