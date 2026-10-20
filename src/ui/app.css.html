@@ -4833,4 +4833,62 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   .search-box.is-open .search-close { display: inline-flex; }
   .search-box.is-open .search-results { position: fixed; left: var(--sp-4); right: var(--sp-4); top: 56px; width: auto; }
 }
+/* ----- 楽しい演出 (js-fun。既定はオフ) -----
+   1枚の重ねにだけ描く。押せず (pointer-events: none)、読み上げにも載らない (aria-hidden)。
+   色はトークンだけ。tone の色を color に置き、影や枠は currentColor で引く */
+.fun-layer { position: fixed; inset: 0; pointer-events: none; z-index: 400; overflow: hidden; }
+.fun-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fun-tone-accent { color: var(--accent); }
+.fun-tone-success { color: var(--success); }
+.fun-tone-warn { color: var(--warn); }
+.fun-tone-danger { color: var(--danger); }
+.fun-tone-merged { color: var(--merged); }
+.fun-flash { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 0 6px currentColor, inset 0 0 48px currentColor; }
+.fun-flash.is-on { animation: fun-flash 600ms ease-out; }
+.fun-combo {
+  position: absolute; transform: translate(-100%, -115%); white-space: nowrap;
+  font-weight: 900; font-style: italic; font-size: 22px; letter-spacing: 0.02em; line-height: 1;
+  text-shadow: 0 2px 0 var(--bg), 0 0 10px currentColor;
+}
+.fun-combo-n { font-size: 30px; }
+.fun-combo-word { color: var(--ink); }
+.fun-combo-grade { font-size: 28px; }
+.fun-combo.is-bump { animation: fun-bump 180ms ease-out; }
+.fun-banner { position: absolute; white-space: nowrap; font-weight: 900; font-style: italic; line-height: 1;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
+.fun-big { left: 50%; top: 42%; transform: translate(-50%, -50%); font-size: clamp(36px, 9vw, 88px);
+  animation: fun-pop 1200ms ease-out forwards; }
+.fun-big .fun-banner-text, .fun-small .fun-banner-text {
+  background-image: linear-gradient(100deg, var(--warn), currentColor 45%, var(--merged) 80%, var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 0 var(--bg)) drop-shadow(0 0 14px currentColor);
+  padding: 0 0.15em;
+}
+.fun-small { transform: translate(-50%, -50%); font-size: 28px; animation: fun-rise 900ms ease-out forwards; }
+.fun-banner-sub { font-size: 0.55em; color: var(--ink); text-shadow: 0 2px 0 var(--bg); }
+.fun-badge {
+  transform: translate(-50%, -50%); font-size: 13px; font-style: normal; font-weight: 700;
+  flex-direction: row; padding: var(--sp-1) var(--sp-3); border-radius: 999px;
+  background: var(--surface-raised); box-shadow: var(--hairline), var(--elev-2);
+}
+.fun-badge .fun-banner-sub { font-size: 11px; text-shadow: none; color: var(--ink-2); }
+@keyframes fun-flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+@keyframes fun-bump { 0% { transform: translate(-100%, -115%) scale(1.25); } 100% { transform: translate(-100%, -115%) scale(1); } }
+@keyframes fun-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5) rotate(-6deg); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.12) rotate(-3deg); }
+  30% { transform: translate(-50%, -50%) scale(1) rotate(-3deg); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(1.04) rotate(-3deg); }
+}
+@keyframes fun-rise {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -110%) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fun-layer * { animation: none !important; }
+  .fun-canvas, .fun-flash { display: none; }
+}
 </style>
