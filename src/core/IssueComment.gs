@@ -39,7 +39,7 @@ function issueCommentAdd(number, body) {
   var row = {
     issueNumber: Number(number),
     body: text,
-    by: Session.getActiveUser().getEmail(),
+    by: currentEmail_(),
     at: new Date(),
     editedAt: '',
   };
@@ -126,7 +126,7 @@ function issueComments(number) {
  * @param {object} row
  */
 function issueCommentAssertOwn_(row) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   if (String(row.by) !== String(me)) {
     throw new Error('自分が書いたものだけ直せます');
   }

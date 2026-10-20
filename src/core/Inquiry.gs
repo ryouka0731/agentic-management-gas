@@ -79,7 +79,7 @@ function inquiryCreate(kind, body, context, shots) {
     kind: key,
     title: inquiryTitleOf_(text),
     body: text,
-    by: Session.getActiveUser().getEmail(),
+    by: currentEmail_(),
     at: new Date(),
     state: 'open',
     context: String(context || '').substring(0, 500),
@@ -169,7 +169,7 @@ function inquiryReply(number, body, shots) {
   var row = {
     inquiryNumber: Number(number),
     body: text,
-    by: Session.getActiveUser().getEmail(),
+    by: currentEmail_(),
     at: new Date(),
     editedAt: '',
     shots: inquirySaveShots_(shots, 'reply-' + number),
@@ -245,7 +245,7 @@ function inquiryReplyGet(id) {
  * @param {object} row
  */
 function inquiryAssertOwn_(row) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   if (String(row.by) !== String(me)) {
     throw new Error('自分が書いたものだけ直せます');
   }
@@ -304,7 +304,7 @@ function inquiryOwners_() {
  * @param {object} row inquiries 行
  */
 function inquiryAssertCanClose_(row) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
 
   if (String(row.by) !== String(me) && !repoIsAdmin_(me)) {
     throw new Error('出した本人か、このアプリの管理者だけが閉じられます');
@@ -325,7 +325,7 @@ function inquiryClose(number) {
   dbUpdate('inquiries', 'number', number, {
     state: 'done',
     answeredAt: new Date(),
-    closedBy: Session.getActiveUser().getEmail(),
+    closedBy: currentEmail_(),
   });
 
   inquirySyncIssue_(row, true);
@@ -443,7 +443,7 @@ function inquiryShotsOf(row) {
  */
 function inquiryMentioned_(text, already) {
   var called = mentionResolve(text, inquiryRoster_());
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var out = [];
 
   for (var i = 0; i < called.length; i++) {
