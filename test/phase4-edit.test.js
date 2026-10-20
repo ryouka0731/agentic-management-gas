@@ -623,6 +623,19 @@ describe('画面に渡せる形か', () => {
     ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
     ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],
     ['apiWorkspace', (ctx) => ctx.apiWorkspace()],
+    // 台帳の日は Date で返る。そのまま返すと画面に null が届く
+    ['apiUsageSummary', (ctx) => {
+      ctx.usageRecord([{ kind: 'view', target: 'docs', count: 2 }]);
+      const out = ctx.apiUsageSummary(30, '');
+      if (!out.total) throw new Error('使われ方が空のまま検査されている');
+      return out;
+    }],
+    ['apiUsageRows', (ctx) => {
+      ctx.usageRecord([{ kind: 'view', target: 'docs', count: 2 }]);
+      const out = ctx.apiUsageRows(30, '');
+      if (!out.rows.length) throw new Error('CSV の行が空のまま検査されている');
+      return out;
+    }],
     ['apiIssueComments', (ctx, env) => ctx.apiIssueComments(env.issue.number)],
     // 消す側も走査する。返す形を間違えても、成功した以上は気づかれない
     ['apiPrClose', (ctx, env) => ctx.apiPrClose(env.pr.number)],
@@ -1244,6 +1257,27 @@ describe('使われ方で見えるもの', () => {
     fake._setUser('tester@example.com');
 
     expect(ctx.apiUsageSummary(30, '').total).toBe(6);
+  });
+
+  it('CSV の人の列は、本人と部下のぶんだけ', () => {
+    const { ctx, fake } = setup();
+    used(ctx, fake);
+    ctx.memberSet('tester@example.com', 'boss@example.com', '');
+
+    fake._setUser('boss@example.com');
+    const res = ctx.apiUsageRows(30, '');
+    expect(res.rows.map((r) => r.user).sort())
+      .toEqual(['', 'boss@example.com', 'tester@example.com']);
+    // 見られない人のぶんも数は残す。足せば画面の合計に戻る
+    expect(res.rows.reduce((n, r) => n + r.count, 0)).toBe(6);
+  });
+
+  it('CSV でも、見てはいけない人には絞り込めない', () => {
+    const { ctx, fake } = setup();
+    used(ctx, fake);
+    fake._setUser('tester@example.com');
+
+    expect(() => ctx.apiUsageRows(30, 'other@example.com')).toThrow(/見られません/);
   });
 });
 
