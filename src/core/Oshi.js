@@ -71,7 +71,7 @@ function OSHI_TONES() {
  * (変えたいときは自分のキャラを作る)。絵は利用者が用意したもので、scripts/build-oshi-default.mjs が
  * assets/oshi-default/<key>/ から src/core/OshiDefault<Key><形>.gs に焼く。
  *
- * - クロハ: 耽美で少し芝居がかった、祈るように見守るキャラ
+ * - イツキ: 耽美で少し芝居がかった、祈るように見守るキャラ
  * - タク: 明るくて少しおちゃめな相棒。面倒なことは道具に任せて、余白を作ろうと誘ってくれる
  *
  * 名前は架空のもの。**実在の人の名前・所属を書かない** (肖像やなりすましの扱いになる)。
@@ -81,7 +81,7 @@ function OSHI_TONES() {
  */
 function OSHI_BUILTINS() {
   return [
-    { key: 'kuroha', name: 'クロハ', tone: 'gothic' },
+    { key: 'itsuki', name: 'イツキ', tone: 'gothic' },
     { key: 'taku', name: 'タク', tone: 'buddy' },
   ];
 }

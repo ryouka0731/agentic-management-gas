@@ -59,7 +59,7 @@ export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
 export const KIT_SOURCES = ['src/KitFiles.gs', 'src/core/AgentKit.gs'];
 
 export const OSHI_DEFAULT_SOURCES = [
-  'src/core/OshiDefaultKurohaNormal.gs', 'src/core/OshiDefaultKurohaChibi.gs',
+  'src/core/OshiDefaultItsukiNormal.gs', 'src/core/OshiDefaultItsukiChibi.gs',
   'src/core/OshiDefaultTakuNormal.gs', 'src/core/OshiDefaultTakuChibi.gs',
 ];
 
