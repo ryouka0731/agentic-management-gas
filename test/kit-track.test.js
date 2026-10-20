@@ -667,19 +667,27 @@ describe('スキルと説明', () => {
     expect(skill()).toContain('番頭に載せられませんでした');
   });
 
-  it('AGENTS.md に入れ方・更新・危険と切り方がある', () => {
-    const t = fs.readFileSync('kit/AGENTS.md', 'utf8');
-    expect(t).toContain('## 番頭に作業を載せる');
+  it('AGENTS.md から辿れるスキルに、入れ方・更新・危険と切り方がある', () => {
+    // 毎回は要らないので AGENTS.md (= CLAUDE.md) からスキルに分けた。AGENTS.md には辿る先と、--yes の前に読むことを残す
+    const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    expect(agents).toContain('`banto-track-setup`');
+    expect(agents).toContain('`--yes` を付ける前に必ず読む');
+    // 確かめてから入れる、の決まりそのものは毎回読む AGENTS.md に残す
+    expect(agents).toContain('入れる前に利用者に確かめ、ok をもらってから `--yes` を付ける');
+    expect(agents).not.toContain('agent.mjs agent ');
+    const t = fs.readFileSync('kit/.claude/skills/banto-track-setup/SKILL.md', 'utf8');
+    expect(t).toContain('# 番頭に作業を載せる');
     expect(t).toContain('track install');
     expect(t).toContain('node agent.mjs update rollback');
     expect(t).not.toContain('agent.mjs agent ');
     expect(skill()).not.toContain('agent.mjs agent ');
     expect(t).toContain('"autoUpdate": false');
-    expect(t).toContain('Drive を共有している人なら誰でも');
+    expect(agents).toContain('Drive を共有している人なら誰でも');
   });
 
   it('自動更新は「書き換えるだけ」ではないと書いてある (フックが次の依頼で自動で動く)', () => {
-    for (const file of ['kit/AGENTS.md', 'CLAUDE.md']) {
+    expect(fs.readFileSync('kit/AGENTS.md', 'utf8')).not.toContain('書き換えるだけで');
+    for (const file of ['kit/.claude/skills/banto-track-setup/SKILL.md', 'CLAUDE.md']) {
       const t = fs.readFileSync(file, 'utf8');
       expect(t, file).not.toContain('書き換えるだけで');
       expect(t, file).toContain('track-hook.mjs');
@@ -687,7 +695,7 @@ describe('スキルと説明', () => {
       expect(t, file).toContain('"autoUpdate": false');
     }
     // --yes を付ける前に、利用者へ危険と切り方を伝える
-    const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    const agents = fs.readFileSync('kit/.claude/skills/banto-track-setup/SKILL.md', 'utf8');
     const at = agents.indexOf('`--yes` を付ける前に');
     expect(at).toBeGreaterThan(-1);
     expect(agents.slice(at, at + 300)).toContain('"autoUpdate": false');
@@ -702,7 +710,12 @@ describe('スキルと説明', () => {
       expect(t, file).not.toContain('偽物は防げない。本当の止め方');
       expect(t, file).not.toContain('この変更では入れていない');
     }
-    const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+    const agents = fs.readFileSync('kit/.claude/skills/banto-track-setup/SKILL.md', 'utf8');
+    // 詳しい説明はスキルに分けた。そちらも同じ言い方をしない
+    expect(agents).toContain('署名が合うものだけ');
+    expect(agents).toContain('秘密鍵を持つ人');
+    expect(agents).not.toContain('偽物は防げません');
+    expect(agents).not.toContain('この変更では入れていない');
     expect(agents).toContain('バックグラウンド');
     const claude = fs.readFileSync('CLAUDE.md', 'utf8');
     expect(claude).toContain('src/KitSigning.gs');
