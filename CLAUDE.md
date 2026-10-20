@@ -426,6 +426,25 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
   `test/prclose.test.js` の「取り下げられるかを誰が決めるか」が本体を見ている
 - 画面側の成功ハンドラは `list || []` で受ける
 
+## 画面の JS は1つの関数を分けて置いてある
+
+画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
+(`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
+`js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-init` /
+`js-settings` / `js-scrum` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
+
+- **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
+  その順で走る。関数の宣言は巻き上がるのでどこに置いてもよいが、`var` と文は動かさない
+- **部分ファイルに `<script>` を書かない。** タグは `wiki.html` の側にある。書くとその先が
+  script の外に出て、ページ本文としてそのまま出る
+- **`js-*.html` を足したら `wiki.html` に並べる。** 並べ忘れると本番にもテストにも入らない
+  (`test/ui-assemble.test.js` が止める)。`include()` は `createHtmlOutputFromFile(...).getContent()`
+  なので、部分ファイルの中の `<? ?>` は評価されない。入れ子の include は書けない
+- **テストは `test/ui-source.js` の `APP` だけを読む。** `wiki.html` の include を読んで
+  本番と同じ順につなぐ。テストに並びを写さない。`test/ui-assemble.test.js` が、`Main.gs` の
+  `include()` でテンプレートを評価したものと同じ字になるかを見ている
+
 ## サーバを呼ぶのは `call()` だけ
 
 **`google.script.run` を直に書かない。** 失敗ハンドラを付け忘れると失敗が
@@ -769,7 +788,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
   そこから呼んだ `call()` が失敗すると書いたまま開き直す (`formDraftForCall`)。
   入力欄から `google.script.run` を直に呼ぶと、この控えが効かない
 - **両方にある関数は `test/ui-parity.test.js` が同じ答えを返すかを見ている。** 画面の
-  関数は app.js.html から原文のまま切り出して動かす。足したらここにも足す
+  関数は画面の JS (`test/ui-source.js` の `APP`) から原文のまま切り出して動かす。足したらここにも足す
 
 - **一覧で行ごとに `dbFindOne` / Drive を呼ばない。** 1件ごとに表を丸ごと読む
   ことになる (ボードが30枚で30回読んでいた)。先に1回読んで引く表を作る
