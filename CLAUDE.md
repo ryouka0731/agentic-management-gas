@@ -95,6 +95,7 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 |---|---|
 | ピュアな `.js` (Hash / Normalize / Diff / Merge / Markdown / FileUrl) | vitest で直接 |
 | GAS 依存の `.gs` | `test/fakegas.js` の疑似GASで統合テスト |
+| 画面 → api* → 台帳 → 画面 の通し | `test/e2e/fullstack.js` (画面は `test/dom.js` で組み、返事は本物のサーバが返す) |
 | DocumentApp / SlidesApp の描画忠実性 | 実機の `debug*` 関数 |
 
 `test/harness.js` の `loadGas` / `loadGasWith` が `node:vm` でソースを評価する。
