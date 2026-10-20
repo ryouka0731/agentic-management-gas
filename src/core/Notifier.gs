@@ -263,20 +263,6 @@ function notifyInquiry(row) {
 }
 
 /**
- * 報告に答えたことを、送った本人に知らせる。
- *
- * @param {object} row inquiries 行
- */
-function notifyInquiryAnswered(row) {
-  notify(
-    row.by,
-    notifySubject_('報告', row.number, 'に返事がありました'),
-    row.body + '\n\n--- 返事 ---\n' + row.answer,
-    'inquiry'
-  );
-}
-
-/**
  * 返信があったことを、その話に加わっている人に知らせる。
  *
  * 書いた本人には送らない。自分の発言で自分に通知が来ると、
