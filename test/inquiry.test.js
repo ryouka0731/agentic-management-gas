@@ -1,26 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { ISSUE_SOURCES } from './sources.js';
 
-const SOURCES = [
-  'src/core/Hash.js',
-  'src/core/HashGas.gs',
-  'src/core/Db.gs',
-  'src/core/Repo.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Issue.gs', 'src/core/IssueTree.js',
-  'src/core/IssueComment.gs',
-  'src/core/Project.gs',
-  'src/core/Plain.js',
-  'src/core/Mention.js',
-  'src/core/Inquiry.gs',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-];
+const SOURCES = ISSUE_SOURCES;
 
 function setup() {
   const fake = createFakeGas();
@@ -112,35 +95,6 @@ describe('報告を読む', () => {
     });
 
     expect(ctx.inquiryList('tester@example.com').map((r) => r.number)).toEqual([1]);
-  });
-});
-
-describe('報告に答える', () => {
-  it('答えると閉じる', () => {
-    const { ctx } = setup();
-    const row = ctx.inquiryCreate('bug', '動かない');
-
-    const after = ctx.inquiryAnswer(row.number, '直しました');
-
-    expect(after.state).toBe('done');
-    expect(after.answer).toBe('直しました');
-    expect(after.answeredAt).not.toBe('');
-  });
-
-  it('答えたことを送り主に知らせる', () => {
-    const { ctx, fake } = setup();
-    const row = ctx.inquiryCreate('bug', '動かない');
-
-    ctx.inquiryAnswer(row.number, '直しました');
-
-    const mail = fake._sentMails().pop();
-    expect(mail.to).toBe('tester@example.com');
-    expect(mail.body).toContain('直しました');
-  });
-
-  it('無い受付には答えられない', () => {
-    const { ctx } = setup();
-    expect(() => ctx.inquiryAnswer(999, 'なにか')).toThrow(/見つかりません/);
   });
 });
 

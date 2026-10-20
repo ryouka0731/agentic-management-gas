@@ -7,7 +7,7 @@ import { APP_SOURCES } from './sources.js';
  * 完了にした瞬間に「何が起きたか」を1つだけ返す。くじではなく、本当に
  * 起きたことで驚かせる (docs/superpowers/specs/2026-10-14-task-flow-motivation-design.md)。
  */
-const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs']);
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();

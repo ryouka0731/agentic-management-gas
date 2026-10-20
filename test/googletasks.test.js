@@ -1,26 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { ISSUE_SOURCES } from './sources.js';
 
-const SOURCES = [
-  'src/core/Hash.js',
-  'src/core/HashGas.gs',
-  'src/core/Db.gs',
-  'src/core/Repo.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Issue.gs', 'src/core/IssueTree.js',
-  'src/core/IssueComment.gs',
-  'src/core/Project.gs',
-  'src/core/Plain.js',
-  'src/core/Mention.js',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-  'src/core/GoogleTasks.gs',
-];
+const SOURCES = ISSUE_SOURCES.concat(['src/core/GoogleTasks.gs']);
 
 /**
  * @param {boolean} withTasks 拡張サービスを足した環境かどうか

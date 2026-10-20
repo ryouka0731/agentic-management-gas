@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
-import { APP_SOURCES } from './sources.js';
+import * as SOURCE_LISTS from './sources.js';
+
+const { APP_SOURCES } = SOURCE_LISTS;
 
 /*
  * 改善のヒント (#14)。本人のデータとチームの合計だけから、決まった規則で多くて3件。
@@ -372,21 +374,34 @@ describe('使い方の問い合わせ (管理者のみ)', () => {
 describe('テストの SOURCES', () => {
   // apiHomeSummary は助言の例外を握る。読み込みの足りない SOURCES だと ReferenceError が黙って
   // 空の助言になり、ほかのテストが何も確かめないまま通る。Home.gs を読む全ての SOURCES で、
-  // 全部の規則が当たる状況を握らずに通す
-  const lists = fs.readdirSync(new URL('.', import.meta.url))
-    // sources.js の APP_SOURCES は、多くのテストが共有する集合
-    .filter((f) => f.endsWith('.test.js') || f === 'sources.js')
-    .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const (?:APP_)?SOURCES = (\[[\s\S]*?\]);/)])
-    .filter(([, m]) => m && m[1].indexOf('src/core/Home.gs') >= 0);
+  // 全部の規則が当たる状況を握らずに通す。
+  // 並びは sources.js に集めてある。テストの中に並びを手で書いたものも、まだあれば拾う
+  // apiHomeSummary も呼ぶので、ホームの中身と画面の入口の両方を読む並びを見る。
+  // 他のファイルが欠けていても外さない (欠けを見つけるための検査なので)
+  const withApi = (list) => Array.isArray(list) &&
+    list.includes('src/core/Home.gs') && list.includes('src/api/Home.gs');
+  const exported = Object.entries(SOURCE_LISTS)
+    .filter(([, list]) => withApi(list))
+    .map(([name, list]) => ['sources.js ' + name, list]);
+  const literal = fs.readdirSync(new URL('.', import.meta.url))
+    .filter((f) => f.endsWith('.test.js'))
+    .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const SOURCES = (\[[\s\S]*?\]);/)])
+    .filter(([, m]) => m && m[1].includes('src/core/Home.gs'))
+    .map(([f, m]) => {
+      // 字を並べただけでない並び (変数を混ぜたものなど) は評価できないので見送る
+      try { return [f, eval(m[1])]; } catch (e) { return [f, null]; }
+    })
+    .filter(([, list]) => withApi(list));
+  const lists = exported.concat(literal);
 
   it('Home.gs を読む SOURCES が見つかる', () => {
-    expect(lists.length).toBeGreaterThan(3);
+    expect(exported.map(([name]) => name)).toContain('sources.js APP_SOURCES');
   });
 
-  lists.forEach(([file, m]) => {
+  lists.forEach(([file, list]) => {
     it(file + ' の SOURCES で全部の規則が動く', () => {
       const fake = createFakeGas();
-      const ctx = loadGasWith(fake, ...eval(m[1]));
+      const ctx = loadGasWith(fake, ...list);
       ctx.repoInit('agentic-management');
       ctx.repoIsAdmin_ = () => true;
       everything(ctx);

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { API_SOURCES } from './sources.js';
 
 /**
  * サービス名が、人の目に触れる場所すべてで揃っているかを見る。
@@ -27,7 +28,8 @@ describe('サービス名', () => {
 
   it('サーバ側に名前の字を書かない', () => {
     // タブと通知と概要で食い違わないよう、どれも出どころから引く
-    const text = read('src/Main.gs');
+    // 画面の入口は src/Main.gs と src/api/*.gs に分かれている
+    const text = API_SOURCES.map(read).join('\n');
 
     expect(text).toContain('repo: APP_NAME()');
     expect(text).not.toContain("'" + NAME + "'");
@@ -66,7 +68,7 @@ describe('サービス名', () => {
 
   it('仮の名前が人の目に触れる場所に残っていない', () => {
     const brand = [
-      'src/core/Brand.js', 'src/Main.gs', 'src/core/Notifier.gs',
+      'src/core/Brand.js', ...API_SOURCES, 'src/core/Notifier.gs',
       'src/core/AgentKit.gs',
       'kit/README.md', 'kit/AGENTS.md', 'kit/package.json',
     ];
