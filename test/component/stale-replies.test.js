@@ -204,4 +204,67 @@ describe('遅れて届いた古い返事で、新しい一覧を描き直さな�
     expect(text).toContain('新しい困りごと');
     expect(text).not.toContain('古い困りごと');
   });
+  it('知らせ: 1分ごとの頼みの返事を捨てても、後の返事で新しい知らせを前に出す', () => {
+    // 1分ごとの取り直しを手で回せるように、組むときに預かる
+    const every = window.setInterval;
+    let poll = null;
+    window.setInterval = function (fn, ms, ...rest) {
+      if (ms === 60000 && String(fn).includes('loadNotices')) poll = fn;
+      return every.call(window, fn, ms, ...rest);
+    };
+    let app;
+    try { app = mount(); } finally { window.setInterval = every; }
+    expect(poll).not.toBeNull();
+
+    const fresh = {
+      items: [{ id: 9, kind: 'mention', title: '新しく呼ばれました', body: '', link: '', at: '2026-10-01T00:00:00.000Z', read: false }],
+      unread: 1,
+    };
+    const held = [];
+    app.respond('apiNotifications', () => ({ later: (ok) => held.push(ok) }));
+    poll();                                          // 知らせて出す頼み
+    document.getElementById('bell-btn').click();     // 返事の前に、黙って取る頼み
+    expect(held.length).toBe(2);
+    held[1](fresh);   // 後の頼みの返事が先に届く
+    held[0](fresh);   // 先の頼みの返事は捨てられる
+
+    expect(document.getElementById('snackbar').textContent).toContain('新しく呼ばれました');
+  });
+
+  const PRS = [
+    Object.assign({}, DEFAULTS.apiPrList[0], { number: 1, title: '第2条の改訂' }),
+    Object.assign({}, DEFAULTS.apiPrList[0], { number: 2, title: '賃金規程の見直し' }),
+  ];
+
+  it('確認依頼の一覧', () => {
+    const app = mount();
+    const tab = document.querySelector('[data-tab="pulls"]');
+    tab.click();
+    const t = askTwice(app, 'apiPrList', () => tab.click());
+    deliverOutOfOrder(t,
+      [Object.assign({}, PRS[0], { title: '新しい依頼' })],
+      [Object.assign({}, PRS[0], { title: '古い依頼' })]);
+
+    const text = document.getElementById('pr-list').textContent;
+    expect(text).toContain('新しい依頼');
+    expect(text).not.toContain('古い依頼');
+  });
+
+  it('確認依頼を続けて開いたとき、前の依頼の中身で上書きしない', () => {
+    const app = mount({ apiPrList: PRS });
+    document.querySelector('[data-tab="pulls"]').click();
+
+    const held = [];
+    app.respond('apiPrPreview', (number) => ({ later: (ok) => held.push({ number, ok }) }));
+    const rows = [...document.querySelectorAll('#pr-list button')];
+    rows.find((b) => b.textContent.includes('第2条の改訂')).click();
+    rows.find((b) => b.textContent.includes('賃金規程の見直し')).click();
+
+    held.find((h) => h.number === 2).ok(DEFAULTS.apiPrPreview);
+    held.find((h) => h.number === 1).ok(DEFAULTS.apiPrPreview);
+
+    const text = document.getElementById('pr-detail').textContent;
+    expect(text).toContain('賃金規程の見直し');
+    expect(text).not.toContain('第2条の改訂');
+  });
 });

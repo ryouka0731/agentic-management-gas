@@ -12992,6 +12992,9 @@
     bellBtn.setAttribute('aria-expanded', 'false');
   }
 
+  /** 返事を待っている頼みのどれかが、新しい知らせを前に出すものか */
+  var noticeLoud = false;
+
   /**
    * 知らせを取ってくる。
    *
@@ -13000,8 +13003,13 @@
   function loadNotices(quiet) {
     // 1分ごとと開いたときの両方で取るので、前に頼んだぶんの返事で読んだ印を戻さない
     var still = latest('notices');
+    // 知らせて出す頼み (1分ごと) の返事を捨てても、知らせることは後の返事に引き継ぐ。
+    // 引き継がないと、待つあいだにベルを開いた返事が見た番号だけ進め、新しい知らせが出ない
+    if (!quiet) noticeLoud = true;
     call('apiNotifications', [30], function (res) {
       if (!still()) return;
+      var loud = noticeLoud;
+      noticeLoud = false;
       var data = res || { items: [], unread: 0 };
       renderNotices(data.items);
 
@@ -13020,7 +13028,7 @@
         if (n.id > seenNoticeId) seenNoticeId = n.id;
       });
 
-      if (quiet || !fresh.length) return;
+      if (!loud || !fresh.length) return;
 
       showSnack(fresh[0].title, { kind: 'ok' });
       fresh.forEach(popDesktop);
