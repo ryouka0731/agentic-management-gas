@@ -49,6 +49,10 @@ function DB_SCHEMA() {
     // 集中のしかた (Focus.gs)。自分の設定でオンにした人の「今から始める」の記録。本人にだけ見せる
     focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
       'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
+    // 推し (自分だけのキャラクター。既定はオフ)。名前・口調・自分のせりふは1人1行、
+    // 表情の画像は中身を objects/ に置き、どの人のどの表情かだけをここに書く
+    oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt'],
+    oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt'],
   };
 }
 

@@ -66,9 +66,12 @@ export function createFakeGas() {
       },
       getBlob: () => ({
         getDataAsString: () => f._content,
-        // GAS の Blob.getBytes() は符号付き byte を返す
-        getBytes: () => Array.from(Buffer.from(String(f._content), 'utf8'))
+        // GAS の Blob.getBytes() は符号付き byte を返す。Blob から作ったファイル (画像) は
+        // byte の並びをそのまま持つので、字に直さずに返す (直すと "137,80,…" の字になる)
+        getBytes: () => (Array.isArray(f._content) ? f._content.slice()
+          : Array.from(Buffer.from(String(f._content), 'utf8')))
           .map((b) => (b > 127 ? b - 256 : b)),
+        getContentType: () => f._mime,
       }),
       makeCopy: (newName, folder) => {
         const copy = makeFile(newName, f._content, folder.getId(), f._mime);
@@ -383,12 +386,17 @@ export function createFakeGas() {
       getBytes: () => Array.from(Buffer.from(blobs.map((b) => b.getName()).join(','))),
       getContentType: () => 'application/zip',
     }),
-    newBlob: (bytes, mime, name) => ({
-      _bytes: bytes,
-      getBytes: () => bytes,
-      getContentType: () => mime,
-      getName: () => name,
-    }),
+    newBlob: function newBlob(bytes, mime, name) {
+      return {
+        _bytes: bytes,
+        getBytes: () => bytes,
+        getContentType: () => mime,
+        getName: () => name,
+        // 実機と同じく、写しを作って名前を付け替えられる (objectPutBlob が使う)
+        copyBlob: () => newBlob(bytes, mime, name),
+        setName: function (n) { name = n; return this; },
+      };
+    },
   };
 
   /**

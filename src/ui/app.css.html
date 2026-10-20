@@ -5003,4 +5003,62 @@ body.focus-mode .mobile-nav { display: none !important; }
 .style-card-img { display: block; max-width: 100%; height: auto; margin-top: var(--sp-2); border-radius: var(--radius-sm);
   box-shadow: var(--hairline); }
 .pref-focus { border-radius: var(--radius-sm); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-bg); }
+
+/* ----- 推し (js-oshi。既定はオフ) -----
+   吹き出しは左下に1つだけ。押せば閉じる。お祝いの字 (右下・真ん中) とは重ねない。色はトークンだけ */
+.oshi-bubble {
+  position: fixed; left: var(--sp-4); bottom: var(--sp-4); z-index: 390;
+  display: flex; align-items: flex-end; gap: var(--sp-3);
+  max-width: min(420px, calc(100vw - 2 * var(--sp-4)));
+  padding: var(--sp-3) var(--sp-5) var(--sp-3) var(--sp-3);
+  background: var(--surface-raised); color: var(--ink);
+  border-radius: var(--radius); box-shadow: var(--hairline), var(--elev-2);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity var(--motion) ease-out, transform var(--motion) ease-out;
+}
+.oshi-bubble.is-in { opacity: 1; transform: none; }
+.oshi-bubble.is-out { opacity: 0; transform: translateY(8px); }
+.oshi-bubble .oshi-close { position: absolute; top: var(--sp-1); right: var(--sp-1); }
+.oshi-figure { flex: none; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
+.oshi-img { width: 100%; height: 100%; object-fit: contain; }
+.oshi-avatar {
+  width: 64px; height: 64px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent-bg); color: var(--accent); font-weight: 700; font-size: 24px;
+}
+.oshi-avatar.oshi-empty { font-size: 12px; background: var(--bg-3); color: var(--ink-2); }
+.oshi-speech { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.oshi-name { font-size: 12px; font-weight: 700; color: var(--accent); }
+.oshi-line {
+  margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius);
+  background: var(--accent-bg); color: var(--ink); line-height: 1.5;
+}
+.oshi-card-row { display: flex; align-items: center; gap: var(--sp-3); }
+.oshi-card-row .oshi-line { flex: 1; min-width: 0; }
+.oshi-growth { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+.oshi-stage { font-size: 13px; }
+.oshi-page { display: flex; flex-direction: column; gap: var(--sp-4); }
+.oshi-section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.oshi-h { margin: 0; font-size: 15px; }
+.oshi-care { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--warn-bg); }
+.oshi-care .row-meta { color: var(--ink); margin: 0; }
+.oshi-field { display: flex; flex-direction: column; gap: var(--sp-1); font-size: 13px; }
+.oshi-state { display: flex; gap: var(--sp-3); padding: var(--sp-2) 0; border-top: 1px solid var(--line); }
+.oshi-state-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); }
+.oshi-state-body .row-meta { margin: 0; }
+.oshi-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-2); }
+/* 写すボタンの下に、頼み文を本文の幅いっぱいで開く (横に並べると開いた字が細い柱になる) */
+.oshi-prompt-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+.oshi-prompt { min-width: 0; align-self: stretch; }
+.oshi-prompt summary { cursor: pointer; font-size: 12px; color: var(--ink-2); padding-top: var(--sp-1); }
+.oshi-prompt-text {
+  white-space: pre-wrap; font-family: var(--mono); font-size: 12px; font-weight: 400; margin: var(--sp-1) 0 0;
+  padding: var(--sp-2); background: var(--bg-2); border-radius: var(--radius-sm);
+}
+.oshi-pick { position: relative; overflow: hidden; cursor: pointer; }
+.oshi-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.oshi-lines summary { cursor: pointer; }
+.oshi-lines-input { width: -webkit-fill-available; width: -moz-available; width: stretch; margin: var(--sp-1) 0; }
+@media (prefers-reduced-motion: reduce) {
+  .oshi-bubble, .oshi-bubble.is-in, .oshi-bubble.is-out { transition: none; transform: none; }
+}
 </style>
