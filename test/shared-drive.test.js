@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
-import { APP_SOURCES } from './sources.js';
+import { APP_SOURCES, KIT_SOURCES } from './sources.js';
 
 /*
  * 共有ドライブに置いたとき。ファイルは親を1つしか持てず、持ち主が無く、
  * 投稿者はゴミ箱へ移せない。
  */
 // GAS は全ファイルを同じグローバルに読む。zip は AgentKit を使う
-const SOURCES = [...APP_SOURCES, 'src/KitFiles.gs', 'src/core/AgentKit.gs'];
+const SOURCES = APP_SOURCES.concat(KIT_SOURCES);
 
 /** 疑似GASに zip が無ければ足す */
 function withZip(fake) {
