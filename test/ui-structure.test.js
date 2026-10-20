@@ -1236,3 +1236,25 @@ describe('遅れて届いた返事の見分け方', () => {
     expect(counters.sort()).toEqual(['diagramSeq', 'hintSeq', 'prefsAppliedSeq', 'prefsSeq']);
   });
 });
+
+describe('日本語の折り返し', () => {
+  const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+  const rule = (sel) => {
+    const i = css.indexOf('\n' + sel + ' {');
+    return i < 0 ? '' : css.slice(i, css.indexOf('}', i));
+  };
+
+  it('文は語の切れ目で割る (「確認依頼」を「確認依」「頼」に割らない)', () => {
+    expect(rule('body')).toMatch(/word-break:\s*auto-phrase/);
+    // anywhere は最小幅を変えて並びを崩すので、全体には break-word を当てる
+    expect(rule('body')).toMatch(/overflow-wrap:\s*break-word/);
+  });
+
+  it('差分は等幅のまま字の途中で割る', () => {
+    expect(rule('.diff-line')).toMatch(/word-break:\s*break-all/);
+  });
+
+  it('文の欄で break-all を使わない', () => {
+    expect(rule('.report-context .comment-body')).not.toMatch(/break-all/);
+  });
+});
