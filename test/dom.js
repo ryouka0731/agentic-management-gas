@@ -9,6 +9,37 @@ function read(rel) {
 }
 
 /*
+ * 組む元 (wiki.html / app.css.html / app.js.html) は 1 ファイルの中で 1 回だけ読む。
+ *
+ * 画面を組むテストは数百あり、そのたびに 1万6千行を読み直して組み直していた。
+ * 覚えるのは**字と、まだ走らせていない関数だけ**。関数は呼ぶたびに中身を
+ * 頭から走らせるので、app.js の変数や聞き手は組むたびに新しく作られ、前の
+ * 画面の状態は引き継がれない (状態は window / document 側にあり、それは
+ * mountApp が毎回組み直し、dropLeftovers が外す)。
+ * vitest はテストのファイルごとにモジュールを読み直すので、覚え書きもファイルを
+ * またがない。
+ */
+let source = null;
+
+function compiled() {
+  if (source) return source;
+  const html = read('src/ui/wiki.html')
+    .replace("<?!= include('ui/app.css') ?>", read('src/ui/app.css.html'))
+    .replace("<?!= include('ui/app.js') ?>", '')
+    .replace(/^[\s\S]*?<html[^>]*>/, '')
+    .replace(/<\/html>[\s\S]*$/, '');
+
+  // app.js は <script> で包まれている。中身だけを走らせる
+  const js = read('src/ui/app.js.html')
+    .replace(/^\s*<script>/, '')
+    .replace(/<\/script>\s*$/, '');
+
+  // eslint-disable-next-line no-new-func
+  source = { html, run: new Function('window', 'document', 'google', js) };
+  return source;
+}
+
+/*
  * 前に組んだ画面が window / document に付けた聞き手と時計、待ちの rAF、iframe の中の window を外す。
  *
  * 組み直しても window と document は同じものなので、外さないと前の画面
@@ -77,13 +108,7 @@ export function mountApp(responses, options) {
   trackGlobals();
   dropLeftovers();
 
-  const html = read('src/ui/wiki.html')
-    .replace("<?!= include('ui/app.css') ?>", read('src/ui/app.css.html'))
-    .replace("<?!= include('ui/app.js') ?>", '');
-
-  document.documentElement.innerHTML = html
-    .replace(/^[\s\S]*?<html[^>]*>/, '')
-    .replace(/<\/html>[\s\S]*$/, '');
+  document.documentElement.innerHTML = compiled().html;
 
   const calls = [];
   const table = Object.assign({}, responses);
@@ -117,7 +142,9 @@ export function mountApp(responses, options) {
           value.later(onSuccess || (() => {}), onFailure || (() => {}));
           return;
         }
-        if (onSuccess) onSuccess(value === undefined ? null : value);
+        // 実物は返事を運ぶときに写しを作る。同じ物を渡すと、画面が返事に書き込んだ
+        // 分 (名前を決めたときの peopleNames など) が DEFAULTS に残り、後のテストに漏れる
+        if (onSuccess) onSuccess(value === undefined ? null : structuredClone(value));
       };
     });
     return runner;
@@ -129,13 +156,8 @@ export function mountApp(responses, options) {
 
   window.google = { script: { run: makeRunner(null, null), url } };
 
-  // app.js は <script> で包まれている。中身だけを走らせる
-  const js = read('src/ui/app.js.html')
-    .replace(/^\s*<script>/, '')
-    .replace(/<\/script>\s*$/, '');
-
-  // eslint-disable-next-line no-new-func
-  new Function('window', 'document', 'google', js)(window, document, window.google);
+  // 毎回呼び直すので、app.js の中の状態は組むたびに新しく作られる
+  compiled().run(window, document, window.google);
 
   return {
     calls,
@@ -239,6 +261,8 @@ export const DEFAULTS = {
   apiArchiveKeepDays: 30,
   apiIssueArchivedList: [],
   apiInquiryList: [],
+  // 送ったあとの帯は返事の number を読む。null だと TypeError が出ていた
+  apiInquiryCreate: { number: 1, kind: 'bug', body: '' },
   apiNotifications: { items: [], unread: 0 },
   apiTasksState: { available: false, listId: '', lists: [] },
   apiTallyScope: { me: 'me@example.com', canSee: ['me@example.com'], isManager: false, canEdit: false },
@@ -331,12 +355,16 @@ export const DEFAULTS = {
       clean: true, problems: [], conflicts: [], ops: [],
     }],
   },
+  // 足したあとの帯は返事の path を読む。null だと TypeError が出ていた
+  apiBranchAddFile: { path: 'branches/見直し/賃金規程.doc', fileId: 'DOC2' },
   apiOutboxList: [],
   apiOutboxVerbs: [['diff', '差分を出して添える'],
     ['merge', '承認されたので取り込む'], ['review', '中身を読んで意見をもらう']],
   apiPrCommits: [],
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com', 'other@example.com'],
+  // 決めたあとの帯は返事の name を読む。null だと TypeError が出ていた
+  apiPeopleSetName: (email, name) => ({ email, name }),
   apiPeopleNames: { 'me@example.com': '山田 太郎', 'other@example.com': '鈴木 花子' },
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
