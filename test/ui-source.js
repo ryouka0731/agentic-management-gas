@@ -96,3 +96,73 @@ export function ui(names, globals) {
   vm.runInContext(names.map(extract).join('\n'), ctx);
   return ctx;
 }
+
+const VLQ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+function vlq(n) {
+  let v = n < 0 ? ((-n) << 1) | 1 : n << 1;
+  let out = '';
+  do {
+    let digit = v & 31;
+    v >>>= 5;
+    if (v) digit |= 32;
+    out += VLQ[digit];
+  } while (v);
+  return out;
+}
+
+/**
+ * 画面の JS (APP) の各行が、どのファイルの何行目から来たかを表す source map。
+ *
+ * テストは APP を1つの字として走らせるので、そのままではカバレッジが app.js.html にも
+ * js-*.html にも結び付かず、画面の部分ファイルが全部 0% と出ていた。行ごとに元のファイルの
+ * 行へ戻す地図を添えると、走った行がそれぞれのファイルに数えられる。
+ */
+export function appSourceMap() {
+  const sources = ['src/ui/wiki.html'];
+  const wikiLine0 = WIKI.substring(0, RANGE.start + '<script>'.length).split('\n').length - 1;
+  const lines = [];        // 生成した行ごとの区切り [[genCol, src, line, col], ...]
+  let cur = [];
+  const newline = () => { lines.push(cur); cur = []; };
+  let gcol = 0;
+  // テンプレートの字 (include の外) は wiki.html の行へ、include の中身は部分ファイルの行へ
+  let wikiLine = wikiLine0;
+  let wikiCol = '<script>'.length;
+  const emitText = (text, src, startLine, startCol) => {
+    let line = startLine, col = startCol;
+    for (let i = 0; i <= text.length; i++) {
+      if (i === 0 || text[i - 1] === '\n') cur.push([gcol, src, line, col]);
+      if (i === text.length) break;
+      if (text[i] === '\n') { newline(); gcol = 0; line++; col = 0; } else { gcol++; col++; }
+    }
+    return { line, col };
+  };
+  let last = 0;
+  for (const m of APP_TEMPLATE.matchAll(INCLUDE_RE)) {
+    const glue = APP_TEMPLATE.substring(last, m.index);
+    ({ line: wikiLine, col: wikiCol } = emitText(glue, 0, wikiLine, wikiCol));
+    const file = 'src/' + m[1] + '.html';
+    let src = sources.indexOf(file);
+    if (src < 0) { sources.push(file); src = sources.length - 1; }
+    emitText(read(file), src, 0, 0);
+    wikiCol += m[0].length;
+    last = m.index + m[0].length;
+  }
+  emitText(APP_TEMPLATE.substring(last), 0, wikiLine, wikiCol);
+  newline();
+
+  let prev = [0, 0, 0];
+  const mappings = lines.map((segs) => {
+    let prevCol = 0;
+    return segs.map(([g, s, l, c]) => {
+      const out = vlq(g - prevCol) + vlq(s - prev[0]) + vlq(l - prev[1]) + vlq(c - prev[2]);
+      prevCol = g; prev = [s, l, c];
+      return out;
+    }).join(',');
+  }).join(';');
+  return {
+    version: 3,
+    sources: sources.map((f) => path.join(ROOT, f)),
+    sourcesContent: sources.map((f) => read(f)),
+    mappings,
+  };
+}
