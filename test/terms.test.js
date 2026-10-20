@@ -141,7 +141,7 @@ describe('サーバの文は一般の言葉に固定する', () => {
    * エディタで動かす確かめ (debug*) は持ち主だけが読むので数えない。
    * 設定の「言葉の表し方」は、スクラムの言葉そのものを選択肢として見せる。
    */
-  const FILES = ['src/core/Scrum.gs', 'src/core/Issue.gs', 'src/core/Settings.gs', 'src/core/CommandQueue.gs',
+  const FILES = ['src/core/Scrum.gs', 'src/core/Issue.gs', 'src/core/IssueTree.js', 'src/core/Settings.gs', 'src/core/CommandQueue.gs',
     'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/Prefs.gs', 'src/Main.gs'];
 
   FILES.forEach((path) => {

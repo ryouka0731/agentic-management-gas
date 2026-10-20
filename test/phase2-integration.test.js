@@ -33,7 +33,7 @@ const SOURCES = [
   'src/core/Tag.gs',
   'src/core/Template.gs',
   'src/core/Member.gs',
-  'src/core/Issue.gs',
+  'src/core/Issue.gs', 'src/core/IssueTree.js',
   'src/core/IssueComment.gs',
   'src/core/Project.gs',
   'src/core/Mention.js',
