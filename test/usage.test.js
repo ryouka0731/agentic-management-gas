@@ -6,6 +6,7 @@ const SOURCES = [
   'src/core/Hash.js',
   'src/core/HashGas.gs',
   'src/core/Db.gs',
+  'src/core/CurrentUser.gs',
   'src/core/Repo.gs',
   'src/core/Usage.gs',
   'src/core/Prefs.gs',

@@ -151,7 +151,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
       sourceBranch: sourceBranch,
       targetBranch: into,
       state: 'open',
-      author: Session.getActiveUser().getEmail(),
+      author: currentEmail_(),
       createdAt: new Date(),
       mergedAt: '',
     };
@@ -521,7 +521,7 @@ function prReview(number, state, body) {
   // 生き返り、同じ組の依頼が2つ開く
   if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
 
-  var reviewer = Session.getActiveUser().getEmail();
+  var reviewer = currentEmail_();
   if (state === 'approve' && String(pr.author) === reviewer) {
     // 自己承認は既定で禁止する。ただし1人でのPoC検証ではマージまで
     // 到達できなくなるため、スクリプトプロパティで一時的に緩められる。
@@ -745,7 +745,7 @@ function prWithdrawOrphans() {
  * @param {object} pr
  */
 function prAssertCanClose_(pr) {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
 
   if (String(pr.author) === me) return;
   if (repoIsAdmin_(me)) return;
@@ -1131,7 +1131,7 @@ function prAssertReviewLength_(body) {
  * @param {object} row reviews 行
  */
 function reviewAssertOwn_(row) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   if (String(row.reviewer) !== String(me)) {
     throw new Error('自分が書いたものだけ直せます');
   }

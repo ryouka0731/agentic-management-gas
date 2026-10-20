@@ -3,7 +3,7 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 
 const SOURCES = [
-  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs',
+  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs',
   'src/core/Repo.gs', 'src/core/Plain.js', 'src/core/Outbox.gs',
 ];
 

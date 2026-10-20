@@ -10,7 +10,7 @@
 function apiAgentKit() {
   var kit = agentKitFile();
   // 落とした時点でその人の道具は最新。画面の「更新あり」を消すため
-  kitRemember_(String(Session.getActiveUser().getEmail() || ''), kitPrint_());
+  kitRemember_(currentEmail_(), kitPrint_());
   return kit;
 }
 
@@ -20,7 +20,7 @@ function apiAgentKit() {
  * @returns {{print:string, mine:string, outdated:boolean}}
  */
 function apiKitStatus() {
-  return kitStatus_(String(Session.getActiveUser().getEmail() || ''));
+  return kitStatus_(currentEmail_());
 }
 
 function plainQueueStatus_(st) {
@@ -37,7 +37,7 @@ function plainQueueStatus_(st) {
  *   queue: ({runner:string, lastRun:string, stale:boolean}|null)}}
  */
 function apiSettings() {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var admin = repoIsAdmin_(me);
   var texts = scrumTexts();
   return {
@@ -85,7 +85,7 @@ function apiSetGameEnabled(on) {
  */
 function apiGameState() {
   if (!gameEnabled()) return { enabled: false };
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var m = gameMine_(me, new Date());
   return { enabled: true, total: plainNumber(m.total), week: plainNumber(m.week),
     level: plainNumber(m.level), levelFrom: plainNumber(m.levelFrom), nextAt: plainNumber(m.nextAt),
@@ -110,7 +110,7 @@ function apiGameState() {
  */
 function apiGameLevelSeen(n) {
   if (!gameEnabled()) return null;
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   return { level: plainNumber(gameLevelSeenAck_(me, Number(n))) };
 }
 
@@ -124,7 +124,7 @@ function apiGameLevelSeen(n) {
  */
 function apiGameTop() {
   if (!gameEnabled()) return [];
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   return gameTop_(new Date()).map(function (r) {
     return { rank: plainNumber(r.rank), name: plainText(r.name), points: plainNumber(r.points),
       me: r.email === me };
@@ -139,7 +139,7 @@ function apiGameTop() {
  */
 function apiGameJoin(on) {
   if (!gameEnabled()) throw new Error('ポイントとレベルはオフです');
-  gameSetPlaying_(String(Session.getActiveUser().getEmail() || ''), !!on);
+  gameSetPlaying_(currentEmail_(), !!on);
   return apiGameState();
 }
 

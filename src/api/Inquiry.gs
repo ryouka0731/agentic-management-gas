@@ -12,7 +12,7 @@
 function inquiryToPlain_(row, shared) {
   // 一覧では管理者かどうかと返信の数を先に1回だけ求めて渡す。1件ごとに求めると
   // 件数のぶん Drive と返信の表を読みに行き、報告が増えるほど遅くなる
-  var me = shared ? shared.me : Session.getActiveUser().getEmail();
+  var me = shared ? shared.me : currentEmail_();
   var admin = shared ? shared.admin : repoIsAdmin_(me);
 
   return {
@@ -103,7 +103,7 @@ function apiInquiryList() {
   var rows = inquiryList(null);
   var out = [];
 
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var shared = {
     me: me,
     admin: repoIsAdmin_(me),
@@ -126,7 +126,7 @@ function apiInquiryList() {
  * @returns {{inquiry: object, replies: object[]}}
  */
 function apiInquiryThread(number) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var replies = inquiryReplies(number);
   var out = [];
 
@@ -145,7 +145,7 @@ function apiInquiryThread(number) {
  * @returns {object}
  */
 function apiInquiryReply(number, body, shots) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return inquiryReplyToPlain_(inquiryReply(number, body, shots), me);
 }
 
@@ -157,7 +157,7 @@ function apiInquiryReply(number, body, shots) {
  * @returns {object}
  */
 function apiInquiryReplyEdit(id, body) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return inquiryReplyToPlain_(inquiryReplyEdit(id, body), me);
 }
 
@@ -199,7 +199,7 @@ function apiInquiryReopen(number) {
  * @returns {{items: object[], unread: number}}
  */
 function apiNotifications(limit) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var rows = noticeList(me, limit || 30);
   var items = [];
   var unread = 0;
