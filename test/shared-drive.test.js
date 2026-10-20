@@ -259,6 +259,22 @@ describe('共有ドライブの持ち主と管理者', () => {
     expect(fake.Drive._calls.permissionsList).toBeGreaterThan(0);
   });
 
+  it('覚えておく場所が使えなくても、読めた役割で答える。アドレスの無い役割は数えない', () => {
+    const members = MEMBERS.concat([{ role: 'organizer', type: 'user' }]);
+    const { ctx, fake } = setupShared({ members });
+    // CacheService そのものが使えない
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
+    fake.CacheService = { getScriptCache: () => { throw new Error('使えません'); } };
+    expect(ctx.repoOwners_().sort()).toEqual(['boss@example.com', 'tester@example.com']);
+    // 引けるが、置けない
+    ctx.DRIVE_MEMBERS_MEMO_ = {};
+    fake.CacheService = { getScriptCache: () => ({ get: () => null, put: () => { throw new Error('大きすぎます'); } }) };
+    expect(ctx.driveMembers_('drive-1')).toEqual({
+      owners: ['tester@example.com', 'boss@example.com'],
+      admins: ['tester@example.com', 'boss@example.com', 'manager@example.com', 'writer@example.com'],
+    });
+  });
+
   it('役割は10分覚え、続けて聞かない', () => {
     const { ctx, fake } = setupShared();
     const cache = new Map();
