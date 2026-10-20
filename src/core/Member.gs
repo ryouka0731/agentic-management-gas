@@ -147,36 +147,6 @@ function memberVisibleTo(viewer) {
 }
 
 /**
- * その人の数字を見てよいかを返す。
- *
- * @param {string} viewer
- * @param {string} target
- * @returns {boolean}
- */
-function memberCanSee(viewer, target) {
-  return memberVisibleTo(viewer).indexOf(String(target)) >= 0;
-}
-
-/**
- * 画面に出す名前を決める。
- *
- * メールアドレスは目で追いにくく、長い並びの中では全部同じに見える。
- * 登録された名前があればそれを、無ければアドレスの手前を使う。
- *
- * @param {string} email
- * @returns {string}
- */
-function memberNameOf(email) {
-  var who = String(email || '');
-  if (!who) return '';
-
-  var row = dbFindOne('members', 'email', who);
-  var name = row ? String(row.name || '') : '';
-
-  return name || who.split('@')[0];
-}
-
-/**
  * 名前を覚えさせる。上下関係は変えない。
  *
  * @param {string} email

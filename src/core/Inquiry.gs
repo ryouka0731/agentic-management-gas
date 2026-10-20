@@ -121,28 +121,6 @@ function inquiryList(by) {
 }
 
 /**
- * 報告に答えて、受付を閉じる。
- *
- * @param {number} number
- * @param {string} answer
- * @returns {object} 更新後の行
- */
-function inquiryAnswer(number, answer) {
-  var row = dbFindOne('inquiries', 'number', number);
-  if (!row) throw new Error('受付が見つかりません: ' + number);
-
-  dbUpdate('inquiries', 'number', number, {
-    state: 'done',
-    answer: String(answer || ''),
-    answeredAt: new Date(),
-  });
-
-  var after = dbFindOne('inquiries', 'number', number);
-  notifyInquiryAnswered(after);
-  return after;
-}
-
-/**
  * 本文の1行目を見出しにする。
  *
  * 一覧に本文をそのまま並べると、長いものが場所を食って見比べられない。
