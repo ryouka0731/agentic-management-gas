@@ -1,0 +1,1308 @@
+  // ===== Google ToDo との同期 (オプション) =====
+
+  var tasksState = { available: false, listId: '', lists: [] };
+
+  /**
+   * 使える環境かを見て、使えるときだけ入口を出す。
+   *
+   * 拡張サービスを足していない環境で押せるボタンを出しても、押した先で
+   * 断られるだけになる。
+   */
+  function loadTasksState() {
+    call('apiTasksState', [], function (res) {
+      tasksState = res || { available: false, listId: '', lists: [] };
+      var btn = document.getElementById('tasks-btn');
+
+      btn.hidden = !tasksState.available;
+      btn.title = tasksState.listId
+        ? '自分の担当を Google ToDo と同期します'
+        : '入れ先の ToDo リストを選びます';
+    }, failQuiet('使えないだけ'));
+  }
+
+  /**
+   * 同期の入口。入れ先が決まっていなければ先に選んでもらう。
+   *
+   * @param {HTMLElement} sourceEl
+   */
+  function openTasks(sourceEl) {
+    if (!tasksState.listId) return chooseTasksList(sourceEl);
+
+    var btn = document.getElementById('tasks-btn');
+    btn.disabled = true;
+
+    call('apiTasksSync', [], function (res) {
+      btn.disabled = false;
+      var msg = (res.pushed || 0) + '件を ToDo に送りました';
+      if (res.closed) msg += ' / ' + res.closed + '件を完了にしました';
+
+      showSnack(msg, { kind: 'ok' });
+      refreshIssueViews();
+    }, failEnable(btn));
+  }
+
+  /**
+   * 入れ先の ToDo リストを選ばせる。
+   *
+   * @param {HTMLElement} sourceEl
+   */
+  function chooseTasksList(sourceEl) {
+    var choices = (tasksState.lists || []).map(function (one) {
+      return [one.id, one.title];
+    });
+
+    if (!choices.length) {
+      showSnack('ToDo リストが見つかりません', { kind: 'ng' });
+      return;
+    }
+
+    var form = openInlineForm(
+      'Google ToDo と同期する',
+      [{ name: 'listId', label: '入れ先のリスト', choices: choices }],
+      '決める',
+      function (v) {
+        call('apiTasksChooseList', [v.listId], function (id) {
+          tasksState.listId = id;
+          showSnack('入れ先を決めました。もう一度押すと同期します',
+            { kind: 'ok' });
+          loadTasksState();
+        });
+      },
+      sourceEl
+    );
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent =
+      '自分が担当で、まだ終わっていないやることだけを送ります。' +
+      'ToDo 側で完了にすると、こちらも完了になります。';
+    form.insertBefore(note, form.querySelector('.inline-form-actions'));
+  }
+
+  // ===== 文書を登録する =====
+
+  /**
+   * 正式版の入れ物にある文書を、画面から登録させる。
+   *
+   * ファイルの id を調べてスクリプトプロパティに書く、という手順は、
+   * この道具を使う人の仕事ではない。入れ物を覗いて、見つかったものを
+   * 選ばせる。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function addDocs(sourceEl) {
+    var box = openSideView('文書を登録する', sourceEl, null);
+
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = '正式版の入れ物 (main) を見ています…';
+    box.appendChild(lead);
+
+    call('apiFoundFiles', [],
+      function (list) { draw(list || []); },
+      failInto(lead));
+
+    function draw(found) {
+      box.textContent = '';
+
+      if (!found.length) {
+        box.appendChild(makeBlankState(
+          '登録できる文書が見つかりません',
+          'Google ドライブで、この道具の「main」フォルダに文書を入れてから、' +
+          'もう一度開いてください。'
+        ));
+        addFolderLink(box);
+        return;
+      }
+
+      var head = document.createElement('p');
+      head.className = 'row-meta';
+      head.textContent = '入れ物の中にある、まだ登録していない文書です。' +
+        '管理したいものを選んでください。';
+      box.appendChild(head);
+
+      var list = document.createElement('div');
+      list.className = 'bulk-list';
+      var checks = [];
+
+      found.forEach(function (one) {
+        var row = document.createElement('label');
+        row.className = 'bulk-row';
+
+        var check = document.createElement('input');
+        check.type = 'checkbox';
+        check.value = one.fileId;
+        check.checked = one.ok;
+        check.disabled = !one.ok;
+        checks.push(check);
+        row.appendChild(check);
+
+        row.appendChild(makeIcon(one.ok ? 'file-text' : 'help-circle'));
+
+        var name = document.createElement('span');
+        name.textContent = one.name;
+        row.appendChild(name);
+
+        if (!one.ok) {
+          var why = document.createElement('span');
+          why.className = 'row-meta';
+          why.textContent = one.why;
+          row.appendChild(why);
+        }
+        list.appendChild(row);
+      });
+      box.appendChild(list);
+
+      var go = document.createElement('button');
+      go.className = 'btn btn-primary';
+      go.textContent = '登録する';
+      go.addEventListener('click', function () {
+        var ids = checks.filter(function (c) { return c.checked; })
+          .map(function (c) { return c.value; });
+
+        if (!ids.length) {
+          showSnack('登録するものが選ばれていません', { kind: 'ng' });
+          return;
+        }
+        go.disabled = true;
+
+        call('apiRegisterFiles', [ids], function (res) {
+          go.disabled = false;
+          var text = res.added.length + '件を登録しました';
+
+          if (res.failed.length) {
+            text += ' / ' + res.failed.length + '件できませんでした';
+          }
+          showSnack(text, { kind: res.failed.length ? 'ng' : 'ok' });
+
+          closeSide();
+          loadFiles(function () { switchTab('docs'); });
+        }, failEnable(go));
+      });
+      box.appendChild(go);
+
+      addFolderLink(box);
+    }
+
+    function addFolderLink(host) {
+      call('apiMainFolderUrl', [], function (url) {
+        if (!url) return;
+
+        var link = document.createElement('a');
+        link.className = 'btn';
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = '入れ物を Drive で開く';
+        host.appendChild(link);
+      }, failQuiet('開く口が無いだけ'));
+    }
+  }
+
+  // ===== 自分まわり =====
+
+  /**
+   * 自分まわりの操作を作る。
+   *
+   * 名前を決める・道具を落とす・案内を出し直すは、読み物ではなく操作で
+   * ある。使い方の頁の底に置くと、困ったときにしか開かれない場所に
+   * 埋もれる。上の帯からいつでも開ける形にする。
+   *
+   * @returns {HTMLElement[]}
+   */
+  /**
+   * 道具を落とすボタンを作る。
+   *
+   * はじめの案内と、自分まわりの両方から同じものを出す。2つ書くと
+   * 片方だけ直って食い違う。
+   *
+   * @param {string} [label]
+   * @returns {HTMLElement}
+   */
+  function makeKitButton(label) {
+    var kit = document.createElement('button');
+    kit.className = 'btn btn-primary';
+    kit.appendChild(makeIcon('save'));
+    kit.appendChild(document.createTextNode(label || '手元から動かす道具を落とす'));
+    if (kitOutdated) kit.appendChild(makePill('更新あり', 'stale-badge'));
+    attachHint(kit,
+      '画面を開かずに、やること・改訂版・確認依頼を作れる小さな道具です。' +
+      'Claude や Codex に読ませる説明も入っています');
+
+    kit.addEventListener('click', function () {
+      kit.disabled = true;
+
+      call('apiAgentKit', [], function (res) {
+        kit.disabled = false;
+        if (!res) return;
+
+        // 落とす先は Drive。画面から直に流すと、大きさの上限に当たる
+        window.open(res.url, '_blank');
+        showSnack(res.name + ' を落としています', { kind: 'ok' });
+        openKitSteps(res);
+        // 落とし直した道具は最新。点と札を消す (サーバ側も apiAgentKit で覚え直している)
+        if (kitOutdated) {
+          kitOutdated = false;
+          drawMe();
+        }
+      }, failEnable(kit));
+    });
+    return kit;
+  }
+
+  function makeMeActions() {
+    var out = [];
+    out.push(makeKitButton());
+
+    var rename = document.createElement('button');
+    rename.className = 'btn';
+    rename.appendChild(makeIcon('user'));
+    rename.appendChild(document.createTextNode('表示する名前を決める'));
+    attachHint(rename,
+      'ほかの人の画面にも、この名前で出ます。決めないとアドレスの手前が使われます');
+
+    rename.addEventListener('click', function () {
+      closeMe();
+
+      var form = openInlineForm(
+        '表示する名前',
+        [{ name: 'name', label: '名前', required: true }],
+        '決める',
+        function (v) {
+          call('apiPeopleSetName', [currentUser, v.name], function (row) {
+            peopleNames[currentUser] = row.name;
+            showSnack('名前を「' + row.name + '」にしました', { kind: 'ok' });
+            closeSide();
+            drawMe();
+          });
+        },
+        rename
+      );
+      form.querySelector('input').value = personName(currentUser);
+    });
+    out.push(rename);
+
+    var again = document.createElement('button');
+    again.className = 'btn';
+    again.appendChild(makeIcon('help-circle'));
+    again.appendChild(document.createTextNode('はじめの案内をもう一度出す'));
+
+    again.addEventListener('click', function () {
+      closeMe();
+      setGuideline(true);
+      switchTab('home');
+      showSnack('ホームに案内を出しました', { kind: 'ok' });
+    });
+    out.push(again);
+    out.push(makeProgressToggle());
+    // ゲームがオンのときだけ、参加の切り替えを出す。設定でオフと分かっていれば
+    // 尋ねない (設定より先に描かれるときは settings がまだ無い)。切り替えは隠して
+    // 並びに直に置き、返事で出す (包む箱に入れると、並びのボタンと幅が揃わない)
+    if (!settings || settings.gameEnabled !== false) {
+      var join = makeGameJoinToggle({ playing: false });
+      join.hidden = true;
+      out.push(join);
+      call('apiGameState', [], function (state) {
+        if (!state || !state.enabled) return;
+        setToggle(join, !!state.playing);
+        join.hidden = false;
+      }, failQuiet('参加の切り替えが出なくても使える'));
+    }
+
+    return out;
+  }
+
+  /**
+   * 落としたあとの続きを出す。
+   *
+   * zip を渡して終わりにすると、設定に何を書けばよいかが分からずそこで
+   * 止まる。いちばん詰まるのは入れ先の場所なので、写して貼れる形で出す。
+   *
+   * @param {object} kit apiAgentKit の戻り
+   */
+  function openKitSteps(kit) {
+    closeMe();
+
+    var box = openSideView('手元から動かす', null, null);
+
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = kit.name + ' を落としました。' +
+      '次の3つで、Claude や Codex から動かせるようになります。';
+    box.appendChild(lead);
+
+    // 前に落としたものが手元に残っていると、それを使って詰まる
+    var ver = document.createElement('p');
+    ver.className = 'row-meta';
+    ver.textContent = '前に落としたものが残っていれば、捨ててください。' +
+      '使うのは ' + kit.name + ' です。';
+    box.appendChild(ver);
+
+    var steps = document.createElement('ol');
+    steps.className = 'setup-steps';
+
+    [
+      ['zip を広げる', '好きな場所で構いません。中に agent.mjs と、' +
+        'Claude / Codex 向けの説明 (AGENTS.md / CLAUDE.md) が入っています。'],
+      ['Google ドライブを同期する', 'Google Drive for desktop で、' +
+        'この道具のフォルダを手元に同期してください。鍵もトークンも要りません。'],
+      ['入れ先を設定に書く', 'agentkit.example.json を .agentkit.json に写し、' +
+        'queueDir に下の場所までのパスを書きます。'],
+    ].forEach(function (pair) {
+      var li = document.createElement('li');
+
+      var head = document.createElement('strong');
+      head.textContent = pair[0];
+      li.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'row-meta';
+      body.textContent = pair[1];
+      li.appendChild(body);
+
+      steps.appendChild(li);
+    });
+    box.appendChild(steps);
+
+    box.appendChild(makeCopyRow('入れ先 (Drive の中での場所)', kit.queuePath));
+
+    var open = document.createElement('a');
+    open.className = 'btn';
+    open.href = kit.queueUrl;
+    open.target = '_blank';
+    open.rel = 'noopener';
+    open.textContent = 'この場所を Drive で開く';
+    box.appendChild(open);
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '手元のパスは、同期しているフォルダの場所に ' +
+      '上の道のりを繋いだものになります。書けたら「node agent.mjs files」' +
+      'を打って、文書の一覧が返れば設定完了です。';
+    box.appendChild(note);
+  }
+
+  /**
+   * 写して貼れる一行を作る。
+   *
+   * 目で読んで打ち直させると、必ずどこかで間違える。
+   *
+   * @param {string} label
+   * @param {string} value
+   * @returns {HTMLElement}
+   */
+  function makeCopyRow(label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'copy-row';
+
+    var name = document.createElement('div');
+    name.className = 'row-meta';
+    name.textContent = label;
+    wrap.appendChild(name);
+
+    var line = document.createElement('div');
+    line.className = 'copy-line';
+
+    var text = document.createElement('code');
+    text.textContent = value;
+    line.appendChild(text);
+
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = '写す';
+    btn.addEventListener('click', function () {
+      var area = document.createElement('textarea');
+      area.value = value;
+      document.body.appendChild(area);
+      area.select();
+
+      // execCommand は断られても例外にならず false を返す。true のときだけ写せた
+      var ok = false;
+      try {
+        ok = document.execCommand('copy') === true;
+      } catch (e) {
+        ok = false;
+      }
+      area.remove();
+      if (ok) {
+        showSnack('写しました', { kind: 'ok' });
+        return;
+      }
+      // 字を選んだままにして、手で写せるようにする
+      var range = document.createRange();
+      range.selectNodeContents(text);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
+    });
+    line.appendChild(btn);
+
+    wrap.appendChild(line);
+    return wrap;
+  }
+
+  function closeMe() {
+    mePanel.hidden = true;
+    meBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * 自分まわりの中身を描く。
+   */
+  function drawMe() {
+    meBtn.textContent = '';
+    meBtn.appendChild(makeAvatar(currentUser));
+    if (kitOutdated) {
+      var dot = document.createElement('span');
+      dot.className = 'me-dot';
+      meBtn.appendChild(dot);
+    }
+    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
+
+    document.getElementById('me-who').textContent =
+      personName(currentUser) || 'あなた';
+
+    meBody.textContent = '';
+
+    var who = document.createElement('div');
+    who.className = 'row-meta';
+    who.textContent = currentUser
+      ? currentUser
+      : '利用者を特定できていません。この状態では記録に名前が残りません';
+    meBody.appendChild(who);
+
+    var actions = document.createElement('div');
+    actions.className = 'me-actions';
+    makeMeActions().forEach(function (el) { actions.appendChild(el); });
+    meBody.appendChild(actions);
+  }
+
+  // ===== 使われ方の記録 =====
+
+  /**
+   * 溜めておく数。押すたびに送るとスプレッドシートが持たない。
+   */
+  var usageBuffer = {};
+
+  /**
+   * 場所の名前を決める。
+   *
+   * 名前を付けていないものは数えない。無名のものまで拾うと、作りかけの
+   * 画面から知らない名前が大量に流れ込む。
+   *
+   * @param {EventTarget} target
+   * @returns {string} 数えないなら空文字
+   */
+  function usageTargetOf(target) {
+    var el = target;
+
+    while (el && el !== document) {
+      // 使い方の見出しは押す物ではない。数えると、節を開いた数 (guide-<id>) と紛れる
+      if (el.dataset && el.dataset.guideHead) return '';
+      if (el.id && /^[A-Za-z0-9:_-]{1,60}$/.test(el.id)) return el.id;
+
+      if (el.dataset && el.dataset.tab) return 'tab-' + el.dataset.tab;
+      if (el.dataset && el.dataset.track) return el.dataset.track;
+
+      // 一覧の行やカードは、1つずつではなく種類でまとめて数える
+      if (el.classList) {
+        if (el.classList.contains('row-open')) return 'row-open';
+        if (el.classList.contains('board-card')) return 'board-card';
+        if (el.classList.contains('gantt-bar')) return 'gantt-bar';
+        if (el.classList.contains('doc-open')) return 'doc-open';
+        if (el.classList.contains('commit-item')) return 'commit-item';
+        if (el.classList.contains('rel-chip')) return 'rel-chip';
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  /**
+   * 1つ数える。
+   *
+   * @param {string} kind 'view' | 'action'
+   * @param {string} target
+   */
+  function usageCount(kind, target) {
+    if (!target) return;
+    // チームか本人が止めていれば数えない (サーバでも断るが、送ること自体をやめる)
+    if (!prefUsageOn()) return;
+
+    var key = kind + '\t' + target;
+    usageBuffer[key] = (usageBuffer[key] || 0) + 1;
+  }
+
+  /**
+   * 溜めたぶんを送る。
+   */
+  function usageFlush() {
+    var rows = [];
+
+    for (var key in usageBuffer) {
+      if (!Object.prototype.hasOwnProperty.call(usageBuffer, key)) continue;
+
+      var parts = key.split('\t');
+      rows.push({ kind: parts[0], target: parts[1], count: usageBuffer[key] });
+    }
+    if (!rows.length) return;
+
+    usageBuffer = {};
+    call('apiUsageRecord', [rows], function () {}, failQuiet('数えられなくても操作はできる'));
+  }
+
+  // ===== 使われ方のボード =====
+
+  var USAGE_SPANS = [['7', '直近7日'], ['30', '直近30日'], ['90', '直近90日']];
+
+  /**
+   * 場所の名前を、人が読める言葉にする。
+   *
+   * @param {string} target
+   * @returns {string}
+   */
+  function usageLabel(target) {
+    var known = {
+      'row-open': 'やること・報告の行を開く',
+      'board-card': '進捗ボードのカード',
+      'gantt-bar': '工程表の棒',
+      'doc-open': '文書を開く',
+      'commit-item': '履歴の記録',
+      'rel-chip': '親子への行き先',
+      'issue-create-btn': 'やることを作る',
+      'report-btn': '開発者に伝える',
+      'commit-btn': '変更を記録',
+      'bulk-commit-btn': 'まとめて記録',
+      'branch-create-btn': '改訂版を作る',
+      'draft-create-btn': 'この文書の改訂版を作る',
+      'bell-btn': '知らせ',
+      'theme-btn': '画面の明るさ',
+      'side-edit': '直す (鉛筆)',
+      'mine-btn': '自分の担当だけ',
+      'tasks-btn': 'Google ToDo と同期',
+    };
+
+    if (known[target]) return known[target];
+
+    // 使い方の節。場所の名前は英数の id なので、見出しに直す
+    var guide = /^guide-(.+)$/.exec(target);
+    if (guide) {
+      var section = GUIDE.filter(function (g) { return g.id === guide[1]; })[0];
+      if (section) return '使い方: ' + section.title;
+    }
+
+    var tab = /^tab-(.+)$/.exec(target);
+    if (tab) {
+      var names = {
+        docs: '文書', issues: 'やること', branches: '改訂中の版',
+        pulls: '確認依頼', help: '使い方', report: '要望・不具合',
+        usage: '使われ方', content: '本文', history: '改訂の履歴',
+        drafts: 'この文書の改訂版',
+      };
+      return names[tab[1]] || tab[1];
+    }
+    return target;
+  }
+
+  /**
+   * 使われ方を描く。
+   *
+   * どこが使われていないかを見るためのもの。場所ごとの合計は誰が見ても
+   * 全員ぶん。人ごとの数と絞り込みは、本人と部下のぶんだけ届く
+   * (サーバ側の apiUsageSummary が絞る。工数の集計と同じ)。
+   */
+  /**
+   * 期間か対象を選び直すたびに頼み直す。届いた返事が最後のぶんでなければ捨てる。
+   * 捨てないと、選び直したあとに前の期間のまとめや CSV が出る。
+   */
+  function loadUsage() {
+    var still = latest('usage');
+    fillSelect(usageDaysSel, USAGE_SPANS, '30');
+
+    // いま溜めているぶんも含めて見たい
+    usageFlush();
+    showSkeleton(usageEl, 'list', 4);
+
+    call('apiUsageSummary', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      if (!still()) return;
+      var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
+      fillUsageWho(data.byUser || []);
+      usageEl.textContent = '';
+
+      if (!data.total && !(data.byUser || []).length) {
+        usageEl.appendChild(makeBlankState(
+          'まだ記録がありません',
+          'しばらく使うと、どこがよく押されているかがここに出ます。'
+        ));
+        return;
+      }
+
+      // 前の期間を持たない返事 (古い版のサーバ) でも描けるようにする
+      var prev = data.prev || { total: 0, byTarget: [] };
+      var before = {};
+      (prev.byTarget || []).forEach(function (t) { before[t.kind + ':' + t.target] = t.count; });
+      var views = data.byTarget.filter(function (t) { return t.kind === 'view'; });
+
+      usageEl.appendChild(makeUsageSummary(data, prev.total || 0));
+      usageEl.appendChild(makeUsagePeople(data.byUser || []));
+      usageEl.appendChild(makeUsageRanking('よく押されている操作',
+        data.byTarget.filter(function (t) { return t.kind === 'action'; }), before));
+      usageEl.appendChild(makeUsageRanking('よく開かれている画面', views, before));
+      usageEl.appendChild(makeUsageUnseen(views));
+      usageEl.appendChild(makeUsageWeekdays(data.byWeekday || [0, 0, 0, 0, 0, 0, 0]));
+      usageEl.appendChild(makeUsageDays(data.byDay));
+    }, function (err) {
+      if (still()) failInto(usageEl)(err);
+    });
+  }
+
+  /**
+   * 誰のぶんを見るかの選択肢を、記録に出てきた人から詰める。
+   *
+   * @param {object[]} people
+   */
+  function fillUsageWho(people) {
+    var want = usageWhoSel.value;
+    usageWhoSel.textContent = '';
+
+    var pairs = [['', 'みんなの合計']];
+    people.forEach(function (one) {
+      pairs.push([one.who, personName(one.who) || '(不明)']);
+    });
+
+    pairs.forEach(function (pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      usageWhoSel.appendChild(opt);
+    });
+    usageWhoSel.value = want;
+  }
+
+  /**
+   * よく使っている人を多い順に並べる。
+   *
+   * 押すとその人のぶんに絞る。誰が使っているかを見てから、その人が
+   * どこを使っているかに進める
+   *
+   * @param {object[]} people
+   * @returns {HTMLElement}
+   */
+  function makeUsagePeople(people) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = 'よく使っている人';
+    wrap.appendChild(head);
+
+    if (!people.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'まだ記録がありません';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var top = people[0].count || 1;
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    people.slice(0, 15).forEach(function (row, at) {
+      var line = document.createElement('button');
+      line.className = 'usage-row usage-person';
+      line.setAttribute('aria-label', personName(row.who) + ' のぶんだけを見る');
+      attachHint(line, 'この人が使っているところだけを見ます');
+
+      line.addEventListener('click', function () {
+        usageWhoSel.value = row.who;
+        loadUsage();
+      });
+
+      var rank = document.createElement('span');
+      rank.className = 'usage-rank';
+      rank.textContent = (at + 1);
+      line.appendChild(rank);
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.appendChild(makeAvatar(row.who));
+      name.appendChild(document.createTextNode(personName(row.who) || '(不明)'));
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = Math.max(2, Math.round(row.count / top * 100)) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = row.count;
+      line.appendChild(count);
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * 前の期間からの増減を、矢印と割合の字にする。
+   *
+   * 前の期間が0だと割合が決まらない (0で割る)。そのときは数を出さずにそう言う。
+   *
+   * @param {number} now
+   * @param {number} before
+   * @returns {string}
+   */
+  function usageTrend(now, before) {
+    if (!before) return '前の期間は記録なし';
+    var pct = Math.round((now - before) / before * 100);
+    var arrow = pct > 0 ? '↑' : (pct < 0 ? '↓' : '→');
+    return arrow + ' ' + Math.abs(pct) + '%';
+  }
+
+  /**
+   * 前の期間との差を、符号の付いた字にする。
+   *
+   * @param {number} diff
+   * @returns {string}
+   */
+  function usageDiff(diff) {
+    if (diff > 0) return '+' + diff;
+    if (diff < 0) return '−' + Math.abs(diff);
+    return '±0';
+  }
+
+  /**
+   * 開いた画面の名前。左の行き先に書いてある字を使う。
+   *
+   * 画面を開いたときは data-tab の名前 (issues など) のまま数えている。
+   * usageLabel は tab- の付いた名前しか直さないため、そのままだと英字が出る。
+   *
+   * @param {string} target
+   * @returns {string}
+   */
+  function usageViewName(target) {
+    var nav = sidebarEl && sidebarEl.querySelector(
+      '.nav-item[data-tab="' + String(target).replace(/["\\]/g, '') + '"] .nav-label');
+    if (nav && nav.textContent) return nav.textContent;
+
+    var tab = usageLabel('tab-' + target);
+    return tab !== target ? tab : usageLabel(target);
+  }
+
+  /**
+   * @param {object} data
+   * @param {number} prevTotal 前の期間の回数
+   * @returns {HTMLElement}
+   */
+  function makeUsageSummary(data, prevTotal) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-summary';
+
+    [['数えた回数', data.total + '回', usageTrend(data.total, prevTotal)],
+     ['数えた場所', data.byTarget.length + 'か所'],
+     ['対象', data.who ? personName(data.who) : 'みんな'],
+     ['期間', data.from + ' 〜 ' + data.to]].forEach(function (pair) {
+      var box = document.createElement('div');
+      box.className = 'tally-card';
+
+      var label = document.createElement('div');
+      label.className = 'row-meta';
+      label.textContent = pair[0];
+      box.appendChild(label);
+
+      var value = document.createElement('div');
+      value.className = 'tally-value';
+      value.textContent = pair[1];
+      box.appendChild(value);
+
+      if (pair[2]) {
+        var trend = document.createElement('div');
+        trend.className = 'row-meta usage-delta';
+        trend.textContent = pair[2];
+        attachHint(trend, prevTotal
+          ? '同じ長さの前の期間 (' + prevTotal + '回) と比べて'
+          : '同じ長さの前の期間には記録がありません');
+        box.appendChild(trend);
+      }
+
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  /**
+   * 多い順に棒で並べる。
+   *
+   * 数字だけを並べても、どれが飛び抜けているのかは読み取れない。
+   *
+   * @param {string} title
+   * @param {object[]} rows
+   * @param {Object<string, number>} [before] 前の期間の数 (kind:target ごと)
+   * @returns {HTMLElement}
+   */
+  function makeUsageRanking(title, rows, before) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = title;
+    wrap.appendChild(head);
+
+    if (!rows.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'まだ記録がありません';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var top = rows[0].count || 1;
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    rows.slice(0, 15).forEach(function (row) {
+      var line = document.createElement('div');
+      line.className = 'usage-row';
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.textContent = row.kind === 'view' ? usageViewName(row.target) : usageLabel(row.target);
+      attachHint(name, row.target);
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = Math.max(2, Math.round(row.count / top * 100)) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = row.count;
+      line.appendChild(count);
+
+      if (before) {
+        var was = before[row.kind + ':' + row.target] || 0;
+        var delta = document.createElement('span');
+        delta.className = 'usage-delta';
+        delta.textContent = usageDiff(row.count - was);
+        attachHint(delta, '前の期間は' + was + '回');
+        line.appendChild(delta);
+      }
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * この期間に一度も開かれなかった画面を並べる。
+   *
+   * 行き先の一覧は左の帯から取る (画面が持っている一覧)。サーバに写しを
+   * 持つと、画面を足したときに数え漏れる。スクラムがオフのあいだは
+   * スプリントと障害物が出ないので、開かれなくて当然であり、数えない。
+   *
+   * @param {object[]} views この期間に開かれた画面 (kind: 'view')
+   * @returns {HTMLElement}
+   */
+  function makeUsageUnseen(views) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = 'この期間に開かれなかった画面';
+    wrap.appendChild(head);
+
+    var seen = {};
+    views.forEach(function (v) { if (v.count > 0) seen[v.target] = true; });
+
+    var items = sidebarEl ? sidebarEl.querySelectorAll('.nav-item[data-tab]') : [];
+    var missing = [];
+    for (var i = 0; i < items.length; i++) {
+      var tab = items[i].dataset.tab;
+      if (!scrumOn() && items[i].closest('#nav-scrum')) continue;
+      // 隠れている行き先は押せないので、開かれなくて当然
+      if (items[i].closest('[hidden]')) continue;
+      if (seen[tab]) continue;
+      missing.push(usageViewName(tab));
+    }
+
+    if (!missing.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'どの画面も開かれていました';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var list = document.createElement('div');
+    list.className = 'usage-unseen';
+    missing.forEach(function (name) { list.appendChild(makePill(name, 'chip')); });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * 曜日ごとの回数を、月曜から7本の棒で並べる。
+   *
+   * @param {number[]} counts 月曜から日曜までの7つ
+   * @returns {HTMLElement}
+   */
+  function makeUsageWeekdays(counts) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '曜日ごと';
+    wrap.appendChild(head);
+
+    var names = ['月', '火', '水', '木', '金', '土', '日'];
+    var top = 1;
+    names.forEach(function (_, at) { if ((counts[at] || 0) > top) top = counts[at]; });
+
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    names.forEach(function (day, at) {
+      var n = Number(counts[at]) || 0;
+      var line = document.createElement('div');
+      line.className = 'usage-row';
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.textContent = day;
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = (n ? Math.max(2, Math.round(n / top * 100)) : 0) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = n;
+      line.appendChild(count);
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * CSV の1つのセル。
+   *
+   * 表計算は = + - @ で始まる字を式として読む (式の差し込み)。先頭に ' を
+   * 付けて字のまま読ませる。区切りや改行を含むものは " で囲む。
+   *
+   * @param {*} v
+   * @returns {string}
+   */
+  function usageCsvCell(v) {
+    var s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  /**
+   * 日・場所・人ごとの数を CSV の字にする。
+   *
+   * 先頭に BOM を付ける。付けないと Excel が日本語を化けさせる。
+   *
+   * @param {object[]} rows apiUsageRows の rows
+   * @returns {string}
+   */
+  function usageCsv(rows) {
+    var lines = [['日', '種類', '場所', '名前', '人', '回数']];
+    rows.forEach(function (r) {
+      lines.push([
+        r.day, r.kind === 'view' ? '画面' : '操作', r.target,
+        r.kind === 'view' ? usageViewName(r.target) : usageLabel(r.target),
+        r.user, r.count,
+      ]);
+    });
+    return '\uFEFF' + lines.map(function (line) {
+      return line.map(usageCsvCell).join(',');
+    }).join('\r\n') + '\r\n';
+  }
+
+  /**
+   * ファイルとして落とす。落とせたかは分からないことがある。
+   *
+   * Apps Script の枠の中では、保存を断られても例外にならず黙って何も
+   * 起きないことがある。そのため落とせたと思っても字は画面に出しておく。
+   *
+   * @param {string} name
+   * @param {string} text
+   * @returns {boolean} 落とそうとできたか
+   */
+  function usageDownload(name, text) {
+    try {
+      if (!window.Blob || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+        return false;
+      }
+      var url = window.URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.hidden = true;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        try { window.URL.revokeObjectURL(url); } catch (e) { /* 消せなくても困らない */ }
+      }, 1000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 今見ている期間と対象の数を CSV で保存する。
+   *
+   * サーバは本人と部下のぶんだけを返す (apiUsageRows)。
+   */
+  function saveUsageCsv() {
+    var still = latestSoFar('usage');
+    usageCsvBtn.disabled = true;
+    call('apiUsageRows', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      usageCsvBtn.disabled = false;
+      // 頼んだあとに期間か対象を選び直していたら、今見ている範囲の CSV ではない
+      if (!still()) return;
+      var data = res || { from: '', to: '', rows: [] };
+      var text = usageCsv(data.rows || []);
+      var saved = usageDownload('usage-' + data.from + '_' + data.to + '.csv', text);
+
+      var old = usageEl.querySelector('.usage-export');
+      if (old) old.remove();
+
+      var wrap = document.createElement('div');
+      wrap.className = 'tally-block usage-export';
+      var note = document.createElement('div');
+      note.className = 'row-meta';
+      note.textContent = '見られない人のぶんは入っていません (画面の合計とは合わないことがあります)';
+      wrap.appendChild(note);
+      wrap.appendChild(makeCopyRow(saved
+        ? 'ファイルが保存されないときは、ここから写して表計算に貼ってください'
+        : '保存できなかったので、字のまま出します。写して表計算に貼ってください', text));
+      usageEl.insertBefore(wrap, usageEl.firstChild);
+    }, failEnable(usageCsvBtn, 'CSV を作れませんでした: '));
+  }
+
+  /**
+   * 日ごとの回数を並べる。
+   *
+   * @param {object[]} rows
+   * @returns {HTMLElement}
+   */
+  function makeUsageDays(rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '日ごと';
+    wrap.appendChild(head);
+
+    var top = 1;
+    rows.forEach(function (r) { if (r.count > top) top = r.count; });
+
+    var chart = document.createElement('div');
+    chart.className = 'usage-days';
+
+    rows.forEach(function (row) {
+      var col = document.createElement('div');
+      col.className = 'usage-day';
+      attachHint(col, row.day + ' · ' + row.count + '回');
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-day-bar';
+      bar.style.height = Math.max(4, Math.round(row.count / top * 100)) + '%';
+      col.appendChild(bar);
+
+      chart.appendChild(col);
+    });
+
+    wrap.appendChild(chart);
+    return wrap;
+  }
+
+  // ===== 知らせ =====
+
+  /**
+   * デスクトップ通知が使えるかを見る。
+   *
+   * この画面は枠の中で動くため、ブラウザや設定によっては許可そのものを
+   * 求められない。使えないときは画面の中の知らせだけで済ませる。
+   *
+   * @returns {string} 'granted' | 'denied' | 'default' | 'unavailable'
+   */
+  function desktopState() {
+    try {
+      if (!window.Notification) return 'unavailable';
+      return window.Notification.permission;
+    } catch (e) {
+      return 'unavailable';
+    }
+  }
+
+  function renderDesktopButton() {
+    var btn = document.getElementById('notice-desktop');
+    var note = document.getElementById('notice-desktop-note');
+    var state = desktopState();
+
+    btn.hidden = state !== 'default';
+    note.textContent = {
+      granted: 'デスクトップ通知は入になっています',
+      denied: 'デスクトップ通知はブラウザ側で断られています。ここの一覧で見てください',
+      unavailable: 'この環境ではデスクトップ通知を出せません。ここの一覧で見てください',
+      'default': '',
+    }[state] || '';
+  }
+
+  /**
+   * デスクトップに出す。出せなければ何もしない。
+   *
+   * @param {object} notice
+   */
+  function popDesktop(notice) {
+    if (desktopState() !== 'granted') return;
+
+    try {
+      var n = new window.Notification(notice.title, { body: notice.body });
+      n.onclick = function () {
+        window.focus();
+        openNoticeLink(notice);
+      };
+    } catch (e) { /* 出せなくても画面の中には残っている */ }
+  }
+
+  /**
+   * 知らせの指す場所を開く。
+   *
+   * @param {object} notice
+   */
+  function openNoticeLink(notice) {
+    var parts = String(notice.link || '').split(':');
+    if (parts[0] === 'report') {
+      switchTab('report');
+      openReport(Number(parts[1]));
+    } else if (parts[0] === 'pull') {
+      switchTab('pulls');
+    }
+    noticePanel.hidden = true;
+    bellBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  /** 返事を待っている頼みのどれかが、新しい知らせを前に出すものか */
+  var noticeLoud = false;
+
+  /**
+   * 知らせを取ってくる。
+   *
+   * @param {boolean} [quiet] 初回は前からあるぶんで驚かせない
+   */
+  function loadNotices(quiet) {
+    // 1分ごとと開いたときの両方で取るので、前に頼んだぶんの返事で読んだ印を戻さない
+    var still = latest('notices');
+    // 知らせて出す頼み (1分ごと) の返事を捨てても、知らせることは後の返事に引き継ぐ。
+    // 引き継がないと、待つあいだにベルを開いた返事が見た番号だけ進め、新しい知らせが出ない
+    if (!quiet) noticeLoud = true;
+    call('apiNotifications', [30], function (res) {
+      if (!still()) return;
+      var loud = noticeLoud;
+      noticeLoud = false;
+      var data = res || { items: [], unread: 0 };
+      renderNotices(data.items);
+
+      bellCount.textContent = data.unread;
+      bellCount.hidden = !data.unread;
+      bellBtn.title = data.unread
+        ? '知らせが' + data.unread + '件あります' : '知らせ';
+      bellBtn.setAttribute('aria-label', bellBtn.title);
+
+      // 前に見た番号より新しく、まだ読んでいないものだけを前に出す
+      var fresh = data.items.filter(function (n) {
+        return !n.read && n.id > seenNoticeId;
+      });
+
+      data.items.forEach(function (n) {
+        if (n.id > seenNoticeId) seenNoticeId = n.id;
+      });
+
+      if (!loud || !fresh.length) return;
+
+      showSnack(fresh[0].title, { kind: 'ok' });
+      fresh.forEach(popDesktop);
+    }, failQuiet('知らせが出ないだけ'));
+  }
+
+  /**
+   * @param {object[]} items
+   */
+  function renderNotices(items) {
+    noticeBody.textContent = '';
+
+    if (!items.length) {
+      noticeBody.appendChild(makeBlankState(
+        '知らせはありません',
+        '名前を呼ばれたときや、返信があったときにここに出ます。'
+      ));
+      return;
+    }
+
+    var labels = { mention: '呼ばれました', reply: '返信', review: '確認の依頼' };
+
+    items.forEach(function (n) {
+      var row = document.createElement('button');
+      row.className = 'notice-item' + (n.read ? '' : ' unread');
+
+      var head = document.createElement('div');
+      head.className = 'row-meta';
+      head.textContent = (labels[n.kind] || n.kind) + ' · ' +
+        tokyoDay(n.at);
+      row.appendChild(head);
+
+      var title = document.createElement('div');
+      title.className = 'row-title';
+      title.textContent = n.title;
+      row.appendChild(title);
+
+      if (n.body) {
+        var body = document.createElement('div');
+        body.className = 'row-meta notice-quote';
+        body.textContent = n.body;
+        row.appendChild(body);
+      }
+
+      row.addEventListener('click', function () {
+        call('apiNotificationsRead', [[n.id]],
+          function () { loadNotices(true); },
+          failQuiet('知らせなくてよい'));
+        openNoticeLink(n);
+      });
+
+      noticeBody.appendChild(row);
+    });
+  }
+

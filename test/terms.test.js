@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
 import { APP_SOURCES, API_SOURCES } from './sources.js';
+import { APP } from './ui-source.js';
 
 /*
  * スクラムの言葉を一般の言葉にする (#21)。TERMS() が唯一の定義。
@@ -122,8 +123,8 @@ function offenders(text) {
 }
 
 describe('画面にスクラムの言葉を直に書かない', () => {
-  it('app.js.html', () => {
-    let text = stripJsComments(fs.readFileSync('src/ui/app.js.html', 'utf8'));
+  it('画面の JS (app.js.html と js-*.html)', () => {
+    let text = stripJsComments(APP);
     text = blank(text, '  function TERMS() {', '\n  }\n');
     expect(offenders(text)).toEqual([]);
   });
