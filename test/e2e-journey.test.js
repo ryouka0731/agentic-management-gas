@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /**
  * 何も無いところから一連の流れを通す。
@@ -13,29 +14,7 @@ import { createFakeGas } from './fakegas.js';
  * ここでは何も仕込まず、人がたどる順序でそのまま進める。
  */
 
-const SOURCES = [
-  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/Repo.gs',
-  'src/core/ObjectStore.gs', 'src/core/Normalize.js', 'src/core/Markdown.js',
-  'src/core/Diff.js', 'src/core/Merge.js', 'src/core/Graph.js', 'src/core/Gantt.js',
-  'src/core/Grouping.js', 'src/core/IssueTree.js', 'src/core/Commit.gs',
-  'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/render/SheetRenderer.gs',
-  'src/render/SheetWriter.gs', 'src/core/PullRequest.gs', 'src/core/PullPatch.gs',
-  'src/core/Outbox.gs',
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Issue.gs',
-  'src/core/IssueComment.gs',
-  'src/core/IssueBranch.gs', 'src/core/Project.gs', 'src/core/Mention.js',
-  'src/core/Inquiry.gs',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-  'src/core/Tally.js',
-  'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
-];
+const SOURCES = APP_SOURCES;
 
 /** 何も仕込まない。リポジトリを作るだけ */
 function bare() {

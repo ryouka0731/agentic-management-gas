@@ -7,7 +7,7 @@ import { APP_SOURCES } from './sources.js';
  * ポイント・レベル・週の上位。利用者の判断で入れた。守り (重さで付ける・
  * 上位3人だけ・週ごと・既定オフ・参加は本人が選ぶ) を固定する。
  */
-const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs', 'src/core/Game.gs']);
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();
