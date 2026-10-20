@@ -1240,3 +1240,33 @@ describe('遅れて届いた返事の見分け方', () => {
     expect(counters.sort()).toEqual(['diagramSeq', 'hintSeq', 'prefsAppliedSeq', 'prefsSeq']);
   });
 });
+
+describe('日本語の折り返し', () => {
+  // コメントにした宣言はブラウザが読まないので、外してから見る
+  const css = fs.readFileSync('src/ui/app.css.html', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 規則が無くなったときに空の字で通ってしまわないよう、見つからなければ落とす
+  const rule = (sel) => {
+    const i = css.indexOf('\n' + sel + ' {');
+    expect(i, sel + ' の規則が見つからない').toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf('}', i));
+  };
+
+  it('文は語の切れ目で割る (「確認依頼」を「確認依」「頼」に割らない)', () => {
+    expect(rule('body')).toMatch(/word-break:\s*auto-phrase/);
+    // anywhere は最小幅を変えて並びを崩すので、全体には break-word を当てる
+    expect(rule('body')).toMatch(/overflow-wrap:\s*break-word/);
+  });
+
+  it('差分は等幅のまま字の途中で割る', () => {
+    expect(rule('.diff-line')).toMatch(/word-break:\s*break-all/);
+  });
+
+  it('文の欄で break-all を使わない', () => {
+    const body = rule('.report-context .comment-body');
+    expect(body).toMatch(/word-break:\s*auto-phrase/);
+    expect(body).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(body).not.toMatch(/break-all/);
+    // もっと広い .comment-body に break-all が当たると、こちらの指定を上書きしうる
+    expect(css).not.toMatch(/(^|[\s,}])\.comment-body\s*\{[^}]*break-all/);
+  });
+});
