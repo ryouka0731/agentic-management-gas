@@ -24,13 +24,3 @@ function APP_NAME() {
   return 'SoftBanto';
 }
 
-/**
- * 通称を返す。
- *
- * 正式な名前は長いため、話すときはこちらが使われる。
- *
- * @returns {string}
- */
-function APP_NICKNAME() {
-  return '番頭';
-}

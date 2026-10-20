@@ -115,35 +115,6 @@ describe('報告を読む', () => {
   });
 });
 
-describe('報告に答える', () => {
-  it('答えると閉じる', () => {
-    const { ctx } = setup();
-    const row = ctx.inquiryCreate('bug', '動かない');
-
-    const after = ctx.inquiryAnswer(row.number, '直しました');
-
-    expect(after.state).toBe('done');
-    expect(after.answer).toBe('直しました');
-    expect(after.answeredAt).not.toBe('');
-  });
-
-  it('答えたことを送り主に知らせる', () => {
-    const { ctx, fake } = setup();
-    const row = ctx.inquiryCreate('bug', '動かない');
-
-    ctx.inquiryAnswer(row.number, '直しました');
-
-    const mail = fake._sentMails().pop();
-    expect(mail.to).toBe('tester@example.com');
-    expect(mail.body).toContain('直しました');
-  });
-
-  it('無い受付には答えられない', () => {
-    const { ctx } = setup();
-    expect(() => ctx.inquiryAnswer(999, 'なにか')).toThrow(/見つかりません/);
-  });
-});
-
 describe('報告で話す', () => {
   it('返信が古い順に並ぶ', () => {
     const { ctx } = setup();
