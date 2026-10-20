@@ -18,7 +18,7 @@ function escapeMd_(text) {
  * @returns {string}
  */
 function unescapeMd_(text) {
-  return String(text).replace(/\\([\\*~\[<|#\-.])/g, '$1');
+  return String(text).replace(/\\([\\*~\[\]<|#\-.])/g, '$1');
 }
 
 /**
@@ -39,7 +39,9 @@ function runsToMd_(runs) {
     if (!r.text) continue;
 
     var md = escapeMd_(r.text);
-    if (r.link) md = '[' + md + '](' + escapeMdUrl_(r.link) + ')';
+    // リンクの字の中の ]( は逃がす。逃がさないと、字 `a](b` と URL `c` が、字 `a` と
+    // URL `b](c` と同じ `[a](b](c)` になり、読む側がどちらとも決められない
+    if (r.link) md = '[' + md.replace(/\]\(/g, '\\](') + '](' + escapeMdUrl_(r.link) + ')';
     if (r.strike) md = '~~' + md + '~~';
     if (r.underline) md = '<u>' + md + '</u>';
     if (r.italic) md = '*' + md + '*';
@@ -156,57 +158,130 @@ function blocksToMd(blocks) {
 }
 
 /**
- * 先頭の装飾を1つ剥がし、中身を再帰的に解析する。
+ * 装飾の形。開きと閉じと、付ける属性。** は * より先に試す。
  *
- * @param {string} rest
- * @returns {{runs: object[], rest: string}|null} 剥がせなければ null
+ * @returns {object[]}
  */
-function mdTakeDecorated_(rest) {
-  var forms = [
+function mdForms_() {
+  return [
     { open: '**', close: '**', attr: 'bold' },
     { open: '~~', close: '~~', attr: 'strike' },
     { open: '<u>', close: '</u>', attr: 'underline' },
     { open: '*', close: '*', attr: 'italic' },
   ];
+}
+
+/** 入れ子をこれより深く試さない。書く側の入れ子は最大5段 (太字〜リンク) */
+function MD_MAX_DEPTH_() { return 32; }
+
+/**
+ * run を写す。覚えておいた読みの結果を、別の場所で使い回しても書き換わらないように。
+ *
+ * @param {object} run
+ * @returns {object}
+ */
+function mdCopyRun_(run) {
+  var out = {};
+  for (var k in run) if (Object.prototype.hasOwnProperty.call(run, k)) out[k] = run[k];
+  return out;
+}
+
+/**
+ * pos から始まる装飾を1つ剥がし、中身を再帰的に解析する。
+ *
+ * 閉じは indexOf で探さない。中身を頭から読み、逃がした字 (\\*) と内側の装飾を
+ * 飛ばしたうえで、最初に現れた自分の閉じで閉じる。indexOf だと `***x***` の閉じを
+ * 内側の ** と取り違え、`**a\\***` の \\* を閉じと読んでいた。
+ *
+ * @param {string} src
+ * @param {number} pos
+ * @param {object} memo
+ * @param {number} depth
+ * @returns {{runs: object[], end: number}|null} 剥がせなければ null
+ */
+function mdTakeDecorated_(src, pos, memo, depth) {
+  // 試せる手間を使い切ったら、それ以上は装飾を開かない (字として残す)
+  if (memo.budget <= 0) return null;
+  var forms = memo.forms;
 
   for (var i = 0; i < forms.length; i++) {
     var f = forms[i];
-    if (rest.indexOf(f.open) !== 0) continue;
+    if (src.substr(pos, f.open.length) !== f.open) continue;
 
-    var end = rest.indexOf(f.close, f.open.length);
-    if (end < 0) continue;
+    var inner = mdParseInline_(src, pos + f.open.length, f.close, memo, depth + 1);
+    if (!inner) continue;
 
-    var inner = rest.substring(f.open.length, end);
-    var runs = mdToRuns_(inner);
-    for (var r = 0; r < runs.length; r++) runs[r][f.attr] = true;
-    return { runs: runs, rest: rest.substring(end + f.close.length) };
+    var runs = [];
+    for (var r = 0; r < inner.runs.length; r++) {
+      var run = mdCopyRun_(inner.runs[r]);
+      run[f.attr] = true;
+      runs.push(run);
+    }
+    return { runs: runs, end: inner.end + f.close.length };
   }
 
-  var link = /^\[([\s\S]*?)\]\(((?:\\[\s\S]|[^)\\])*)\)/.exec(rest);
-  if (link) {
-    var url = link[2].replace(/\\([\\)])/g, '$1');
-    var lruns = mdToRuns_(link[1]);
-    for (var k = 0; k < lruns.length; k++) lruns[k].link = url;
-    return { runs: lruns, rest: rest.substring(link[0].length) };
+  if (src.charAt(pos) === '[') {
+    // リンクの字は最初の逃がしていない ]( で終わる (書く側は字の中の ]( を逃がす)
+    var text = mdParseInline_(src, pos + 1, '](', memo, depth + 1);
+    if (!text) return null;
+
+    var j = text.end + 2;
+    var url = '';
+    while (j < src.length && src.charAt(j) !== ')') {
+      if (src.charAt(j) === '\\' && j + 1 < src.length) {
+        var next = src.charAt(j + 1);
+        url += (next === '\\' || next === ')') ? next : '\\' + next;
+        j += 2;
+      } else {
+        url += src.charAt(j);
+        j++;
+      }
+    }
+    if (j >= src.length) return null;
+
+    var lruns = [];
+    for (var k = 0; k < text.runs.length; k++) {
+      var lrun = mdCopyRun_(text.runs[k]);
+      lrun.link = url;
+      lruns.push(lrun);
+    }
+    return { runs: lruns, end: j + 1 };
   }
   return null;
 }
 
 /**
- * Markdown のインライン記法を Run配列にする。
+ * pos から読み、closer が現れたところで止める。closer が空なら最後まで読む。
  *
- * 外側から順に装飾を剥がす。runsToMd_ と対称にすることで往復が成立する。
+ * 中身の無い装飾は装飾と読まない (書く側は空の run を出さない)。読むと、閉じの
+ * 無い `a **b` の ** を「中身の無い斜体」として2字とも消していた。開けなかった
+ * `*` / `~` だけの中身も中身と数えない (書く側は字の中の * と ~ を逃がすので、
+ * そういう中身は出さない。数えると `***` が斜体の `*` になる)。閉じが
+ * 見つからなければ null を返し、呼んだ側は開きの字をそのまま字として残す。
  *
- * @param {string} md
- * @returns {object[]}
+ * 結果は (pos, closer) だけで決まるので覚えておく。覚えないと、閉じの無い記号が
+ * 並んだときに試し直しが指数的に増える。
+ *
+ * @param {string} src
+ * @param {number} pos
+ * @param {string} closer
+ * @param {object} memo
+ * @param {number} depth
+ * @returns {{runs: object[], end: number}|null}
  */
-function mdToRuns_(md) {
-  // 逆斜線でも止まる。止まらないと、逃がしの \\ を手前の字と一緒に取り込み、
-  // 逃がしたはずの記号 (\\*) を装飾の始まりとして読んでしまう
-  var re = /(\\|\*\*|\*|<u>|~~|\[)/;
-  var rest = String(md);
+function mdParseInline_(src, pos, closer, memo, depth) {
+  var key = pos + '|' + closer;
+  if (key in memo) return memo[key];
+  // 深すぎる入れ子は装飾と読まない (呼び出しの深さで落ちないように)。書く側の
+  // 入れ子は5段まで。閉じの無い記号が 32 以上続く所では、その先の装飾を字の
+  // まま読むことがあるが、字は落とさない
+  if (depth > MD_MAX_DEPTH_()) return null;
+
   var runs = [];
   var plain = '';
+  var real = false;
+  var i = pos;
+  var result = null;
 
   function flush() {
     if (!plain) return;
@@ -214,36 +289,65 @@ function mdToRuns_(md) {
     plain = '';
   }
 
-  while (rest) {
+  while (i < src.length) {
+    memo.budget--;
+    if (closer && real && src.substr(i, closer.length) === closer) {
+      flush();
+      result = { runs: runs, end: i };
+      break;
+    }
+
     // エスケープされた文字は記法として解釈しない
-    if (rest.charAt(0) === '\\' && rest.length > 1) {
-      plain += rest.substring(0, 2);
-      rest = rest.substring(2);
+    var ch = src.charAt(i);
+    if (ch === '\\' && i + 1 < src.length) {
+      plain += src.substr(i, 2);
+      real = true;
+      i += 2;
       continue;
     }
 
-    var m = re.exec(rest);
-    if (!m) { plain += rest; break; }
-
-    if (m.index > 0) {
-      plain += rest.substring(0, m.index);
-      rest = rest.substring(m.index);
+    var taken = (ch === '*' || ch === '~' || ch === '<' || ch === '[')
+      ? mdTakeDecorated_(src, i, memo, depth)
+      : null;
+    if (taken) {
+      flush();
+      for (var r = 0; r < taken.runs.length; r++) runs.push(taken.runs[r]);
+      real = true;
+      i = taken.end;
       continue;
     }
 
-    var parsed = mdTakeDecorated_(rest);
-    if (!parsed) {
-      plain += rest.charAt(0);
-      rest = rest.substring(1);
-      continue;
-    }
-
-    flush();
-    for (var i = 0; i < parsed.runs.length; i++) runs.push(parsed.runs[i]);
-    rest = parsed.rest;
+    plain += ch;
+    if (ch !== '*' && ch !== '~') real = true;
+    i++;
   }
-  flush();
-  return runs;
+
+  if (!result && !closer) {
+    flush();
+    result = { runs: runs, end: i };
+  }
+  memo[key] = result;
+  return result;
+}
+
+/**
+ * Markdown のインライン記法を Run配列にする。
+ *
+ * 外側から順に装飾を剥がす。runsToMd_ と対称にすることで往復が成立する。
+ * 閉じの見つからない記号は字のまま残す。
+ *
+ * @param {string} md
+ * @returns {object[]}
+ */
+function mdToRuns_(md) {
+  var src = String(md);
+  // 閉じの無い記号を試すたびに最後まで読むので、記号が多いと手間が字数の2乗で
+  // 増える。書く側の出力は試し損ねないので字数ほどで済む。手間を字数の 16 倍に
+  // 抑え、超えた先の記号は字のまま読む (字は落とさない)
+  var memo = Object.create(null);
+  memo.forms = mdForms_();
+  memo.budget = 16 * src.length + 4096;
+  return mdParseInline_(src, 0, '', memo, 0).runs;
 }
 
 /**
