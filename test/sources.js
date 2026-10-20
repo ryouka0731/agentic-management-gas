@@ -13,7 +13,7 @@ export const APP_SOURCES = [
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/core/PullRequest.gs',
   'src/core/PullPatch.gs', 'src/core/Outbox.gs', 'src/core/Archive.js',
   'src/core/Staleness.js', 'src/core/Tag.gs', 'src/core/Template.gs', 'src/core/Member.gs',
-  'src/core/Usage.gs', 'src/core/Issue.gs', 'src/core/IssueComment.gs',
+  'src/core/Usage.gs', 'src/core/Issue.gs', 'src/core/IssueTree.js', 'src/core/IssueComment.gs',
   'src/core/Project.gs', 'src/core/Mention.js', 'src/core/Inquiry.gs', 'src/core/Brand.js',
   'src/core/Notifier.gs', 'src/core/Tally.js', 'src/core/Plain.js',
   'src/core/Settings.gs', 'src/core/Prefs.gs', 'src/core/Scrum.gs', 'src/core/ScrumView.js',
