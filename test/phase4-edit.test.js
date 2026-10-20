@@ -26,7 +26,7 @@ const SOURCES = [
   'src/core/PullPatch.gs',
   'src/core/Outbox.gs',
   'src/core/Archive.js',
-  'src/core/Staleness.js',
+  'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs',
   'src/core/Template.gs',
   'src/core/Member.gs',
@@ -533,6 +533,14 @@ describe('画面に渡せる形か', () => {
     ['apiOverview', (ctx) => ctx.apiOverview()],
     ['apiProgress', (ctx) => ctx.apiProgress()],
     ['apiSetTeamGoal', (ctx) => ctx.apiSetTeamGoal(10)],
+    ['apiPrefs', (ctx) => {
+      // 決めた値も検査する (既定値のままだと、決めた値の運び方を見ない)
+      ctx.apiPrefSet('stale.steps', [3, 10, 20]);
+      ctx.apiPrefSet('home.cards.game', false);
+      ctx.apiPrefSet('notify.review', false);
+      return ctx.apiPrefs({ team: true });
+    }],
+    ['apiPrefSet', (ctx) => ctx.apiPrefSet('home.dueDays', 5)],
     ['apiMyMilestones', (ctx) => ctx.apiMyMilestones()],
     // 閉じたものが無いと、閉じたときにだけ返す欄と今日の一覧が空のまま検査される
     ['apiCloseFeedback', (ctx) => {

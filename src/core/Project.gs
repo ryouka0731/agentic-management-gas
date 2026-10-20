@@ -48,6 +48,8 @@ function projectBoard() {
   }
 
   var now = new Date();
+  // 「動きなし」の段階はチームの設定 (stale.steps)。カードごとに読まない
+  var steps = staleSteps_();
   var items = dbReadAll('project_items');
   for (var j = 0; j < items.length; j++) {
     var column = String(items[j].column);
@@ -57,7 +59,7 @@ function projectBoard() {
     if (!issue || issue.archivedAt) continue;
 
     // 画面に渡すため、日時は文字列にして素の形にする
-    var stale = stalenessOf(issue, now);
+    var stale = stalenessOf(issue, now, steps);
 
     board[column].push({
       issueNumber: Number(items[j].issueNumber),
