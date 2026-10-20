@@ -105,6 +105,29 @@ describe('(a) いま居ないブランチを git push しない', () => {
   it('rtk を通して書いても見る', () => {
     expect(bash('rtk git push origin feat/x').code).toBe(2);
   });
+
+  it('送り先まで書いた形 (a:b) は、わざとそう書いたものとして通す', () => {
+    expect(bash('git push origin feat/x:feat/x').code).toBe(0);
+  });
+
+  it('居るブランチを送り終えていれば、別のブランチを名指しで送るのは通す', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-hook-remote-'));
+    const remote = path.join(root, 'remote.git');
+    const local = path.join(root, 'local');
+    git(root, 'init', '-q', '--bare', remote);
+    git(root, 'clone', '-q', remote, local);
+    const c = (m) => git(local, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', m);
+    c('init');
+    git(local, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+    git(local, 'branch', '-q', '--set-upstream-to=origin/main');
+    git(local, 'branch', 'feat/y');
+    expect(bash('git push origin feat/y', local).code).toBe(0);
+    // 居るブランチに送っていない記録ができたら、取り違えとして止める
+    c('work');
+    const r = bash('git push origin feat/y', local);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('1 件');
+  });
 });
 
 describe('(b) clasp で新しいデプロイを作らない', () => {
@@ -145,6 +168,14 @@ describe('(c) scripts が作るファイルを手で直さない', () => {
     expect(bash('git diff src/KitFiles.gs | head').code).toBe(0);
     expect(bash('echo x > src/KitFiles.gs').code).toBe(2);
     expect(bash("sed -i '' 's/a/b/' src/KitSigning.gs").code).toBe(2);
+    expect(bash('echo x >| src/KitFiles.gs').code).toBe(2);
+  });
+
+  it('ヒアドキュメントの本文は命令として読まない', () => {
+    expect(bash("git commit -F - <<'EOF'\n説明: echo x > src/KitFiles.gs は止まる\nEOF").code).toBe(0);
+    expect(bash("cat <<-EOF\n\t> src/KitFiles.gs\n\tEOF\necho ok").code).toBe(0);
+    // 本文が終わったあとの命令は読む
+    expect(bash("cat <<EOF\nx\nEOF\necho x > src/KitFiles.gs").code).toBe(2);
   });
 });
 
@@ -164,6 +195,12 @@ describe('(d) 署名の秘密鍵に触れない', () => {
     expect(bash('cat ~/.config/softbanto/*').code).toBe(2);
     expect(bash('npm test && head -1 ~/.config/softbanto/kit-signing-key.pem | pbcopy').code).toBe(2);
     expect(bash('cd ~/.config/softbanto && cat kit-signing-key.pem').code).toBe(2);
+    expect(bash('cat ~/.config/soft*/kit-signing-key.pem').code).toBe(2);
+  });
+
+  it('鍵の置き場の上から Grep / Glob で探すのも止める', () => {
+    expect(tool('Grep', { pattern: 'PRIVATE', path: path.join(home, '.config') }).code).toBe(2);
+    expect(tool('Glob', { pattern: '**/*.pem', path: path.join(home, '.config') }).code).toBe(2);
   });
 
   it('$BANTO_SIGNING_KEY を使っても、その指す先を書いても止める', () => {

@@ -46,7 +46,26 @@ export function tokenize(cmd) {
   const out = [];
   let cur = null;
   let i = 0;
-  const push = () => { if (cur !== null) { out.push(cur); cur = null; } };
+  // ヒアドキュメント (<<EOF) の本文は命令ではなく字なので、行ごと読み飛ばす
+  // (読むと、本文に「> src/KitFiles.gs」と書いた説明だけで止めてしまう)
+  const docs = [];
+  let wantDelim = null;
+  const push = () => {
+    if (cur === null) return;
+    if (wantDelim) { docs.push({ word: cur, strip: wantDelim === '<<-' }); wantDelim = null; }
+    out.push(cur); cur = null;
+  };
+  const skipDocs = () => {
+    while (docs.length && i < cmd.length) {
+      const { word, strip } = docs.shift();
+      for (;;) {
+        const end = cmd.indexOf('\n', i);
+        const line = cmd.slice(i, end < 0 ? cmd.length : end);
+        i = end < 0 ? cmd.length : end + 1;
+        if ((strip ? line.replace(/^\t+/, '') : line) === word || end < 0) break;
+      }
+    }
+  };
   while (i < cmd.length) {
     const c = cmd[i];
     if (c === '\\' && i + 1 < cmd.length) {
@@ -67,7 +86,8 @@ export function tokenize(cmd) {
       cur = (cur || '') + s; i = j + 1; continue;
     }
     if (c === ' ' || c === '\t') { push(); i++; continue; }
-    if (c === '\n' || c === ';' || c === '(' || c === ')') { push(); out.push({ op: c }); i++; continue; }
+    if (c === '\n') { push(); out.push({ op: c }); i++; skipDocs(); continue; }
+    if (c === ';' || c === '(' || c === ')') { push(); out.push({ op: c }); i++; continue; }
     if (c === '&' || c === '|') {
       push();
       const two = cmd.slice(i, i + 2);
@@ -75,11 +95,18 @@ export function tokenize(cmd) {
       if (c === '&' && cmd[i + 1] === '>') { cur = '&>'; i += 2; push(); continue; }
       out.push({ op: c }); i++; continue;
     }
+    if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      push();
+      const tok = cmd[i + 2] === '-' ? '<<-' : '<<';
+      out.push(tok); i += tok.length; wantDelim = tok;
+      continue;
+    }
     if (c === '>' || c === '<') {
       // 2>&1 のような形はそのまま1語にする。 > / >> は単独の語にする
       if (cur !== null && /^\d+$/.test(cur)) { cur += c; } else { push(); cur = c; }
       i++;
       if (cmd[i] === '>' || cmd[i] === '&') { cur += cmd[i]; i++; if (/\d/.test(cmd[i] || '')) { cur += cmd[i]; i++; } }
+      else if (c === '>' && cmd[i] === '|') { cur += '|'; i++; }
       push();
       continue;
     }
@@ -133,6 +160,17 @@ function currentBranch(dir) {
   }
 }
 
+/** いま居るブランチの記録のうち、どの送り先 (origin/…) にも無いものの数。分からなければ 0 */
+function unpushedCount(dir) {
+  try {
+    return Number(execFileSync('git', ['rev-list', '--count', 'HEAD', '--not', '--remotes'], {
+      cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()) || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
 function isLocalBranch(dir, name) {
   try {
     execFileSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/' + name], {
@@ -177,16 +215,23 @@ function checkGitPush(words, cwd) {
   if (!refspecs.length || dir == null) return null;
   const current = currentBranch(dir);
   if (!current) return null;
+  // 止めたいのは「居るブランチで作った記録を送ったつもりで、別の名前を送る」取り違えだけ。
+  // 居るブランチに送っていない記録が無ければ、別のブランチを送るのは正しい使い方である
+  const ahead = unpushedCount(dir);
+  if (!ahead) return null;
   for (const spec of refspecs) {
     if (spec.includes('$') || spec.includes('*')) continue;
-    const src = spec.replace(/^\+/, '').split(':')[0];
+    // 送り先まで書いた形 (a:b) は、わざとそう書いたものとして通す
+    if (spec.includes(':')) continue;
+    const src = spec.replace(/^\+/, '');
     if (!src || src === 'HEAD' || src === '@') continue;
     const name = src.replace(/^refs\/heads\//, '');
     if (name === current) continue;
     if (!isLocalBranch(dir, name)) continue; // タグや知らない名前は通す (git が自分で断る)
-    return 'git push で送ろうとしている「' + name + '」は、いま居るブランチ (' + current + ') ではありません。\n'
+    return 'git push で送ろうとしている「' + name + '」は、いま居るブランチ (' + current + ') ではありません。'
+      + 'いまのブランチには、まだ送っていない記録が ' + ahead + ' 件あります。\n'
       + '`git push origin <名前>` はその名前のブランチを送るので、ここで作った変更は送られません。\n'
-      + 'いまのブランチを送るなら `git push -u origin HEAD`。「' + name + '」を送るなら、その版のフォルダ (worktree) に移ってから送ってください。\n'
+      + 'いまのブランチを送るなら `git push -u origin HEAD`。「' + name + '」をわざと送るなら `git push origin ' + name + ':' + name + '` と送り先まで書いてください。\n'
       + '(居る場所: ' + dir + ')';
   }
   return null;
@@ -231,6 +276,8 @@ function wordTouchesKey(w, cwd) {
   const norm = expandHome(plain);
   // ~/.config/softbanto の中を * でまとめて指すのも止める
   if (/(^|\/)\.config\/softbanto\/[^/]*[*?[][^/]*$/.test(norm)) return true;
+  // 置き場の名前を * でぼかしても、鍵の名前を書いていれば止める (~/.config/soft*/kit-signing-key.pem)
+  if (!/\s/.test(norm) && /(^|\/)\.config\/[^/]*\/[^/]*kit-signing-key/.test(norm)) return true;
   if (!norm.includes('/')) {
     // 名前だけ (grep の引数など) は、cwd がちょうど鍵の置き場のときだけ鍵を指す
     return cwd != null && isKeyPath(path.resolve(cwd, norm));
@@ -293,7 +340,7 @@ export function check(input) {
   if (typeof file !== 'string' || !file) return null;
   const abs = resolveFrom(cwd, file);
   if (isKeyPath(abs)) return KEY_REASON;
-  if ((tool === 'Grep' || tool === 'Glob') && /(^|\/)\.config\/softbanto\/?$/.test(abs)) return KEY_REASON;
+  if ((tool === 'Grep' || tool === 'Glob') && /(^|\/)\.config(\/softbanto)?\/?$/.test(abs)) return KEY_REASON;
   if ((tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit' || tool === 'NotebookEdit') && isGenerated(abs)) {
     return generatedReason(abs);
   }
