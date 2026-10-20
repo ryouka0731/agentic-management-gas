@@ -4891,4 +4891,45 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   .fun-layer * { animation: none !important; }
   .fun-canvas, .fun-flash { display: none; }
 }
+/* ----- 仕事のスタンス診断 (js-style) -----
+   右のパネルで開く。問いは5段の選択、結果は軸の帯・強み・おすすめ・共有の札 */
+.style-note { font-size: 12px; color: var(--ink-2); background: var(--bg-2); border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0 var(--sp-3); }
+.style-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.style-q { border: 0; margin: 0; padding: var(--sp-3); border-radius: var(--radius); background: var(--bg-2); min-width: 0; }
+.style-q legend { float: left; width: 100%; padding: 0; margin-bottom: var(--sp-2); font-weight: 600; color: var(--ink); }
+.style-scale { clear: both; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-1); }
+.style-choice { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); text-align: center;
+  font-size: 11px; color: var(--ink-2); padding: var(--sp-1); border-radius: var(--radius-sm); cursor: pointer; }
+.style-choice:hover { background: var(--bg-3); }
+.style-choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.style-choice:has(input:checked) { color: var(--ink); background: var(--accent-bg); font-weight: 600; }
+.style-choice:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
+.style-foot { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); padding: var(--sp-3) 0; background: var(--bg); }
+.style-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.style-emoji { font-size: 44px; line-height: 1; }
+.style-name { margin: 0; font-size: 22px; color: var(--ink); }
+.style-one { font-size: 15px; color: var(--ink); margin: 0 0 var(--sp-3); }
+.style-sec { margin: var(--sp-4) 0; }
+.style-sec ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); line-height: 1.7; }
+.style-axes { display: flex; flex-direction: column; gap: var(--sp-3); }
+.style-axis-head { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.style-axis-line { display: grid; grid-template-columns: minmax(0, 6em) minmax(0, 1fr) minmax(0, 6em); align-items: center;
+  gap: var(--sp-2); font-size: 12px; color: var(--ink-2); }
+.style-axis-line > span:last-child { text-align: right; }
+.style-axis-track { position: relative; height: 8px; border-radius: 999px; background: var(--bg-3); }
+.style-axis-track::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line-strong); }
+.style-axis-mark { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 999px; transform: translate(-50%, -50%);
+  background: var(--accent); box-shadow: var(--hairline), var(--elev-1); }
+.style-use { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); margin-top: var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); }
+.style-use > div { min-width: 0; }
+.style-use .btn { flex: none; }
+.style-card-text { white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere; font-family: inherit; font-size: 13px;
+  color: var(--ink); background: var(--bg-2); border-radius: var(--radius-sm); padding: var(--sp-3); margin: var(--sp-2) 0; }
+.style-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.style-card-img { display: block; max-width: 100%; height: auto; margin-top: var(--sp-2); border-radius: var(--radius-sm);
+  box-shadow: var(--hairline); }
+.pref-focus { border-radius: var(--radius-sm); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-bg); }
 </style>

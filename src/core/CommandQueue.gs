@@ -133,6 +133,13 @@ function COMMAND_OPS() {
     homeAdvice: function (a, by) {
       return homeAdvicePlain_(homeAdvice_(commandBy_(by), new Date()));
     },
+    /*
+     * 仕事のスタンス診断の結果と、手元の Claude が手伝い方を合わせるための言葉 (配るスキル banto-style が読む)。
+     * 点数は入れない (返事は入れ先に置かれ、共有している人なら読める)。診断していなければ、そう返す
+     */
+    workStyle: function (a, by) {
+      return workStyleKitPlain_(commandBy_(by));
+    },
     // 題名・番号・状態だけ (人の名前もアドレスも入らない)。絞るのは手元
     searchIndex: function () { return apiSearchIndex(); },
     /*
@@ -190,7 +197,7 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft'];
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle'];
 }
 
 /**
