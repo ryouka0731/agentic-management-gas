@@ -396,7 +396,7 @@ function apiSaveMarkdown(fileId, markdown, baseSha) {
  * なるため、逃げ道をここに1つだけ用意する (spec §5.6)。
  *
  * @param {string} fileId
- * @returns {object} 作成された commits 行
+ * @returns {object} 作成された commits 行 (日時は ISO の字)
  */
 function apiStashMainDrift(fileId) {
   var row = dbFindOne('files', 'fileId', fileId);
@@ -404,5 +404,18 @@ function apiStashMainDrift(fileId) {
   if (branchOfPath_(row.path) !== 'main') {
     throw new Error('正式版の文書にだけ使えます');
   }
-  return commitFile(fileId, 'main', '正式版への直接編集を退避', null);
+  var commit = commitFile(fileId, 'main', '正式版への直接編集を退避', null);
+
+  // 行をそのまま返すと timestamp が Date のまま混ざり、画面には null が届く。
+  // 欄はそのままに、日時だけ字にする (キューの結果は JSON にしたときと同じ形)
+  return {
+    sha: plainText(commit.sha),
+    parentSha: plainText(commit.parentSha),
+    branch: plainText(commit.branch),
+    fileId: plainText(commit.fileId),
+    blobSha: plainText(commit.blobSha),
+    author: plainText(commit.author),
+    message: plainText(commit.message),
+    timestamp: plainDate(commit.timestamp),
+  };
 }

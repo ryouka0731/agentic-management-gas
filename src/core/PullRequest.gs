@@ -120,13 +120,13 @@ function prCreateWanted_(mainFileId) {
 /** 出す元の改訂版と反映先の版が、開いたまま在ることを確かめる。 */
 function prCreateAssertBranches_(sourceBranch, into) {
   var branch = dbFindOne('branches', 'name', sourceBranch);
-  if (!branch) throw new Error('改訂版が見つかりません: ' + sourceBranch);
+  if (!branch) throw new Error('改訂版が見つかりません: 「' + sourceBranch + '」');
   if (String(branch.state) !== 'open') {
-    throw new Error('この改訂版は既に閉じられています: ' + sourceBranch);
+    throw new Error('この改訂版は既に閉じられています: 「' + sourceBranch + '」');
   }
 
   if (into === String(sourceBranch)) {
-    throw new Error('同じ版には反映できません: ' + into);
+    throw new Error('同じ版には反映できません: 「' + into + '」');
   }
 
   // 正式版は台帳の行が無くても必ずある。main の行を台帳に入れるようになった
@@ -135,9 +135,9 @@ function prCreateAssertBranches_(sourceBranch, into) {
   if (into === 'main') return;
 
   var intoRow = dbFindOne('branches', 'name', into);
-  if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
+  if (!intoRow) throw new Error('反映先の版が見つかりません: 「' + into + '」');
   if (String(intoRow.state) !== 'open') {
-    throw new Error('反映先の版は既に閉じられています: ' + into);
+    throw new Error('反映先の版は既に閉じられています: 「' + into + '」');
   }
 }
 
@@ -1370,7 +1370,7 @@ function prTargetBranchFileId(pr, mainFileId) {
   if (into === 'main') return mainFileId;
 
   var fileId = branchWorkingFileId(into, mainFileId);
-  if (!fileId) throw new Error('反映先の版に作業コピーがありません: ' + into);
+  if (!fileId) throw new Error('反映先の版に作業コピーがありません: 「' + into + '」');
 
   return fileId;
 }

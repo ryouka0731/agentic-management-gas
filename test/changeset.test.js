@@ -264,10 +264,10 @@ describe('確認依頼は変更の集まり', () => {
 
     expect(() => ctx.prCreate('', '', '見直し', a)).toThrow('タイトルを入力してください');
     expect(() => ctx.prCreate('あ'.repeat(201), '', '見直し', a)).toThrow('タイトルを入力してください');
-    expect(() => ctx.prCreate('t', '', '無い版', a)).toThrow('改訂版が見つかりません: 無い版');
+    expect(() => ctx.prCreate('t', '', '無い版', a)).toThrow('改訂版が見つかりません: 「無い版」');
     expect(() => ctx.prCreate('t', '', '閉じた版', a)).toThrow('この改訂版は既に閉じられています');
     expect(() => ctx.prCreate('t', '', '見直し', a, '見直し')).toThrow('同じ版には反映できません');
-    expect(() => ctx.prCreate('t', '', '見直し', a, '無い先')).toThrow('反映先の版が見つかりません: 無い先');
+    expect(() => ctx.prCreate('t', '', '見直し', a, '無い先')).toThrow('反映先の版が見つかりません: 「無い先」');
     expect(() => ctx.prCreate('t', '', '見直し', a, '閉じた版')).toThrow('反映先の版は既に閉じられています');
     expect(() => ctx.prCreate('t', '', '見直し', 'nope')).toThrow('対象ファイルが管理対象にありません');
     expect(() => ctx.prCreate('t', '', '見直し', ctx.branchWorkingFileId('見直し', a)))
