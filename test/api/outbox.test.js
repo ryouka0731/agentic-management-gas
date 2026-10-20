@@ -9,11 +9,11 @@ import { makeEnv, expectScreenSafe, expectRefused, snapshotDb, OTHER } from './s
  */
 
 describe('apiOutboxVerbs', () => {
-  it('[動詞, 見せる字] の組を、OUTBOX_VERBS と同じ並びで返す', () => {
+  it('[動詞, 見せる字] の組を、OUTBOX_VERBS と同じ並びで返す (手で頼ませない merge は除く)', () => {
     const { ctx } = makeEnv({ file: false });
     const out = expectScreenSafe(ctx.apiOutboxVerbs());
     const verbs = ctx.OUTBOX_VERBS();
-    expect(out.map((v) => v[0])).toEqual(Object.keys(verbs));
+    expect(out.map((v) => v[0])).toEqual(Object.keys(verbs).filter((k) => k !== 'merge'));
     for (const [key, label] of out) expect(label).toBe(verbs[key].label);
   });
 });
@@ -55,6 +55,13 @@ describe('apiOutboxAdd', () => {
     const { ctx } = makeEnv({ file: false });
     expect(ctx.apiOutboxAdd('diff', {}).id).toBe(1);
     expect(ctx.apiOutboxAdd('review', {}).id).toBe(2);
+  });
+
+  it('取り込み (merge) は手では頼ませない (承認したときに自動で置かれる)', () => {
+    const { ctx } = makeEnv({ file: false });
+    expectRefused(() => ctx.apiOutboxAdd('merge', { branch: '改訂', into: 'main' }),
+      /取り込みは、承認したときに自動で頼みます/);
+    expect(ctx.dbReadAll('outbox')).toHaveLength(0);
   });
 
   it('知らない動詞は断り、何も置かない', () => {

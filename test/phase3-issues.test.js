@@ -100,7 +100,7 @@ describe('Issue の CRUD', () => {
     const { ctx } = setup();
     const issue = ctx.issueCreate('改訂', '', []);
     expect(() => ctx.issueUpdate(issue.number, { state: 'closed' }))
-      .toThrow(/stateはissueCloseで変更してください/);
+      .toThrow(/状態は「完了にする」「完了を取り消す」で変えてください/);
   });
 
   it('一覧は新しい順に並ぶ', () => {

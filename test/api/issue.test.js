@@ -147,7 +147,24 @@ describe('apiIssueUpdate', () => {
     expect(ctx.apiIssueUpdate(1).title).toBe('A');
   });
 
-  it.todo('題名を空に直せてしまう (作るときは「タイトルを入力してください」で断るのに、直すときは通る)');
+  it('題名を空に直すのは、作るときと同じ断りで止める', () => {
+    const { ctx } = makeEnv();
+    ctx.apiIssueCreate('A', '', []);
+    expectRefused(() => ctx.apiIssueCreate('', '', []), /タイトルを入力してください/);
+    const before = snapshotDb(ctx, ['issues']);
+    expectRefused(() => ctx.apiIssueUpdate(1, { title: '' }), /タイトルを入力してください/);
+    expectRefused(() => ctx.apiIssueUpdate(1, { title: null }), /タイトルを入力してください/);
+    expectRefused(() => ctx.apiIssueUpdate(1, { title: 'あ'.repeat(201) }), /タイトルを入力してください/);
+    expect(snapshotDb(ctx, ['issues'])).toEqual(before);
+    expect(ctx.apiIssueUpdate(1, { title: 'B' }).title).toBe('B');
+  });
+
+  it('状態を直そうとしたときの断りに関数の名前を出さない', () => {
+    const { ctx } = makeEnv();
+    ctx.apiIssueCreate('A', '', []);
+    expectRefused(() => ctx.apiIssueUpdate(1, { state: 'closed' }),
+      /^状態は「完了にする」「完了を取り消す」で変えてください$/);
+  });
 });
 
 describe('apiIssueClose / apiIssueReopen', () => {
@@ -301,9 +318,33 @@ describe('下書き (apiTemplate*)', () => {
     expect(ctx.dbFindOne('templates', 'name', 'ほかの人の')).toBeNull();
   });
 
-  it.todo('一覧を一度も開かないうちに保存すると、用意した下書きが入らない (templateList は表が空のときだけ入れる。用意したものと同じ名前で先に保存すると、書き換えられない守りも外れる)');
+  it('一覧を一度も開かないうちに保存しても、用意した下書きが入り、その名前は書き換えられない', () => {
+    const { ctx } = makeEnv({ file: false });
+    const builtinName = ctx.TEMPLATE_BUILTIN()[0].name;
+    expectRefused(() => ctx.apiTemplateSave(builtinName, '先に保存'), /用意されている下書きは書き換えられません/);
+    expect(ctx.dbReadAll('templates')).toHaveLength(0);
 
-  it.todo('他人の下書きを上書き保存できてしまう (消すのは作った本人か管理者だけなのに、同じ名前で保存すると誰でも中身を書き換えられる)');
+    ctx.apiTemplateSave('自分の', '中身');
+    const list = ctx.apiTemplateList();
+    for (const b of ctx.TEMPLATE_BUILTIN()) {
+      expect(list.find((t) => t.name === b.name)).toMatchObject({ builtin: true, body: b.body });
+    }
+    expect(list.find((t) => t.name === '自分の')).toMatchObject({ builtin: false, mine: true });
+  });
+
+  it('他人の下書きを上書きできるのは、作った本人か管理者だけ', () => {
+    const { ctx, fake } = makeEnv({ file: false });
+    asUser(fake, OTHER, () => ctx.apiTemplateSave('ほかの人の', '中身'));
+    expectRefused(() => asUser(fake, 'third@example.com', () => ctx.apiTemplateSave('ほかの人の', '書き換え')),
+      /自分が作った下書きだけ書き換えられます/);
+    expect(String(ctx.dbFindOne('templates', 'name', 'ほかの人の').body)).toBe('中身');
+
+    asUser(fake, OTHER, () => ctx.apiTemplateSave('ほかの人の', '本人が直す'));
+    expect(String(ctx.dbFindOne('templates', 'name', 'ほかの人の').body)).toBe('本人が直す');
+    asUser(fake, ADMIN, () => ctx.apiTemplateSave('ほかの人の', '管理者が直す'));
+    expect(String(ctx.dbFindOne('templates', 'name', 'ほかの人の').body)).toBe('管理者が直す');
+    expect(String(ctx.dbFindOne('templates', 'name', 'ほかの人の').createdBy)).toBe(OTHER);
+  });
 });
 
 describe('タグ (apiTag*)', () => {
