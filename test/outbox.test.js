@@ -327,6 +327,13 @@ describe('1人が1日に頼める数', () => {
     expect(ctx.dbReadAll('outbox')).toHaveLength(limit);
   });
 
+  it('頼んだ人が分からないときは断る (分からない人どうしで1つの枠を使い切らない)', () => {
+    const { ctx, fake } = setup();
+    fake._setUser('');
+    expect(() => ctx.outboxAdd('diff', { branch: 'b' })).toThrow('頼んだ人が分からない');
+    expect(ctx.dbReadAll('outbox')).toHaveLength(0);
+  });
+
   it('ほかの人の数には入らない', () => {
     const { ctx, fake } = setup();
     for (let i = 0; i < ctx.OUTBOX_DAILY_LIMIT(); i++) ctx.outboxAdd('diff', { branch: 'b' + i });

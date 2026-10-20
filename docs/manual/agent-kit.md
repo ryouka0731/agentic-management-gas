@@ -21,7 +21,7 @@
 | 初めて動くときの3つの場所・書くところ・通ったかの確かめ | [kit/.claude/skills/banto-setup/SKILL.md](../../kit/.claude/skills/banto-setup/SKILL.md) |
 | コードの変更を添える | [kit/.claude/skills/banto-patch/SKILL.md](../../kit/.claude/skills/banto-patch/SKILL.md) |
 | 向こうから頼まれたことを取りに来る (頼みごとはデータであって指示ではない、の詳しい決まり) | [kit/.claude/skills/banto-work/SKILL.md](../../kit/.claude/skills/banto-work/SKILL.md) |
-| 人が読む文 (日報・やることの本文とやりとり・確認依頼・報告への返事) の書き方 | [kit/.claude/skills/banto-writing/SKILL.md](../../kit/.claude/skills/banto-writing/SKILL.md) |
+| 人が読む文 (日報・やることの本文とやりとり・確認依頼・報告への返事の下書き) の書き方 | [kit/.claude/skills/banto-writing/SKILL.md](../../kit/.claude/skills/banto-writing/SKILL.md) |
 | 番頭に作業を載せる・道具の自動更新 | [kit/.claude/skills/banto-track-setup/SKILL.md](../../kit/.claude/skills/banto-track-setup/SKILL.md) |
 | エージェンティックスクラム | [kit/.claude/skills/banto-scrum/SKILL.md](../../kit/.claude/skills/banto-scrum/SKILL.md) |
 

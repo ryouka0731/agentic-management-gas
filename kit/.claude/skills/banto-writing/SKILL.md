@@ -1,6 +1,6 @@
 ---
 name: banto-writing
-description: この道具 (SoftBanto / 番頭) で人が読む文を書くときに読む。日報の下書きを整えるとき (`node agent.mjs report`)、やることの本文ややりとり (`issue` / `issue-say`)、確認依頼の題と本文 (`pr`)、報告への返事を書くとき。日本語の書き方の決まり。
+description: この道具 (SoftBanto / 番頭) で人が読む文を書くときに読む。日報の下書きを整えるとき (`node agent.mjs report`)、やることの本文ややりとり (`issue` / `issue-say`)、確認依頼の題と本文 (`pr`)、報告への返事の下書き (画面に貼ってもらう) を書くとき。日本語の書き方の決まり。
 ---
 
 # 人が読む文の書き方

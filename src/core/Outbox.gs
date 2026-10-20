@@ -111,6 +111,8 @@ function OUTBOX_DAILY_LIMIT() {
  */
 function outboxAdd(verb, args, extra) {
   var row = outboxRow_(verb, args, extra);
+  // 分からない人どうしが1つの枠を分け合って、互いに使い切ってしまうのを避ける
+  if (!row.createdBy) throw new Error('頼んだ人が分からないため、頼めません。番頭を開き直してください');
   return dbWithLock_(30000, function () {
     var limit = OUTBOX_DAILY_LIMIT();
     if (outboxCountToday_(row.createdBy, row.createdAt) >= limit) {
