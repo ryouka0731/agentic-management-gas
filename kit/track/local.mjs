@@ -16,7 +16,7 @@ import { readConfig, cleanVersion, compareVersions, paths } from './update.mjs';
  * この道具の版。**番頭の AGENT_KIT_VERSION() と同じでなければならない**
  * (test/kit-commands.test.js が見ている)。doctor が入れた道具の版と比べる。
  */
-export const KIT_VERSION = '1.9.0';
+export const KIT_VERSION = '1.9.1';
 
 /** 画面の OFFICIAL と同じ言葉 */
 const OFFICIAL = '正式版';

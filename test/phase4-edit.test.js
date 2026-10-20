@@ -66,14 +66,14 @@ describe('Markdown編集', () => {
     const { ctx, fileId } = setup();
     expect(ctx.apiGetMarkdown(fileId).editable).toBe(false);
     expect(() => ctx.apiSaveMarkdown(fileId, '# 変更\n'))
-      .toThrow(/mainは保護されています/);
+      .toThrow(/正式版は直接なおせません/);
   });
 
   it('mainには直接コミットできない', () => {
     const { ctx, fake, fileId } = setup();
     fake._docs.set(fileId, '<p>直接編集</p>\n');
     expect(() => ctx.apiCommit(fileId, '直接コミット', null))
-      .toThrow(/mainは保護されています/);
+      .toThrow(/正式版は直接なおせません/);
   });
 
   it('ブランチのファイルは編集して保存できる', () => {
@@ -183,7 +183,7 @@ describe('mainの直接編集の退避', () => {
     ctx.branchCreate('改訂', fileId);
     const workFileId = ctx.branchWorkingFileId('改訂', fileId);
     expect(() => ctx.apiStashMainDrift(workFileId))
-      .toThrow(/mainのファイルにのみ使えます/);
+      .toThrow(/正式版の文書にだけ使えます/);
   });
 
   it('退避すればマージまで到達できる', () => {
@@ -291,7 +291,7 @@ describe('Slides の扱い', () => {
     ctx.repoRegisterFile(slideId, '提案書.slide');
 
     expect(() => ctx.prCreate('改訂', '', '改訂', slideId))
-      .toThrow(/Slidesはマージに対応していません/);
+      .toThrow(/スライドは反映に対応していません/);
   });
 
   it('Slidesも管理対象として登録できる', () => {
@@ -408,7 +408,7 @@ describe('一括コミット', () => {
     const result = env.ctx.apiCommitMany([env.fileId], 'main を直接');
 
     expect(result.committed).toEqual([]);
-    expect(result.failed[0].error).toContain('mainは保護されています');
+    expect(result.failed[0].error).toContain('正式版は直接なおせません');
   });
 
   it('対象が空なら拒否する', () => {

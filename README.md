@@ -1,531 +1,100 @@
-# SoftBanto（そふと番頭） / 通称 Banto
+# SoftBanto（そふと番頭） / 通称 番頭
 
-主に代わって帳面をつけ、段取りをし、確認を取り次ぐ——番頭の役どころから
-名前を取っている。リポジトリ名 `agentic-management-gas` は開発上の呼び名として
-そのまま残してある。
+主に代わって帳面をつけ、段取りをし、確認を取り次ぐ——番頭の役どころから名前を取っている。
+リポジトリ名 `agentic-management-gas` は開発上の呼び名としてそのまま残してある。
 
-Google Workspace 上の文書に Git の概念（コミット / ブランチ / PR / Issue / Projects）を
-与えて管理するシステム。**GAS 標準サービスのみ**で構築され、外部 API を一切使用しない。
+Google Workspace の文書（Docs / Sheets / Slides）に、Git 相当の版管理を与える Google Apps Script
+の Web アプリ。文書を直接なおさず、コピー（改訂版）で直し、確認を経て正式版に反映する。誰がいつ
+何を変えたかが残り、いつでも前の状態と見比べられる。やること（タスク）・進捗ボード・工程表・
+報告の相談板も同じ画面にある。
 
-## 現在の状態: Phase 2 完了
+- **誰のためのものか** — 規程や手順書を扱う総務・人事など、Git を知らない人。画面に Git の言葉は出さない
+- **どこで動くか** — 1つの Apps Script を置き、Web アプリの URL を配る。文書・履歴・台帳はすべて Drive 側にあり、
+  このリポジトリには入らない
+- **外に出ない** — 外部 API も公開エンドポイントも使わない。手元（Claude / Codex）からの操作も Drive の同期に乗せる
 
-Google Docs に対して commit / branch / Pull Request / 3-way merge が動作し、
-マージ結果を元の Doc に書き戻せる (fileId は維持されるため共有リンクは壊れない)。
+詳しい説明は **[使い方の手引き (docs/manual/)](docs/manual/README.md)** にある。
 
-### Git 操作の対応状況
+## できること
 
-| 操作 | 状態 |
-|---|---|
-| コミット / 履歴 / 差分表示 | 動作 |
-| `git status` 相当 (未コミット検出) | 動作 |
-| ブランチ作成 (Doc の作業コピー) | 動作 |
-| Pull Request / レビュー / 承認 | 動作 |
-| 3-way merge | 動作 |
-| コンフリクト解決 (ours / theirs / both) | 動作 |
-| main への書き戻し | 動作 |
-| 楽観的並行制御 (HEAD 検証) | 動作 |
-
-### ローカルからの操作（コマンドキュー）
-
-GCP プロジェクトが使えない環境では `clasp run`（Apps Script API）が使えない。
-公開エンドポイントも作らない方針のため、**Drive 上のキューを介した非同期実行**で
-ローカルから操作する。
-
-```
-.git/
-├── queue/          未処理の命令と結果
-│   ├── <id>.cmd.json
-│   └── <id>.result.json
-└── queue-done/     処理済みの命令
-```
-
-実機で検証済み（2026-09-08、`debugVerifyCommandQueue()` で6項目すべて PASS）。
-
-セットアップは GAS エディタで **`setupCommandQueue()`** を1回実行するだけ
-（1分間隔の時間主導トリガーを設置する。二度実行しても増えない）。
-
-命令ファイル `<id>.cmd.json` を `queue/` に置くと、1分以内に実行されて
-`<id>.result.json` が同じフォルダに出る。
-
-```json
-{ "op": "commit", "args": { "fileId": "1AbC...", "message": "第3条を改訂" } }
-```
-
-```json
-{ "ok": true, "op": "commit", "result": { "sha": "9f8e..." }, "at": "2026-09-08T09:00:00.000Z" }
-```
-
-| op | args |
-|---|---|
-| `listFiles` | なし |
-| `status` | `fileId` |
-| `readMarkdown` / `writeMarkdown` | `fileId` / `fileId`, `markdown` |
-| `commit` | `fileId`, `message`, `expectedHeadSha`(任意) |
-| `stashMainDrift` | `fileId` |
-| `branchCreate` | `name`, `fileId` |
-| `issueCreate` / `issueCreateBranch` | `title`,`body`,`linkedFileIds` / `number`,`fileId` |
-| `prCreate` / `prPreview` / `prMerge` | PR の作成・下見・マージ |
-| `issueList` / `issueUpdate` / `issueClose` / `issueComment` | やることの一覧・更新・完了・書き込み |
-| `prList` / `commitHistory` / `commitDiff` | 一覧と履歴と差分 (読むだけ) |
-
-#### 手元から動かす道具 (agent kit)
-
-命令のファイルを手で書かなくてよいよう、小さな道具一式を配っている。
-画面の右上の自分の顔から **「手元から動かす道具を落とす」** で zip が取れる。
-落とすと、続きの手順と**入れ先の場所が写せる形で**その場に出る。
-
-```
-agent.mjs                 命令を置いて結果を待つ CLI
-agentkit.example.json     キューの場所を書く設定の見本
-README.md                 人向けの説明
-AGENTS.md / CLAUDE.md     Claude / Codex 向けの説明
-```
-
-要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけで、
-鍵もトークンも要らない。
-
-中身の本体は `kit/` にある**本物のファイル**で、`scripts/build-kit.mjs` が
-base64 にして `src/KitFiles.gs` に焼き直し、GAS 側が zip にして `.git/kit/` に
-置いてから配る。**直すのは `kit/` のほう。** そのまま GAS の HTML ファイルとして
-置くと `<id>` がタグと解釈されて壊れる（実際に壊れた）。
-
-```sh
-node agent.mjs files
-node agent.mjs issue "通勤手当の見直し" "4月から改定"
-node agent.mjs read <fileId> > body.md
-cat body.md | node agent.mjs write <fileId> -
-node agent.mjs commit <fileId> "第3条を改訂"
-```
-
-**ホワイトリストに無い op は実行しない。** キューは Drive の共有相手なら誰でも
-書けるため、op を任意の関数名にすると事実上の RPC になる。
-
-**`prReview` は含めない。** トリガーはオーナー権限で走るので、キュー経由の承認は
-常に自己承認になる。承認は人が画面で行う操作として残している。
-
-main の保護などの安全機構はキュー経由でも同じように効く。
-遅延は最大1分（時間主導トリガーの最小間隔）。
-
-### 社内展開
-
-**リポジトリを配るのではなく、1つのインスタンスを共有して Web App の URL を配る。**
-文書・履歴・メタDB はすべて Drive 側にあり、このリポジトリには入らない。
-各自が `setupRepo()` を実行すると、それぞれの Drive に別々の空リポジトリができる。
-
-共有するには `src/appsscript.json` の `webapp` を変える。
-
-```json
-"webapp": {
-  "executeAs": "USER_ACCESSING",
-  "access": "MYSELF"
-}
-```
-
-| | `USER_ACCESSING` | `ME`（オーナー権限で実行） |
+| | 内容 | 手引き |
 |---|---|---|
-| 利用者に必要な Drive 権限 | メタDBと全文書への編集権限 | 不要（アプリ経由のみ） |
-| main の直接編集 | Docs を開けばできてしまう | できない（権限が無い） |
-| Drive のリビジョン履歴 | 実際の編集者が残る | 全部オーナー名になる |
-| 実行クォータ | 各自 | オーナーに集中 |
+| 文書の版管理 | 変更の記録・履歴・左右2列の差分・改訂版・3つを見比べる反映・Docs への書き戻し | [文書と確認依頼](docs/manual/documents-and-reviews.md) |
+| 確認依頼 | 複数の文書とコードの差分を1つにまとめて承認・反映。正式版は直接なおせない | [文書と確認依頼](docs/manual/documents-and-reviews.md) |
+| やること | 一覧・進捗ボード・工程表・集計・親子・工数・タグ・下書き・Google ToDo | [やること](docs/manual/tasks.md) |
+| ホーム | あなたの番・改善のヒント・草・最近の動き・チームの前進・ポイントとレベル (既定オフ) | [ホームとポイント](docs/manual/home-and-game.md) |
+| 要望・不具合 | 誰でも読めて返信できる相談板。持ち主のやることに自動で積まれる (持ち主が複数なら担当なし) | [要望・不具合](docs/manual/inquiries.md) |
+| 期間で進める | スプリント・バーンダウン・ベロシティ・困りごと (既定オフ) | [期間で進める](docs/manual/scrum.md) |
+| 人と工数 | 上下関係・表示名・頭数で割る工数 | [人と工数](docs/manual/people-and-effort.md) |
+| 使われ方 | どこが押され、どの画面が開かれたか。前の期間との比較・曜日・CSV | [使われ方](docs/manual/usage.md) |
+| 設定 | 自分の設定とチームの設定 (`PREFS_SCHEMA()` の全項目) | [設定](docs/manual/settings.md) |
+| 手元から動かす | Drive 上のコマンドキューと、配る道具 (`agent.mjs`) | [コマンドキュー](docs/manual/command-queue.md) / [手元の道具](docs/manual/agent-kit.md) |
 
-**手元の道具に付ける署名の秘密鍵は、deploy する人の手元にだけある。** 番頭 (`src/KitSigning.gs`) が持つのは
-署名だけで、秘密鍵は入っていない。スクリプトを開ける人が増えても、偽の道具に正しい署名は付けられない。
-ただし @151 までに送った版のスクリプトには古い秘密鍵が版の履歴に残っているので、Apps Script のプロジェクトを
-他の人と共有する前に `node scripts/kit-key.mjs --rotate` で鍵を作り直すことを考える
-(作り直すと利用者は道具の zip を落とし直す)。
+対応するファイル: Docs と Sheets は閲覧・履歴・差分・改訂版・反映まで。Slides は閲覧・履歴・差分のみで、
+反映は確認依頼を出す時点で断る。
 
-**共有ドライブに置くときは、共有ドライブの「管理者」を個人のアカウントで付ける。** 番頭は管理者
-(`organizer`) 全員を持ち主として扱うが、グループで付けた役割は数えない (中の人を確かめられない)。
-グループだけで管理者を付けると持ち主が0人になり、`setupCommandQueue()` などエディタで動かす関数を
-誰も実行できなくなる。置いたら GAS エディタで `debugVerifySharedDrive()` を実行して確かめる。
+## 言葉の対応
 
-`ME` を推奨する。アプリ側の main 保護は「アプリ経由の操作」しか止められないため、
-`USER_ACCESSING` だと Docs を直接開く抜け道が残る。
+画面とメールと記録に残る文は、右の Git の言葉を使わない。このリポジトリのコードとこの README には
+Git の言葉が出てくるので、読み替えに使ってほしい。
 
-**`ME` で共有する前に知っておくこと。** 末尾が `_` でない関数は、画面の
-`google.script.run` から直に呼べる。`ME` では利用者の誰もが、それを持ち主の
-権限で呼べることになる。エディタ専用の関数 (`setupRepo` / `debug*` /
-`setupCommandQueue`) は持ち主以外を断るようにしてあるが、`dbUpdate` などの
-中の関数は塞いでいない。共有を決めたら、中の関数を画面から呼べない形に組み
-替える計画を先に立てること。
-
-**ただし切り替える前に、別アカウントでヘルプタブを開いて身元表示を確認すること。**
-`executeAs: ME` では `Session.getActiveUser().getEmail()` が空文字を返す環境があり、
-その場合はコミットの作者とレビュアーがすべて空になって自己承認の禁止が誤作動する。
-
-### 対応するファイル種別
-
-| 種別 | 閲覧・履歴・diff | ブランチ・PR | マージ書き戻し |
-|---|---|---|---|
-| Docs | 対応 | 対応 | 対応 |
-| Sheets | 対応 | 対応 | 対応（`setValues`、数式は `data-formula` で保持） |
-| Slides | 対応 | — | **非対応**（PR 作成の時点で拒否） |
-
-Sheets は表示値を内容とし、数式を `data-formula` 属性に退避する。セルの改行は
-正規化で潰す（1ブロック = 1行が壊れると行ベース diff が意味を失うため）。
-
-### 画面
-
-GitHub を使ったことがあれば説明なしで操作できることを目標にしている。
-
-- 左ペインで**ブランチを切り替える**と、そのブランチのファイルだけがパスで
-  階層化されて並ぶ。各行の `↗` から元ファイル (Docs / Sheets / Slides) を開ける
-- 差分は**左右2列**。書き換わった行は左右に並ぶ
-- PR は**会話 / コミット / 変更ファイル**の3タブ。会話にコメントを投稿できる。
-  承認とマージのボタンはタブの外にあり、どのタブからでも操作できる
-- タブ構成は 本文 / 編集 / 履歴 / ブランチ / プルリクエスト / Issue / ボード
-
-### アプリ内での編集と main の保護
-
-- ブランチ上の文書は**アプリ内で Markdown として編集**できる。保存しても
-  コミットはされず、「未コミットの変更あり」になる (Docs で編集した場合と同じ)
-- 対応する記法は正規化HTMLの語彙に閉じる。下線だけ Markdown に記法がないため
-  `<u>` タグを許す
-- **main は保護されている。** 編集も直接コミットもできず、変更は必ず PR 経由になる
-  (GitHub の branch protection 相当)
-- Docs 側で main を直接編集した場合だけは、`apiStashMainDrift` (画面では
-  「直接編集を退避」) で専用のコミットとして記録できる。これが無いと、
-  未コミットの main はマージも拒否されるため行き止まりになる
-
-### Issue と Projects
-
-実機で検証済み（2026-09-08、`debugVerifyPhase3b()` で9項目すべて PASS）。
-Issue作成 → Backlog → ブランチ作成 → In Progress → PR作成 → In Review →
-マージ → Done と Issue のクローズまでが通しで動く。
-
-
-- Issue は文書に紐づく。Wiki で文書を開くと、その文書の open Issue が本文の上に並ぶ
-- Issue から 1 クリックでブランチを作れる (`issue-<番号>-<題名>` で自動命名)
-- PR 本文に `closes #N` と書くと、マージ時に Issue が閉じて PR 番号が記録される
-- カンバンは PR の状態変化で自動的に動く
-  (Issue作成 → Backlog、ブランチ作成 → In Progress、PR作成 → In Review、マージ → Done)
-- カードはドラッグ&ドロップでも動かせる
-- 通知は `Notifier.gs` の `notify()` に隔離してある。`UrlFetchApp` が解禁されたら
-  Google Chat Webhook に差し替えられる。通知の失敗は本処理を巻き戻さない
-
-### Phase 2 で実機検証済みの項目
-
-GAS エディタから `debugVerifyPhase2()` を実行して確認した (2026-09-04)。
-使い捨ての Doc を1つ作り、通しで実行して**15項目すべて PASS**。
-
-| 項目 | 結果 |
-|---|---|
-| コンフリクト検出 | 同一行の相反する変更を `clean=false conflicts=1` として検出 |
-| コンフリクト解決とマージ | ブランチ側を採用してマージし、main に書き戻される |
-| fileId の維持 | 書き戻し後も同じ fileId が更新される (共有リンクが壊れない) |
-| 書き戻し拒否 | 実体を取得できない画像を含む書き戻しは実行前に拒否される |
-| 楽観的並行制御 | 古い headSha でのコミットは拒否され、最新なら通る |
-
-同じシナリオは `test/phase2-integration.test.js` (疑似GAS) にも落としてあり、
-以後は `npm test` で回帰を検出できる。
-
-### 書き戻しの安全機構
-
-`body.clear()` は破壊的操作であり、失敗すると文書の内容が失われる。
-そのため3段の防御を設けている。
-
-1. **事前検証** — `htmlWriterValidate` で復元できない要素を検出し、
-   `body.clear()` の前に中断する
-2. **取得不能な画像を含むマージは拒否** — `sha='unavailable'` の画像は
-   バイト列が存在せず、書き戻すと永久に失われるためマージ自体を止める
-3. **main が未コミットのときはマージしない** — マージ結果はコミット済みの
-   HEAD を ours として計算されるため、未コミットの編集はマージに参加できず、
-   書き戻しで黙って上書きされてしまう。git が dirty な作業ツリーでの
-   マージを拒むのと同じ理由で、先に main をコミットさせる。
-   検査から書き戻しまでの間に編集が入った場合に備え、書き戻し直前にも
-   う一度見て、変更があれば自動退避コミットを作る
-
-なお、ブランチを削除しても `files` 行は残す。行を消すと作業コピーを解決できなくなり、
-そのブランチから作られた**マージ済み PR を二度と開けなくなる**ため。
-Wiki の一覧からは `filesVisibleInWiki()` で隠す。
-
-加えて、マージには1件以上の承認が必要で、PR作成者は自分のPRを承認できない。
-ただし1人で検証する場合は承認者を確保できずマージまで到達できないため、
-スクリプトプロパティ `ALLOW_SELF_APPROVE=true`（`debugEnableSelfApprove()` で設定）
-のときだけ自己承認を許可する。許可時は警告ログが残る。本番運用では
-`debugDisableSelfApprove()` で必ず禁止に戻すこと。
-
-### Phase 1 で実機検証済みの項目
-
-| 項目 | 結果 |
-|---|---|
-| レンダリングの決定性 | 同一 Doc から常にバイト単位で同一の HTML |
-| ラウンドトリップ | 実際の Doc 出力で `parse(serialize(x)) === x` が成立 |
-| ライブ同期 | Docs 編集が次回閲覧時に自動反映 (同期ジョブなし) |
-| キャッシュ効果 | 4,048ms → 294ms (13.8倍) |
-| 壊れた画像への耐性 | 実体を取得できない画像があっても本文は正常にレンダリング |
-| XSS 防御 | エスケープ + iframe sandbox の二重防御 |
-
-## 設計の中核
-
-### すべてを正規化 HTML に変換する
-
-Docs / Sheets / Slides という異種のファイルを、すべて**同一の正規化 HTML**に変換する。
-この HTML が Git における blob に相当する。
-
-```
-Google Docs   ─┐
-Google Sheets ─┼─→ 正規化HTML (1ブロック = 1行) ─→ 行ベース diff / 3-way merge
-Google Slides ─┘
-```
-
-1 ブロック = 1 行、属性順と空白を固定、装飾のネスト順を固定することで、
-**同じ内容からは常にバイト単位で同一の HTML** が出る。差分ノイズがゼロになるため、
-Git と同じ行ベースのアルゴリズムがそのまま適用できる。
-
-### 二層構造（ライブ層とスナップショット層）
-
-| 層 | 実体 | 用途 |
+| 画面の言葉 | Git でいうと | 意味 |
 |---|---|---|
-| ライブ層 | Drive 上の実ファイル | Wiki 閲覧。常に最新が見える |
-| スナップショット層 | `.git/objects/<sha>.html` | 履歴・diff・PR・マージ |
+| 正式版 | main | いま効力を持つ版。直接なおせない |
+| 改訂版 (改訂中の版) | ブランチ | 正式版をコピーして直している途中の版 |
+| 変更の記録 | コミット | ある時点の中身を丸ごと残したもの |
+| 確認依頼 | プルリクエスト | ある版を別の版に反映してよいか尋ねるもの |
+| 反映 | マージ | 承認された中身を反映先へ書き戻すこと |
+| やること | Issue | 誰かがやるべき作業 |
+| 進捗ボード | Projects (カンバン) | やることの列 (これから / 作業中 / 確認中 / 完了) |
 
-ライブ層のキャッシュキーにファイルの `lastUpdated` を含めるため、
-**編集された瞬間にキャッシュが無効化される**。同期ジョブもトリガーも不要。
+スクラムまわりの言葉 (作業期間 = スプリント など) は [期間で進める](docs/manual/scrum.md) にある。
 
-## セットアップ
+## はじめに
 
-### 1. 依存のインストール
+最初の一人だけが行う。二人目からは配られた URL を開くだけ。詳しくは [置き方](docs/manual/setup.md)。
 
 ```bash
-npm install
-```
-
-### 2. GAS プロジェクトへの接続
-
-```bash
+npm ci                                   # テストの依存 (package-lock.json は消さない)
 clasp login
 clasp create-script --type standalone --title "SoftBanto" --rootDir src
 clasp push --force
 ```
 
-> **clasp 3.x の注意点**
-> - `--type webapp` は `Invalid container file type` で失敗する。`standalone` で作成し、
->   Web App 化は `appsscript.json` の `webapp` 設定とデプロイで行う
-> - `clasp create-script` は `src/appsscript.json` を上書きするため、作成後に書き戻すこと
-> - `.claspignore` のパターンは `rootDir`（= `src`）相対で評価される。
->   `!src/**` のような書き方は機能しない
-> - マニフェスト変更を含む push には `--force` が必要（非対話では確認プロンプトが
->   否定され `Skipping push.` になる）
+1. GAS エディタで **`setupRepo()`** を一度だけ実行する。スクリプトと同じフォルダに入れ物
+   `agentic-management/` (`main/` `branches/` `.git/`) ができ、台帳のスプレッドシートは `.git/` の中に置かれる
+2. 手元から動かすなら **`setupCommandQueue()`** も一度だけ実行する (1分ごとのトリガー。1日1回の片付けも載っている)
+3. 初回のデプロイを作り、その ID を `deployment.json` に書く。以後は **`npm run deploy -- "何を変えたか"`**
+   だけを使う (`clasp create-deployment` を直に叩くと URL が変わる)。先に一度 `node scripts/kit-key.mjs` で
+   道具に付ける署名の鍵を作る。**署名の秘密鍵は deploy する人の手元にだけある** (リポジトリにも Drive にも
+   番頭にも置かない)。失ったときや、古い版のスクリプトを人と共有する前は `--rotate` で作り直す
+   ([管理](docs/manual/admin.md#道具の署名の鍵))
+4. 管理したい文書を Drive で `agentic-management/main/` に入れ、画面の **「文書」→「文書を登録する」** で選ぶ
 
-### 3. リポジトリの初期化
-
-GAS エディタ（`clasp open-script`）で **`setupRepo()`** を 1 回だけ実行する。
-**スクリプトと同じフォルダに** `agentic-management/` とメタ DB スプレッドシートが
-作られる（マイドライブの直下ではない）。スクリプトの置き場が分からない場合だけ、
-マイドライブの直下に落ちる。
-
-### 4. デプロイ
-
-```bash
-clasp create-deployment --description "Phase 1"
-clasp open-web-app
-```
-
-2回目からは `npm run deploy -- "何を変えたか"`。その前に一度だけ `node scripts/kit-key.mjs` で手元の道具に
-付ける署名の鍵を作る (秘密鍵は `~/.config/softbanto/` に置かれる。控えを取ること。無いと deploy は断る)。
-
-### 5. 文書の登録
-
-対象の文書（Docs / Sheets / Slides）を Drive で `agentic-management/main/` に
-ドラッグして入れ、**画面の「文書」タブ →「文書を登録する」**を押す。入れ物の中に
-あってまだ登録していないものが一覧に出るので、選んで登録する。
-
-**スクリプトプロパティも fileId も触らない。** ファイルの id を調べて設定に書く
-のは、この道具を使う人の仕事ではない。`debugRegisterFile()` は開発時の入口として
-残してあるが、通常の運用では使わない。
-
-> 2人目以降は何も要らない。配られた URL を開くだけで使える。
+スクリプトプロパティや fileId を人に触らせることはない。
 
 ## 開発
 
 ```bash
-npm test          # ユニットテスト + 疑似GASによる統合テスト (241件)
+npx vitest run --testTimeout=30000   # 全テスト (疑似GAS・jsdom を含む。数分かかる)
 npm run test:watch
-clasp push --force
+npm run coverage
+npm run deploy -- "何を変えたか"     # kit/ の焼き直し → 署名 → clasp push → 同じ ID へ差し替え
 ```
 
-### テストの仕組み
-
-ランタイムコードには `import` / `export` / `require` を**書かない**
-（GAS で動かなくなるため）。テストは `test/harness.js` が `node:vm` で
-ソースを評価し、定義された関数を取り出す方式を採る。
-
-これにより、diff / 3-way merge / HTML 正規化という最も重要なロジックを、
-**GAS に一切依存せずローカルで TDD** できる。
-
-```
-src/core/Hash.js       ★ピュア  → ローカルテスト可
-src/core/Normalize.js  ★ピュア  → ローカルテスト可
-src/core/Diff.js       ★ピュア  → ローカルテスト可 (Myers 行diff)
-src/core/Merge.js      ★ピュア  → ローカルテスト可 (3-way merge)
-src/core/Markdown.js   ★ピュア  → ローカルテスト可 (Markdown変換)
-src/core/FileUrl.js    ★ピュア  → ローカルテスト可 (元ファイルURL)
-src/core/Db.gs         GAS依存  → 疑似GASで統合テスト可
-src/core/Repo.gs       GAS依存  → 疑似GASで統合テスト可
-src/core/Commit.gs     GAS依存  → 疑似GASで統合テスト可
-src/core/Branch.gs     GAS依存  → 疑似GASで統合テスト可
-src/core/PullRequest.gs GAS依存 → 疑似GASで統合テスト可
-src/core/Issue.gs      GAS依存  → 疑似GASで統合テスト可
-src/core/Project.gs    GAS依存  → 疑似GASで統合テスト可
-src/core/Notifier.gs   GAS依存  → 疑似GASで統合テスト可
-src/render/SheetRenderer.gs  GAS依存 → 疑似GASで統合テスト可
-src/render/SheetWriter.gs    GAS依存 → 疑似GASで統合テスト可
-src/render/SlidesRenderer.gs GAS依存 → 疑似GASで統合テスト可
-src/render/DocRenderer.gs    GAS依存 → 実機で確認 (DocumentApp 依存)
-```
-
-diff / 3-way merge / HTML 正規化という、最もバグが出やすく、かつ
-システムの正しさを決定づけるロジックがすべてピュア側にある。
-
-### 疑似GASによる統合テスト
-
-`test/fakegas.js` が DriveApp / SpreadsheetApp / PropertiesService /
-Session / LockService / Utilities を最小限だけ再現する。これにより
-commit → branch → PR → 3-way merge → 書き戻しという**組み立ての層を
-ローカルで通しで実行**できる (`test/phase2-integration.test.js`)。
-
-Docs の描画と書き戻しだけは `fileId → 正規化HTML` の写像に差し替える。
-描画の忠実さは Phase 1 で実機検証済みで、ここで確かめたいのは
-「どの順序で、どの条件を満たしたときに書き戻すか」だから。
-
-このため**書き戻しのラウンドトリップ欠落だけはローカルでは検出できない**。
-そこは実機の `debugWriteRoundTrip()` と `test/roundtrip-check.js` が担う。
-
-### 実際のDocでラウンドトリップを検証する
-
-```bash
-node test/roundtrip-check.js <レンダリング結果を保存したhtmlファイル>
-```
-
-`parse(serialize(x)) === x` が成立することは、Phase 2 のマージ書き戻し
-（HTML → Google Docs）が実装可能であることの証明になる。
-
-## ドキュメント
-
-- [設計仕様](docs/superpowers/specs/2026-09-02-gws-git-management-design.md)
-- [大規模版スケーリング構想](docs/superpowers/specs/2026-09-02-gws-git-management-scaling.md)
-- [Phase 1 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase1.md)
-- [Phase 2 実装計画](docs/superpowers/plans/2026-09-02-gws-git-management-phase2.md)
-- [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
-- [Phase 3b 実装計画 (Issue / Projects)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3b-issues-projects.md)
-- [Phase 3a 実装計画 (Sheets / Slides レンダラ)](docs/superpowers/plans/2026-09-04-gws-git-management-phase3a-sheets-slides.md)
-- [Phase 4 設計仕様](docs/superpowers/specs/2026-09-04-gws-git-management-phase4-design.md)
-- [Phase 4b 実装計画 (Markdown編集 + main保護)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4b-markdown-edit.md)
-- [Phase 4c 実装計画 (GitHub ライクな UI)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4c-github-ui.md)
-- [Phase 4d 実装計画 (アプリ内ガイド)](docs/superpowers/plans/2026-09-04-gws-git-management-phase4d-guide.md)
-- [Phase 4a 実装計画 (コマンドキュー)](docs/superpowers/plans/2026-09-08-gws-git-management-phase4a-command-queue.md)
+- ランタイムコードに `import` / `export` / `require` を書かない (GAS で動かなくなる)。テストは
+  `test/harness.js` が `node:vm` でソースを評価する
+- 配る道具の本体は `kit/`。`src/KitFiles.gs` は手で直さない
+- 守るべき決めごととその理由は **[CLAUDE.md](CLAUDE.md)** にまとめてある。構成とテストの詳細は
+  [開発の手引き](docs/manual/development.md)
 
 ## 制約
 
-- GAS 標準サービスのみ（Advanced Google Services / 外部 API は使用不可）
-- Drive のネイティブ版履歴は取得できないため、独自スナップショット方式を採る
-- 色・フォント・サイズは版管理の対象外（意図的な割り切り）。
-  全角スペースによる字下げも正規化で失われる
-- Google Docs / Sheets に対応。Slides は閲覧・履歴・diff のみ（マージ非対応）
-- Slides はマージ非対応（図形座標を HTML から復元できないため）。
-  PR 作成の時点で拒否する。spec の「ブランチのコピーを採用する fast-forward」案は
-  fileId が変わるため採らない
+- GCP プロジェクトは使えないので `clasp run` (Apps Script API) は使わない。手元からの操作はコマンドキュー経由
+- 外部 API・公開エンドポイントは使わない。Drive の拡張サービス (v3) は `appsscript.json` で足してある。
+  Google ToDo 連携だけは、エディタで Tasks の拡張サービスを足したときに入口が出る
+- 色・フォント・文字サイズは版管理の対象外 (意図的な割り切り)。全角スペースによる字下げも正規化で失われる
+- Drive のネイティブな版の履歴は取れないので、独自の記録 (`.git/objects/`) を持つ
+- 手元からの命令は最大1分遅れる (時間主導トリガーの最小間隔)
 
-## ロードマップ
-
-| Phase | 内容 | 状態 |
-|---|---|---|
-| 1 | 基盤 + Docs レンダラ + ライブ Wiki | 完了 |
-| 2 | commit / branch / PR / merge / 書き戻し | 完了 |
-| **3a** | Sheets / Slides レンダラ | 計画済み |
-| **3a** | Sheets / Slides レンダラ | 実装完了・実機検証待ち |
-| **3b** | Issue / Projects | **完了（実機検証済み）** |
-| **4b** | Markdown編集 + main のブランチ保護 | **完了（往復を実機検証済み）** |
-| **4c** | GitHub ライクな UI | 実装完了・実機検証待ち |
-| **4a** | コマンドキュー (ローカル連携) | **完了（実機検証済み）** |
-| **4d** | アプリ内ガイド | 実装完了・実機検証待ち |
-
-## 上長として部下の工数を見られるようにする
-
-工数の集計は、既定では**チーム全体の合計は誰でも**、**人ごとの内訳は自分のぶんだけ**が
-見えるようになっている。全員が全員の数字を見られると監視されている感が出て、
-正直な実績が入らなくなるためである。入らない数字は集計しても意味がない。
-
-上長として部下のぶんも見られるようにするには、メタDBの `members` シートに
-行を足す。`email` にその人、`manager` に上長を書く。
-
-| email | manager |
-|---|---|
-| buka@example.com | naka@example.com |
-| naka@example.com | boss@example.com |
-
-この例では `naka` は `buka` を、`boss` は `naka` と `buka` を見られる
-（下の下まで届く）。下から上、および横は見られない。
-
-GAS エディタからは次のようにも書ける。
-
-```js
-memberSet('buka@example.com', 'naka@example.com');  // 登録・付け替え
-memberSet('buka@example.com', '');                  // 関係を外す
-```
-
-画面からの変更は、このアプリの管理者（持ち主と、リポジトリのフォルダを編集できる人）だけが
-できる。誰でも書き換えられると、自分を上長にして他人の数字を覗けてしまう。
-
-## 画面に出す名前を決める
-
-担当者や書いた人は、既定ではメールアドレスの `@` より手前で表示される。
-目で追いにくいので、名前を登録しておくとよい。
-
-- 自分の名前は「使い方」の下にある「表示する名前を決める」から決められる
-- 他人の名前は、このアプリの管理者だけが変えられる
-
-GAS エディタからは次のようにも書ける。
-
-```js
-memberSetName('aoki@example.com', '青木 太郎');
-```
-
-名前は `members` シートの `name` 列に入る。上下関係とは別々に扱われるので、
-どちらか一方だけを入れてもよい。
-
-## 担当者が複数いる仕事の工数
-
-ひとつのやることに担当者を何人でも割り当てられる。工数は集計のときに
-**頭数で割って**数える。
-
-- 4人日を2人で持てば、それぞれ 2人日 として数えられる
-- チーム全体の合計は 4人日 のまま
-
-それぞれに全部を足す形にすると、人ごとの合計を足しても全体の合計に
-戻らなくなり、どちらの数字を信じてよいのか分からなくなるためである。
-
-割り当てた本人にその場で分かるよう、2人以上にした時点で入力欄の下に
-断り書きが出る。集計の「人ごと」の表の脇にも同じことを書いてある。
-
-## エージェンティックスクラム (既定はオフ)
-
-`ai-scrum-gas` から、AI のチームメンバーとスクラムで進める機能を取り入れた。
-使わないチームのほうが多いと見て、**既定ではオフ**にしてある。
-
-- オンにするのは管理者 (持ち主と、リポジトリのフォルダを編集できる人)。画面の「設定」で切り替え、プロダクトゴールと完了の
-  定義もそこで書く
-- オンにすると、左に「スプリント」「障害物」が出て、やることにスプリント・
-  ストーリーポイント・受入基準の欄が付く。バーンダウン・ベロシティ・ロードマップは
-  やることのポイントと完了日から数える
-- 手元の道具では `node agent.mjs scrum` で状態を見られる。スキルとエージェントは
-  zip の `.claude/` に、ai-scrum-gas の CSV との読み替えは `SCRUM.md` にある
-
-## 使われ方の記録について
-
-左の「使われ方」に、どこがよく押されているかが出る。みんなの合計でも、
-人ごとでも見られ、よく使っている人の並びも出る。
-
-`usage` シートに残るのは「日・種類・場所・回数・押した人」の5つである。
-**残すのは「その日に何回押したか」までで、押した順番や時刻は残さない。**
-何時に何をしていたかまで追える形にはしない、という線を引いてある。
-
-押した人はサーバ側で決める (`Session.getActiveUser()`)。画面から受け取ると
-名乗りを詐称できるためである。
-
-- 押すたびには送らず、画面側で1分ぶんまとめてから送る
-- 名前を付けていない場所は数えない。一覧の行やカードは、1つずつではなく
-  種類でまとめて数える
-- 一度に受け取る場所の数には上限がある (行が増え続けないようにするため)
-- 行数は「日 × 場所 × 人」で頭打ちになる
+設計の経緯は [これまでとこれから](docs/manual/roadmap.md) と `docs/superpowers/` にある。

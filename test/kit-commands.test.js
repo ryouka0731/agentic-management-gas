@@ -323,7 +323,7 @@ describe('道具の版', () => {
     const fake = createFakeGas();
     const ctx = loadGasWith(fake, 'src/core/AgentKit.gs');
     expect(local.KIT_VERSION).toBe(ctx.AGENT_KIT_VERSION());
-    expect(local.KIT_VERSION).toBe('1.9.0');
+    expect(local.KIT_VERSION).toBe('1.9.1');
   });
 });
 

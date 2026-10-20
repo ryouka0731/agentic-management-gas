@@ -507,7 +507,7 @@ function apiCommitHistory(fileId) {
 function apiCommitDiff(fromSha, toSha) {
   var from = fromSha ? (commitHtml(fromSha) || '') : '';
   var to = commitHtml(toSha);
-  if (to === null) throw new Error('コミットが見つかりません');
+  if (to === null) throw new Error('変更の記録が見つかりません');
   return diffHtml(from, to);
 }
 
@@ -1130,7 +1130,7 @@ function apiCommitGraph(fileId) {
 
   var mainPath = String(row.path).replace(/^branches\/[^\/]+\//, '');
   var mainRow = dbFindOne('files', 'path', mainPath);
-  if (!mainRow) throw new Error('mainのファイルが見つかりません: ' + mainPath);
+  if (!mainRow) throw new Error('正式版の文書が見つかりません: ' + mainPath);
 
   var chains = [{
     name: 'main',
@@ -1305,7 +1305,7 @@ function assertNotProtected_(fileId) {
   if (branchOfPath_(row.path) !== 'main') return;
 
   throw new Error(
-    'mainは保護されています。ブランチを作って変更し、PRでマージしてください'
+    '正式版は直接なおせません。改訂版を作って直し、確認依頼を出して反映してください'
   );
 }
 
@@ -1381,7 +1381,7 @@ function apiStashMainDrift(fileId) {
   var row = dbFindOne('files', 'fileId', fileId);
   if (!row) throw new Error('管理対象に登録されていません');
   if (branchOfPath_(row.path) !== 'main') {
-    throw new Error('mainのファイルにのみ使えます');
+    throw new Error('正式版の文書にだけ使えます');
   }
   return commitFile(fileId, 'main', 'mainへの直接編集を退避', null);
 }
