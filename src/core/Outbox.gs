@@ -81,7 +81,28 @@ function outboxArgValid_(value) {
 
 
 /**
- * 頼みごとを置く。
+ * 1人が1日に置ける頼みごとの数。
+ *
+ * 人が画面で頼むのは1日に数件で、承認のたびに自動で置かれる取り込みを足しても
+ * 10件を超えることはまず無い。50 はその何倍もあり、正規の使い方では当たらない。
+ * それでも上限を置くのは、Drive を共有している人なら誰でも頼めるからである。
+ * 上限が無いと、1人 (や暴走した手順) が何百件も積んで、ほかの人の頼みごとを
+ * 埋もれさせ、取りに来た手元の Claude に読みきれない量を渡せてしまう。
+ * `outboxTake` は表を丸ごと読むので、積まれたぶんだけ全員の取りに来るのも遅くなる。
+ *
+ * @returns {number}
+ */
+function OUTBOX_DAILY_LIMIT() {
+  return 50;
+}
+
+/**
+ * 頼みごとを置く (人が頼む口)。1人1日 OUTBOX_DAILY_LIMIT() 件まで。
+ *
+ * 数えるのは台帳にあるその人の今日の行で、承認で自動に置かれたぶんも含む
+ * (自動のものは見分ける印を持たない。印を作ると、人が同じ形で頼めば上限を
+ * すり抜けられる)。数えることと書くことは1つの鍵の中で行う。分けると、
+ * ほぼ同時の2件がどちらも「まだ空きがある」と読んで上限を超える。
  *
  * @param {string} verb OUTBOX_VERBS のどれか
  * @param {Object<string,string>} args
@@ -89,6 +110,67 @@ function outboxArgValid_(value) {
  * @returns {object} 置いた行
  */
 function outboxAdd(verb, args, extra) {
+  var row = outboxRow_(verb, args, extra);
+  return dbWithLock_(30000, function () {
+    var limit = OUTBOX_DAILY_LIMIT();
+    if (outboxCountToday_(row.createdBy, row.createdAt) >= limit) {
+      throw new Error('きょう頼める数 (1人 ' + limit +
+        ' 件) を超えました。あすになってから、もう一度頼んでください');
+    }
+    dbAppendNumbered('outbox', 'id', row);
+    return row;
+  });
+}
+
+/**
+ * 承認したときに自動で置く口。**上限で止めない。**
+ *
+ * 承認は済んでいるので、ここで断ると「承認したのに取り込みを頼めていない」に
+ * なる。置いたぶんは承認した人の今日の数には入る (outboxAdd の説明)。
+ * 末尾が `_` なので画面からは呼べない。
+ *
+ * @param {string} verb
+ * @param {Object<string,string>} args
+ * @param {{note?:string, prNumber?:number}} [extra]
+ * @returns {object}
+ */
+function outboxAddOnApproval_(verb, args, extra) {
+  var row = outboxRow_(verb, args, extra);
+  dbAppendNumbered('outbox', 'id', row);
+  return row;
+}
+
+/**
+ * その人がその日に置いた頼みごとの数。鍵を持った状態で呼ぶ。
+ *
+ * @param {string} who
+ * @param {Date} now
+ * @returns {number}
+ */
+function outboxCountToday_(who, now) {
+  var day = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd');
+  var me = String(who || '').toLowerCase();
+  var rows = dbReadAll('outbox');
+  var n = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].createdBy || '').toLowerCase() !== me) continue;
+    var at = new Date(rows[i].createdAt);
+    if (isNaN(at.getTime())) continue;
+    if (Utilities.formatDate(at, 'Asia/Tokyo', 'yyyy-MM-dd') === day) n++;
+  }
+  return n;
+}
+
+/**
+ * 置く行を組み立てる。動詞と引数をここで検査する。
+ *
+ * @param {string} verb
+ * @param {Object<string,string>} args
+ * @param {{note?:string, prNumber?:number}} [extra]
+ * @returns {object}
+ */
+function outboxRow_(verb, args, extra) {
   var verbs = OUTBOX_VERBS();
   var want = String(verb || '');
 
@@ -124,7 +206,6 @@ function outboxAdd(verb, args, extra) {
     doneAt: '',
     result: '',
   };
-  dbAppendNumbered('outbox', 'id', row);
   return row;
 }
 

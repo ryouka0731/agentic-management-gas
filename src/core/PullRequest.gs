@@ -1017,7 +1017,7 @@ function prMerge(number, choices, previewSha) {
          */
         if (prHasPatches(number)) {
           try {
-            outboxAdd('merge',
+            outboxAddOnApproval_('merge',
               { branch: String(pr.sourceBranch), into: String(into) },
               {
                 prNumber: number,
