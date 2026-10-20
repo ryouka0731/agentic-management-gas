@@ -5046,6 +5046,7 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-state-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); }
 .oshi-state-body .row-meta { margin: 0; }
 .oshi-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-2); }
+.oshi-actions > .btn { flex: none; white-space: nowrap; }
 /* 写すボタンの下に、頼み文を本文の幅いっぱいで開く (横に並べると開いた字が細い柱になる) */
 .oshi-prompt-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .oshi-prompt { min-width: 0; align-self: stretch; }
@@ -5058,6 +5059,19 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .oshi-lines summary { cursor: pointer; }
 .oshi-lines-input { width: -webkit-fill-available; width: -moz-available; width: stretch; margin: var(--sp-1) 0; }
+.oshi-mine-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.oshi-mine-tab[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.oshi-create { align-self: flex-start; }
+.oshi-choices { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0; }
+.oshi-choice {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); width: 112px; padding: var(--sp-2);
+  border-radius: var(--radius); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; text-align: center;
+}
+.oshi-choice:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.oshi-choice[aria-checked="true"] { background: var(--accent-bg); box-shadow: inset 0 0 0 2px var(--accent); }
+.oshi-choice .oshi-choice-fig { width: 72px; height: 72px; }
+.oshi-choice-name { font-size: 13px; font-weight: 700; max-width: 100%; overflow-wrap: anywhere; }
+.oshi-choice-kind { margin: 0; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) {
   .oshi-bubble, .oshi-bubble.is-in, .oshi-bubble.is-out { transition: none; transform: none; }
 }

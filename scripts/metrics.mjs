@@ -27,7 +27,7 @@ function sourceFiles() {
     for (const name of fs.readdirSync(dir)) {
       const p = path.join(dir, name);
       if (fs.statSync(p).isDirectory()) { walk(p); continue; }
-      if (/^(KitFiles|KitSigning|OshiDefaultNormal|OshiDefaultChibi)\.gs$/.test(name)) continue;
+      if (/^(KitFiles|KitSigning|OshiDefault[A-Z][a-z]+(Normal|Chibi))\.gs$/.test(name)) continue;
       if (/\.(gs|js|mjs)$/.test(name)) out.push(p);
     }
   };
