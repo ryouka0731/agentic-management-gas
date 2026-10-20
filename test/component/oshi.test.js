@@ -14,39 +14,55 @@ import { APP_SOURCES } from '../sources.js';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const PNG_URL = 'data:image/png;base64,' + PNG.toString('base64');
 
-let server = null;
-/** サーバが返す形そのもの。画像は「ほめる」と「おいわい」だけ入れてある */
+const servers = {};
+/**
+ * サーバが返す形そのもの。自分のキャラ「ルナ」(1人目) に「おいわい」の絵だけ入れてあり、使うキャラはルナ。
+ * opts.char / opts.fallback で、使うキャラと絵が無い表情の設定を変えて返す。opts.two なら2人目「ソラ」もいる。
+ */
 function oshiFixture(opts) {
-  if (!server) {
+  const o = opts || {};
+  const key = o.two ? 'two' : 'one';
+  if (!servers[key]) {
     const fake = createFakeGas();
     const ctx = loadGasWith(fake, ...APP_SOURCES);
     ctx.repoInit('agentic-management');
-    ctx.apiOshiSetProfile('ルナ', 'genki');
-    ctx.apiOshiSetImage('celebrate', PNG_URL);
-    ctx.apiOshiSetLines('done', ['自分のせりふ！']);
-    server = { ctx, fake };
+    const c = ctx.apiOshiCharCreate('ルナ', 'genki').charId;
+    ctx.apiOshiSetImage(c, 'celebrate', PNG_URL);
+    ctx.apiOshiSetLines(c, 'done', ['自分のせりふ！']);
+    if (o.two) ctx.apiOshiSetImage(ctx.apiOshiCharCreate('ソラ', 'cool').charId, 'idle', PNG_URL);
+    servers[key] = { ctx, fake };
   }
-  const got = JSON.parse(JSON.stringify(server.ctx.apiOshiGet()));
-  if (opts && opts.noImages) got.images = [];
-  if (opts && opts.growth) Object.assign(got.growth, opts.growth);
+  const ctx = servers[key].ctx;
+  ctx.apiPrefSet('oshi.char', o.char || 'mine:1');
+  ctx.apiPrefSet('oshi.fallback', o.fallback || null);
+  const got = JSON.parse(JSON.stringify(ctx.apiOshiGet()));
+  if (o.noImages) {
+    got.images = [];
+    got.mine.forEach((m) => { m.images = []; });
+  }
+  if (o.growth) Object.assign(got.growth, o.growth);
   return got;
 }
 
-/** 最初からいるキャラの絵 (疑似)。形と表情で字が変わる */
-const defaultUrl = (style, state) => 'data:image/webp;base64,' + Buffer.from(style + ':' + state).toString('base64');
+/** 最初からいるキャラの絵 (疑似)。キャラ・形・表情で字が変わる */
+const defaultUrl = (char, style, state) => 'data:image/webp;base64,' + Buffer.from(char + ':' + style + ':' + state).toString('base64');
 
 function mountOshi(values, over) {
+  const v = values || {};
   return mount(Object.assign({
-    apiPrefs: prefsFixture({ values: values || {} }),
-    apiOshiGet: oshiFixture(),
-    apiOshiImage: (state) => ({ state, sha: 'f'.repeat(64), dataUrl: PNG_URL }),
-    apiOshiDefaultImage: (style, state) => ({ style, state, dataUrl: defaultUrl(style, state) }),
+    apiPrefs: prefsFixture({ values: v }),
+    apiOshiGet: oshiFixture({ char: v['oshi.char'], fallback: v['oshi.fallback'] }),
+    apiOshiImage: (charId, state) => ({ charId, state, sha: 'f'.repeat(64), dataUrl: PNG_URL }),
+    apiOshiDefaultImage: (char, style, state) => ({ char, style, state, dataUrl: defaultUrl(char, style, state) }),
+    // 書いたあとの設定は、それまでの値に重ねて返す (疑似の既定は1つだけ返すので、推しがオフに戻ってしまう)
+    apiPrefSet: (key, value) => prefsFixture({ values: Object.assign({}, v, { [key]: value }) }),
   }, over || {}));
 }
 
-const ON = { 'oshi.on': true };
-/** 最初からいるキャラを使わない人 */
-const OWN_ONLY = { 'oshi.on': true, 'oshi.useDefault': false };
+/** 自分のキャラ (ルナ) を使う人 */
+const ON = { 'oshi.on': true, 'oshi.char': 'mine:1' };
+/** 自分のキャラだけを使い、絵が無い表情に最初からいるキャラを出さない人 */
+const OWN_ONLY = { 'oshi.on': true, 'oshi.char': 'mine:1', 'oshi.fallback': 'none' };
 const defaultCalls = (app) => app.calls.filter((c) => c.name === 'apiOshiDefaultImage').map((c) => c.args);
 const bubble = () => document.getElementById('oshi-bubble');
 const names = (app) => app.calls.map((c) => c.name);
@@ -110,7 +126,7 @@ describe('推し', () => {
     expect(bubble().querySelector('.oshi-line').textContent).toBe(oshiFixture().events.find((e) => e.key === 'done').lines[0]);
   });
 
-  it('最初からいるキャラを使わない人は、その表情の絵が無ければ名前の頭文字を出す (外から何も取ってこない)', () => {
+  it('絵が無い表情に何も出さない人は、その表情の絵が無ければ名前の頭文字を出す (外から何も取ってこない)', () => {
     mountOshi(OWN_ONLY, { apiOshiGet: oshiFixture({ noImages: true }) });
     closeOneIssue();
     expect(bubble().querySelector('img')).toBe(null);
@@ -163,7 +179,7 @@ describe('推し', () => {
     expect(card.querySelector('.oshi-stage').textContent).toContain('一人前');
     expect(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('40');
 
-    mountOshi({ 'oshi.on': true, 'oshi.home': false });
+    mountOshi({ 'oshi.on': true, 'oshi.char': 'mine:1', 'oshi.home': false });
     expect(document.querySelector('.oshi-card')).toBe(null);
   });
 
@@ -204,11 +220,11 @@ describe('推し', () => {
     expect(document.getElementById('snackbar').textContent).toContain('受け取れない形式です');
     expect(names(app)).not.toContain('apiOshiSetImage');
 
-    app.respond('apiOshiSetImage', (state) => ({ state, sha: 'a'.repeat(64), mime: 'image/png' }));
+    app.respond('apiOshiSetImage', (id, state) => ({ charId: id, state, sha: 'a'.repeat(64), mime: 'image/png' }));
     pick(new window.File([PNG], 'a.png', { type: 'image/png' }));
     for (let i = 0; i < 50 && !names(app).includes('apiOshiSetImage'); i++) await new Promise((r) => setTimeout(r, 10));
     const sent = app.calls.find((c) => c.name === 'apiOshiSetImage');
-    expect(sent.args).toEqual(['praise', PNG_URL]);
+    expect(sent.args).toEqual([1, 'praise', PNG_URL]);
     // その表情の行が「差し替える」に変わる
     const after = document.querySelector('.oshi-state[data-state="praise"]');
     expect(after.querySelector('.oshi-pick').textContent).toContain('差し替える');
@@ -236,16 +252,16 @@ describe('推し', () => {
     const page = openPage();
     page.querySelector('.oshi-name-input').value = 'ソラ';
     page.querySelector('.oshi-tone').value = 'butler';
-    app.respond('apiOshiSetProfile', (n, t) => ({ name: n, tone: t }));
+    app.respond('apiOshiSetProfile', (id, n, t) => ({ charId: id, name: n, tone: t }));
     page.querySelector('.oshi-profile-save').click();
-    expect(app.calls.find((c) => c.name === 'apiOshiSetProfile').args).toEqual(['ソラ', 'butler']);
+    expect(app.calls.find((c) => c.name === 'apiOshiSetProfile').args).toEqual([1, 'ソラ', 'butler']);
 
     const page2 = document.querySelector('.oshi-page');
     const item = page2.querySelector('.oshi-lines[data-event="merge"]');
     item.querySelector('textarea').value = 'おめでとう\n\nすごい';
-    app.respond('apiOshiSetLines', (e, l) => ({ event: e, lines: l.filter((x) => x) }));
+    app.respond('apiOshiSetLines', (id, e, l) => ({ charId: id, event: e, lines: l.filter((x) => x) }));
     item.querySelector('button').click();
-    expect(app.calls.find((c) => c.name === 'apiOshiSetLines').args).toEqual(['merge', ['おめでとう', '', 'すごい']]);
+    expect(app.calls.find((c) => c.name === 'apiOshiSetLines').args).toEqual([1, 'merge', ['おめでとう', '', 'すごい']]);
     expect(item.querySelector('summary').textContent).toContain('自分のせりふ 2');
   });
 
@@ -265,13 +281,13 @@ describe('最初からいるキャラ', () => {
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  const NO_HOME = { 'oshi.on': true, 'oshi.home': false };
+  const NO_HOME = { 'oshi.on': true, 'oshi.char': 'mine:1', 'oshi.home': false };
 
-  it('自分の絵が無い表情には、最初からいるキャラの絵 (既定は 2頭身) を出す', () => {
+  it('自分のキャラの絵が無い表情には、絵が無い表情の設定のキャラ (既定はクロハの 2頭身) を出す', () => {
     const app = mountOshi(NO_HOME, { apiOshiGet: oshiFixture({ noImages: true }) });
     closeOneIssue();
-    expect(bubble().querySelector('img.oshi-img').getAttribute('src')).toBe(defaultUrl('chibi', 'celebrate'));
-    expect(defaultCalls(app)).toEqual([['chibi', 'celebrate']]);
+    expect(bubble().querySelector('img.oshi-img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'celebrate'));
+    expect(defaultCalls(app)).toEqual([['kuroha', 'chibi', 'celebrate']]);
   });
 
   it('入れた表情だけ自分の絵になり、ほかの表情は最初からいるキャラのまま', () => {
@@ -279,24 +295,24 @@ describe('最初からいるキャラ', () => {
     closeOneIssue();
     // 断られた → 「しんぱい」は自分の絵が無いので最初からいるキャラ
     expect(bubble().dataset.state).toBe('worry');
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('chibi', 'worry'));
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'worry'));
 
     app.respond('apiIssueClose', () => null);
     closeOneIssue();
     // 「おいわい」は自分の絵 (取りに行かない)
     expect(bubble().dataset.state).toBe('celebrate');
     expect(bubble().querySelector('img').getAttribute('src')).toBe(PNG_URL);
-    expect(defaultCalls(app)).toEqual([['chibi', 'worry']]);
+    expect(defaultCalls(app)).toEqual([['kuroha', 'chibi', 'worry']]);
   });
 
   it('設定で等身を選ぶと、等身の絵を取る', () => {
     const app = mountOshi(Object.assign({ 'oshi.style': 'normal' }, NO_HOME), { apiOshiGet: oshiFixture({ noImages: true }) });
     closeOneIssue();
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('normal', 'celebrate'));
-    expect(defaultCalls(app)).toEqual([['normal', 'celebrate']]);
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'normal', 'celebrate'));
+    expect(defaultCalls(app)).toEqual([['kuroha', 'normal', 'celebrate']]);
   });
 
-  it('使わない設定なら、最初からいるキャラの絵を1度も取らない (吹き出し・ホーム・頁のどれでも)', () => {
+  it('「出さない」なら、最初からいるキャラの絵を1度も取らない (吹き出し・ホーム・頁のどれでも)', () => {
     const app = mountOshi(OWN_ONLY, { apiOshiGet: oshiFixture({ noImages: true }) });
     closeOneIssue();
     const page = openPage();
@@ -311,33 +327,32 @@ describe('最初からいるキャラ', () => {
     expect(names(app)).not.toContain('apiOshiDefaultImage');
     closeOneIssue();
     closeOneIssue();
-    expect(defaultCalls(app)).toEqual([['chibi', 'celebrate']]);
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('chibi', 'celebrate'));
+    expect(defaultCalls(app)).toEqual([['kuroha', 'chibi', 'celebrate']]);
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'celebrate'));
   });
 
   it('取りに行っている最中に同じ絵が要っても、2回取りに行かない', () => {
     let reply = null;
     const app = mountOshi(NO_HOME, {
       apiOshiGet: oshiFixture({ noImages: true }),
-      apiOshiDefaultImage: (style, state) => ({ later: (ok) => { reply = () => ok({ style, state, dataUrl: defaultUrl(style, state) }); } }),
+      apiOshiDefaultImage: (char, style, state) => ({ later: (ok) => { reply = () => ok({ char, style, state, dataUrl: defaultUrl(char, style, state) }); } }),
     });
     closeOneIssue();
     closeOneIssue();
-    expect(defaultCalls(app)).toEqual([['chibi', 'celebrate']]);
+    expect(defaultCalls(app)).toEqual([['kuroha', 'chibi', 'celebrate']]);
     reply();
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('chibi', 'celebrate'));
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'celebrate'));
   });
 
-  it('推しの頁: 自分の絵の無い表情は最初からいるキャラの絵で、見本だと書いてある (実在の人には触れない)', () => {
+  it('推しの頁: 自分の絵の無い表情は最初からいるキャラの絵で、そう書いてある', () => {
     mountOshi(NO_HOME);
     const page = openPage();
     expect(page.querySelector('.oshi-state[data-state="celebrate"]').dataset.picture).toBe('mine');
     const idle = page.querySelector('.oshi-state[data-state="idle"]');
     expect(idle.dataset.picture).toBe('default');
-    expect(idle.querySelector('img').getAttribute('src')).toBe(defaultUrl('chibi', 'idle'));
+    expect(idle.querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'idle'));
     expect(idle.textContent).toContain('いまは最初からいるキャラの絵');
-    expect(page.textContent).toContain('最初からいるキャラ (クロハ) は見本です');
-    expect(page.textContent).toContain('最初からいるキャラを使う');
+    expect(page.textContent).toContain('自分のキャラの絵が無い表情');
   });
 
   it('ホームのカードも最初からいるキャラで出し、「絵を入れる」は急かさない', () => {
@@ -346,5 +361,185 @@ describe('最初からいるキャラ', () => {
     expect(card.querySelector('img.oshi-img')).toBeTruthy();
     expect([...card.querySelectorAll('button')].some((b) => b.textContent === '推しの絵を入れる')).toBe(false);
     expect(defaultCalls(app).length).toBe(1);
+  });
+});
+
+describe('キャラを選ぶ', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  const TAKU = { 'oshi.on': true, 'oshi.char': 'builtin:taku', 'oshi.home': false };
+  const picker = () => document.querySelector('[data-pref="oshi.char"]');
+  const cards = () => [...picker().querySelectorAll('.oshi-choice')];
+  const checked = () => cards().filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.char);
+  const openSettings = () => document.querySelector('.nav-item[data-tab="settings"]').click();
+
+  it('タクを使う人は、済ませるとタクの絵と明るい相棒のせりふで吹き出しが出る (自分の絵は取りに行かない)', () => {
+    const app = mountOshi(TAKU);
+    closeOneIssue();
+    const b = bubble();
+    expect(b.dataset.char).toBe('builtin:taku');
+    expect(b.querySelector('.oshi-name').textContent).toBe('タク');
+    expect(oshiFixture({ char: 'builtin:taku' }).events.find((e) => e.key === 'done').lines)
+      .toContain(b.querySelector('.oshi-line').textContent);
+    expect(b.querySelector('.oshi-line').textContent).toBe(loadGasWith(createFakeGas(), 'src/core/Oshi.js').OSHI_LINES().buddy.done[0]);
+    expect(b.querySelector('img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'celebrate'));
+    expect(b.querySelector('img').alt).toBe('タクの「おいわい」');
+    expect(defaultCalls(app)).toEqual([['taku', 'chibi', 'celebrate']]);
+    expect(names(app)).not.toContain('apiOshiImage');
+  });
+
+  it('設定の「使うキャラ」に、最初からいるキャラと自分のキャラがふつうの顔の絵つきのカードで並ぶ', () => {
+    const app = mountOshi({ 'oshi.on': true, 'oshi.home': false });
+    openSettings();
+    expect(cards().map((b) => b.dataset.char)).toEqual(['builtin:kuroha', 'builtin:taku', 'mine:1']);
+    expect(cards().map((b) => b.querySelector('.oshi-choice-name').textContent)).toEqual(['クロハ', 'タク', 'ルナ']);
+    expect(picker().querySelector('[role="radiogroup"]')).toBeTruthy();
+    expect(checked()).toEqual(['builtin:kuroha']);
+    // 最初からいるキャラは「ふつう」の絵、自分のキャラは「ふつう」の絵が無いので頭文字
+    expect(cards()[0].querySelector('img').getAttribute('src')).toBe(defaultUrl('kuroha', 'chibi', 'idle'));
+    expect(cards()[1].querySelector('img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'idle'));
+    expect(cards()[2].querySelector('img')).toBe(null);
+    expect(cards()[2].querySelector('.oshi-avatar').textContent).toBe('ル');
+    expect(defaultCalls(app)).toEqual([['kuroha', 'chibi', 'idle'], ['taku', 'chibi', 'idle']]);
+  });
+
+  it('カードを押すと apiPrefSet で保存し、選んだしるしが移る。吹き出しもそのキャラになる', () => {
+    const app = mountOshi({ 'oshi.on': true, 'oshi.home': false });
+    openSettings();
+    app.respond('apiOshiGet', oshiFixture({ char: 'builtin:taku' }));
+    cards()[1].click();
+    expect(app.calls.filter((c) => c.name === 'apiPrefSet').map((c) => c.args)).toEqual([['oshi.char', 'builtin:taku']]);
+    expect(checked()).toEqual(['builtin:taku']);
+    expect(document.getElementById('snackbar').textContent).toContain('「タク」を使います');
+    // 選び直すと推しを取り直す (名前・口調・絵が変わる)
+    closeOneIssue();
+    expect(bubble().querySelector('.oshi-name').textContent).toBe('タク');
+    // 同じカードをもう一度押しても書かない (開き直すと、設定は書いたあとの値で届く)
+    app.respond('apiPrefs', prefsFixture({ values: { 'oshi.on': true, 'oshi.home': false, 'oshi.char': 'builtin:taku' } }));
+    openSettings();
+    expect(checked()).toEqual(['builtin:taku']);
+    cards().find((b) => b.dataset.char === 'builtin:taku').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrefSet').length).toBe(1);
+  });
+
+  it('断られたら、選んだしるしは動かさない', () => {
+    const app = mountOshi({ 'oshi.on': true, 'oshi.home': false }, { apiPrefSet: new Error('そのキャラは選べません') });
+    openSettings();
+    cards()[2].click();
+    expect(names(app)).toContain('apiPrefSet');
+    expect(checked()).toEqual(['builtin:kuroha']);
+    expect(document.getElementById('snackbar').textContent).toContain('選べませんでした');
+  });
+
+  it('推しがオフなら、選び方は出るが絵も自分のキャラも取りに行かない', () => {
+    const app = mountOshi();
+    openSettings();
+    expect(cards().map((b) => b.dataset.char)).toEqual(['builtin:kuroha', 'builtin:taku']);
+    expect(picker().textContent).toContain('オンにすると');
+    expect(names(app)).not.toContain('apiOshiGet');
+    expect(names(app)).not.toContain('apiOshiDefaultImage');
+  });
+});
+
+describe('推しの頁: 自分のキャラを何人も', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  const TWO = { 'oshi.on': true, 'oshi.char': 'mine:1', 'oshi.home': false };
+  const tabs = (page) => [...page.querySelectorAll('.oshi-mine-tab')];
+
+  function mountTwo(over) {
+    return mountOshi(TWO, Object.assign({ apiOshiGet: oshiFixture({ two: true }) }, over || {}));
+  }
+
+  it('自分のキャラが並び、押したキャラの名前・絵・せりふを直す。使っているキャラにはしるしが付く', () => {
+    const app = mountTwo();
+    const page = openPage();
+    expect(tabs(page).map((b) => b.textContent)).toEqual(['ルナ ・ 使用中', 'ソラ']);
+    expect(page.querySelector('.oshi-profile').dataset.charId).toBe('1');
+    expect(page.querySelector('.oshi-name-input').value).toBe('ルナ');
+    expect(page.querySelector('.oshi-use').disabled).toBe(true);
+    tabs(page)[1].click();
+    const p2 = document.querySelector('.oshi-page');
+    expect(p2.querySelector('.oshi-profile').dataset.charId).toBe('2');
+    expect(p2.querySelector('.oshi-name-input').value).toBe('ソラ');
+    expect(p2.querySelector('.oshi-tone').value).toBe('cool');
+    expect(tabs(p2)[1].getAttribute('aria-pressed')).toBe('true');
+    expect(p2.querySelector('.oshi-state[data-state="idle"]').dataset.picture).toBe('mine');
+    expect(p2.querySelector('.oshi-state[data-state="celebrate"]').dataset.picture).toBe('default');
+    // ソラの絵は ソラの番号で取る
+    expect(app.calls.filter((c) => c.name === 'apiOshiImage').map((c) => c.args)).toContainEqual([2, 'idle']);
+    // 名前を決めると、ソラの番号で送る
+    p2.querySelector('.oshi-name-input').value = 'ソラ2';
+    app.respond('apiOshiSetProfile', (id, n, t) => ({ charId: id, name: n, tone: t }));
+    p2.querySelector('.oshi-profile-save').click();
+    expect(app.calls.find((c) => c.name === 'apiOshiSetProfile').args).toEqual([2, 'ソラ2', 'cool']);
+  });
+
+  it('「このキャラを使う」で使うキャラにする (書くのは apiPrefSet)', () => {
+    const app = mountTwo();
+    let page = openPage();
+    tabs(page)[1].click();
+    page = document.querySelector('.oshi-page');
+    page.querySelector('.oshi-use').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrefSet').map((c) => c.args)).toEqual([['oshi.char', 'mine:2']]);
+  });
+
+  it('「新しいキャラを作る」で作り、作ったキャラを直す画面になる。上限なら押せない', () => {
+    const app = mountTwo();
+    const page = openPage();
+    expect(page.textContent).toContain('5人まで作れます (いま 2人)');
+    app.respond('apiOshiCharCreate', () => ({ charId: 3, name: '', tone: 'polite' }));
+    const after = oshiFixture({ two: true });
+    after.mine.push({ charId: 3, name: '', tone: 'polite', images: [], events: after.mine[0].events.map((e) => Object.assign({}, e, { mine: [] })) });
+    app.respond('apiOshiGet', after);
+    page.querySelector('.oshi-create').click();
+    expect(app.calls.find((c) => c.name === 'apiOshiCharCreate').args).toEqual(['', 'polite']);
+    const p2 = document.querySelector('.oshi-page');
+    expect(p2.querySelector('.oshi-profile').dataset.charId).toBe('3');
+    expect(tabs(p2).map((b) => b.textContent)).toContain('名前なし (3人目)');
+
+    const full = oshiFixture({ two: true });
+    for (let i = 3; i <= 5; i++) full.mine.push(Object.assign({}, full.mine[1], { charId: i, name: 'キャラ' + i }));
+    mountOshi(TWO, { apiOshiGet: full });
+    const p3 = openPage();
+    expect(p3.querySelector('.oshi-create').disabled).toBe(true);
+    expect(p3.textContent).toContain('自分のキャラは5人までです');
+  });
+
+  it('「このキャラを消す」は確かめてから、そのキャラの番号だけを消す', () => {
+    const app = mountTwo();
+    let page = openPage();
+    tabs(page)[1].click();
+    page = document.querySelector('.oshi-page');
+    page.querySelector('.oshi-delete').click();
+    expect(names(app)).not.toContain('apiOshiCharDelete');
+    const strip = page.querySelector('.oshi-profile');
+    expect(strip.textContent).toContain('ほかのキャラは残ります');
+    const yes = [...strip.querySelectorAll('button')].find((b) => b.textContent === '消す');
+    app.respond('apiOshiGet', oshiFixture());
+    yes.click();
+    expect(app.calls.find((c) => c.name === 'apiOshiCharDelete').args).toEqual([2]);
+    expect(tabs(document.querySelector('.oshi-page')).map((b) => b.textContent)).toEqual(['ルナ ・ 使用中']);
+  });
+
+  it('自分のキャラがまだいなければ、作り方と「新しいキャラを作る」だけを出す', () => {
+    const none = oshiFixture({ char: 'builtin:taku' });
+    none.mine = [];
+    mountOshi({ 'oshi.on': true, 'oshi.char': 'builtin:taku', 'oshi.home': false }, { apiOshiGet: none });
+    const page = openPage();
+    expect(page.textContent).toContain('まだ自分のキャラはいません');
+    expect(page.textContent).toContain('いま使っているキャラ: タク');
+    expect(page.querySelector('.oshi-profile')).toBe(null);
+    expect(page.querySelector('.oshi-state')).toBe(null);
+    expect(page.querySelector('.oshi-create').disabled).toBe(false);
+    expect(page.querySelector('button.oshi-copy[data-prompt="base"]')).toBeTruthy();
   });
 });

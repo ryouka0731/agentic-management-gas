@@ -12,7 +12,7 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**', 'coverage-ui/**'],
       extension: ['.js', '.gs', '.html'],
-      exclude: ['src/KitFiles.gs', 'src/KitSigning.gs', 'src/core/OshiDefaultNormal.gs', 'src/core/OshiDefaultChibi.gs', 'src/ui/app.css.html', 'src/ui/wiki.html', 'src/appsscript.json'],
+      exclude: ['src/KitFiles.gs', 'src/KitSigning.gs', 'src/core/OshiDefaultKurohaNormal.gs', 'src/core/OshiDefaultKurohaChibi.gs', 'src/core/OshiDefaultTakuNormal.gs', 'src/core/OshiDefaultTakuChibi.gs', 'src/ui/app.css.html', 'src/ui/wiki.html', 'src/appsscript.json'],
     },
   },
 });

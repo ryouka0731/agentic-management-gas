@@ -51,8 +51,8 @@ function DB_SCHEMA() {
       'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
     // 推し (自分だけのキャラクター。既定はオフ)。名前・口調・自分のせりふは1人1行、
     // 表情の画像は中身を objects/ に置き、どの人のどの表情かだけをここに書く
-    oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt'],
-    oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt'],
+    oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId'],
+    oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
   };
 }
 

@@ -225,13 +225,21 @@ function PREF_GROUPS_() {
           def: false },
         { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し',
           label: 'ホームであいさつする', help: '推しがオンのとき、ホームに推しのカードを出します', def: true },
-        { key: 'oshi.useDefault', scope: 'me', type: 'bool', section: '推し',
-          label: '最初からいるキャラを使う',
-          help: '自分の絵を入れていない表情には、最初からいるキャラ (' + OSHI_DEFAULT().name +
-            ') の絵を出します。自分の絵だけにしたいときは外してください',
-          def: true },
+        { key: 'oshi.char', scope: 'me', type: 'char', section: '推し',
+          label: '使うキャラ',
+          help: '最初からいるキャラ (' + OSHI_BUILTINS().map(function (c) { return c.name; }).join('・') +
+            ') か、推しの頁で作った自分のキャラから選びます',
+          // 選べるのは最初からいるキャラと、その人が作った自分のキャラ。人ごとに違うので、検査は oshiCharKnownFor_ が行う
+          options: OSHI_BUILTINS().map(function (c) { return { value: 'builtin:' + c.key, label: c.name }; }),
+          def: 'builtin:' + OSHI_BUILTINS()[0].key },
+        { key: 'oshi.fallback', scope: 'me', type: 'enum', section: '推し',
+          label: '自分のキャラの絵が無い表情',
+          help: '自分のキャラを使っていて、その表情の絵をまだ入れていないときに出す絵です。「出さない」なら名前の頭文字になります',
+          options: OSHI_BUILTINS().map(function (c) { return { value: 'builtin:' + c.key, label: c.name + 'の絵を出す' }; })
+            .concat([{ value: 'none', label: '出さない' }]),
+          def: 'builtin:' + OSHI_BUILTINS()[0].key },
         { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し',
-          label: '最初からいるキャラの絵', help: '2頭身か、等身か。自分で入れた絵は変わりません',
+          label: '最初からいるキャラの絵', help: '2頭身か、等身か。自分のキャラに入れた絵は変わりません',
           options: OSHI_STYLES().map(function (s) { return { value: s.key, label: s.label }; }),
           def: OSHI_STYLES()[0].key },
       ];
@@ -283,9 +291,10 @@ function prefItem_(key) {
  *
  * @param {object} item
  * @param {*} v
+ * @param {string} [email] 誰の設定か。使うキャラ (type 'char') は人ごとに選べるものが違うので要る
  * @returns {boolean}
  */
-function prefValid_(item, v) {
+function prefValid_(item, v, email) {
   if (!item) return false;
   function intIn(n) {
     return typeof n === 'number' && isFinite(n) && Math.floor(n) === n && n >= item.min && n <= item.max;
@@ -295,6 +304,8 @@ function prefValid_(item, v) {
   if (item.type === 'enum') {
     return typeof v === 'string' && (item.options || []).some(function (o) { return o.value === v; });
   }
+  // 使うキャラ: 最初からいるキャラか、その人が作った自分のキャラ。自分のキャラのときだけ台帳を読む
+  if (item.type === 'char') return typeof v === 'string' && oshiCharKnownFor_(email, v);
   if (item.type === 'steps') {
     if (!Array.isArray(v) || v.length !== 3) return false;
     for (var i = 0; i < v.length; i++) {
@@ -376,15 +387,16 @@ function prefGet_(key, email, read) {
  */
 function prefValueOf_(item, email, read) {
   var v;
+  var who = '';
   if (item.scope === 'me') {
-    var who = String(email || currentEmail_());
+    who = String(email || currentEmail_());
     var mine = who ? prefParse_(read(prefMineKey_(who))) : undefined;
     if (mine && typeof mine === 'object' && !Array.isArray(mine) &&
         Object.prototype.hasOwnProperty.call(mine, item.key)) v = mine[item.key];
   } else {
     v = prefParse_(read(prefTeamKey_(item.key)));
   }
-  if (v !== undefined && prefValid_(item, v)) return { value: v, custom: true };
+  if (v !== undefined && prefValid_(item, v, who)) return { value: v, custom: true };
   return { value: item.def, custom: false };
 }
 
@@ -410,7 +422,10 @@ function apiPrefSet(key, value) {
   var item = prefItem_(key);
   if (!item) throw new Error('知らない設定です: ' + key);
   var reset = value === null || value === undefined;
-  if (!reset && !prefValid_(item, value)) {
+  if (!reset && item.type === 'char' && !prefValid_(item, value, currentEmail_())) {
+    throw new Error('そのキャラは選べません。最初からいるキャラか、推しの頁で作った自分のキャラを選んでください');
+  }
+  if (!reset && !prefValid_(item, value, currentEmail_())) {
     throw new Error('「' + item.label + '」に入れられない値です' +
       (item.type === 'int' ? ' (' + item.min + '〜' + item.max + ' の整数)' : '') +
       (item.type === 'steps' ? ' (' + item.min + '〜' + item.max + ' の整数を小さい順に3つ)' : ''));
@@ -497,7 +512,8 @@ function apiPrefs(opts) {
       focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
         remind: plainText(byKey['focus.remind']) },
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
-        useDefault: byKey['oshi.useDefault'] !== false, style: plainText(byKey['oshi.style']) },
+        char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
+        style: plainText(byKey['oshi.style']) },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),

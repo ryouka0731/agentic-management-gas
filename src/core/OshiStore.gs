@@ -1,9 +1,13 @@
 /**
  * 推しの置き場。定義 (表情・口調・せりふ・頼み文・上限) は src/core/Oshi.js が持つ。
  *
- * - 名前・口調・自分のせりふは台帳の `oshi` に、1人1行
- * - 表情ごとの画像は、中身を objects/ (中身の指紋の名前) に、どの人のどの表情かを台帳の `oshi_images` に置く
+ * - 自分のキャラは1人 OSHI_MINE_MAX 人まで。人ごとの番号 (`charId`) で分ける
+ * - 名前・口調・自分のせりふは台帳の `oshi` に、キャラごとに1行
+ * - 表情ごとの画像は、中身を objects/ (中身の指紋の名前) に、どの人のどのキャラのどの表情かを台帳の `oshi_images` に置く
  *   (台帳のセルには上限があり、画像は入らない)
+ * - `charId` は後から足した列。それより前の行は空で、その人の1人目 (1) として読む (oshiCharIdOf_)
+ * - 最初からいるキャラ (OSHI_BUILTINS) は台帳に置かない。名前・口調は決まっていて、絵は焼いたファイルにある
+ * - どのキャラを使うかは自分の設定 oshi.char、自分のキャラの絵が無い表情に出す最初からいるキャラは oshi.fallback
  * - 育ちの最高の段だけを UserProperties (`OSHI_STAGE_MAX:<アドレス>`) に覚える (取り消しで戻さない)
  *
  * **番頭の画面では本人にだけ見せる。** 末尾が _ の関数はアドレスを受けるので画面から呼べない。
@@ -22,29 +26,72 @@ function oshiWho_(email) {
 }
 
 /**
- * その人が最初からいるキャラクターを使うか (自分の設定 oshi.useDefault。既定はオン)。
+ * 行の自分のキャラの番号。**この列 (charId) を足す前の行は空なので、その人の1人目 (1) として読む**
+ * (それまでは1人1キャラだった)。書き直すときに 1 が入る。
  *
- * @param {string} email
- * @returns {boolean}
+ * @param {object} row
+ * @returns {number}
  */
-function oshiUseDefault_(email) {
-  return prefGet_('oshi.useDefault', oshiWho_(email)) !== false;
+function oshiCharIdOf_(row) {
+  var n = Number(row && row.charId);
+  return isFinite(n) && n >= 1 && Math.floor(n) === n ? n : 1;
 }
 
 /**
- * その人の名前・口調・自分のせりふ。まだ決めていなければ、最初からいるキャラを使う人は
- * その名前と口調 (OSHI_DEFAULT)、使わない人は名前なし・丁寧。せりふは無し。
+ * 画面から届いた自分のキャラの番号を読む。読めなければふつうの言葉で断る。
+ *
+ * @param {*} v
+ * @returns {number}
+ */
+function oshiCharIdArg_(v) {
+  var n = Number(v);
+  if (!(isFinite(n) && n >= 1 && n < 1000000 && Math.floor(n) === n)) throw new Error('知らないキャラです: ' + v);
+  return n;
+}
+
+/**
+ * その人の自分のキャラの番号 (小さい順)。名前の行か、絵の行のどちらかがあれば「ある」。
+ * (前は名前を決めずに絵だけ入れられたので、絵の行しか無い1人目もある)
  *
  * @param {string} email
- * @param {object[]} [rows] 読んだ oshi の行
- * @returns {{row: (object|null), name: string, tone: string, lines: Object<string, string[]>}}
+ * @param {object[]} [profRows] 読んだ oshi の行
+ * @param {object[]} [imgRows] 読んだ oshi_images の行
+ * @returns {number[]}
  */
-function oshiProfile_(email, rows) {
+function oshiMineIds_(email, profRows, imgRows) {
+  var who = oshiWho_(email);
+  var seen = {};
+  if (!who) return [];
+  (profRows || dbReadAll('oshi')).concat(imgRows || dbReadAll('oshi_images')).forEach(function (r) {
+    if (oshiWho_(r.who) === who) seen[oshiCharIdOf_(r)] = true;
+  });
+  return Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+}
+
+/**
+ * 自分のキャラがあるか確かめる。無ければふつうの言葉で断る。
+ *
+ * @param {string} email
+ * @param {number} id
+ */
+function oshiAssertMine_(email, id) {
+  if (oshiMineIds_(email).indexOf(id) < 0) throw new Error('そのキャラは見つかりません。推しの頁を開き直してください');
+}
+
+/**
+ * 自分のキャラの名前・口調・自分のせりふ。名前の行が無ければ (絵だけの1人目) 名前なし・丁寧。
+ *
+ * @param {string} email
+ * @param {number} id 自分のキャラの番号
+ * @param {object[]} [rows] 読んだ oshi の行
+ * @returns {{row: (object|null), id: number, name: string, tone: string, lines: Object<string, string[]>}}
+ */
+function oshiProfile_(email, id, rows) {
   var who = oshiWho_(email);
   var list = rows || dbReadAll('oshi');
   var row = null;
   for (var i = 0; i < list.length; i++) {
-    if (oshiWho_(list[i].who) === who) { row = list[i]; break; }
+    if (oshiWho_(list[i].who) === who && oshiCharIdOf_(list[i]) === id) { row = list[i]; break; }
   }
   var lines = {};
   if (row && row.lines) {
@@ -60,34 +107,83 @@ function oshiProfile_(email, rows) {
       }
     } catch (e) { /* 読めなければ、せりふは無いことにする */ }
   }
-  var first = row ? null : (oshiUseDefault_(who) ? OSHI_DEFAULT() : { name: '', tone: 'polite' });
-  var tone = row ? (oshiToneKnown(row.tone) ? String(row.tone) : 'polite') : first.tone;
-  return { row: row, name: row ? plainText(row.name) : first.name, tone: tone, lines: lines };
+  var tone = row && oshiToneKnown(row.tone) ? String(row.tone) : 'polite';
+  return { row: row, id: id, name: row ? plainText(row.name) : '', tone: tone, lines: lines };
 }
 
 /**
  * 名前・口調・せりふを書く。**あるか見てから書くまでを1つの鍵の中で行う**
- * (分けると、ほぼ同時の2回が両方「無い」と読んで、同じ人の行が2つ並ぶ)。
+ * (分けると、ほぼ同時の2回が両方「無い」と読んで、同じキャラの行が2つ並ぶ)。
  *
  * @param {string} email
+ * @param {number} id
  * @param {{name?: string, tone?: string, lines?: Object<string, string[]>}} patch
- * @returns {{name: string, tone: string, lines: Object<string, string[]>}}
+ * @returns {{id: number, name: string, tone: string, lines: Object<string, string[]>}}
  */
-function oshiProfileWrite_(email, patch) {
+function oshiProfileWrite_(email, id, patch) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   return dbWithLock_(30000, function () {
-    var cur = oshiProfile_(who);
+    oshiAssertMine_(who, id);
+    var cur = oshiProfile_(who, id);
     var next = {
       who: who,
       name: patch.name !== undefined ? patch.name : cur.name,
       tone: patch.tone !== undefined ? patch.tone : cur.tone,
       lines: JSON.stringify(patch.lines !== undefined ? patch.lines : cur.lines),
       updatedAt: new Date(),
+      charId: id,
     };
     if (cur.row) dbUpdate('oshi', 'id', cur.row.id, next);
     else dbAppendNumbered('oshi', 'id', next);
-    return { name: next.name, tone: next.tone, lines: JSON.parse(next.lines) };
+    return { id: id, name: next.name, tone: next.tone, lines: JSON.parse(next.lines) };
+  });
+}
+
+/**
+ * 名前を整える。長すぎれば断る。
+ *
+ * @param {*} name
+ * @returns {string}
+ */
+function oshiCleanName_(name) {
+  var lim = OSHI_TEXT_LIMITS();
+  var n = String(name == null ? '' : name).replace(/^\s+|\s+$/g, '');
+  if (n.length > lim.nameMax) throw new Error('名前は' + lim.nameMax + '字までにしてください');
+  return n;
+}
+
+/**
+ * 自分のキャラを1人作る。上限 (OSHI_MINE_MAX) まで。
+ *
+ * **番号は人ごとの通し番号で、一度出した番号は二度出さない** (スクリプトプロパティ `OSHI_CHAR_HIGH:<アドレス>`
+ * に出した最大を覚える)。消した番号を次のキャラに回すと、自分の設定 oshi.char が指していた消したキャラが、
+ * 選んだ覚えの無い新しいキャラにすり替わる。数えるのと書くのは1つの鍵の中で行う。
+ *
+ * @param {string} email
+ * @param {string} name
+ * @param {string} tone
+ * @returns {{id: number, name: string, tone: string}}
+ */
+function oshiCharCreate_(email, name, tone) {
+  var who = oshiWho_(email);
+  if (!who) throw new Error('誰の推しか分かりません');
+  var n = oshiCleanName_(name);
+  var t = tone === undefined || tone === null || tone === '' ? 'polite' : String(tone);
+  if (!oshiToneKnown(t)) throw new Error('知らない口調です: ' + t);
+  return dbWithLock_(30000, function () {
+    var ids = oshiMineIds_(who);
+    if (ids.length >= OSHI_MINE_MAX()) {
+      throw new Error('自分のキャラは' + OSHI_MINE_MAX() + '人までです。作り直すときは、使わないキャラを消してください');
+    }
+    var props = PropertiesService.getScriptProperties();
+    var key = 'OSHI_CHAR_HIGH:' + who;
+    var high = Number(props.getProperty(key));
+    if (!isFinite(high) || high < 0) high = 0;
+    var id = Math.max(high, ids.length ? ids[ids.length - 1] : 0) + 1;
+    dbAppendNumbered('oshi', 'id', { who: who, name: n, tone: t, lines: '{}', updatedAt: new Date(), charId: id });
+    props.setProperty(key, String(id));
+    return { id: id, name: n, tone: t };
   });
 }
 
@@ -95,52 +191,55 @@ function oshiProfileWrite_(email, patch) {
  * 名前と口調を決める。
  *
  * @param {string} email
+ * @param {number} id
  * @param {string} name 空なら名前なし
  * @param {string} tone OSHI_TONES の key
  * @returns {object}
  */
-function oshiSetProfile_(email, name, tone) {
-  var lim = OSHI_TEXT_LIMITS();
-  var n = String(name == null ? '' : name).replace(/^\s+|\s+$/g, '');
-  if (n.length > lim.nameMax) throw new Error('名前は' + lim.nameMax + '字までにしてください');
+function oshiSetProfile_(email, id, name, tone) {
+  var n = oshiCleanName_(name);
   if (!oshiToneKnown(tone)) throw new Error('知らない口調です: ' + tone);
-  return oshiProfileWrite_(email, { name: n, tone: String(tone) });
+  return oshiProfileWrite_(email, id, { name: n, tone: String(tone) });
 }
 
 /**
- * 場面ごとの自分のせりふを決める。空にすると、その場面は既定のせりふだけになる。
+ * 場面ごとの自分のせりふを決める。空にすると、その場面は口調のせりふだけになる。
  *
  * @param {string} email
+ * @param {number} id
  * @param {string} event OSHI_EVENTS の key
  * @param {string[]|string} lines
  * @returns {string[]} 残したせりふ
  */
-function oshiSetLines_(email, event, lines) {
+function oshiSetLines_(email, id, event, lines) {
   if (!oshiEventOf(event)) throw new Error('知らない場面です: ' + event);
   var clean = oshiCleanLines(lines);
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   return dbWithLock_(30000, function () {
-    var all = oshiProfile_(who).lines;
+    oshiAssertMine_(who, id);
+    var all = oshiProfile_(who, id).lines;
     if (clean.length) all[String(event)] = clean;
     else delete all[String(event)];
-    oshiProfileWrite_(who, { lines: all });
+    oshiProfileWrite_(who, id, { lines: all });
     return clean;
   });
 }
 
 /**
- * その人の画像の行。表情ごとに1つ (同じ表情が2つあれば後のもの)。
+ * そのキャラの画像の行。表情ごとに1つ (同じ表情が2つあれば後のもの)。
  *
  * @param {string} email
+ * @param {number} id
+ * @param {object[]} [rows] 読んだ oshi_images の行
  * @returns {Object<string, object>} state → 行
  */
-function oshiImageRows_(email) {
+function oshiImageRows_(email, id, rows) {
   var who = oshiWho_(email);
   var out = {};
   if (!who) return out;
-  dbReadAll('oshi_images').forEach(function (r) {
-    if (oshiWho_(r.who) !== who) return;
+  (rows || dbReadAll('oshi_images')).forEach(function (r) {
+    if (oshiWho_(r.who) !== who || oshiCharIdOf_(r) !== id) return;
     if (!oshiStateOf(r.state)) return;
     out[String(r.state)] = r;
   });
@@ -201,11 +300,12 @@ function oshiParseImage_(dataUrl) {
  * どこからも指されない中身が残る)。差し替えた前の中身は、ほかに指す行が無ければゴミ箱へ移す。
  *
  * @param {string} email
+ * @param {number} id 自分のキャラの番号
  * @param {string} state OSHI_STATES の key
  * @param {string} dataUrl
- * @returns {{state: string, sha: string, mime: string}}
+ * @returns {{charId: number, state: string, sha: string, mime: string}}
  */
-function oshiSetImage_(email, state, dataUrl) {
+function oshiSetImage_(email, id, state, dataUrl) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
@@ -214,9 +314,10 @@ function oshiSetImage_(email, state, dataUrl) {
   var sha = sha256HexBytes(blob);
 
   return dbWithLock_(30000, function () {
-    var old = oshiImageRows_(who)[String(state)] || null;
+    oshiAssertMine_(who, id);
+    var old = oshiImageRows_(who, id)[String(state)] || null;
     objectPutBlob(sha, blob, img.ext);
-    var row = { who: who, state: String(state), sha: sha, mime: img.mime, updatedAt: new Date() };
+    var row = { who: who, state: String(state), sha: sha, mime: img.mime, updatedAt: new Date(), charId: id };
     if (old) {
       row.id = old.id;
       dbUpdate('oshi_images', 'id', old.id, row);
@@ -224,7 +325,7 @@ function oshiSetImage_(email, state, dataUrl) {
     } else {
       dbAppendNumbered('oshi_images', 'id', row);
     }
-    return { state: row.state, sha: sha, mime: img.mime };
+    return { charId: id, state: row.state, sha: sha, mime: img.mime };
   });
 }
 
@@ -250,15 +351,16 @@ function oshiDropObject_(sha, mime) {
  * 表情の画像を外す。
  *
  * @param {string} email
+ * @param {number} id
  * @param {string} state
  * @returns {boolean} 外したか
  */
-function oshiClearImage_(email, state) {
+function oshiClearImage_(email, id, state) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
   return dbWithLock_(30000, function () {
-    var old = oshiImageRows_(who)[String(state)];
+    var old = oshiImageRows_(who, id)[String(state)];
     if (!old) return false;
     dbDelete('oshi_images', 'id', old.id);
     oshiDropObject_(String(old.sha), String(old.mime));
@@ -267,8 +369,37 @@ function oshiClearImage_(email, state) {
 }
 
 /**
- * 推しをまるごと消す (名前・口調・せりふ・画像)。入れた道と対の、出る道。
+ * 自分のキャラを1人消す (名前・口調・せりふ・絵)。入れた道と対の、出る道。ほかのキャラはそのまま。
  * 画像の行を先に消し、名前の行を最後に消す (途中で落ちても、もう一度押せば片付く)。
+ * 中身 (objects/) は、ほかに指す行が無ければゴミ箱へ移す。
+ *
+ * @param {string} email
+ * @param {number} id
+ * @returns {number} 消した画像の数
+ */
+function oshiCharDelete_(email, id) {
+  var who = oshiWho_(email);
+  if (!who) throw new Error('誰の推しか分かりません');
+  return dbWithLock_(30000, function () {
+    oshiAssertMine_(who, id);
+    var n = 0;
+    // 同じ表情の行が2つ残っていることもある (手で書き足した行)。そのキャラの行は全部消す
+    dbReadAll('oshi_images').forEach(function (r) {
+      if (oshiWho_(r.who) !== who || oshiCharIdOf_(r) !== id) return;
+      dbDelete('oshi_images', 'id', r.id);
+      oshiDropObject_(String(r.sha), String(r.mime));
+      n++;
+    });
+    dbReadAll('oshi').forEach(function (r) {
+      if (oshiWho_(r.who) === who && oshiCharIdOf_(r) === id) dbDelete('oshi', 'id', r.id);
+    });
+    return n;
+  });
+}
+
+/**
+ * 自分のキャラを全部消す (名前・口調・せりふ・画像・育ちの覚え)。
+ * 出した番号の覚え (OSHI_CHAR_HIGH) は残す (消した番号を次のキャラに回さない)。
  *
  * @param {string} email
  * @returns {number} 消した画像の数
@@ -277,15 +408,8 @@ function oshiForget_(email) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   return dbWithLock_(30000, function () {
-    var imgs = oshiImageRows_(who);
     var n = 0;
-    Object.keys(imgs).forEach(function (k) {
-      dbDelete('oshi_images', 'id', imgs[k].id);
-      oshiDropObject_(String(imgs[k].sha), String(imgs[k].mime));
-      n++;
-    });
-    var prof = oshiProfile_(who);
-    if (prof.row) dbDelete('oshi', 'id', prof.row.id);
+    oshiMineIds_(who).forEach(function (id) { n += oshiCharDelete_(who, id); });
     PropertiesService.getUserProperties().deleteProperty('OSHI_STAGE_MAX:' + who);
     return n;
   });
@@ -295,12 +419,13 @@ function oshiForget_(email) {
  * 表情の画像を data URL で返す。本人の行だけを見る (中身の指紋を名指しで読む道は作らない)。
  *
  * @param {string} email
+ * @param {number} id
  * @param {string} state
- * @returns {{state: string, sha: string, dataUrl: string}|null}
+ * @returns {{charId: number, state: string, sha: string, dataUrl: string}|null}
  */
-function oshiImageData_(email, state) {
+function oshiImageData_(email, id, state) {
   if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
-  var row = oshiImageRows_(email)[String(state)];
+  var row = oshiImageRows_(email, id)[String(state)];
   if (!row) return null;
   var ext = OSHI_IMAGE_LIMITS().mimes[String(row.mime)];
   if (!ext || !/^[0-9a-f]{64}$/.test(String(row.sha))) return null;
@@ -309,6 +434,7 @@ function oshiImageData_(email, state) {
   // 100KB を超えうるのでキャッシュに置かない (CacheService の上限)。画面が中身の指紋ごとに覚える
   var bytes = it.next().getBlob().getBytes();
   return {
+    charId: id,
     state: String(row.state),
     sha: String(row.sha),
     dataUrl: 'data:' + String(row.mime) + ';base64,' + Utilities.base64Encode(bytes),
@@ -369,16 +495,62 @@ function oshiGrowth_(email) {
 }
 
 /**
- * 最初からいるキャラクターの絵 (data URL)。形と表情は定義にあるものだけを通す。
- * 絵は src/core/OshiDefault{Normal,Chibi}.gs (scripts/build-oshi-default.mjs が作る)。
+ * 最初からいるキャラクターの絵 (data URL)。キャラ・形・表情は定義にあるものだけを通す。
+ * 絵は src/core/OshiDefault<キャラ><形>.gs (scripts/build-oshi-default.mjs が作る)。
  *
+ * @param {string} char OSHI_BUILTINS の key
  * @param {string} style OSHI_STYLES の key
  * @param {string} state OSHI_STATES の key
  * @returns {string|null} 絵が無ければ null
  */
-function oshiDefaultImage_(style, state) {
+function oshiDefaultImage_(char, style, state) {
+  if (!oshiBuiltinOf(char)) throw new Error('知らないキャラです: ' + char);
   if (!oshiStyleKnown(style)) throw new Error('知らない絵の形です: ' + style);
   if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
-  var all = String(style) === 'normal' ? OSHI_DEFAULT_NORMAL() : OSHI_DEFAULT_CHIBI();
-  return Object.prototype.hasOwnProperty.call(all, String(state)) ? all[String(state)] : null;
+  var all = oshiDefaultPictures_(String(char), String(style));
+  return all && Object.prototype.hasOwnProperty.call(all, String(state)) ? all[String(state)] : null;
+}
+
+/**
+ * キャラと形 → 焼いた絵の表。キャラを足したら、ここにも足す (test/oshi.test.js が全部の組を引いて見ている)。
+ * 呼ぶのは要るときだけ (焼いたファイルは大きいので、読まないテストもある)。
+ *
+ * @param {string} char
+ * @param {string} style
+ * @returns {Object<string,string>|null}
+ */
+function oshiDefaultPictures_(char, style) {
+  if (char === 'kuroha') return style === 'normal' ? OSHI_DEFAULT_KUROHA_NORMAL() : OSHI_DEFAULT_KUROHA_CHIBI();
+  if (char === 'taku') return style === 'normal' ? OSHI_DEFAULT_TAKU_NORMAL() : OSHI_DEFAULT_TAKU_CHIBI();
+  return null;
+}
+
+/**
+ * 使うキャラの名指しが、その人にとって在るものか。最初からいるキャラは誰にでもあり、
+ * 自分のキャラは本人が持っているものだけ (自分の設定 oshi.char の検査。Prefs.gs の prefValid_ が呼ぶ)。
+ *
+ * @param {string} email
+ * @param {*} v
+ * @returns {boolean}
+ */
+function oshiCharKnownFor_(email, v) {
+  var c = oshiCharParse(v);
+  if (!c) return false;
+  if (c.kind === 'builtin') return true;
+  return oshiMineIds_(email).indexOf(c.id) >= 0;
+}
+
+/**
+ * いま使うキャラ (自分の設定 oshi.char)。在るものだけが返る (無い・消したキャラなら既定の最初からいるキャラ)。
+ * 自分のキャラのときは、絵の無い表情に出す最初からいるキャラ (oshi.fallback。'none' なら出さない) も添える。
+ *
+ * @param {string} email
+ * @returns {{value: string, kind: string, key: string, id: number, fallback: string}}
+ */
+function oshiChoice_(email) {
+  var who = oshiWho_(email);
+  var value = String(prefGet_('oshi.char', who));
+  var c = oshiCharParse(value) || oshiCharParse('builtin:' + OSHI_BUILTINS()[0].key);
+  var fb = oshiCharParse(prefGet_('oshi.fallback', who));
+  return { value: value, kind: c.kind, key: c.key, id: c.id, fallback: fb && fb.kind === 'builtin' ? fb.key : '' };
 }

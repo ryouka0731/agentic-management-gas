@@ -188,23 +188,37 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 画面が持つのは「成功した api の名前 → 場面」の表 `OSHI_CALL_EVENTS()` だけ。`FUN_CHEERS` と同じく `call()` の
   成功の枝から `oshiAfter` を呼ぶ。失敗の枝からは `oshiAfterFail` を呼び、**表に当たる (人が押した) 操作だけ**
   「しんぱい」を出す (裏で取るだけの呼び出しの失敗では出さない)。**キャラクターは叱らない**
-- 画像は1枚ずつ `apiOshiImage(state)` で取り、中身の指紋ごとに画面が覚える (`oshiImgs`)。サーバはキャッシュに置かない
+- 画像は1枚ずつ `apiOshiImage(charId, state)` で取り、中身の指紋ごとに画面が覚える (`oshiImgs`)。サーバはキャッシュに置かない
   (CacheService は1つ 100KB まで)。絵が無い表情は、育ちの段の絵 → ふつうの絵 → 名前の頭文字の順に代える
 - 上げる前に画面で長い辺 512px に縮める (canvas が使えるときだけ。GIF は縮めない)。上限・形式はサーバの値で見て、
   サーバも同じ値で断る (先頭のバイトで中身の形式も見る)
 - 吹き出しは1つ (`#oshi-bubble`)。字は `textContent`、絵は自分の推しの data URL だけ。押せば閉じ、6秒で消える。
   動きを減らす設定では CSS がふわっと出る動きを止める。「久しぶり」は端末に最後に開いた日 (`oshiLastSeen`) だけを覚え、
   連続日数は数えない
-- **最初からいるキャラ (クロハ)**。自分の絵が無い表情には、その絵を出す (自分の設定 `oshi.useDefault`、既定オン。
-  形は `oshi.style` = `chibi` / `normal`、既定は 2頭身)。名前と口調の既定は `OSHI_DEFAULT()` (`Oshi.js`)、まだ決めて
-  いない人にだけ効く (`oshiProfile_`。使わない設定の人は名前なし・丁寧のまま)
-  - 絵の本物は `assets/oshi-default/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の
-    data URL にして `src/core/OshiDefaultNormal.gs` / `src/core/OshiDefaultChibi.gs` に焼く (`build-kit.mjs` → `KitFiles.gs`
-    と同じ形。**焼いたものは手で直さない**。1つ 600KB まで)。`npm run deploy` が送る前に焼き直し、
-    `test/oshi-default.test.js` が assets と一致しているかを見ている。表情と形の並びは `Oshi.js` から読む
-  - **最初のページには入れない。** 全部で 1MB 近くあるので、吹き出し・カード・頁が要るときに
-    `apiOshiDefaultImage(style, state)` で1枚ずつ取り、画面が `'形:表情'` ごとに覚える (`oshiDefaultImgs`。取りに行っている
-    最中の同じ絵は待ち合わせる)。使わない設定の人は1度も取らない。形と表情は定義にあるものだけを通す
+- **キャラは2種類。** 最初からいるキャラ (`OSHI_BUILTINS()` が唯一の表。クロハ = 耽美、タク = 明るい相棒。名前・口調・絵は
+  決まっていて変えられない) と、本人が作る自分のキャラ (`OSHI_MINE_MAX()` = 5人まで。番号 `charId` で名指す)。どれを使うかは
+  自分の設定 `oshi.char` (`'builtin:<key>'` / `'mine:<charId>'`、既定は `'builtin:kuroha'`)。`apiOshiGet` はいま使うキャラ
+  (`kind` / `builtinKey` / `charId` / `name` / `tone` / `events` / `images`) と、頁で直すための自分のキャラ全部 (`mine`) を返す
+  - **`oshi.char` は人ごとに選べるものが違う** (type `'char'`)。`prefValid_(item, v, email)` が `oshiCharKnownFor_` で、
+    最初からいるキャラか、その人が持っている自分のキャラかを見る (自分のキャラのときだけ台帳を読む)。無い・消したキャラを
+    指していても表示の道では断らず既定に倒し (`prefValueOf_`)、`apiPrefSet` だけがふつうの言葉で断る。選んでいた自分のキャラを
+    消すと `apiOshiCharDelete` が既定に戻す。画面の選び方は `makeOshiCharPicker` (設定の一覧で `type === 'char'` の欄だけ
+    js-oshi が組む)。最初からいるキャラは設定の `options`、自分のキャラは `apiOshiGet` の `mine` から並べ、ふつうの顔の絵を
+    添える (**推しがオンのときだけ絵を取る**)。押したら `apiPrefSet` で書く (書くのはここだけ、のまま)
+  - 自分のキャラの絵が無い表情には `oshi.fallback` (`'builtin:<key>'` / `'none'`、既定はクロハ) の絵を出す。最初からいるキャラを
+    使っているときは、そのキャラの絵だけ。形は `oshi.style` = `chibi` / `normal`、既定は 2頭身
+  - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)
+  - 絵の本物は `assets/oshi-default/<キャラ>/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の
+    data URL にして、キャラ×形ごとに `src/core/OshiDefault<キャラ><形>.gs` (関数は `OSHI_DEFAULT_<キャラ>_<形>`) に焼く
+    (`build-kit.mjs` → `KitFiles.gs` と同じ形。**焼いたものは手で直さない**。1つ 600KB まで)。`npm run deploy` が送る前に
+    焼き直し、`test/oshi-default.test.js` が assets と一致しているかを見ている。キャラ・表情・形の並びは `Oshi.js` から読む。
+    **キャラを足したら** `OshiStore.gs` の `oshiDefaultPictures_` と `OSHI_DEFAULT_SOURCES` (`test/sources.js`) にも足す
+    (ファイル名は src の中で他と重ならないこと。同じ名前の .js と .gs は clasp で1つになる。`test/sources.test.js` が見ている)
+  - **最初のページには入れない。** 1人の2つの形で 1MB 近くあるので、吹き出し・カード・頁・設定の選び方が要るときに
+    `apiOshiDefaultImage(char, style, state)` で1枚ずつ取り、画面が `'キャラ:形:表情'` ごとに覚える (`oshiDefaultImgs`。
+    取りに行っている最中の同じ絵は待ち合わせる)。オフの人・絵を出さない設定の人は1度も取らない。キャラ・形・表情は定義に
+    あるものだけを通す
   - テストで読むときは `OSHI_DEFAULT_SOURCES` (`test/sources.js`) を足す。大きいので `APP_SOURCES` には入れていない
-  - 実在の人の名前を既定にしない (名前・口調は架空のもので、利用者が変えられる)。既定のキャラの絵は利用者が用意したもの (2026-10-21)
+  - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
+    (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`

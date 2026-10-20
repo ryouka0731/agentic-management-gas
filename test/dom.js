@@ -222,7 +222,7 @@ const API_NAMES = [
   'apiFoundFiles', 'apiRegisterFiles', 'apiMainFolderUrl', 'apiUnregisterFile',
   'apiAppUrl', 'apiWorkStyle', 'apiWorkStyleSave', 'apiWorkStyleForget', 'apiWorkStyleTeam',
   'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
-  'apiOshiForget', 'apiOshiDefaultImage',
+  'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
 ];
 
 /**
@@ -254,7 +254,11 @@ export function prefsFixture(over) {
     { key: 'style.share', scope: 'me', type: 'bool', section: '仕事のスタンス診断', label: '診断の型の名前をチームに見せる', help: '', def: false },
     { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し', label: '推しに応援してもらう', help: '', def: false },
     { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し', label: 'ホームであいさつする', help: '', def: true },
-    { key: 'oshi.useDefault', scope: 'me', type: 'bool', section: '推し', label: '最初からいるキャラを使う', help: '', def: true },
+    { key: 'oshi.char', scope: 'me', type: 'char', section: '推し', label: '使うキャラ', help: '',
+      options: [{ value: 'builtin:kuroha', label: 'クロハ' }, { value: 'builtin:taku', label: 'タク' }], def: 'builtin:kuroha' },
+    { key: 'oshi.fallback', scope: 'me', type: 'enum', section: '推し', label: '自分のキャラの絵が無い表情', help: '',
+      options: [{ value: 'builtin:kuroha', label: 'クロハの絵を出す' }, { value: 'builtin:taku', label: 'タクの絵を出す' },
+        { value: 'none', label: '出さない' }], def: 'builtin:kuroha' },
     { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し', label: '最初からいるキャラの絵', help: '',
       options: [{ value: 'chibi', label: '2頭身' }, { value: 'normal', label: '等身' }], def: 'chibi' },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
@@ -288,7 +292,7 @@ export function prefsFixture(over) {
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
       focus: { start: v('focus.start') === true, sound: v('focus.sound') === true, remind: v('focus.remind') },
       oshi: { on: v('oshi.on') === true, home: v('oshi.home') !== false,
-        useDefault: v('oshi.useDefault') !== false, style: v('oshi.style') },
+        char: v('oshi.char'), fallback: v('oshi.fallback'), style: v('oshi.style') },
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
     },
