@@ -22,7 +22,11 @@ node agent.mjs setup
 
 Claude Code を使う人は、`node agent.mjs track install` で作業を番頭のやることに載せる仕掛けを入れられます
 (フック2つとスキル1つ。何が入るかは実行したときに出ます)。入れた道具は1日1回、自分を新しくします。
-切り方と戻し方は `.claude/skills/banto-track-setup/SKILL.md` の「番頭に作業を載せる」にあります。
+切り方と戻し方の詳しくは `.claude/skills/banto-track-setup/SKILL.md` の「番頭に作業を載せる」にあります
+(`.claude` は名前が `.` で始まる隠しフォルダです。Finder なら ⌘ + Shift + . で見えます)。
+
+- 自動で新しくするのを止める: `~/.banto/config.json` に `"autoUpdate": false` と書く
+- 1つ前の道具に戻す: `node agent.mjs update rollback`
 
 ## 設定 (ここだけ最初にやる)
 

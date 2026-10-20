@@ -628,11 +628,11 @@ describe('道具の版を手元に教える', () => {
 });
 
 describe('結果の出し方', () => {
-  /** files を送り、返事を置いて、出た字を返す */
-  async function output(extra) {
+  /** 引数のまま動かし、命令に返事を置いて、出た字を返す */
+  async function output(args) {
     const queue = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-q-'));
     const { spawn } = await import('node:child_process');
-    const child = spawn(process.execPath, [path.resolve('kit/agent.mjs'), 'files', ...extra, '--queue', queue],
+    const child = spawn(process.execPath, [path.resolve('kit/agent.mjs'), ...args, '--queue', queue],
       { env: { ...process.env, ...ISOLATED } });
     let stdout = '';
     child.stdout.on('data', (b) => { stdout += b; });
@@ -655,16 +655,36 @@ describe('結果の出し方', () => {
   const answer = { ok: true, op: 'listFiles', result: [{ id: 'f1', name: '規程' }] };
 
   it('既定では1行に詰めて出す (読むのは Claude で、字下げのぶんだけ読む量が増える)', async () => {
-    const { stdout } = await output([]);
+    const { stdout } = await output(['files']);
     expect(stdout).toBe(JSON.stringify(answer) + '\n');
     expect(JSON.parse(stdout)).toEqual(answer);
   }, 30000);
 
   it('--pretty を付けると字下げして出し、命令の引数には混ぜない', async () => {
-    const { stdout, cmd } = await output(['--pretty']);
+    const { stdout, cmd } = await output(['files', '--pretty']);
     expect(stdout).toBe(JSON.stringify(answer, null, 2) + '\n');
     expect(cmd).toEqual({ op: 'listFiles', args: {} });
   }, 30000);
+
+  it('--pretty は操作の前に書いても効く', async () => {
+    const { stdout, cmd } = await output(['--pretty', 'files']);
+    expect(stdout).toBe(JSON.stringify(answer, null, 2) + '\n');
+    expect(cmd).toEqual({ op: 'listFiles', args: {} });
+  }, 30000);
+
+  it('-- より後ろの --pretty はデータとして残し、字下げもしない', async () => {
+    const { stdout, cmd } = await output(['issue', '--', '--pretty']);
+    expect(cmd.op).toBe('issueCreate');
+    expect(cmd.args.body).toBe('--pretty');
+    expect(stdout).toBe(JSON.stringify(answer) + '\n');
+  }, 30000);
+
+  it('track には --pretty が届かない', () => {
+    // 届くと「track の後には…」と断られる (--pretty を下の命令と読む)
+    const out = execFileSync(process.execPath, [path.resolve('kit/agent.mjs'), '--pretty', 'track', 'list'],
+      { encoding: 'utf8', env: { ...process.env, ...ISOLATED } });
+    expect(out).toContain('(載せるフォルダはありません)');
+  });
 
   it('使い方の一覧と AGENTS.md に --pretty がある', () => {
     const out = execFileSync(process.execPath, [path.resolve('kit/agent.mjs')],
