@@ -53,6 +53,21 @@ function branchSplitPath_(path) {
 }
 
 /**
+ * 論理パスからブランチ名を判定する。
+ * branches/<name>/... 形式なら <name>、そうでなければ 'main'。
+ *
+ * **判定そのものは持たない。** 同じことを2か所で書いていて、語彙が
+ * 変わったときに直し漏れる形になっていた。分け方は `branchSplitPath_`
+ * が唯一の定義である。
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+function branchOfPath_(path) {
+  return branchSplitPath_(path).branch;
+}
+
+/**
  * ある文書の作業コピーを持っている版の名を返す。
  *
  * 管理から外すときに要る。作業コピーが残ったまま外すと、その版だけが

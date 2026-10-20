@@ -376,17 +376,21 @@ describe('テストの SOURCES', () => {
   // 空の助言になり、ほかのテストが何も確かめないまま通る。Home.gs を読む全ての SOURCES で、
   // 全部の規則が当たる状況を握らずに通す。
   // 並びは sources.js に集めてある。テストの中に並びを手で書いたものも、まだあれば拾う
-  // apiHomeSummary も呼ぶので、画面の API (API_SOURCES) まで揃った並びだけを見る
-  const withApi = (list) => Array.isArray(list) && list.indexOf('src/core/Home.gs') >= 0 &&
-    SOURCE_LISTS.API_SOURCES.every((f) => list.indexOf(f) >= 0);
+  // apiHomeSummary も呼ぶので、ホームの中身と画面の入口の両方を読む並びを見る。
+  // 他のファイルが欠けていても外さない (欠けを見つけるための検査なので)
+  const withApi = (list) => Array.isArray(list) &&
+    list.includes('src/core/Home.gs') && list.includes('src/api/Home.gs');
   const exported = Object.entries(SOURCE_LISTS)
     .filter(([, list]) => withApi(list))
     .map(([name, list]) => ['sources.js ' + name, list]);
   const literal = fs.readdirSync(new URL('.', import.meta.url))
     .filter((f) => f.endsWith('.test.js'))
     .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const SOURCES = (\[[\s\S]*?\]);/)])
-    .filter(([, m]) => m)
-    .map(([f, m]) => [f, eval(m[1])])
+    .filter(([, m]) => m && m[1].includes('src/core/Home.gs'))
+    .map(([f, m]) => {
+      // 字を並べただけでない並び (変数を混ぜたものなど) は評価できないので見送る
+      try { return [f, eval(m[1])]; } catch (e) { return [f, null]; }
+    })
     .filter(([, list]) => withApi(list));
   const lists = exported.concat(literal);
 

@@ -193,7 +193,7 @@ function prGet(number) {
 /**
  * PRのapprove数を返す。人ごとに最後の判断が承認のものだけを1件と数える。
  *
- * Main.gs の apiPrPreview からも呼ぶため、末尾アンダースコアを付けない
+ * api/Pr.gs の apiPrPreview からも呼ぶため、末尾アンダースコアを付けない
  * (アンダースコアはファイル内部専用の目印という規約のため)。
  *
  * @param {number} number
@@ -212,7 +212,7 @@ function prApprovalCount(number) {
 /**
  * 承認のあとに中身が変わって、数えなくなった承認の数を返す。
  *
- * Main.gs の apiPrPreview から呼ぶ。
+ * api/Pr.gs の apiPrPreview から呼ぶ。
  *
  * @param {number} number
  * @returns {number}
@@ -369,7 +369,7 @@ function prPreviewMerge(number, wantFileId) {
  * 反映先と改訂版の、それぞれの最後の記録の中身から取る。中身は空白の扱いを
  * そろえてから見るので、反映の直前に空白の扱いだけを記録し直しても変わらない。
  *
- * Main.gs の apiPrPreview からも呼ぶ。
+ * api/Pr.gs の apiPrPreview からも呼ぶ。
  *
  * @param {number} number
  * @returns {string}
