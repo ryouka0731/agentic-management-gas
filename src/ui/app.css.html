@@ -3832,6 +3832,31 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
   background: var(--accent);
 }
 
+/* 前の期間との増減。数の横に小さく添える */
+.usage-delta {
+  color: var(--ink-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-row .usage-delta {
+  flex: 0 0 40px;
+  text-align: right;
+}
+
+.usage-unseen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* CSV は行ごとに読めるよう、折り返さずに改行を残す */
+.usage-export .copy-line code {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre;
+}
+
 @media (max-width: 767px) {
   .usage-name { flex-basis: 110px; }
 }

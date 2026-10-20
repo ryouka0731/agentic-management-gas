@@ -400,3 +400,126 @@ describe('日付に変えられた日を読む', () => {
     expect(ctx.dbReadAll('usage').map((r) => r.target)).toEqual(['a']);
   });
 });
+
+describe('前の期間と比べる', () => {
+  function put(ctx, day, kind, target, count, user) {
+    ctx.dbAppend('usage', { day, kind, target, count, user: user || 'tester@example.com' });
+  }
+
+  it('同じ長さで直前の期間を数える', () => {
+    const { ctx } = setup();
+    // 7日なら 9/4〜9/10。前は 8/28〜9/3
+    put(ctx, '2026-09-04', 'action', 'a', 5);
+    put(ctx, '2026-09-03', 'action', 'a', 2);
+    put(ctx, '2026-08-28', 'view', 'docs', 3);
+    put(ctx, '2026-08-27', 'action', 'a', 100);
+
+    const res = ctx.usageSummary(7, new Date(2026, 8, 10));
+    expect(res.prev.total).toBe(5);
+    expect(res.prev.byTarget).toEqual([
+      { kind: 'view', target: 'docs', count: 3 },
+      { kind: 'action', target: 'a', count: 2 },
+    ]);
+    expect(res.total).toBe(5);
+  });
+
+  it('人を指定すると前の期間もその人のぶんだけ', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-03', 'action', 'a', 2, 'aoki@example.com');
+    put(ctx, '2026-09-03', 'action', 'a', 9, 'ito@example.com');
+
+    const res = ctx.usageSummary(7, new Date(2026, 8, 10), 'aoki@example.com');
+    expect(res.prev.total).toBe(2);
+  });
+
+  it('前の期間に何も無ければ0', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'a', 1);
+
+    const res = ctx.usageSummary(7, new Date(2026, 8, 10));
+    expect(res.prev).toEqual({ total: 0, byTarget: [] });
+  });
+});
+
+describe('曜日ごと', () => {
+  function put(ctx, day, count, user) {
+    ctx.dbAppend('usage', {
+      day, kind: 'action', target: 'a', count, user: user || 'tester@example.com',
+    });
+  }
+
+  it('月曜から日曜までの7つで返す', () => {
+    const { ctx } = setup();
+    // 2026-09-07 は月曜、09-06 は日曜
+    put(ctx, '2026-09-07', 4);
+    put(ctx, '2026-09-06', 2);
+    put(ctx, '2026-09-09', 1);
+    put(ctx, '2026-09-02', 3);
+
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10));
+    expect(res.byWeekday).toEqual([4, 0, 4, 0, 0, 0, 2]);
+  });
+
+  it('期間の外と、ほかの人の絞り込みは入れない', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-07', 4, 'aoki@example.com');
+    put(ctx, '2026-09-07', 9, 'ito@example.com');
+    put(ctx, '2026-07-06', 50, 'aoki@example.com');
+
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10), 'aoki@example.com');
+    expect(res.byWeekday).toEqual([4, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('台帳から Date で返った日でも曜日を取り違えない', () => {
+    const { ctx } = setup();
+    // Sheets は 'yyyy-MM-dd' を日付として持ち、Date で返す
+    ctx.dbAppend('usage', {
+      day: new Date(2026, 8, 6), kind: 'action', target: 'a', count: 1,
+      user: 'tester@example.com',
+    });
+    const res = ctx.usageSummary(30, new Date(2026, 8, 10));
+    expect(res.byWeekday[6]).toBe(1);
+  });
+});
+
+describe('CSV にする行', () => {
+  function put(ctx, day, kind, target, count, user) {
+    ctx.dbAppend('usage', { day, kind, target, count, user });
+  }
+
+  it('期間の中を日・場所・人ごとに返す', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'b', 2, 'aoki@example.com');
+    put(ctx, '2026-09-09', 'view', 'docs', 3, 'aoki@example.com');
+    put(ctx, '2026-08-01', 'action', 'b', 9, 'aoki@example.com');
+
+    const res = ctx.usageRows(30, new Date(2026, 8, 10), '', ['aoki@example.com']);
+    expect(res.from).toBe('2026-08-12');
+    expect(res.rows).toEqual([
+      { day: '2026-09-09', kind: 'view', target: 'docs', user: 'aoki@example.com', count: 3 },
+      { day: '2026-09-10', kind: 'action', target: 'b', user: 'aoki@example.com', count: 2 },
+    ]);
+  });
+
+  it('見られない人のぶんは入れない', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'b', 2, 'aoki@example.com');
+    put(ctx, '2026-09-10', 'view', 'docs', 5, 'ito@example.com');
+
+    // 見られない人が1人だと、名前を空にしても、その人の日ごと・場所ごとの記録がそのまま読める
+    const res = ctx.usageRows(30, new Date(2026, 8, 10), '', ['aoki@example.com']);
+    expect(res.rows).toEqual([
+      { day: '2026-09-10', kind: 'action', target: 'b', user: 'aoki@example.com', count: 2 },
+    ]);
+  });
+
+  it('人を指定するとその人のぶんだけ', () => {
+    const { ctx } = setup();
+    put(ctx, '2026-09-10', 'action', 'b', 2, 'aoki@example.com');
+    put(ctx, '2026-09-10', 'action', 'b', 5, 'ito@example.com');
+
+    const res = ctx.usageRows(30, new Date(2026, 8, 10), 'aoki@example.com',
+      ['aoki@example.com', 'ito@example.com']);
+    expect(res.rows.map((r) => r.count)).toEqual([2]);
+  });
+});

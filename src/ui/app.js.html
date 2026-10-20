@@ -69,6 +69,7 @@
   var usageEl = document.getElementById('usage');
   var usageDaysSel = document.getElementById('usage-days');
   var usageWhoSel = document.getElementById('usage-who');
+  var usageCsvBtn = document.getElementById('usage-csv-btn');
   var reportListEl = document.getElementById('report-list');
   var reportDetail = document.getElementById('report-detail');
   var reportFilterEl = document.getElementById('report-filter');
@@ -11867,7 +11868,14 @@
    * 全員ぶん。人ごとの数と絞り込みは、本人と部下のぶんだけ届く
    * (サーバ側の apiUsageSummary が絞る。工数の集計と同じ)。
    */
+  /**
+   * 期間か対象を選び直すたびに進める。届いた返事がこれと違えば古いので捨てる。
+   * 捨てないと、選び直したあとに前の期間のまとめや CSV が出る。
+   */
+  var usageGen = 0;
+
   function loadUsage() {
+    var gen = ++usageGen;
     fillSelect(usageDaysSel, USAGE_SPANS, '30');
 
     // いま溜めているぶんも含めて見たい
@@ -11875,6 +11883,7 @@
     showSkeleton(usageEl, 'list', 4);
 
     call('apiUsageSummary', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      if (gen !== usageGen) return;
       var data = res || { total: 0, byTarget: [], byDay: [], byUser: [] };
       fillUsageWho(data.byUser || []);
       usageEl.textContent = '';
@@ -11887,14 +11896,23 @@
         return;
       }
 
-      usageEl.appendChild(makeUsageSummary(data));
+      // 前の期間を持たない返事 (古い版のサーバ) でも描けるようにする
+      var prev = data.prev || { total: 0, byTarget: [] };
+      var before = {};
+      (prev.byTarget || []).forEach(function (t) { before[t.kind + ':' + t.target] = t.count; });
+      var views = data.byTarget.filter(function (t) { return t.kind === 'view'; });
+
+      usageEl.appendChild(makeUsageSummary(data, prev.total || 0));
       usageEl.appendChild(makeUsagePeople(data.byUser || []));
       usageEl.appendChild(makeUsageRanking('よく押されている操作',
-        data.byTarget.filter(function (t) { return t.kind === 'action'; })));
-      usageEl.appendChild(makeUsageRanking('よく開かれている画面',
-        data.byTarget.filter(function (t) { return t.kind === 'view'; })));
+        data.byTarget.filter(function (t) { return t.kind === 'action'; }), before));
+      usageEl.appendChild(makeUsageRanking('よく開かれている画面', views, before));
+      usageEl.appendChild(makeUsageUnseen(views));
+      usageEl.appendChild(makeUsageWeekdays(data.byWeekday || [0, 0, 0, 0, 0, 0, 0]));
       usageEl.appendChild(makeUsageDays(data.byDay));
-    }, failInto(usageEl));
+    }, function (err) {
+      if (gen === usageGen) failInto(usageEl)(err);
+    });
   }
 
   /**
@@ -11993,14 +12011,61 @@
   }
 
   /**
+   * 前の期間からの増減を、矢印と割合の字にする。
+   *
+   * 前の期間が0だと割合が決まらない (0で割る)。そのときは数を出さずにそう言う。
+   *
+   * @param {number} now
+   * @param {number} before
+   * @returns {string}
+   */
+  function usageTrend(now, before) {
+    if (!before) return '前の期間は記録なし';
+    var pct = Math.round((now - before) / before * 100);
+    var arrow = pct > 0 ? '↑' : (pct < 0 ? '↓' : '→');
+    return arrow + ' ' + Math.abs(pct) + '%';
+  }
+
+  /**
+   * 前の期間との差を、符号の付いた字にする。
+   *
+   * @param {number} diff
+   * @returns {string}
+   */
+  function usageDiff(diff) {
+    if (diff > 0) return '+' + diff;
+    if (diff < 0) return '−' + Math.abs(diff);
+    return '±0';
+  }
+
+  /**
+   * 開いた画面の名前。左の行き先に書いてある字を使う。
+   *
+   * 画面を開いたときは data-tab の名前 (issues など) のまま数えている。
+   * usageLabel は tab- の付いた名前しか直さないため、そのままだと英字が出る。
+   *
+   * @param {string} target
+   * @returns {string}
+   */
+  function usageViewName(target) {
+    var nav = sidebarEl && sidebarEl.querySelector(
+      '.nav-item[data-tab="' + String(target).replace(/["\\]/g, '') + '"] .nav-label');
+    if (nav && nav.textContent) return nav.textContent;
+
+    var tab = usageLabel('tab-' + target);
+    return tab !== target ? tab : usageLabel(target);
+  }
+
+  /**
    * @param {object} data
+   * @param {number} prevTotal 前の期間の回数
    * @returns {HTMLElement}
    */
-  function makeUsageSummary(data) {
+  function makeUsageSummary(data, prevTotal) {
     var wrap = document.createElement('div');
     wrap.className = 'tally-summary';
 
-    [['数えた回数', data.total + '回'],
+    [['数えた回数', data.total + '回', usageTrend(data.total, prevTotal)],
      ['数えた場所', data.byTarget.length + 'か所'],
      ['対象', data.who ? personName(data.who) : 'みんな'],
      ['期間', data.from + ' 〜 ' + data.to]].forEach(function (pair) {
@@ -12017,6 +12082,16 @@
       value.textContent = pair[1];
       box.appendChild(value);
 
+      if (pair[2]) {
+        var trend = document.createElement('div');
+        trend.className = 'row-meta usage-delta';
+        trend.textContent = pair[2];
+        attachHint(trend, prevTotal
+          ? '同じ長さの前の期間 (' + prevTotal + '回) と比べて'
+          : '同じ長さの前の期間には記録がありません');
+        box.appendChild(trend);
+      }
+
       wrap.appendChild(box);
     });
     return wrap;
@@ -12029,9 +12104,10 @@
    *
    * @param {string} title
    * @param {object[]} rows
+   * @param {Object<string, number>} [before] 前の期間の数 (kind:target ごと)
    * @returns {HTMLElement}
    */
-  function makeUsageRanking(title, rows) {
+  function makeUsageRanking(title, rows, before) {
     var wrap = document.createElement('div');
     wrap.className = 'tally-block';
 
@@ -12057,7 +12133,7 @@
 
       var name = document.createElement('span');
       name.className = 'usage-name';
-      name.textContent = usageLabel(row.target);
+      name.textContent = row.kind === 'view' ? usageViewName(row.target) : usageLabel(row.target);
       attachHint(name, row.target);
       line.appendChild(name);
 
@@ -12075,11 +12151,221 @@
       count.textContent = row.count;
       line.appendChild(count);
 
+      if (before) {
+        var was = before[row.kind + ':' + row.target] || 0;
+        var delta = document.createElement('span');
+        delta.className = 'usage-delta';
+        delta.textContent = usageDiff(row.count - was);
+        attachHint(delta, '前の期間は' + was + '回');
+        line.appendChild(delta);
+      }
+
       list.appendChild(line);
     });
 
     wrap.appendChild(list);
     return wrap;
+  }
+
+  /**
+   * この期間に一度も開かれなかった画面を並べる。
+   *
+   * 行き先の一覧は左の帯から取る (画面が持っている一覧)。サーバに写しを
+   * 持つと、画面を足したときに数え漏れる。スクラムがオフのあいだは
+   * スプリントと障害物が出ないので、開かれなくて当然であり、数えない。
+   *
+   * @param {object[]} views この期間に開かれた画面 (kind: 'view')
+   * @returns {HTMLElement}
+   */
+  function makeUsageUnseen(views) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = 'この期間に開かれなかった画面';
+    wrap.appendChild(head);
+
+    var seen = {};
+    views.forEach(function (v) { if (v.count > 0) seen[v.target] = true; });
+
+    var items = sidebarEl ? sidebarEl.querySelectorAll('.nav-item[data-tab]') : [];
+    var missing = [];
+    for (var i = 0; i < items.length; i++) {
+      var tab = items[i].dataset.tab;
+      if (!scrumOn() && items[i].closest('#nav-scrum')) continue;
+      // 隠れている行き先は押せないので、開かれなくて当然
+      if (items[i].closest('[hidden]')) continue;
+      if (seen[tab]) continue;
+      missing.push(usageViewName(tab));
+    }
+
+    if (!missing.length) {
+      var none = document.createElement('div');
+      none.className = 'row-meta';
+      none.textContent = 'どの画面も開かれていました';
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var list = document.createElement('div');
+    list.className = 'usage-unseen';
+    missing.forEach(function (name) { list.appendChild(makePill(name, 'chip')); });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * 曜日ごとの回数を、月曜から7本の棒で並べる。
+   *
+   * @param {number[]} counts 月曜から日曜までの7つ
+   * @returns {HTMLElement}
+   */
+  function makeUsageWeekdays(counts) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '曜日ごと';
+    wrap.appendChild(head);
+
+    var names = ['月', '火', '水', '木', '金', '土', '日'];
+    var top = 1;
+    names.forEach(function (_, at) { if ((counts[at] || 0) > top) top = counts[at]; });
+
+    var list = document.createElement('div');
+    list.className = 'usage-list';
+
+    names.forEach(function (day, at) {
+      var n = Number(counts[at]) || 0;
+      var line = document.createElement('div');
+      line.className = 'usage-row';
+
+      var name = document.createElement('span');
+      name.className = 'usage-name';
+      name.textContent = day;
+      line.appendChild(name);
+
+      var track = document.createElement('span');
+      track.className = 'usage-track';
+
+      var bar = document.createElement('span');
+      bar.className = 'usage-bar';
+      bar.style.width = (n ? Math.max(2, Math.round(n / top * 100)) : 0) + '%';
+      track.appendChild(bar);
+      line.appendChild(track);
+
+      var count = document.createElement('span');
+      count.className = 'usage-count';
+      count.textContent = n;
+      line.appendChild(count);
+
+      list.appendChild(line);
+    });
+
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * CSV の1つのセル。
+   *
+   * 表計算は = + - @ で始まる字を式として読む (式の差し込み)。先頭に ' を
+   * 付けて字のまま読ませる。区切りや改行を含むものは " で囲む。
+   *
+   * @param {*} v
+   * @returns {string}
+   */
+  function usageCsvCell(v) {
+    var s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  /**
+   * 日・場所・人ごとの数を CSV の字にする。
+   *
+   * 先頭に BOM を付ける。付けないと Excel が日本語を化けさせる。
+   *
+   * @param {object[]} rows apiUsageRows の rows
+   * @returns {string}
+   */
+  function usageCsv(rows) {
+    var lines = [['日', '種類', '場所', '名前', '人', '回数']];
+    rows.forEach(function (r) {
+      lines.push([
+        r.day, r.kind === 'view' ? '画面' : '操作', r.target,
+        r.kind === 'view' ? usageViewName(r.target) : usageLabel(r.target),
+        r.user, r.count,
+      ]);
+    });
+    return '\uFEFF' + lines.map(function (line) {
+      return line.map(usageCsvCell).join(',');
+    }).join('\r\n') + '\r\n';
+  }
+
+  /**
+   * ファイルとして落とす。落とせたかは分からないことがある。
+   *
+   * Apps Script の枠の中では、保存を断られても例外にならず黙って何も
+   * 起きないことがある。そのため落とせたと思っても字は画面に出しておく。
+   *
+   * @param {string} name
+   * @param {string} text
+   * @returns {boolean} 落とそうとできたか
+   */
+  function usageDownload(name, text) {
+    try {
+      if (!window.Blob || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+        return false;
+      }
+      var url = window.URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.hidden = true;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        try { window.URL.revokeObjectURL(url); } catch (e) { /* 消せなくても困らない */ }
+      }, 1000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 今見ている期間と対象の数を CSV で保存する。
+   *
+   * サーバは本人と部下のぶんだけを返す (apiUsageRows)。
+   */
+  function saveUsageCsv() {
+    var gen = usageGen;
+    usageCsvBtn.disabled = true;
+    call('apiUsageRows', [Number(usageDaysSel.value) || 30, usageWhoSel.value], function (res) {
+      usageCsvBtn.disabled = false;
+      // 頼んだあとに期間か対象を選び直していたら、今見ている範囲の CSV ではない
+      if (gen !== usageGen) return;
+      var data = res || { from: '', to: '', rows: [] };
+      var text = usageCsv(data.rows || []);
+      var saved = usageDownload('usage-' + data.from + '_' + data.to + '.csv', text);
+
+      var old = usageEl.querySelector('.usage-export');
+      if (old) old.remove();
+
+      var wrap = document.createElement('div');
+      wrap.className = 'tally-block usage-export';
+      var note = document.createElement('div');
+      note.className = 'row-meta';
+      note.textContent = '見られない人のぶんは入っていません (画面の合計とは合わないことがあります)';
+      wrap.appendChild(note);
+      wrap.appendChild(makeCopyRow(saved
+        ? 'ファイルが保存されないときは、ここから写して表計算に貼ってください'
+        : '保存できなかったので、字のまま出します。写して表計算に貼ってください', text));
+      usageEl.insertBefore(wrap, usageEl.firstChild);
+    }, failEnable(usageCsvBtn, 'CSV を作れませんでした: '));
   }
 
   /**
@@ -12470,6 +12756,7 @@
   tallyWhoSel.addEventListener('change', loadTally);
   usageDaysSel.addEventListener('change', loadUsage);
   usageWhoSel.addEventListener('change', loadUsage);
+  usageCsvBtn.addEventListener('click', saveUsageCsv);
 
   call('apiTallyScope', [], function (res) {
     tallyScope = res || { me: '', canSee: [], isManager: false };

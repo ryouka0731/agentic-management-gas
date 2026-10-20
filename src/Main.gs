@@ -2179,7 +2179,10 @@ function apiKitStatus() {
 /**
  * 使われ方を記録する (Web App API)。
  *
- * 誰が押したかは受け取らないし、残さない。日と場所と回数だけを数える。
+ * 日・場所・回数に加えて、押した人も残す (人ごとに見られるようにするため)。
+ * 押した人は画面から受け取らず、サーバ側で決める (名乗りを詐称できるため)。
+ * 人ごとの数を見られるのは本人と部下だけ (apiUsageSummary)。
+ * 押した順番と時刻は残さない。
  *
  * @param {Array<{kind:string, target:string, count:number}>} rows
  * @returns {number}
@@ -2211,6 +2214,25 @@ function apiUsageSummary(days, who) {
   var res = usageSummary(days, null, target);
   res.byUser = res.byUser.filter(function (u) { return allowed.indexOf(u.who) >= 0; });
   return res;
+}
+
+/**
+ * CSV にするための、日・場所・人ごとの数を返す (Web App API)。
+ *
+ * 本人と部下のぶんだけを返す。ほかの人の行は入れない (usageRows)。
+ *
+ * @param {number} days
+ * @param {string} [who] 空なら全員ぶん
+ * @returns {{from:string, to:string, who:string, rows:object[]}}
+ */
+function apiUsageRows(days, who) {
+  var me = Session.getActiveUser().getEmail();
+  var allowed = memberVisibleTo(me);
+  var target = String(who || '');
+  if (target && allowed.indexOf(target) < 0) {
+    throw new Error('その人の使われ方は見られません');
+  }
+  return usageRows(days, null, target, allowed);
 }
 
 /**
