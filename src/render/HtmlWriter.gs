@@ -128,91 +128,126 @@ function writeBlocksToDoc(fileId, blocks) {
   // 事前の子要素数を控えておく必要はなく、書き込み後に判定する
   body.clear();
 
+  var writers = DOC_BLOCK_WRITERS_();
   for (var i = 0; i < blocks.length; i++) {
-    var b = blocks[i];
-
-    if (b.type === 'heading') {
-      var h = body.appendParagraph('');
-      h.setHeading(headingFromLevel_(b.level));
-      writeRuns_(h.editAsText(), b.runs);
-
-    } else if (b.type === 'paragraph') {
-      var p = body.appendParagraph('');
-      p.setHeading(DocumentApp.ParagraphHeading.NORMAL);
-      writeRuns_(p.editAsText(), b.runs);
-
-    } else if (b.type === 'listItem') {
-      var li = body.appendListItem('');
-      // ネストレベルを先に設定する。glyphType を先に設定すると
-      // ネスト変更時に既定のグリフへ戻ることがある
-      li.setNestingLevel(b.depth || 0);
-      li.setGlyphType(b.ordered
-        ? DocumentApp.GlyphType.NUMBER
-        : DocumentApp.GlyphType.BULLET);
-      writeRuns_(li.editAsText(), b.runs);
-
-    } else if (b.type === 'table') {
-      // appendTable は文字列の2次元配列を取る。装飾はセルごとに後から適用する
-      var plain = [];
-      for (var r = 0; r < b.rows.length; r++) {
-        var row = [];
-        for (var c = 0; c < b.rows[r].length; c++) {
-          var cellText = '';
-          for (var k = 0; k < b.rows[r][c].length; k++) {
-            cellText += b.rows[r][c][k].text;
-          }
-          // 空文字のセルはDocsが行を潰すことがあるため半角スペースを置く
-          row.push(cellText === '' ? ' ' : cellText);
-        }
-        plain.push(row);
-      }
-      var table = body.appendTable(plain);
-
-      for (var tr = 0; tr < b.rows.length; tr++) {
-        for (var tc = 0; tc < b.rows[tr].length; tc++) {
-          var runs = b.rows[tr][tc];
-          if (!runs || runs.length === 0) continue;
-
-          /*
-           * 字は appendTable で既に入っている。その位置に装飾だけを当てる。
-           *
-           * **空にしてから書き直してはいけない。** 実機の Docs は空の字を入れる
-           * 操作を断る (setText('') が `Cannot insert an empty text element.`)。
-           * 以前はそうしていて、中身のあるセルを持つ表は、反映でも Markdown
-           * 保存でも毎回書き戻しに失敗していた。cell.clear() も段落構造を
-           * 壊すことがあるため使わない
-           */
-          var cellText = table.getRow(tr).getCell(tc).getChild(0).asParagraph().editAsText();
-          var at = 0;
-          for (var rr = 0; rr < runs.length; rr++) {
-            var len = String(runs[rr].text || '').length;
-            if (len) styleRun_(cellText, at, at + len - 1, runs[rr]);
-            at += len;
-          }
-        }
-      }
-
-    } else if (b.type === 'image') {
-      var blob = objectFindBlob(b.sha);
-      var imgPara = body.appendParagraph('');
-      var inserted = imgPara.appendInlineImage(blob);
-      if (b.alt) inserted.setAltDescription(b.alt);
-    }
+    // 種別は htmlWriterValidate で確かめてある。知らない種別は書かない
+    // ('toString' のような名前で Object の持ち物を引かないよう、自分の欄だけを見る)
+    var type = blocks[i].type;
+    if (Object.prototype.hasOwnProperty.call(writers, type)) writers[type](body, blocks[i]);
   }
 
-  // body.clear() が残した空段落が先頭にあれば削除する。
-  // 内容を書き込んだ後なので、body に2つ以上の子要素がある場合のみ実施する
-  if (body.getNumChildren() > 1) {
-    var first = body.getChild(0);
-    if (first.getType() === DocumentApp.ElementType.PARAGRAPH) {
-      var fp = first.asParagraph();
-      if (fp.getText() === '' && fp.getNumChildren() === 0) {
-        body.removeChild(first);
-      }
-    }
-  }
+  docRemoveLeadingEmpty_(body);
 
   doc.saveAndClose();
+}
+
+/** ブロックの種別ごとの書き方。種別を足すときは htmlWriterValidate にも足す */
+function DOC_BLOCK_WRITERS_() {
+  return {
+    heading: docWriteHeading_,
+    paragraph: docWriteParagraph_,
+    listItem: docWriteListItem_,
+    table: docWriteTable_,
+    image: docWriteImage_,
+  };
+}
+
+function docWriteHeading_(body, b) {
+  var h = body.appendParagraph('');
+  h.setHeading(headingFromLevel_(b.level));
+  writeRuns_(h.editAsText(), b.runs);
+}
+
+function docWriteParagraph_(body, b) {
+  var p = body.appendParagraph('');
+  p.setHeading(DocumentApp.ParagraphHeading.NORMAL);
+  writeRuns_(p.editAsText(), b.runs);
+}
+
+function docWriteListItem_(body, b) {
+  var li = body.appendListItem('');
+  // ネストレベルを先に設定する。glyphType を先に設定すると
+  // ネスト変更時に既定のグリフへ戻ることがある
+  li.setNestingLevel(b.depth || 0);
+  li.setGlyphType(b.ordered
+    ? DocumentApp.GlyphType.NUMBER
+    : DocumentApp.GlyphType.BULLET);
+  writeRuns_(li.editAsText(), b.runs);
+}
+
+function docWriteTable_(body, b) {
+  // appendTable は文字列の2次元配列を取る。装飾はセルごとに後から適用する
+  var table = body.appendTable(docTablePlain_(b.rows));
+
+  for (var tr = 0; tr < b.rows.length; tr++) {
+    for (var tc = 0; tc < b.rows[tr].length; tc++) {
+      var runs = b.rows[tr][tc];
+      if (!runs || runs.length === 0) continue;
+
+      /*
+       * 字は appendTable で既に入っている。その位置に装飾だけを当てる。
+       *
+       * **空にしてから書き直してはいけない。** 実機の Docs は空の字を入れる
+       * 操作を断る (setText('') が `Cannot insert an empty text element.`)。
+       * 以前はそうしていて、中身のあるセルを持つ表は、反映でも Markdown
+       * 保存でも毎回書き戻しに失敗していた。cell.clear() も段落構造を
+       * 壊すことがあるため使わない
+       */
+      var cellText = table.getRow(tr).getCell(tc).getChild(0).asParagraph().editAsText();
+      docStyleCellRuns_(cellText, runs);
+    }
+  }
+}
+
+/** 表の字だけを2次元の配列にする (appendTable に渡す形) */
+function docTablePlain_(rows) {
+  var plain = [];
+  for (var r = 0; r < rows.length; r++) {
+    var row = [];
+    for (var c = 0; c < rows[r].length; c++) {
+      var cellText = '';
+      for (var k = 0; k < rows[r][c].length; k++) {
+        cellText += rows[r][c][k].text;
+      }
+      // 空文字のセルはDocsが行を潰すことがあるため半角スペースを置く
+      row.push(cellText === '' ? ' ' : cellText);
+    }
+    plain.push(row);
+  }
+  return plain;
+}
+
+/** 既に入っているセルの字に、run ごとの装飾を位置で当てる。字は書かない */
+function docStyleCellRuns_(cellText, runs) {
+  var at = 0;
+  for (var rr = 0; rr < runs.length; rr++) {
+    var len = String(runs[rr].text || '').length;
+    if (len) styleRun_(cellText, at, at + len - 1, runs[rr]);
+    at += len;
+  }
+}
+
+function docWriteImage_(body, b) {
+  var blob = objectFindBlob(b.sha);
+  var imgPara = body.appendParagraph('');
+  var inserted = imgPara.appendInlineImage(blob);
+  if (b.alt) inserted.setAltDescription(b.alt);
+}
+
+/**
+ * body.clear() が残した空段落が先頭にあれば削除する。
+ * 内容を書き込んだ後なので、body に2つ以上の子要素がある場合のみ実施する
+ */
+function docRemoveLeadingEmpty_(body) {
+  if (body.getNumChildren() <= 1) return;
+
+  var first = body.getChild(0);
+  if (first.getType() !== DocumentApp.ElementType.PARAGRAPH) return;
+
+  var fp = first.asParagraph();
+  if (fp.getText() === '' && fp.getNumChildren() === 0) {
+    body.removeChild(first);
+  }
 }
 
 /**

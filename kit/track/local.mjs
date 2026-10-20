@@ -16,7 +16,7 @@ import { readConfig, cleanVersion, compareVersions, paths } from './update.mjs';
  * この道具の版。**番頭の AGENT_KIT_VERSION() と同じでなければならない**
  * (test/kit-commands.test.js が見ている)。doctor が入れた道具の版と比べる。
  */
-export const KIT_VERSION = '1.11.0';
+export const KIT_VERSION = '1.11.1';
 
 /** 画面の OFFICIAL と同じ言葉 */
 const OFFICIAL = '正式版';
@@ -234,6 +234,137 @@ function minutes(ms) {
 }
 
 /**
+ * 点検の書き付け。よし・直す・情報の3つの書き方と、直すことの並びを持つ。
+ * 点検ごとに関数を分けても、出る字と並びが1か所で決まるようにしてある。
+ */
+function doctorReport() {
+  const lines = ['手元の道具の点検 (番頭には何も頼みません)', ''];
+  const fixes = [];
+  return {
+    lines,
+    fixes,
+    good: (what, how) => lines.push('[よし] ' + what + ': ' + how),
+    bad: (what, how, fix) => { lines.push('[直す] ' + what + ': ' + how); fixes.push(fix); },
+    note: (what, how) => lines.push('[情報] ' + what + ': ' + how),
+  };
+}
+
+/** 1. 設定 */
+function doctorConfig(r, config) {
+  if (!config) {
+    r.bad('設定', '見つかりません',
+      'node agent.mjs setup を実行し、agentkit.example.json を .agentkit.json として写して queueDir を書く');
+  } else {
+    r.good('設定', config.from);
+  }
+}
+
+/**
+ * 2. 命令の入れ先。書けるときだけ道のりを返す (返事の点検はそこを見る)。
+ *
+ * @returns {string} 書ける入れ先。書けなければ ''
+ */
+function doctorQueueDir(r, config) {
+  const queueDir = config ? String(config.queueDir || '') : '';
+  if (config && !queueDir) {
+    r.bad('入れ先', '設定に queueDir がありません', '設定 (' + config.from + ') に queueDir を書く');
+    return '';
+  }
+  if (!queueDir) return '';
+  if (!fs.existsSync(queueDir)) {
+    r.bad('入れ先', queueDir + ' がありません',
+      'Google Drive for desktop が動いて同期しているか、queueDir の道のりの綴りを確かめる (画面の右上の自分の顔 →「手元から動かす道具を落とす」に道のりが出ます)');
+    return '';
+  }
+  try {
+    fs.accessSync(queueDir, fs.constants.W_OK);
+  } catch (e) {
+    r.bad('入れ先', queueDir + ' に書けません', 'そのフォルダに書けるか (Drive の共有で編集者になっているか) を確かめる');
+    return '';
+  }
+  r.good('入れ先', queueDir);
+  return queueDir;
+}
+
+/**
+ * 入れ先に残っている返事と、返事の無い命令の時刻。
+ * 返事は受け取ると消すので、残っているもので見当を付ける。
+ */
+function queueTimes(queueDir) {
+  const names = fs.readdirSync(queueDir);
+  const at = (n) => { try { return fs.statSync(path.join(queueDir, n)).mtimeMs; } catch (e) { return NaN; } };
+  const known = (t) => !isNaN(t);
+  const resultNames = names.filter((n) => n.endsWith('.result.json'));
+  const answered = new Set(resultNames.map((n) => n.replace(/\.result\.json$/, '')));
+  const results = resultNames.map(at).filter(known);
+  const waiting = names.filter((n) => n.endsWith('.cmd.json') && !answered.has(n.replace(/\.cmd\.json$/, '')))
+    .map(at).filter(known);
+  return {
+    waiting: waiting.length,
+    lastReply: results.length ? Math.max(...results) : NaN,
+    oldest: waiting.length ? Math.min(...waiting) : NaN,
+  };
+}
+
+/** 3. 最後の返事 */
+function doctorReplies(r, queueDir, now) {
+  const { waiting, lastReply, oldest } = queueTimes(queueDir);
+  if (!isNaN(lastReply)) r.note('最後の返事', minutes(now - lastReply) + '分前');
+  if (!isNaN(oldest) && now - oldest > STALE_MS) {
+    r.bad('返事', '命令が ' + waiting + '件、いちばん古いもので ' + minutes(now - oldest) + '分返事がありません',
+      'Drive for desktop が同期しているかを確かめる。同期していれば番頭の1分ごとの仕掛けが止まっています。管理者に画面の「設定」でキューの状態を見てもらい、止まっていれば持ち主に Apps Script で setupCommandQueue() をもう一度実行してもらう');
+  } else if (waiting) {
+    r.note('返事', '命令が ' + waiting + '件、返事を待っています (1分ほどで返ります)');
+  } else if (isNaN(lastReply)) {
+    r.note('返事', '手がかりがありません。node agent.mjs files で確かめられます (返るまで最大1分)');
+  } else {
+    r.good('返事', '待っている命令はありません');
+  }
+}
+
+/** 4. 道具の版。入れた道具 (~/.banto) とこの道具が違えば、どちらかが古い */
+function doctorVersion(r, banto, home, version) {
+  const installed = banto ? cleanVersion(banto.kitVersion) : '';
+  if (!banto) {
+    r.note('道具の版', version + ' (番頭に作業を載せる仕掛けは入っていません)');
+  } else if (installed && compareVersions(installed, version) > 0) {
+    // 入れた道具は自分で新しくなっている。古いのは今動かしているほう (落とした zip) なので、update では直らない
+    r.bad('道具の版', '入れた道具は ' + installed + '、いま動かしている道具は ' + version + ' (こちらが古い)',
+      'node "' + path.join(paths(home).kit, 'agent.mjs') + '" を使う (または画面から道具の zip を落とし直す)');
+  } else if (installed && installed !== version) {
+    r.bad('道具の版', '入れた道具は ' + installed + '、この道具は ' + version,
+      'node agent.mjs update で入れた道具を新しくする');
+  } else {
+    r.good('道具の版', version);
+  }
+}
+
+/** settings.json に書かれたフックの命令。読めなければ空 */
+function settingsHookCommands(claude) {
+  const commands = [];
+  try {
+    const settings = JSON.parse(fs.readFileSync(path.join(claude, 'settings.json'), 'utf8'));
+    for (const groups of Object.values((settings && settings.hooks) || {})) {
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups) for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) commands.push(h && h.command);
+    }
+  } catch (e) {
+    return [];
+  }
+  return commands;
+}
+
+/** 5. フックとスキル。入れた人だけ見る */
+function doctorHooks(r, home, claude) {
+  const commands = settingsHookCommands(claude);
+  const hooks = ['prompt', 'stop'].every((k) => commands.includes(hookCommand(home, k)));
+  const skill = fs.existsSync(path.join(claude, 'skills', 'banto-track'));
+  if (hooks && skill) r.good('フック', 'Claude Code に入っています');
+  else r.bad('フック', (hooks ? '' : 'settings.json にフックがありません ') + (skill ? '' : 'スキルがありません'),
+    'node agent.mjs track install でフックとスキルを入れ直す');
+}
+
+/**
  * 設定・入れ先・最後の返事・道具の版・フックを点検して、直し方を出す。
  *
  * **番頭には何も頼まない。** 届かないときに使うものなので、届くことを前提にしない。
@@ -243,97 +374,15 @@ function minutes(ms) {
  * @returns {{ok: boolean, text: string}}
  */
 export function doctor({ config, home, claude, now = Date.now(), version = KIT_VERSION }) {
-  const lines = ['手元の道具の点検 (番頭には何も頼みません)', ''];
-  const fixes = [];
-  const good = (what, how) => lines.push('[よし] ' + what + ': ' + how);
-  const bad = (what, how, fix) => { lines.push('[直す] ' + what + ': ' + how); fixes.push(fix); };
-  const note = (what, how) => lines.push('[情報] ' + what + ': ' + how);
-
-  // 1. 設定
-  if (!config) {
-    bad('設定', '見つかりません',
-      'node agent.mjs setup を実行し、agentkit.example.json を .agentkit.json として写して queueDir を書く');
-  } else {
-    good('設定', config.from);
-  }
-
-  // 2. 命令の入れ先
-  const queueDir = config ? String(config.queueDir || '') : '';
-  let queueOk = false;
-  if (config && !queueDir) {
-    bad('入れ先', '設定に queueDir がありません', '設定 (' + config.from + ') に queueDir を書く');
-  } else if (queueDir && !fs.existsSync(queueDir)) {
-    bad('入れ先', queueDir + ' がありません',
-      'Google Drive for desktop が動いて同期しているか、queueDir の道のりの綴りを確かめる (画面の右上の自分の顔 →「手元から動かす道具を落とす」に道のりが出ます)');
-  } else if (queueDir) {
-    try {
-      fs.accessSync(queueDir, fs.constants.W_OK);
-      queueOk = true;
-      good('入れ先', queueDir);
-    } catch (e) {
-      bad('入れ先', queueDir + ' に書けません', 'そのフォルダに書けるか (Drive の共有で編集者になっているか) を確かめる');
-    }
-  }
-
-  // 3. 最後の返事。返事は受け取ると消すので、残っているもので見当を付ける
-  if (queueOk) {
-    const names = fs.readdirSync(queueDir);
-    const at = (n) => { try { return fs.statSync(path.join(queueDir, n)).mtimeMs; } catch (e) { return NaN; } };
-    const results = names.filter((n) => n.endsWith('.result.json')).map(at).filter((t) => !isNaN(t));
-    const answered = new Set(names.filter((n) => n.endsWith('.result.json')).map((n) => n.replace(/\.result\.json$/, '')));
-    const waiting = names.filter((n) => n.endsWith('.cmd.json') && !answered.has(n.replace(/\.cmd\.json$/, '')))
-      .map(at).filter((t) => !isNaN(t));
-    const lastReply = results.length ? Math.max(...results) : NaN;
-    const oldest = waiting.length ? Math.min(...waiting) : NaN;
-
-    if (!isNaN(lastReply)) note('最後の返事', minutes(now - lastReply) + '分前');
-    if (!isNaN(oldest) && now - oldest > STALE_MS) {
-      bad('返事', '命令が ' + waiting.length + '件、いちばん古いもので ' + minutes(now - oldest) + '分返事がありません',
-        'Drive for desktop が同期しているかを確かめる。同期していれば番頭の1分ごとの仕掛けが止まっています。管理者に画面の「設定」でキューの状態を見てもらい、止まっていれば持ち主に Apps Script で setupCommandQueue() をもう一度実行してもらう');
-    } else if (waiting.length) {
-      note('返事', '命令が ' + waiting.length + '件、返事を待っています (1分ほどで返ります)');
-    } else if (isNaN(lastReply)) {
-      note('返事', '手がかりがありません。node agent.mjs files で確かめられます (返るまで最大1分)');
-    } else {
-      good('返事', '待っている命令はありません');
-    }
-  }
-
-  // 4. 道具の版。入れた道具 (~/.banto) とこの道具が違えば、どちらかが古い
+  const r = doctorReport();
+  doctorConfig(r, config);
+  const queueDir = doctorQueueDir(r, config);
+  if (queueDir) doctorReplies(r, queueDir, now);
   const banto = readConfig(home);
-  const installed = banto ? cleanVersion(banto.kitVersion) : '';
-  if (!banto) {
-    note('道具の版', version + ' (番頭に作業を載せる仕掛けは入っていません)');
-  } else if (installed && compareVersions(installed, version) > 0) {
-    // 入れた道具は自分で新しくなっている。古いのは今動かしているほう (落とした zip) なので、update では直らない
-    bad('道具の版', '入れた道具は ' + installed + '、いま動かしている道具は ' + version + ' (こちらが古い)',
-      'node "' + path.join(paths(home).kit, 'agent.mjs') + '" を使う (または画面から道具の zip を落とし直す)');
-  } else if (installed && installed !== version) {
-    bad('道具の版', '入れた道具は ' + installed + '、この道具は ' + version,
-      'node agent.mjs update で入れた道具を新しくする');
-  } else {
-    good('道具の版', version);
-  }
+  doctorVersion(r, banto, home, version);
+  if (banto) doctorHooks(r, home, claude);
 
-  // 5. フックとスキル。入れた人だけ見る
-  if (banto) {
-    let commands = [];
-    try {
-      const settings = JSON.parse(fs.readFileSync(path.join(claude, 'settings.json'), 'utf8'));
-      for (const groups of Object.values((settings && settings.hooks) || {})) {
-        if (!Array.isArray(groups)) continue;
-        for (const g of groups) for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) commands.push(h && h.command);
-      }
-    } catch (e) {
-      commands = [];
-    }
-    const hooks = ['prompt', 'stop'].every((k) => commands.includes(hookCommand(home, k)));
-    const skill = fs.existsSync(path.join(claude, 'skills', 'banto-track'));
-    if (hooks && skill) good('フック', 'Claude Code に入っています');
-    else bad('フック', (hooks ? '' : 'settings.json にフックがありません ') + (skill ? '' : 'スキルがありません'),
-      'node agent.mjs track install でフックとスキルを入れ直す');
-  }
-
+  const { lines, fixes } = r;
   lines.push('');
   if (fixes.length) {
     lines.push('直すこと:');
