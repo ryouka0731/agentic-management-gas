@@ -38,7 +38,10 @@ export const CORE_SOURCES = [
 ];
 
 export const API_SOURCES = [
-  'src/Main.gs',
+  'src/Main.gs', 'src/Debug.gs',
+  'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
+  'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
+  'src/api/Settings.gs', 'src/api/Scrum.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
