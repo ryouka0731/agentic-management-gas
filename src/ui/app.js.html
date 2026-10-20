@@ -2914,6 +2914,30 @@
 
   var DOC_TABS = { content: 1, history: 1, drafts: 1 };
 
+  /*
+   * 開いたときに取り直すもの。画面の名前から引く (載っていない画面は取り直さない)。
+   * 関数は呼ぶときに引く (ここで掴むと、あとで差し替えたものが効かない)
+   */
+  var TAB_LOADERS = {
+    home: function () { loadHome(); },
+    docs: function () { loadDocs(); },
+    history: function () { loadHistory(); },
+    drafts: function () { loadDrafts(); },
+    branches: function () { loadBranches(); },
+    pulls: function (opts) { loadPulls(opts && opts.pr); },
+    issues: function () {
+      // 起動時に工程表を覚えていると、隠れたまま一度描かれる。開いたこの時に今日へ送る
+      if (issueView === 'gantt') ganttToToday = true;
+      reloadIssueView();
+    },
+    help: function () { loadHelp(); },
+    report: function () { loadReports(); },
+    usage: function () { loadUsage(); },
+    settings: function () { loadSettingsPanel(); },
+    sprint: function () { loadSprint(); },
+    impediments: function () { loadImpediments(); }
+  };
+
   /**
    * 画面を切り替える。
    *
@@ -2930,34 +2954,11 @@
     // 文書のビューを見ているときは、左の「文書」を現在地にする。
     // どこにいるのか分からなくなるため
     var navName = DOC_TABS[name] ? 'docs' : name;
+    markCurrentTab(name, navName);
+    leaveFullViews(name);
 
-    var targets = document.querySelectorAll('[data-tab]');
-    for (var i = 0; i < targets.length; i++) {
-      var el = targets[i];
-      var isTab = el.classList.contains('tab');
-      el.setAttribute('aria-current',
-        String(el.dataset.tab === (isTab ? name : navName)));
-    }
-
-    // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
-    if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
-    // 文書の全画面も、どこかへ移ったら抜ける。左も上も隠れたまま別の画面が出る
-    if (document.body.classList.contains('doc-full')) setDocFull(false);
-
-    panelHome.hidden = name !== 'home';
-    panelDocs.hidden = name !== 'docs';
-    panelContent.hidden = name !== 'content';
-    panelHistory.hidden = name !== 'history';
-    panelDrafts.hidden = name !== 'drafts';
-    panelBranches.hidden = name !== 'branches';
-    panelPulls.hidden = name !== 'pulls';
-    panelIssues.hidden = name !== 'issues';
-    panelHelp.hidden = name !== 'help';
-    panelReport.hidden = name !== 'report';
-    panelUsage.hidden = name !== 'usage';
-    panelSettings.hidden = name !== 'settings';
-    panelSprint.hidden = name !== 'sprint';
-    panelImpediments.hidden = name !== 'impediments';
+    var panels = tabPanels();
+    for (var key in panels) panels[key].hidden = key !== name;
 
     tabsEl.hidden = !current.fileId || !DOC_TABS[name];
     updateCrumbs();
@@ -2966,23 +2967,36 @@
 
     usageCount('view', name);
 
-    if (name === 'home') loadHome();
-    else if (name === 'docs') loadDocs();
-    else if (name === 'history') loadHistory();
-    else if (name === 'drafts') loadDrafts();
-    else if (name === 'branches') loadBranches();
-    else if (name === 'pulls') loadPulls(opts && opts.pr);
-    else if (name === 'issues') {
-      // 起動時に工程表を覚えていると、隠れたまま一度描かれる。開いたこの時に今日へ送る
-      if (issueView === 'gantt') ganttToToday = true;
-      reloadIssueView();
+    if (Object.prototype.hasOwnProperty.call(TAB_LOADERS, name)) TAB_LOADERS[name](opts);
+  }
+
+  /** 画面の名前と、その面。切り替えるたびに引く (面は読み込みの途中で取るため) */
+  function tabPanels() {
+    return {
+      home: panelHome, docs: panelDocs, content: panelContent, history: panelHistory,
+      drafts: panelDrafts, branches: panelBranches, pulls: panelPulls, issues: panelIssues,
+      help: panelHelp, report: panelReport, usage: panelUsage, settings: panelSettings,
+      sprint: panelSprint, impediments: panelImpediments
+    };
+  }
+
+  /** 上のタブは開いている画面、左の行き先は navName を現在地にする */
+  function markCurrentTab(name, navName) {
+    var targets = document.querySelectorAll('[data-tab]');
+    for (var i = 0; i < targets.length; i++) {
+      var el = targets[i];
+      var isTab = el.classList.contains('tab');
+      el.setAttribute('aria-current',
+        String(el.dataset.tab === (isTab ? name : navName)));
     }
-    else if (name === 'help') loadHelp();
-    else if (name === 'report') loadReports();
-    else if (name === 'usage') loadUsage();
-    else if (name === 'settings') loadSettingsPanel();
-    else if (name === 'sprint') loadSprint();
-    else if (name === 'impediments') loadImpediments();
+  }
+
+  /** 広げた差分と文書の全画面から抜ける */
+  function leaveFullViews(name) {
+    // 履歴から離れるときは広げた差分を畳む。畳まないと画面を覆い続ける
+    if (name !== 'history' && diffPane.classList.contains('full')) setDiffFull(false);
+    // 文書の全画面も、どこかへ移ったら抜ける。左も上も隠れたまま別の画面が出る
+    if (document.body.classList.contains('doc-full')) setDocFull(false);
   }
 
   /**
