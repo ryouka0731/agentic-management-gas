@@ -176,7 +176,7 @@ function apiBranchDelete(name) {
   // 作業コピーをゴミ箱に入れる。確認依頼の取り下げと同じく、作った本人か
   // 管理者に絞る。頼まれた側が捨てられると、作った人の知らないうちに消える
   var row = dbFindOne('branches', 'name', name);
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   if (row && String(row.createdBy) !== me && !repoIsAdmin_(me)) {
     throw new Error('改訂版を捨てられるのは、作った本人か、このアプリの管理者だけです');
   }

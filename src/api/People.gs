@@ -53,7 +53,7 @@ function apiTasksSync() {
  * @returns {object}
  */
 function apiTallyEffort(unit, basis, who) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var allowed = memberVisibleTo(me);
 
   // 担当が付いていないぶんは誰の数字でもない。全員に見せる
@@ -128,7 +128,7 @@ function apiTallyEffort(unit, basis, who) {
  * @returns {{me:string, canSee:string[], isManager:boolean, canEdit:boolean}}
  */
 function apiTallyScope() {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var allowed = memberVisibleTo(me);
 
   return {
@@ -177,7 +177,7 @@ function apiPeopleNames() {
  * @returns {object}
  */
 function apiPeopleSetName(email, name) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var who = String(email || '');
 
   if (who !== me && !repoIsAdmin_(me)) {
@@ -237,7 +237,7 @@ function apiUsageSummary(days, who) {
    * 使ったかは個人の働き方そのものなので、上下関係の外には見せない。場所
    * ごとの合計は個人が写らないので、誰が見ても全員ぶん。
    */
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var allowed = memberVisibleTo(me);
   var target = String(who || '');
   if (target && allowed.indexOf(target) < 0) {
@@ -259,7 +259,7 @@ function apiUsageSummary(days, who) {
  * @returns {{from:string, to:string, who:string, rows:object[]}}
  */
 function apiUsageRows(days, who) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var allowed = memberVisibleTo(me);
   var target = String(who || '');
   if (target && allowed.indexOf(target) < 0) {
@@ -286,7 +286,7 @@ function apiKnownPeople() {
     out.push(v);
   }
 
-  add(Session.getActiveUser().getEmail());
+  add(currentEmail_());
 
   var commits = dbReadAll('commits');
   for (var i = 0; i < commits.length; i++) add(commits[i].author);

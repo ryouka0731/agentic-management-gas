@@ -148,7 +148,7 @@ function tasksSyncMine() {
   var listId = tasksChosenList();
   if (!listId) throw new Error('先に入れ先の ToDo リストを選んでください');
 
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var issues = issueList(null);
   var pushed = 0;
   var closed = 0;

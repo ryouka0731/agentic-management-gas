@@ -126,7 +126,7 @@ function noticeList(to, limit) {
  * @returns {number} 読んだことにした件数
  */
 function noticeMarkRead(ids) {
-  var me = String(Session.getActiveUser().getEmail());
+  var me = currentEmail_();
   var want = ids || [];
 
   /*
