@@ -112,7 +112,7 @@ describe('Issue の CRUD', () => {
 
   it('存在しない Issue はエラーになる', () => {
     const { ctx } = setup();
-    expect(() => ctx.issueGet(99)).toThrow(/Issueが見つかりません/);
+    expect(() => ctx.issueGet(99)).toThrow(/やることが見つかりません/);
   });
 
   it('ラベルと担当を更新できる', () => {
@@ -179,7 +179,7 @@ describe('Issue からのブランチ作成', () => {
     const issue = ctx.issueCreate('改訂', '', [fileId]);
     ctx.issueClose(issue.number, null);
     expect(() => ctx.issueCreateBranch(issue.number, fileId))
-      .toThrow(/クローズ済みのIssueからはブランチを作れません/);
+      .toThrow(/完了したやることからは改訂版を作れません/);
   });
 });
 
@@ -278,7 +278,7 @@ describe('カンバンボード', () => {
 
   it('存在しないIssueは置けない', () => {
     const { ctx } = setup();
-    expect(() => ctx.projectPlace(99, 'Backlog')).toThrow(/Issueが見つかりません/);
+    expect(() => ctx.projectPlace(99, 'Backlog')).toThrow(/やることが見つかりません/);
   });
 
   it('二重に置いても増えない', () => {
