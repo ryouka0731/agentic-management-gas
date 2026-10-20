@@ -294,7 +294,7 @@ function prefGet_(key, email, read) {
 function prefValueOf_(item, email, read) {
   var v;
   if (item.scope === 'me') {
-    var who = String(email || Session.getActiveUser().getEmail() || '');
+    var who = String(email || currentEmail_());
     var mine = who ? prefParse_(read(prefMineKey_(who))) : undefined;
     if (mine && typeof mine === 'object' && !Array.isArray(mine) &&
         Object.prototype.hasOwnProperty.call(mine, item.key)) v = mine[item.key];
@@ -343,7 +343,7 @@ function apiPrefSet(key, value) {
     return apiPrefs({ team: true });
   }
 
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   if (!me) throw new Error('誰の設定か分かりません');
   // 自分の設定は1つの JSON に全部入っている。続けて2つ切り替えたとき、読んで書くあいだに
   // もう一方が書くと片方が消えるので、鍵の中で読み書きする
@@ -372,7 +372,7 @@ function apiPrefSet(key, value) {
  * @returns {object}
  */
 function apiPrefs(opts) {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var read = prefReader_();
   var items = PREFS_SCHEMA().map(function (p) {
     var got = prefValueOf_(p, me, read);

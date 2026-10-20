@@ -123,7 +123,7 @@ function sprintCreate(fields) {
       endDate: end,
       notes: String(f.notes || '').substring(0, 2000),
       createdAt: new Date(),
-      createdBy: Session.getActiveUser().getEmail(),
+      createdBy: currentEmail_(),
     };
     dbAppend('sprints', row);
     historyRecord_('sprint:' + name, 'create', []);
@@ -174,7 +174,7 @@ function impedimentCreate(fields) {
   var row = {
     title: title,
     body: String(f.body || '').substring(0, 4000),
-    reportedBy: String(f.reportedBy || Session.getActiveUser().getEmail()),
+    reportedBy: String(f.reportedBy || currentEmail_()),
     reportedAt: new Date(),
     state: 'open',
     resolvedAt: '',
@@ -303,7 +303,7 @@ function impedimentCommentAdd(number, body) {
   var row = {
     impedimentNumber: Number(number),
     body: text,
-    by: Session.getActiveUser().getEmail(),
+    by: currentEmail_(),
     at: new Date(),
     editedAt: '',
   };
@@ -427,7 +427,7 @@ function historyRecord_(target, action, changes) {
   // update で何も変わっていなければ残さない
   if (action === 'update' && !(changes && changes.length)) return;
 
-  var actor = Session.getActiveUser().getEmail();
+  var actor = currentEmail_();
   var at = new Date();
   var rows = [];
   for (var i = 0; i < list.length; i++) {

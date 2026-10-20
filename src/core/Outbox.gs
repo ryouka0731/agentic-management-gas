@@ -118,7 +118,7 @@ function outboxAdd(verb, args, extra) {
     state: 'open',
     prNumber: options.prNumber ? Number(options.prNumber) : '',
     createdAt: new Date(),
-    createdBy: Session.getActiveUser().getEmail(),
+    createdBy: currentEmail_(),
     takenAt: '',
     takenBy: '',
     doneAt: '',
@@ -194,7 +194,7 @@ function outboxTake(limit) {
   // 取る印を付ける前に他の手元が同じ行を読むと、二重に進む
   return dbWithLock_(10000, function () {
         var rows = dbReadAll('outbox');
-        var me = Session.getActiveUser().getEmail();
+        var me = currentEmail_();
         var out = [];
 
         for (var i = 0; i < rows.length && out.length < max; i++) {

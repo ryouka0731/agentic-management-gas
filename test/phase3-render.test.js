@@ -291,7 +291,7 @@ describe('liveHtml のキャッシュ', () => {
     const fake = createFakeGas();
     const store = withCache(fake, opts);
     const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs',
-      'src/core/Db.gs', 'src/core/Repo.gs', 'src/core/Normalize.js',
+      'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs', 'src/core/Normalize.js',
       'src/render/LiveCache.gs');
     const config = ctx.repoInit('agentic-management');
     const id = fake._createDoc('就業規則', '', config.mainId);

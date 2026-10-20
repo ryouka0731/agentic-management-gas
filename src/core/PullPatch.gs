@@ -135,7 +135,7 @@ function prPatchAdd(prNumber, path, text) {
       added: stat.added,
       removed: stat.removed,
       at: new Date(),
-      by: Session.getActiveUser().getEmail(),
+      by: currentEmail_(),
     };
 
     // 証跡が変われば、それまでの承認は今の中身を承認したものではない。

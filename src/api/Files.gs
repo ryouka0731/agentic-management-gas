@@ -165,7 +165,7 @@ function apiWorkspace() {
  * @returns {{activeUser:string, effectiveUser:string, sameUser:boolean}}
  */
 function apiWhoAmI() {
-  var active = String(Session.getActiveUser().getEmail() || '');
+  var active = currentEmail_();
   var effective = String(Session.getEffectiveUser().getEmail() || '');
 
   return {
@@ -226,7 +226,7 @@ function apiOverview() {
 
   return {
     repo: APP_NAME(),
-    me: String(Session.getActiveUser().getEmail() || ''),
+    me: currentEmail_(),
     docs: docs,
     branches: openBranches,
     openIssues: openIssues,

@@ -155,7 +155,7 @@ function issueCommentToPlain_(row, me) {
  * @returns {object[]}
  */
 function apiIssueComments(number) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var rows = issueComments(number);
   var out = [];
 
@@ -171,7 +171,7 @@ function apiIssueComments(number) {
  * @returns {object}
  */
 function apiIssueComment(number, body) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return issueCommentToPlain_(issueCommentAdd(number, body), me);
 }
 
@@ -183,7 +183,7 @@ function apiIssueComment(number, body) {
  * @returns {object}
  */
 function apiIssueCommentEdit(id, body) {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   return issueCommentToPlain_(issueCommentEdit(id, body), me);
 }
 
@@ -204,7 +204,7 @@ function apiIssueCommentDelete(id) {
  * @returns {Array<{name:string, body:string, builtin:boolean, mine:boolean}>}
  */
 function apiTemplateList() {
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var rows = templateList();
   var out = [];
 
