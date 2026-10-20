@@ -11,6 +11,35 @@
 - テストが通ってから確認依頼 (プルリクエスト) を出し、bot のレビューの指摘を片付けてから main に入れる
 - 複数のセッションが並行して触ることがある。作業前に `git rev-parse --abbrev-ref HEAD` と `git status` を確かめる
 - `git push origin <名前>` のあとは `git log --oneline -1 origin/<名前>` で着いたことを確かめる
+- 確認依頼の本文には「確かめていないこと」の節を置く (疑似GASでは示せない実機の動き・目で見る確認など)
+
+## 約束を止める仕掛け
+
+### Claude Code のフック
+
+`.claude/settings.json` が、Claude Code の道具を使う前 (PreToolUse) に `scripts/guard-hook.mjs` を走らせる。
+次のものを止め (exit 2)、理由を返す。テストは `test/guard-hook.test.js`。
+
+| 止めるもの | 理由 |
+|---|---|
+| `git push origin <名前>` で、<名前> がいま居るブランチ (入力の cwd で見る) でない手元のブランチ | 居るブランチは送られない。`git push -u origin HEAD` を使う |
+| `clasp create-deployment` / `clasp deploy` を `-i` / `--deploymentId` 無しで | 新しいデプロイができて URL が変わる。`npm run deploy` を使う |
+| `src/KitFiles.gs` / `src/KitSigning.gs` を手で書く (Edit / Write、シェルの `>` / `sed -i` など) | scripts が作るもの。`node scripts/build-kit.mjs` と `npm run deploy` は通る |
+| 署名の秘密鍵 (`~/.config/softbanto/kit-signing-key.pem` / `$BANTO_SIGNING_KEY`) を読む・書く | 鍵は `scripts/deploy.mjs` だけが読む |
+
+`&&` / `;` / `|` でつないだ命令は1つずつ見る。push と clasp は、読み取れない形なら通す (止めすぎると使えない)。
+生成物と鍵は、迷ったら止める側に倒す。`.claude/settings.local.json` は各自のもので、記録しない。
+
+### 秘密の混入を探す
+
+```bash
+npm run secrets
+```
+
+`trufflehog git file://. --results=verified --fail` を走らせ、git の履歴全体から**本物と確かめられた**秘密だけを
+探す (見つかると 183 で終わる)。trufflehog は入れていない人が多いので、無ければ `brew install trufflehog` を
+案内して 0 以外で終わる。公開鍵 `kit/track/kit-key.pem` は確かめられる秘密ではないので、除外の設定は置いていない。
+CI には載せていない (手元で、送る前に走らせる)。
 
 ## ファイルの構成
 
@@ -26,7 +55,7 @@ src/
 ├── render/                Docs / Sheets / Slides と正規化 HTML の行き来
 └── ui/                    wiki.html (部品) / app.js.html と js-*.html (動き。1つの関数を場所ごとに分けたもの) / app.css.html (見た目)
 kit/                       配る道具の本物 (agent.mjs・説明・track/・スクラムのスキルとひな形)
-scripts/                   build-kit.mjs (焼き直し) / deploy.mjs / kit-key.mjs (署名の鍵)
+scripts/                   build-kit.mjs (焼き直し) / deploy.mjs / kit-key.mjs (署名の鍵) / guard-hook.mjs (Claude Code のフック)
 test/                      vitest。harness.js・fakegas.js (疑似GAS)・dom.js (jsdom の画面)
 docs/manual/               この手引き
 docs/superpowers/          設計 (specs) と計画 (plans)
@@ -120,6 +149,8 @@ npm run coverage
 3. `node scripts/build-kit.mjs` で焼き直す (`npm run deploy` も自動で走らせる)。`test/agentkit.test.js` が `kit/` と
    焼き直したものの一致を見ている
 4. `agent.mjs` が読み込むファイルを足したら、自動更新の `REQUIRED_FILES` にも足す
+5. スキル (`kit/.claude/skills/`) を直したら、版を上げる前に、何も知らない Claude (別のセッションやサブエージェント) に
+   実際にありそうな頼み方で走らせ、思った通りに動くかを確かめる
 
 中身をそのまま GAS の HTML ファイルとして置かない (`<id>` がタグと読まれて壊れる)。base64 にして `KitFiles.gs` に入れている。
 

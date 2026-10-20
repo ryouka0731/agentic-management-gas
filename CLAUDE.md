@@ -895,6 +895,15 @@ npm run deploy -- "何を変えたか"
 
 送る前に差し替えると、前の中身のまま版だけが上がる。順番は push → deploy。
 
+**Claude Code のフックが止める** (`.claude/settings.json` → `scripts/guard-hook.mjs`、
+テストは `test/guard-hook.test.js`)。`-i` / `--deploymentId` 無しの `clasp create-deployment` /
+`clasp deploy`、いま居ない手元のブランチを名指しした `git push origin <名前>` (居る場所は
+入力の cwd で見るので worktree ごとに正しく決まる)、`src/KitFiles.gs` / `src/KitSigning.gs` を
+手で書くこと、署名の秘密鍵を読むこと。push と clasp は読み取れない形なら通し、生成物と鍵は
+迷ったら止める。止められたら回り道を探さず、理由に書いてある正しい道を使う。
+
+秘密の混入は `npm run secrets` (trufflehog。入っていなければ入れ方を出して止まる) で探す。
+
 ## 使う人に GAS を触らせない
 
 **ファイルの id を調べてスクリプトプロパティに書かせない。** この道具を使うのは
@@ -979,6 +988,17 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 
 `docs/superpowers/plans/` の実装計画に沿って、`feat/<phase名>` ブランチで作業し、
 テストが通ってから main にマージする。
+
+**確認依頼の本文には「確かめていないこと」の節を必ず置く。** 疑似GASでは示せない
+実機の動き (Drive・Sheets・Docs の書き戻し、権限、トリガー)、目で見る確認 (画面の
+並び・色・狭い画面) など、テストが通っても言えないことを書く。書かないと、通った
+テストが「全部確かめた」と読まれる。`.github/pull_request_template.md` にその節がある
+(`.github/` は autofix の類が書けないので、整形の対象から外すこと)。
+
+**配る道具のスキル (`kit/.claude/`) を直したら、`AGENT_KIT_VERSION()` を上げる前に
+試す。** 何も知らない Claude (新しいセッションかサブエージェント) に、実際にありそうな
+頼み方で走らせ、読んだとおりに動くかを見る。書いた本人が読むと、書いていない前提を
+補って読んでしまう。
 
 ## 並び順を変えたら、偶然一致していないか確かめる
 
