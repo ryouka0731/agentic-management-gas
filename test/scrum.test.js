@@ -126,9 +126,9 @@ describe('やることを PBI として扱う', () => {
     const { ctx } = setup();
     const made = ctx.issueCreate('x', '', []);
 
-    expect(() => ctx.issueUpdate(made.number, { sprint: 'nai' })).toThrow(/スプリント/);
-    expect(() => ctx.issueUpdate(made.number, { points: -1 })).toThrow(/ポイント/);
-    expect(() => ctx.issueUpdate(made.number, { points: 'たくさん' })).toThrow(/ポイント/);
+    expect(() => ctx.issueUpdate(made.number, { sprint: 'nai' })).toThrow(/作業期間/);
+    expect(() => ctx.issueUpdate(made.number, { points: -1 })).toThrow(/大きさ/);
+    expect(() => ctx.issueUpdate(made.number, { points: 'たくさん' })).toThrow(/大きさ/);
   });
 
   it('オフのあいだは、スクラムの欄を直させない', () => {

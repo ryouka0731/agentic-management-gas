@@ -50,7 +50,8 @@ function groupIssues(issues, by, docNames) {
       // 未定の束の鍵は空にする。'(未定)' という名前のスプリントも作れるので、
       // 名前と重なる鍵にすると混ざる
       var sprint = String(issue.sprint || '');
-      put(sprint, sprint || 'スプリント未定', issue);
+      // 見出しは一般の言葉 (TERMS の sprint)。画面は言葉の表し方に合わせる
+      put(sprint, sprint || '作業期間未定', issue);
       continue;
     }
 
