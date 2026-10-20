@@ -152,7 +152,7 @@ function fileStatus(fileId, branch) {
  */
 function commitFile(fileId, branch, message, expectedHeadSha) {
   if (!/^[\s\S]{1,500}$/.test(String(message || ''))) {
-    throw new Error('コミットメッセージを入力してください');
+    throw new Error('何を変えたかを入力してください');
   }
 
   return dbWithLock_(30000, function () {
@@ -163,7 +163,7 @@ function commitFile(fileId, branch, message, expectedHeadSha) {
             expectedHeadSha !== '' &&
             String(expectedHeadSha) !== String(headSha)) {
           throw new Error(
-            'HEADが進んでいます。画面を再読み込みしてから再度コミットしてください'
+            '開いたあとに、ほかの記録が先に入りました。画面を再読み込みしてから、もう一度記録してください'
           );
         }
 
