@@ -1990,6 +1990,8 @@
     var run = google.script.run
       .withSuccessHandler(function (res) {
         if (searchIndexChangedBy(name)) searchIndexStale();
+        // 楽しい演出のお祝いも、成功した api の名前だけで決める (表は js-fun の FUN_CHEERS)
+        funCheerAfter(name, args);
         ok(res);
       })
       .withFailureHandler(function (err) {

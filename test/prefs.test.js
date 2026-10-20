@@ -478,3 +478,52 @@ describe('レビューの指摘', () => {
     expect(ctx.usageRecord([{ kind: 'view', target: 'home', count: 1 }])).toBe(1);
   });
 });
+
+describe('楽しい演出 (既定はオフ)', () => {
+  const FUN = ['fun.combo', 'fun.words', 'fun.cheer'];
+
+  it('3つとも自分の設定の bool で、既定はオフ', () => {
+    const { ctx } = setup();
+    FUN.forEach((k) => {
+      const p = item(ctx, k);
+      expect(p).toBeTruthy();
+      expect(p.scope).toBe('me');
+      expect(p.type).toBe('bool');
+      expect(p.def).toBe(false);
+      expect(p.section).toBe('楽しい演出');
+      expect(ctx.prefGet_(k, ME)).toBe(false);
+    });
+    expect(item(ctx, 'fun.combo').label).toBe('打つと盛り上がる');
+    expect(item(ctx, 'fun.words').label).toBe('言葉に反応する');
+    expect(item(ctx, 'fun.cheer').label).toBe('済ませたらお祝い');
+  });
+
+  it('effective.fun は既定で全部オフ。本人がオンにしたぶんだけオンになり、ほかの人には効かない', () => {
+    const { ctx, fake } = setup();
+    fake._setUser(ME);
+    expect(ctx.apiPrefs().effective.fun).toEqual({ combo: false, words: false, cheer: false });
+    ctx.apiPrefSet('fun.combo', true);
+    expect(ctx.apiPrefs().effective.fun).toEqual({ combo: true, words: false, cheer: false });
+    const raw = JSON.parse(fake.PropertiesService.getScriptProperties().getProperty('MYPREF:' + ME));
+    expect(raw['fun.combo']).toBe(true);
+    fake._setUser(OTHER);
+    expect(ctx.apiPrefs().effective.fun.combo).toBe(false);
+  });
+
+  it('bool 以外は通さない。オフに戻すと既定と同じなので消える', () => {
+    const { ctx, fake } = setup();
+    fake._setUser(ME);
+    expect(() => ctx.apiPrefSet('fun.words', 'true')).toThrow();
+    expect(() => ctx.apiPrefSet('fun.words', 1)).toThrow();
+    ctx.apiPrefSet('fun.words', true);
+    ctx.apiPrefSet('fun.words', false);
+    expect(fake.PropertiesService.getScriptProperties().getProperty('MYPREF:' + ME)).toBe(null);
+  });
+
+  it('管理者でなくても自分のぶんは変えられる', () => {
+    const { ctx, fake } = setup({ admin: false });
+    fake._setUser(ME);
+    expect(() => ctx.apiPrefSet('fun.cheer', true)).not.toThrow();
+    expect(ctx.apiPrefs().effective.fun.cheer).toBe(true);
+  });
+});

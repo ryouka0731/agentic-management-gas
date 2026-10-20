@@ -1,0 +1,541 @@
+  // ===== 楽しい演出 (既定はオフ) =====
+  //
+  // 自分の設定の「楽しい演出」(fun.combo / fun.words / fun.cheer) をオンにした人の画面にだけ出す。
+  // 設定の定義はサーバの PREFS_SCHEMA() が持ち、ここは prefs.effective.fun を読むだけ。
+  //
+  // 守ること:
+  // - 打った字・カーソル・フォーカスには触らない。欄の値を書き換えない。打つのを止めない (preventDefault しない)
+  // - 演出は1枚の重ね (#fun-layer) にだけ描く。pointer-events: none・aria-hidden・inert で、押せず読み上げにも載らない
+  // - 字は textContent だけで置く。粒は canvas に描き、粒が無くなったら rAF を止める。粒は FUN_MAX_PARTICLES まで
+  // - 動きを減らす設定 (prefers-reduced-motion) では、短い字の札だけを出す (粒・枠の光・跳ねる動きは出さない)
+  // - 音は鳴らさない
+  //
+  // 何に反応するかの表はそれぞれ1つだけ: 言葉は FUN_KEYWORDS()、済ませた操作は FUN_CHEERS()、
+  // 続けて打った数の節目は FUN_MILESTONES()、段は FUN_GRADES()。
+  // 関数にしてあるのは、call() が読み込みの途中で呼ばれても表が引けるようにするため (var は並び順で初期化される)。
+
+  /** 粒の上限。多いと遅い端末で打つのが重くなる */
+  var FUN_MAX_PARTICLES = 150;
+  /** これだけ打たないと、続けて打った数を数え直す (ミリ秒) */
+  var FUN_COMBO_IDLE_MS = 1500;
+  /** 続けて打った数を欄の近くに出し始める数 */
+  var FUN_COMBO_SHOW_FROM = 3;
+  /** これ以上続けたあとで消すと COMBO BREAK を出す */
+  var FUN_BREAK_FROM = 5;
+
+  /**
+   * 言葉の反応。**唯一の表。** 打った字の終わりがどれかの言葉に当たると出す。
+   * tone は色 (トークン) の名前、glyphs は飛ばす絵。
+   *
+   * @returns {Array<{words: string[], text: string, tone: string, glyphs: string[]}>}
+   */
+  function FUN_KEYWORDS() {
+    return [
+      { words: ['リリース', '完成', '反映', 'できた', '公開'], text: 'SHIPPED!', tone: 'accent', glyphs: ['🚀', '✨'] },
+      { words: ['好き', 'ありがとう', '感謝', 'うれしい', '嬉しい'], text: 'LOVE ♡', tone: 'danger', glyphs: ['💖', '💕'] },
+      { words: ['承認', 'OK', 'いいね', '了解'], text: 'NICE!', tone: 'success', glyphs: ['👍', '✨'] },
+      { words: ['締切', '締め切り', '至急'], text: 'HURRY!', tone: 'warn', glyphs: ['⏰', '💨'] },
+    ];
+  }
+
+  /**
+   * 済ませたときのお祝い。**唯一の表。** call() が成功した api の名前で引く (searchIndexChangedBy と同じ形)。
+   * when があれば、引数を見て当たるときだけ出す。size は big (真ん中に大きく) か small (右下に小さく)。
+   *
+   * @returns {Object<string, {text: string, size: string, tone: string, glyphs: string[], when?: function(Array): boolean}>}
+   */
+  function FUN_CHEERS() {
+    return {
+      apiPrMerge: { text: 'SHIPPED!', size: 'big', tone: 'merged', glyphs: ['🚀', '🎉', '✨'] },
+      apiIssueClose: { text: 'CLEAR!', size: 'big', tone: 'success', glyphs: ['🎉', '✨'] },
+      apiProjectMove: { text: 'CLEAR!', size: 'big', tone: 'success', glyphs: ['🎉', '✨'],
+        when: function (args) { return args && args[1] === 'Done'; } },
+      apiPrReview: { text: 'NICE!', size: 'big', tone: 'accent', glyphs: ['👍', '✨'],
+        when: function (args) { return args && args[1] === 'approve'; } },
+      apiPrCreate: { text: 'SENT!', size: 'big', tone: 'accent', glyphs: ['📨', '✨'] },
+      apiCommit: { text: 'SAVED', size: 'small', tone: 'success', glyphs: ['✨'] },
+      apiCommitMany: { text: 'SAVED', size: 'small', tone: 'success', glyphs: ['✨'] },
+      apiSaveMarkdown: { text: 'SAVED', size: 'small', tone: 'success', glyphs: ['✨'] },
+      apiIssueCreate: { text: 'NEW!', size: 'small', tone: 'accent', glyphs: ['✨'] },
+    };
+  }
+
+  /**
+   * 続けて打った数の節目。ちょうどこの数を越えたときに大きな字を出す。
+   *
+   * @returns {Array<{at: number, text: string, tone: string}>}
+   */
+  function FUN_MILESTONES() {
+    return [
+      { at: 10, text: 'COMBO x10', tone: 'accent' },
+      { at: 20, text: 'MEGA HIT', tone: 'merged' },
+      { at: 30, text: 'ON FIRE x30', tone: 'danger' },
+      { at: 50, text: 'CRITICAL!!', tone: 'warn' },
+      { at: 100, text: 'LEGEND x100', tone: 'success' },
+    ];
+  }
+
+  /**
+   * 続けて打った数の段。上から順に見て、最初に届いたもの。
+   *
+   * @returns {Array<{min: number, grade: string, tone: string}>}
+   */
+  function FUN_GRADES() {
+    return [
+      { min: 30, grade: 'S', tone: 'danger' },
+      { min: 20, grade: 'A', tone: 'warn' },
+      { min: 10, grade: 'B', tone: 'merged' },
+      { min: 0, grade: 'C', tone: 'accent' },
+    ];
+  }
+
+  /**
+   * @param {number} n
+   * @returns {{min: number, grade: string, tone: string}}
+   */
+  function funGradeOf(n) {
+    var list = FUN_GRADES();
+    for (var i = 0; i < list.length; i++) if (n >= list[i].min) return list[i];
+    return list[list.length - 1];
+  }
+
+  /**
+   * 自分の設定でオンか。設定が届くまではオフ。
+   *
+   * @param {string} kind combo / words / cheer
+   * @returns {boolean}
+   */
+  function funOn(kind) {
+    var f = prefs && prefs.effective && prefs.effective.fun;
+    return !!(f && f[kind] === true);
+  }
+
+  /** 動きを減らす設定か */
+  function funReduced() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 重ねの器。初めて要るときに作る (使わない人の画面には何も足さない)。
+   * 読み込みの途中で呼ばれても2つ作らないよう、var に持たず id で引く。
+   *
+   * @returns {HTMLElement}
+   */
+  function funLayer() {
+    var el = document.getElementById('fun-layer');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'fun-layer';
+    el.className = 'fun-layer';
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('inert', '');
+    var canvas = document.createElement('canvas');
+    canvas.className = 'fun-canvas';
+    el.appendChild(canvas);
+    var flash = document.createElement('div');
+    flash.className = 'fun-flash';
+    el.appendChild(flash);
+    var combo = document.createElement('div');
+    combo.className = 'fun-combo';
+    combo.hidden = true;
+    ['fun-combo-n', 'fun-combo-word', 'fun-combo-grade'].forEach(function (cls, i) {
+      if (i) combo.appendChild(document.createTextNode(' '));
+      var s = document.createElement('span');
+      s.className = cls;
+      combo.appendChild(s);
+    });
+    el.appendChild(combo);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** 今描いている字の札をすべて外し、数を隠す (オフにしたとき) */
+  function funClear() {
+    var el = document.getElementById('fun-layer');
+    if (!el) return;
+    Array.prototype.forEach.call(el.querySelectorAll('.fun-banner'), function (b) { b.remove(); });
+    var combo = el.querySelector('.fun-combo');
+    if (combo) combo.hidden = true;
+    if (funParticles) funParticles.length = 0;
+  }
+
+  /**
+   * 設定が届いた・変わった (applyPrefs から呼ぶ)。止めたものの残りを外す。
+   */
+  function funPrefsChanged() {
+    if (!funOn('combo')) funComboReset();
+    if (!funOn('combo') && !funOn('words') && !funOn('cheer')) funClear();
+  }
+
+  /**
+   * 演出を出す欄か。字を書く欄だけ (textarea と type=text)。探す欄・絞り込み (type=search)・
+   * 合言葉・数の欄では出さない。重ねの中の物は対象にしない。
+   *
+   * @param {*} el
+   * @returns {boolean}
+   */
+  function funTarget(el) {
+    if (!el || !el.tagName) return false;
+    if (el.closest && el.closest('#fun-layer')) return false;
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+    var type = String(el.getAttribute('type') || 'text').toLowerCase();
+    return type === 'text';
+  }
+
+  // ----- 続けて打った数 -----
+
+  var funCombo = 0;
+  var funComboTimer = null;
+  /** 同じ言葉で続けて出さない (ミリ秒) */
+  var funWordLast = { text: '', at: 0 };
+
+  /**
+   * 演出を置く位置 (欄の右上)。画面の外へははみ出させない。
+   *
+   * @param {HTMLElement} [el]
+   * @returns {{x: number, y: number}}
+   */
+  function funPointOf(el) {
+    var w = window.innerWidth || 800;
+    var h = window.innerHeight || 600;
+    var r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    var x = r && r.width ? r.right - 16 : w / 2;
+    var y = r && r.height ? r.top : h / 2;
+    return { x: Math.max(16, Math.min(w - 16, x)), y: Math.max(24, Math.min(h - 24, y)) };
+  }
+
+  /** 続けて打った数を数え直す */
+  function funComboReset() {
+    funCombo = 0;
+    if (funComboTimer) clearTimeout(funComboTimer);
+    funComboTimer = null;
+    var el = document.getElementById('fun-layer');
+    var combo = el && el.querySelector('.fun-combo');
+    if (combo) combo.hidden = true;
+  }
+
+  /**
+   * 打った。続けて打った数を足し、数・段・節目を出す。
+   *
+   * @param {HTMLElement} el 打った欄
+   * @param {number} n 足す数 (変換を決めたときは字数)
+   */
+  function funComboAdd(el, n) {
+    var before = funCombo;
+    funCombo += Math.max(1, n);
+    if (funComboTimer) clearTimeout(funComboTimer);
+    funComboTimer = setTimeout(funComboReset, FUN_COMBO_IDLE_MS);
+
+    var grade = funGradeOf(funCombo);
+    var p = funPointOf(el);
+    if (funCombo >= FUN_COMBO_SHOW_FROM) {
+      var layer = funLayer();
+      var combo = layer.querySelector('.fun-combo');
+      combo.hidden = false;
+      combo.dataset.combo = String(funCombo);
+      combo.dataset.grade = grade.grade;
+      combo.className = 'fun-combo fun-tone-' + grade.tone;
+      combo.querySelector('.fun-combo-n').textContent = String(funCombo);
+      combo.querySelector('.fun-combo-word').textContent = 'COMBO';
+      combo.querySelector('.fun-combo-grade').textContent = grade.grade;
+      combo.style.left = p.x + 'px';
+      combo.style.top = p.y + 'px';
+      // 数が増えるたびに小さく跳ねる (動きを減らす設定では CSS が止める)
+      combo.classList.remove('is-bump');
+      void combo.offsetWidth;
+      combo.classList.add('is-bump');
+    }
+    FUN_MILESTONES().forEach(function (m) {
+      if (before < m.at && funCombo >= m.at) {
+        funBanner(m.text, 'big', m.tone, null);
+        funFlash(m.tone);
+        funBurst(p.x, p.y, 40, null);
+      }
+    });
+    if (funCombo >= FUN_COMBO_SHOW_FROM && !funReduced()) funBurst(p.x, p.y, 3 + Math.min(6, Math.floor(funCombo / 10)), null);
+  }
+
+  /**
+   * 消した。続けていたなら COMBO BREAK を出して数え直す。
+   *
+   * @param {HTMLElement} el
+   */
+  function funComboBreak(el) {
+    if (funCombo >= FUN_BREAK_FROM) {
+      var p = funPointOf(el);
+      funBanner('COMBO BREAK', 'small', 'danger', p, 'DEL');
+    }
+    funComboReset();
+  }
+
+  /**
+   * 打った字の終わりが言葉に当たるか。当たれば言葉の表の1行。
+   *
+   * @param {string} text カーソルより前の字
+   * @returns {object|null}
+   */
+  function funKeywordAt(text) {
+    var tail = String(text || '').slice(-12).toLowerCase();
+    var list = FUN_KEYWORDS();
+    for (var i = 0; i < list.length; i++) {
+      for (var j = 0; j < list[i].words.length; j++) {
+        var w = list[i].words[j].toLowerCase();
+        if (tail.length >= w.length && tail.lastIndexOf(w) === tail.length - w.length) return list[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 打ったあとに言葉を見る。
+   *
+   * @param {HTMLElement} el
+   */
+  function funWords(el) {
+    var value = String(el.value || '');
+    var end = typeof el.selectionStart === 'number' && el.selectionStart !== null ? el.selectionStart : value.length;
+    var hit = funKeywordAt(value.slice(0, end));
+    if (!hit) return;
+    var now = Date.now();
+    if (funWordLast.text === hit.text && now - funWordLast.at < 800) return;
+    funWordLast = { text: hit.text, at: now };
+    // 続けて打った数は欄の右上に出るので、言葉の字は左上に出して重ねない
+    var p = funPointOf(el);
+    var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    var x = r && r.width ? Math.max(80, r.left + 80) : p.x;
+    funBanner(hit.text, 'small', hit.tone, { x: x, y: Math.max(24, p.y - 24) });
+    funBurst(x, p.y, 16, hit.glyphs);
+  }
+
+  /**
+   * 1回打った (変換を決めたときも含む)。
+   *
+   * @param {HTMLElement} el
+   * @param {number} n
+   */
+  function funTyped(el, n) {
+    if (funOn('combo')) funComboAdd(el, n);
+    else if (funCombo) funComboReset();
+    if (funOn('words')) funWords(el);
+  }
+
+  // 1つの聞き手で全部の欄を見る (欄ごとに付けない)。捕まえる段で聞き、何も止めない
+  document.addEventListener('input', function (e) {
+    if (!funOn('combo') && !funOn('words')) return;
+    var el = e.target;
+    if (!funTarget(el)) return;
+    // 変換中は数えない。変換を決めたとき (compositionend) に数える
+    if (e.isComposing) return;
+    var type = String(e.inputType || '');
+    if (/Composition/.test(type)) return;
+    if (type.indexOf('delete') === 0) {
+      if (funOn('combo')) funComboBreak(el);
+      return;
+    }
+    funTyped(el, 1);
+  }, true);
+
+  document.addEventListener('compositionend', function (e) {
+    if (!funOn('combo') && !funOn('words')) return;
+    var el = e.target;
+    if (!funTarget(el)) return;
+    var n = String(e.data || '').length;
+    if (!n) return;
+    funTyped(el, n);
+  }, true);
+
+  // ----- 字の札 -----
+
+  /**
+   * 大きな字 (真ん中) か小さな字 (指した位置) を出し、しばらくして外す。
+   * 動きを減らす設定では、どちらも短い字の札にする。
+   *
+   * @param {string} text
+   * @param {string} size big / small
+   * @param {string} tone
+   * @param {{x: number, y: number}|null} at 小さな字の位置。無ければ右下
+   * @param {string} [sub] 下に添える字
+   */
+  function funBanner(text, size, tone, at, sub) {
+    var layer = funLayer();
+    var reduced = funReduced();
+    var b = document.createElement('div');
+    b.className = 'fun-banner fun-tone-' + tone + ' ' + (reduced ? 'fun-badge' : size === 'big' ? 'fun-big' : 'fun-small');
+    var main = document.createElement('span');
+    main.className = 'fun-banner-text';
+    main.textContent = text;
+    b.appendChild(main);
+    if (sub) {
+      var s = document.createElement('span');
+      s.className = 'fun-banner-sub';
+      s.textContent = sub;
+      b.appendChild(s);
+    }
+    if (reduced || size !== 'big') {
+      var w = window.innerWidth || 800;
+      var h = window.innerHeight || 600;
+      var p = at || { x: w - 120, y: h - 80 };
+      b.style.left = p.x + 'px';
+      b.style.top = p.y + 'px';
+    }
+    // 大きな字は同時に1つだけ (重なると読めない)
+    if (size === 'big') {
+      Array.prototype.forEach.call(layer.querySelectorAll('.fun-banner.fun-big'), function (old) { old.remove(); });
+    }
+    layer.appendChild(b);
+    setTimeout(function () { b.remove(); }, reduced ? 900 : size === 'big' ? 1200 : 900);
+    return b;
+  }
+
+  /**
+   * 画面の縁を一瞬光らせる。動きを減らす設定では出さない。
+   *
+   * @param {string} tone
+   */
+  function funFlash(tone) {
+    if (funReduced()) return;
+    var flash = funLayer().querySelector('.fun-flash');
+    flash.className = 'fun-flash fun-tone-' + tone;
+    void flash.offsetWidth;
+    flash.classList.add('is-on');
+  }
+
+  // ----- 粒 (canvas) -----
+
+  var funParticles = [];
+  var funFrame = 0;
+  var funCtx = null;
+  var funCtxTried = false;
+  var funColors = [];
+
+  /** canvas の描き口。描けない環境 (jsdom など) では null のまま、粒を出さない */
+  function funContext() {
+    if (funCtxTried) return funCtx;
+    funCtxTried = true;
+    var canvas = funLayer().querySelector('.fun-canvas');
+    try {
+      funCtx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
+    } catch (e) {
+      funCtx = null;
+    }
+    return funCtx;
+  }
+
+  /** 粒の色はトークンから読む (明るさの切り替えに付いていく) */
+  function funReadColors() {
+    var css = getComputedStyle(document.documentElement);
+    funColors = ['--accent', '--success', '--warn', '--danger', '--merged'].map(function (t) {
+      return String(css.getPropertyValue(t) || '').trim();
+    }).filter(function (c) { return !!c; });
+    if (!funColors.length) funColors = ['currentColor'];
+  }
+
+  /**
+   * 粒をはじけさせる。
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {number} count
+   * @param {string[]|null} glyphs 絵を混ぜるとき
+   */
+  function funBurst(x, y, count, glyphs) {
+    if (funReduced()) return;
+    var ctx = funContext();
+    if (!ctx) return;
+    if (!funParticles.length) funReadColors();
+    for (var i = 0; i < count && funParticles.length < FUN_MAX_PARTICLES; i++) {
+      var angle = Math.random() * Math.PI * 2;
+      var speed = 4 + Math.random() * 7;
+      var glyph = glyphs && i % 3 === 0 ? glyphs[i % glyphs.length] : '';
+      funParticles.push({
+        x: x, y: y,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 3,
+        life: 0, max: 40 + Math.floor(Math.random() * 25),
+        size: glyph ? 18 + Math.random() * 10 : 2 + Math.random() * 3,
+        color: funColors[i % funColors.length],
+        glyph: glyph,
+      });
+    }
+    if (!funFrame && window.requestAnimationFrame) funFrame = window.requestAnimationFrame(funStep);
+  }
+
+  /** 1こま描く。粒が無くなったら止める */
+  function funStep() {
+    funFrame = 0;
+    var ctx = funCtx;
+    var canvas = ctx && ctx.canvas;
+    if (!canvas) return;
+    var dpr = window.devicePixelRatio || 1;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    funParticles = funParticles.filter(function (p) { return p.life < p.max; });
+    funParticles.forEach(function (p) {
+      p.life++;
+      p.vy += 0.22;
+      p.vx *= 0.98;
+      p.x += p.vx;
+      p.y += p.vy;
+      ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+      if (p.glyph) {
+        ctx.font = Math.round(p.size) + 'px sans-serif';
+        ctx.fillText(p.glyph, p.x, p.y);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size * 1.6);
+      }
+    });
+    ctx.globalAlpha = 1;
+    if (funParticles.length) funFrame = window.requestAnimationFrame(funStep);
+    else ctx.clearRect(0, 0, w, h);
+  }
+
+  // ----- 済ませたときのお祝い -----
+
+  /**
+   * call() が成功したあとに呼ぶ。表 (FUN_CHEERS) に当たり、オンなら出す。
+   * 失敗したときは呼ばれない (call() の成功の枝だけから呼ぶ)。
+   *
+   * @param {string} name
+   * @param {Array} args
+   */
+  function funCheerAfter(name, args) {
+    if (!funOn('cheer')) return;
+    // 飾りが落ちても、本来の返事の扱い (call の ok) は止めない
+    try {
+      funCheer(name, args);
+    } catch (e) {
+      if (window.console) console.warn('お祝いを出せませんでした', e);
+    }
+  }
+
+  /**
+   * @param {string} name
+   * @param {Array} args
+   */
+  function funCheer(name, args) {
+    var table = FUN_CHEERS();
+    if (!Object.prototype.hasOwnProperty.call(table, name)) return;
+    var c = table[name];
+    if (c.when && !c.when(args || [])) return;
+    var w = window.innerWidth || 800;
+    var h = window.innerHeight || 600;
+    if (c.size === 'big') {
+      funBanner(c.text, 'big', c.tone, null);
+      funFlash(c.tone);
+      funBurst(w / 2, h / 2, 60, c.glyphs);
+    } else {
+      funBanner(c.text, 'small', c.tone, null);
+      funBurst(w - 120, h - 80, 14, c.glyphs);
+    }
+  }

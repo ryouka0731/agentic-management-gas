@@ -240,6 +240,9 @@ export function prefsFixture(over) {
     { key: 'home.cards.game', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'ポイントとレベル', help: '', def: true },
     { key: 'home.cards.recent', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '最近の動き', help: '', def: true },
     { key: 'home.cards.team', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'チームの前進', help: '', def: true },
+    { key: 'fun.combo', scope: 'me', type: 'bool', section: '楽しい演出', label: '打つと盛り上がる', help: '', def: false },
+    { key: 'fun.words', scope: 'me', type: 'bool', section: '楽しい演出', label: '言葉に反応する', help: '', def: false },
+    { key: 'fun.cheer', scope: 'me', type: 'bool', section: '楽しい演出', label: '済ませたらお祝い', help: '', def: false },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
     { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方', label: '自分の使われ方を記録する', help: '', def: true },
     { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方', label: '使われ方を記録する', help: '', def: true },
@@ -268,6 +271,7 @@ export function prefsFixture(over) {
       termStyle: v('terms.style'),
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
+      fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
     },
