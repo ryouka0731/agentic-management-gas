@@ -288,34 +288,12 @@ const stderr = (s) => process.stderr.write(s);
  */
 export async function installFromServer({ home, claude, send, now = Date.now(), link = false,
   manual = false, pinnedKey = '', warn = stderr }) {
-  const res = await send('kitFiles', {});
-  if (!res || !res.ok) throw new Error('道具を受け取れませんでした: ' + ((res && res.error) || '返事がありません'));
-  const result = res.result || {};
-  const files = result.files || {};
-  const print = String(result.print || '');
-  const version = String(result.version || '');
-  if (!print || kitPrintOf(files) !== print) {
-    throw new Error('受け取った道具の指紋が合いません。入れ替えませんでした');
-  }
+  const { files, print, version, signature } = receivedKit(await send('kitFiles', {}));
   // 控えを取る前に確かめる。断ったときに控えだけ増えると、戻す先がずれる
   const entries = checkFiles(files);
-  const key = pinnedKey || readPinnedKey(home);
-  if (key) {
-    if (!verifyKit({ version, files, signature: result.signature }, key)) {
-      throw new Error('受け取った道具の署名が合いません。番頭が作ったものではないおそれがあります。入れ替えませんでした');
-    }
-  } else if (!manual) {
-    throw new Error('いまの道具は署名を確かめる鍵を持っていないため、自動では入れ替えませんでした。' +
-      '番頭の画面から道具の zip を落とし直し、node agent.mjs track install で入れ直してください');
-  } else {
-    warn('署名を確かめられませんでした (確かめる鍵をまだ持っていません)。頼まれたので入れます\n');
-  }
+  assertSigned({ version, files, signature }, pinnedKey || readPinnedKey(home), manual, warn);
   const mine = readConfig(home) || {};
-  // 署名は本物でも、前に配った古い版の返事を流し直されうる (待っている id に置くだけで済む)。
-  // 自動では今より古い版に戻さない。戻すのは人が頼んだとき (update / rollback) だけ
-  if (!manual && cleanVersion(mine.kitVersion) && compareVersions(version, mine.kitVersion) < 0) {
-    throw new Error('受け取った道具は今より古い版です (' + cleanVersion(version) + ')。自動では戻しません');
-  }
+  assertNotOlder(version, mine, manual);
 
   const p = paths(home);
   const before = snapshot(p.kit);
@@ -323,16 +301,7 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
 
   // 新しい置き場を隣に組んでから差し替える。途中で落ちても今の置き場は残る
   const next = p.kit + '.new';
-  fs.rmSync(next, { recursive: true, force: true });
-  fs.mkdirSync(next, { recursive: true });
-  const written = {};
-  for (const [safe, body] of entries) {
-    const to = path.join(next, ...safe.split('/'));
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    const bytes = Buffer.from(body, 'base64');
-    fs.writeFileSync(to, bytes);
-    written[safe] = bytes.toString('utf8');
-  }
+  const written = writeKitDir(next, entries);
   swapKit(p.kit, next);
 
   if (link || claudeLinked(claude)) linkClaude(home, claude);
@@ -343,6 +312,65 @@ export async function installFromServer({ home, claude, send, now = Date.now(), 
   const shown = cleanVersion(version);
   writeConfig(home, { kitPrint: print, kitVersion: shown, skipPrint: '' });
   return { print, version: shown, changed };
+}
+
+/** 中身の返事を読む。返事が無い・指紋が合わないものは、何も変えないうちに断る */
+function receivedKit(res) {
+  if (!res || !res.ok) throw new Error('道具を受け取れませんでした: ' + ((res && res.error) || '返事がありません'));
+  const result = res.result || {};
+  const files = result.files || {};
+  const print = String(result.print || '');
+  const version = String(result.version || '');
+  if (!print || kitPrintOf(files) !== print) {
+    throw new Error('受け取った道具の指紋が合いません。入れ替えませんでした');
+  }
+  return { files, print, version, signature: result.signature };
+}
+
+/**
+ * 署名を確かめる。鍵が無いときは、人が頼んだとき (manual) だけ断ってから通す。
+ */
+function assertSigned(kit, key, manual, warn) {
+  if (key) {
+    if (!verifyKit(kit, key)) {
+      throw new Error('受け取った道具の署名が合いません。番頭が作ったものではないおそれがあります。入れ替えませんでした');
+    }
+    return;
+  }
+  if (!manual) {
+    throw new Error('いまの道具は署名を確かめる鍵を持っていないため、自動では入れ替えませんでした。' +
+      '番頭の画面から道具の zip を落とし直し、node agent.mjs track install で入れ直してください');
+  }
+  warn('署名を確かめられませんでした (確かめる鍵をまだ持っていません)。頼まれたので入れます\n');
+}
+
+/**
+ * 署名は本物でも、前に配った古い版の返事を流し直されうる (待っている id に置くだけで済む)。
+ * 自動では今より古い版に戻さない。戻すのは人が頼んだとき (update / rollback) だけ
+ */
+function assertNotOlder(version, mine, manual) {
+  if (!manual && cleanVersion(mine.kitVersion) && compareVersions(version, mine.kitVersion) < 0) {
+    throw new Error('受け取った道具は今より古い版です (' + cleanVersion(version) + ')。自動では戻しません');
+  }
+}
+
+/**
+ * 確かめた中身を新しい置き場に書く。
+ *
+ * @returns {Object<string,string>} 書いた名前と中身 (変わったものを数えるため)
+ */
+function writeKitDir(next, entries) {
+  fs.rmSync(next, { recursive: true, force: true });
+  fs.mkdirSync(next, { recursive: true });
+  const written = {};
+  for (const [safe, body] of entries) {
+    const to = path.join(next, ...safe.split('/'));
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    const bytes = Buffer.from(body, 'base64');
+    fs.writeFileSync(to, bytes);
+    written[safe] = bytes.toString('utf8');
+  }
+  return written;
 }
 
 /**
@@ -474,41 +502,12 @@ export async function tickUpdate({ home, claude, place, collect, drop, sweep, no
   if (!config) return { updated: false };
 
   const pending = config.pendingUpdate;
-  if (sweep) {
-    // 片付けに失敗しても、確認そのものは止めない
-    try { sweep(pending && pending.id ? String(pending.id) : '', now); } catch (e) { /* 次の日にまた試す */ }
-  }
+  if (sweep) sweepQuietly(sweep, pending, now);
   if (pending) {
-    const at = Date.parse(pending.at || '');
-    const known = pending.op === 'kitVersion' || pending.op === 'kitFiles';
-    let res = null;
-    let broken = !known || !Number.isFinite(at) || now - at >= DAY_MS;
-    if (!broken) {
-      // 読めない id で collect が投げると、24時間のあいだ命令のたびに失敗する。捨てる
-      try { res = collect(String(pending.id)); } catch (e) { broken = true; }
-    }
-    if (broken) {
-      dropPending(home, drop);
-      config = readConfig(home);
-    } else {
-      if (res === null || res === undefined) return { updated: false };
-      writeConfig(home, { pendingUpdate: null });
-      config = readConfig(home);
-
-      const j = judgeVersion(config, res, false);
-      if (j.next === 'skip') return { updated: false, skipped: true };
-      if (j.next === 'available' || (j.next === 'install' && !readPinnedKey(home))) {
-        writeAvailable(home, j.version, now, j.next === 'install');
-        return { updated: false, available: true, version: cleanVersion(j.version) };
-      }
-      if (j.next !== 'install') return { updated: false };
-      if (pending.op === 'kitFiles') {
-        return installAndLog({ home, claude, send: async () => res, now });
-      }
-      const id = place('kitFiles', {});
-      writeConfig(home, { pendingUpdate: { op: 'kitFiles', id, at: new Date(now).toISOString() } });
-      return { updated: false, placed: 'kitFiles' };
-    }
+    const got = collectPending(pending, collect, now);
+    if (!got.broken) return continuePending({ home, claude, place, pending, res: got.res, now });
+    dropPending(home, drop);
+    config = readConfig(home);
   }
 
   const last = Date.parse(config.lastUpdateCheck || '');
@@ -519,6 +518,45 @@ export async function tickUpdate({ home, claude, place, collect, drop, sweep, no
   const id = place('kitVersion', { mine: config.kitPrint || '' });
   writeConfig(home, { pendingUpdate: { op: 'kitVersion', id, at: new Date(now).toISOString() } });
   return { updated: false, placed: 'kitVersion' };
+}
+
+/** 捨てた待ちの残りを片付ける。片付けに失敗しても、確認そのものは止めない */
+function sweepQuietly(sweep, pending, now) {
+  try { sweep(pending && pending.id ? String(pending.id) : '', now); } catch (e) { /* 次の日にまた試す */ }
+}
+
+/**
+ * 待っている命令の結果を拾う。知らない命令・読めない時刻・24時間たったものは捨てる側 (broken) に回す。
+ *
+ * @returns {{broken: boolean, res?: *}}
+ */
+function collectPending(pending, collect, now) {
+  const at = Date.parse(pending.at || '');
+  const known = pending.op === 'kitVersion' || pending.op === 'kitFiles';
+  if (!known || !Number.isFinite(at) || now - at >= DAY_MS) return { broken: true };
+  // 読めない id で collect が投げると、24時間のあいだ命令のたびに失敗する。捨てる
+  try { return { broken: false, res: collect(String(pending.id)) }; } catch (e) { return { broken: true }; }
+}
+
+/** 待っていた命令の結果で1歩進める。まだ返っていなければ待ち続ける */
+async function continuePending({ home, claude, place, pending, res, now }) {
+  if (res === null || res === undefined) return { updated: false };
+  writeConfig(home, { pendingUpdate: null });
+  const config = readConfig(home);
+
+  const j = judgeVersion(config, res, false);
+  if (j.next === 'skip') return { updated: false, skipped: true };
+  if (j.next === 'available' || (j.next === 'install' && !readPinnedKey(home))) {
+    writeAvailable(home, j.version, now, j.next === 'install');
+    return { updated: false, available: true, version: cleanVersion(j.version) };
+  }
+  if (j.next !== 'install') return { updated: false };
+  if (pending.op === 'kitFiles') {
+    return installAndLog({ home, claude, send: async () => res, now });
+  }
+  const id = place('kitFiles', {});
+  writeConfig(home, { pendingUpdate: { op: 'kitFiles', id, at: new Date(now).toISOString() } });
+  return { updated: false, placed: 'kitFiles' };
 }
 
 /**
