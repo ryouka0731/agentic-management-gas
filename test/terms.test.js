@@ -75,8 +75,8 @@ describe('言葉の表し方は自分の設定', () => {
  * 画面にスクラムの言葉を直に書かない。書くと、一般の言葉を選んだ人 (既定) にも
  * スクラムの言葉が混ざって出る。言葉は term() / termFill() を通す。
  *
- * コメントは人に見せないので数えない。TERMS() の表そのものと、使い方 (GUIDE と
- * その図 SCRUM_DIAGRAM) は別の作業で直すので、それまでは除く。
+ * コメントは人に見せないので数えない。TERMS() の表そのものは除く。使い方 (GUIDE) と
+ * その図も {key} で書く。
  * ゲームの「ポイントとレベル」はスクラムの見積もりとは別物なので、「ポイント」
  * だけは禁じない (見積もりの「ストーリーポイント」は禁じる)。
  */
@@ -115,10 +115,6 @@ describe('画面にスクラムの言葉を直に書かない', () => {
   it('app.js.html', () => {
     let text = stripJsComments(fs.readFileSync('src/ui/app.js.html', 'utf8'));
     text = blank(text, '  function TERMS() {', '\n  }\n');
-    // 使い方は別の作業で term() を通す (#21 の続き)。それまでは除く
-    text = blank(text, '  var GUIDE = [', '\n  ];\n');
-    text = blank(text, '  var SCRUM_DIAGRAM = {', '\n  };\n');
-    text = text.replace("'スクラムで進める (使う人だけ)': SCRUM_DIAGRAM", '');
     expect(offenders(text)).toEqual([]);
   });
 

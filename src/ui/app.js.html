@@ -52,6 +52,7 @@
   var openLink = document.getElementById('open-in-docs');
   var docFullBtn = document.getElementById('doc-full-btn');
   var docLinkBtn = document.getElementById('doc-link-btn');
+  var guideLinkBtn = document.getElementById('guide-link');
   var docLinkRow = document.getElementById('doc-link-row');
 
   var tabsEl = document.getElementById('tabs');
@@ -879,6 +880,13 @@
    */
   function makeDiagram(spec) {
     var ns = 'http://www.w3.org/2000/svg';
+
+    // 字は {key} を言葉の表し方で埋める。含むものは、表し方が変わったら applyTerms が埋め直す
+    function say(el, text) {
+      var raw = String(text == null ? '' : text);
+      el.textContent = termIn(raw);
+      if (raw.indexOf('{') >= 0) el.setAttribute('data-term', raw);
+    }
     var wrap = document.createElement('figure');
     wrap.className = 'diagram';
 
@@ -887,11 +895,11 @@
     svg.setAttribute('role', 'img');
 
     var title = document.createElementNS(ns, 'title');
-    title.textContent = spec.title;
+    say(title, spec.title);
     svg.appendChild(title);
 
     var desc = document.createElementNS(ns, 'desc');
-    desc.textContent = spec.desc;
+    say(desc, spec.desc);
     svg.appendChild(desc);
 
     // 矢印の先。同じ頁に2つ並ぶので、名前を分ける
@@ -947,7 +955,7 @@
         x: lane.x + 12, y: lane.y + 18,
         class: 'diagram-lane-text' + (lane.tone ? ' ' + lane.tone : ''),
       });
-      tag.textContent = lane.label;
+      say(tag, lane.label);
     });
 
     (spec.arrows || []).forEach(function (arrow) {
@@ -970,7 +978,7 @@
         x: arrow.lx, y: arrow.ly, class: 'diagram-label',
         'text-anchor': 'middle',
       });
-      text.textContent = arrow.label;
+      say(text, arrow.label);
     });
 
     (spec.boxes || []).forEach(function (box) {
@@ -989,7 +997,7 @@
           class: 'diagram-text' + (box.tone ? ' ' + box.tone : ''),
           'text-anchor': 'middle',
         });
-        text.textContent = line;
+        say(text, line);
       });
 
       if (!box.sub) return;
@@ -998,7 +1006,7 @@
         x: box.x + box.w / 2, y: box.y + box.h - 9,
         class: 'diagram-sub', 'text-anchor': 'middle',
       });
-      sub.textContent = box.sub;
+      say(sub, box.sub);
     });
 
     // 点は「その時点」。記録が並んでいく様子を線の上に置く
@@ -1014,7 +1022,7 @@
         x: dot.cx, y: dot.cy + (dot.below ? 24 : -15),
         class: 'diagram-label', 'text-anchor': 'middle',
       });
-      text.textContent = dot.label;
+      say(text, dot.label);
     });
 
     (spec.notes || []).forEach(function (note) {
@@ -1024,7 +1032,7 @@
           (note.tone ? ' ' + note.tone : ''),
         'text-anchor': note.anchor || 'start',
       });
-      text.textContent = note.text;
+      say(text, note.text);
     });
 
     wrap.appendChild(svg);
@@ -1032,7 +1040,7 @@
     if (spec.caption) {
       var cap = document.createElement('figcaption');
       cap.className = 'row-meta';
-      cap.textContent = spec.caption;
+      say(cap, spec.caption);
       wrap.appendChild(cap);
     }
     return wrap;
@@ -1277,12 +1285,12 @@
       '同期したフォルダだけです。',
   };
 
-  /** エージェンティックスクラムの1巡り */
+  /** エージェンティックスクラムの1巡り。字の {key} は makeDiagram が言葉の表し方で埋める */
   var SCRUM_DIAGRAM = {
-    title: 'スクラムの1巡り（使う人だけ）',
-    desc: '管理者が設定でオンにすると、スプリントを作り、やることにポイントを付けて' +
-      '積み、進捗ボードで進め、終わったら振り返る。障害物はいつでも書き出す。' +
-      'バーンダウンとベロシティは、ポイントと完了日から番頭が数える。',
+    title: '{sprint}の1巡り（使う人だけ）',
+    desc: '管理者が設定でオンにすると、{sprint}を作り、やることに{points}を付けて' +
+      '積み、進捗ボードで進め、終わったら振り返る。{impediment}はいつでも書き出す。' +
+      '{burndown}と{velocity}は、{points}と完了日から番頭が数える。',
     width: 760,
     height: 278,
     lanes: [
@@ -1300,11 +1308,11 @@
       },
       {
         x: 200, y: 34, w: 160, h: 70,
-        label: 'スプリントを作る', sub: 'ゴールと期間',
+        label: '{sprint}を作る', sub: '目標と期間',
       },
       {
         x: 390, y: 34, w: 160, h: 70,
-        label: 'やることを積む', sub: 'ポイント・受入基準',
+        label: 'やることを積む', sub: '{points}と条件',
       },
       {
         x: 580, y: 34, w: 170, h: 70,
@@ -1317,12 +1325,12 @@
       { d: 'M550 69h24' },
       {
         d: 'M665 104C665 166 280 166 280 108', soft: true,
-        lx: 472, ly: 184, label: '次のスプリントへ（ベロシティが目安）',
+        lx: 472, ly: 184, label: '次の{sprint}へ（{velocity}が目安）',
       },
     ],
     notes: [
-      { x: 26, y: 246, text: 'オン・オフ / ゴールと完了の定義 / 承認' },
-      { x: 408, y: 246, text: 'スプリント・障害物・ポイントの読み書き' },
+      { x: 26, y: 246, text: 'オン・オフ / 目標と{definitionOfDone} / 承認' },
+      { x: 408, y: 246, text: '{sprint}・{impediment}・{points}の読み書き' },
     ],
     caption: '既定ではオフです。使わないチームは何も変わりません。',
   };
@@ -1423,6 +1431,192 @@
     ],
     caption: '「同じ場所が両方で変わっています」と出たら、' +
       'どちらを残すかを選んでから反映してください。',
+  };
+
+  /** ホームの見方 */
+  var HOME_DIAGRAM = {
+    title: 'ホームの見方',
+    desc: 'ホームには、あなたの番・改善のヒント・ポイントとレベルが上に、草・最近の動き・チームの前進が下に並ぶ。' +
+      'どれを出すかは自分の設定で選べる。見えるのはあなたのぶんとチームの合計だけで、ほかの人の草や名前は出ない。' +
+      'ポイントとレベルは、管理者がオンにしたときだけ出る。',
+    width: 760,
+    height: 278,
+    lanes: [
+      {
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '見えるもの',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn', label: '出さないもの',
+      },
+    ],
+    boxes: [
+      {
+        x: 14, y: 30, w: 232, h: 70,
+        label: 'あなたの番', sub: '確認・担当・期限', tone: 'strong',
+      },
+      {
+        x: 264, y: 30, w: 232, h: 70,
+        label: '改善のヒント', sub: '多くて3件',
+      },
+      {
+        x: 514, y: 30, w: 232, h: 70,
+        label: 'ポイントとレベル', sub: '管理者がオンにしたとき',
+      },
+      {
+        x: 14, y: 116, w: 232, h: 64,
+        label: '草', sub: 'あなた / チームの合計',
+      },
+      {
+        x: 264, y: 116, w: 232, h: 64,
+        label: '最近の動き', sub: '人の名前は出さない',
+      },
+      {
+        x: 514, y: 116, w: 232, h: 64,
+        label: 'チームの前進', sub: '毎月の目標まで',
+      },
+    ],
+    notes: [
+      { x: 26, y: 246, text: '自分のぶん・チームの合計' },
+      { x: 408, y: 246, text: '他人の草・連続日数・人の名前' },
+    ],
+    caption: '出すカードは、設定の「自分の設定」で選べます。行を押すと、そのものを開きます。',
+  };
+
+  /** 文書と工程表の見え方 */
+  var VIEW_DIAGRAM = {
+    title: '文書と工程表の見え方',
+    desc: '文書を読むときは、全画面で左と上を隠して本文だけにでき、全画面で開くリンクを写せる。' +
+      '工程表は、日・週・月で細かさを切り替え、「今日」で今日の位置へ送り、名前の欄の幅を掴んで変えられる。',
+    width: 760,
+    height: 248,
+    lanes: [
+      {
+        x: 10, y: 10, w: 358, h: 226, label: '文書を読むとき',
+      },
+      {
+        x: 392, y: 10, w: 358, h: 226, label: '工程表',
+      },
+    ],
+    boxes: [
+      {
+        x: 26, y: 40, w: 326, h: 56,
+        label: '全画面', sub: '左と上を隠して本文だけ', tone: 'strong',
+      },
+      {
+        x: 26, y: 108, w: 326, h: 56,
+        label: 'リンクをコピー', sub: '全画面で開くリンク',
+      },
+      {
+        x: 26, y: 176, w: 326, h: 48,
+        label: 'Esc か「全画面を閉じる」で戻る',
+      },
+      {
+        x: 408, y: 40, w: 326, h: 56,
+        label: '日・週・月', sub: '細かさを切り替える', tone: 'strong',
+      },
+      {
+        x: 408, y: 108, w: 326, h: 56,
+        label: '今日', sub: '今日の位置へ送る',
+      },
+      {
+        x: 408, y: 176, w: 326, h: 48,
+        label: '名前の欄の幅は掴んで変える',
+      },
+    ],
+    caption: '全画面のリンクを配ると、受け取った人は本文だけの画面で開けます。',
+  };
+
+  /** 使われ方で数えるもの */
+  var USAGE_DIAGRAM = {
+    title: '使われ方で数えるもの',
+    desc: '押した場所と開いた画面を、その日に何回かだけ数える。順番と時刻は残さない。' +
+      '場所ごとの合計は誰でも見られ、人ごとの数は本人と部下のぶんだけ。' +
+      'チームの設定で記録そのものを止められ、自分の設定で自分のぶんだけ止められる。',
+    width: 760,
+    height: 278,
+    lanes: [
+      {
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '数えるもの',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn', label: '数えないもの',
+      },
+    ],
+    boxes: [
+      {
+        x: 10, y: 34, w: 160, h: 70,
+        label: '押す・開く', sub: '画面の上で',
+      },
+      {
+        x: 200, y: 34, w: 160, h: 70,
+        label: '日ごとに数える', sub: '場所と回数だけ', tone: 'strong',
+      },
+      {
+        x: 390, y: 34, w: 160, h: 70,
+        label: '使われ方で見る', sub: '前の期間・曜日',
+      },
+      {
+        x: 580, y: 34, w: 170, h: 70,
+        label: 'CSV で保存', sub: '見ている範囲だけ',
+      },
+    ],
+    arrows: [
+      { d: 'M170 69h24' },
+      { d: 'M360 69h24' },
+      { d: 'M550 69h24' },
+      { d: 'M280 104v34', dash: true, bare: true },
+    ],
+    notes: [
+      { x: 280, y: 160, anchor: 'middle', text: '設定で止めると、ここで数えない' },
+      { x: 26, y: 246, text: '場所・画面・その日の回数' },
+      { x: 408, y: 246, text: '押した順番・時刻・文書の中身' },
+    ],
+    caption: '人ごとの数は、本人と部下のぶんだけが見えます。',
+  };
+
+  /** 設定でできること */
+  var SETTINGS_DIAGRAM = {
+    title: '設定でできること',
+    desc: '設定は自分の設定とチームの設定に分かれる。自分の設定は誰でも変えられ、最初に出す画面・' +
+      'ホームのカード・通知・自分の使われ方を決める。チームの設定は管理者だけが変えられ、' +
+      'そうでない人には今の値が読めるだけ。',
+    width: 760,
+    height: 248,
+    lanes: [
+      {
+        x: 10, y: 10, w: 358, h: 226, tone: 'ok', label: '自分の設定（誰でも）',
+      },
+      {
+        x: 392, y: 10, w: 358, h: 226, label: 'チームの設定（管理者）',
+      },
+    ],
+    boxes: [
+      {
+        x: 26, y: 40, w: 326, h: 56,
+        label: '最初に出す画面', sub: 'どの端末でも同じ',
+      },
+      {
+        x: 26, y: 108, w: 326, h: 56,
+        label: '通知メール', sub: '種類ごとに止められる', tone: 'strong',
+      },
+      {
+        x: 26, y: 176, w: 326, h: 48,
+        label: 'ホームに出すもの・自分の使われ方',
+      },
+      {
+        x: 408, y: 40, w: 326, h: 56,
+        label: '改善のヒントの規則', sub: '数と日数・オンオフ',
+      },
+      {
+        x: 408, y: 108, w: 326, h: 56,
+        label: '使われ方の記録', sub: '止める・残す日数',
+      },
+      {
+        x: 408, y: 176, w: 326, h: 48,
+        label: '毎月の目標・機能のオンオフなど',
+      },
+    ],
+    caption: '管理者でない人にも、チームの設定の今の値は見えます。変えたいときは管理者に頼んでください。',
   };
 
   // ===== テーマ =====
@@ -2752,6 +2946,7 @@
   function updateCrumbs() {
     var inDoc = !!current.fileId && !!DOC_TABS[currentTab];
     syncDocViewBtns();
+    syncGuideLink();
 
     crumbBack.hidden = !inDoc;
     crumbSep.hidden = !inDoc;
@@ -2774,6 +2969,36 @@
     }
     titleEl.textContent = current.docPath || '';
   }
+
+  /**
+   * 画面ごとの使い方の節。無い画面では「?」を出さない。
+   *
+   * @param {string} tab
+   * @returns {string} GUIDE の id
+   */
+  function guideIdOf(tab) {
+    if (tab === 'issues') return issueView === 'gantt' ? 'view' : 'pitfalls';
+    return {
+      home: 'home', docs: 'flow', content: 'view', pulls: 'flow',
+      usage: 'usage', settings: 'settings',
+    }[tab] || '';
+  }
+
+  /** 見出しの横の「?」を、いまの画面の節へ向ける */
+  function syncGuideLink() {
+    var id = guideIdOf(currentTab);
+    var section = GUIDE.filter(function (g) { return g.id === id; })[0];
+    guideLinkBtn.hidden = !section;
+    if (!section) return;
+    guideLinkBtn.dataset.guide = id;
+    // 字は「?」だけなので、何の使い方を開くのかを読み上げと手がかりで言う
+    guideLinkBtn.setAttribute('aria-label', '使い方の「' + section.title + '」を開く');
+    guideLinkBtn.title = '使い方: ' + section.title;
+  }
+
+  guideLinkBtn.addEventListener('click', function () {
+    if (guideLinkBtn.dataset.guide) openGuideAt(guideLinkBtn.dataset.guide);
+  });
 
   // ===== 文書の一覧 =====
 
@@ -3319,7 +3544,42 @@
   var searchSeq = 0;
   var searchLoading = false;
   var searchError = '';
-  var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '{impediment}' };
+  // 候補の全体の枠。searchFilter の TOTAL と同じ数 (あちらは手元の道具の写しなので触らない)
+  var SEARCH_TOTAL = 20;
+  var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '{impediment}', guide: '使い方' };
+
+  /**
+   * 使い方の節を見出しで探す。サーバの一覧には無いので、ここで足す。
+   *
+   * **searchFilter には混ぜない。** あれは手元の道具 (kit/track/local.mjs) と同じ答えを
+   * 返す写しで、種類を足すと両方を直して道具を配り直すことになる。並べ方は同じ
+   * searchRank で決め、種類の並びの最後に5件まで足す。全体の枠 (SEARCH_TOTAL) は
+   * 超えない (余った枠だけを使う)。
+   *
+   * @param {string} query
+   * @param {number} room 残っている枠
+   * @returns {?{kind: string, items: object[]}}
+   */
+  function guideSearchGroup(query, room) {
+    var words = searchNormalize(query).split(/\s+/).filter(Boolean);
+    if (!words.length || room <= 0) return null;
+    var items = [];
+    GUIDE.forEach(function (g, at) {
+      var item = { kind: 'guide', key: g.id, number: 0, title: g.title, state: '', archived: false };
+      var rank = searchRank(item, words);
+      if (rank < 0) return;
+      var hit = null;
+      var norm = searchNormalize(g.title);
+      if (norm.length === g.title.length) {
+        var pos = norm.indexOf(words[0]);
+        if (pos >= 0) hit = [pos, pos + words[0].length];
+      }
+      items.push(Object.assign(item, { rank: rank, hit: hit, at: at }));
+    });
+    if (!items.length) return null;
+    items.sort(function (a, b) { return a.rank - b.rank || a.at - b.at; });
+    return { kind: 'guide', items: items.slice(0, Math.min(5, room)) };
+  }
   /**
    * 状態の札。**それぞれの一覧と同じ言葉にする。** 違う言葉だと、開いた先で同じものだと分からない。
    * 確認依頼は stateLabel に寄せる (一覧と同じ関数)。
@@ -3420,17 +3680,24 @@
   function renderSearch() {
     var q = searchInput.value;
     if (!q.replace(/\s+/g, '')) { hideSearchResults(); return; }
-    if (!searchIndexRows) {
-      // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
-      showSearchMessage(searchLoading || !searchError ? '探しています…' : searchError);
-      return;
-    }
-    var groups = searchFilter(searchIndexRows, q);
-    if (!groups.length) { showSearchMessage('見つかりませんでした'); return; }
+    // 一覧がまだ無いとき (取りに行っている・取れなかった) も、使い方の節は手元にあるので出す。
+    // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
+    var pending = searchIndexRows ? '' : (searchLoading || !searchError ? '探しています…' : searchError);
+    var groups = pending ? [] : searchFilter(searchIndexRows, q);
+    var used = groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+    var guideGroup = guideSearchGroup(q, SEARCH_TOTAL - used);
+    if (guideGroup) groups = groups.concat([guideGroup]);
+    if (!groups.length) { showSearchMessage(pending || '見つかりませんでした'); return; }
 
     searchResults.textContent = '';
     searchActive = -1;
     searchInput.removeAttribute('aria-activedescendant');
+    if (pending) {
+      var wait = document.createElement('p');
+      wait.className = 'search-empty row-meta';
+      wait.textContent = pending;
+      searchResults.appendChild(wait);
+    }
     var n = 0;
     groups.forEach(function (g) {
       var head = document.createElement('div');
@@ -3497,6 +3764,7 @@
       switchTab('report');
     }
     else if (item.kind === 'impediment') switchTab('impediments');
+    else if (item.kind === 'guide') openGuideAt(item.key);
   }
 
   // 一覧の中 (見出し・送りのつまみ・行) を押しても欄から抜けない。抜けると blur で閉じる
@@ -6143,6 +6411,8 @@
    */
   function setIssueView(view, quiet, opts) {
     issueView = view;
+    // 工程表とほかの見え方とで、「?」の行き先が違う
+    if (currentTab === 'issues') syncGuideLink();
     if (!(opts && opts.keepOverdue)) setOverdueOnly(false);
 
     Object.keys(viewBtns).forEach(function (k) {
@@ -10278,12 +10548,12 @@
   // ===== 使い方 =====
 
   var GUIDE = [
-    ['このアプリについて', [
+    { id: 'about', title: 'このアプリについて', lines: [
       'SoftBanto（そふと番頭）といいます。通称は「番頭」です。主に代わって帳面をつけ、段取りをし、確認を取り次ぐ役どころからそう呼んでいます。',
       '文書を直接なおさず、コピー（改訂版）で変更し、確認を経て正式版に反映します。',
       '誰がいつ何を変えたかがすべて残り、いつでも前の状態と見比べられます。',
-    ]],
-    ['言葉の意味', [
+    ] },
+    { id: 'words', title: '言葉の意味', lines: [
       '正式版 — いま効力を持つ版。全員が見るもの',
       '改訂版 — 直している途中の版。正式版には影響しない',
       '変更の記録 — ある時点の中身を丸ごと残したもの',
@@ -10298,8 +10568,8 @@
       '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
       '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
       '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
-    ]],
-    ['基本の流れ', [
+    ] },
+    { id: 'flow', title: '基本の流れ', lines: [
       '1. 文書を開く',
       '2.「この文書の改訂版」で改訂版を作る',
       '3.「本文」の「直す」で書き換え、保存する',
@@ -10307,8 +10577,28 @@
       '5.「改訂中の版」から確認を依頼する',
       '6. 承認されたら「正式版に反映する」',
       '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
-    ]],
-    ['はじめての設定 (最初の一人だけ)', [
+    ] },
+    { id: 'home', title: 'ホームの見方', lines: [
+      'ホームは開いたときに最初に出る画面です。最初に出す画面は、設定の「自分の設定」で変えられます。',
+      'カードは6つあります。どれを出すかは、設定の「自分の設定」の「ホームに出すもの」で選べます。',
+      'あなたの番 — あなたが動く番のもの。確認を頼まれた依頼・担当のやること・期限が近いものが種類ごとに並びます。押すとそのものを開きます。「期限が近い」とみなす日数は、管理者がチームの設定で決めます。',
+      '改善のヒント — 仕事の進め方を良くするヒントが多くて3件出ます。何を見て出すかは「改善のヒント」の節にあります。',
+      '草 (アクティビティ) — 日ごとに動いた数を色の濃さで並べたもの。「あなた」と「チーム」を切り替えられます。見えるのはあなたのぶんとチームの合計だけで、ほかの人の草は出ません。連続日数も出しません。',
+      'ポイントとレベル — 管理者がチームの設定でオンにしたときだけ出ます (既定はオフ)。片づけたものの重さと、ほかの人の確認依頼への返事でポイントが付き、レベルが上がります。称号はあなたにだけ見えます。人事の評価には使いません。月曜にゼロから数え直します。',
+      '週の上位には、自分まわり (上の帯の自分の顔) で「週の上位に参加する」を選んだ人だけが載ります。既定では参加しません。',
+      '最近の動き — チームで最近あったこと。誰がしたかの名前は出しません。',
+      'チームの前進 — 今週片づけた数と、チームの毎月の目標までの進み具合。人ごとには出しません。',
+    ] },
+    { id: 'view', title: '文書と工程表の見え方', lines: [
+      '文書を開いて「読む」にしているとき、上の帯に「全画面」と「リンクをコピー」が出ます。',
+      '全画面 — 左の並びと上の帯を隠して、本文だけを広げます。Esc か「全画面を閉じる」で戻ります。ほかの画面へ移っても戻ります。',
+      'リンクをコピー — その文書を全画面で開くリンクを写します。写せないときは、選んで写せる欄にリンクが出ます。',
+      '工程表は「やること」の見え方の1つです。上の「工程表」を押すと出ます。',
+      '日・週・月 — 工程表の細かさを切り替えます。',
+      '今日 — 今日の位置へ送ります。工程表を開いたときも、今日が見える位置から始まります。',
+      '名前の欄の幅 — 名前の欄と日の並びの間を掴み、左右に引くと変わります。二度押しで元の幅に戻ります。',
+    ] },
+    { id: 'setup', title: 'はじめての設定 (最初の一人だけ)', admin: true, lines: [
       'この道具を初めて置くときだけ必要な手順です。二人目からは、配られた URL を開くだけで使えます。',
       '1. Apps Script のエディタを開き、関数の一覧から setupRepo を選んで一度だけ実行します。スクリプトと同じフォルダに入れ物 (agentic-management) と台帳のスプレッドシートができます。',
       '2. 初回だけ Google から「アクセスを承認してください」と出ます。自分のアカウントを選び、内容を確かめて許可してください。文書・表・スライド・Drive・メールに触るための許可です。',
@@ -10316,8 +10606,8 @@
       '4. 画面の「文書」から「文書を登録する」を押すと、入れ物の中が一覧に出ます。管理したいものを選んで登録してください。',
       '5. 手元 (Claude や Codex) からも動かすなら、エディタで setupCommandQueue を一度だけ実行します。1分ごとの見張りが置かれます。二度実行しても増えません。',
       'うまくいかないときは、エディタの「実行数」でエラーの中身が読めます。',
-    ]],
-    ['手元から動かす (Claude / Codex)', [
+    ] },
+    { id: 'local', title: '手元から動かす (Claude / Codex)', lines: [
       '画面を開かずに、やること・改訂版・確認依頼を作れます。上の帯にある自分の顔から「手元から動かす道具を落とす」を押してください。',
       '落とすと、続きの3手順と「入れ先の場所」がその場に出ます。場所は写して貼れる形で出るので、当てる必要はありません。',
       '要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけです。鍵もトークンも要りません。',
@@ -10325,8 +10615,8 @@
       '設定ができたら「node agent.mjs files」を打ってください。文書の一覧が返れば通っています。',
       '命令はファイルとして Drive に置かれ、1分以内に実行されて結果が返ります。遅延は最大1分です。すぐ返らなくても壊れてはいません。',
       '正式版を直接なおすことと、確認依頼の承認は、手元からはできません。承認は人が画面で行う操作として残してあります。',
-    ]],
-    ['つまずきやすい点', [
+    ] },
+    { id: 'pitfalls', title: 'つまずきやすい点', lines: [
       'やることを押すと、まず読む形で開きます。書き換えるには右上の鉛筆を押してください。触っただけで中身が変わることはありません。',
       '補足は Markdown で書けます。「## 見出し」「- 箇条書き」「- [ ] 手を付けたかの印」「**強い字**」「[名前](リンク)」が使えます。',
       '正式版は直接なおせません。誰がいつ変えたか残らなくなるためです。改訂版を作ってください。',
@@ -10342,28 +10632,73 @@
       '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
       '報告はみんなが読めて、誰でも返信できます。同じことで困った人が先に答えを知っていることがあります。直ったら「解決した」を押してください (押せるのは出した本人と、このアプリの管理者です)。',
       'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
-    ]],
-    ['スクラムで進める (使う人だけ)', [
-      'AI のチームメンバー (手元の Claude) と一緒に、スクラムで進めるための機能です。既定ではオフで、使わないなら何も変わりません。',
-      'はじめてなら、左の「スプリント」を開いてください。上に「次にすること」が1つだけ出ます。それを順にこなせば、計画 → 進める → 見せる → ふりかえる の1巡りが回ります。',
-      'オンにするのはこのアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人) です。左の「設定」でエージェンティックスクラムをオンにしてください。プロダクトゴールと完了の定義もそこで書きます。',
-      'オンにすると、左に「スプリント」と「障害物」が出て、やることにスプリント・ポイント・受入基準の欄が付きます。',
-      'スプリント — 区切った作業の期間。ゴールと始まり・終わりの日を決めて作り、やることをそこへ積みます。',
-      'ポイント — やること1つの相対的な大きさ。時間ではありません。受入基準は「終わった」と言える条件を1行に1つ書きます。',
-      'バーンダウンとベロシティは、やることのポイントと完了日から自動で数えます。数を手で書く場所はありません。進め方は「進捗ボード」で列を動かし、終わったら完了にします。',
-      '障害物 — 進みを妨げているもの。気づいた人が書き出し、取り除けたら解決策を書いて「解決した」にします。',
+    ] },
+    // 見出しは figures のキーなので一般の言葉に固定する。行の {key} は描くときに言葉の表し方で埋める
+    { id: 'scrum', title: '期間で進める (使う人だけ)', lines: [
+      'AI のチームメンバー (手元の Claude) と一緒に、仕事を{sprint}に区切って進めるための機能です。既定ではオフで、使わないなら何も変わりません。',
+      'はじめてなら、左の「{sprint}」を開いてください。上に「次にすること」が1つだけ出ます。それを順にこなせば、計画 → 進める → 見せる → ふりかえる の1巡りが回ります。',
+      'オンにするのはこのアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人) です。左の「設定」で「{feature}」をオンにしてください。{productGoal}と{definitionOfDone}もそこで書きます。',
+      'オンにすると、左に「{sprint}」と「{impediment}」が出て、やることに{sprint}・{points}・{acceptance}の欄が付きます。',
+      '{sprint} — 区切った作業の期間。目標と始まり・終わりの日を決めて作り、やることをそこへ積みます。',
+      '{points} — やること1つの相対的な大きさ。時間ではありません。{acceptance}は、できたと言えることを1行に1つ書きます。',
+      '{burndown}と{velocity}は、やることの{points}と完了日から自動で数えます。数を手で書く場所はありません。進め方は「進捗ボード」で列を動かし、終わったら完了にします。',
+      '{impediment} — 進みを妨げているもの。気づいた人が書き出し、取り除けたら解決策を書いて「解決した」にします。',
+      'ここで使う言葉は、自分の設定の「言葉の表し方」で、エンジニア向けの言い方にも切り替えられます。',
       'やることの欄がいつ誰にどう変わったかは、やることの詳細の「変更の履歴」で見られます。',
-      '手元から使うときは、まず「node agent.mjs scrum」でオンかを確かめます。落とした道具の中に、スプリントの計画・振り返りなどのスキルとチームの役割 (.claude/) と、進め方の読み替え (SCRUM.md) が入っています。',
+      '手元から使うときは、まず「node agent.mjs scrum」でオンかを確かめます。落とした道具の中に、{sprint}の計画・振り返りなどのスキルとチームの役割 (.claude/) と、進め方の読み替え (SCRUM.md) が入っています。',
       'オンにしても、確認依頼の承認と設定の変更は人が画面で行います。',
-    ]],
-    ['改善のヒント', [
+    ] },
+    { id: 'advice', title: '改善のヒント', lines: [
       'ホームに、仕事の進め方を良くするヒントが多くて3件出ます。番頭が台帳の数から決まった規則で出すもので、AI に問い合わせてはいません。',
       '見るのはあなたのぶんだけです (担当のやること・あなた宛ての確認・あなたが作ったやること)。ほかの人の数や名前は出ません。',
       '出るもの (数は既定のもの。管理者が「設定」で変えたり、規則ごと止めたりできます) — 確認を3日以上待たせている / 期限切れが3件以上 / 作業中が5件以上 / 見積もりの倍以上かかったものが半分以上 / 同じタグや題名のやることを30日で5件以上作った / 「使い方が分からない」の報告が30日で3件以上 (管理者だけ)',
       '1件ごとに理由の数字と、次に開く画面のボタンが付きます。「期限切れを見る」で開いた一覧は「期限切れだけ ×」を押すか見え方を切り替えると、絞りが外れます。',
       '「今週は出さない」を押すと、その週はこの端末に出ません。次の週にまだ当てはまれば、また出ます。',
-    ]],
+    ] },
+    { id: 'usage', title: '使われ方の見方', lines: [
+      '使われ方 — どこがよく押され、どの画面がよく開かれているかを見る画面です。使われていない所を見つけて直すためのものです。',
+      '数えるのは「どの場所を、その日に何回押したか・開いたか」だけです。押した順番・時刻・文書や書き込みの中身は数えない決まりです。',
+      '場所ごとの合計は誰でも見られます。人ごとの数は本人と部下のぶんだけが見えます (上長として登録されている人には、その下の人のぶんも)。',
+      '前の期間との比較 — 同じ長さの直前の期間に比べて、どれだけ増えたか減ったかを添えます。前の期間に記録が無ければそう出ます。',
+      '曜日ごと — 月曜から日曜までの7本の棒で、どの曜日によく使われているかを見ます。時刻は残していないので、時間帯は分かりません。',
+      'この期間に開かれなかった画面 — 左の行き先のうち、この期間に一度も開かれなかったものが並びます。',
+      'CSV で保存 — 今見ている期間と対象の、日・場所・人ごとの数を CSV で落とせます。見られない人のぶんは入っていないので、画面の合計とは合わないことがあります。落とせないときは、字をそのまま写せる形で出します。',
+      '止め方 — 自分のぶんは、設定の「自分の設定」で「自分の使われ方を記録する」を外すと数えません。チーム全体の記録は、管理者が「チームの設定」で止められます。残す日数もそこで決めます (画面で直近90日まで見るので、90日より短くはできません)。',
+      '使い方の節を開いた回数も数えています (目次・絞り込み・「?」・探すで開いたときだけ。送って通り過ぎただけでは数えません)。読まれていない節を見つけるためです。',
+    ] },
+    { id: 'settings', title: '設定でできること', lines: [
+      '左の「設定」は、自分の設定とチームの設定の2つに分かれています。',
+      '自分の設定 — 誰でも、自分のぶんだけ変えられます。開いたときに最初に出す画面・ホームに出すもの・通知メール・自分の使われ方を記録するか・言葉の表し方を決めます。どの端末で開いても同じになります。',
+      '通知メールは種類ごとに止められます (確認を頼まれた・確認依頼が出た / 反映した・取り下げた / 報告とその返事 / 名指しされた / やることのやりとり)。全部止めることもできます。確認を頼まれた知らせを止めると、設定の画面に断りが出ます。そのあいだは、ホームの「あなたの番」と画面の中の知らせ (鈴) で確かめてください。',
+      'チームの設定 — 全員に効く設定です。変えられるのは管理者だけで、ほかの人には今の値が見えるだけです。',
+      'チームの設定で決めるもの — チームの毎月の目標、改善のヒントの規則ごとのオン・オフと数、「動きなし」の段階の日数、「期限が近い」とみなす日数、使われ方を記録するかと残す日数、日報の形の既定、「{feature}」とポイントとレベルのオン・オフ。',
+      '変えたい項目がチームの設定なら、管理者 (このアプリの持ち主と、入れ物のフォルダを編集できる人) に頼んでください。',
+      '「既定に戻す」を押すと、その項目は最初の値に戻ります。',
+    ] },
   ];
+
+  /** 使い方の絞り込みを外から当てる。loadHelp が組むまでは何もしない */
+  var guideFilterApply = function () {};
+
+  /**
+   * 使い方を開き、その節へ送る。「?」と探す (Ctrl+K) から呼ぶ。
+   *
+   * 絞り込みが残っていると開いた節が隠れていることがあるので、外してから送る。
+   * 開いた節は数える (スクロールで通り過ぎたものとは違い、読みに来たもの)。
+   *
+   * @param {string} id GUIDE の id
+   */
+  function openGuideAt(id) {
+    var section = GUIDE.filter(function (g) { return g.id === id; })[0];
+    if (!section) { switchTab('help'); return; }
+    switchTab('help');
+    guideFilterApply('');
+    var h = document.getElementById('guide-sec-' + id);
+    if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    // 読み上げも開いた節から始める。送るのは上で済ませたので、ここでは動かさない
+    if (h) h.focus({ preventScroll: true });
+    usageCount('view', 'guide-' + id);
+  }
 
   function loadHelp() {
     if (guideEl.dataset.ready) return;
@@ -10388,7 +10723,27 @@
     makeMeActions().forEach(function (el) { top.appendChild(el); });
     guideEl.appendChild(top);
 
-    var tocItems = [];
+    // 絞り込みは本文の上に置く。長い頁を送って探させない
+    var filterBox = document.createElement('label');
+    filterBox.className = 'filter-box guide-filter';
+    var filterInput = document.createElement('input');
+    filterInput.id = 'guide-filter';
+    filterInput.type = 'search';
+    filterInput.placeholder = '使い方の中を絞る';
+    filterInput.setAttribute('aria-label', '使い方の節を絞り込む');
+    filterBox.appendChild(filterInput);
+    guideEl.insertBefore(filterBox, top);
+
+    var empty = document.createElement('p');
+    empty.className = 'row-meta guide-empty';
+    empty.id = 'guide-empty';
+    empty.setAttribute('role', 'status');
+    empty.textContent = '見つかりません。言葉を変えてみてください';
+    empty.hidden = true;
+    guideEl.appendChild(empty);
+
+    // 節ごとに 見出し・図・箇条書き と目次の項をまとめて持つ。絞り込みで一緒に隠す
+    var guideSections = [];
 
     /**
      * 目次の項を作る。
@@ -10396,51 +10751,112 @@
      * href の飛び先にはしない。この画面は枠の中で動いているため、
      * 場所が変わると外側の頁ごと動くことがある。押して寄せる
      *
-     * @param {string} label
+     * @param {object} section GUIDE の1節
      * @param {HTMLElement} target 寄せたい見出し
+     * @returns {HTMLElement}
      */
-    function addToc(label, target) {
+    function addToc(section, target) {
       var btn = document.createElement('button');
       btn.className = 'guide-toc-item';
-      btn.textContent = label;
+      btn.dataset.guide = section.id;
+      btn.textContent = section.title;
       btn.addEventListener('click', function () {
         target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        // 目次から送った節は「読まれた」と数える。送って通り過ぎたものは数えない
+        usageCount('view', 'guide-' + section.id);
       });
       toc.appendChild(btn);
-      tocItems.push({ btn: btn, target: target });
+      return btn;
     }
 
     // 節ごとに、その話の図を先に置く。字だけの説明は読まれない。
-    // 全部の節に置いてあるのは、図だけ見て帰れるようにするため
+    // 全部の節に置いてあるのは、図だけ見て帰れるようにするため。
+    // キーは見出しと一字一句同じにする (違うとその節だけ図が消える)
     var figures = {
       'このアプリについて': FLOW_DIAGRAM,
       '言葉の意味': VOCAB_DIAGRAM,
       '基本の流れ': STEPS_DIAGRAM,
+      'ホームの見方': HOME_DIAGRAM,
+      '文書と工程表の見え方': VIEW_DIAGRAM,
       'はじめての設定 (最初の一人だけ)': SETUP_DIAGRAM,
       '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
       'つまずきやすい点': CONFLICT_DIAGRAM,
-      'スクラムで進める (使う人だけ)': SCRUM_DIAGRAM,
+      '期間で進める (使う人だけ)': SCRUM_DIAGRAM,
       '改善のヒント': ADVICE_DIAGRAM,
+      '使われ方の見方': USAGE_DIAGRAM,
+      '設定でできること': SETTINGS_DIAGRAM,
     };
 
     GUIDE.forEach(function (section) {
+      var parts = [];
       var h = document.createElement('h2');
-      h.textContent = section[0];
+      // 画面の部品 (guide-filter / guide-link など) とぶつけないよう、見出しは guide-sec- で始める。
+      // 数える場所の名前 (guide-<id>) とも分ける。見出しを押しても数えない (usageTargetOf)
+      h.id = 'guide-sec-' + section.id;
+      h.dataset.guideHead = section.id;
+      h.tabIndex = -1;
+      var text = document.createElement('span');
+      text.className = 'guide-head-text';
+      text.textContent = section.title;
+      h.appendChild(text);
+      // 管理者向けの節も隠さない。誰に頼めばよいかが分かるように
+      if (section.admin) {
+        var pill = makePill('管理者', 'chip');
+        pill.title = 'このアプリの管理者がする操作です';
+        h.appendChild(pill);
+      }
       guideEl.appendChild(h);
-      addToc(section[0], h);
+      parts.push(h);
+      var tocBtn = addToc(section, h);
 
-      if (figures[section[0]]) {
-        guideEl.appendChild(makeDiagram(figures[section[0]]));
+      if (figures[section.title]) {
+        var fig = makeDiagram(figures[section.title]);
+        guideEl.appendChild(fig);
+        parts.push(fig);
       }
 
       var ul = document.createElement('ul');
-      section[1].forEach(function (line) {
+      section.lines.forEach(function (line) {
         var li = document.createElement('li');
-        li.textContent = line;
+        // {key} を含む行は、言葉の表し方が変わったら applyTerms が埋め直す
+        li.textContent = termIn(line);
+        if (line.indexOf('{') >= 0) li.setAttribute('data-term', line);
         ul.appendChild(li);
       });
       guideEl.appendChild(ul);
+      parts.push(ul);
+
+      guideSections.push({
+        id: section.id, head: h, parts: parts, toc: tocBtn,
+        text: searchNormalize(section.title + '\n' + termIn(section.lines.join('\n'))),
+      });
     });
+
+    // 絞り込みで1件になった節。打ち足しても同じ節なら数え直さない
+    var filterOne = '';
+
+    /** 打った字を見出しと行に含む節だけを出す。目次も同じく絞る */
+    function applyGuideFilter() {
+      var words = searchNormalize(filterInput.value).split(/\s+/).filter(Boolean);
+      var shown = [];
+      guideSections.forEach(function (sec) {
+        var hit = words.every(function (w) { return sec.text.indexOf(w) >= 0; });
+        sec.parts.forEach(function (el) { el.hidden = !hit; });
+        sec.toc.hidden = !hit;
+        if (hit) shown.push(sec);
+      });
+      empty.hidden = shown.length > 0;
+
+      var one = words.length && shown.length === 1 ? shown[0].id : '';
+      if (one && one !== filterOne) usageCount('view', 'guide-' + one);
+      filterOne = one;
+      markToc();
+    }
+    filterInput.addEventListener('input', applyGuideFilter);
+    guideFilterApply = function (value) {
+      filterInput.value = value;
+      applyGuideFilter();
+    };
 
     var foot = document.createElement('div');
     foot.className = 'guide-foot';
@@ -10455,17 +10871,19 @@
      * いま読んでいる節を目次の側で示す。
      *
      * どこを読んでいるのか分からないまま長い頁を送ると、戻る先を
-     * 見失う。色だけでなく aria-current でも示す
+     * 見失う。色だけでなく aria-current でも示す。絞り込みで隠れた節は
+     * 数えない (隠れた見出しの位置は 0 になり、先頭を指してしまう)
      */
     function markToc() {
       var line = guideEl.scrollTop + 80;
-      var at = 0;
+      var shown = guideSections.filter(function (sec) { return !sec.head.hidden; });
+      var at = shown.length ? shown[0] : null;
 
-      for (var i = 0; i < tocItems.length; i++) {
-        if (tocItems[i].target.offsetTop <= line) at = i;
-      }
-      tocItems.forEach(function (item, i) {
-        item.btn.setAttribute('aria-current', String(i === at));
+      shown.forEach(function (sec) {
+        if (sec.head.offsetTop <= line) at = sec;
+      });
+      guideSections.forEach(function (sec) {
+        sec.toc.setAttribute('aria-current', String(sec === at));
       });
     }
 
@@ -11765,6 +12183,8 @@
     var el = target;
 
     while (el && el !== document) {
+      // 使い方の見出しは押す物ではない。数えると、節を開いた数 (guide-<id>) と紛れる
+      if (el.dataset && el.dataset.guideHead) return '';
       if (el.id && /^[A-Za-z0-9:_-]{1,60}$/.test(el.id)) return el.id;
 
       if (el.dataset && el.dataset.tab) return 'tab-' + el.dataset.tab;
@@ -11849,6 +12269,13 @@
     };
 
     if (known[target]) return known[target];
+
+    // 使い方の節。場所の名前は英数の id なので、見出しに直す
+    var guide = /^guide-(.+)$/.exec(target);
+    if (guide) {
+      var section = GUIDE.filter(function (g) { return g.id === guide[1]; })[0];
+      if (section) return '使い方: ' + section.title;
+    }
 
     var tab = /^tab-(.+)$/.exec(target);
     if (tab) {
