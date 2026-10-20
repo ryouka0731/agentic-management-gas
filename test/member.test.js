@@ -98,6 +98,11 @@ describe('見てよい人', () => {
     expect(seen).toHaveLength(4);
   });
 
+  it('下から上は見えない', () => {
+    const { ctx } = tree();
+    expect(ctx.memberVisibleTo('buka@example.com')).toEqual(['buka@example.com']);
+  });
+
   it('名前が空なら誰も見られない', () => {
     const { ctx } = tree();
     expect(ctx.memberVisibleTo('')).toEqual([]);
