@@ -203,9 +203,9 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 吹き出しは1つ (`#oshi-bubble`)。字は `textContent`、絵は自分の推しの data URL だけ。押せば閉じ、6秒で消える。
   動きを減らす設定では CSS がふわっと出る動きを止める。「久しぶり」は端末に最後に開いた日 (`oshiLastSeen`) だけを覚え、
   連続日数は数えない
-- **キャラは2種類。** 最初からいるキャラ (`OSHI_BUILTINS()` が唯一の表。クロハ = 耽美、タク = 明るい相棒。名前・口調・絵は
+- **キャラは2種類。** 最初からいるキャラ (`OSHI_BUILTINS()` が唯一の表。イツキ = 耽美、タク = 明るい相棒。名前・口調・絵は
   決まっていて変えられない) と、本人が作る自分のキャラ (`OSHI_MINE_MAX()` = 5人まで。番号 `charId` で名指す)。どれを使うかは
-  自分の設定 `oshi.char` (`'builtin:<key>'` / `'mine:<charId>'`、既定は `'builtin:kuroha'`)。`apiOshiGet` はいま使うキャラ
+  自分の設定 `oshi.char` (`'builtin:<key>'` / `'mine:<charId>'`、既定は `'builtin:itsuki'`)。`apiOshiGet` はいま使うキャラ
   (`kind` / `builtinKey` / `charId` / `name` / `tone` / `events` / `images`) と、頁で直すための自分のキャラ全部 (`mine`) を返す
   - **`oshi.char` は人ごとに選べるものが違う** (type `'char'`)。`prefValid_(item, v, email)` が `oshiCharKnownFor_` で、
     最初からいるキャラか、その人が持っている自分のキャラかを見る (自分のキャラのときだけ台帳を読む)。無い・消したキャラを
@@ -213,7 +213,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     消すと `apiOshiCharDelete` が既定に戻す。画面の選び方は `makeOshiCharPicker` (設定の一覧で `type === 'char'` の欄だけ
     js-oshi が組む)。最初からいるキャラは設定の `options`、自分のキャラは `apiOshiGet` の `mine` から並べ、ふつうの顔の絵を
     添える (**推しがオンのときだけ絵を取る**)。押したら `apiPrefSet` で書く (書くのはここだけ、のまま)
-  - 自分のキャラの絵が無い表情には `oshi.fallback` (`'builtin:<key>'` / `'none'`、既定はクロハ) の絵を出す。最初からいるキャラを
+  - 自分のキャラの絵が無い表情には `oshi.fallback` (`'builtin:<key>'` / `'none'`、既定はイツキ) の絵を出す。最初からいるキャラを
     使っているときは、そのキャラの絵だけ。形は `oshi.style` = `chibi` / `normal`、既定は 2頭身
   - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)
   - 絵の本物は `assets/oshi-default/<キャラ>/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の

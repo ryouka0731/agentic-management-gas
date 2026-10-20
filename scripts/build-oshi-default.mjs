@@ -3,7 +3,7 @@
  *
  * 本物は assets/oshi-default/<キャラ>/<形>-<表情>.webp (利用者が用意した絵。透明な WebP、長い辺 384px まで)。
  * GAS は src の外を読めないので、base64 の data URL にして、キャラと形ごとに1つのファイル
- * (src/core/OshiDefault<キャラ><形>.gs。例: OshiDefaultKurohaNormal.gs) に書く。分けるのは、
+ * (src/core/OshiDefault<キャラ><形>.gs。例: OshiDefaultItsukiNormal.gs) に書く。分けるのは、
  * 1つが大きくなりすぎないため (1ファイル 600KB まで)。
  *
  * キャラ・表情・形の並びは src/core/Oshi.js (OSHI_BUILTINS / OSHI_STATES / OSHI_STYLES) が唯一の定義なので、

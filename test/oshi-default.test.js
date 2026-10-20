@@ -46,8 +46,8 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
   }
 
   it('キャラごとに別の絵 (取り違えて同じ絵を焼いていない)', () => {
-    expect(oshiDefaultMap('kuroha', 'chibi').idle).not.toBe(oshiDefaultMap('taku', 'chibi').idle);
-    expect(oshiDefaultMap('kuroha', 'normal').idle).not.toBe(oshiDefaultMap('taku', 'normal').idle);
+    expect(oshiDefaultMap('itsuki', 'chibi').idle).not.toBe(oshiDefaultMap('taku', 'chibi').idle);
+    expect(oshiDefaultMap('itsuki', 'normal').idle).not.toBe(oshiDefaultMap('taku', 'normal').idle);
   });
 
   it('知らないキャラ・形は焼かない', () => {

@@ -623,7 +623,7 @@ function oshiDefaultImage_(char, style, state) {
  * @returns {Object<string,string>|null}
  */
 function oshiDefaultPictures_(char, style) {
-  if (char === 'kuroha') return style === 'normal' ? OSHI_DEFAULT_KUROHA_NORMAL() : OSHI_DEFAULT_KUROHA_CHIBI();
+  if (char === 'itsuki') return style === 'normal' ? OSHI_DEFAULT_ITSUKI_NORMAL() : OSHI_DEFAULT_ITSUKI_CHIBI();
   if (char === 'taku') return style === 'normal' ? OSHI_DEFAULT_TAKU_NORMAL() : OSHI_DEFAULT_TAKU_CHIBI();
   return null;
 }

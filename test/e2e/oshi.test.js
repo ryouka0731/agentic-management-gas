@@ -72,7 +72,7 @@ describe('推しにほめてもらう', () => {
     await other.settle();
     other.fake._setUser('b@example.com');
     expect(other.ctx.apiOshiImage(1, 'celebrate')).toBe(null);
-    expect(other.ctx.apiOshiGet()).toMatchObject({ name: 'クロハ', mine: [] });
+    expect(other.ctx.apiOshiGet()).toMatchObject({ name: 'イツキ', mine: [] });
   });
 
   it('設定でタクを選ぶ → 済ませるとタクがほめる。自分のキャラを作って選び、絵を1枚入れると、ほかの表情は選んだ最初からいるキャラ', async () => {
