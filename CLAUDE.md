@@ -31,7 +31,9 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 なっていた（`'マージ: PR #12 …'` が履歴に残っていた）。
 
 `test/naming.test.js` の「Git の言葉を人に見せない」が、コメントを除いた
-`Notifier.gs` / `PullRequest.gs` / `Branch.gs` を走査している。
+`Notifier.gs` / `PullRequest.gs` / `Branch.gs` を走査している。**断り文 (`new Error(...)` の字) も人が読む**
+(画面の帯と手元の結果にそのまま出る)。同じテストが `Main.gs` / `PullRequest.gs` / `Branch.gs` の断り文を、
+コメントと `debug*` を除いて走査している。名前そのものを指すときは「main」と括る。
 
 **件名の接頭辞 `[SoftBanto]` は動かさない。** 受信側の振り分けはそこを見ている
 ので、言葉を直すときに一緒に動かすと既存のルールが全部外れる。
@@ -454,7 +456,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 関数は、持ち主以外には動かない」に名前を足すこと。
 
 今は `access: MYSELF` なので害は出ない。`executeAs: ME` で共有すると、中の関数
-(`dbUpdate` など) まで持ち主の権限で呼べるので、その前に組み替えが要る (README)。
+(`dbUpdate` など) まで持ち主の権限で呼べるので、その前に組み替えが要る (`docs/manual/admin.md`)。
 
 人に関わる数（工数・使われ方）は、本人と部下のぶんだけ見せる (`memberVisibleTo`)。
 **使われ方の CSV (`apiUsageRows`) は、見られない人の行を入れない。** 名前を空にして数だけ残すと、
@@ -515,7 +517,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - **共有ドライブでは** 持ち主 = `organizer` 全員、管理者 = `organizer` / `fileOrganizer` /
   `writer`。グループは数えない。役割は `driveMembers_` が10分覚える。読めないときは誰も
   持ち主・管理者ではない。**共有ドライブの管理者は個人で付ける** (グループだけで付けると持ち主が
-  0人になり、`setupCommandQueue` も `debug*` も誰にも動かせない。README にも書いてある)
+  0人になり、`setupCommandQueue` も `debug*` も誰にも動かせない。`docs/manual/setup.md` にも書いてある)
 - 報告の知らせは持ち主全員に届く。報告から作るやることは、持ち主が複数なら担当なし
 - Drive の `getEditors` は編集権限の無い人が呼ぶと空を返す。分からないときは投げずに
   「管理者ではない」と答える。一覧では1件ごとに問い合わせず、先に1回だけ求める
@@ -630,7 +632,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 
 `ai-scrum-gas` から取り入れた (`docs/superpowers/plans/2026-10-07-agentic-scrum.md`)。
 **使わない人が多いので既定はオフ。** スクリプトプロパティ `SCRUM_ENABLED` が
-`'true'` のときだけオンで、切り替えるのは持ち主だけ (画面の「設定」)。
+`'true'` のときだけオンで、切り替えるのは管理者 (`apiSetScrumEnabled` が `repoAssertAdmin_` で確かめる。画面の「設定」)。
 
 - オフのあいだ、スクラムの API と命令は `scrumAssertEnabled_()` で断り、画面には
   行き先も欄も出さない。**状態を見る `scrumState` だけはオフでも通す** (オンに
@@ -912,7 +914,7 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 ## 制約
 
 - **GAS 標準サービスのみ。GCP プロジェクトは使えない**ため `clasp run` は使用不可。
-  ローカルからの操作は `.git/queue/` のコマンドキュー経由（README 参照）
+  ローカルからの操作は `.git/queue/` のコマンドキュー経由（`docs/manual/command-queue.md` 参照）
 - 外部 API / 公開エンドポイントは使わない
 - **拡張サービスは2つだけの例外**: Google ToDo 連携 (`src/core/GoogleTasks.gs`) と
   Drive (v3。共有ドライブの役割を読む `driveMembers_` と、入れ物が共有ドライブかを見る
