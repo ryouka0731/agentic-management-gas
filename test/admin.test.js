@@ -1,7 +1,7 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 管理者 = このアプリの持ち主 + 入れ物のフォルダを編集できる人。
@@ -13,10 +13,7 @@ import { createFakeGas } from './fakegas.js';
  * エディタ専用の関数 (debug* / setupCommandQueue / 自己承認の解禁) は持ち主の
  * まま。GAS エディタで持ち主が動かす前提のもので、広げる理由が無い。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-})();
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();

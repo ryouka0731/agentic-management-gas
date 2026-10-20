@@ -2,16 +2,14 @@ import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 改善のヒント (#14)。本人のデータとチームの合計だけから、決まった規則で多くて3件。
  * 規則の言葉と閾値は ADVICE_RULES() が唯一の定義。境目は ADVICE_RULES() から読む
  * (テストに数を写すと、閾値を変えたときにテストだけ古いまま通る)。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-})();
+const SOURCES = APP_SOURCES;
 
 const ME = 'tester@example.com';
 const OTHER = 'b@example.com';
@@ -376,8 +374,9 @@ describe('テストの SOURCES', () => {
   // 空の助言になり、ほかのテストが何も確かめないまま通る。Home.gs を読む全ての SOURCES で、
   // 全部の規則が当たる状況を握らずに通す
   const lists = fs.readdirSync(new URL('.', import.meta.url))
-    .filter((f) => f.endsWith('.test.js'))
-    .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const SOURCES = (\[[\s\S]*?\]);/)])
+    // sources.js の APP_SOURCES は、多くのテストが共有する集合
+    .filter((f) => f.endsWith('.test.js') || f === 'sources.js')
+    .map((f) => [f, fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8').match(/const (?:APP_)?SOURCES = (\[[\s\S]*?\]);/)])
     .filter(([, m]) => m && m[1].indexOf('src/core/Home.gs') >= 0);
 
   it('Home.gs を読む SOURCES が見つかる', () => {
