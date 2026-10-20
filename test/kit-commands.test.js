@@ -290,6 +290,12 @@ describe('他の人が書いた字を渡すとき', () => {
     expect(got.result[0].body).toBe('a[31mbcde\n\tf');
   });
 
+  it('幅の無い字・向きの印・割れない改行も落とし、絵文字をつなぐ印は残す', async () => {
+    const odd = 'a\u200bb\u200ec\u061cd\u2028e\u2029f\ufeffg 👨\u200d👩';
+    const r = await run(['issues'], [{ number: 1, title: odd }]);
+    expect(JSON.parse(r.out).result[0].title).toBe('abcdefg 👨\u200d👩');
+  });
+
   it('JSON で返す命令は囲わない (引用符が区切りになっている)', async () => {
     const r = await run(['issues'], [{ number: 1, title: 'x' }]);
     expect(r.out).not.toContain('ここから他の人が書いた字');

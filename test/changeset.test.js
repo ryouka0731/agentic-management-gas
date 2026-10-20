@@ -587,7 +587,7 @@ describe('承認したら手元に取り込みを頼む', () => {
     const pr = approved(ctx, fake, a);
 
     // 通知と同じく、失敗で巻き戻さない
-    ctx.outboxAdd = () => { throw new Error('台帳が書けません'); };
+    ctx.outboxAddOnApproval_ = () => { throw new Error('台帳が書けません'); };
 
     expect(() => ctx.prMerge(pr.number, {})).not.toThrow();
     expect(ctx.prGet(pr.number).state).toBe('merged');
