@@ -434,7 +434,7 @@ describe('入力の置き場所', () => {
   it('閉じ道が3つある (閉じるボタン・やめる・Escape)', () => {
     expect(html).toContain('id="side-close"');
     expect(js).toContain("cancel.textContent = 'やめる'");
-    // 実際に閉じるかは test/component.test.js の「Escape で閉じられる」で見る
+    // 実際に閉じるかは test/component/issues.test.js の「Escape で閉じられる」で見る
     expect(js).toContain("if (e.key !== 'Escape') return;");
     expect(js).toContain('if (!sidePanel.hidden) closeSide();');
   });
@@ -1220,5 +1220,19 @@ describe('ヘッダーの検索欄', () => {
     // 検索欄だけの枠・角・余白を別に書かない
     const own = css.match(/\.search-input\s*\{[^}]*\}/g) || [];
     own.forEach((rule) => expect(rule).not.toMatch(/border|padding|box-shadow|background/));
+  });
+});
+
+describe('遅れて届いた返事の見分け方', () => {
+  it('latest(key) の1か所だけ。画面ごとに番号の数え方を書き直さない', () => {
+    const js = read('src/ui/app.js.html');
+    expect(js).toContain('function latest(key)');
+    // 以前は docGen / usageGen / pullsSeq / ganttLoadSeq … と画面ごとに数えていて、
+    // 書き忘れた一覧だけが古い返事で描き直されていた。
+    // 名前を作るための番号 (hintSeq / diagramSeq) と、当てた返事の新しさを見る設定
+    // (prefsSeq / prefsAppliedSeq) は返事を捨てる見分けではないので除く
+    const counters = (js.match(/var\s+\w+(?:Gen|Seq)\s*=\s*0\b/g) || [])
+      .map((s) => s.replace(/var\s+(\w+).*/, '$1'));
+    expect(counters.sort()).toEqual(['diagramSeq', 'hintSeq', 'prefsAppliedSeq', 'prefsSeq']);
   });
 });

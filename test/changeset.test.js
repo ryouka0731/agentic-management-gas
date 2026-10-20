@@ -11,7 +11,7 @@ const SOURCES = [
   'src/core/PullRequest.gs',
   'src/core/PullPatch.gs',
   'src/core/Plain.js', 'src/core/Outbox.gs', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Tag.gs', 'src/core/Issue.gs', 'src/core/Project.gs',
+  'src/core/Tag.gs', 'src/core/Issue.gs', 'src/core/IssueTree.js', 'src/core/Project.gs',
   'src/core/Mention.js', 'src/core/Brand.js', 'src/core/Notifier.gs',
   'src/core/Member.gs', 'src/core/Template.gs',
 ];
