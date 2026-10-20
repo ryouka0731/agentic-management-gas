@@ -38,6 +38,26 @@ function FOCUS_EXTEND_MINUTES() {
   return 10;
 }
 
+/** @returns {number} 置きっぱなしとみなす時間 (時間)。これより前に始めて終えていないものは「終えないまま」(left) */
+function FOCUS_STALE_HOURS() {
+  return 12;
+}
+
+/** @returns {number} 集中のしかたで1人が1日に得られるポイントの上限 (ボーナスも含めて) */
+function FOCUS_DAY_POINTS() {
+  return 2;
+}
+
+/**
+ * ポイントになる「始めた」の手。**台帳に残る手だけ。** 最初の一手 (firstStep) は書くだけで付くので、
+ * 本人の「始めた」(技・数) にはなるがポイントにはしない (何か書けば点になる、を作らない)。
+ *
+ * @returns {string[]}
+ */
+function FOCUS_LEDGER_PROOFS() {
+  return ['comment', 'edit', 'record', 'move'];
+}
+
 /** @returns {number} 最初の一手の字数の上限 */
 function FOCUS_STEP_MAX() {
   return 200;
@@ -131,10 +151,49 @@ function focusOwn_(me, id) {
 }
 
 /**
+ * 「今から始める」を開いた時刻をサーバの時計で覚える。始めるボーナスと電光石火はこの時刻から数える
+ * (画面が送る時刻は画面の時計なので、いくらでも作れる)。本人ごとに1つだけ持ち、始めたら消す。
+ *
+ * @param {string} me
+ * @param {number} number
+ * @param {Date} now
+ */
+function focusOpen_(me, number, now) {
+  issueGet(number);
+  PropertiesService.getScriptProperties().setProperty('FOCUS_OPEN:' + me,
+    JSON.stringify({ n: Number(number), at: now.getTime() }));
+}
+
+/**
+ * 覚えた開いた時刻を取り出して消す。同じやることを1時間のうちに開いたものだけ。無ければ ''。
+ *
+ * @param {string} me
+ * @param {number} number
+ * @param {Date} now
+ * @returns {Date|string}
+ */
+function focusTakeOpened_(me, number, now) {
+  var props = PropertiesService.getScriptProperties();
+  var key = 'FOCUS_OPEN:' + me;
+  var raw = props.getProperty(key);
+  if (!raw) return '';
+  props.deleteProperty(key);
+  try {
+    var got = JSON.parse(raw);
+    var at = Number(got.at);
+    if (Number(got.n) !== Number(number) || !isFinite(at)) return '';
+    if (at > now.getTime() || at < now.getTime() - 3600000) return '';
+    return new Date(at);
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
  * 始める。前に終えていない自分の記録があれば「終えないまま次を始めた」(left) にする。
  *
- * openedAt は画面が「今から始める」を開いた時刻。今より先・1時間より前・読めないものは
- * 始めた時刻に倒す (始めるまでの時間を作り物にさせない)。
+ * openedAt はサーバが覚えた「今から始める」を開いた時刻 (focusTakeOpened_)。**画面の時計を渡さない。**
+ * 今より先・1時間より前・読めないものは空 (分からない) にする。空ならボーナスも電光石火も付かない。
  *
  * @param {string} me 小文字のアドレス
  * @param {number} number やることの番号
@@ -156,17 +215,19 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
   if (step.length > FOCUS_STEP_MAX()) step = step.substring(0, FOCUS_STEP_MAX());
 
   var opened = focusTime_(openedAt);
-  if (!isFinite(opened) || opened > now.getTime() || opened < now.getTime() - 3600000) opened = now.getTime();
+  if (!isFinite(opened) || opened > now.getTime() || opened < now.getTime() - 3600000) opened = NaN;
+
+  // 始めた時点のボードの置き場。ボードの移し替えは履歴に残らないので、「始めたあとに作業中へ動かした」は
+  // これと今の置き場を比べて確かめる。カードが無ければ 'none' (空は列を足す前の記録 = 分からない)。
+  // ボードの表は鍵の外で読む (鍵は短く持つ)
+  var card = dbFindOne('project_items', 'issueNumber', Number(number));
+  var columnAtStart = card && card.column ? String(card.column) : 'none';
 
   return dbWithLock_(30000, function () {
     var mine = focusRowsOf_(me);
     for (var i = 0; i < mine.length; i++) {
       if (!mine[i].endedAt) dbUpdate('focus_sessions', 'id', mine[i].id, { endedAt: now, result: 'left' });
     }
-    // 始めた時点のボードの置き場。ボードの移し替えは履歴に残らないので、「始めたあとに作業中へ動かした」は
-    // これと今の置き場を比べて確かめる。カードが無ければ 'none' (空は列を足す前の記録 = 分からない)
-    var card = dbFindOne('project_items', 'issueNumber', Number(number));
-    var columnAtStart = card && card.column ? String(card.column) : 'none';
     return dbAppendNumbered('focus_sessions', 'id', {
       issueNumber: Number(number),
       who: me,
@@ -177,7 +238,7 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
       provedAt: step ? now : '',
       endedAt: '',
       result: '',
-      openedAt: new Date(opened),
+      openedAt: isFinite(opened) ? new Date(opened) : '',
       extendedMinutes: 0,
       proofKind: step ? 'firstStep' : '',
       columnAtStart: columnAtStart,
@@ -186,8 +247,9 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
 }
 
 /**
- * 「始めた」と言える手を、台帳から探す。始めた時刻から、終えた時刻 (まだなら今) まで。
- * いちばん早いものを返す。見つからなければ null。
+ * 「始めた」と言える手を、台帳から探す。始めた時刻から、決めた長さ (延ばした分も入れる。12時間まで) と
+ * 終えた時刻 (まだなら今) の早いほうまで。いちばん早いものを返す。見つからなければ null。
+ * **大きな表を読むので、鍵の外で呼ぶ。**
  *
  * - やりとり: そのやることに本人が書いた
  * - 直した: そのやることの変更の履歴に本人の行がある (完了にしたのも入る。作ったことは入れない)
@@ -208,6 +270,8 @@ function focusEvidence_(row, kind, now) {
   var since = focusTime_(row.startedAt);
   var until = row.endedAt ? focusTime_(row.endedAt) : now.getTime();
   if (!isFinite(since)) return null;
+  var minutes = (Number(row.plannedMinutes) || 0) + (Number(row.extendedMinutes) || 0);
+  until = Math.min(until, since + Math.min(minutes * 60000, FOCUS_STALE_HOURS() * 3600000));
   var best = null;
   function seen(at, what) {
     var t = focusTime_(at);
@@ -236,39 +300,96 @@ function focusEvidence_(row, kind, now) {
 }
 
 /**
- * 始めたことを確かめる。既に確かめていれば何もしない。
+ * ポイントになる手で確かめてあるか (最初の一手だけのものは、まだ台帳の手を探す)。
+ *
+ * @param {object} row
+ * @returns {boolean}
+ */
+function focusLedgerProved_(row) {
+  return !!row.provedAt && FOCUS_LEDGER_PROOFS().indexOf(String(row.proofKind || '')) >= 0;
+}
+
+/**
+ * 置きっぱなしか (終えないまま FOCUS_STALE_HOURS より前に始めた)。
+ *
+ * @param {object} row
+ * @param {Date} now
+ * @returns {boolean}
+ */
+function focusIsStale_(row, now) {
+  if (row.endedAt) return false;
+  var t = focusTime_(row.startedAt);
+  return !isFinite(t) || now.getTime() - t > FOCUS_STALE_HOURS() * 3600000;
+}
+
+/**
+ * 置きっぱなしのものを「終えないまま」(left) で閉じる。確かめもポイントも付けない。
+ *
+ * @param {string} me
+ * @param {*} id
+ * @param {Date} now
+ * @returns {object}
+ */
+function focusLeaveStale_(me, id, now) {
+  return dbWithLock_(30000, function () {
+    var row = focusOwn_(me, id);
+    if (row.endedAt) return row;
+    dbUpdate('focus_sessions', 'id', row.id, { endedAt: now, result: 'left' });
+    return dbFindOne('focus_sessions', 'id', row.id);
+  });
+}
+
+/**
+ * 始めたことを確かめる。台帳の手で確かめてあれば何もしない。最初の一手だけで「始めた」になって
+ * いるものは、台帳の手が見つかれば手の種類だけ改める (始めた時刻はそのまま。ポイントはここから付く)。
+ *
+ * **台帳を探すのは鍵の外。** 鍵の中では行を読み直し、既に確かめた・終えたものなら何もしない。
  *
  * @param {string} me
  * @param {*} id
  * @param {string} kind 画面が言う手 (comment / edit / move / record)
  * @param {Date} now
- * @returns {{row: object, fresh: boolean}} fresh は今回確かめたか
+ * @returns {{row: object, fresh: boolean, credited: boolean}} fresh は今回「始めた」になったか、
+ *   credited は今回ポイントになる手で確かめたか
  */
 function focusProve_(me, id, kind, now) {
+  var row = focusOwn_(me, id);
+  var none = function (r) { return { row: r, fresh: false, credited: false }; };
+  if (focusLedgerProved_(row) || row.endedAt) return none(row);
+  if (focusIsStale_(row, now)) return none(focusLeaveStale_(me, id, now));
+  var ev = focusEvidence_(row, String(kind || ''), now);
+  if (!ev) return none(row);
   return dbWithLock_(30000, function () {
-    var row = focusOwn_(me, id);
-    if (row.provedAt) return { row: row, fresh: false };
-    var ev = focusEvidence_(row, String(kind || ''), now);
-    if (!ev) return { row: row, fresh: false };
-    dbUpdate('focus_sessions', 'id', row.id, { provedAt: ev.at, proofKind: ev.kind });
-    return { row: dbFindOne('focus_sessions', 'id', row.id), fresh: true };
+    var cur = focusOwn_(me, id);
+    if (focusLedgerProved_(cur) || cur.endedAt) return none(cur);
+    var patch = { proofKind: ev.kind };
+    var fresh = !cur.provedAt;
+    if (fresh) patch.provedAt = ev.at;
+    dbUpdate('focus_sessions', 'id', cur.id, patch);
+    return { row: dbFindOne('focus_sessions', 'id', cur.id), fresh: fresh, credited: true };
   });
 }
 
 /**
- * 延ばす (「もう少し」)。終えた記録は延ばせない。
+ * 延ばす (「もう少し」)。終えた記録は延ばせない。置きっぱなしのものは「終えないまま」で閉じて断る。
  *
  * @param {string} me
  * @param {*} id
  * @param {number} [minutes] 省くと FOCUS_EXTEND_MINUTES
+ * @param {Date} [now]
  * @returns {object}
  */
-function focusExtend_(me, id, minutes) {
+function focusExtend_(me, id, minutes, now) {
+  var at = now || new Date();
   var m = minutes === undefined || minutes === null ? FOCUS_EXTEND_MINUTES() : Number(minutes);
   if (!isFinite(m) || Math.floor(m) !== m || m < 1 || m > 60) throw new Error('延ばすのは1〜60分の整数です');
-  return dbWithLock_(30000, function () {
+  var out = dbWithLock_(30000, function () {
     var row = focusOwn_(me, id);
-    if (row.endedAt) throw new Error('この集中はもう終わっています');
+    if (row.endedAt) return null;
+    if (focusIsStale_(row, at)) {
+      dbUpdate('focus_sessions', 'id', row.id, { endedAt: at, result: 'left' });
+      return null;
+    }
     var total = (Number(row.extendedMinutes) || 0) + m;
     if ((Number(row.plannedMinutes) || 0) + total > FOCUS_MAX_MINUTES()) {
       throw new Error('合わせて' + FOCUS_MAX_MINUTES() + '分までです。一度終えてから始め直してください');
@@ -276,11 +397,16 @@ function focusExtend_(me, id, minutes) {
     dbUpdate('focus_sessions', 'id', row.id, { extendedMinutes: total });
     return dbFindOne('focus_sessions', 'id', row.id);
   });
+  if (!out) throw new Error('この集中はもう終わっています');
+  return out;
 }
 
 /**
- * 終える。まだ確かめていなければ、終える前に台帳を見て確かめる (書いてから終えた人を取りこぼさない)。
- * 既に終えていれば、そのまま返す (二度押し)。
+ * 終える。まだ台帳の手で確かめていなければ、終える前に台帳を見て確かめる (書いてから終えた人を取りこぼさない)。
+ * 既に終えていれば、そのまま返す (二度押し)。**done は、やることが完了になっているときだけ** 残す
+ * (画面の言い分だけで「やりきった」にしない。完了でなければ stopped)。置きっぱなしのものは left。
+ *
+ * 台帳を探すのは鍵の外。鍵の中では行を読み直してから書く。
  *
  * @param {string} me
  * @param {*} id
@@ -291,19 +417,25 @@ function focusExtend_(me, id, minutes) {
 function focusEnd_(me, id, result, now) {
   var r = String(result || '');
   if (r !== 'done' && r !== 'stopped') throw new Error('終わり方は「終わった」か「やめる」です');
+  var row = focusOwn_(me, id);
+  if (row.endedAt) return row;
+  if (focusIsStale_(row, now)) return focusLeaveStale_(me, id, now);
+  var ev = focusLedgerProved_(row) ? null : focusEvidence_(row, '', now);
   return dbWithLock_(30000, function () {
-    var row = focusOwn_(me, id);
-    if (row.endedAt) return row;
-    var patch = { endedAt: now, result: r };
-    if (!row.provedAt) {
-      var ev = focusEvidence_(row, '', now);
-      if (ev) {
-        patch.provedAt = ev.at;
-        patch.proofKind = ev.kind;
-      }
+    var cur = focusOwn_(me, id);
+    if (cur.endedAt) return cur;
+    var end = r;
+    if (end === 'done') {
+      var issue = dbFindOne('issues', 'number', cur.issueNumber);
+      if (!issue || String(issue.state) !== 'closed') end = 'stopped';
     }
-    dbUpdate('focus_sessions', 'id', row.id, patch);
-    return dbFindOne('focus_sessions', 'id', row.id);
+    var patch = { endedAt: now, result: end };
+    if (ev && !focusLedgerProved_(cur)) {
+      if (!cur.provedAt) patch.provedAt = ev.at;
+      patch.proofKind = ev.kind;
+    }
+    dbUpdate('focus_sessions', 'id', cur.id, patch);
+    return dbFindOne('focus_sessions', 'id', cur.id);
   });
 }
 
@@ -315,8 +447,9 @@ function focusEnd_(me, id, result, now) {
  */
 function focusSecondsToStart_(row) {
   var proved = focusTime_(row.provedAt);
+  // 開いた時刻が分からないもの (サーバが覚えていなかった) は測らない。始めた時刻で代えると、0秒になって
+  // 電光石火がただで付く
   var opened = focusTime_(row.openedAt);
-  if (!isFinite(opened)) opened = focusTime_(row.startedAt);
   if (!isFinite(proved) || !isFinite(opened)) return NaN;
   return Math.max(0, (proved - opened) / 1000);
 }
@@ -337,8 +470,10 @@ function focusBonus_(row, issue) {
 }
 
 /**
- * ポイントになる始め。**確かめた始めだけ・同じやることには1人1日1回まで** (数稼ぎをさせない)。
- * 1点、始めるボーナスが付けば +1。同じ日に何度か始めたら、いちばん良いもの1つ。
+ * ポイントになる始め。**台帳の手で確かめた始めだけ** (最初の一手だけのものは入れない)・**同じやることには
+ * 1人1日1回まで・1人1日 FOCUS_DAY_POINTS 点まで** (数稼ぎをさせない)。
+ * 1点、始めるボーナスが付けば +1。同じ日に何度か始めたら、いちばん良いもの1つ。上限を越えたぶんは
+ * 台帳の並び順で後のものから削る (0点のものは返さない)。
  *
  * @param {object[]} sessions focus_sessions
  * @param {object[]} issues
@@ -351,7 +486,7 @@ function focusCredits_(sessions, issues) {
   var order = [];
   for (var s = 0; s < sessions.length; s++) {
     var row = sessions[s];
-    if (!row.provedAt) continue;
+    if (!focusLedgerProved_(row)) continue;
     var who = String(row.who || '').toLowerCase();
     var day = motivationDay_(row.provedAt);
     var issue = byNumber[String(row.issueNumber)];
@@ -362,7 +497,18 @@ function focusCredits_(sessions, issues) {
     if (!best[key]) order.push(key);
     if (!best[key] || points > best[key].points) best[key] = { id: Number(row.id), who: who, day: day, points: points };
   }
-  return order.map(function (k) { return best[k]; });
+  var used = {};
+  var out = [];
+  for (var o = 0; o < order.length; o++) {
+    var c = best[order[o]];
+    var dayKey = c.who + '|' + c.day;
+    var room = FOCUS_DAY_POINTS() - (used[dayKey] || 0);
+    if (room <= 0) continue;
+    var got = Math.min(room, c.points);
+    used[dayKey] = (used[dayKey] || 0) + got;
+    out.push({ id: c.id, who: c.who, day: c.day, points: got });
+  }
+  return out;
 }
 
 /**
@@ -456,7 +602,7 @@ function focusActive_(mine, now) {
     var row = mine[i];
     if (row.endedAt) continue;
     var t = focusTime_(row.startedAt);
-    if (!isFinite(t) || now.getTime() - t > 12 * 3600000) continue;
+    if (!isFinite(t) || now.getTime() - t > FOCUS_STALE_HOURS() * 3600000) continue;
     if (!found || t > focusTime_(found.startedAt)) found = row;
   }
   return found;

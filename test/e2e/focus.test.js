@@ -80,7 +80,9 @@ describe('今から始めて、やりきるまで', () => {
     go('issues'); await other.settle();
     expect($('.focus-start-btn')).toBe(null);
     expect($('#focus-dock')).toBe(null);
-    // サーバも、名指しされても断る
+    // サーバも、名指しされても断る (オンにしていても、ほかの人の記録は扱えない)
+    server.fake._setUser('b@example.com');
+    server.ctx.apiPrefSet('focus.start', true);
     let err = null;
     window.google.script.run.withFailureHandler((e) => { err = e; }).apiFocusEnd(1, 'stopped');
     await other.settle();

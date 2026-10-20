@@ -577,9 +577,14 @@ describe('画面に渡せる形か', () => {
     ['apiGameLevelSeen', (ctx) => { ctx.apiSetGameEnabled(true); return ctx.apiGameLevelSeen(1); }],
     ['apiSetGameEnabled', (ctx) => ctx.apiSetGameEnabled(true)],
     // 集中のしかた。始めた・確かめた・終えた時刻が台帳から Date で返る
+    ['apiFocusOpen', (ctx, env) => {
+      ctx.apiPrefSet('focus.start', true);
+      return ctx.apiFocusOpen(env.issue.number);
+    }],
     ['apiFocusStart', (ctx, env) => {
       ctx.apiPrefSet('focus.start', true);
-      const out = ctx.apiFocusStart(env.issue.number, 25, '第3条を開く', new Date().toISOString());
+      ctx.apiFocusOpen(env.issue.number);
+      const out = ctx.apiFocusStart(env.issue.number, 25, '第3条を開く');
       if (!out.provedAt || !out.openedAt) throw new Error('始めた時刻が空のまま検査されている');
       return out;
     }],
@@ -597,13 +602,18 @@ describe('画面に渡せる形か', () => {
     }],
     ['apiFocusEnd', (ctx, env) => {
       ctx.apiPrefSet('focus.start', true);
-      const out = ctx.apiFocusEnd(ctx.apiFocusStart(env.issue.number, 25, '一手', '').id, 'done');
-      if (!out.endedAt) throw new Error('終えた時刻が空のまま検査されている');
+      const s = ctx.apiFocusStart(env.issue.number, 25, '一手', '');
+      ctx.apiIssueClose(env.issue.number);
+      const out = ctx.apiFocusEnd(s.id, 'done');
+      if (!out.endedAt || out.result !== 'done') throw new Error('終えた時刻が空のまま検査されている');
       return out;
     }],
     ['apiFocusMine', (ctx, env) => {
       ctx.apiPrefSet('focus.start', true);
-      ctx.apiFocusEnd(ctx.apiFocusStart(env.issue.number, 25, '一手', new Date().toISOString()).id, 'done');
+      const other = ctx.apiIssueCreate('完了にするもの', '', []).number;
+      const s = ctx.apiFocusStart(other, 25, '一手', '');
+      ctx.apiIssueClose(other);
+      ctx.apiFocusEnd(s.id, 'done');
       ctx.apiFocusStart(env.issue.number, 25, '', '');
       const out = ctx.apiFocusMine();
       if (!out.active) throw new Error('続いているものが空のまま検査されている');
