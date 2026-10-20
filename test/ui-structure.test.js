@@ -1270,3 +1270,25 @@ describe('日本語の折り返し', () => {
     expect(css).not.toMatch(/(^|[\s,}])\.comment-body\s*\{[^}]*break-all/);
   });
 });
+
+describe('プルダウンの形', () => {
+  // コメントにした宣言はブラウザが読まないので外してから見る
+  const css = fs.readFileSync('src/ui/app.css.html', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
+
+  it('形 (既定の見た目を外す・枠・角・矢印) は select の1つの規則で決める', () => {
+    const base = rules.find((r) => r.sel === 'select');
+    expect(base, 'select の規則が無い').toBeTruthy();
+    expect(base.body).toMatch(/appearance:\s*none/);
+    expect(base.body).toMatch(/box-shadow:\s*var\(--hairline\)/);
+    expect(base.body).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+    expect(base.body).toMatch(/background-image:/);
+  });
+
+  it('ほかの規則で select の形 (余白・枠・角・地) を書き直さない', () => {
+    const shape = /(^|;)\s*(padding|border|border-radius|background|box-shadow)\s*:/;
+    const bad = rules.filter((r) => r.sel !== 'select' && /(^|[\s,>])select(?![-\w])/.test(r.sel) &&
+      !/:(hover|focus|focus-visible|disabled)/.test(r.sel) && !/option/.test(r.sel) && shape.test(r.body));
+    expect(bad.map((r) => r.sel)).toEqual([]);
+  });
+});
