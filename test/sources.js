@@ -42,13 +42,14 @@ export const CORE_SOURCES = [
   'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/IssueTree.js',
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
+  'src/core/WorkStyle.js', 'src/core/WorkStyle.gs',
 ];
 
 export const API_SOURCES = [
   'src/Main.gs', 'src/Debug.gs',
   'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
-  'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs',
+  'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);

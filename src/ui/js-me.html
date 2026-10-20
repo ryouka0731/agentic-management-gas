@@ -281,6 +281,7 @@
       form.querySelector('input').value = personName(currentUser);
     });
     out.push(rename);
+    out.push(makeStyleButton());
 
     var again = document.createElement('button');
     again.className = 'btn';
@@ -414,35 +415,56 @@
     btn.className = 'btn';
     btn.textContent = '写す';
     btn.addEventListener('click', function () {
-      var area = document.createElement('textarea');
-      area.value = value;
-      document.body.appendChild(area);
-      area.select();
-
-      // execCommand は断られても例外にならず false を返す。true のときだけ写せた
-      var ok = false;
-      try {
-        ok = document.execCommand('copy') === true;
-      } catch (e) {
-        ok = false;
-      }
-      area.remove();
-      if (ok) {
+      if (copyPlainText(value)) {
         showSnack('写しました', { kind: 'ok' });
         return;
       }
       // 字を選んだままにして、手で写せるようにする
-      var range = document.createRange();
-      range.selectNodeContents(text);
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
+      selectTextOf(text);
       showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
     });
     line.appendChild(btn);
 
     wrap.appendChild(line);
     return wrap;
+  }
+
+  /**
+   * 字を写す。写せたか。
+   *
+   * execCommand は断られても例外にならず false を返す。true のときだけ写せた。
+   * navigator.clipboard は Apps Script の枠の中で断られることがあるので使わない。
+   *
+   * @param {string} value
+   * @returns {boolean}
+   */
+  function copyPlainText(value) {
+    var area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy') === true;
+    } catch (e) {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+
+  /**
+   * 要素の字を選んだままにする (写せなかったとき、手で写せるように)。
+   *
+   * @param {HTMLElement} el
+   */
+  function selectTextOf(el) {
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
   function closeMe() {

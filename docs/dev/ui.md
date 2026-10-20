@@ -41,8 +41,8 @@
 
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
-`js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-init` /
-`js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` /
+`js-init` / `js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -160,3 +160,18 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 「ADHD」など人を分ける言葉は画面に出さない。「集中のしかた」として全員向けに書き、効き目を約束しない
 - 試すのは `test/component/focus.test.js` (押して確かめる)・`test/focus-ui.test.js` (計算と音の形)・
   `test/focus.test.js` (サーバ)・`test/e2e/focus.test.js` (通し)
+
+## 仕事のスタンス診断 (`js-style`)
+
+自分まわりの「仕事のスタンス診断」から右のパネルで開く。問い・軸・型・おすすめは `src/core/WorkStyle.js` が唯一の定義で、
+画面は `apiWorkStyle` で受け取って描く。**画面は数えない** (答えを `apiWorkStyleSave` に送り、型はサーバが決める)。
+
+- **`js-init` より前に読む** (`wiki.html` の並び)。`peopleStyles` の初期化 (`var … = {}`) が `js-init` の `apiWorkStyleTeam` の
+  返事より後に走ると、テストの疑似 run (返事がその場で届く) で空に戻る
+- 顔 (`makeAvatar`) の読み上げと吹き出しに、本人が「チームに見せる」を選んだ人だけ型の名前を添える (`personStyleText`)。点数は出さない
+- おすすめの設定は `openPrefAt(key)` で設定の画面を開き、その項目 (`data-pref`) に `.pref-focus` の印を付けて送るだけ。
+  **切り替えない**。画面の行き先 (`board` / `gantt` / `list` / `help`) はサーバの `WORK_STYLE_VIEWS_()` と同じ key を `styleGo` が知っている
+- 札を写すのは `copyPlainText` (execCommand。`makeCopyRow` と共用)。写せなければ札の字を選んだままにする。画像は canvas に
+  トークンの色で描き、その場に `<img>` で出してから保存を試みる (枠の中では保存が黙って断られることがある)。描けない環境 (jsdom) ではそう言う
+- 断り書き (遊びの診断・評価や配置には使わない・医学的なものではない) は、問いと結果の両方に出す
+- 試すのは `test/component/style.test.js` (返事は本物の api で作る) と `test/e2e/work-style.test.js`

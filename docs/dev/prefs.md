@@ -18,3 +18,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 
 `notify` / `usageRecord` / 一覧の「動きなし」が `prefGet_` を呼ぶので、それらを読むテストの SOURCES には
 `src/core/Prefs.gs` が要る。
+
+`style.share` (仕事のスタンス診断の型の名前をチームに見せる) も自分の設定で、既定はオフ。読むのは `workStyleShared_` が
+`prefValueOf_` で人ごとに読む (全員の `STYLE:` を1回の写しで読むので、`prefReader_` と同じ形の口を渡す)。結果の画面の切り替えも
+`apiPrefSet` を呼ぶ (書くのはここだけ、のまま)。`apiWorkStyleForget` は `apiPrefSet('style.share', null)` で既定に戻す。

@@ -356,6 +356,12 @@ const VIEWS = {
     show: (r) => local.formatMine(shaped(r, r && r.reviews && r.returned && r.due)),
   },
   'advice': { op: 'homeAdvice', args: () => ({}), show: (r) => local.formatAdvice(shaped(r, Array.isArray(r))) },
+  // 仕事のスタンス診断の型と、軸ごとの手伝い方。合わせ方の決まりはスキル banto-style にある
+  'style': {
+    op: 'workStyle', args: () => ({}),
+    show: (r) => local.formatStyle(shaped(r, r && typeof r.taken === 'boolean' && (!r.taken || Array.isArray(r.axes)))),
+    hint: '手伝い方はスキル banto-style に従って合わせる (型は好みの目安で、本人の頼み方が先。型で人を決めつけない)',
+  },
   'search': {
     op: 'searchIndex',
     args: (a) => {
@@ -387,7 +393,7 @@ const VIEWS = {
  *
  * - 制御文字は落とす (改行とタブは残す)。端末の表示を書き換える字や、字の向きを逆にして
  *   見た目と中身を食い違わせる字を Claude と人に見せない
- * - 読める字で出すもの (mine / advice / search / report) と頼みごと (work) は囲いに入れる。
+ * - 読める字で出すもの (mine / advice / style / search / report) と頼みごと (work) は囲いに入れる。
  *   囲いの印には毎回変わる字を添え、中に囲いに見える行があれば行頭に \ を付けて無害にする。
  *   どちらか片方だけだと、中から囲いを閉じたふりができる
  * - ほかの JSON の返事は囲わない。字は JSON の引用符の中にあり、それが既に区切りになっている
@@ -802,6 +808,7 @@ function usage() {
   lines.push('自分の様子を見る (本人のぶんだけ返る):');
   lines.push('  mine                   あなたの番 (確かめてほしい確認依頼・戻ってきたもの・期限)');
   lines.push('  advice                 改善のヒント');
+  lines.push('  style                  仕事のスタンス診断の型と、Claude の手伝い方の合わせ方');
   lines.push('  search <語…>           文書・やること・確認依頼などを題名で探す');
   lines.push('  report [today]         今日の日報の下書き (形を渡さなければ画面で選んでいる形)');
   lines.push('  doctor                 番頭に頼まずに、設定・入れ先・返事・道具の版・フックを点検する');
