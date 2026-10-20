@@ -9,6 +9,8 @@ npm run coverage   # 範囲は vitest.config.js の coverage。結果は coverag
 npm run metrics    # 関数の長さ・分かれ道の数・入れ子・重なり (scripts/metrics.mjs)
 ```
 
+2026-10-21 に測った結果と、そのとき直したものは `docs/metrics-report.md` にある。
+
 **画面の JS は、つないだものを `coverage-ui/app.joined.js` に書いて読む** (`test/dom.js`)。カバレッジは
 ファイル名の中身をディスクから読み直すので、`new Function` で読むと名前が無くて1行も数えられず、
 `app.js.html` 単体を名乗ると (開いた関数だけなので) 読めずに外される。つないだものに source map
