@@ -41,8 +41,8 @@
 
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
-`js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-init` /
-`js-style` / `js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` /
+`js-init` / `js-settings` / `js-scrum` / `js-fun` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは

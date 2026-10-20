@@ -52,8 +52,10 @@ function apiWorkStyleSave(answers) {
 function apiWorkStyleForget() {
   var me = currentEmail_();
   if (!me) throw new Error('誰の診断か分かりません');
-  workStyleForget_(me);
+  // 見せる設定を先に戻す。結果を先に消すと、設定を戻すところで混み合って落ちたとき、
+  // 「見せる」が残ったまま結果だけ消え、次に診断し直した型が選んだ覚えの無いまま見える
   apiPrefSet('style.share', null);
+  workStyleForget_(me);
   return { ok: true };
 }
 

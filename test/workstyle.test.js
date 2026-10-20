@@ -287,6 +287,17 @@ describe('チームに見せるのは、本人が選んだときの型の名前�
     expect(Object.keys(plain(ctx.apiWorkStyleTeam()))).toEqual([OTHER]);
   });
 
+  it('見せる設定を戻せなかったときは、結果も消さない (見せるが残ったまま結果だけ消えない)', () => {
+    const { ctx } = server();
+    ctx.apiWorkStyleSave(all(3));
+    ctx.apiPrefSet('style.share', true);
+    const set = ctx.apiPrefSet;
+    ctx.apiPrefSet = () => { throw new Error('混み合っています'); };
+    expect(() => ctx.apiWorkStyleForget()).toThrow('混み合っています');
+    ctx.apiPrefSet = set;
+    expect(ctx.apiWorkStyle().mine).not.toBeNull();
+  });
+
   it('結果を消すと、見せる設定も既定 (見せない) に戻る', () => {
     const { ctx } = server();
     ctx.apiWorkStyleSave(all(3));
