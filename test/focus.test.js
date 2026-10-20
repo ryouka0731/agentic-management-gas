@@ -151,6 +151,49 @@ describe('始めたことを確かめる (番頭の中の手で)', () => {
     expect(ctx.apiFocusProve(s.id, 'move').session.proofKind).toBe('move');
   });
 
+  it('始める前から作業中にあったカードは、ボードの手として数えない (始めたあとに動かしたときだけ)', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    ctx.projectMove(n, 'In Progress', 0);
+    const s = startedAgo(ctx, n);
+    expect(ctx.dbFindOne('focus_sessions', 'id', s.id).columnAtStart).toBe('In Progress');
+    expect(ctx.apiFocusProve(s.id, 'move').fresh).toBe(false);
+    // 一度外して戻しても、始めた時点の置き場は作業中のまま (移し替えの履歴が無いので確かめようがない)
+    ctx.projectMove(n, 'Backlog', 0);
+    ctx.projectMove(n, 'In Progress', 0);
+    expect(ctx.apiFocusProve(s.id, 'move').fresh).toBe(false);
+  });
+
+  it('始めた時点で作業中でなかったカードを作業中へ動かすと、ボードの手になる', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    ctx.projectMove(n, 'Backlog', 0);
+    const s = startedAgo(ctx, n);
+    expect(ctx.dbFindOne('focus_sessions', 'id', s.id).columnAtStart).toBe('Backlog');
+    ctx.projectMove(n, 'In Progress', 0);
+    expect(ctx.apiFocusProve(s.id, 'move').session.proofKind).toBe('move');
+  });
+
+  it('始めた時点で完了の列にあったカードは、ボードの手として数えない', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    ctx.projectMove(n, 'Done', 0);
+    const s = startedAgo(ctx, n);
+    ctx.projectMove(n, 'In Progress', 0);
+    expect(ctx.apiFocusProve(s.id, 'move').fresh).toBe(false);
+  });
+
+  it('始めた時点の置き場が空の (列を足す前の) 記録は、ボードの手として数えない。ほかの手は数える', () => {
+    const { ctx } = setup();
+    const n = issue(ctx);
+    ctx.dbAppend('focus_sessions', { id: 70, issueNumber: n, who: ME, plannedMinutes: 25,
+      startedAt: new Date(Date.now() - 60000), openedAt: new Date(Date.now() - 70000) });
+    ctx.projectMove(n, 'In Progress', 0);
+    expect(ctx.apiFocusProve(70, 'move').fresh).toBe(false);
+    ctx.issueUpdate(n, { title: '直した題名' });
+    expect(ctx.apiFocusProve(70, 'edit').session.proofKind).toBe('edit');
+  });
+
   it('そのやることから作った改訂版に記録すると「始めた」になる。ほかの改訂版では確かめない', () => {
     const { ctx } = setup();
     const n = issue(ctx);

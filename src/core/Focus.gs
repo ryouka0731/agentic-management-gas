@@ -163,6 +163,10 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
     for (var i = 0; i < mine.length; i++) {
       if (!mine[i].endedAt) dbUpdate('focus_sessions', 'id', mine[i].id, { endedAt: now, result: 'left' });
     }
+    // 始めた時点のボードの置き場。ボードの移し替えは履歴に残らないので、「始めたあとに作業中へ動かした」は
+    // これと今の置き場を比べて確かめる。カードが無ければ 'none' (空は列を足す前の記録 = 分からない)
+    var card = dbFindOne('project_items', 'issueNumber', Number(number));
+    var columnAtStart = card && card.column ? String(card.column) : 'none';
     return dbAppendNumbered('focus_sessions', 'id', {
       issueNumber: Number(number),
       who: me,
@@ -176,6 +180,7 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
       openedAt: new Date(opened),
       extendedMinutes: 0,
       proofKind: step ? 'firstStep' : '',
+      columnAtStart: columnAtStart,
     });
   });
 }
@@ -187,8 +192,10 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
  * - やりとり: そのやることに本人が書いた
  * - 直した: そのやることの変更の履歴に本人の行がある (完了にしたのも入る。作ったことは入れない)
  * - 記録: そのやることから作った改訂版 (issue-N…) に本人が記録した
- * - ボード: 画面が「作業中へ動かした」と言い (kind === 'move')、いま作業中の列にある
- *   (ボードの移し替えは履歴に残らないので、いまの置き場で確かめる)
+ * - ボード: 画面が「作業中へ動かした」と言い (kind === 'move')、始めた時点 (columnAtStart) では作業中でも
+ *   完了でもなく、いま作業中の列にある (ボードの移し替えは履歴に残らないので、始めた時点と今の置き場で確かめる)。
+ *   始める前から作業中だったカードを数えると、何もしなくても「始めた」になる。columnAtStart が空の行
+ *   (列を足す前の記録) は始めた時点が分からないので、ボードの手は数えない
  *
  * @param {object} row
  * @param {string} kind 画面が言う手 (move のときだけ使う)
@@ -220,7 +227,8 @@ function focusEvidence_(row, kind, now) {
   dbReadAll('commits').forEach(function (c) {
     if (branch.test(String(c.branch || '')) && String(c.author || '').toLowerCase() === me) seen(c.timestamp, 'record');
   });
-  if (kind === 'move') {
+  var atStart = String(row.columnAtStart == null ? '' : row.columnAtStart);
+  if (kind === 'move' && atStart && atStart !== 'In Progress' && atStart !== 'Done') {
     var card = dbFindOne('project_items', 'issueNumber', n);
     if (card && String(card.column) === 'In Progress') seen(now, 'move');
   }
