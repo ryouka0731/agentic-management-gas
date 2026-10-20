@@ -5,8 +5,19 @@
 ## テストの測り方と、測れないもの
 
 ```bash
-npm run coverage
+npm run coverage   # 範囲は vitest.config.js の coverage。結果は coverage/coverage-summary.json
+npm run metrics    # 関数の長さ・分かれ道の数・入れ子・重なり (scripts/metrics.mjs)
 ```
+
+**画面の JS は、つないだものを `coverage-ui/app.joined.js` に書いて読む** (`test/dom.js`)。カバレッジは
+ファイル名の中身をディスクから読み直すので、`new Function` で読むと名前が無くて1行も数えられず、
+`app.js.html` 単体を名乗ると (開いた関数だけなので) 読めずに外される。つないだものに source map
+(`test/ui-source.js` の `appSourceMap`) を添え、行を元の部分ファイル (`src/ui/*.html`) へ戻している。
+以前は画面の部分ファイルが全部 0% と出ていて、全体も 44% に見えていた (実際は 90%)。
+
+**画面が投げたまま誰も受け止めなかった例外は、そのテストを落とす** (`test/component/mount.js` の `afterEach`)。
+jsdom は聞き手や返事のハンドラの例外を console に出すだけなので、描けずに落ちている画面のテストが通っていた
+(工数の集計の表を古い形の返事で描いていた)。疑似の返事はサーバが返す形に合わせること。
 
 テスト回りの依存を入れ直すときは、**package-lock.json を消さない**。npm 10.9 には
 vitest 4 の peer 解決で落ちる不具合があり (`Cannot read properties of null
