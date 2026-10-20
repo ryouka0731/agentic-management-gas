@@ -149,6 +149,9 @@
         submit.disabled = false;
         if (!mine || !box.isConnected) return;
         styleAnswers = {};
+        // チームに見せている人は、自分の顔の横の型も新しいものに替える (読み直すまで古い型が残っていた)
+        var me = String(currentUser || '').toLowerCase();
+        if (me && peopleStyles[me]) peopleStyles[me] = { name: mine.name, emoji: mine.emoji };
         drawStyleResult(box, res, mine);
         showSnack('あなたは「' + mine.name + '」でした', { kind: 'ok' });
       }, failEnable(submit, '結果を出せませんでした: '));
