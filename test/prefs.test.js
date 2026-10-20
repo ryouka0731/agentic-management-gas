@@ -206,7 +206,7 @@ describe('apiPrefs', () => {
     const { ctx } = setup();
     ctx.apiPrefSet('home.dueDays', 6);
     ctx.apiSetTeamGoal(12);
-    const out = ctx.apiPrefs();
+    const out = ctx.apiPrefs({ team: true });
     expect(unserializable(out, 'apiPrefs')).toEqual([]);
     expect(out.canEditTeam).toBe(true);
     expect(out.teamGoal).toBe(12);
@@ -424,5 +424,61 @@ describe('通知', () => {
     ctx.notifyIssueCommentMention({ number: 1, title: 't' }, { by: OTHER, body: 'r' }, [ME]);
     expect(kinds).toEqual(['review', 'review', 'result', 'result', 'inquiry', 'inquiry',
       'mention', 'mention', 'comment', 'mention']);
+  });
+});
+
+describe('レビューの指摘', () => {
+  it('設定を読めなくても通知メールは落とさず、元の宛先に送る', () => {
+    const { ctx, fake } = setup();
+    ctx.prefReaderLive_ = () => { throw new Error('読めない'); };
+    ctx.notify(ME, '件名', '本文', 'review');
+    expect(fake._sentMails().map((m) => m.to)).toEqual([ME]);
+  });
+
+  it('組の名前は自分の持ち物だけを見る (__proto__ などは知らない設定)', () => {
+    const { ctx } = setup();
+    ['__proto__.x', 'constructor.x', 'toString.x', 'hasOwnProperty.x'].forEach((k) => {
+      expect(() => ctx.apiPrefSet(k, 1)).toThrow(/知らない設定です/);
+      expect(() => ctx.prefGet_(k)).toThrow(/知らない設定です/);
+    });
+  });
+
+  it('既定値と同じ値を書いたら、チームの設定は鍵ごと消す', () => {
+    const { ctx, fake } = setup();
+    ctx.apiPrefSet('home.dueDays', 5);
+    ctx.apiPrefSet('home.dueDays', 3);
+    expect(fake.PropertiesService.getScriptProperties().getProperty('PREF:home.dueDays')).toBe(null);
+    ctx.apiPrefSet('stale.steps', [7, 14, 30]);
+    expect(fake.PropertiesService.getScriptProperties().getProperty('PREF:stale.steps')).toBe(null);
+  });
+
+  it('既定値と同じ値を書いたら、自分の設定からも消し、空なら MYPREF ごと消す', () => {
+    const { ctx, fake } = setup();
+    const props = fake.PropertiesService.getScriptProperties();
+    ctx.apiPrefSet('notify.review', false);
+    ctx.apiPrefSet('start.tab', 'issues');
+    ctx.apiPrefSet('notify.review', true);
+    expect(JSON.parse(props.getProperty('MYPREF:tester@example.com'))).toEqual({ 'start.tab': 'issues' });
+    ctx.apiPrefSet('start.tab', 'home');
+    expect(props.getProperty('MYPREF:tester@example.com')).toBe(null);
+    expect(ctx.apiPrefs().items.filter((p) => p.key === 'start.tab')[0].custom).toBe(false);
+  });
+
+  it('管理者かは設定の画面が尋ねたときだけ調べる (起動のときは Drive に聞かない)', () => {
+    const { ctx } = setup();
+    let asked = 0;
+    ctx.repoIsAdmin_ = () => { asked++; return true; };
+    expect(ctx.apiPrefs().canEditTeam).toBe(false);
+    expect(asked).toBe(0);
+    expect(ctx.apiPrefs({ team: true }).canEditTeam).toBe(true);
+    expect(asked).toBe(1);
+    // 画面から書いたあとの返りは設定の画面のもの
+    expect(ctx.apiPrefSet('start.tab', 'issues').canEditTeam).toBe(true);
+  });
+
+  it('使われ方の設定を読めなくても、数えるのは止めない', () => {
+    const { ctx } = setup();
+    ctx.prefGet_ = () => { throw new Error('読めない'); };
+    expect(ctx.usageRecord([{ kind: 'view', target: 'home', count: 1 }])).toBe(1);
   });
 });

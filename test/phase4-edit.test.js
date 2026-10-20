@@ -538,7 +538,7 @@ describe('画面に渡せる形か', () => {
       ctx.apiPrefSet('stale.steps', [3, 10, 20]);
       ctx.apiPrefSet('home.cards.game', false);
       ctx.apiPrefSet('notify.review', false);
-      return ctx.apiPrefs();
+      return ctx.apiPrefs({ team: true });
     }],
     ['apiPrefSet', (ctx) => ctx.apiPrefSet('home.dueDays', 5)],
     ['apiMyMilestones', (ctx) => ctx.apiMyMilestones()],

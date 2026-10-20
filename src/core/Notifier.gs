@@ -20,7 +20,14 @@
 function notify(to, subject, body, kind) {
   if (!to) return;
   try {
-    var send = notifyRecipients_(to, kind);
+    // 止めた人を外せなかった (設定が読めない) ときは、落とさずに元の宛先へ送る
+    var send;
+    try {
+      send = notifyRecipients_(to, kind);
+    } catch (e) {
+      Logger.log('通知の設定を読めませんでした: ' + e.message);
+      send = to;
+    }
     if (!send) return;
     GmailApp.sendEmail(send, subject, body);
   } catch (e) {

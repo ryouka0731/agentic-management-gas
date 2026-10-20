@@ -9393,3 +9393,51 @@ describe('設定の一覧 (#18)', () => {
     expect(app.calls.some((c) => c.name === 'apiUsageRecord')).toBe(true);
   });
 });
+
+describe('設定の一覧 (#18) レビューの指摘', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+  const GAME = { enabled: true, total: 3, week: 1, level: 2, levelFrom: 0, nextAt: 5, playing: false, badges: [], team: null };
+
+  it('設定が届くまでポイントのカードを出さず、見たレベルも覚えない', () => {
+    let reply;
+    const app = mount({ apiPrefs: { later: (ok) => { reply = ok; } }, apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(false);
+    reply(prefsFixture());
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(true);
+  });
+
+  it('ポイントのカードを隠した人のレベルは、見たことにしない', () => {
+    const app = mount({ apiPrefs: prefsFixture({ values: { 'home.cards.game': false } }), apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).toBeNull();
+    expect(app.calls.some((c) => c.name === 'apiGameLevelSeen')).toBe(false);
+  });
+
+  it('設定が取れなくても、ポイントのカードは出す', () => {
+    mount({ apiPrefs: new Error('混み合っています'), apiGameState: GAME });
+    expect(document.querySelector('#home-cards .game-card')).not.toBeNull();
+  });
+
+  it('遅れて届いた古い書き込みの返事で、新しい設定を上書きしない', () => {
+    const replies = [];
+    mount({ apiPrefSet: (key, value) => ({ later: (ok) => replies.push(() => ok(prefsFixture({ values: { [key]: value } }))) }) });
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    document.querySelector('[data-pref="notify.review"] button[role="switch"]').click();
+    document.querySelector('[data-pref="home.cards.recent"] button[role="switch"]').click();
+    // 後から頼んだほうが先に届き、先に頼んだほうが遅れて届く
+    replies[1]();
+    replies[0]();
+    document.querySelector('.nav-item[data-tab="home"]').click();
+    expect(document.getElementById('home-recent').hidden).toBe(true);
+  });
+
+  it('起動のときは管理者かを尋ねず、設定の画面だけが尋ねる', () => {
+    const app = mount();
+    const first = app.calls.filter((c) => c.name === 'apiPrefs');
+    expect(first.length).toBe(1);
+    expect(first[0].args).toEqual([]);
+    document.querySelector('.nav-item[data-tab="settings"]').click();
+    expect(app.calls.filter((c) => c.name === 'apiPrefs').pop().args).toEqual([{ team: true }]);
+  });
+});
