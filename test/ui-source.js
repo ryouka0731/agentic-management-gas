@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
  * 画面 (app.js.html) の関数を原文のまま切り出して動かす。
  *
  * 写しをテストに書くと、写しどうしを比べることになって意味が無い。
- * 切り出し方はここだけに置く (ui-parity.test.js と component.test.js が使う)。
+ * 切り出し方はここだけに置く (ui-parity.test.js と component/*.test.js が使う)。
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
