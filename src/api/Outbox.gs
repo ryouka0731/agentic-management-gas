@@ -15,6 +15,10 @@
  * @returns {object}
  */
 function apiOutboxAdd(verb, args, extra) {
+  // 取り込みは承認したときに自動で置かれる (outboxAddOnApproval_)。手でも頼めると二重になる
+  if (String(verb || '') === 'merge') {
+    throw new Error('取り込みは、承認したときに自動で頼みます。手では頼めません');
+  }
   return outboxToPlain_(outboxAdd(verb, args || {}, extra || {}));
 }
 
@@ -41,6 +45,8 @@ function apiOutboxVerbs() {
 
   for (var key in verbs) {
     if (!Object.prototype.hasOwnProperty.call(verbs, key)) continue;
+    // 手では頼ませないものは出さない (apiOutboxAdd が断る)
+    if (key === 'merge') continue;
     out.push([key, verbs[key].label]);
   }
   return out;

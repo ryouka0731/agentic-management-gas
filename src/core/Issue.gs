@@ -256,7 +256,12 @@ function issuesForFile(fileId) {
 function issueUpdate(number, patch) {
   var before = issueGet(number);
   if (Object.prototype.hasOwnProperty.call(patch, 'state')) {
-    throw new Error('stateはissueCloseで変更してください');
+    throw new Error('状態は「完了にする」「完了を取り消す」で変えてください');
+  }
+  // 作るときに断る題名は、直すときにも断る。通すと題名の無いやることができる
+  if (Object.prototype.hasOwnProperty.call(patch, 'title') &&
+      !/^[\s\S]{1,200}$/.test(String(patch.title || ''))) {
+    throw new Error('タイトルを入力してください');
   }
 
   // その場で書いたタグが次から選べないと、同じものを何度も書くことになる

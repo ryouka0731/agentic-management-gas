@@ -70,16 +70,16 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
   }
 
   var branch = dbFindOne('branches', 'name', sourceBranch);
-  if (!branch) throw new Error('改訂版が見つかりません: ' + sourceBranch);
+  if (!branch) throw new Error('改訂版が見つかりません: 「' + sourceBranch + '」');
   if (String(branch.state) !== 'open') {
-    throw new Error('この改訂版は既に閉じられています: ' + sourceBranch);
+    throw new Error('この改訂版は既に閉じられています: 「' + sourceBranch + '」');
   }
 
   // 反映先。既定は正式版だが、改訂版どうしでも出せる。長い改訂を
   // 分けて進めるとき、途中の版に先に取り込めないと待ち行列ができる
   var into = String(targetBranch || 'main');
   if (into === String(sourceBranch)) {
-    throw new Error('同じ版には反映できません: ' + into);
+    throw new Error('同じ版には反映できません: 「' + into + '」');
   }
 
   // 正式版は台帳の行が無くても必ずある。main の行を台帳に入れるようになった
@@ -87,9 +87,9 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
   // 確認依頼が「反映先の版が見つかりません: main」で出せなくなる
   if (into !== 'main') {
     var intoRow = dbFindOne('branches', 'name', into);
-    if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
+    if (!intoRow) throw new Error('反映先の版が見つかりません: 「' + into + '」');
     if (String(intoRow.state) !== 'open') {
-      throw new Error('反映先の版は既に閉じられています: ' + into);
+      throw new Error('反映先の版は既に閉じられています: 「' + into + '」');
     }
   }
 
@@ -1300,7 +1300,7 @@ function prTargetBranchFileId(pr, mainFileId) {
   if (into === 'main') return mainFileId;
 
   var fileId = branchWorkingFileId(into, mainFileId);
-  if (!fileId) throw new Error('反映先の版に作業コピーがありません: ' + into);
+  if (!fileId) throw new Error('反映先の版に作業コピーがありません: 「' + into + '」');
 
   return fileId;
 }

@@ -40,13 +40,37 @@ function templateNameValid_(name) {
 }
 
 /**
- * 下書きの一覧を返す。1つも無ければ先に用意したものを入れる。
+ * 用意した下書きの名前か。
+ *
+ * 台帳の builtin の印だけで見ると、用意したものが入る前に同じ名前で
+ * 保存された行が「自分の下書き」として通り、守りが外れる。
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function templateIsBuiltinName_(name) {
+  var builtin = TEMPLATE_BUILTIN();
+  for (var i = 0; i < builtin.length; i++) {
+    if (builtin[i].name === name) return true;
+  }
+  return false;
+}
+
+/**
+ * 下書きの一覧を返す。用意したものが欠けていれば先に入れる。
+ *
+ * 表が空のときだけ入れていると、一覧を開く前に誰かが1つ保存した時点で
+ * 用意したものが二度と入らない。
  *
  * @returns {object[]}
  */
 function templateList() {
   var rows = dbReadAll('templates');
-  if (!rows.length) {
+  var have = {};
+  for (var h = 0; h < rows.length; h++) have[String(rows[h].name)] = true;
+
+  var missing = TEMPLATE_BUILTIN().some(function (t) { return !have[t.name]; });
+  if (missing) {
     templateSeed_();
     rows = dbReadAll('templates');
   }
@@ -66,9 +90,16 @@ function templateList() {
 }
 
 /**
- * 用意した下書きを入れる。
+ * 用意した下書きを入れる。あるか見てから書くので、鍵の中で行う。
  */
 function templateSeed_() {
+  dbWithLock_(30000, templateSeedLocked_);
+}
+
+/**
+ * templateSeed_ の本体。鍵を持った状態で呼ばれる。
+ */
+function templateSeedLocked_() {
   var builtin = TEMPLATE_BUILTIN();
 
   for (var i = 0; i < builtin.length; i++) {
@@ -117,9 +148,25 @@ function templateSaveLocked_(name, body) {
     throw new Error('下書きは4000文字までにしてください');
   }
 
+  if (templateIsBuiltinName_(clean)) {
+    throw new Error('用意されている下書きは書き換えられません: ' + clean);
+  }
+
+  // 一覧を開く前に保存されても、用意したものが入るようにする
+  templateSeedLocked_();
+
   var found = dbFindOne('templates', 'name', clean);
   if (found && (found.builtin === true || String(found.builtin) === 'true')) {
     throw new Error('用意されている下書きは書き換えられません: ' + clean);
+  }
+
+  // 消すのと同じく、作った本人か管理者だけ。同じ名前で保存すれば誰でも
+  // 書き換えられると、消せない人が中身を差し替えられる
+  if (found) {
+    var me = currentEmail_();
+    if (String(found.createdBy) !== String(me) && !repoIsAdmin_(me)) {
+      throw new Error('自分が作った下書きだけ書き換えられます');
+    }
   }
 
   if (found) {

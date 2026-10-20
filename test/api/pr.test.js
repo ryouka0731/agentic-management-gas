@@ -105,7 +105,22 @@ describe('apiPrCreate / apiPrList', () => {
     expect(ctx.dbReadAll('pulls')).toHaveLength(0);
   });
 
-  it.todo('正式版から正式版へ出そうとすると「同じ版には反映できません: main」と、括らない main が断りに出る (src/core/PullRequest.gs の prCreate)');
+  it('正式版から正式版へ出そうとしたときの断りは、main を「main」と括る', () => {
+    const { ctx, fileId } = makeEnv();
+    let msg = '';
+    try { ctx.apiPrCreate('x', '', 'main', fileId, 'main'); } catch (e) { msg = String(e.message); }
+    expect(msg).toMatch(/「main」/);
+    expect(msg).not.toMatch(/(^|[^「A-Za-z_])main(?![A-Za-z_」])/);
+    expect(ctx.dbReadAll('pulls')).toHaveLength(0);
+  });
+
+  it('版の名前を出す断りは、名前を「」で括る', () => {
+    const env = prEnv();
+    const { ctx } = env;
+    expectRefused(() => ctx.apiPrCreate('x', '', '無い', env.fileId), /改訂版が見つかりません: 「無い」/);
+    expectRefused(() => ctx.apiPrCreate('x', '', '改訂', env.fileId, '改訂'), /同じ版には反映できません: 「改訂」/);
+    expectRefused(() => ctx.apiPrCreate('x', '', '改訂', env.fileId, '無い版'), /反映先の版が見つかりません: 「無い版」/);
+  });
 });
 
 describe('apiPrPreview / apiPrCommits', () => {
