@@ -11,6 +11,8 @@ import { createFakeGas } from './fakegas.js';
  * debugWriteRoundTrip で初めて落ちた。
  */
 function fakeDocs() {
+  // 書き込みの呼び出しを順に控える (書く順序を確かめるため)
+  const log = [];
   function text(initial) {
     const t = {
       s: initial || '', styles: [],
@@ -34,17 +36,23 @@ function fakeDocs() {
       getType: () => 'PARAGRAPH', asParagraph: () => p, editAsText: () => tx,
       getText: () => tx.s, getNumChildren: () => (tx.s ? 1 : 0),
       setText: (v) => { tx.setText(v); return p; },
-      setHeading: () => p, setNestingLevel: () => p, setGlyphType: () => p,
-      appendInlineImage: () => ({ setAltDescription: () => {} }),
+      setHeading: (h) => { log.push(['heading', h]); return p; },
+      setNestingLevel: (n) => { log.push(['nesting', n]); return p; },
+      setGlyphType: (g) => { log.push(['glyph', g]); return p; },
+      appendInlineImage: (blob) => {
+        log.push(['image', blob]);
+        return { setAltDescription: (a) => { log.push(['alt', a]); } };
+      },
     };
     return p;
   }
   const body = {
     children: [],
-    clear: () => { body.children = [para('')]; return body; },
-    appendParagraph: (v) => { const p = para(v); body.children.push(p); return p; },
-    appendListItem: (v) => { const p = para(v); p.kind = 'LIST_ITEM'; body.children.push(p); return p; },
+    clear: () => { log.push(['clear']); body.children = [para('')]; return body; },
+    appendParagraph: (v) => { log.push(['p', v]); const p = para(v); body.children.push(p); return p; },
+    appendListItem: (v) => { log.push(['li', v]); const p = para(v); p.kind = 'LIST_ITEM'; body.children.push(p); return p; },
     appendTable: (rows) => {
+      log.push(['table', rows]);
       const cells = rows.map((r) => r.map((v) => para(v)));
       const table = {
         kind: 'TABLE', cells,
@@ -59,12 +67,12 @@ function fakeDocs() {
     removeChild: (el) => { body.children = body.children.filter((x) => x !== el); },
   };
   const DocumentApp = {
-    openById: () => ({ getBody: () => body, saveAndClose: () => {} }),
+    openById: () => ({ getBody: () => body, saveAndClose: () => { log.push(['save']); } }),
     ParagraphHeading: { NORMAL: 'N', HEADING1: 'H1', HEADING2: 'H2', HEADING3: 'H3', HEADING4: 'H4', HEADING5: 'H5', HEADING6: 'H6' },
     GlyphType: { NUMBER: 'NUMBER', BULLET: 'BULLET' },
     ElementType: { PARAGRAPH: 'PARAGRAPH', TABLE: 'TABLE', LIST_ITEM: 'LIST_ITEM' },
   };
-  return { DocumentApp, body };
+  return { DocumentApp, body, log };
 }
 
 function setup() {
@@ -72,8 +80,8 @@ function setup() {
   const docs = fakeDocs();
   fake.DocumentApp = docs.DocumentApp;
   const ctx = loadGasWith(fake, 'src/core/Normalize.js', 'src/render/HtmlWriter.gs');
-  ctx.objectFindBlob = () => ({});
-  return { ctx, body: docs.body };
+  ctx.objectFindBlob = (sha) => ({ sha });
+  return { ctx, body: docs.body, log: docs.log };
 }
 
 describe('表のセルに書き戻す', () => {
@@ -117,5 +125,52 @@ describe('段落とリストに書き戻す', () => {
     const p = body.children.find((c) => c.kind === 'PARAGRAPH' && c.text.s);
     expect(p.text.s).toBe('Hello world and more');
     expect(p.text.styles).toEqual([{ k: 'Bold', a: 6, b: 10, v: true }]);
+  });
+});
+
+describe('ブロックの種類ごとの書き方', () => {
+  it('見出し・段落・リスト・表・画像を順に書き、clear() が残した空段落を消す', () => {
+    const { ctx, body, log } = setup();
+    ctx.writeHtmlToDoc('D1', [
+      '<h2>見出し</h2>',
+      '<p>本文</p>',
+      '<li data-list="ul" data-depth="1">箇条</li>',
+      '<li data-list="ol" data-depth="0">番号</li>',
+      '<table>',
+      '<tr><td></td><td>b</td></tr>',
+      '</table>',
+      '<img data-sha="s1" alt="図">',
+      '<img data-sha="s2" alt="">',
+    ].join('\n') + '\n');
+
+    expect(JSON.parse(JSON.stringify(log))).toEqual([
+      ['clear'],
+      ['p', ''], ['heading', 'H2'],
+      ['p', ''], ['heading', 'N'],
+      ['li', ''], ['nesting', 1], ['glyph', 'BULLET'],
+      ['li', ''], ['nesting', 0], ['glyph', 'NUMBER'],
+      ['table', [[' ', 'b']]],
+      ['p', ''], ['image', { sha: 's1' }], ['alt', '図'],
+      ['p', ''], ['image', { sha: 's2' }],
+      ['save'],
+    ]);
+    expect(body.children.map((c) => c.kind))
+      .toEqual(['PARAGRAPH', 'PARAGRAPH', 'LIST_ITEM', 'LIST_ITEM', 'TABLE', 'PARAGRAPH', 'PARAGRAPH']);
+    expect(body.children[0].text.s).toBe('見出し');
+  });
+
+  it('書き戻せない中身と空の中身は、消す前に断る', () => {
+    const { ctx, log } = setup();
+    expect(() => ctx.writeBlocksToDoc('D1', [{ type: 'image', sha: 'unavailable', alt: '' }]))
+      .toThrow('書き戻せません');
+    expect(() => ctx.writeBlocksToDoc('D1', [])).toThrow('書き戻す内容が空です');
+    expect(log).toEqual([]);
+  });
+
+  it('表だけでも、clear() が残した空段落を消す', () => {
+    const { ctx, body } = setup();
+    ctx.writeHtmlToDoc('D1', '<table>\n<tr><td>a</td></tr>\n</table>\n');
+    // 子が2つ (空段落 + 表) なので消す。表だけが残る
+    expect(body.children.map((c) => c.kind)).toEqual(['TABLE']);
   });
 });

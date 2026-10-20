@@ -51,78 +51,20 @@ function prTargetFiles(pr) {
  * @returns {object} 作成された pulls 行
  */
 function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
-  // 1つでも配列でも受ける。呼ぶ側を一斉に直さなくても変更セットになる
-  var wanted = [];
-  var raw = Array.isArray(mainFileId) ? mainFileId : [mainFileId];
-  var seenWanted = {};
-
-  for (var w = 0; w < raw.length; w++) {
-    var one = String(raw[w] || '');
-    if (!one || seenWanted[one]) continue;
-
-    seenWanted[one] = true;
-    wanted.push(one);
-  }
+  var wanted = prCreateWanted_(mainFileId);
   if (!wanted.length) throw new Error('反映する文書を選んでください');
 
   if (!/^[\s\S]{1,200}$/.test(String(title || ''))) {
     throw new Error('タイトルを入力してください');
   }
 
-  var branch = dbFindOne('branches', 'name', sourceBranch);
-  if (!branch) throw new Error('改訂版が見つかりません: ' + sourceBranch);
-  if (String(branch.state) !== 'open') {
-    throw new Error('この改訂版は既に閉じられています: ' + sourceBranch);
-  }
-
   // 反映先。既定は正式版だが、改訂版どうしでも出せる。長い改訂を
   // 分けて進めるとき、途中の版に先に取り込めないと待ち行列ができる
   var into = String(targetBranch || 'main');
-  if (into === String(sourceBranch)) {
-    throw new Error('同じ版には反映できません: ' + into);
-  }
-
-  // 正式版は台帳の行が無くても必ずある。main の行を台帳に入れるようになった
-  // のは途中からで、それ以前のリポジトリには行が無い。探すと、正式版への
-  // 確認依頼が「反映先の版が見つかりません: main」で出せなくなる
-  if (into !== 'main') {
-    var intoRow = dbFindOne('branches', 'name', into);
-    if (!intoRow) throw new Error('反映先の版が見つかりません: ' + into);
-    if (String(intoRow.state) !== 'open') {
-      throw new Error('反映先の版は既に閉じられています: ' + into);
-    }
-  }
+  prCreateAssertBranches_(sourceBranch, into);
 
   for (var t = 0; t < wanted.length; t++) {
-    var targetRow = dbFindOne('files', 'fileId', wanted[t]);
-    if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
-
-    if (branchSplitPath_(targetRow.path).branch !== 'main') {
-      throw new Error('正式版の文書を選んでください: ' + targetRow.path);
-    }
-
-    // Slides は書き戻せないため、PRを作らせない。閲覧・履歴・diff は使える。
-    // fast-forward でコピーを採用する案は fileId が変わるため採らない
-    if (String(targetRow.type) === 'slide') {
-      throw new Error(
-        'スライドは反映に対応していません。履歴と差分は見られますが、' +
-        '反映はSlides上で直接行ってください'
-      );
-    }
-
-    // その改訂版に入っていない文書は反映できない。作業コピーが無いと
-    // 「何を反映するのか」が無い
-    if (!branchWorkingFileId(sourceBranch, wanted[t])) {
-      throw new Error(
-        'その文書は「' + sourceBranch + '」に入っていません: ' + targetRow.path);
-    }
-
-    // 反映先が改訂版なら、そちらにも作業コピーが要る。無いまま作ると、
-    // 開くたびに「反映先の版に作業コピーがありません」で落ちる依頼になる
-    if (into !== 'main' && !branchWorkingFileId(into, wanted[t])) {
-      throw new Error(
-        'その文書は反映先の「' + into + '」に入っていません: ' + targetRow.path);
-    }
+    prCreateAssertTarget_(wanted[t], sourceBranch, into);
   }
 
   /*
@@ -130,17 +72,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
    * ほぼ同時の2件が「まだ無い」と読んで、同じ組の依頼が2つ開く。
    */
   var row = dbWithLock_(30000, function () {
-    // 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる
-    var existing = dbReadAll('pulls');
-    for (var i = 0; i < existing.length; i++) {
-      if (String(existing[i].sourceBranch) !== String(sourceBranch)) continue;
-      if (String(existing[i].targetBranch || 'main') !== into) continue;
-
-      var st = String(existing[i].state);
-      if (st === 'open' || st === 'approved') {
-        throw new Error('この組み合わせには閉じていない確認依頼があります: #' + existing[i].number);
-      }
-    }
+    prCreateAssertNoOpen_(sourceBranch, into);
 
     var made = {
       title: title,
@@ -167,6 +99,96 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
 
   notifyPrCreated(row);
   return row;
+}
+
+/** 1つでも配列でも受ける。呼ぶ側を一斉に直さなくても変更セットになる */
+function prCreateWanted_(mainFileId) {
+  var wanted = [];
+  var raw = Array.isArray(mainFileId) ? mainFileId : [mainFileId];
+  var seenWanted = {};
+
+  for (var w = 0; w < raw.length; w++) {
+    var one = String(raw[w] || '');
+    if (!one || seenWanted[one]) continue;
+
+    seenWanted[one] = true;
+    wanted.push(one);
+  }
+  return wanted;
+}
+
+/** 出す元の改訂版と反映先の版が、開いたまま在ることを確かめる。 */
+function prCreateAssertBranches_(sourceBranch, into) {
+  var branch = dbFindOne('branches', 'name', sourceBranch);
+  if (!branch) throw new Error('改訂版が見つかりません: 「' + sourceBranch + '」');
+  if (String(branch.state) !== 'open') {
+    throw new Error('この改訂版は既に閉じられています: 「' + sourceBranch + '」');
+  }
+
+  if (into === String(sourceBranch)) {
+    throw new Error('同じ版には反映できません: 「' + into + '」');
+  }
+
+  // 正式版は台帳の行が無くても必ずある。main の行を台帳に入れるようになった
+  // のは途中からで、それ以前のリポジトリには行が無い。探すと、正式版への
+  // 確認依頼が「反映先の版が見つかりません: main」で出せなくなる
+  if (into === 'main') return;
+
+  var intoRow = dbFindOne('branches', 'name', into);
+  if (!intoRow) throw new Error('反映先の版が見つかりません: 「' + into + '」');
+  if (String(intoRow.state) !== 'open') {
+    throw new Error('反映先の版は既に閉じられています: 「' + into + '」');
+  }
+}
+
+/** 1つの文書が、この改訂版から反映先へ出せるものかを確かめる。 */
+function prCreateAssertTarget_(fileId, sourceBranch, into) {
+  var targetRow = dbFindOne('files', 'fileId', fileId);
+  if (!targetRow) throw new Error('対象ファイルが管理対象にありません');
+
+  if (branchSplitPath_(targetRow.path).branch !== 'main') {
+    throw new Error('正式版の文書を選んでください: ' + targetRow.path);
+  }
+
+  // Slides は書き戻せないため、PRを作らせない。閲覧・履歴・diff は使える。
+  // fast-forward でコピーを採用する案は fileId が変わるため採らない
+  if (String(targetRow.type) === 'slide') {
+    throw new Error(
+      'スライドは反映に対応していません。履歴と差分は見られますが、' +
+      '反映はSlides上で直接行ってください'
+    );
+  }
+
+  // その改訂版に入っていない文書は反映できない。作業コピーが無いと
+  // 「何を反映するのか」が無い
+  if (!branchWorkingFileId(sourceBranch, fileId)) {
+    throw new Error(
+      'その文書は「' + sourceBranch + '」に入っていません: ' + targetRow.path);
+  }
+
+  // 反映先が改訂版なら、そちらにも作業コピーが要る。無いまま作ると、
+  // 開くたびに「反映先の版に作業コピーがありません」で落ちる依頼になる
+  if (into !== 'main' && !branchWorkingFileId(into, fileId)) {
+    throw new Error(
+      'その文書は反映先の「' + into + '」に入っていません: ' + targetRow.path);
+  }
+}
+
+/**
+ * 同じ組み合わせで二重に出さない。反映先が違えば別の依頼として出せる。
+ * 読んでから書くまでを1つの鍵に入れるため、prCreate の鍵の中から呼ぶ。
+ */
+function prCreateAssertNoOpen_(sourceBranch, into) {
+  var existing = dbReadAll('pulls');
+  for (var i = 0; i < existing.length; i++) {
+    if (String(existing[i].sourceBranch) !== String(sourceBranch)) continue;
+    if (String(existing[i].targetBranch || 'main') !== into) continue;
+
+    var st = String(existing[i].state);
+    if (st === 'open' || st === 'approved') {
+      throw new Error('この組み合わせには閉じていない確認依頼があります: #' + existing[i].number);
+    }
+  }
 }
 
 /**
@@ -831,51 +853,8 @@ function prPreviewAll(number) {
 function prMerge(number, choices, previewSha) {
   return dbWithLock_(60000, function () {
         var pr = prGet(number);
-        if (String(pr.state) === 'merged') throw new Error('この確認依頼は既に反映済みです');
-        if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
-
-        /*
-         * **見比べたものを反映する。** 見比べてから押すまでに反映先か改訂版が
-         * 進むと、食い違いが変わる。数がずれれば下で断られるが、数が同じで
-         * 中身が違うと、選んだ「こちら/相手」が別の食い違いに当てはまり、
-         * 見ていない結果で反映される。指紋を持たない呼び方は通す
-         */
-        // 対象の文書が Drive で消されていたら、反映せずに取り下げる。
-        // ゴミ箱の中の文書に書き戻すことになる
-        var gone = prMissingFiles_(pr);
-        if (gone.length) {
-          prCloseBecause_(pr,
-            '対象の文書が Drive で消されたため、自動で取り下げました: ' + gone.join('、'));
-          throw new Error(
-            '対象の文書が Drive で消されているため、反映せずに取り下げました: ' + gone.join('、'));
-        }
-
-        if (previewSha && prPreviewFingerprint(number) !== String(previewSha)) {
-          throw new Error(
-            '見比べたあとで、反映先か改訂版が進みました。見比べ直してから反映してください');
-        }
-
-        var decisions = prDecisions_(number);
-        if (prApprovalCount(number) < 1) {
-          // 承認はあったが、そのあとに中身が変わった。黙って「承認が無い」と
-          // 言うと、承認したはずの人が首をかしげる
-          for (var sw in decisions) {
-            if (!Object.prototype.hasOwnProperty.call(decisions, sw)) continue;
-            if (decisions[sw] === 'stale') {
-              throw new Error('承認のあとに中身が変わっています。もう一度確認して承認してもらってください');
-            }
-          }
-          throw new Error('反映には1件以上の承認が必要です');
-        }
-
-        // 誰かが差し戻したままなら反映しない。別の人の承認で押し切れると、
-        // 差し戻しが意味を持たない
-        for (var who in decisions) {
-          if (!Object.prototype.hasOwnProperty.call(decisions, who)) continue;
-          if (decisions[who] === 'request_changes') {
-            throw new Error(who + ' さんの差し戻しが残っています。直してもらうか、承認し直してもらってください');
-          }
-        }
+        prMergeAssertOpen_(pr, number, previewSha);
+        prMergeAssertApproved_(number);
 
         // main に未コミットの変更があるうちはマージしない。
         // マージ結果はコミット済みのHEADを ours として計算されるため、
@@ -908,81 +887,12 @@ function prMerge(number, choices, previewSha) {
          * **1件ずつ「検証して書く」を繰り返してはいけない。** 3件目で落ちた
          * とき、1件目と2件目だけ反映された状態が残り、確認を経ていない
          * 中途半端な正式版ができる。戻す手立ても無い。
+         *
+         * そのため、1と2は prMergePlan_ が全件ぶん終えてから返し、書き戻す
+         * prMergeWriteAll_ はそのあとで呼ぶ。2つを1つの繰り返しにまとめない
          */
-        var plan = [];
-
-        for (var t = 0; t < targets.length; t++) {
-          var mainRow = dbFindOne('files', 'fileId', targets[t]);
-          var path = mainRow ? branchSplitPath_(mainRow.path).path : targets[t];
-          var type = mainRow ? String(mainRow.type) : 'doc';
-          var intoFileId = prTargetBranchFileId(pr, targets[t]);
-
-          // 空白の扱いを改める前の記録のままなら、いまの形で記録し直す。
-          // 中身は同じなので、何も編集していない人に退避を押させない
-          prRecordSpacingOnly_(branchWorkingFileId(pr.sourceBranch, targets[t]),
-            pr.sourceBranch);
-
-          if (prRecordSpacingOnly_(intoFileId, into)) {
-            throw new Error(
-              '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
-              ' に記録していない変更があります。先にそちらを記録してから' +
-              '反映してください'
-            );
-          }
-
-          var preview = prPreviewMerge(number, targets[t]);
-          var lines = preview.clean
-            ? preview.lines
-            : resolveConflicts(
-                { lines: preview.lines, conflicts: preview.conflicts },
-                choiceMap[targets[t]] || []
-              );
-
-          var mergedHtml = linesToHtml_(lines);
-
-          // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
-          var mergedBlocks = parseBlocks(mergedHtml);
-          var problems = (type === 'sheet')
-            ? sheetWriterValidate(mergedBlocks)
-            : htmlWriterValidate(mergedBlocks);
-
-          if (problems.length > 0) {
-            throw new Error(
-              path + ' の反映結果を書き戻せません:\n' + problems.join('\n'));
-          }
-
-          plan.push({
-            fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
-            // 反映先と同じなら書き戻さない。変更セットには直していない文書も
-            // 入りうる。書き戻すと記録が空になって commitFile が断り、前の
-            // 文書だけ書き戻したところで止まる (やり直しても同じ所で落ちる)
-            same: mergedHtml === preview.oursHtml,
-          });
-        }
-
-        var mergeCommit = null;
-
-        for (var k = 0; k < plan.length; k++) {
-          var step = plan[k];
-          if (step.same) continue;
-
-          // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
-          // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
-          // 通常は上の検査で弾かれるためここは通らない
-          if (fileStatus(step.fileId, into).dirty) {
-            commitFile(step.fileId, into, '確認依頼 #' + number + ' を反映する前の退避', null);
-          }
-
-          writeHtmlToFile(step.fileId, step.html, step.type);
-          liveCacheInvalidate(step.fileId);
-
-          mergeCommit = commitFile(
-            step.fileId,
-            into,
-            '反映: 確認依頼 #' + number + ' ' + pr.title,
-            null
-          );
-        }
+        var plan = prMergePlan_(pr, number, targets, into, choiceMap);
+        var mergeCommit = prMergeWriteAll_(pr, number, into, plan);
 
         dbUpdate('pulls', 'number', number, {
           state: 'merged',
@@ -997,39 +907,7 @@ function prMerge(number, choices, previewSha) {
          *
          * 押したら入っていると思わせないよう、画面の断りにもそう書いてある。
          */
-
-        // closes #N のIssueを閉じ、カードを Done に動かす
-        var issues = prClosesIssues_(pr.body);
-        for (var i = 0; i < issues.length; i++) {
-          if (!dbFindOne('issues', 'number', issues[i])) continue;
-          issueClose(issues[i], number);
-          projectMoveIfExists_(issues[i], 'Done');
-        }
-
-        /*
-         * コードの証跡が添えられていたなら、手元に取り込みを頼む。
-         *
-         * **ここで自動的に取り込んではいけない。** この道具はコードを書き換え
-         * ないと決めてあるので、頼むところまでで止める。手元で人と Claude が
-         * 見て進める。
-         *
-         * 頼めなくてもマージは成立している。通知と同じく、失敗で巻き戻さない
-         */
-        if (prHasPatches(number)) {
-          try {
-            outboxAddOnApproval_('merge',
-              { branch: String(pr.sourceBranch), into: String(into) },
-              {
-                prNumber: number,
-                note: '確認依頼 #' + number + '「' + pr.title +
-                  '」が承認されました。コードの変更を取り込んでください。',
-              });
-          } catch (e) {
-            Logger.log('取り込みを頼めませんでした: ' + e.message);
-          }
-        }
-
-        notifyPrMerged(pr);
+        prMergeAfter_(pr, number, into);
 
         // 文書が無い依頼では書き戻しが無いので記録も無い。呼ぶ側が形で
         // 場合分けしないよう、何をしたのかを添えて返す
@@ -1038,6 +916,198 @@ function prMerge(number, choices, previewSha) {
           message: '承認を記録しました (コードの変更は手元で進めてください)',
         };
   });
+}
+
+/**
+ * 反映してよい状態の依頼かを確かめる (状態・消えた文書・見比べた指紋)。
+ * 何も書き戻さないうちに断るため、prMerge の最初に呼ぶ。
+ */
+function prMergeAssertOpen_(pr, number, previewSha) {
+  if (String(pr.state) === 'merged') throw new Error('この確認依頼は既に反映済みです');
+  if (String(pr.state) === 'closed') throw new Error('この確認依頼は取り下げられています');
+
+  /*
+   * **見比べたものを反映する。** 見比べてから押すまでに反映先か改訂版が
+   * 進むと、食い違いが変わる。数がずれれば下で断られるが、数が同じで
+   * 中身が違うと、選んだ「こちら/相手」が別の食い違いに当てはまり、
+   * 見ていない結果で反映される。指紋を持たない呼び方は通す
+   */
+  // 対象の文書が Drive で消されていたら、反映せずに取り下げる。
+  // ゴミ箱の中の文書に書き戻すことになる
+  var gone = prMissingFiles_(pr);
+  if (gone.length) {
+    prCloseBecause_(pr,
+      '対象の文書が Drive で消されたため、自動で取り下げました: ' + gone.join('、'));
+    throw new Error(
+      '対象の文書が Drive で消されているため、反映せずに取り下げました: ' + gone.join('、'));
+  }
+
+  if (previewSha && prPreviewFingerprint(number) !== String(previewSha)) {
+    throw new Error(
+      '見比べたあとで、反映先か改訂版が進みました。見比べ直してから反映してください');
+  }
+}
+
+/** 承認が1件以上あり、差し戻しが残っていないことを確かめる。 */
+function prMergeAssertApproved_(number) {
+  var decisions = prDecisions_(number);
+  if (prApprovalCount(number) < 1) {
+    // 承認はあったが、そのあとに中身が変わった。黙って「承認が無い」と
+    // 言うと、承認したはずの人が首をかしげる
+    if (prMergeAnyDecision_(decisions, 'stale') !== null) {
+      throw new Error('承認のあとに中身が変わっています。もう一度確認して承認してもらってください');
+    }
+    throw new Error('反映には1件以上の承認が必要です');
+  }
+
+  // 誰かが差し戻したままなら反映しない。別の人の承認で押し切れると、
+  // 差し戻しが意味を持たない
+  var who = prMergeAnyDecision_(decisions, 'request_changes');
+  if (who !== null) {
+    throw new Error(who + ' さんの差し戻しが残っています。直してもらうか、承認し直してもらってください');
+  }
+}
+
+/** decisions の中で kind を下した最初の人を返す。いなければ null (空の名前と分けるため)。 */
+function prMergeAnyDecision_(decisions, kind) {
+  for (var who in decisions) {
+    if (!Object.prototype.hasOwnProperty.call(decisions, who)) continue;
+    if (decisions[who] === kind) return who;
+  }
+  return null;
+}
+
+/**
+ * 反映の手順の 1 と 2。全件のマージ結果を作り、全件が書き戻せることを
+ * 確かめる。1件でも駄目なら投げ、何も書き戻さない。
+ *
+ * **ここで書き戻してはいけない。** 書き戻すのは、全件を作り終えてから
+ * prMergeWriteAll_ が行う。
+ */
+function prMergePlan_(pr, number, targets, into, choiceMap) {
+  var plan = [];
+  for (var t = 0; t < targets.length; t++) {
+    plan.push(prMergePlanOne_(pr, number, targets[t], into, choiceMap));
+  }
+  return plan;
+}
+
+/** 1つの文書のマージ結果を作り、書き戻せるかを確かめる。書き戻さない。 */
+function prMergePlanOne_(pr, number, fileId, into, choiceMap) {
+  var mainRow = dbFindOne('files', 'fileId', fileId);
+  var path = mainRow ? branchSplitPath_(mainRow.path).path : fileId;
+  var type = mainRow ? String(mainRow.type) : 'doc';
+  var intoFileId = prTargetBranchFileId(pr, fileId);
+
+  // 空白の扱いを改める前の記録のままなら、いまの形で記録し直す。
+  // 中身は同じなので、何も編集していない人に退避を押させない
+  prRecordSpacingOnly_(branchWorkingFileId(pr.sourceBranch, fileId),
+    pr.sourceBranch);
+
+  if (prRecordSpacingOnly_(intoFileId, into)) {
+    throw new Error(
+      '「' + (into === 'main' ? '正式版' : into) + '」の ' + path +
+      ' に記録していない変更があります。先にそちらを記録してから' +
+      '反映してください'
+    );
+  }
+
+  var preview = prPreviewMerge(number, fileId);
+  var lines = preview.clean
+    ? preview.lines
+    : resolveConflicts(
+        { lines: preview.lines, conflicts: preview.conflicts },
+        choiceMap[fileId] || []
+      );
+
+  var mergedHtml = linesToHtml_(lines);
+
+  // 書き戻せるかを破壊的操作の前に必ず検証する。検証は種別ごとに違う
+  var mergedBlocks = parseBlocks(mergedHtml);
+  var problems = (type === 'sheet')
+    ? sheetWriterValidate(mergedBlocks)
+    : htmlWriterValidate(mergedBlocks);
+
+  if (problems.length > 0) {
+    throw new Error(
+      path + ' の反映結果を書き戻せません:\n' + problems.join('\n'));
+  }
+
+  return {
+    fileId: preview.intoFileId, html: mergedHtml, type: type, path: path,
+    // 反映先と同じなら書き戻さない。変更セットには直していない文書も
+    // 入りうる。書き戻すと記録が空になって commitFile が断り、前の
+    // 文書だけ書き戻したところで止まる (やり直しても同じ所で落ちる)
+    same: mergedHtml === preview.oursHtml,
+  };
+}
+
+/**
+ * 反映の手順の 3。prMergePlan_ が全件を確かめ終えたあとでだけ呼ぶ。
+ *
+ * @returns {object|null} 最後に作った記録。書き戻すものが無ければ null
+ */
+function prMergeWriteAll_(pr, number, into, plan) {
+  var mergeCommit = null;
+
+  for (var k = 0; k < plan.length; k++) {
+    var step = plan[k];
+    if (step.same) continue;
+
+    // 最後の砦。上の検査から書き戻しまでの間に誰かが Doc を編集した
+    // 場合に備え、書き戻す直前にもう一度見て、変更があれば退避する。
+    // 通常は上の検査で弾かれるためここは通らない
+    if (fileStatus(step.fileId, into).dirty) {
+      commitFile(step.fileId, into, '確認依頼 #' + number + ' を反映する前の退避', null);
+    }
+
+    writeHtmlToFile(step.fileId, step.html, step.type);
+    liveCacheInvalidate(step.fileId);
+
+    mergeCommit = commitFile(
+      step.fileId,
+      into,
+      '反映: 確認依頼 #' + number + ' ' + pr.title,
+      null
+    );
+  }
+  return mergeCommit;
+}
+
+/** 反映が成立したあとの後始末 (やることを閉じる・手元に頼む・知らせる)。 */
+function prMergeAfter_(pr, number, into) {
+  // closes #N のIssueを閉じ、カードを Done に動かす
+  var issues = prClosesIssues_(pr.body);
+  for (var i = 0; i < issues.length; i++) {
+    if (!dbFindOne('issues', 'number', issues[i])) continue;
+    issueClose(issues[i], number);
+    projectMoveIfExists_(issues[i], 'Done');
+  }
+
+  /*
+   * コードの証跡が添えられていたなら、手元に取り込みを頼む。
+   *
+   * **ここで自動的に取り込んではいけない。** この道具はコードを書き換え
+   * ないと決めてあるので、頼むところまでで止める。手元で人と Claude が
+   * 見て進める。
+   *
+   * 頼めなくてもマージは成立している。通知と同じく、失敗で巻き戻さない
+   */
+  if (prHasPatches(number)) {
+    try {
+      outboxAddOnApproval_('merge',
+        { branch: String(pr.sourceBranch), into: String(into) },
+        {
+          prNumber: number,
+          note: '確認依頼 #' + number + '「' + pr.title +
+            '」が承認されました。コードの変更を取り込んでください。',
+        });
+    } catch (e) {
+      Logger.log('取り込みを頼めませんでした: ' + e.message);
+    }
+  }
+
+  notifyPrMerged(pr);
 }
 
 /**
@@ -1300,7 +1370,7 @@ function prTargetBranchFileId(pr, mainFileId) {
   if (into === 'main') return mainFileId;
 
   var fileId = branchWorkingFileId(into, mainFileId);
-  if (!fileId) throw new Error('反映先の版に作業コピーがありません: ' + into);
+  if (!fileId) throw new Error('反映先の版に作業コピーがありません: 「' + into + '」');
 
   return fileId;
 }
@@ -1333,28 +1403,42 @@ function prMergeBase_(branch, into, mainFileId) {
   // 正式版の並びで後ろに出てくるほう (古いほう) が共通の起点。
   // 新しいほうを使うと、相手にまだ無い変更まで「相手が消した」と読め、
   // 黙って消える
-  var chains = [];
-  if (mainFileId) chains.push(commitHistory(mainFileId, 'main'));
+  var chains = prMergeBaseChains_(mainFileId);
+
+  for (var k = 0; k < chains.length; k++) {
+    var older = prOlderInChain_(chains[k], mine, yours);
+    if (older) return older;
+  }
+  return mine;
+}
+
+/** 起点を見比べる正式版の記録の並び。対象が分かればその文書だけ。 */
+function prMergeBaseChains_(mainFileId) {
+  if (mainFileId) return [commitHistory(mainFileId, 'main')];
 
   // 対象が分からない古い呼び出しのために、正式版の全文書を当たる形も残す
+  var chains = [];
   var files = dbReadAll('files');
-  for (var i = 0; i < files.length && !mainFileId; i++) {
+  for (var i = 0; i < files.length; i++) {
     if (branchSplitPath_(files[i].path).branch !== 'main') continue;
     chains.push(commitHistory(files[i].fileId, 'main'));
   }
+  return chains;
+}
 
-  for (var k = 0; k < chains.length; k++) {
-    var chain = chains[k];
-    var mineAt = -1;
-    var yoursAt = -1;
+/**
+ * 1つの並び (新しいものから) の中で、a と b のうち古いほうを返す。
+ * どちらかが並びに無ければ '' (次の並びを当たる)。
+ */
+function prOlderInChain_(chain, a, b) {
+  var aAt = -1;
+  var bAt = -1;
 
-    for (var c = 0; c < chain.length; c++) {
-      if (String(chain[c].sha) === mine) mineAt = c;
-      if (String(chain[c].sha) === yours) yoursAt = c;
-    }
-    if (mineAt < 0 || yoursAt < 0) continue;
-
-    return mineAt > yoursAt ? mine : yours;
+  for (var c = 0; c < chain.length; c++) {
+    if (String(chain[c].sha) === a) aAt = c;
+    if (String(chain[c].sha) === b) bAt = c;
   }
-  return mine;
+  if (aAt < 0 || bAt < 0) return '';
+
+  return aAt > bAt ? a : b;
 }

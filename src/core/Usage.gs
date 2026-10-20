@@ -144,68 +144,93 @@ function usageRecord(rows) {
         var dropped = values.length - kept.length;
         values = kept;
 
-        var at = {};
-        for (var r = 0; r < values.length; r++) {
-          at[usageDayOf_(values[r][0]) + '\t' + values[r][1] + '\t' + values[r][2] +
-            '\t' + values[r][4]] = r;
-        }
+        var merged = usageMerge_(list, values, day, me);
 
-        var kinds = USAGE_KINDS();
-        var added = [];
-
-        // 同じまとめの中に同じ場所が2度入ることがある。**足し先を values の
-        // 長さから数えると、まだ書いていない行を指してしまう。** 以前は
-        // `values[at[key]]` が undefined になって例外で終わり、そのまとめの
-        // ぶんが黙って失われていた
-        var addedAt = {};
-        var touched = dropped > 0;
-        var done = 0;
-
-        for (var i = 0; i < list.length; i++) {
-          var kind = String(list[i].kind || '');
-          var target = String(list[i].target || '');
-          var count = Math.round(Number(list[i].count) || 0);
-
-          if (kinds.indexOf(kind) < 0) continue;
-          if (!usageTargetValid_(target)) continue;
-          if (count < 1 || count > 10000) continue;
-
-          var key = day + '\t' + kind + '\t' + target + '\t' + me;
-
-          if (Object.prototype.hasOwnProperty.call(at, key)) {
-            values[at[key]][3] = (Number(values[at[key]][3]) || 0) + count;
-            touched = true;
-          } else if (Object.prototype.hasOwnProperty.call(addedAt, key)) {
-            added[addedAt[key]][3] = (Number(added[addedAt[key]][3]) || 0) + count;
-          } else {
-            addedAt[key] = added.length;
-            added.push([day, kind, target, count, me]);
-          }
-          done++;
-        }
-
-        // 字のセルは ' を付けて書く (dbCell_)。付けないと '1-2' のような場所が
-        // 日付に化けて、次から足し込めなくなる
-        var cells = function (list) {
-          return list.map(function (row) {
-            return row.map(function (v, c) { return dbCell_(cols[c], v); });
-          });
-        };
-        if (touched && values.length) {
-          sheet.getRange(2, 1, values.length, cols.length).setValues(cells(values));
-        }
-        if (added.length) {
-          sheet.getRange(values.length + 2, 1, added.length, cols.length)
-            .setValues(cells(added));
-        }
+        usageWriteBack_(sheet, cols, values, merged.added, merged.touched || dropped > 0);
 
         // 落としたぶんだけ行が余る。消さないと、書き戻した中身の下に
         // 古い行が残ったままになる
         for (var d = 0; d < dropped; d++) {
-          sheet.deleteRow(values.length + added.length + 2);
+          sheet.deleteRow(values.length + merged.added.length + 2);
         }
-        return done;
+        return merged.done;
   }, function () { return 0; });
+}
+
+/** 足し込む1件を読む。数えない種類・場所・回数なら null */
+function usageEntry_(item, kinds) {
+  var kind = String(item.kind || '');
+  var target = String(item.target || '');
+  var count = Math.round(Number(item.count) || 0);
+
+  if (kinds.indexOf(kind) < 0) return null;
+  if (!usageTargetValid_(target)) return null;
+  if (count < 1 || count > 10000) return null;
+  return { kind: kind, target: target, count: count };
+}
+
+/**
+ * 今の行 (values) に足し込み、無い場所は新しい行 (added) にする。values は書き換える。
+ *
+ * @returns {{added: Array[], touched: boolean, done: number}} touched は values を変えたか
+ */
+function usageMerge_(list, values, day, me) {
+  var at = {};
+  for (var r = 0; r < values.length; r++) {
+    at[usageDayOf_(values[r][0]) + '\t' + values[r][1] + '\t' + values[r][2] +
+      '\t' + values[r][4]] = r;
+  }
+
+  var kinds = USAGE_KINDS();
+  var added = [];
+
+  // 同じまとめの中に同じ場所が2度入ることがある。**足し先を values の
+  // 長さから数えると、まだ書いていない行を指してしまう。** 以前は
+  // `values[at[key]]` が undefined になって例外で終わり、そのまとめの
+  // ぶんが黙って失われていた
+  var addedAt = {};
+  var touched = false;
+  var done = 0;
+
+  for (var i = 0; i < list.length; i++) {
+    var one = usageEntry_(list[i], kinds);
+    if (!one) continue;
+
+    var key = day + '\t' + one.kind + '\t' + one.target + '\t' + me;
+
+    if (Object.prototype.hasOwnProperty.call(at, key)) {
+      values[at[key]][3] = (Number(values[at[key]][3]) || 0) + one.count;
+      touched = true;
+    } else if (Object.prototype.hasOwnProperty.call(addedAt, key)) {
+      added[addedAt[key]][3] = (Number(added[addedAt[key]][3]) || 0) + one.count;
+    } else {
+      addedAt[key] = added.length;
+      added.push([day, one.kind, one.target, one.count, me]);
+    }
+    done++;
+  }
+  return { added: added, touched: touched, done: done };
+}
+
+/**
+ * 今の行を (変えたときだけ) 書き戻し、新しい行をその下に書く。
+ *
+ * 字のセルは ' を付けて書く (dbCell_)。付けないと '1-2' のような場所が
+ * 日付に化けて、次から足し込めなくなる
+ */
+function usageWriteBack_(sheet, cols, values, added, touched) {
+  var cells = function (list) {
+    return list.map(function (row) {
+      return row.map(function (v, c) { return dbCell_(cols[c], v); });
+    });
+  };
+  if (touched && values.length) {
+    sheet.getRange(2, 1, values.length, cols.length).setValues(cells(values));
+  }
+  if (added.length) {
+    sheet.getRange(values.length + 2, 1, added.length, cols.length)
+      .setValues(cells(added));
+  }
 }
 
 /**
@@ -291,99 +316,100 @@ function usageWeekday_(day) {
  */
 function usageSummary(days, today, who) {
   var range = usageSpan_(days, today);
-  var from = range.from;
-  var to = range.to;
   var target = String(who || '');
 
   var rows = dbReadAll('usage');
-  var byTarget = {};
-  var order = [];
-  var byDay = {};
-  var dayOrder = [];
-  var byUser = {};
-  var userOrder = [];
-  var total = 0;
-  var byWeekday = [0, 0, 0, 0, 0, 0, 0];
-  var prevByTarget = {};
-  var prevOrder = [];
-  var prevTotal = 0;
+  var acc = {
+    byTarget: usageTally_(),
+    byDay: usageTally_(),
+    byUser: usageTally_(),
+    total: 0,
+    byWeekday: [0, 0, 0, 0, 0, 0, 0],
+  };
+  var prev = { byTarget: usageTally_(), total: 0 };
 
   for (var i = 0; i < rows.length; i++) {
     var day = usageDayOf_(rows[i].day);
 
     if (day >= range.prevFrom && day <= range.prevTo) {
-      if (target && String(rows[i].user || '') !== target) continue;
-      var prevKey = String(rows[i].kind) + ':' + String(rows[i].target);
-      if (!prevByTarget[prevKey]) {
-        prevByTarget[prevKey] = {
-          kind: String(rows[i].kind), target: String(rows[i].target), count: 0,
-        };
-        prevOrder.push(prevKey);
-      }
-      var prevCount = Number(rows[i].count) || 0;
-      prevByTarget[prevKey].count += prevCount;
-      prevTotal += prevCount;
+      usageSummaryAddPrev_(prev, rows[i], target);
       continue;
     }
-    if (day < from || day > to) continue;
+    if (day < range.from || day > range.to) continue;
 
-    var user = String(rows[i].user || '');
-    var count = Number(rows[i].count) || 0;
-
-    // 人ごとの並びは、絞り込んでいても全員ぶんを出す。誰が使って
-    // いるかは、一人を見ているときにも知りたい
-    if (!byUser[user]) {
-      byUser[user] = { who: user, count: 0 };
-      userOrder.push(user);
-    }
-    byUser[user].count += count;
-
-    if (target && user !== target) continue;
-
-    var key = String(rows[i].kind) + ':' + String(rows[i].target);
-
-    if (!byTarget[key]) {
-      byTarget[key] = {
-        kind: String(rows[i].kind), target: String(rows[i].target), count: 0,
-      };
-      order.push(key);
-    }
-    byTarget[key].count += count;
-
-    if (!byDay[day]) {
-      byDay[day] = { day: day, count: 0 };
-      dayOrder.push(day);
-    }
-    byDay[day].count += count;
-    total += count;
-
-    var weekday = usageWeekday_(day);
-    if (weekday >= 0) byWeekday[weekday] += count;
+    usageSummaryAdd_(acc, rows[i], day, target);
   }
 
-  var prevTargets = prevOrder.map(function (k) { return prevByTarget[k]; });
-  prevTargets.sort(function (a, b) { return b.count - a.count; });
-
-  var targets = order.map(function (k) { return byTarget[k]; });
-  targets.sort(function (a, b) { return b.count - a.count; });
-
-  var users = userOrder.map(function (u) { return byUser[u]; });
-  users.sort(function (a, b) { return b.count - a.count; });
-
-  dayOrder.sort();
-  var daily = dayOrder.map(function (d) { return byDay[d]; });
+  var dailyOrder = acc.byDay.order.slice().sort();
 
   return {
-    from: from,
-    to: to,
+    from: range.from,
+    to: range.to,
     who: target,
-    total: total,
-    byTarget: targets,
-    byDay: daily,
-    byUser: users,
-    byWeekday: byWeekday,
-    prev: { total: prevTotal, byTarget: prevTargets },
+    total: acc.total,
+    byTarget: usageByCount_(acc.byTarget),
+    byDay: dailyOrder.map(function (d) { return acc.byDay.map[d]; }),
+    byUser: usageByCount_(acc.byUser),
+    byWeekday: acc.byWeekday,
+    prev: { total: prev.total, byTarget: usageByCount_(prev.byTarget) },
   };
+}
+
+/** 出てきた順を覚えて数を足し込む入れ物 */
+function usageTally_() {
+  return { map: {}, order: [] };
+}
+
+/** key の行が無ければ make() で作ってから count を足す */
+function usageTallyAdd_(tally, key, make, count) {
+  if (!tally.map[key]) {
+    tally.map[key] = make();
+    tally.order.push(key);
+  }
+  tally.map[key].count += count;
+}
+
+/** 多い順に並べる (同じ数なら出てきた順) */
+function usageByCount_(tally) {
+  var list = tally.order.map(function (k) { return tally.map[k]; });
+  list.sort(function (a, b) { return b.count - a.count; });
+  return list;
+}
+
+/** 場所ごとの行の作り方 */
+function usageTargetRow_(row) {
+  return function () {
+    return { kind: String(row.kind), target: String(row.target), count: 0 };
+  };
+}
+
+/** 前の期間の1行を足す。絞り込んでいれば、その人のぶんだけ */
+function usageSummaryAddPrev_(prev, row, target) {
+  if (target && String(row.user || '') !== target) return;
+  var count = Number(row.count) || 0;
+  usageTallyAdd_(prev.byTarget, String(row.kind) + ':' + String(row.target),
+    usageTargetRow_(row), count);
+  prev.total += count;
+}
+
+/** 見ている期間の1行を足す */
+function usageSummaryAdd_(acc, row, day, target) {
+  var user = String(row.user || '');
+  var count = Number(row.count) || 0;
+
+  // 人ごとの並びは、絞り込んでいても全員ぶんを出す。誰が使って
+  // いるかは、一人を見ているときにも知りたい
+  usageTallyAdd_(acc.byUser, user, function () { return { who: user, count: 0 }; }, count);
+
+  if (target && user !== target) return;
+
+  usageTallyAdd_(acc.byTarget, String(row.kind) + ':' + String(row.target),
+    usageTargetRow_(row), count);
+  usageTallyAdd_(acc.byDay, day, function () { return { day: day, count: 0 }; }, count);
+  acc.total += count;
+
+  var weekday = usageWeekday_(day);
+  if (weekday >= 0) acc.byWeekday[weekday] += count;
 }
 
 /**
