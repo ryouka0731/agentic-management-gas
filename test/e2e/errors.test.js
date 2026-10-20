@@ -63,7 +63,7 @@ describe('サーバに断られたとき', () => {
     click($('#draft-create-btn'));
     fillSideForm({ name: '見直し' }); submitSideForm(); await e2e.settle();
 
-    expect(e2e.snacks.join(' ')).toContain('作れませんでした: 同じ名前の改訂版が既にあります: 見直し');
+    expect(e2e.snacks.join(' ')).toContain('作れませんでした: 同じ名前の改訂版が既にあります: 「見直し」');
     expect($('#side-body [name="name"]').value).toBe('見直し');
     expect(e2e.rows('branches').filter((b) => b.name === '見直し')).toHaveLength(1);
   }, LONG);

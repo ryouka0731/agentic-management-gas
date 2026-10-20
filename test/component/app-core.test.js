@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mount } from './mount.js';
+import { takeUncaught } from '../dom.js';
 
 /*
  * 画面の土台 (app.js) の道具: 画面側のエラーの帯、差分の読み替え、掴み手のキー操作、
@@ -27,6 +28,8 @@ describe('画面側のエラーを帯で見せる', () => {
     window.dispatchEvent(Object.assign(new window.Event('unhandledrejection'), { reason: '字だけ' }));
     expect($('#fatal-error').textContent).toContain('字だけ');
     expect(document.querySelectorAll('#fatal-error')).toHaveLength(1);
+    // わざと起こした例外なので、受け止めなかった例外としては数えない
+    takeUncaught();
   });
 });
 
