@@ -128,3 +128,35 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 色はトークンだけ (`.fun-tone-<accent|success|warn|danger|merged>` が `color` を置き、影や枠は `currentColor`)。
   粒の色も `getComputedStyle` でトークンから読む
 - 試すのは `test/component/fun.test.js`
+- 集中のしかた (`js-focus`) の LET'S GO!! と SUPER COMPLETE!! も `FUN_CHEERS()` の行 (`apiFocusStart` / `apiFocusEnd` の done)。
+  お祝いがオフの人には js-focus が落ち着いた帯を出す
+
+## 集中のしかた (`js-focus`)
+
+自分の設定の「集中のしかた」(`focus.start` / `focus.remind` / `focus.sound`) をオンにした人の画面にだけ出す。**既定はオフ。**
+項目は `PREFS_SCHEMA()` (`PREF_FOCUS_ITEMS_`) が持ち、画面は `prefs.effective.focus` を `focusOn()` / `focusSoundOn()` /
+`focusRemindEvery()` で読むだけ。オフのあいだは入口 (`makeFocusStartButton` / `makeFocusRecordButton`) が null を返し、
+`apiFocusMine` も呼ばない。サーバは `src/core/Focus.gs` と `src/api/Focus.gs`、台帳は `focus_sessions`。
+
+- **「始めた」は番頭の中の手で確かめる** (カメラは使わない)。`call()` の成功の枝から `focusAfterCall(name, args)` を呼び、
+  集中しているやることへの `apiIssueComment` / `apiIssueUpdate` / `apiProjectMove` (作業中へ) / `apiCommit*` なら
+  `apiFocusProve` を呼ぶ (最初の一手だけで「始めた」ものも、台帳の手でポイントが付くので呼ぶ。返事の `credited`)。
+  開いた時刻は画面の時計で送らず、開いたときに `apiFocusOpen` を呼んでサーバに覚えてもらう。**本来の返事の扱い (`ok`) のあとに置く** (先に置くと、確かめた帯を本来の帯が上書きする)。
+  サーバは台帳に本人の手が始めたあとにあるときだけ付ける (画面の言い分だけでは付けない。ボードの移し替えは履歴に
+  残らないので、始めた時点の置き場 `columnAtStart` が作業中でも完了でもなく、いまの置き場が作業中かで見る。
+  始める前から作業中だったカードを数えると何もしなくても付く。`columnAtStart` が空の古い行はボードの手を数えない)。そのやることへの `apiIssueClose` は集中を「やりきった」で終える。
+  そのときはふつうの完了のお祝い (CLEAR!) を出さない (`focusClosesSession` を `funCheerAfter` が見る。SUPER COMPLETE!! と重ねない)。
+  集中の画面は右のペインを隠すので、記録と技の図鑑を開くときは集中の画面を戻す (`openFocusRecord`)
+- **残りは時刻の差で数える** (`focusRemainingMs`)。背景のタブでは時計が間引かれるので、刻みを数えない。タブの題名にも
+  残りを出し (`focusTitleOf`)、終えたら元に戻す
+- **音は押した聞き手の中でだけ作る** (`focusSoundPlay`)。番頭は別の場所の枠の中で動くので、押した中で作らないと鳴らない。
+  読み込みや表示では作らない。1小節 (ノイズは4秒) を `AudioBuffer` に描き、`loop` で繰り返す (拍を時計で打たない)。
+  音の形は画面に依らない関数 (`focusRenderBar` / `focusRenderNoise` / `focusKickFreq` …) にしてあり、
+  `test/focus-ui.test.js` が `test/ui-source.js` の `ui()` で切り出して確かめる。`AudioContext` の無い環境 (jsdom) では
+  欄を出さず断りだけ出す。大きさは `FOCUS_GAIN_MAX` を超えない
+- **集中の画面は CSS で隠すだけ** (`body.focus-mode`)。右のペインも掴み手も知らせの数も、状態は変えずに見えなくする。
+  Esc で戻り、集中を終えたら必ず戻す (`focusClear`)
+- 置き場 (`#focus-dock`) は初めて要るときに作る。字は `textContent` だけ。色はトークンだけ
+- 「ADHD」など人を分ける言葉は画面に出さない。「集中のしかた」として全員向けに書き、効き目を約束しない
+- 試すのは `test/component/focus.test.js` (押して確かめる)・`test/focus-ui.test.js` (計算と音の形)・
+  `test/focus.test.js` (サーバ)・`test/e2e/focus.test.js` (通し)

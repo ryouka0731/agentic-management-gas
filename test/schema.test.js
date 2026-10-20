@@ -41,6 +41,8 @@ const EXPECTED = {
     'resolvedAt', 'resolution', 'sprint', 'updatedAt'],
   impediment_comments: ['id', 'impedimentNumber', 'body', 'by', 'at', 'editedAt'],
   change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
+  focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
+    'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
 };
 
 describe('メタDBの列順', () => {

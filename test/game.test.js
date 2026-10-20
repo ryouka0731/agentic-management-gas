@@ -482,7 +482,8 @@ describe('ゲームの API', () => {
     } finally {
       ctx.dbReadAll = real;
     }
-    expect(reads).toEqual({ issues: 1, change_log: 1, pulls: 1, reviews: 1 });
+    // 集中のしかたの「始めた」(focus_sessions) も同じ読みから数える
+    expect(reads).toEqual({ issues: 1, change_log: 1, pulls: 1, reviews: 1, focus_sessions: 1 });
   });
 
   it('称号とチームの合計を返す。オフなら何も返さない', () => {

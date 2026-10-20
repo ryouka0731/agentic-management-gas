@@ -14,6 +14,12 @@
   (`reviewBackfillIds_`) 形にした
 - `test/schema.test.js` が全テーブルの列と順序を固定している
 
+`focus_sessions` (集中のしかた) は `id` を `dbAppendNumbered` で振る通し番号にしている。`who` は小文字のアドレス。
+時刻の欄 (`startedAt` / `openedAt` / `provedAt` / `endedAt`) は Date で書く。やることを `issuePurge` で消すと一緒に消す。
+`columnAtStart` は始めた時点のボードの置き場 (カードが無ければ `none`)。ボードの移し替えは履歴に残らないので、
+「始めたあとに作業中へ動かした」をこれと今の置き場で確かめる。**列を足す前の行は空のままにし、空は「分からない」として
+ボードの手を数えない** (埋め直すと、始める前から作業中だったカードが「始めた」になる)。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

@@ -4891,4 +4891,75 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   .fun-layer * { animation: none !important; }
   .fun-canvas, .fun-flash { display: none; }
 }
+/* ===== 集中のしかた (js-focus。自分の設定でオンにした人だけ) ===== */
+.focus-dock {
+  position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 350;
+  width: 340px; max-width: calc(100vw - 2 * var(--sp-4)); max-height: calc(100vh - 2 * var(--sp-4)); overflow: auto;
+  box-sizing: border-box; padding: var(--sp-4); border-radius: var(--radius);
+  background: var(--surface-raised); color: var(--ink); box-shadow: var(--hairline), var(--elev-2);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.focus-dock.is-running { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--sp-3); }
+.focus-dock.is-running > .focus-note, .focus-dock.is-running > .focus-timeup,
+.focus-dock.is-running > .focus-controls { grid-column: 1 / -1; }
+.focus-head { display: flex; align-items: center; gap: var(--sp-2); }
+.focus-head h3 { margin: 0; flex: 1; font-size: 15px; }
+.focus-what { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.focus-lengths { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.focus-lengths .seg { border-radius: var(--radius-sm); box-shadow: var(--hairline); }
+.focus-lengths .seg + .seg { border-left: 0; }
+.focus-custom { width: 72px; }
+.focus-step-field { display: flex; flex-direction: column; gap: var(--sp-1); }
+.focus-step-field input { box-sizing: border-box; min-width: 0; }
+.focus-sound { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); }
+.focus-sound-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.focus-ear { margin: 0; }
+.focus-ring { position: relative; width: 120px; height: 120px; }
+.focus-ring svg { width: 120px; height: 120px; display: block; }
+.focus-ring-track { fill: none; stroke: var(--line); stroke-width: 10; }
+.focus-ring-bar { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear; }
+.focus-ring-text { position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center;
+  padding-top: 38px; box-sizing: border-box; }
+.focus-left { font-size: 36px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.focus-unit { font-size: 13px; color: var(--ink-2); margin-left: 2px; }
+.focus-side { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.focus-first { margin: 0; overflow-wrap: anywhere; }
+.focus-proof p { margin: 0; }
+.chip.focus-proved { color: var(--success); background: var(--success-bg); }
+.focus-note { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--ink); }
+.focus-timeup { padding: var(--sp-3); border-radius: var(--radius-sm); background: var(--warn-bg); }
+.focus-timeup-text { margin: 0 0 var(--sp-2); font-weight: 600; }
+.focus-controls { display: flex; flex-direction: column; gap: var(--sp-2); }
+.focus-controls .inline-form-actions { flex-wrap: wrap; }
+/* 集中の画面: 横の帯・右のペイン・知らせの数を隠す。知らせそのものは届いている (Esc で戻る) */
+body.focus-mode .sidebar, body.focus-mode #resizer, body.focus-mode #side-panel, body.focus-mode #side-resizer,
+body.focus-mode .notice-panel, body.focus-mode .bell-count, body.focus-mode .nav-count,
+body.focus-mode .mobile-nav { display: none !important; }
+.focus-record-head { margin: var(--sp-4) 0 var(--sp-2); font-size: 14px; }
+.focus-week { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin: 0; }
+.focus-week div { padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); }
+.focus-week dt { font-size: 12px; color: var(--ink-2); }
+.focus-week dd { margin: 0; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.focus-bars { display: flex; flex-direction: column; gap: var(--sp-1); }
+.focus-bar-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 32px; align-items: center; gap: var(--sp-2); }
+.focus-bar-label, .focus-bar-count { font-size: 12px; color: var(--ink-2); }
+.focus-bar-count { text-align: right; font-variant-numeric: tabular-nums; }
+.focus-bar-track { height: 10px; border-radius: 999px; background: var(--bg-3); overflow: hidden; }
+.focus-bar-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.focus-badges { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--sp-2); }
+.focus-badge { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-2); border-radius: var(--radius); background: var(--bg-2); color: var(--ink-2); }
+.focus-medal { width: 44px; height: 44px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 18px; background: var(--bg-3); color: var(--ink-2); box-shadow: var(--hairline); }
+.focus-badge.is-done { color: var(--ink); background: var(--surface-raised); box-shadow: var(--hairline), var(--elev-1); }
+.focus-badge.is-done .focus-medal { background: var(--warn-bg); color: var(--warn); box-shadow: 0 0 0 2px var(--warn); }
+.focus-badge-name { font-weight: 700; }
+.focus-badge-sub { font-size: 11px; }
+@media (max-width: 767px) {
+  .focus-dock { right: var(--sp-4); left: var(--sp-4); width: auto; bottom: calc(var(--sp-4) + 56px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-ring-bar { transition: none; }
+}
 </style>
