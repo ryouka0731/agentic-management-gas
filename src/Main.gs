@@ -1471,9 +1471,11 @@ function apiPrCommits(number) {
  * 動いている apiPrList / apiBranchList と同じく、明示的に文字列へ直す。
  *
  * @param {object} row issues 行
+ * @param {number[]} [steps] 「動きなし」の段階。一覧では staleSteps_() を1回だけ読んで渡す
  * @returns {object}
  */
-function issueToPlain_(row) {
+function issueToPlain_(row, steps) {
+  var stale = stalenessOf(row, new Date(), steps || staleSteps_());
   return {
     number: plainId(row.number),
     title: plainText(row.title),
@@ -1498,8 +1500,8 @@ function issueToPlain_(row) {
     archivedAt: plainDate(row.archivedAt),
     daysLeft: row.archivedAt ? archiveDaysLeft(row.archivedAt, new Date()) : '',
     updatedAt: plainDate(row.updatedAt),
-    staleDays: stalenessOf(row, new Date()).days,
-    staleLevel: stalenessOf(row, new Date()).level,
+    staleDays: stale.days,
+    staleLevel: stale.level,
     // エージェンティックスクラム (既定はオフ)。オフのときは空のまま届く
     sprint: plainText(row.sprint),
     points: plainNumber(row.points),
@@ -1516,7 +1518,8 @@ function issueToPlain_(row) {
 function apiIssueList(state) {
   var rows = issueList(state || null);
   var out = [];
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  var steps = staleSteps_();
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -1902,9 +1905,10 @@ function apiTallyEffort(unit, basis, who) {
 
   var rows = issueList(null);
   var plain = [];
+  var steps = staleSteps_();
 
   for (var i = 0; i < rows.length; i++) {
-    var one = issueToPlain_(rows[i]);
+    var one = issueToPlain_(rows[i], steps);
     var who = one.assignees;
 
     if (!who.length) {
@@ -2336,8 +2340,9 @@ function apiIssuePurge(number) {
 function apiIssueArchivedList() {
   var rows = issueListArchived();
   var out = [];
+  var steps = staleSteps_();
 
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -2422,7 +2427,8 @@ function apiIssueCreateBranch(number, fileId) {
 function apiIssuesForFile(fileId) {
   var rows = issuesForFile(fileId);
   var out = [];
-  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i]));
+  var steps = staleSteps_();
+  for (var i = 0; i < rows.length; i++) out.push(issueToPlain_(rows[i], steps));
   return out;
 }
 
@@ -3339,10 +3345,11 @@ function apiHomeSummary() {
   var now = new Date();
   var tables = homeTables_();
   var turn = homeMyTurn_(me, now, tables);
-  // 改善のヒントは無くてもホームは使える。落ちてもほかの区画は返す
+  // 改善のヒントは無くてもホームは使える。落ちてもほかの区画は返す。
+  // ホームに出さないと決めた人のぶんは数えない (表をいくつも読むので)
   var advice = [];
   try {
-    advice = homeAdvice_(me, now, tables);
+    if (prefGet_('home.cards.advice', me)) advice = homeAdvice_(me, now, tables);
   } catch (e) {
     Logger.log('改善のヒントを出せませんでした: ' + e.message);
   }

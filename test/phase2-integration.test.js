@@ -29,7 +29,7 @@ const SOURCES = [
   // PullRequest.gs は Issue とボードと通知を呼ぶ。GAS は全ファイルを
   // 同じグローバルに読むため、テストでも同じ集合を読ませる
   'src/core/Archive.js',
-  'src/core/Staleness.js',
+  'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs',
   'src/core/Template.gs',
   'src/core/Member.gs',
