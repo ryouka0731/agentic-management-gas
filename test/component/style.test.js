@@ -7,7 +7,7 @@ import { mount } from './mount.js';
 
 /*
  * 仕事のスタンス診断 (js-style)。自分まわりから開き、20問に答えると型が出る。
- * 返事はサーバの定義 (src/core/WorkStyle.js) から本物の api で作る (画面に写しを持たせない)。
+ * 返事はサーバの定義 (src/core/WorkStyleTypes.js) から本物の api で作る (画面に写しを持たせない)。
  */
 
 const $ = (s) => document.querySelector(s);

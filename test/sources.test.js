@@ -40,6 +40,14 @@ describe('読み込む並び', () => {
     expect([...API_SOURCES].sort()).toEqual(entry);
   });
 
+  it('拡張子だけが違う同じ名前のファイルを src に置かない (clasp が送れない)', () => {
+    // GAS では .js も .gs も同じ「スクリプト」になり、名前から拡張子が外れる。WorkStyle.js と WorkStyle.gs を
+    // 並べたら、テストは全部通ったのに clasp push が「Conflicting files found」で止まり、反映できなかった
+    const names = runtimeFiles().filter((f) => /\.(js|gs)$/.test(f)).map((f) => f.replace(/\.(js|gs)$/, ''));
+    const dup = names.filter((n, i) => names.indexOf(n) !== i);
+    expect(dup).toEqual([]);
+  });
+
   it('同じ名前の関数を2つのファイルに書かない', () => {
     // 同じグローバルなので、後に読んだほうが黙って勝つ。どちらが勝つかは読む順で変わる
     const seen = new Map();

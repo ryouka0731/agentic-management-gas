@@ -42,7 +42,7 @@ export const CORE_SOURCES = [
   'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/IssueTree.js',
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
-  'src/core/WorkStyle.js', 'src/core/WorkStyle.gs',
+  'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs',
 ];
 
 export const API_SOURCES = [
