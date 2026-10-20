@@ -69,6 +69,18 @@ describe('言葉の表し方は自分の設定', () => {
     ctx.apiPrefSet('terms.style', 'scrum');
     expect(ctx.apiPrefs().effective.termStyle).toBe('scrum');
   });
+
+  it('最初に出す画面の選択肢は {key} で渡し、画面が言葉の表し方で埋める', async () => {
+    const { loadGasWith } = await import('./harness.js');
+    const { createFakeGas } = await import('./fakegas.js');
+    const ctx = loadGasWith(createFakeGas(), ...SOURCES);
+    ctx.repoInit('agentic-management');
+    ctx.PropertiesService.getScriptProperties().setProperty(ctx.SCRUM_ENABLED_KEY(), 'true');
+    const p = ctx.apiPrefs().items.filter((x) => x.key === 'start.tab')[0];
+    const label = (v) => p.options.filter((o) => o.value === v)[0].label;
+    expect(label('sprint')).toBe('{sprint}');
+    expect(label('impediments')).toBe('{impediment}');
+  });
 });
 
 /*

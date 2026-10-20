@@ -658,7 +658,9 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
   (作業期間・困りごと…)、自分の設定 `terms.style` で「スクラムの言葉」を選んだ人にだけスクラムの言葉で出す。
   画面は写し (`term` / `termFill`。`test/ui-parity.test.js`) を `termOf(key)` / `termIn('…{key}…')` で通し、
   **字を直に書かない** (`test/terms.test.js` がコメントを除いて走査する)。静の HTML は `data-term` に置き、
-  `applyTerms` が埋める。文ごと両方の形を持たず、言葉だけを差し込む。用語の説明 (`SCRUM_GLOSSARY`) は
+  `applyTerms` が埋める (描いた字も `termText` で印を付けると埋め直る)。文ごと両方の形を持たず、言葉だけを差し込む。
+  表し方が変わっても**取り直さない** (`refreshTerms` は最後の返事から描き直す)。サーバが人ごとに変わる名前を
+  渡すときは `{key}` のまま渡し、画面が埋める (`PREF_START_TABS_`)。用語の説明 (`SCRUM_GLOSSARY`) は
   TERMS の key で引く (見出しの字は人で変わる)。ゲームのポイントは別物なので変えない。
   台帳の列名・API 名・データ・`kit/` (エンジニア向け) も変えない
 - **サーバの文 (断り・知らせ・説明) は一般の言葉に固定する。** 人ごとに切り替えると、キューやトリガーから
@@ -759,7 +761,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 - **サーバ側と UI 側の両方にある関数がある**。`google.script.run` の往復を
   減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**:
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
-  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort`
+  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill`
 - **イテレータを回しながら Drive のファイルを移動しない**。先に対象を集める
 - **コマンドキューは「処理済みへ移す」だけでは二度実行を防げない。** 命令は手元が
   Drive の同期フォルダに置いたもので、手元に実体が残っていると同期の都合で
