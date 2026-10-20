@@ -116,7 +116,7 @@ function usageRecord(rows) {
 
   // チームで止めたとき・本人が止めたときは数えない。鍵も取らない
   // 設定が読めないときは数え続ける (止めたつもりの無い人の記録を黙って落とさない)
-  var who = Session.getActiveUser().getEmail();
+  var who = currentEmail_();
   var on = true;
   try {
     on = prefGet_('usage.enabled') !== false && prefGet_('usage.self', who) !== false;
@@ -135,7 +135,7 @@ function usageRecord(rows) {
           ? sheet.getRange(2, 1, last - 1, cols.length).getValues() : [];
 
         // 押した人は画面から受け取らない。名乗りを詐称できてしまう
-        var me = Session.getActiveUser().getEmail();
+        var me = currentEmail_();
         var day = usageDay();
 
         // 古いぶんは落としてから足し込む。落とさないと丸ごとの読み書きが

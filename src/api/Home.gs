@@ -9,7 +9,7 @@
  */
 function apiProgress() {
   var p = motivationProgress(new Date());
-  p.canEditGoal = repoIsAdmin_(String(Session.getActiveUser().getEmail() || ''));
+  p.canEditGoal = repoIsAdmin_(currentEmail_());
   return p;
 }
 
@@ -31,7 +31,7 @@ function apiSetTeamGoal(n) {
  * @returns {object[]}
  */
 function apiMyMilestones() {
-  return motivationMilestones_(String(Session.getActiveUser().getEmail() || '')).map(function (m) {
+  return motivationMilestones_(currentEmail_()).map(function (m) {
     return { key: m.key, label: m.label, hint: m.hint, tab: m.tab, done: !!m.done };
   });
 }
@@ -62,7 +62,7 @@ function apiCloseFeedback(number) {
   }
   if (fb.days) out.days = plainNumber(fb.days);
   if (gameEnabled() && fb.closed) {
-    var g = gameAfterClose_(String(Session.getActiveUser().getEmail() || ''), Number(number),
+    var g = gameAfterClose_(currentEmail_(), Number(number),
       { issues: issues });
     out.points = plainNumber(g.points);
     if (g.levelUp) out.levelUp = plainNumber(g.levelUp);
@@ -76,7 +76,7 @@ function apiCloseFeedback(number) {
  * @returns {Array<{kind: string, number: number, title: string}>}
  */
 function apiMyToday() {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   return myToday_(me, new Date()).map(function (x) {
     return { kind: plainText(x.kind), number: plainId(x.number), title: plainText(x.title) };
   });
@@ -88,7 +88,7 @@ function apiMyToday() {
  * @returns {{weeks: Array<Array<{day: string, me: number, team: number, future: boolean}>>, meTotal: number}}
  */
 function apiHomeActivity() {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var act = homeActivity_(me, new Date());
   return {
     weeks: act.weeks.map(function (w) {
@@ -106,7 +106,7 @@ function apiHomeActivity() {
  * @returns {{myTurn: object, recent: object[], advice: object[]}}
  */
 function apiHomeSummary() {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var now = new Date();
   var tables = homeTables_();
   var turn = homeMyTurn_(me, now, tables);
@@ -174,7 +174,7 @@ function homeAdvicePlain_(advice) {
  * @returns {{parts: object, templates: object[], kind: string, custom: string}}
  */
 function apiReportParts() {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   return {
     parts: reportPartsPlain_(reportParts_(me, new Date())),
     templates: REPORT_TEMPLATES().map(function (t) {
@@ -214,7 +214,7 @@ function reportPartsPlain_(p) {
  * @returns {{kind: string}}
  */
 function apiSetReportKind(kind) {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   return { kind: plainText(reportSetKind_(me, kind)) };
 }
 
@@ -226,7 +226,7 @@ function apiSetReportKind(kind) {
  * @returns {{custom: string, kind: string}}
  */
 function apiSetReportCustom(text) {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   var custom = reportSetCustom_(me, text);
   return { custom: plainText(custom), kind: plainText(reportKind_(me)) };
 }

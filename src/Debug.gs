@@ -900,7 +900,7 @@ function debugVerifySharedDrive() {
   var members = driveMembers_(driveId);
   check('持ち主 (organizer) が読めた', members.owners.length > 0, members.owners.join(', '));
   check('自分が持ち主に入っている',
-    members.owners.indexOf(String(Session.getActiveUser().getEmail() || '').toLowerCase()) >= 0);
+    members.owners.indexOf(currentEmailLower_()) >= 0);
 
   var queue = commandQueueFolder_();
   // 名前は毎回変える。同じ名前だと、打ち切られて残った処理済みの命令を commandAlreadyRan_ が

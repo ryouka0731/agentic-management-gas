@@ -21,7 +21,7 @@ function apiPrList() {
 
   // 取り下げられるかはサーバが決める。画面で決めると、他人の依頼を
   // 自分のものだと名乗って取り下げられる
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   // 一覧の1件ごとに Drive へ問い合わせない。先に1回だけ求める
   var isAdmin = repoIsAdmin_(me);
 
@@ -267,7 +267,7 @@ function apiPrReviews(number) {
   reviewBackfillIds_();
 
   var rows = dbReadAll('reviews');
-  var me = Session.getActiveUser().getEmail();
+  var me = currentEmail_();
   var out = [];
 
   for (var i = 0; i < rows.length; i++) {

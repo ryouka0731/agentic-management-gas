@@ -134,7 +134,7 @@ function tagCreateLocked_(name, color) {
     name: clean,
     color: pick,
     builtin: false,
-    createdBy: Session.getActiveUser().getEmail(),
+    createdBy: currentEmail_(),
     createdAt: new Date(),
   };
   dbAppend('tags', row);

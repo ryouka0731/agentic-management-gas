@@ -66,7 +66,7 @@ function repoInit(rootFolderName) {
     baseSha: '',
     state: 'open',
     workingFolderId: config.mainId,
-    createdBy: Session.getActiveUser().getEmail(),
+    createdBy: currentEmail_(),
     createdAt: new Date(),
   });
 
@@ -370,7 +370,7 @@ function repoRegisterFileLocked_(fileId, path) {
     path: path,
     type: type,
     registeredAt: new Date(),
-    registeredBy: Session.getActiveUser().getEmail(),
+    registeredBy: currentEmail_(),
   };
   dbAppend('files', row);
   return row;
@@ -496,7 +496,7 @@ function repoIsAdmin_(email) {
  * @param {string} [what] 何ができないのか (断るときの言葉に入れる)
  */
 function repoAssertAdmin_(what) {
-  var me = String(Session.getActiveUser().getEmail() || '');
+  var me = currentEmail_();
   if (!repoIsAdmin_(me)) {
     throw new Error((what || 'この操作') + 'は、このアプリの管理者 (持ち主と、入れ物のフォルダを' +
       '編集できる人) だけが行えます');

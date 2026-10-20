@@ -64,4 +64,18 @@ describe('読み込む並び', () => {
       expect(top, f).toEqual([]);
     }
   });
+
+  it('開いている人のアドレスは currentEmail_ だけが Session から読む', () => {
+    // 以前は80か所近くに `|| ''` の有無・小文字化の有無が混ざって写されていて、取れない
+    // とき (null) に落ちる所と落ちない所があった。直に書くと、その食い違いがまた生まれる
+    const helper = 'src/core/CurrentUser.gs';
+    const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+    const direct = /Session\s*\.\s*getActiveUser\s*\(/;
+    const found = runtimeFiles()
+      .filter((f) => f !== helper && !/\/KitFiles\.gs$/.test(f))
+      .filter((f) => direct.test(strip(fs.readFileSync(f, 'utf8'))));
+    expect(found).toEqual([]);
+    // 見張りそのものが効いていること (helper の中では読んでいる)
+    expect(direct.test(strip(fs.readFileSync(helper, 'utf8')))).toBe(true);
+  });
 });
