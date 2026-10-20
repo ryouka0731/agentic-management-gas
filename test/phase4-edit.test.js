@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
-import { APP_SOURCES, KIT_SOURCES } from './sources.js';
+import fs from 'node:fs';
+import { APP_SOURCES, API_SOURCES, KIT_SOURCES } from './sources.js';
 
 /**
  * Phase 4b (Markdown編集 + mainのブランチ保護) の統合テスト。
@@ -1136,6 +1137,16 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugListWorkingCopies', 'debugFindConvertedCells', 'debugVerifyScrum',
     'debugVerifySharedDrive',
   ];
+
+  it('エディタ用の関数はすべて上に並んでいる', () => {
+    // 足した debug* を並べ忘れると、持ち主の確かめが無くても気づかれない。
+    // setupRepo は持ち主ではなく「初期化済みなら断る」で守っている
+    const text = API_SOURCES.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+    const editor = [...text.matchAll(/^function ((?:debug|setup)[\w$]*[^_\W])\s*\(/gm)]
+      .map((m) => m[1]).filter((n) => n !== 'setupRepo');
+    expect(editor.length).toBeGreaterThan(15);
+    expect(editor.filter((n) => NAMES.indexOf(n) < 0)).toEqual([]);
+  });
 
   for (const name of NAMES) {
     it(name, () => {
