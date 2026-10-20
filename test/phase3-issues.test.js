@@ -1,44 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /**
  * Phase 3b (Issue / Projects) の統合テスト。
  * Docs の入出力だけ fileId → 正規化HTML の写像に置き換える。
  */
 
-const SOURCES = [
-  'src/core/Hash.js',
-  'src/core/HashGas.gs',
-  'src/core/Db.gs',
-  'src/core/Repo.gs',
-  'src/core/ObjectStore.gs',
-  'src/core/Normalize.js',
-  'src/core/Diff.js',
-  'src/core/Merge.js',
-  'src/core/Commit.gs',
-  'src/core/Branch.gs',
-  'src/render/HtmlWriter.gs',
-  'src/core/PullRequest.gs',
-  'src/core/PullPatch.gs',
-  'src/core/Outbox.gs',
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Issue.gs', 'src/core/IssueTree.js',
-  'src/core/IssueComment.gs',
-  'src/core/IssueBranch.gs',
-  'src/core/Project.gs',
-  'src/core/Mention.js',
-  'src/core/Inquiry.gs',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-  'src/core/Tally.js',
-  'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
-];
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();

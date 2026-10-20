@@ -6667,12 +6667,6 @@
   }
 
   /**
-   * やることを親子の木に組み直す。src/core/IssueTree.js と同じもの。
-   *
-   * @param {object[]} issues
-   * @returns {object[]} 上から順に並べた節。depth を持つ
-   */
-  /**
    * その親子関係が輪になるかを調べる。
    *
    * src/core/IssueTree.js の issueWouldCycle と同じもの。自分自身や
@@ -7878,28 +7872,6 @@
         list.appendChild(opt);
       });
     }, failQuiet('候補が無くても手で書ける'));
-  }
-
-  /** やることを扱う画面をまとめて描き直す */
-  /**
-   * パネルの操作列に件数を出す。
-   *
-   * 何件返ってきたのかが見えないと、空なのか描けていないのか分からない。
-   *
-   * @param {HTMLElement} panel
-   * @param {string} text
-   */
-  function setPanelCount(panel, text) {
-    var actions = panel.querySelector('.panel-actions');
-    if (!actions) return;
-
-    var el = actions.querySelector('.panel-count');
-    if (!el) {
-      el = document.createElement('span');
-      el.className = 'panel-count row-meta';
-      actions.appendChild(el);
-    }
-    el.textContent = text;
   }
 
   /**
@@ -16121,7 +16093,7 @@
     page();
   }
 
-  /** サーバが一度に渡す上限 (Main.gs の HISTORY_MAX_ROWS と同じ) */
+  /** サーバが一度に渡す上限 (src/api/Scrum.gs の HISTORY_MAX_ROWS と同じ) */
   var HISTORY_MAX_SHOWN = 500;
 
   /**

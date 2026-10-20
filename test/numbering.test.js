@@ -2,15 +2,9 @@ import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { ISSUE_SOURCES } from './sources.js';
 
-const SOURCES = [
-  'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs',
-  'src/core/Repo.gs', 'src/core/Plain.js', 'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs', 'src/core/Tag.gs', 'src/core/Issue.gs', 'src/core/IssueTree.js',
-  'src/core/IssueComment.gs', 'src/core/Project.gs', 'src/core/Mention.js',
-  'src/core/Member.gs', 'src/core/Brand.js', 'src/core/Inquiry.gs',
-  'src/core/Notifier.gs',
-];
+const SOURCES = ISSUE_SOURCES;
 
 /*
  * Web アプリと1分ごとのトリガーが同じ表に書く。読んで決めて書く形は鍵なしでは
