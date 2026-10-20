@@ -1,0 +1,361 @@
+  // ===== 使い方 =====
+
+  var GUIDE = [
+    { id: 'about', title: 'このアプリについて', lines: [
+      'SoftBanto（そふと番頭）といいます。通称は「番頭」です。主に代わって帳面をつけ、段取りをし、確認を取り次ぐ役どころからそう呼んでいます。',
+      '文書を直接なおさず、コピー（改訂版）で変更し、確認を経て正式版に反映します。',
+      '誰がいつ何を変えたかがすべて残り、いつでも前の状態と見比べられます。',
+    ] },
+    { id: 'words', title: '言葉の意味', lines: [
+      '正式版 — いま効力を持つ版。全員が見るもの',
+      '改訂版 — 直している途中の版。正式版には影響しない',
+      '変更の記録 — ある時点の中身を丸ごと残したもの',
+      '確認依頼 — ある版を別の版に反映してよいか尋ねるもの。ふだんは改訂版から正式版へ',
+      'やること — 誰かがやるべき作業。文書に紐づけてもよいし、紐づけなくてもよい。担当者は何人でも割り当てられる',
+      'やりとり — やることの中で話し合った跡。決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論をまた一からやることになる',
+      '下書き — よく使う補足の形。差し込んでから書き足す。自分で作って残せる',
+      '使われ方 — どこがよく押されているかの記録。みんなの合計でも人ごとでも見られる。数えているのは「その日に何回押したか」までで、順番や時刻は残していない',
+      'タグ — どんな種類の仕事かの印。「#」で書きます',
+      '管理者 — このアプリの持ち主と、入れ物のフォルダを編集できる人。設定を変えたり、他人の確認依頼を取り下げたりできる',
+      '担当者が複数いる仕事の工数は、集計のときに頭数で割って数えられます。4人日を2人で持てば、それぞれ2人日として数えられ、全体の合計は4人日のままです。',
+      '集計 — 予定と実績の工数を、週・月・四半期・半期・年度ごとに足し上げたもの。四半期以上は4月始まりの年度で切ります。チーム全体の合計は誰でも見られ、人ごとの内訳は自分のぶんだけ (上長として登録されている人は、その下の人のぶんも)',
+      '完了を取り消す — 早合点で完了にしたものを、やることに戻す',
+      '捨てたもの — 捨てたやることの置き場。しばらく残り、いつでも戻せる',
+    ] },
+    { id: 'flow', title: '基本の流れ', lines: [
+      '1. 文書を開く',
+      '2.「この文書の改訂版」で改訂版を作る',
+      '3.「本文」の「直す」で書き換え、保存する',
+      '4.「変更を記録」でその時点を残す',
+      '5.「改訂中の版」から確認を依頼する',
+      '6. 承認されたら「正式版に反映する」',
+      '長い改訂は、途中の版を土台にして分けて進められます。確認依頼は改訂版どうしでも出せます。',
+    ] },
+    { id: 'home', title: 'ホームの見方', lines: [
+      'ホームは開いたときに最初に出る画面です。最初に出す画面は、設定の「自分の設定」で変えられます。',
+      'カードは6つあります。どれを出すかは、設定の「自分の設定」の「ホームに出すもの」で選べます。',
+      'あなたの番 — あなたが動く番のもの。確認を頼まれた依頼・担当のやること・期限が近いものが種類ごとに並びます。押すとそのものを開きます。「期限が近い」とみなす日数は、管理者がチームの設定で決めます。',
+      '改善のヒント — 仕事の進め方を良くするヒントが多くて3件出ます。何を見て出すかは「改善のヒント」の節にあります。',
+      '草 (アクティビティ) — 日ごとに動いた数を色の濃さで並べたもの。「あなた」と「チーム」を切り替えられます。見えるのはあなたのぶんとチームの合計だけで、ほかの人の草は出ません。連続日数も出しません。',
+      'ポイントとレベル — 管理者がチームの設定でオンにしたときだけ出ます (既定はオフ)。片づけたものの重さと、ほかの人の確認依頼への返事でポイントが付き、レベルが上がります。称号はあなたにだけ見えます。人事の評価には使いません。月曜にゼロから数え直します。',
+      '週の上位には、自分まわり (上の帯の自分の顔) で「週の上位に参加する」を選んだ人だけが載ります。既定では参加しません。',
+      '最近の動き — チームで最近あったこと。誰がしたかの名前は出しません。',
+      'チームの前進 — 今週片づけた数と、チームの毎月の目標までの進み具合。人ごとには出しません。',
+    ] },
+    { id: 'view', title: '文書と工程表の見え方', lines: [
+      '文書を開いて「読む」にしているとき、上の帯に「全画面」と「リンクをコピー」が出ます。',
+      '全画面 — 左の並びと上の帯を隠して、本文だけを広げます。Esc か「全画面を閉じる」で戻ります。ほかの画面へ移っても戻ります。',
+      'リンクをコピー — その文書を全画面で開くリンクを写します。写せないときは、選んで写せる欄にリンクが出ます。',
+      '工程表は「やること」の見え方の1つです。上の「工程表」を押すと出ます。',
+      '日・週・月 — 工程表の細かさを切り替えます。',
+      '今日 — 今日の位置へ送ります。工程表を開いたときも、今日が見える位置から始まります。',
+      '名前の欄の幅 — 名前の欄と日の並びの間を掴み、左右に引くと変わります。二度押しで元の幅に戻ります。',
+    ] },
+    { id: 'setup', title: 'はじめての設定 (最初の一人だけ)', admin: true, lines: [
+      'この道具を初めて置くときだけ必要な手順です。二人目からは、配られた URL を開くだけで使えます。',
+      '1. Apps Script のエディタを開き、関数の一覧から setupRepo を選んで一度だけ実行します。スクリプトと同じフォルダに入れ物 (agentic-management) と台帳のスプレッドシートができます。',
+      '2. 初回だけ Google から「アクセスを承認してください」と出ます。自分のアカウントを選び、内容を確かめて許可してください。文書・表・スライド・Drive・メールに触るための許可です。',
+      '3. 管理したい文書を、できた入れ物の main フォルダに入れます。Google ドライブで、そのままドラッグして入れてください。',
+      '4. 画面の「文書」から「文書を登録する」を押すと、入れ物の中が一覧に出ます。管理したいものを選んで登録してください。',
+      '5. 手元 (Claude や Codex) からも動かすなら、エディタで setupCommandQueue を一度だけ実行します。1分ごとの見張りが置かれます。二度実行しても増えません。',
+      'うまくいかないときは、エディタの「実行数」でエラーの中身が読めます。',
+    ] },
+    { id: 'local', title: '手元から動かす (Claude / Codex)', lines: [
+      '画面を開かずに、やること・改訂版・確認依頼を作れます。上の帯にある自分の顔から「手元から動かす道具を落とす」を押してください。',
+      '落とすと、続きの3手順と「入れ先の場所」がその場に出ます。場所は写して貼れる形で出るので、当てる必要はありません。',
+      '要るのは Node.js 18 以上と、Google Drive for desktop で同期したフォルダだけです。鍵もトークンも要りません。',
+      '落とした一式には Claude / Codex 向けの説明 (AGENTS.md と CLAUDE.md) が入っています。作業させるときは、それを読ませてください。この道具の言葉と、できないことが書いてあります。',
+      '設定ができたら「node agent.mjs files」を打ってください。文書の一覧が返れば通っています。',
+      '命令はファイルとして Drive に置かれ、1分以内に実行されて結果が返ります。遅延は最大1分です。すぐ返らなくても壊れてはいません。',
+      '正式版を直接なおすことと、確認依頼の承認は、手元からはできません。承認は人が画面で行う操作として残してあります。',
+    ] },
+    { id: 'pitfalls', title: 'つまずきやすい点', lines: [
+      'やることを押すと、まず読む形で開きます。書き換えるには右上の鉛筆を押してください。触っただけで中身が変わることはありません。',
+      '補足は Markdown で書けます。「## 見出し」「- 箇条書き」「- [ ] 手を付けたかの印」「**強い字**」「[名前](リンク)」が使えます。',
+      '正式版は直接なおせません。誰がいつ変えたか残らなくなるためです。改訂版を作ってください。',
+      '同じ場所を両方で変えると「同じ場所が両方で変わっています」と出ます。どちらを残すか選んでから反映してください。',
+      '「反映できません」と出るのは、元に戻せない要素（実体を取れない画像など）がある場合です。元のファイルで貼り直してください。',
+      '色・フォント・文字サイズは記録されません。文書の意味内容を管理するためです。',
+      'スライドは読むことと履歴の閲覧のみで、反映には対応していません。',
+      'Google ToDo との同期は追加の設定が要るため、使えるときだけ「やること」に入口が出ます。自分が担当で、まだ終わっていないぶんだけを送ります。',
+      'やることを捨てても、すぐには消えません。「捨てたもの」に30日置かれ、その間は戻せます。期限を過ぎたぶんは自動で片付きます。',
+      'キーボードでも動かせます。「?」で使える操作の一覧が出ます (「/」で絞り込み、「N」でやることを作る)。画面上の「探す」欄は Ctrl+K (Mac は ⌘K) でどこからでも開けます。進捗ボードでは列の「＋」から題名だけ打って足せ、掴んだカードは線の出た位置に入ります。',
+      'うまく動かないとき、こうしてほしいことがあるとき、使い方が分からないときは、左の「要望・不具合」から送ってください。見ている画面と使っている環境も一緒に届きます。',
+      '送られたものは、開発者のやることに自動で積まれます。種類に応じて「不具合」「要望」のタグが付き、進捗ボードの「これから」に並びます。',
+      '返信の中で「@名前」と書くと、その人に知らせが届きます。「@」を打つと候補が出るので、そこから選んでください。名簿に無い名前は誰にも届きません。',
+      '報告はみんなが読めて、誰でも返信できます。同じことで困った人が先に答えを知っていることがあります。直ったら「解決した」を押してください (押せるのは出した本人と、このアプリの管理者です)。',
+      'やることが色あせて「◯日動きなし」と出るのは、しばらく動いていない印です。直すか、完了にするか、捨てるかを決めてください。完了したものは色あせません。',
+    ] },
+    // 見出しは figures のキーなので一般の言葉に固定する。行の {key} は描くときに言葉の表し方で埋める
+    { id: 'scrum', title: '期間で進める (使う人だけ)', lines: [
+      'AI のチームメンバー (手元の Claude) と一緒に、仕事を{sprint}に区切って進めるための機能です。既定ではオフで、使わないなら何も変わりません。',
+      'はじめてなら、左の「{sprint}」を開いてください。上に「次にすること」が1つだけ出ます。それを順にこなせば、計画 → 進める → 見せる → ふりかえる の1巡りが回ります。',
+      'オンにするのはこのアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人) です。左の「設定」で「{feature}」をオンにしてください。{productGoal}と{definitionOfDone}もそこで書きます。',
+      'オンにすると、左に「{sprint}」と「{impediment}」が出て、やることに{sprint}・{points}・{acceptance}の欄が付きます。',
+      '{sprint} — 区切った作業の期間。目標と始まり・終わりの日を決めて作り、やることをそこへ積みます。',
+      '{points} — やること1つの相対的な大きさ。時間ではありません。{acceptance}は、できたと言えることを1行に1つ書きます。',
+      '{burndown}と{velocity}は、やることの{points}と完了日から自動で数えます。数を手で書く場所はありません。進め方は「進捗ボード」で列を動かし、終わったら完了にします。',
+      '{impediment} — 進みを妨げているもの。気づいた人が書き出し、取り除けたら解決策を書いて「解決した」にします。',
+      'ここで使う言葉は、自分の設定の「言葉の表し方」で、エンジニア向けの言い方にも切り替えられます。',
+      'やることの欄がいつ誰にどう変わったかは、やることの詳細の「変更の履歴」で見られます。',
+      '手元から使うときは、まず「node agent.mjs scrum」でオンかを確かめます。落とした道具の中に、{sprint}の計画・振り返りなどのスキルとチームの役割 (.claude/) と、進め方の読み替え (SCRUM.md) が入っています。',
+      'オンにしても、確認依頼の承認と設定の変更は人が画面で行います。',
+    ] },
+    { id: 'advice', title: '改善のヒント', lines: [
+      'ホームに、仕事の進め方を良くするヒントが多くて3件出ます。番頭が台帳の数から決まった規則で出すもので、AI に問い合わせてはいません。',
+      '見るのはあなたのぶんだけです (担当のやること・あなた宛ての確認・あなたが作ったやること)。ほかの人の数や名前は出ません。',
+      '出るもの (数は既定のもの。管理者が「設定」で変えたり、規則ごと止めたりできます) — 確認を3日以上待たせている / 期限切れが3件以上 / 作業中が5件以上 / 見積もりの倍以上かかったものが半分以上 / 同じタグや題名のやることを30日で5件以上作った / 「使い方が分からない」の報告が30日で3件以上 (管理者だけ)',
+      '1件ごとに理由の数字と、次に開く画面のボタンが付きます。「期限切れを見る」で開いた一覧は「期限切れだけ ×」を押すか見え方を切り替えると、絞りが外れます。',
+      '「今週は出さない」を押すと、その週はこの端末に出ません。次の週にまだ当てはまれば、また出ます。',
+    ] },
+    { id: 'usage', title: '使われ方の見方', lines: [
+      '使われ方 — どこがよく押され、どの画面がよく開かれているかを見る画面です。使われていない所を見つけて直すためのものです。',
+      '数えるのは「どの場所を、その日に何回押したか・開いたか」だけです。押した順番・時刻・文書や書き込みの中身は数えない決まりです。',
+      '場所ごとの合計は誰でも見られます。人ごとの数は本人と部下のぶんだけが見えます (上長として登録されている人には、その下の人のぶんも)。',
+      '前の期間との比較 — 同じ長さの直前の期間に比べて、どれだけ増えたか減ったかを添えます。前の期間に記録が無ければそう出ます。',
+      '曜日ごと — 月曜から日曜までの7本の棒で、どの曜日によく使われているかを見ます。時刻は残していないので、時間帯は分かりません。',
+      'この期間に開かれなかった画面 — 左の行き先のうち、この期間に一度も開かれなかったものが並びます。',
+      'CSV で保存 — 今見ている期間と対象の、日・場所・人ごとの数を CSV で落とせます。見られない人のぶんは入っていないので、画面の合計とは合わないことがあります。落とせないときは、字をそのまま写せる形で出します。',
+      '止め方 — 自分のぶんは、設定の「自分の設定」で「自分の使われ方を記録する」を外すと数えません。チーム全体の記録は、管理者が「チームの設定」で止められます。残す日数もそこで決めます (画面で直近90日まで見るので、90日より短くはできません)。',
+      '使い方の節を開いた回数も数えています (目次・絞り込み・「?」・探すで開いたときだけ。送って通り過ぎただけでは数えません)。読まれていない節を見つけるためです。',
+    ] },
+    { id: 'settings', title: '設定でできること', lines: [
+      '左の「設定」は、自分の設定とチームの設定の2つに分かれています。',
+      '自分の設定 — 誰でも、自分のぶんだけ変えられます。開いたときに最初に出す画面・ホームに出すもの・通知メール・自分の使われ方を記録するか・言葉の表し方を決めます。どの端末で開いても同じになります。',
+      '通知メールは種類ごとに止められます (確認を頼まれた・確認依頼が出た / 反映した・取り下げた / 報告とその返事 / 名指しされた / やることのやりとり)。全部止めることもできます。確認を頼まれた知らせを止めると、設定の画面に断りが出ます。そのあいだは、ホームの「あなたの番」と画面の中の知らせ (鈴) で確かめてください。',
+      'チームの設定 — 全員に効く設定です。変えられるのは管理者だけで、ほかの人には今の値が見えるだけです。',
+      'チームの設定で決めるもの — チームの毎月の目標、改善のヒントの規則ごとのオン・オフと数、「動きなし」の段階の日数、「期限が近い」とみなす日数、使われ方を記録するかと残す日数、日報の形の既定、「{feature}」とポイントとレベルのオン・オフ。',
+      '変えたい項目がチームの設定なら、管理者 (このアプリの持ち主と、入れ物のフォルダを編集できる人) に頼んでください。',
+      '「既定に戻す」を押すと、その項目は最初の値に戻ります。',
+    ] },
+  ];
+
+  /** 使い方の絞り込みを外から当てる。loadHelp が組むまでは何もしない */
+  var guideFilterApply = function () {};
+
+  /**
+   * 使い方を開き、その節へ送る。「?」と探す (Ctrl+K) から呼ぶ。
+   *
+   * 絞り込みが残っていると開いた節が隠れていることがあるので、外してから送る。
+   * 開いた節は数える (スクロールで通り過ぎたものとは違い、読みに来たもの)。
+   *
+   * @param {string} id GUIDE の id
+   */
+  function openGuideAt(id) {
+    var section = GUIDE.filter(function (g) { return g.id === id; })[0];
+    if (!section) { switchTab('help'); return; }
+    switchTab('help');
+    guideFilterApply('');
+    var h = document.getElementById('guide-sec-' + id);
+    if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    // 読み上げも開いた節から始める。送るのは上で済ませたので、ここでは動かさない
+    if (h) h.focus({ preventScroll: true });
+    usageCount('view', 'guide-' + id);
+  }
+
+  function loadHelp() {
+    if (guideEl.dataset.ready) return;
+
+    /*
+     * 目次は本文の右に置く。本文は 760px で止まるので、その右は空いている。
+     *
+     * 左の帯に出していたときは、道具そのものの行き先と混ざって何の目次か
+     * 分からず、開くたびに左の並びが動いていた。
+     */
+    var toc = guideTocEl;
+    toc.textContent = '';
+
+    var tocHead = document.createElement('h2');
+    tocHead.textContent = 'この頁の中身';
+    toc.appendChild(tocHead);
+
+    // 操作は読み物より先に置く。底に置くと、困ったときにしか開かれない
+    // 場所に埋もれる
+    var top = document.createElement('div');
+    top.className = 'guide-foot guide-top';
+    makeMeActions().forEach(function (el) { top.appendChild(el); });
+    guideEl.appendChild(top);
+
+    // 絞り込みは本文の上に置く。長い頁を送って探させない
+    var filterBox = document.createElement('label');
+    filterBox.className = 'filter-box guide-filter';
+    var filterInput = document.createElement('input');
+    filterInput.id = 'guide-filter';
+    filterInput.type = 'search';
+    filterInput.placeholder = '使い方の中を絞る';
+    filterInput.setAttribute('aria-label', '使い方の節を絞り込む');
+    filterBox.appendChild(filterInput);
+    guideEl.insertBefore(filterBox, top);
+
+    var empty = document.createElement('p');
+    empty.className = 'row-meta guide-empty';
+    empty.id = 'guide-empty';
+    empty.setAttribute('role', 'status');
+    empty.textContent = '見つかりません。言葉を変えてみてください';
+    empty.hidden = true;
+    guideEl.appendChild(empty);
+
+    // 節ごとに 見出し・図・箇条書き と目次の項をまとめて持つ。絞り込みで一緒に隠す
+    var guideSections = [];
+
+    /**
+     * 目次の項を作る。
+     *
+     * href の飛び先にはしない。この画面は枠の中で動いているため、
+     * 場所が変わると外側の頁ごと動くことがある。押して寄せる
+     *
+     * @param {object} section GUIDE の1節
+     * @param {HTMLElement} target 寄せたい見出し
+     * @returns {HTMLElement}
+     */
+    function addToc(section, target) {
+      var btn = document.createElement('button');
+      btn.className = 'guide-toc-item';
+      btn.dataset.guide = section.id;
+      btn.textContent = section.title;
+      btn.addEventListener('click', function () {
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        // 目次から送った節は「読まれた」と数える。送って通り過ぎたものは数えない
+        usageCount('view', 'guide-' + section.id);
+      });
+      toc.appendChild(btn);
+      return btn;
+    }
+
+    // 節ごとに、その話の図を先に置く。字だけの説明は読まれない。
+    // 全部の節に置いてあるのは、図だけ見て帰れるようにするため。
+    // キーは見出しと一字一句同じにする (違うとその節だけ図が消える)
+    var figures = {
+      'このアプリについて': FLOW_DIAGRAM,
+      '言葉の意味': VOCAB_DIAGRAM,
+      '基本の流れ': STEPS_DIAGRAM,
+      'ホームの見方': HOME_DIAGRAM,
+      '文書と工程表の見え方': VIEW_DIAGRAM,
+      'はじめての設定 (最初の一人だけ)': SETUP_DIAGRAM,
+      '手元から動かす (Claude / Codex)': QUEUE_DIAGRAM,
+      'つまずきやすい点': CONFLICT_DIAGRAM,
+      '期間で進める (使う人だけ)': SCRUM_DIAGRAM,
+      '改善のヒント': ADVICE_DIAGRAM,
+      '使われ方の見方': USAGE_DIAGRAM,
+      '設定でできること': SETTINGS_DIAGRAM,
+    };
+
+    GUIDE.forEach(function (section) {
+      var parts = [];
+      var h = document.createElement('h2');
+      // 画面の部品 (guide-filter / guide-link など) とぶつけないよう、見出しは guide-sec- で始める。
+      // 数える場所の名前 (guide-<id>) とも分ける。見出しを押しても数えない (usageTargetOf)
+      h.id = 'guide-sec-' + section.id;
+      h.dataset.guideHead = section.id;
+      h.tabIndex = -1;
+      var text = document.createElement('span');
+      text.className = 'guide-head-text';
+      text.textContent = section.title;
+      h.appendChild(text);
+      // 管理者向けの節も隠さない。誰に頼めばよいかが分かるように
+      if (section.admin) {
+        var pill = makePill('管理者', 'chip');
+        pill.title = 'このアプリの管理者がする操作です';
+        h.appendChild(pill);
+      }
+      guideEl.appendChild(h);
+      parts.push(h);
+      var tocBtn = addToc(section, h);
+
+      if (figures[section.title]) {
+        var fig = makeDiagram(figures[section.title]);
+        guideEl.appendChild(fig);
+        parts.push(fig);
+      }
+
+      var ul = document.createElement('ul');
+      section.lines.forEach(function (line) {
+        var li = document.createElement('li');
+        // {key} を含む行は、言葉の表し方が変わったら applyTerms が埋め直す
+        li.textContent = termIn(line);
+        if (line.indexOf('{') >= 0) li.setAttribute('data-term', line);
+        ul.appendChild(li);
+      });
+      guideEl.appendChild(ul);
+      parts.push(ul);
+
+      guideSections.push({
+        id: section.id, head: h, parts: parts, toc: tocBtn,
+        // 両方の言葉で引けるようにする。表し方を変えても、人がどちらの言葉で探しても見つかる
+        text: searchNormalize(section.title + '\n' + termFill(section.lines.join('\n'), 'plain') +
+          '\n' + termFill(section.lines.join('\n'), 'scrum')),
+      });
+    });
+
+    // 絞り込みで1件になった節。打ち足しても同じ節なら数え直さない
+    var filterOne = '';
+
+    /** 打った字を見出しと行に含む節だけを出す。目次も同じく絞る */
+    function applyGuideFilter() {
+      var words = searchNormalize(filterInput.value).split(/\s+/).filter(Boolean);
+      var shown = [];
+      guideSections.forEach(function (sec) {
+        var hit = words.every(function (w) { return sec.text.indexOf(w) >= 0; });
+        sec.parts.forEach(function (el) { el.hidden = !hit; });
+        sec.toc.hidden = !hit;
+        if (hit) shown.push(sec);
+      });
+      empty.hidden = shown.length > 0;
+
+      var one = words.length && shown.length === 1 ? shown[0].id : '';
+      if (one && one !== filterOne) usageCount('view', 'guide-' + one);
+      filterOne = one;
+      markToc();
+    }
+    filterInput.addEventListener('input', applyGuideFilter);
+    guideFilterApply = function (value) {
+      filterInput.value = value;
+      applyGuideFilter();
+    };
+
+    var foot = document.createElement('div');
+    foot.className = 'guide-foot';
+
+    var who = document.createElement('span');
+    who.className = 'row-meta';
+    who.id = 'whoami';
+    foot.appendChild(who);
+    guideEl.appendChild(foot);
+
+    /**
+     * いま読んでいる節を目次の側で示す。
+     *
+     * どこを読んでいるのか分からないまま長い頁を送ると、戻る先を
+     * 見失う。色だけでなく aria-current でも示す。絞り込みで隠れた節は
+     * 数えない (隠れた見出しの位置は 0 になり、先頭を指してしまう)
+     */
+    function markToc() {
+      var line = guideEl.scrollTop + 80;
+      var shown = guideSections.filter(function (sec) { return !sec.head.hidden; });
+      var at = shown.length ? shown[0] : null;
+
+      shown.forEach(function (sec) {
+        if (sec.head.offsetTop <= line) at = sec;
+      });
+      guideSections.forEach(function (sec) {
+        sec.toc.setAttribute('aria-current', String(sec === at));
+      });
+    }
+
+    guideEl.addEventListener('scroll', markToc);
+    markToc();
+
+    guideEl.dataset.ready = '1';
+
+    google.script.run
+      .withSuccessHandler(function (info) {
+        currentUser = info.activeUser;
+        who.textContent = info.activeUser
+          ? 'このアプリはあなたを ' + personName(info.activeUser) +
+            ' (' + info.activeUser + ') として認識しています'
+          : '警告: 利用者を特定できていません。この状態では記録に名前が残りません';
+      })
+      .withFailureHandler(function () { who.textContent = ''; })
+      .apiWhoAmI();
+  }
+

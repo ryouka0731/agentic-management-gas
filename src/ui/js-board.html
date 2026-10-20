@@ -1,0 +1,1307 @@
+  // ===== 工程表 =====
+
+  /**
+   * 期限つきのやることを時系列の棒で並べる。
+   *
+   * 配置の計算は src/core/Gantt.js の純関数と同じものをここに写している。
+   * google.script.run の往復を増やさないための意図的な重複であり、
+   * 片方だけ直すと表示と実体がずれる。
+   *
+   * @param {object[]} issues
+   * @param {Date} today
+   * @returns {object}
+   */
+  /** 目盛りの末尾に足す余白の日数。src/core/Gantt.js と同じ値 */
+  var GANTT_TAIL_DAYS = 14;
+
+  /**
+   * 予定工数 (人日) を棒の日数に直す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number|string} planned
+   * @returns {number}
+   */
+  function ganttDaysForEffort(planned) {
+    var n = Number(planned);
+    if (!n || isNaN(n) || n <= 0) return 1;
+
+    return Math.max(1, Math.round(n));
+  }
+
+  /**
+   * 予定工数と棒の長さが食い違っているかを見る。
+   *
+   * @param {number|string} planned
+   * @param {number} days
+   * @returns {boolean}
+   */
+  function ganttEffortDiffers(planned, days) {
+    return ganttDaysForEffort(planned) !== Math.max(1, Number(days) || 1);
+  }
+
+  function ganttLayout(issues, today) {
+    var DAY = 24 * 60 * 60 * 1000;
+
+    function startOfDay(value) {
+      if (value === null || value === undefined || value === '') return null;
+      // src/core/Gantt.js の ganttStartOfDay と同じ。'YYYY-MM-DD' はその土地の日
+      var ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+      if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])).getTime();
+      var d = new Date(value);
+      if (isNaN(d.getTime())) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
+
+    var now = startOfDay(today || new Date());
+    var rows = [];
+    var from = null;
+    var to = null;
+
+    (issues || []).forEach(function (issue) {
+      // 開始日を入れていればそれを使う。無ければ作った日を仮の起点にする
+      var planned = startOfDay(issue.startDate);
+      var start = planned !== null ? planned : startOfDay(issue.createdAt);
+      var due = startOfDay(issue.dueDate);
+      if (start === null) return;
+
+      var end = (due === null) ? start : Math.max(due, start);
+      if (from === null || start < from) from = start;
+      if (to === null || end > to) to = end;
+
+      rows.push({
+        number: Number(issue.number), title: issue.title, state: issue.state,
+        assignee: issue.assignee, hasDue: due !== null,
+        hasStart: planned !== null,
+        planned: issue.plannedHours, parent: issue.parent,
+        overdue: due !== null && String(issue.state) === 'open' && due < now,
+        _start: start, _end: end,
+      });
+    });
+
+    if (!rows.length) return { from: now, to: now, days: 1, todayOffset: 0, rows: [] };
+
+    if (now < from) from = now;
+    if (now > to) to = now;
+
+    // 末尾に余白の日を足す。目盛りが最後の期限で終わっていると、棒を
+    // 掴んで伸ばそうとしても伸ばす先の列が無く、縮められるだけになる
+    to += GANTT_TAIL_DAYS * DAY;
+
+    rows.forEach(function (r) {
+      r.offset = Math.round((r._start - from) / DAY);
+      r.span = Math.round((r._end - r._start) / DAY) + 1;
+      delete r._start;
+      delete r._end;
+    });
+
+    return {
+      from: from, to: to,
+      days: Math.round((to - from) / DAY) + 1,
+      todayOffset: Math.round((now - from) / DAY),
+      rows: rows,
+    };
+  }
+
+  /**
+   * 月ごとの幅を返す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number} from
+   * @param {number} days
+   * @returns {Array<{label:string, span:number}>}
+   */
+  function ganttMonths(from, days) {
+    var DAY = 24 * 60 * 60 * 1000;
+    var out = [];
+
+    for (var i = 0; i < days; i++) {
+      var d = new Date(from + i * DAY);
+      var year = d.getFullYear();
+      var month = d.getMonth() + 1;
+      var last = out.length ? out[out.length - 1] : null;
+
+      if (last && last.year === year && last.month === month) {
+        last.span++;
+        continue;
+      }
+      out.push({ year: year, month: month, span: 1, label: year + '年' + month + '月' });
+    }
+    return out;
+  }
+
+  /**
+   * 列の位置を日付に直す。src/core/Gantt.js と同じもの。
+   *
+   * @param {number} from
+   * @param {number} offset
+   * @returns {string} YYYY-MM-DD
+   */
+  function ganttDateAt(from, offset) {
+    var d = new Date(from + offset * 24 * 60 * 60 * 1000);
+    var m = String(d.getMonth() + 1);
+    var day = String(d.getDate());
+    return d.getFullYear() + '-' +
+      (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+  }
+
+  /**
+   * やることを束ねる。src/core/Grouping.js と同じもの。
+   *
+   * @param {object[]} issues
+   * @param {string} by
+   * @returns {Array<{key:string, label:string, issues:object[]}>}
+   */
+  function groupIssues(issues, by) {
+    var names = {};
+    allFiles.forEach(function (f) {
+      if (splitPath(f.path).branch === 'main') names[f.fileId] = f.path;
+    });
+
+    var order = [];
+    var buckets = Object.create(null);  // '__proto__' のような名前も、ただの鍵として持つ
+
+    function put(key, label, issue) {
+      // 'constructor' のような名前が Object の持ち物と重なる (src/core/Grouping.js と同じ)
+      if (!Object.prototype.hasOwnProperty.call(buckets, key)) {
+        buckets[key] = { key: key, label: label, issues: [] };
+        order.push(key);
+      }
+      buckets[key].issues.push(issue);
+    }
+
+    (issues || []).forEach(function (issue) {
+      if (by === 'none') { put('all', 'すべて', issue); return; }
+
+      if (by === 'assignee') {
+        // 2人で持つ仕事は、両方の束に出す。片方にしか出さないと、
+        // もう片方の人には自分の仕事が見えなくなる
+        var who = issue.assignees ||
+          String(issue.assignee || '').split(',')
+            .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+            .filter(function (x) { return !!x; });
+
+        if (!who.length) {
+          put('(未割当)', '担当なし', issue);
+          return;
+        }
+        who.forEach(function (one) { put(one, personName(one), issue); });
+        return;
+      }
+
+      if (by === 'state') {
+        var open = String(issue.state) === 'open';
+        put(open ? 'open' : 'closed', open ? '未完了' : '完了', issue);
+        return;
+      }
+
+      if (by === 'sprint') {
+        // 未定の鍵は空 ('(未定)' という名前のスプリントと混ざらない)
+        var sprint = String(issue.sprint || '');
+        put(sprint, sprint || termIn('{sprint}未定'), issue);
+        return;
+      }
+
+      if (by === 'label') {
+        var added = false;
+        String(issue.labels || '').split(',').forEach(function (raw) {
+          var label = raw.replace(/^\s+|\s+$/g, '');
+          if (!label) return;
+          put(label, label, issue);
+          added = true;
+        });
+        if (!added) put('(ラベルなし)', 'ラベルなし', issue);
+        return;
+      }
+
+      var linked = false;
+      String(issue.linkedFileIds || '').split(',').forEach(function (raw) {
+        var id = raw.replace(/^\s+|\s+$/g, '');
+        if (!id) return;
+        put(id, names[id] || id, issue);
+        linked = true;
+      });
+      if (!linked) put('(未紐付け)', '文書に紐づいていない', issue);
+    });
+
+    // スプリントは名前の順に並べ、未定は最後に置く (src/core/Grouping.js と同じ)
+    if (by === 'sprint') {
+      order.sort(function (a, b) {
+        if (a === b) return 0;
+        if (a === '') return 1;
+        if (b === '') return -1;
+        return a < b ? -1 : 1;
+      });
+    }
+    return order.map(function (k) { return buckets[k]; });
+  }
+
+  /**
+   * 棒を掴んで日付を変える。
+   *
+   * 端を掴めば片側だけ、真ん中を掴めば全体が動く。放したときに保存する。
+   * 数字を打ち込むより、期間を見ながら決めるほうが早い。
+   *
+   * @param {HTMLElement} bar
+   * @param {object} row ganttLayout の行
+   * @param {object} g ganttLayout の結果
+   * @param {number} colWidth 1日の幅
+   */
+  function makeBarDraggable(bar, row, g, colWidth, hostEl) {
+    var mode = null;
+    var startX = 0;
+    var origin = { offset: row.offset, span: row.span };
+
+    function apply(offset, span) {
+      bar.style.gridColumn = (offset + 1) + ' / span ' + Math.max(1, span);
+    }
+
+    bar.addEventListener('pointerdown', function (e) {
+      var rect = bar.getBoundingClientRect();
+      // 月の細かさでは棒が数 px しかない。端の幅を棒に合わせて狭めないと、
+      // どこを掴んでも端になり全体を動かせない
+      var edge = Math.min(10, rect.width / 4);
+
+      if (e.clientX - rect.left <= edge) mode = 'start';
+      else if (rect.right - e.clientX <= edge) mode = 'end';
+      else mode = 'move';
+
+      startX = e.clientX;
+      origin = { offset: row.offset, span: row.span };
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add('dragging');
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    bar.addEventListener('pointermove', function (e) {
+      if (!mode) {
+        // 掴める場所を形で示す
+        var rect = bar.getBoundingClientRect();
+        var edge = Math.min(10, rect.width / 4);
+        var near = e.clientX - rect.left <= edge || rect.right - e.clientX <= edge;
+        bar.style.cursor = near ? 'ew-resize' : 'grab';
+        return;
+      }
+
+      // 1日の幅は細かさで変わる。描いたときの幅で日に直す。
+      // 3px 未満は手のぶれとして動かさない (月の細かさでは 2px で半日を超え、1日ずれる)
+      var dx = e.clientX - startX;
+      var moved = Math.abs(dx) < 3 ? 0 : Math.round(dx / colWidth);
+
+      if (mode === 'move') {
+        row.offset = Math.max(0, origin.offset + moved);
+        row.span = origin.span;
+      } else if (mode === 'end') {
+        row.span = Math.max(1, origin.span + moved);
+      } else {
+        var offset = Math.min(origin.offset + origin.span - 1,
+          Math.max(0, origin.offset + moved));
+        row.span = origin.span + (origin.offset - offset);
+        row.offset = offset;
+      }
+      apply(row.offset, row.span);
+    });
+
+    bar.addEventListener('pointerup', function (e) {
+      if (!mode) return;
+
+      var was = mode;
+      mode = null;
+      bar.classList.remove('dragging');
+      bar.releasePointerCapture(e.pointerId);
+
+      // 動かさずに離したなら、押したのだと解して中身を開く
+      if (row.offset === origin.offset && row.span === origin.span) {
+        if (was === 'move') openIssueByNumber(row.number, hostEl);
+        return;
+      }
+
+      var patch = { dueDate: ganttDateAt(g.from, row.offset + row.span - 1) };
+      if (was !== 'end') patch.startDate = ganttDateAt(g.from, row.offset);
+
+      // 棒の長さは予定工数そのもの。片方だけ変わると数え直しができない。
+      // 半日きざみで入れた値は、丸めて同じなら書き換えない
+      if (ganttEffortDiffers(row.planned, row.span)) patch.plannedHours = row.span;
+
+      google.script.run
+        .withSuccessHandler(function () {
+          showSnack('#' + row.number + ' の期間を ' +
+            ganttDateAt(g.from, row.offset) + ' 〜 ' + patch.dueDate + ' にしました' +
+            (patch.plannedHours ? ' (予定 ' + patch.plannedHours + '人日)' : ''),
+            { kind: 'ok' });
+          loadGantt();
+        })
+        .withFailureHandler(function (err) {
+          showSnack(err.message, { kind: 'ng' });
+          loadGantt();
+        })
+        .apiIssueUpdate(row.number, patch);
+    });
+  }
+
+  /**
+   * 工程表を今日が見える位置まで横に送る。今日の線を、名前の欄を除いた
+   * 見える幅の左から 1/3 に置く。真ん中より左に寄せるのは、これからの
+   * 予定のほうを多く見せるため
+   */
+  function ganttScrollToToday() {
+    var chart = ganttEl.querySelector('.gantt');
+    if (!chart || !ganttShown) {
+      // 描き直しを待っている (骨組みしか無い)。届いて描いたときに送る
+      ganttToToday = true;
+      return;
+    }
+    // 隠れている器は幅が 0 で送れない。印を残し、見えてから描いたときに送る
+    if (!ganttEl.clientWidth) return;
+    ganttToToday = false;
+
+    var nameW = parseFloat(getComputedStyle(chart).getPropertyValue('--gantt-name-w')) || 220;
+    var head = chart.querySelector('.gantt-head');
+    var gap = (head && parseFloat(getComputedStyle(head).columnGap)) || 0;
+    var pad = parseFloat(getComputedStyle(ganttEl).paddingLeft) || 0;
+    var view = ganttEl.clientWidth - nameW - gap;
+    var col = ganttShown.col;
+
+    ganttEl.scrollLeft = Math.max(0,
+      Math.round(pad + ganttShown.today * col + col / 2 - view / 3));
+    ganttSyncResizer();
+  }
+
+  /**
+   * 掴み手を名前の欄の右に合わせる。名前の欄は左に貼り付いているが、掴み手は
+   * 工程表と一緒に横へ流れるので、貼り付いたぶんだけ送り返す
+   */
+  function ganttSyncResizer() {
+    var chart = ganttEl.querySelector('.gantt');
+    var name = chart && chart.querySelector('.gantt-head .gantt-name');
+    if (!name || !ganttResizer) return;
+
+    var shift = Math.round(name.getBoundingClientRect().left - chart.getBoundingClientRect().left);
+    ganttResizer.style.transform = shift ? 'translateX(' + shift + 'px)' : '';
+  }
+
+  /**
+   * 日の見出しの字。週では月曜だけ、月では出さない (月の見出しが残る)。
+   * 細い列に毎日の字を詰めると重なって読めない
+   *
+   * @param {Date} day
+   * @returns {string}
+   */
+  function ganttDayLabel(day) {
+    if (ganttZoom === 'month') return '';
+    if (ganttZoom === 'week' && day.getDay() !== 1) return '';
+    return String(day.getDate());
+  }
+
+  /**
+   * 今日を左から 1/3 に置けるよう、前後に余白の日を足す。今日が目盛りの端に
+   * あると、送れる幅が足りず端に張り付いたままになる。
+   * ganttLayout (サーバと画面の両方にある) は変えず、描く側で起点をずらす。
+   * 棒の位置と日付への直し (ganttDateAt) は同じ g を使うので食い違わない
+   *
+   * @param {object} g ganttLayout の結果 (書き換える)
+   * @param {number} col 1日の幅
+   */
+  function ganttPadForToday(g, col) {
+    var DAY = 24 * 60 * 60 * 1000;
+    var nameW = parseFloat(getComputedStyle(ganttEl).getPropertyValue('--gantt-name-w')) || 220;
+    var view = ganttEl.clientWidth - nameW;
+    if (view <= 0) return;  // 隠れていて測れない。見えてから描き直したときに足す
+
+    var lead = Math.max(0, Math.ceil((view / 3 - col / 2) / col) - g.todayOffset);
+    var tail = Math.max(0, Math.ceil(view * 2 / 3 / col) - (g.days - g.todayOffset));
+
+    g.from -= lead * DAY;
+    g.to += tail * DAY;
+    g.days += lead + tail;
+    g.todayOffset += lead;
+    g.rows.forEach(function (r) { r.offset += lead; });
+  }
+
+  function loadGantt() {
+    // 遅れて届いた古い返事で、新しい描画を上書きしない
+    var still = latest('gantt');
+    // 描き直しでは、人が送った位置を保つ (中身を消すと 0 に戻る)
+    var keepScroll = ganttEl.scrollLeft;
+    showSkeleton(ganttEl, 'gantt', 5);
+    ganttShown = null;  // 骨組みの間は送れる工程表が無い (「今日」は届いてから送る)
+    // 待つ間に人が送ったら、その位置を奪わない
+    var waitingScroll = ganttEl.scrollLeft;
+
+    call('apiIssueList', [''], function (list) {
+      if (!still()) return;  // もっと新しい読み込みがある
+      if (ganttEl.scrollLeft !== waitingScroll) keepScroll = ganttEl.scrollLeft;
+
+      var issues = list || [];
+      ganttEl.textContent = '';
+      ganttShown = null;
+
+      lastIssues = issues;
+      issues = issues.filter(matchesFilter);
+
+      var g = ganttLayout(issues, new Date());
+      issueCountEl.textContent = g.rows.length + ' / ' + issues.length + '件';
+
+      if (!g.rows.length) {
+        ganttEl.appendChild(makeBlankState(
+          'やることがありません',
+          '期限を入れたやることが、ここに時系列の棒で並びます。',
+          { label: 'やることを作る', onClick: createIssue }
+        ));
+        return;
+      }
+
+      var COL = GANTT_ZOOMS[ganttZoom] || GANTT_ZOOMS.day;
+      ganttPadForToday(g, COL);
+      var chart = document.createElement('div');
+      chart.className = 'gantt';
+      chart.dataset.zoom = ganttZoom;
+      chart.style.setProperty('--gantt-days', String(g.days));
+      chart.style.setProperty('--gantt-col', COL + 'px');
+
+      // 目盛りの週の区切りを、先頭の日から月曜までのずれで合わせる
+      var firstDay = new Date(g.from).getDay();
+      chart.style.setProperty('--week-offset', String((firstDay + 6) % 7));
+
+      // 上段に月、下段に日を出す。日だけでは何月か分からない
+      var monthHead = document.createElement('div');
+      monthHead.className = 'gantt-head';
+
+      var monthName = document.createElement('div');
+      monthName.className = 'gantt-name';
+      monthHead.appendChild(monthName);
+
+      var monthScale = document.createElement('div');
+      monthScale.className = 'gantt-scale';
+
+      ganttMonths(g.from, g.days).forEach(function (m) {
+        var cell = document.createElement('div');
+        cell.className = 'gantt-month';
+        cell.style.gridColumn = 'span ' + m.span;
+        cell.textContent = m.label;
+        monthScale.appendChild(cell);
+      });
+      monthHead.appendChild(monthScale);
+      chart.appendChild(monthHead);
+
+      var head = document.createElement('div');
+      head.className = 'gantt-head';
+
+      var headName = document.createElement('div');
+      headName.className = 'gantt-name';
+      headName.textContent = 'やること';
+      head.appendChild(headName);
+
+      var scale = document.createElement('div');
+      scale.className = 'gantt-scale';
+
+      for (var d = 0; d < g.days; d++) {
+        var day = new Date(g.from + d * 24 * 60 * 60 * 1000);
+        var weekend = day.getDay() === 0 || day.getDay() === 6;
+
+        var cell = document.createElement('div');
+        cell.className = 'gantt-day' +
+          (d === g.todayOffset ? ' today' : '') + (weekend ? ' weekend' : '');
+        cell.textContent = ganttDayLabel(day);
+        cell.title = day.toLocaleDateString('ja-JP');
+        scale.appendChild(cell);
+      }
+      head.appendChild(scale);
+      chart.appendChild(head);
+
+      /*
+       * 目盛りと今日の線は、行ごとではなく1枚の下敷きに描く。
+       * 行ごとに描くと行間で途切れ、日付を縦にたどれない。
+       */
+      var rows = document.createElement('div');
+      rows.className = 'gantt-rows';
+
+      var grid = document.createElement('div');
+      grid.className = 'gantt-grid';
+      rows.appendChild(grid);
+
+      if (g.todayOffset >= 0 && g.todayOffset < g.days) {
+        var todayLine = document.createElement('div');
+        todayLine.className = 'gantt-today';
+        todayLine.style.left = 'calc(var(--gantt-col) * ' + g.todayOffset + ')';
+        grid.appendChild(todayLine);
+      }
+
+      // 行を束ねて見出しを付ける
+      var byNumber = {};
+      g.rows.forEach(function (r) { byNumber[r.number] = r; });
+
+      groupIssues(issues, issueGroupSel.value).forEach(function (group) {
+        var shown = group.issues
+          .map(function (i) { return byNumber[i.number]; })
+          .filter(function (r) { return !!r; });
+
+        if (!shown.length) return;
+        rows.appendChild(makeGroupHead(group.label, shown.length, group.key));
+        if (collapsed[group.key]) return;
+
+        shown.forEach(function (r) {
+          var row = document.createElement('div');
+          row.className = 'gantt-row';
+          row.dataset.number = r.number;
+
+          var name = document.createElement('button');
+          name.className = 'gantt-name';
+
+          // 親の下にあることを、字下げでも示す
+          var depth = depthOf(r.number);
+          if (depth) {
+            row.classList.add('nested');
+            name.style.paddingLeft = (depth * 14 + 8) + 'px';
+          }
+
+          name.appendChild(makeAvatars(r.assignee));
+
+          var who = document.createElement('span');
+          who.className = 'gantt-title';
+          who.textContent = '#' + r.number + ' ' + r.title;
+          name.appendChild(who);
+
+          var rel = makeRelationChips(r.number);
+          if (rel.childNodes.length) name.appendChild(rel);
+          // 名前は3行で切れることがあるので、全文も添える
+          name.title = who.textContent + '\n' + (r.assignee || '担当なし');
+          name.addEventListener('click', function () {
+            openIssueByNumber(r.number, row);
+          });
+          row.appendChild(name);
+
+          var track = document.createElement('div');
+          track.className = 'gantt-track';
+
+          var bar = document.createElement('button');
+          bar.className = 'gantt-bar' +
+            (String(r.state) === 'closed' ? ' done' : '') +
+            (r.overdue ? ' overdue' : '') +
+            (r.hasDue ? '' : ' nodue');
+          bar.style.gridColumn = (r.offset + 1) + ' / span ' + r.span;
+          bar.appendChild(makeAvatars(r.assignee));
+
+          var days = document.createElement('span');
+          days.className = 'gantt-days';
+          days.textContent = r.span + '人日';
+          bar.appendChild(days);
+          bar.title = '#' + r.number + ' ' + r.title +
+            (r.hasDue ? '' : ' (期限なし)') + (r.overdue ? ' · 期限切れ' : '') +
+            ' — 押すと中身を開きます。端を掴むと期限、真ん中を掴むと全体を動かせます';
+          track.appendChild(bar);
+          makeBarDraggable(bar, r, g, COL, row);
+
+          row.appendChild(track);
+          rows.appendChild(row);
+        });
+      });
+
+      chart.appendChild(rows);
+
+      // 掴み手は1つを使い回す。描くたびに作ると、聞き手が window に積もる
+      if (ganttResizer) chart.appendChild(ganttResizer);
+      ganttEl.appendChild(chart);
+
+      ganttShown = { today: g.todayOffset, col: COL };
+      if (ganttToToday) {
+        ganttScrollToToday();
+      } else {
+        ganttEl.scrollLeft = keepScroll;
+        ganttSyncResizer();
+      }
+    }, function (err) {
+      if (still()) failInto(ganttEl)(err);
+    });
+  }
+
+  /**
+   * 細かさを変える。日の幅が変わると今の位置は意味を失うので、今日へ送り直す
+   *
+   * @param {string} zoom 'day' | 'week' | 'month'
+   */
+  function setGanttZoom(zoom) {
+    if (!Object.prototype.hasOwnProperty.call(GANTT_ZOOMS, zoom)) return;
+    ganttZoom = zoom;
+    try {
+      window.localStorage.setItem('ganttZoom', zoom);
+    } catch (e) { /* 覚えられなくても切り替わる */ }
+    markGanttZoom();
+    ganttToToday = true;
+    loadGantt();
+  }
+
+  function markGanttZoom() {
+    document.querySelectorAll('#gantt-zoom [data-zoom]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.zoom === ganttZoom));
+    });
+  }
+
+
+  // ===== 工数の集計 =====
+
+  var TALLY_UNITS = [
+    ['week', '週ごと'], ['month', '月ごと'], ['quarter', '四半期ごと'],
+    ['half', '半期ごと'], ['year', '年度ごと'],
+  ];
+  var TALLY_BASES = [
+    ['due', '期限で数える'], ['closed', '完了日で数える'], ['start', '開始日で数える'],
+  ];
+
+  /**
+   * 選択肢を詰める。
+   *
+   * @param {HTMLSelectElement} sel
+   * @param {Array<Array<string>>} pairs
+   */
+  function fillSelect(sel, pairs, chosen) {
+    if (sel.options.length) return;
+
+    pairs.forEach(function (pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      sel.appendChild(opt);
+    });
+    if (chosen) sel.value = chosen;
+  }
+
+  /**
+   * 数を人日として出す。
+   *
+   * @param {number} n
+   * @returns {string}
+   */
+  function daysText(n) {
+    var v = Math.round((Number(n) || 0) * 100) / 100;
+    return String(v);
+  }
+
+  /**
+   * 差の出し方。超えていれば赤、下回っていれば緑。
+   *
+   * @param {number} diff
+   * @returns {HTMLElement}
+   */
+  function makeDiffCell(diff) {
+    var el = document.createElement('span');
+    var v = Math.round((Number(diff) || 0) * 100) / 100;
+
+    el.className = 'tally-diff' + (v > 0 ? ' over' : (v < 0 ? ' under' : ''));
+    el.textContent = (v > 0 ? '+' : '') + v;
+    return el;
+  }
+
+  /**
+   * 集計を描く。
+   *
+   * 予定と実績を1件ずつ見ているうちは傾向が分からない。区切りごとに
+   * 足し上げ、累計も並べる。
+   */
+  function loadTally() {
+    // 既定は月ごと。週は細かすぎ、四半期は粗すぎて傾向が見えにくい
+    fillSelect(tallyUnitSel, TALLY_UNITS, 'month');
+    fillSelect(tallyBasisSel, TALLY_BASES, 'due');
+    fillTallyWho();
+
+    // 区切りや対象を続けて選び直したとき、前の選び方の集計で上書きしない
+    var still = latest('tally');
+    showSkeleton(tallyEl, 'list', 3);
+
+    call('apiTallyEffort', [tallyUnitSel.value, tallyBasisSel.value, tallyWhoSel.value], function (result) {
+      if (!still()) return;
+      var res = result || { periods: [], people: [], total: {}, hidden: 0 };
+      tallyEl.textContent = '';
+      issueCountEl.textContent = 'チーム全体 ' + res.total.count + '件 / 予定 ' +
+        daysText(res.total.planned) + '人日 · 実績 ' +
+        daysText(res.total.actual) + '人日';
+
+      if (!res.periods.length) {
+        tallyEl.appendChild(makeBlankState(
+          '集計できるやることがありません',
+          '予定工数か実績工数を入れて、数える日 (期限・完了日・開始日) を' +
+          '埋めたものが集まります。'
+        ));
+        return;
+      }
+
+      // 誰に何が見えるかを先に書く。見えている範囲が分からないと、見張られて
+      // いるように感じて工数を入れなくなる (透明で控えめな記録ほど受け入れられる)
+      var scopeNote = document.createElement('div');
+      scopeNote.className = 'tally-visibility row-meta';
+      scopeNote.textContent = '見える範囲: チーム全体の合計は誰でも見られます。人ごとの内訳は本人と、' +
+        'その人の上長として登録されている人だけが見られます。順位は作っていません。';
+      tallyEl.appendChild(scopeNote);
+      tallyEl.appendChild(makeTallySummary(res));
+      tallyEl.appendChild(makeTallyTable(res));
+      tallyEl.appendChild(makePeopleTable(res));
+
+      if (res.hidden) {
+        var scope = document.createElement('div');
+        scope.className = 'tally-note row-meta';
+        scope.textContent = '人ごとの内訳に出るのは自分' +
+          (tallyScope.isManager ? 'と配下の人' : '') +
+          'のぶんだけです。ほかの' + res.hidden +
+          '件は全体の合計にだけ入っています。';
+        tallyEl.appendChild(scope);
+      }
+
+      if (res.skipped) {
+        var note = document.createElement('div');
+        note.className = 'tally-note tally-skipped row-meta';
+        note.textContent = res.skipped + '件は、数える日が空のため入っていません。' +
+          '「数え方」を変えると入ることがあります。';
+        tallyEl.appendChild(note);
+      }
+    }, still.only(failInto(tallyEl)));
+  }
+
+  /**
+   * 誰の内訳を見るかの選択肢を詰める。
+   *
+   * 見てよい人が自分だけなら、選ばせる意味がない。
+   */
+  function fillTallyWho() {
+    if (tallyWhoSel.options.length) return;
+
+    var pairs = [['', '見られる人ぜんぶ']];
+    (tallyScope.canSee || []).forEach(function (who) {
+      pairs.push([who, who === tallyScope.me
+        ? '自分 (' + personName(who) + ')' : personName(who)]);
+    });
+
+    fillSelect(tallyWhoSel, pairs, '');
+  }
+
+  /**
+   * 全体の合計。まず結論を出す。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makeTallySummary(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-summary';
+
+    [['予定', daysText(res.total.planned) + '人日'],
+     ['実績', daysText(res.total.actual) + '人日'],
+     ['差', null],
+     ['件数', res.total.count + '件']].forEach(function (pair) {
+      var box = document.createElement('div');
+      box.className = 'tally-card';
+
+      var label = document.createElement('div');
+      label.className = 'row-meta';
+      label.textContent = pair[0];
+      box.appendChild(label);
+
+      var value = document.createElement('div');
+      value.className = 'tally-value';
+
+      if (pair[1] === null) value.appendChild(makeDiffCell(res.total.diff));
+      else value.textContent = pair[1];
+
+      box.appendChild(value);
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  /**
+   * 区切りごとの表。累計も並べる。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makeTallyTable(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '区切りごと (チーム全体)';
+    wrap.appendChild(head);
+
+    var scroll = document.createElement('div');
+    scroll.className = 'tally-scroll';
+
+    var table = document.createElement('table');
+    table.className = 'tally-table';
+
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    ['区切り', '予定', '実績', '差', '累計予定', '累計実績', '件数']
+      .forEach(function (name) {
+        var th = document.createElement('th');
+        th.textContent = name;
+        hr.appendChild(th);
+      });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    res.periods.forEach(function (p) {
+      var tr = document.createElement('tr');
+
+      var name = document.createElement('th');
+      name.scope = 'row';
+      name.textContent = p.label;
+      tr.appendChild(name);
+
+      [daysText(p.sum.planned), daysText(p.sum.actual), null,
+       daysText(p.cumulative.planned), daysText(p.cumulative.actual),
+       String(p.sum.count)].forEach(function (text) {
+        var td = document.createElement('td');
+        if (text === null) td.appendChild(makeDiffCell(p.sum.diff));
+        else td.textContent = text;
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    return wrap;
+  }
+
+  /**
+   * 人ごとの表。区切りを横に並べる。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makePeopleTable(res) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tally-block';
+
+    var head = document.createElement('h3');
+    head.textContent = '人ごと';
+    hint(head, 'tally:people');
+    wrap.appendChild(head);
+
+    var scroll = document.createElement('div');
+    scroll.className = 'tally-scroll';
+
+    var table = document.createElement('table');
+    table.className = 'tally-table';
+
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+
+    var corner = document.createElement('th');
+    corner.textContent = '担当者';
+    hr.appendChild(corner);
+
+    res.periods.forEach(function (p) {
+      var th = document.createElement('th');
+      th.textContent = p.label;
+      hr.appendChild(th);
+    });
+
+    var last = document.createElement('th');
+    last.textContent = '合計';
+    hr.appendChild(last);
+
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    res.people.forEach(function (person) {
+      var tr = document.createElement('tr');
+
+      var name = document.createElement('th');
+      name.scope = 'row';
+      name.className = 'tally-who';
+      var isNone = person.who === '(担当なし)';
+      name.appendChild(makeAvatar(isNone ? '' : person.who));
+      name.appendChild(isNone
+        ? document.createTextNode('担当なし') : makePersonLabel(person.who));
+      tr.appendChild(name);
+
+      res.periods.forEach(function (p) {
+        var cell = p.byPerson[person.who];
+        var td = document.createElement('td');
+
+        if (!cell) {
+          td.className = 'tally-empty';
+          td.textContent = '—';
+        } else {
+          td.appendChild(document.createTextNode(
+            daysText(cell.planned) + ' / ' + daysText(cell.actual)));
+          td.appendChild(makeDiffCell(cell.actual - cell.planned));
+        }
+        tr.appendChild(td);
+      });
+
+      var totalCell = document.createElement('td');
+      totalCell.appendChild(document.createTextNode(
+        daysText(person.total.planned) + ' / ' + daysText(person.total.actual)));
+      totalCell.appendChild(makeDiffCell(person.total.diff));
+      tr.appendChild(totalCell);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+
+    var note = document.createElement('div');
+    note.className = 'tally-note row-meta';
+    note.textContent = 'それぞれ「予定 / 実績」と、その差です (人日)。' +
+      '担当者が複数いる仕事は、頭数で割って数えています。';
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  // ===== 進捗ボード =====
+
+  var COLUMNS = [
+    ['Backlog', 'これから'],
+    ['In Progress', '作業中'],
+    ['In Review', '確認中'],
+    ['Done', '完了'],
+  ];
+
+  function loadBoard() {
+    // カードを動かすたびに取り直すので、先に頼んだぶんの返事で新しい板を描き直さない
+    var still = latest('board');
+    showSkeleton(boardEl, 'board');
+
+    // 絞り込みに使うため、やることの中身も持っておく
+    if (!lastIssues.length) {
+      call('apiIssueList', [''],
+        still.only(function (list) { lastIssues = list || []; }),
+        failQuiet('知らせなくてよい'));
+    }
+
+    call('apiProjectBoard', [], function (result) {
+      if (!still()) return;
+      // 描くときに列を絞り込むので、写しを控える (言葉の表し方が変わったら写しから描き直す)
+      lastBoard = JSON.stringify(result || {});
+      renderBoard(result);
+    }, still.only(failInto(boardEl)));
+  }
+
+  /** 最後に届いた apiProjectBoard の返り (JSON の字)。まだ無ければ '' */
+  var lastBoard = '';
+
+  /**
+   * 進捗ボードを描く。
+   *
+   * @param {object} result apiProjectBoard の返り (中を書き換える)
+   */
+  function renderBoard(result) {
+    var board = result || {};
+    COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
+    boardEl.textContent = '';
+
+    // 絞り込む前の列の長さ。末尾に足す位置は、見えている枚数ではなくこちらで数える
+    var fullLen = {};
+    COLUMNS.forEach(function (c) { fullLen[c[0]] = board[c[0]].length; });
+
+    // 絞り込みは番号で当てる。カードは中身を全部持っていない
+    var keep = null;
+    if (String(issueFilterEl.value || '')) {
+      keep = {};
+      (lastIssues || []).filter(matchesFilter).forEach(function (i) {
+        keep[i.number] = true;
+      });
+      COLUMNS.forEach(function (c) {
+        board[c[0]] = board[c[0]].filter(function (card) {
+          return keep[card.issueNumber];
+        });
+      });
+    }
+
+    var total = 0;
+    COLUMNS.forEach(function (c) { total += board[c[0]].length; });
+    issueCountEl.textContent = total + '枚';
+
+    if (total === 0) {
+      boardEl.appendChild(makeBlankState(
+        'カードがありません',
+        'カードは「やること」です。作ると「これから」に並び、' +
+        '改訂版や確認依頼に応じて自動で右に動きます。列の「＋」からも足せます。',
+        { label: 'やることを作る', onClick: createIssue }
+      ));
+      // 空でも列は描く。列の「＋」から足せないと、最初の1枚の入口が減る
+    }
+
+    COLUMNS.forEach(function (pair) {
+      var column = pair[0];
+
+      var col = document.createElement('div');
+      col.className = 'board-column';
+
+      var head = document.createElement('h3');
+      head.textContent = pair[1] + ' (' + board[column].length + ')';
+      // 0 のときは出さない。ポイントを使っていない列に「0pt」が並ぶと、ただの雑音になる
+      if (scrumOn() && scrumPointsSum(board[column])) {
+        var colPoints = makePill(pointsLabel(scrumPointsSum(board[column])), 'chip group-points');
+        colPoints.setAttribute('aria-label', termIn('{points}の合計 ') + scrumPointsSum(board[column]));
+        head.appendChild(document.createTextNode(' '));
+        head.appendChild(colPoints);
+      }
+      hint(head, 'board:' + column);
+
+      // 列ごとに、その場でやることを足す。題名だけ打てばその列に入る
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'icon-btn board-add';
+      addBtn.appendChild(makeIcon('plus'));
+      addBtn.setAttribute('aria-label', pair[1] + ' にやることを足す');
+      addBtn.title = pair[1] + ' にやることを足す';
+      addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], fullLen[column]); });
+      var headRow = document.createElement('div');
+      headRow.className = 'board-column-head';
+      headRow.appendChild(head);
+      headRow.appendChild(addBtn);
+      col.appendChild(headRow);
+
+      col.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        col.classList.add('drop-target');
+        // どこに入るかを線で見せる。入る前に分かれば、落とし直さずに済む
+        showDropIndicator(col, boardDropIndex(col, e.clientY));
+      });
+      col.addEventListener('dragleave', function (e) {
+        if (e.relatedTarget && col.contains(e.relatedTarget)) return;
+        col.classList.remove('drop-target');
+        clearDropIndicator();
+      });
+      col.addEventListener('drop', function (e) {
+        e.preventDefault();
+        col.classList.remove('drop-target');
+        var index = boardDropIndex(col, e.clientY);
+        clearDropIndicator();
+
+        var issueNumber = Number(e.dataTransfer.getData('text/plain'));
+        if (!issueNumber) return;
+
+        // 落とした位置に入れる (以前は列の末尾にしか入らなかった)。絞り込んで
+        // いるときは見えている枚数と保存されている並びが食い違うので、
+        // 保存されている並びの位置に直してから送る
+        call('apiProjectMove', [issueNumber, column, boardSavedIndex(col, index, column, issueNumber, fullLen)],
+          function () { loadBoard(); });
+      });
+
+      board[column].forEach(function (card) {
+        var el = document.createElement('div');
+        el.className = 'board-card';
+        el.draggable = true;
+
+        var num = document.createElement('span');
+        num.className = 'card-number';
+        num.textContent = '#' + card.issueNumber;
+        el.appendChild(num);
+
+        var title = document.createElement('div');
+        title.className = 'card-title';
+        title.textContent = card.title;
+        el.appendChild(title);
+
+        el.dataset.number = card.issueNumber;
+        el.dataset.order = card.order;
+        el.dataset.column = column;
+
+        var rel = makeRelationChips(card.issueNumber);
+        if (rel.childNodes.length) {
+          var relBox = document.createElement('div');
+          relBox.className = 'card-rel';
+          relBox.appendChild(rel);
+          el.appendChild(relBox);
+        }
+
+        var cardScrum = makeScrumChips(card);
+        if (cardScrum) el.appendChild(cardScrum);
+
+        var labelEls = makeLabels(card.labels);
+        if (labelEls) el.appendChild(labelEls);
+        applyRot(el, card);
+
+        el.addEventListener('dragstart', function (e) {
+          e.dataTransfer.setData('text/plain', String(card.issueNumber));
+          // 掴んだカードは位置の数え方から外す (自分の前後に落としても動かない)
+          el.classList.add('dragging');
+        });
+        el.addEventListener('dragend', function () {
+          el.classList.remove('dragging');
+          clearDropIndicator();
+        });
+
+        // 掴んで動かすだけでなく、押して中身を直せるようにする
+        el.addEventListener('click', function () {
+          openIssueByNumber(card.issueNumber, el);
+        });
+        el.tabIndex = 0;
+        el.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          openIssueByNumber(card.issueNumber, el);
+        });
+
+        var foot = document.createElement('div');
+        foot.className = 'card-foot';
+
+        var when = document.createElement('span');
+        when.className = 'row-meta';
+        if (card.dueDate) {
+          // 字は札と並べて折り返すので、包んで1つの塊にする
+          var due = document.createElement('span');
+          due.textContent = '期限 ' + String(card.dueDate).substring(0, 10);
+          when.appendChild(due);
+        }
+
+        var cardPri = makePriorityChip(card);
+        if (cardPri) when.appendChild(cardPri);
+
+        var cardStale = makeStaleBadge(card);
+        if (cardStale) when.appendChild(cardStale);
+        foot.appendChild(when);
+        foot.appendChild(makeAvatars(card.assignees || card.assignee));
+
+        // 一覧と同じく、カードからも捨てられるようにする。
+        // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
+        foot.appendChild(makeArchiveButton(
+          { number: card.issueNumber, title: card.title }, panelIssues));
+
+        el.appendChild(foot);
+
+        col.appendChild(el);
+      });
+
+      boardEl.appendChild(col);
+    });
+  }
+
+  /**
+   * 列の中で、その高さに落としたら何番目に入るか。掴んでいるカードは数えない。
+   *
+   * @param {HTMLElement} col
+   * @param {number} y 画面の縦の位置
+   * @returns {number}
+   */
+  function boardDropIndex(col, y) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    for (var i = 0; i < cards.length; i++) {
+      var r = cards[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return i;
+    }
+    return cards.length;
+  }
+
+  /**
+   * 見えている中での位置を、保存されている並びの位置に直す。
+   *
+   * 絞り込んでいると見えないカードがあるので、見えている何番目かをそのまま送ると
+   * ずれる。落とした先のカードの保存されている番号を使い、末尾なら絞り込む前の
+   * 長さを使う。同じ列の中で後ろへ動かすときは、サーバが先に自分を抜くぶん1つ詰める。
+   *
+   * @param {HTMLElement} col
+   * @param {number} index 見えている中での位置
+   * @param {string} column
+   * @param {number} issueNumber 動かすカード
+   * @param {Object<string, number>} fullLen 絞り込む前の列の長さ
+   * @returns {number}
+   */
+  function boardSavedIndex(col, index, column, issueNumber, fullLen) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    var dragged = document.querySelector('.board-card[data-number="' + issueNumber + '"]');
+    var fromSame = dragged && dragged.dataset.column === column;
+    var fromOrder = dragged ? Number(dragged.dataset.order) : -1;
+    if (index < cards.length) {
+      var target = Number(cards[index].dataset.order);
+      return fromSame && fromOrder < target ? target - 1 : target;
+    }
+    var len = fullLen[column] || 0;
+    return fromSame ? len - 1 : len;
+  }
+
+  /** 落とす位置の線。1本だけ出す */
+  var dropIndicator = document.createElement('div');
+  dropIndicator.className = 'drop-indicator';
+  dropIndicator.setAttribute('aria-hidden', 'true');
+
+  function showDropIndicator(col, index) {
+    var cards = [].slice.call(col.querySelectorAll('.board-card:not(.dragging)'));
+    var before = cards[index] || null;
+    if (before) col.insertBefore(dropIndicator, before);
+    else col.appendChild(dropIndicator);
+  }
+
+  function clearDropIndicator() {
+    if (dropIndicator.parentNode) dropIndicator.parentNode.removeChild(dropIndicator);
+  }
+
+  /**
+   * 列の中で、題名だけ打ってやることを足す欄。
+   *
+   * 右の入力欄を開くまでもない思い付きを、その場で書き留められるようにする。
+   * 担当や期限は、足したあとにカードを開いて直す。Enter で足し、Esc でやめる。
+   *
+   * @param {HTMLElement} col
+   * @param {string} column 列の名前 (Backlog など)
+   * @param {string} label 列の見出し
+   * @param {number} at 列の末尾の位置
+   */
+  function openBoardComposer(col, column, label, at) {
+    var open = col.querySelector('.board-composer');
+    if (open) { open.querySelector('input').focus(); return; }
+
+    var form = document.createElement('form');
+    form.className = 'board-composer';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'やることの題名';
+    input.setAttribute('aria-label', label + ' に足すやることの題名');
+    form.appendChild(input);
+
+    var actions = document.createElement('div');
+    actions.className = 'board-composer-actions';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'やめる';
+    var add = document.createElement('button');
+    add.type = 'submit';
+    add.className = 'btn btn-primary';
+    add.textContent = '足す';
+    add.disabled = true;
+    actions.appendChild(cancel);
+    actions.appendChild(add);
+    form.appendChild(actions);
+
+    function close() { form.remove(); }
+    input.addEventListener('input', function () {
+      add.disabled = !input.value.replace(/^\s+|\s+$/g, '');
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    });
+    cancel.addEventListener('click', close);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var title = input.value.replace(/^\s+|\s+$/g, '');
+      if (!title) return;
+      add.disabled = true;
+      call('apiIssueCreate', [title, '', [], '', {}], function (made) {
+        function done() {
+          showSnack('#' + made.number + ' を ' + label + ' に足しました', { kind: 'ok' });
+          loadBoard();
+        }
+        // 作ると「これから」に入る。ほかの列で足したなら、その列の末尾へ移す
+        if (column === 'Backlog' || !made) done();
+        else call('apiProjectMove', [made.number, column, at], done, function (err) {
+          // 作れてはいる。押せないまま残すと、もう一度作られて2つ並ぶ。閉じて板を描き直す
+          close();
+          showSnack('#' + made.number + ' は作りましたが、' + label + ' へ移せませんでした (これから に入っています): ' +
+            err.message, { kind: 'ng' });
+          loadBoard();
+        });
+      }, failEnable(add, '足せませんでした: '));
+    });
+
+    col.insertBefore(form, col.querySelector('.board-column-head').nextSibling);
+    input.focus();
+  }
+

@@ -1,19 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-function read(rel) {
-  return fs.readFileSync(path.join(ROOT, rel), 'utf8');
-}
+import { APP, PAGE_WITHOUT_APP } from './ui-source.js';
 
 /*
- * 組む元 (wiki.html / app.css.html / app.js.html) は 1 ファイルの中で 1 回だけ読む。
+ * 組む元 (wiki.html / app.css.html / 画面の JS) は 1 ファイルの中で 1 回だけ読む。
  *
  * 画面を組むテストは数百あり、そのたびに 1万6千行を読み直して組み直していた。
  * 覚えるのは**字と、まだ走らせていない関数だけ**。関数は呼ぶたびに中身を
- * 頭から走らせるので、app.js の変数や聞き手は組むたびに新しく作られ、前の
+ * 頭から走らせるので、画面の JS の変数や聞き手は組むたびに新しく作られ、前の
  * 画面の状態は引き継がれない (状態は window / document 側にあり、それは
  * mountApp が毎回組み直し、dropLeftovers が外す)。
  * vitest はテストのファイルごとにモジュールを読み直すので、覚え書きもファイルを
@@ -23,16 +15,12 @@ let source = null;
 
 function compiled() {
   if (source) return source;
-  const html = read('src/ui/wiki.html')
-    .replace("<?!= include('ui/app.css') ?>", read('src/ui/app.css.html'))
-    .replace("<?!= include('ui/app.js') ?>", '')
+  // 本文は画面の JS を除いた wiki.html、JS は wiki.html の include の順につないだもの
+  // (つなぎ方は ui-source.js だけが知っている)
+  const html = PAGE_WITHOUT_APP
     .replace(/^[\s\S]*?<html[^>]*>/, '')
     .replace(/<\/html>[\s\S]*$/, '');
-
-  // app.js は <script> で包まれている。中身だけを走らせる
-  const js = read('src/ui/app.js.html')
-    .replace(/^\s*<script>/, '')
-    .replace(/<\/script>\s*$/, '');
+  const js = APP;
 
   // eslint-disable-next-line no-new-func
   source = { html, run: new Function('window', 'document', 'google', js) };
@@ -97,7 +85,7 @@ function dropLeftovers() {
  *
  * ソースを文字列で検査するだけでは、描画も応答も確かめられない。
  * wiki.html に部分HTMLを差し込み、google.script.run を差し替えたうえで
- * app.js を本当に走らせる。
+ * 画面の JS を本当に走らせる。
  *
  * @param {Object<string, *|function>} responses API名 → 返す値、または関数
  * @param {{location?: object}} [options] location は google.script.url.getLocation が
@@ -158,7 +146,7 @@ export function mountApp(responses, options) {
 
   window.google = { script: { run: makeRunner(null, null), url } };
 
-  // 毎回呼び直すので、app.js の中の状態は組むたびに新しく作られる
+  // 毎回呼び直すので、画面の JS の中の状態は組むたびに新しく作られる
   compiled().run(window, document, window.google);
 
   return {
