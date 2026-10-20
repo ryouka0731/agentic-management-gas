@@ -311,3 +311,61 @@ describe('画面に渡せる形', () => {
     expect(ctx.outboxList('failed').map((w) => w.args.branch)).toEqual(['b']);
   });
 });
+
+/*
+ * Drive を共有している人なら誰でも頼めるので、1人が何百件も積むと、ほかの人の
+ * 頼みごとが埋もれ、取りに来た手元の Claude に読みきれない量が渡る。
+ */
+describe('1人が1日に頼める数', () => {
+  it('上限までは置け、上限を超えると断る', () => {
+    const { ctx } = setup();
+    const limit = ctx.OUTBOX_DAILY_LIMIT();
+    expect(limit).toBe(50);
+
+    for (let i = 0; i < limit; i++) ctx.outboxAdd('diff', { branch: 'b' + i });
+    expect(() => ctx.outboxAdd('diff', { branch: 'over' })).toThrow('きょう頼める数');
+    expect(ctx.dbReadAll('outbox')).toHaveLength(limit);
+  });
+
+  it('ほかの人の数には入らない', () => {
+    const { ctx, fake } = setup();
+    for (let i = 0; i < ctx.OUTBOX_DAILY_LIMIT(); i++) ctx.outboxAdd('diff', { branch: 'b' + i });
+
+    fake._setUser('aoki@example.com');
+    expect(() => ctx.outboxAdd('diff', { branch: 'mine' })).not.toThrow();
+  });
+
+  it('前の日の行は数えない', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < ctx.OUTBOX_DAILY_LIMIT(); i++) ctx.outboxAdd('diff', { branch: 'b' + i });
+    const old = new Date(Date.now() - 2 * 24 * 3600 * 1000);
+    ctx.dbReadAll('outbox').forEach((r) => ctx.dbUpdate('outbox', 'id', r.id, { createdAt: old }));
+
+    expect(() => ctx.outboxAdd('diff', { branch: 'today' })).not.toThrow();
+  });
+
+  it('承認で自動に置くぶんは上限で止めない (数には入る)', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < ctx.OUTBOX_DAILY_LIMIT(); i++) ctx.outboxAdd('diff', { branch: 'b' + i });
+
+    // 承認は済んでいる。ここで断ると「承認したのに取り込みを頼めていない」になる
+    const row = ctx.outboxAddOnApproval_('merge', { branch: 'x', into: 'main' }, { prNumber: 3 });
+    expect(row.verb).toBe('merge');
+    expect(ctx.dbReadAll('outbox')).toHaveLength(ctx.OUTBOX_DAILY_LIMIT() + 1);
+    // 自動のぶんも同じ人の数に入るので、人の口は引き続き断る
+    expect(() => ctx.outboxAdd('diff', { branch: 'over' })).toThrow('きょう頼める数');
+  });
+
+  it('自動の口でも動詞と引数は検査する', () => {
+    const { ctx } = setup();
+    expect(() => ctx.outboxAddOnApproval_('run', {})).toThrow('頼めない動詞です');
+    expect(() => ctx.outboxAddOnApproval_('merge', { branch: '-x' })).toThrow('引数に使えない字');
+  });
+
+  it('承認したときは自動の口を使う', async () => {
+    const fs = await import('node:fs');
+    const text = fs.readFileSync(new URL('../src/core/PullRequest.gs', import.meta.url), 'utf8');
+    expect(text).toContain("outboxAddOnApproval_('merge'");
+    expect(text).not.toMatch(/[^_]outboxAdd\(/);
+  });
+});
