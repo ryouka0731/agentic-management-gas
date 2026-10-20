@@ -1,0 +1,2320 @@
+  // ===== やること =====
+
+  /**
+   * やることの見え方を切り替える。
+   *
+   * 対象は同じで、見せ方だけが違う。GitHub の Projects と同じく、
+   * 1つの行き先に複数のビューを持たせる。
+   *
+   * @param {string} view 'list' | 'board' | 'gantt'
+   */
+  /**
+   * ラベルを小さな札にして並べる。
+   *
+   * @param {string} labels カンマ区切り
+   * @returns {HTMLElement|null}
+   */
+  /**
+   * タグの色を返す。一覧に無いものは既定の色。
+   *
+   * @param {string} name
+   * @returns {string}
+   */
+  function tagColorOf(name) {
+    for (var i = 0; i < tags.length; i++) {
+      if (String(tags[i].name) === String(name)) return tags[i].color || 'ink';
+    }
+    return 'ink';
+  }
+
+  /**
+   * 「#タグ」の形で書かれた文からタグを取り出す。
+   * src/core/Tag.gs の tagParse と同じもの。
+   *
+   * @param {string} text
+   * @returns {string[]}
+   */
+  function tagParse(text) {
+    var re = /#([^\s#,]+)/g;
+    var src = String(text || '');
+    var seen = {};
+    var out = [];
+    var m;
+
+    while ((m = re.exec(src)) !== null) {
+      if (seen[m[1]]) continue;
+      seen[m[1]] = true;
+      out.push(m[1]);
+    }
+    return out;
+  }
+
+  /**
+   * タグを書く欄を作る。
+   *
+   * 「#」に続けて書き、空白で区切る。カンマ区切りだと、書いている途中で
+   * 今いくつ書いたのかが読み取れない。「#」なら1つ書くたびに形が見える。
+   *
+   * 「#」を打つと、これまでに使ったタグから候補を出す。自由に書かせると
+   * 「会議」「打合せ」「打ち合わせ」が並んで数えられなくなる。
+   *
+   * @param {string} initial カンマ区切り
+   * @returns {{el: HTMLElement, value: function(): string}}
+   */
+  function makeTagPicker(initial) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tag-picker';
+
+    var label = document.createElement('label');
+    label.className = 'tag-label';
+    label.textContent = 'タグ (「#」で書きます。例: #会議 #調査)';
+    hint(label, 'field:tags');
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tag-input';
+    input.placeholder = '#';
+    input.value = String(initial || '').split(',')
+      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return !!x; })
+      .map(function (x) { return '#' + x; })
+      .join(' ');
+    if (input.value) input.value += ' ';
+
+    label.appendChild(input);
+    wrap.appendChild(label);
+
+    var box = document.createElement('div');
+    box.className = 'mention-picker tag-suggest';
+    box.hidden = true;
+    wrap.appendChild(box);
+
+    var preview = document.createElement('div');
+    preview.className = 'tag-chosen';
+    wrap.appendChild(preview);
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
+
+    function draw() {
+      preview.textContent = '';
+      var names = tagParse(input.value);
+
+      if (!names.length) {
+        var none = document.createElement('span');
+        none.className = 'row-meta';
+        none.textContent = 'まだ付いていません';
+        preview.appendChild(none);
+        return;
+      }
+
+      names.forEach(function (name) {
+        var pill = document.createElement('span');
+        pill.className = 'label-pill tag-' + tagColorOf(name);
+        pill.textContent = name;
+        preview.appendChild(pill);
+      });
+    }
+
+    function pick(name, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+
+      input.value = before + '#' + name + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '#' + name + ' ').length;
+      close();
+      draw();
+    }
+
+    input.addEventListener('input', function () {
+      draw();
+
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /#([^\s#,]*)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var used = tagParse(input.value);
+      var hits = tags.filter(function (tag) {
+        if (used.indexOf(tag.name) >= 0 && tag.name.toLowerCase() !== want) {
+          return false;
+        }
+        return !want || String(tag.name).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 8);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (tag) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+
+        var pill = document.createElement('span');
+        pill.className = 'label-pill tag-' + (tag.color || 'ink');
+        pill.textContent = tag.name;
+        btn.appendChild(pill);
+
+        if (tag.builtin) {
+          var note = document.createElement('span');
+          note.className = 'row-meta';
+          note.textContent = 'よく使うもの';
+          btn.appendChild(note);
+        }
+
+        btn.addEventListener('click', function () { pick(tag.name, m.index); });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !box.hidden) {
+        e.stopPropagation();
+        close();
+      }
+    });
+
+    input.addEventListener('blur', function () {
+      // 候補を押すより先に閉じてしまわないよう、一拍おく
+      window.setTimeout(close, 150);
+    });
+
+    draw();
+    return { el: wrap, value: function () { return tagParse(input.value).join(','); } };
+  }
+
+  function makeLabels(labels) {
+    var list = String(labels || '').split(',')
+      .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+      .filter(function (x) { return !!x; });
+
+    if (!list.length) return null;
+
+    var wrap = document.createElement('span');
+    wrap.className = 'labels';
+
+    list.forEach(function (name) {
+      var pill = document.createElement('span');
+      pill.className = 'label-pill tag-' + tagColorOf(name);
+      pill.textContent = name;
+      wrap.appendChild(pill);
+    });
+    return wrap;
+  }
+
+  /**
+   * 担当者のしるし。頭文字を丸で示す。
+   *
+   * @param {string} email
+   * @returns {HTMLElement}
+   */
+  /**
+   * 画面に出す名前を返す。
+   *
+   * メールアドレスは目で追いにくく、長い並びの中では全部同じに見える。
+   * 登録された名前があればそれを、無ければアドレスの手前を使う。
+   *
+   * @param {string} email
+   * @returns {string}
+   */
+  function personName(email) {
+    var who = String(email || '');
+    if (!who) return '';
+
+    return peopleNames[who] || who.split('@')[0];
+  }
+
+  /**
+   * 名前を主に、アドレスを従にした札を作る。
+   *
+   * @param {string} email
+   * @param {string} [extra] 名前の後ろに添える言葉
+   * @returns {DocumentFragment}
+   */
+  function makePersonLabel(email, extra) {
+    var frag = document.createDocumentFragment();
+    var who = String(email || '');
+
+    var name = document.createElement('span');
+    name.className = 'person-name';
+    name.textContent = personName(who) || '担当なし';
+    frag.appendChild(name);
+
+    if (who) {
+      var addr = document.createElement('span');
+      addr.className = 'person-mail';
+      addr.textContent = who;
+      frag.appendChild(addr);
+    }
+
+    if (extra) frag.appendChild(document.createTextNode(extra));
+    return frag;
+  }
+
+  /**
+   * 担当者の顔を並べる。
+   *
+   * ひとつの仕事を2人で持つことがある。重ねて置き、多いときは残りを
+   * 数で示す。
+   *
+   * @param {string[]|string} people
+   * @returns {HTMLElement}
+   */
+  function makeAvatars(people) {
+    var list = Array.isArray(people)
+      ? people
+      : String(people || '').split(',')
+        .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); })
+        .filter(function (x) { return !!x; });
+
+    if (!list.length) return makeAvatar('');
+
+    var wrap = document.createElement('span');
+    wrap.className = 'avatars';
+
+    list.slice(0, 3).forEach(function (who) { wrap.appendChild(makeAvatar(who)); });
+
+    if (list.length > 3) {
+      var more = document.createElement('span');
+      more.className = 'avatar more';
+      more.textContent = '+' + (list.length - 3);
+      attachHint(more, list.slice(3).map(personName).join(' / '));
+      wrap.appendChild(more);
+    }
+    return wrap;
+  }
+
+  function makeAvatar(email) {
+    var who = String(email || '');
+    var name = personName(who);
+
+    var el = document.createElement('span');
+    el.className = 'avatar' + (who ? '' : ' none');
+    el.textContent = name ? name.charAt(0).toUpperCase() : '?';
+
+    var label = who ? (name + ' (' + who + ')') : '担当なし';
+    el.setAttribute('aria-label', label);
+    attachHint(el, label);
+    return el;
+  }
+
+  /**
+   * @param {string} view
+   * @param {boolean} [quiet] 読み込まない (このあと switchTab が読む)
+   * @param {{noSave: boolean}} [opts] noSave: 次に開いたときの見え方として覚えない。
+   *   探した結果から置き場へ移ったときに使う。覚えると、以後ずっと置き場で開く。
+   *   keepOverdue: 期限切れだけの絞りを残す (改善のヒントから開いたとき)。人が見え方を
+   *   切り替えたら外す。残すと、何で絞られているのか分からないまま件数が減って見える
+   */
+  function setIssueView(view, quiet, opts) {
+    issueView = view;
+    // 工程表とほかの見え方とで、「?」の行き先が違う
+    if (currentTab === 'issues') syncGuideLink();
+    if (!(opts && opts.keepOverdue)) setOverdueOnly(false);
+
+    Object.keys(viewBtns).forEach(function (k) {
+      viewBtns[k].setAttribute('aria-pressed', String(k === view));
+    });
+
+    issueListEl.hidden = view !== 'list';
+    boardEl.hidden = view !== 'board';
+    ganttEl.hidden = view !== 'gantt';
+    tallyEl.hidden = view !== 'tally';
+    trashListEl.hidden = view !== 'trash';
+
+    // 捨てたものと集計は、絞り込みや束ね方の対象外
+    var plain = view === 'trash' || view === 'tally';
+    issueFilterEl.parentNode.hidden = plain;
+    issueGroupSel.parentNode.hidden = plain;
+    mineBtn.hidden = view === 'trash';
+    // 集計と捨てたものには絞りが効かないので出さない
+    overdueOnlyBtn.hidden = !overdueOnly || plain;
+
+    document.getElementById('tally-unit-box').hidden = view !== 'tally';
+    document.getElementById('gantt-zoom').hidden = view !== 'gantt';
+    document.getElementById('gantt-today').hidden = view !== 'gantt';
+    // 開いたら今日を見せる。描き直しのたびに送ると、人が送った位置を奪う
+    if (view === 'gantt') ganttToToday = true;
+    document.getElementById('tally-basis-box').hidden = view !== 'tally';
+    document.getElementById('tally-who-box').hidden =
+      view !== 'tally' || !tallyScope.isManager;
+
+    if (!(opts && opts.noSave)) {
+      try {
+        window.localStorage.setItem('issueView', view);
+      } catch (e) { /* 保存できなくても切り替えは効く */ }
+    }
+
+    if (!quiet) reloadIssueView();
+  }
+
+  function reloadIssueView() {
+    if (issueView === 'tally') loadTally();
+    else if (issueView === 'trash') loadTrash();
+    else if (issueView === 'board') loadBoard();
+    else if (issueView === 'gantt') loadGantt();
+    else loadIssues();
+  }
+
+  /**
+   * 絞り込みの文字で残すかどうかを決める。
+   *
+   * 題名・担当・ラベル・番号のどれかに含まれていれば残す。
+   *
+   * @param {object} issue
+   * @returns {boolean}
+   */
+  /**
+   * その人が担当かを見る。
+   *
+   * @param {object} issue
+   * @param {string} who
+   * @returns {boolean}
+   */
+  function hasAssignee(issue, who) {
+    var list = issue.assignees ||
+      String(issue.assignee || '').split(',')
+        .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); });
+
+    return list.indexOf(String(who)) >= 0;
+  }
+
+  function matchesFilter(issue) {
+    if (mineOnly && !hasAssignee(issue, currentUser)) return false;
+    if (overdueOnly && !isOverdueIssue(issue, tokyoToday(new Date()))) return false;
+
+    var q = String(issueFilterEl.value || '').toLowerCase().replace(/^\s+|\s+$/g, '');
+    if (!q) return true;
+
+    var hay = ['#' + issue.number, issue.title, issue.assignee, issue.labels]
+      .concat(docNamesOf(issue))
+      .join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }
+
+  /**
+   * やることに紐づく文書の名前を返す。
+   *
+   * 人は文書の名前で探すので、番号ではなく名前を絞り込みの対象にする。
+   *
+   * @param {object} issue
+   * @returns {string[]}
+   */
+  function docNamesOf(issue) {
+    var ids = String(issue.linkedFileIds || '').split(',');
+    var out = [];
+
+    for (var i = 0; i < ids.length; i++) {
+      if (!ids[i]) continue;
+      for (var j = 0; j < allFiles.length; j++) {
+        if (allFiles[j].fileId !== ids[i]) continue;
+        var parts = splitPath(allFiles[j].path);
+        if (parts.branch === 'main') out.push(parts.path);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 東京の今日 'YYYY-MM-DD'。東京は夏時間が無いので9時間足すだけでよい (homeDateText と同じ)。
+   *
+   * @param {Date} now
+   * @returns {string}
+   */
+  function tokyoToday(now) {
+    return new Date(now.getTime() + 9 * 3600000).toISOString().substring(0, 10);
+  }
+
+  /**
+   * 期限切れか。今日が期限のものはまだ切れていない (サーバの homeAdvice_ と同じ)。
+   *
+   * @param {object} issue
+   * @param {string} today 'YYYY-MM-DD'
+   * @returns {boolean}
+   */
+  function isOverdueIssue(issue, today) {
+    var due = String(issue.dueDate || '').substring(0, 10);
+    return String(issue.state) === 'open' && !!due && due < today;
+  }
+
+  /** 期限切れだけの絞りを立てる・外す。札は立っている間だけ出す */
+  function setOverdueOnly(on) {
+    overdueOnly = !!on;
+    overdueOnlyBtn.hidden = !overdueOnly;
+  }
+
+  /**
+   * 動きのないやることを傷ませる。
+   *
+   * 色だけだと気づけない人がいるので、日数の吹き出しも付ける。
+   *
+   * @param {HTMLElement} el
+   * @param {object} issue staleLevel / staleDays を持つもの
+   */
+  function applyRot(el, issue) {
+    var level = Number(issue.staleLevel || 0);
+    if (!level) return;
+
+    el.classList.add('rot-' + level);
+    el.dataset.stale = issue.staleDays;
+
+    var note = ['しばらく動きがありません', 'かなり放置されています', '完全に忘れられています'];
+    el.title = issue.staleDays + '日間そのまま — ' + note[level - 1];
+  }
+
+  /**
+   * 動きのなさを示す札。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement|null}
+   */
+  function makeStaleBadge(issue) {
+    if (!Number(issue.staleLevel || 0)) return null;
+
+    return makePill(issue.staleDays + '日動きなし', 'stale-badge', 'clock');
+  }
+
+  /**
+   * 束ねの見出し。押すと畳める。
+   *
+   * @param {string} key
+   * @param {string} label
+   * @param {number} count
+   * @returns {HTMLElement}
+   */
+  function makeGroupHead(label, count, key, points) {
+    var head = document.createElement('button');
+    head.className = 'group-head';
+    head.setAttribute('aria-expanded', String(!collapsed[key]));
+
+    var mark = document.createElement('span');
+    mark.className = 'group-mark';
+    mark.textContent = collapsed[key] ? '▸' : '▾';
+    head.appendChild(mark);
+
+    var name = document.createElement('span');
+    name.textContent = label;
+    head.appendChild(name);
+
+    var n = document.createElement('span');
+    n.className = 'group-count';
+    n.textContent = count;
+    head.appendChild(n);
+
+    // スクラムがオンなら、そのまとまりに積んだポイントの合計も出す。
+    // スプリントごとに束ねたとき、積みすぎていないかを一覧で見比べられる
+    if (points !== undefined && points !== null) {
+      var pt = makePill(pointsLabel(points), 'chip group-points');
+      pt.setAttribute('aria-label', termIn('{points}の合計 ') + points);
+      head.appendChild(pt);
+    }
+
+    head.addEventListener('click', function () {
+      collapsed[key] = !collapsed[key];
+      reloadIssueView();
+    });
+    return head;
+  }
+
+  /**
+   * その親子関係が輪になるかを調べる。
+   *
+   * src/core/IssueTree.js の issueWouldCycle と同じもの。自分自身や
+   * 自分の子孫を親にすると木としてたどれなくなるため、作る前に断る。
+   *
+   * @param {number} child
+   * @param {number} parent
+   * @returns {boolean}
+   */
+  function wouldCycle(child, parent) {
+    if (String(child) === String(parent)) return true;
+
+    var byNumber = {};
+    lastIssues.forEach(function (i) { byNumber[String(i.number)] = i; });
+
+    var seen = {};
+    var cur = byNumber[String(parent)];
+
+    while (cur) {
+      if (String(cur.number) === String(child)) return true;
+      if (seen[String(cur.number)]) return true;
+      seen[String(cur.number)] = true;
+      cur = byNumber[String(cur.parent)];
+    }
+    return false;
+  }
+
+  /**
+   * 親子を付け替える。
+   *
+   * @param {number} child
+   * @param {number|string} parent 空なら親を外す
+   */
+  function setIssueParent(child, parent) {
+    call('apiIssueUpdate', [child, { parent: parent === '' ? '' : Number(parent) }], function () {
+      showSnack(parent
+        ? '#' + child + ' を #' + parent + ' の下に移しました'
+        : '#' + child + ' の親子を解除しました', { kind: 'ok' });
+      reloadIssueView();
+    });
+  }
+
+  /**
+   * 掴んで運べるようにする。
+   *
+   * 落とす先が自分の子孫だと輪になるため、その場合は受け付けない。
+   * 掴む操作しか無いと使えない人が出るので、右のパネルの「親のやること」
+   * でも同じことができるようにしてある。
+   *
+   * @param {HTMLElement} row
+   * @param {object} issue
+   */
+  function makeIssueDraggable(row, issue) {
+    row.draggable = true;
+
+    row.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', String(issue.number));
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+      dropRootEl.hidden = false;
+    });
+
+    row.addEventListener('dragend', function () {
+      row.classList.remove('dragging');
+      dropRootEl.hidden = true;
+      dropRootEl.classList.remove('over');
+    });
+
+    row.addEventListener('dragover', function (e) {
+      var moving = Number(e.dataTransfer.getData('text/plain')) ||
+        Number(document.querySelector('.row-item.dragging') &&
+          document.querySelector('.row-item.dragging').dataset.number);
+
+      if (!moving || wouldCycle(moving, issue.number)) return;
+
+      e.preventDefault();
+      row.classList.add('drop-into');
+    });
+
+    row.addEventListener('dragleave', function () {
+      row.classList.remove('drop-into');
+    });
+
+    row.addEventListener('drop', function (e) {
+      e.preventDefault();
+      row.classList.remove('drop-into');
+
+      var moving = Number(e.dataTransfer.getData('text/plain'));
+      if (!moving || wouldCycle(moving, issue.number)) {
+        showSnack('自分の下にあるやることを親にはできません', { kind: 'ng' });
+        return;
+      }
+      setIssueParent(moving, issue.number);
+    });
+  }
+
+  /**
+   * そのやることの親を返す。
+   *
+   * @param {number} number
+   * @returns {object|null}
+   */
+  function parentOf(number) {
+    var me = byIssueNumber(number);
+    if (!me || me.parent === '' || me.parent === null) return null;
+
+    return byIssueNumber(me.parent);
+  }
+
+  /**
+   * そのやることの子を返す。
+   *
+   * @param {number} number
+   * @returns {object[]}
+   */
+  function childrenOf(number) {
+    return lastIssues.filter(function (i) {
+      return String(i.parent) === String(number);
+    });
+  }
+
+  /**
+   * 番号からやることを引く。
+   *
+   * @param {number} number
+   * @returns {object|null}
+   */
+  function byIssueNumber(number) {
+    for (var i = 0; i < lastIssues.length; i++) {
+      if (String(lastIssues[i].number) === String(number)) return lastIssues[i];
+    }
+    return null;
+  }
+
+  /**
+   * 親をたどった深さを返す。
+   *
+   * @param {number} number
+   * @returns {number}
+   */
+  function depthOf(number) {
+    var seen = {};
+    var depth = 0;
+    var cur = parentOf(number);
+
+    while (cur && !seen[cur.number]) {
+      seen[cur.number] = true;
+      depth++;
+      cur = parentOf(cur.number);
+    }
+    return depth;
+  }
+
+  /**
+   * そのやることを、いま見ている画面の中で探して目立たせる。
+   *
+   * 見えないところに居るなら、代わりに中身を開く。押したのに何も
+   * 起きないのがいちばん困る。
+   *
+   * @param {number} number
+   */
+  function focusIssue(number) {
+    var el = document.querySelector(
+      '#panel-issues [data-number="' + number + '"]');
+
+    if (!el) {
+      openIssueByNumber(number);
+      return;
+    }
+
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+
+    el.classList.remove('flash');
+    // 同じところをもう一度押しても光るよう、いったん外してから付ける
+    void el.offsetWidth;
+    el.classList.add('flash');
+    window.setTimeout(function () { el.classList.remove('flash'); }, 1200);
+  }
+
+  /**
+   * 親と子への行き先を作る。
+   *
+   * 入れ子で並べていても、束ね方や絞り込みで離れると繋がりが見えなくなる。
+   * どちらからでも一押しで行けるようにする。
+   *
+   * @param {number} number
+   * @returns {DocumentFragment}
+   */
+  function makeRelationChips(number) {
+    var frag = document.createDocumentFragment();
+    var parent = parentOf(number);
+    var kids = childrenOf(number);
+
+    function chip(text, target, title) {
+      var btn = document.createElement('button');
+      btn.className = 'rel-chip';
+      btn.appendChild(makeIcon('corner-down-right'));
+      btn.appendChild(document.createTextNode(text));
+      btn.setAttribute('aria-label', title);
+      attachHint(btn, title);
+
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        focusIssue(target);
+      });
+      frag.appendChild(btn);
+    }
+
+    if (parent) {
+      chip('親 #' + parent.number, parent.number,
+        '親の「' + parent.title + '」に移ります');
+    }
+    if (kids.length) {
+      chip('子 ' + kids.length, kids[0].number,
+        kids.length + '件ぶら下がっています。最初の「' + kids[0].title + '」に移ります');
+    }
+    return frag;
+  }
+
+  function issueTreeRows(issues) {
+    var byNumber = {};
+    var nodes = (issues || []).map(function (row) {
+      var node = {};
+      for (var k in row) {
+        if (Object.prototype.hasOwnProperty.call(row, k)) node[k] = row[k];
+      }
+      node.children = [];
+      node.depth = 0;
+      byNumber[String(node.number)] = node;
+      return node;
+    });
+
+    function makesCycle(node, parent) {
+      var seen = {};
+      var cur = parent;
+      while (cur) {
+        if (cur === node || seen[String(cur.number)]) return true;
+        seen[String(cur.number)] = true;
+        cur = byNumber[String(cur.parent)];
+      }
+      return false;
+    }
+
+    var roots = [];
+    nodes.forEach(function (node) {
+      var parent = byNumber[String(node.parent)];
+      if (!parent || parent === node || makesCycle(node, parent)) roots.push(node);
+      else parent.children.push(node);
+    });
+
+    var out = [];
+    (function walk(list, depth) {
+      list.forEach(function (n) {
+        n.depth = depth;
+        out.push(n);
+        walk(n.children, depth + 1);
+      });
+    })(roots, 0);
+
+    return out;
+  }
+
+  /**
+   * 子を含めた工数を足し上げる。
+   *
+   * @param {object} node
+   * @returns {{estimate:number, planned:number, actual:number}}
+   */
+  function rollupEffort(node) {
+    var sum = {
+      estimate: Number(node.estimate) || 0,
+      planned: Number(node.plannedHours) || 0,
+      actual: Number(node.actualHours) || 0,
+    };
+    node.children.forEach(function (c) {
+      var child = rollupEffort(c);
+      sum.estimate += child.estimate;
+      sum.planned += child.planned;
+      sum.actual += child.actual;
+    });
+    return sum;
+  }
+
+  function loadIssues() {
+    // 続けて取り直したとき、先に頼んだぶんの返事で新しい一覧を描き直さない
+    var still = latest('issues');
+    showSkeleton(issueListEl, 'list', 4);
+
+    call('apiIssueList', [''], still.only(renderIssueList), still.only(failInto(issueListEl)));
+  }
+
+  /**
+   * やることの一覧を描く。言葉の表し方が変わったときは、取り直さずに最後の返事から描き直す
+   * (refreshTerms)。
+   *
+   * @param {object[]} list apiIssueList の返り
+   */
+  function renderIssueList(list) {
+    var issues = list || [];
+    lastIssues = issues;
+    issueListEl.textContent = '';
+
+    // 件数は先に出す。0件のときだけ前の値が残っていた
+    var shown = issues.filter(matchesFilter);
+    issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+
+    if (!issues.length) {
+      issueListEl.appendChild(makeBlankState(
+        'やることがありません',
+        '直したい文書を選んでから作ると、その文書に紐づきます。',
+        { label: 'やることを作る', onClick: createIssue }
+      ));
+      return;
+    }
+
+    if (!shown.length) {
+      issueListEl.appendChild(makeBlankState(
+        '絞り込みに合うやることがありません',
+        '絞り込みを消すか、別の言葉で試してください。'
+      ));
+      return;
+    }
+
+    groupIssues(shown, issueGroupSel.value).forEach(function (group) {
+      issueListEl.appendChild(
+        makeGroupHead(group.label, group.issues.length, group.key,
+          scrumOn() ? scrumPointsSum(group.issues) : null));
+      if (collapsed[group.key]) return;
+
+      // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
+      issueTreeRows(group.issues).forEach(renderIssueRow);
+    });
+
+    function renderIssueRow(issue) {
+      var row = document.createElement('div');
+      row.className = 'row-item';
+      row.dataset.number = issue.number;
+      makeIssueDraggable(row, issue);
+
+      if (issue.depth) {
+        row.classList.add('nested');
+        row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
+      }
+
+      var main = document.createElement('div');
+      main.className = 'row-main';
+
+      var title = document.createElement('div');
+      title.className = 'row-title';
+      title.textContent = '#' + issue.number + ' ' + issue.title;
+      main.appendChild(title);
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
+        (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
+
+      var effort = rollupEffort(issue);
+      if (effort.planned || effort.actual || effort.estimate) {
+        var hours = document.createElement('span');
+        hours.className = 'effort';
+        hours.appendChild(makeIcon('clock'));
+
+        var text = [];
+        if (effort.estimate) text.push('見積 ' + effort.estimate);
+        if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+        if (effort.actual) text.push('実績 ' + effort.actual + '人日');
+
+        hours.appendChild(document.createTextNode(text.join(' / ')));
+        if (issue.children.length) hours.title = '子の分を含めた合計';
+        meta.appendChild(hours);
+      }
+
+      // 優先度は先に出す。後ろに付けると他の印に埋もれて拾えない
+      var pri = makePriorityChip(issue);
+      if (pri) meta.appendChild(pri);
+
+      var scrumChips = makeScrumChips(issue);
+      if (scrumChips) meta.appendChild(scrumChips);
+
+      meta.appendChild(makeRelationChips(issue.number));
+
+      var stale = makeStaleBadge(issue);
+      if (stale) meta.appendChild(stale);
+
+      var labelEls = makeLabels(issue.labels);
+      if (labelEls) meta.appendChild(labelEls);
+      main.appendChild(meta);
+      applyRot(row, issue);
+
+      var open = document.createElement('button');
+      open.className = 'row-open';
+      open.appendChild(makeIcon('circle-dot'));
+      open.appendChild(main);
+      open.addEventListener('click', function () {
+        openIssueDetail(issue, row);
+      });
+      row.appendChild(open);
+      row.appendChild(makeAvatars(issue.assignees || issue.assignee));
+
+      var edit = document.createElement('button');
+      edit.className = 'icon-btn';
+      edit.appendChild(makeIcon('pencil'));
+      edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
+      hint(edit, 'act:edit');
+      edit.addEventListener('click', function () { openIssueDetail(issue, row); });
+      row.appendChild(edit);
+
+      if (issue.state === 'open') {
+        var done = document.createElement('button');
+        done.className = 'icon-btn ok';
+        done.appendChild(makeIcon('check'));
+        done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
+        hint(done, 'act:done');
+        done.addEventListener('click', function () {
+          call('apiIssueClose', [issue.number], function () {
+            celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
+            refreshIssueViews();
+          });
+        });
+        row.appendChild(done);
+      } else {
+        var back = document.createElement('button');
+        back.className = 'icon-btn';
+        back.appendChild(makeIcon('back'));
+        back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
+        hint(back, 'act:reopen');
+        back.addEventListener('click', function () {
+          reopenIssue(issue.number);
+        });
+        row.appendChild(back);
+      }
+
+      row.appendChild(makeArchiveButton(issue, panelIssues));
+
+      if (issue.state === 'open' && current.docFileId) {
+        var branchBtn = document.createElement('button');
+        branchBtn.className = 'btn btn-primary';
+        branchBtn.textContent = 'この作業の改訂版を作る';
+        branchBtn.addEventListener('click', function () {
+          branchBtn.disabled = true;
+          call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
+            showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
+            loadFiles(function () { loadIssues(); });
+            loadOverview();
+          }, failEnable(branchBtn));
+        });
+        row.appendChild(branchBtn);
+      }
+
+      issueListEl.appendChild(row);
+    }
+  }
+
+  /**
+   * やることの中身を直す。
+   *
+   * 一覧からも工程表からも進捗ボードからも同じ画面を開く。
+   * 対象が同じなら編集の場所も同じにする。
+   *
+   * @param {object} issue issues 行
+   * @param {HTMLElement} [sourceEl] 一覧の行やカードなど、対象の要素
+   */
+  /*
+   * 補足の切り分け。src/core/MarkdownView.js と同じもの。
+   * google.script.run の往復を増やさないための意図的な重複。
+   */
+  function mdRuns(text) {
+    var src = String(text || '');
+    var re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)\s]+\))/g;
+    var out = [];
+    var at = 0;
+    var m;
+
+    function plain(part) {
+      if (part) out.push({ text: part });
+    }
+
+    while ((m = re.exec(src)) !== null) {
+      plain(src.substring(at, m.index));
+
+      if (m[1]) {
+        out.push({ text: m[1].substring(1, m[1].length - 1), code: true });
+      } else if (m[2]) {
+        out.push({ text: m[2].substring(2, m[2].length - 2), bold: true });
+      } else if (m[3]) {
+        out.push({ text: m[3].substring(1, m[3].length - 1), italic: true });
+      } else {
+        var link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(m[4]);
+        out.push({ text: link[1], link: link[2] });
+      }
+      at = m.index + m[0].length;
+    }
+
+    plain(src.substring(at));
+    return out.length ? out : [{ text: '' }];
+  }
+
+  /**
+   * 補足を塊に分ける。
+   *
+   * @param {string} text
+   * @returns {Array<object>} {type, level?, runs?, items?}
+   */
+  function mdBlocks(text) {
+    var lines = String(text || '').split('\n');
+    var out = [];
+    var para = [];
+    var list = null;
+
+    function flushPara() {
+      if (!para.length) return;
+
+      out.push({ type: 'p', runs: mdRuns(para.join('\n')) });
+      para = [];
+    }
+
+    function flushList() {
+      if (!list) return;
+
+      out.push(list);
+      list = null;
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.replace(/\s+$/, '');
+
+      if (!trimmed.replace(/^\s+/, '')) {
+        flushPara();
+        flushList();
+        continue;
+      }
+
+      var head = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+      if (head) {
+        flushPara();
+        flushList();
+        out.push({ type: 'h', level: head[1].length, runs: mdRuns(head[2]) });
+        continue;
+      }
+
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) {
+        flushPara();
+        flushList();
+        out.push({ type: 'hr' });
+        continue;
+      }
+
+      var quote = /^>\s?(.*)$/.exec(trimmed);
+      if (quote) {
+        flushPara();
+        flushList();
+        out.push({ type: 'quote', runs: mdRuns(quote[1]) });
+        continue;
+      }
+
+      // 手を付けたかどうかの印。順番の無い箇条書きより先に見る
+      var task = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/.exec(trimmed);
+      if (task) {
+        flushPara();
+        if (!list || list.type !== 'tasks') {
+          flushList();
+          list = { type: 'tasks', items: [] };
+        }
+        list.items.push({
+          done: task[1].toLowerCase() === 'x',
+          runs: mdRuns(task[2]),
+        });
+        continue;
+      }
+
+      var bullet = /^\s*[-*]\s+(.*)$/.exec(trimmed);
+      if (bullet) {
+        flushPara();
+        if (!list || list.type !== 'ul') {
+          flushList();
+          list = { type: 'ul', items: [] };
+        }
+        list.items.push({ runs: mdRuns(bullet[1]) });
+        continue;
+      }
+
+      var numbered = /^\s*\d+[.)]\s+(.*)$/.exec(trimmed);
+      if (numbered) {
+        flushPara();
+        if (!list || list.type !== 'ol') {
+          flushList();
+          list = { type: 'ol', items: [] };
+        }
+        list.items.push({ runs: mdRuns(numbered[1]) });
+        continue;
+      }
+
+      flushList();
+      para.push(trimmed);
+    }
+
+    flushPara();
+    flushList();
+    return out;
+  }
+
+  /**
+   * 右のパネルを読む形で開く。
+   *
+   * @param {string} title
+   * @param {HTMLElement} sourceEl
+   * @param {function} onEdit
+   * @returns {HTMLElement} 中身を入れる器
+   */
+  function openSideView(title, sourceEl, onEdit) {
+    setSideSource(sourceEl);
+    sideBody.textContent = '';
+    sideShowing = null;
+    termText(sideTitle, title);
+    setSideOpen(true);
+    setSideEdit(onEdit);
+
+    var box = document.createElement('div');
+    box.className = 'side-view';
+    sideBody.appendChild(box);
+    return box;
+  }
+
+  /**
+   * 補足を読む形に組み立てる。
+   *
+   * src/core/MarkdownView.js と同じ切り分けをここでも行う。画面は
+   * textContent だけで組み立てる決まりなので、HTML の文字列は作らない。
+   *
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function makeMarkdown(text) {
+    var box = document.createElement('div');
+    box.className = 'md';
+
+    mdBlocks(text).forEach(function (block) {
+      if (block.type === 'hr') {
+        box.appendChild(document.createElement('hr'));
+        return;
+      }
+
+      if (block.type === 'ul' || block.type === 'ol' || block.type === 'tasks') {
+        var list = document.createElement(block.type === 'ol' ? 'ol' : 'ul');
+        if (block.type === 'tasks') list.className = 'md-tasks';
+
+        block.items.forEach(function (item) {
+          var li = document.createElement('li');
+
+          if (block.type === 'tasks') {
+            var mark = document.createElement('span');
+            mark.className = 'md-check' + (item.done ? ' done' : '');
+            mark.textContent = item.done ? '✓' : '';
+            mark.setAttribute('aria-label', item.done ? '済んだ' : 'まだ');
+            li.appendChild(mark);
+          }
+
+          fillRuns(li, item.runs);
+          list.appendChild(li);
+        });
+        box.appendChild(list);
+        return;
+      }
+
+      var el;
+      if (block.type === 'h') el = document.createElement('h' + (block.level + 2));
+      else if (block.type === 'quote') el = document.createElement('blockquote');
+      else el = document.createElement('p');
+
+      fillRuns(el, block.runs);
+      box.appendChild(el);
+    });
+
+    if (!box.childNodes.length) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = '(補足はありません)';
+      box.appendChild(none);
+    }
+    return box;
+  }
+
+  /**
+   * 飾りの付いた字を並べる。
+   *
+   * @param {HTMLElement} host
+   * @param {object[]} runs
+   */
+  function fillRuns(host, runs) {
+    (runs || []).forEach(function (run) {
+      if (run.link) {
+        var a = document.createElement('a');
+        // 開く先は http と https だけにする。他の形は字のまま出す
+        if (/^https?:\/\//.test(run.link)) {
+          a.href = run.link;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = run.text;
+          host.appendChild(a);
+          return;
+        }
+        host.appendChild(document.createTextNode(run.text));
+        return;
+      }
+
+      var tag = run.code ? 'code' : (run.bold ? 'strong' : (run.italic ? 'em' : null));
+      if (!tag) {
+        host.appendChild(document.createTextNode(run.text));
+        return;
+      }
+
+      var el = document.createElement(tag);
+      el.textContent = run.text;
+      host.appendChild(el);
+    });
+  }
+
+  /**
+   * 補足の欄に、下書きを差し込む口を付ける。
+   *
+   * 同じ形の書き出しを毎回作り直すと、書く人によって形が変わり、後から
+   * 読み比べられなくなる。
+   *
+   * @param {HTMLTextAreaElement} input
+   * @returns {HTMLElement}
+   */
+  function makeTemplateBar(input) {
+    var wrap = document.createElement('div');
+    wrap.className = 'template-bar';
+
+    var label = document.createElement('span');
+    label.className = 'row-meta';
+    label.textContent = '下書きを差し込む';
+    wrap.appendChild(label);
+
+    function draw() {
+      // 見出しだけ残して並べ直す
+      while (wrap.childNodes.length > 1) wrap.removeChild(wrap.lastChild);
+
+      templates.forEach(function (one) {
+        var chip = document.createElement('span');
+        chip.className = 'template-chip';
+
+        var use = document.createElement('button');
+        use.type = 'button';
+        use.className = 'template-use';
+        use.textContent = one.name;
+        attachHint(use, one.body.split('\n').slice(0, 4).join('\n'));
+
+        use.addEventListener('click', function () { insert(one.body); });
+        chip.appendChild(use);
+
+        if (one.mine) {
+          var off = document.createElement('button');
+          off.type = 'button';
+          off.className = 'chip-off';
+          off.textContent = '×';
+          off.setAttribute('aria-label', one.name + ' を消す');
+          attachHint(off, 'この下書きを消します');
+
+          off.addEventListener('click', function () { drop(one.name); });
+          chip.appendChild(off);
+        }
+        wrap.appendChild(chip);
+      });
+
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn';
+      save.appendChild(makeIcon('plus'));
+      save.appendChild(document.createTextNode('いまの補足を下書きにする'));
+      save.addEventListener('click', keep);
+      wrap.appendChild(save);
+    }
+
+    function insert(body) {
+      var at = input.selectionStart;
+      var before = input.value.substring(0, at);
+      var after = input.value.substring(input.selectionEnd);
+
+      // 前に字があれば1行空ける。続けて差し込むと塊が繋がって読めない
+      var joint = (before && !/\n\n$/.test(before)) ? '\n\n' : '';
+
+      input.value = before + joint + body + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + joint + body).length;
+    }
+
+    function keep() {
+      if (!String(input.value || '').replace(/^\s+|\s+$/g, '')) {
+        showSnack('先に補足を書いてください', { kind: 'ng' });
+        return;
+      }
+
+      openInlineForm(
+        '下書きにする',
+        [{ name: 'name', label: '名前 (例: 週報)', required: true }],
+        '残す',
+        function (v) {
+          call('apiTemplateSave', [v.name, input.value], function (row) {
+            if (row) {
+              templates = templates.filter(function (t) {
+                return t.name !== row.name;
+              });
+              templates.push({ name: row.name, body: row.body, mine: true });
+            }
+            showSnack('下書き「' + v.name + '」を残しました', { kind: 'ok' });
+            closeSide();
+          });
+        }
+      );
+    }
+
+    function drop(name) {
+      call('apiTemplateDelete', [name], function (msg) {
+        templates = templates.filter(function (t) { return t.name !== name; });
+        showSnack(msg, { kind: 'ok' });
+        draw();
+      });
+    }
+
+    draw();
+    return wrap;
+  }
+
+  /**
+   * 予定工数から期限を出す。
+   *
+   * 始まりの日から数えて、予定した人日ぶんの最後の日を返す。
+   *
+   * @param {string} startish 始まりの日 (無ければ作った日)
+   * @param {number|string} planned 人日
+   * @returns {string} YYYY-MM-DD。出せなければ空文字
+   */
+  function dueFromEffort(startish, planned) {
+    var start = new Date(startish);
+    if (!startish || isNaN(start.getTime())) return '';
+
+    var days = ganttDaysForEffort(planned);
+    var end = new Date(start.getFullYear(), start.getMonth(),
+      start.getDate() + days - 1);
+
+    var m = String(end.getMonth() + 1);
+    var d = String(end.getDate());
+    return end.getFullYear() + '-' +
+      (m.length < 2 ? '0' + m : m) + '-' + (d.length < 2 ? '0' + d : d);
+  }
+
+  function openIssueEdit(issue, sourceEl) {
+    var picker = null;
+    var form = openInlineForm(
+      'やること #' + issue.number,
+      [
+        { name: 'title', label: 'やること', required: true },
+        { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
+        {
+          name: 'priority', label: '優先度', choices: priorities,
+          value: issue.priority || 'normal',
+        },
+        { name: 'startDate', label: '開始日 (任意)' },
+        { name: 'dueDate', label: '期限 (例: 2026-09-30)' },
+        { name: 'estimate', label: '見積もり (規模。数値)' },
+        { name: 'plannedHours', label: '予定工数 (人日。0.5 きざみで書けます)' },
+        { name: 'actualHours', label: '実績工数 (人日)' },
+        { name: 'parent', label: '親のやること (番号。空なら親なし)' },
+      ].concat(scrumIssueFields(issue)),
+      '保存する',
+      function (v) {
+        var patch = {
+          title: v.title, body: v.body, assignee: people.value(),
+          startDate: v.startDate, dueDate: v.dueDate,
+          labels: picker ? picker.value() : (issue.labels || ''),
+          estimate: v.estimate, plannedHours: v.plannedHours,
+          actualHours: v.actualHours, parent: v.parent,
+          priority: v.priority,
+        };
+        scrumIssuePatch(v, patch);
+
+        // 予定工数を書き換えたなら、棒の長さもそれに合わせる。
+        // 片方だけ動くと、工程表と工数のどちらが本当か分からなくなる
+        if (String(v.plannedHours) !== String(issue.plannedHours)) {
+          var moved = dueFromEffort(v.startDate || issue.startDate ||
+            issue.createdAt, v.plannedHours);
+          if (moved) patch.dueDate = moved;
+        }
+
+        call('apiIssueUpdate', [issue.number, patch], function (after) {
+          showSnack('#' + issue.number + ' を更新しました', { kind: 'ok' });
+          // 直したら読む形に戻す。書き換えの形のまま残ると、
+          // どこまで反映されたのかが分からない
+          if (after) openIssueDetail(after, sideSource);
+          refreshIssueViews();
+        });
+      },
+      sourceEl
+    );
+
+    var inputs = form.querySelectorAll('input, textarea');
+    inputs[0].value = issue.title || '';
+    inputs[1].value = issue.body || '';
+    inputs[2].value = (issue.assignees || []).map(function (who) {
+      return '@' + who;
+    }).join(' ');
+    if (inputs[2].value) inputs[2].value += ' ';
+    inputs[3].value = issue.startDate ? String(issue.startDate).substring(0, 10) : '';
+    inputs[4].value = issue.dueDate ? String(issue.dueDate).substring(0, 10) : '';
+    inputs[5].value = issue.estimate === '' ? '' : issue.estimate;
+    inputs[6].value = issue.plannedHours === '' ? '' : issue.plannedHours;
+    inputs[7].value = issue.actualHours === '' ? '' : issue.actualHours;
+    inputs[8].value = issue.parent === '' ? '' : issue.parent;
+
+    inputs[3].type = 'date';
+    inputs[4].type = 'date';
+    inputs[5].type = 'number';
+    inputs[6].type = 'number';
+    inputs[7].type = 'number';
+    inputs[8].type = 'number';
+
+    // 人日は半日きざみで入れられるようにする
+    hint(inputs[2].parentNode, 'field:assignee');
+    hint(inputs[5].parentNode, 'field:estimate');
+    hint(inputs[6].parentNode, 'field:planned');
+    hint(inputs[7].parentNode, 'field:actual');
+    hint(inputs[8].parentNode, 'field:parent');
+
+    inputs[6].step = '0.5';
+    inputs[7].step = '0.5';
+    inputs[6].min = '0';
+    inputs[7].min = '0';
+    var people = attachAssigneePicker(inputs[2]);
+    inputs[1].parentNode.parentNode
+      .insertBefore(makeTemplateBar(inputs[1]), inputs[1].parentNode.nextSibling);
+
+    var picker = makeTagPicker(issue.labels || '');
+    form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
+
+    var extra = document.createElement('div');
+    extra.className = 'inline-form-actions';
+
+    var mine = document.createElement('button');
+    mine.type = 'button';
+    mine.className = 'btn';
+    mine.appendChild(makeIcon('user'));
+    mine.appendChild(document.createTextNode('自分に割り当てる'));
+    mine.addEventListener('click', function () {
+      if (people.has(currentUser)) return;
+      people.add(currentUser);
+    });
+    extra.appendChild(mine);
+
+    if (String(issue.state) === 'open') {
+      var done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'btn';
+      done.appendChild(makeIcon('check'));
+      done.appendChild(document.createTextNode('完了にする'));
+      done.addEventListener('click', function () {
+        call('apiIssueClose', [issue.number], function () {
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
+          form.remove();
+          refreshIssueViews();
+        });
+      });
+      extra.appendChild(done);
+    } else {
+      var back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'btn';
+      back.appendChild(makeIcon('back'));
+      back.appendChild(document.createTextNode('完了を取り消す'));
+      back.addEventListener('click', function () {
+        form.remove();
+        reopenIssue(issue.number);
+      });
+      extra.appendChild(back);
+    }
+
+    // 一覧・ボード・工程表のどこから開いても捨てられるようにする。
+    // 確かめの帯は入力パネルの中に出す (裏に隠れると押せない)
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = '#' + issue.number + ' を捨てる';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            closeSide();
+            refreshIssueViews();
+          });
+        });
+    });
+    extra.appendChild(del);
+
+    form.insertBefore(extra, form.querySelector('.inline-form-actions'));
+  }
+
+  /**
+   * 担当者の欄を「@」で選ぶ形にする。
+   *
+   * アドレスを手で打たせると、打ち間違いが黙って通る。名前でもアドレス
+   * でも探せる候補から選ばせ、入るのはアドレスにする。
+   *
+   * ひとつの仕事を2人で持つことがあるので、何人でも並べられるようにする。
+   *
+   * @param {HTMLInputElement} input
+   * @returns {{value: function(): string, has: function(string): boolean,
+   *   add: function(string): void}}
+   */
+  function attachAssigneePicker(input) {
+    var wrap = document.createElement('div');
+    wrap.className = 'assignee-picker';
+    input.parentNode.insertBefore(wrap, input.nextSibling);
+
+    var box = document.createElement('div');
+    box.className = 'mention-picker';
+    box.hidden = true;
+    wrap.appendChild(box);
+
+    var preview = document.createElement('div');
+    preview.className = 'assignee-chosen';
+    wrap.appendChild(preview);
+
+    function current() {
+      var re = /@([^\s@,]+@[^\s@,]+|[^\s@,]+)/g;
+      var seen = {};
+      var out = [];
+      var m;
+
+      while ((m = re.exec(input.value)) !== null) {
+        var who = mentionMatch(m[1]);
+        if (!who || seen[who]) continue;
+
+        seen[who] = true;
+        out.push(who);
+      }
+      return out;
+    }
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
+
+    function draw() {
+      preview.textContent = '';
+      var list = current();
+
+      if (!list.length) {
+        var none = document.createElement('span');
+        none.className = 'row-meta';
+        none.textContent = 'まだ誰も割り当てていません';
+        preview.appendChild(none);
+        return;
+      }
+
+      list.forEach(function (who) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(who));
+        chip.appendChild(makePersonLabel(who));
+
+        // 外すのに文字を消させない。どこからどこまでが1人ぶんか
+        // 分かりにくく、隣まで巻き込んで消してしまう
+        var off = document.createElement('button');
+        off.type = 'button';
+        off.className = 'chip-off';
+        off.textContent = '×';
+        off.setAttribute('aria-label', personName(who) + ' を外す');
+        attachHint(off, personName(who) + ' を担当から外します');
+
+        off.addEventListener('click', function () { remove(who); });
+        chip.appendChild(off);
+
+        preview.appendChild(chip);
+      });
+
+      // 割り当てているその場で言う。集計を見てから気づくのでは遅い
+      if (list.length > 1) {
+        var note = document.createElement('div');
+        note.className = 'row-meta assignee-note';
+        note.textContent = '工数は集計のときに ' + list.length +
+          '人で割って数えます (全体の合計は1件ぶんのままです)。';
+        preview.appendChild(note);
+      }
+    }
+
+    /**
+     * ひとり外す。
+     *
+     * 残った人から書き直す。書きかけの字は消えるが、この欄は担当者を
+     * 並べるためだけのものなので、他に消えて困るものは無い。
+     *
+     * @param {string} who
+     */
+    function remove(who) {
+      var left = current().filter(function (one) { return one !== who; });
+
+      input.value = left.map(function (one) { return '@' + one + ' '; }).join('');
+      draw();
+      input.focus();
+    }
+
+    function pick(who, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+
+      input.value = before + '@' + who + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '@' + who + ' ').length;
+      close();
+      draw();
+    }
+
+    input.addEventListener('input', function () {
+      draw();
+
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /@([^\s@,]*(?:@[^\s@,]*)?)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var chosen = current();
+
+      // いま打っている途中のものは「もう選んだ」に数えない。数えると
+      // 打ち終わる前に候補から消える
+      var typing = mentionMatch(m[1]);
+
+      var hits = roster.filter(function (one) {
+        if (chosen.indexOf(one) >= 0 && one !== typing) return false;
+        if (!want) return true;
+
+        return String(one).toLowerCase().indexOf(want) >= 0 ||
+          personName(one).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 6);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (who) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+        btn.appendChild(makeAvatar(who));
+
+        var name = document.createElement('span');
+        name.className = 'mention-name';
+        name.textContent = personName(who);
+        btn.appendChild(name);
+
+        var addr = document.createElement('span');
+        addr.className = 'row-meta';
+        addr.textContent = who;
+        btn.appendChild(addr);
+
+        btn.addEventListener('click', function () { pick(who, m.index); });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
+    input.addEventListener('blur', function () {
+      window.setTimeout(close, 150);
+    });
+
+    draw();
+    return {
+      value: function () { return current().join(','); },
+      has: function (who) { return current().indexOf(who) >= 0; },
+      add: function (who) {
+        if (input.value && !/\s$/.test(input.value)) input.value += ' ';
+        input.value += '@' + who + ' ';
+        draw();
+      },
+    };
+  }
+
+  /**
+   * 担当者の候補を用意する。名簿を別に持たず、関わった人から集める。
+   *
+   * @param {HTMLElement} form
+   */
+  function attachPeopleList(form) {
+    if (document.getElementById('people-list')) return;
+
+    var list = document.createElement('datalist');
+    list.id = 'people-list';
+    form.appendChild(list);
+
+    call('apiKnownPeople', [], function (people) {
+      (people || []).forEach(function (email) {
+        var opt = document.createElement('option');
+        opt.value = email;
+        list.appendChild(opt);
+      });
+    }, failQuiet('候補が無くても手で書ける'));
+  }
+
+  /**
+   * 完了を取り消して、やることに戻す。
+   *
+   * 早合点で完了にしてしまうことがある。取り消せないと、同じ内容の
+   * やることをもう1つ作ることになる。
+   *
+   * @param {number} number
+   */
+  function reopenIssue(number) {
+    call('apiIssueReopen', [number], function () {
+      showSnack('#' + number + ' をやることに戻しました', { kind: 'ok' });
+      refreshIssueViews();
+    });
+  }
+
+  /**
+   * 捨てるボタン。押すとその場で確かめてから置き場に移す。
+   *
+   * すぐには消えないので、取り違えても戻せることを言葉で伝える。
+   *
+   * @param {object} issue
+   * @param {HTMLElement} host 確認の帯を出す場所
+   * @returns {HTMLElement}
+   */
+  function makeArchiveButton(issue, host) {
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    // アイコンだけなので、読み上げと吹き出しに名前を持たせる
+    del.setAttribute('aria-label', '#' + issue.number + ' を捨てる');
+    hint(del, 'act:archive');
+
+    del.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openConfirmStrip(host,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            refreshIssueViews();
+          });
+        });
+    });
+    return del;
+  }
+
+  /**
+   * 捨てたものの置き場。
+   *
+   * 期限まで何日残っているかを出す。何もしなければ自然に片付く。
+   *
+   * 探した結果から開いたときは、その行を指す (trashFocus)。
+   */
+  var trashFocus = null;
+
+  function loadTrash() {
+    var still = latest('trash');
+    showSkeleton(trashListEl, 'list', 3);
+
+    call('apiIssueArchivedList', [], function (list) {
+      // 古い返事では指す先も使わない (新しいほうの返事が使う)
+      if (!still()) return;
+      var rows = list || [];
+      var focus = trashFocus;
+      trashFocus = null;
+      trashListEl.textContent = '';
+      issueCountEl.textContent = rows.length + '件';
+      if (focus && !rows.some(function (r) { return Number(r.number) === Number(focus); })) {
+        // 期限が来て片付いたか、ほかの人が戻した
+        showSnack('やること #' + focus + ' は置き場にありません', { kind: 'ng' });
+      }
+
+      if (!rows.length) {
+        trashListEl.appendChild(makeBlankState(
+          '捨てたものはありません',
+          '捨てたやることはここに' + archiveKeepDays +
+          '日置かれ、その間はいつでも戻せます。'
+        ));
+        return;
+      }
+
+      rows.forEach(function (issue) {
+        var row = document.createElement('div');
+        row.className = 'row-item archived';
+        row.dataset.number = issue.number;
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + issue.number + ' ' + issue.title;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = '捨てた日 ' + tokyoDay(issue.archivedAt) +
+          ' · あと' + issue.daysLeft + '日で消えます';
+        main.appendChild(meta);
+
+        var open = document.createElement('div');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('archive'));
+        open.appendChild(main);
+        row.appendChild(open);
+
+        var back = document.createElement('button');
+        back.className = 'btn';
+        back.appendChild(makeIcon('back'));
+        back.appendChild(document.createTextNode('元に戻す'));
+        back.addEventListener('click', function () {
+          call('apiIssueRestore', [issue.number], function () {
+            showSnack('#' + issue.number + ' を戻しました', { kind: 'ok' });
+            loadTrash();
+            loadOverview();
+          });
+        });
+        row.appendChild(back);
+
+        var purge = document.createElement('button');
+        purge.className = 'btn btn-danger';
+        purge.appendChild(makeIcon('trash'));
+        purge.title = '#' + issue.number + ' を完全に消す';
+        purge.setAttribute('aria-label', purge.title);
+        purge.addEventListener('click', function () {
+          openConfirmStrip(panelIssues,
+            '#' + issue.number + '「' + issue.title + '」を完全に消します。' +
+            'もう戻せません。',
+            '完全に消す',
+            function () {
+              call('apiIssuePurge', [issue.number], function (msg) {
+                showSnack(msg, { kind: 'ok' });
+                loadTrash();
+              });
+            });
+        });
+        row.appendChild(purge);
+
+        trashListEl.appendChild(row);
+        if (focus && Number(issue.number) === Number(focus)) {
+          row.setAttribute('aria-current', 'true');
+          if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+        }
+      });
+    }, function (err) {
+      if (!still()) return;
+      // 取れなくても指す先は捨てる。残すと、後で自分で開いたときに古い行を指す
+      trashFocus = null;
+      failInto(trashListEl)(err);
+    });
+  }
+
+  function refreshIssueViews() {
+    if (!panelIssues.hidden) reloadIssueView();
+    loadOverview();
+  }
+
+  function createIssue(sourceEl) {
+    var picker = null;
+    var linkBox = null;
+
+    var people = null;
+
+    var form = openInlineForm(
+      'やることを作る',
+      [
+        { name: 'title', label: 'やること', required: true },
+        { name: 'body', label: '補足 (Markdown で書けます)', multiline: true },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)' },
+        { name: 'priority', label: '優先度', choices: priorities, value: 'normal' },
+        { name: 'startDate', label: '開始日 (任意)' },
+        { name: 'dueDate', label: '期限 (任意)' },
+        { name: 'estimate', label: '見積もり (規模。数値)' },
+        { name: 'plannedHours', label: '予定工数 (人日)' },
+      ].concat(scrumIssueFields(null)),
+      '作る',
+      function (v) {
+        var linked = (linkBox && linkBox.checked && current.docFileId)
+          ? [current.docFileId] : [];
+
+        var extra = {
+          assignee: people ? people.value() : '',
+          startDate: v.startDate,
+          dueDate: v.dueDate,
+          estimate: v.estimate,
+          plannedHours: v.plannedHours,
+          priority: v.priority,
+        };
+        scrumIssuePatch(v, extra);
+
+        call('apiIssueCreate', [v.title, v.body, linked, picker ? picker.value() : '', extra], function () {
+          showSnack('やることを作りました', { kind: 'ok' });
+          // 作った直後は一覧に居ないことがある。対象の画面に移して見せる
+          if (panelIssues.hidden) switchTab('issues');
+          else refreshIssueViews();
+        }, failSnack('作れませんでした: '));
+      },
+      sourceEl
+    );
+
+    var made = form.querySelectorAll('input, textarea');
+    made[3].type = 'date';
+    made[4].type = 'date';
+    made[5].type = 'number';
+    made[6].type = 'number';
+    made[6].step = '0.5';
+    made[6].min = '0';
+
+    people = attachAssigneePicker(made[2]);
+    hint(made[2].parentNode, 'field:assignee');
+    hint(made[5].parentNode, 'field:estimate');
+    hint(made[6].parentNode, 'field:planned');
+
+    made[1].parentNode.parentNode
+      .insertBefore(makeTemplateBar(made[1]), made[1].parentNode.nextSibling);
+
+    picker = makeTagPicker('');
+    form.insertBefore(picker.el, form.querySelector('.inline-form-actions'));
+
+    // 文書に紐づかないやることもある。開いている文書があるときだけ尋ねる
+    if (current.docFileId) {
+      var link = document.createElement('label');
+      link.className = 'check-row';
+
+      linkBox = document.createElement('input');
+      linkBox.type = 'checkbox';
+      linkBox.checked = true;
+      link.appendChild(linkBox);
+
+      link.appendChild(document.createTextNode(
+        'いま開いている「' + current.docPath + '」の作業にする'));
+      form.insertBefore(link, form.querySelector('.inline-form-actions'));
+    }
+  }
+
+  /**
+   * やることを読む形で開く。
+   *
+   * 読むために開いたのに書き換えの形で出てくると、触っただけで中身が
+   * 変わりそうで怖い。読む形を先に見せ、直すのは鉛筆を押してから。
+   *
+   * @param {object} issue
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openIssueDetail(issue, sourceEl) {
+    var box = openSideView('やること #' + issue.number, sourceEl, function () {
+      openIssueEdit(issue, sideSource);
+    });
+    sideShowing = { kind: 'issue', number: Number(issue.number) };
+
+    var title = document.createElement('h3');
+    title.className = 'view-title';
+    title.textContent = issue.title;
+    box.appendChild(title);
+
+    box.appendChild(makeIssueFacts(issue));
+
+    var bodyHead = document.createElement('div');
+    bodyHead.className = 'row-meta view-label';
+    bodyHead.textContent = '補足';
+    box.appendChild(bodyHead);
+    box.appendChild(makeMarkdown(issue.body));
+
+    if (scrumOn() && issue.acceptance) {
+      var acc = document.createElement('div');
+      acc.className = 'row-meta view-label';
+      termText(acc, '{acceptance}');
+      box.appendChild(acc);
+      box.appendChild(makeMarkdown(issue.acceptance));
+    }
+
+    box.appendChild(makeIssueActions(issue));
+    box.appendChild(makeIssueTalk(issue));
+    box.appendChild(makeHistorySection('issue:' + issue.number));
+  }
+
+  /**
+   * いつ・誰が・どれくらい、を並べる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueFacts(issue) {
+    var wrap = document.createElement('dl');
+    wrap.className = 'view-facts';
+
+    function row(label, build) {
+      var dt = document.createElement('dt');
+      termText(dt, label);
+      wrap.appendChild(dt);
+
+      var dd = document.createElement('dd');
+      build(dd);
+      wrap.appendChild(dd);
+    }
+
+    row('状態', function (dd) {
+      var state = document.createElement('span');
+      state.className = 'state' +
+        (String(issue.state) === 'closed' ? ' state-merged' : '');
+      state.textContent = String(issue.state) === 'closed' ? '完了' : '対応中';
+      dd.appendChild(state);
+
+      var stale = makeStaleBadge(issue);
+      if (stale) dd.appendChild(stale);
+    });
+
+    row('担当', function (dd) {
+      var who = issue.assignees || [];
+      if (!who.length) {
+        dd.appendChild(document.createTextNode('担当なし'));
+        return;
+      }
+      who.forEach(function (one) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(one));
+        chip.appendChild(makePersonLabel(one));
+        dd.appendChild(chip);
+      });
+    });
+
+    var span = [
+      issue.startDate ? String(issue.startDate).substring(0, 10) : '',
+      issue.dueDate ? String(issue.dueDate).substring(0, 10) : '',
+    ];
+    if (span[0] || span[1]) {
+      row('期間', function (dd) {
+        dd.textContent = (span[0] || '未定') + ' 〜 ' + (span[1] || '未定');
+      });
+    }
+
+    var effort = rollupEffort(Object.assign({ children: [] }, issue));
+    if (effort.estimate || effort.planned || effort.actual) {
+      row('工数', function (dd) {
+        var text = [];
+        if (effort.estimate) text.push('見積 ' + effort.estimate);
+        if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+        if (effort.actual) text.push('実績 ' + effort.actual + '人日');
+
+        dd.textContent = text.join(' / ');
+      });
+    }
+
+    var labels = makeLabels(issue.labels);
+    if (labels) row('タグ', function (dd) { dd.appendChild(labels); });
+
+    // エージェンティックスクラム。オンのときだけ出す
+    if (scrumOn() && (issue.sprint || issue.points !== '')) {
+      row('{sprint}', function (dd) {
+        dd.appendChild(document.createTextNode(issue.sprint || '未定'));
+        if (issue.points === '' || issue.points === undefined) return;
+        dd.appendChild(termText(document.createElement('span'), ' ・ {points} '));
+        dd.appendChild(document.createTextNode(String(issue.points)));
+      });
+    }
+
+    var rel = makeRelationChips(issue.number);
+    if (rel.childNodes.length) {
+      row('親子', function (dd) { dd.appendChild(rel); });
+    }
+    return wrap;
+  }
+
+  /**
+   * 読む形のまま押せる操作。
+   *
+   * 直すために鉛筆を押さないと終われない、では回り道になる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueActions(issue) {
+    var wrap = document.createElement('div');
+    wrap.className = 'inline-form-actions';
+
+    if (String(issue.state) === 'open') {
+      var done = document.createElement('button');
+      done.className = 'btn';
+      done.appendChild(makeIcon('check'));
+      done.appendChild(document.createTextNode('完了にする'));
+      hint(done, 'act:done');
+
+      done.addEventListener('click', function () {
+        call('apiIssueClose', [issue.number], function () {
+          celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
+          closeSide();
+          refreshIssueViews();
+        });
+      });
+      wrap.appendChild(done);
+    } else {
+      var back = document.createElement('button');
+      back.className = 'btn';
+      back.appendChild(makeIcon('back'));
+      back.appendChild(document.createTextNode('完了を取り消す'));
+      hint(back, 'act:reopen');
+
+      back.addEventListener('click', function () {
+        closeSide();
+        reopenIssue(issue.number);
+      });
+      wrap.appendChild(back);
+    }
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.setAttribute('aria-label', '#' + issue.number + ' を捨てる');
+    hint(del, 'act:archive');
+
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        '#' + issue.number + '「' + issue.title + '」を捨てます。' +
+        archiveKeepDays + '日のうちなら「捨てたもの」から戻せます。',
+        '捨てる',
+        function () {
+          call('apiIssueArchive', [issue.number], function () {
+            showSnack('#' + issue.number + ' を捨てました', { kind: 'ok' });
+            closeSide();
+            refreshIssueViews();
+          });
+        });
+    });
+    wrap.appendChild(del);
+    return wrap;
+  }
+
+  /**
+   * やることの中でのやりとり。
+   *
+   * 決めた結果だけが残って、なぜそう決めたのかが残らないと、同じ議論を
+   * また一からやることになる。
+   *
+   * @param {object} issue
+   * @returns {HTMLElement}
+   */
+  function makeIssueTalk(issue) {
+    var wrap = document.createElement('div');
+    wrap.className = 'issue-talk';
+
+    var head = document.createElement('div');
+    head.className = 'row-meta view-label';
+    head.textContent = 'やりとり';
+    wrap.appendChild(head);
+
+    var list = document.createElement('div');
+    list.className = 'issue-talk-list';
+    wrap.appendChild(list);
+
+    function draw(rows) {
+      list.textContent = '';
+
+      if (!rows.length) {
+        var none = document.createElement('div');
+        none.className = 'row-meta';
+        none.textContent = 'まだ何も話していません。決めた理由をここに残せます。';
+        list.appendChild(none);
+        return;
+      }
+
+      rows.forEach(function (row) {
+        var el = document.createElement('div');
+        el.className = 'comment';
+
+        var h = makeCommentHead(row.by, tokyoDay(row.at) +
+          (row.editedAt ? ' · 直しました' : ''));
+        if (row.canEdit) h.appendChild(makeTalkTools(issue, row, el));
+        el.appendChild(h);
+
+        el.appendChild(makeMarkdown(row.body));
+        list.appendChild(el);
+      });
+    }
+
+    function load() {
+      call('apiIssueComments', [issue.number],
+        function (rows) { draw(rows || []); },
+        failInto(list));
+    }
+
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder = '決めたこと、迷っていること (@ で人を呼べます)';
+    form.appendChild(input);
+    attachMentionPicker(input);
+
+    var send = document.createElement('button');
+    send.className = 'btn btn-primary';
+    send.textContent = '書き込む';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+
+      call('apiIssueComment', [issue.number, input.value], function () {
+        send.disabled = false;
+        input.value = '';
+        showSnack('書き込みました', { kind: 'ok' });
+        load();
+      }, failEnable(send));
+    });
+    form.appendChild(send);
+    wrap.appendChild(form);
+
+    load();
+    return wrap;
+  }
+
+  /**
+   * 自分の書き込みを直す / 消す。
+   *
+   * @param {object} issue
+   * @param {object} row
+   * @param {HTMLElement} host
+   * @returns {HTMLElement}
+   */
+  function makeTalkTools(issue, row, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.setAttribute('aria-label', 'この書き込みを直す');
+    attachHint(edit, 'この書き込みを直します');
+
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        '書き込みを直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          call('apiIssueCommentEdit', [row.id, v.body], function () {
+            showSnack('直しました', { kind: 'ok' });
+            openIssueDetail(issue, sideSource);
+          });
+        },
+        host
+      );
+      form.querySelector('textarea').value = row.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.setAttribute('aria-label', 'この書き込みを消す');
+    attachHint(del, 'この書き込みを消します');
+
+    del.addEventListener('click', function () {
+      openConfirmStrip(sideBody,
+        'この書き込みを消します。元には戻せません。',
+        '消す',
+        function () {
+          call('apiIssueCommentDelete', [row.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            openIssueDetail(issue, sideSource);
+          });
+        });
+    });
+    tools.appendChild(del);
+    return tools;
+  }
+
+  /**
+   * 番号だけ分かっているやることを開く。
+   *
+   * ボードのカードや工程表の棒は中身を全部持っていないため、引き直す。
+   *
+   * @param {number} number
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openIssueByNumber(number, sourceEl) {
+    call('apiIssueList', [''], function (list) {
+      var found = (list || []).filter(function (i) {
+        return Number(i.number) === Number(number);
+      })[0];
+
+      if (!found) {
+        showSnack('やること #' + number + ' が見つかりません', { kind: 'ng' });
+        return;
+      }
+      openIssueDetail(found, sourceEl);
+    });
+  }
+

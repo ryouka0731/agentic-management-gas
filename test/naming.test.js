@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { API_SOURCES } from './sources.js';
+import { APP } from './ui-source.js';
 
 /**
  * サービス名が、人の目に触れる場所すべてで揃っているかを見る。
@@ -38,7 +39,7 @@ describe('サービス名', () => {
   it('画面の左上にも同じ名前が出る', () => {
     // 画面側はサーバの関数を呼べないため字で持つ。往復を1つ増やして
     // 左上が一瞬空になるほうが損である
-    expect(read('src/ui/app.js.html'))
+    expect(APP)
       .toContain("name.textContent = '" + NAME + "';");
   });
 
@@ -63,7 +64,7 @@ describe('サービス名', () => {
   });
 
   it('使い方で通称にも触れている', () => {
-    expect(read('src/ui/app.js.html')).toContain('通称は「番頭」');
+    expect(APP).toContain('通称は「番頭」');
   });
 
   it('仮の名前が人の目に触れる場所に残っていない', () => {

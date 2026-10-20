@@ -1,0 +1,163 @@
+  // ===== スマホ =====
+  //
+  // 狭い画面では左の行き先を常に出さない。上に縦に積むと画面の4割を占め、
+  // 本文が下に押し出されていた。Material Design 3 の「ナビゲーションバー」と
+  // 「モーダルのナビゲーションドロワー」に倣い、主な行き先は親指の届く下の帯に、
+  // 残りは「メニュー」から引き出す。広い画面では何も変えない (CSS で出し分ける)。
+
+  /** 下の帯に並べる行き先。多いと1つずつが狭くなるので4つに絞る */
+  var MOBILE_NAV = ['home', 'docs', 'issues', 'pulls'];
+
+  var sidebarEl = document.querySelector('.sidebar');
+  var navScrim = document.createElement('div');
+  navScrim.className = 'nav-scrim';
+  navScrim.hidden = true;
+  document.body.appendChild(navScrim);
+
+  var mobileNav = document.createElement('nav');
+  mobileNav.className = 'mobile-nav';
+  mobileNav.id = 'mobile-nav';
+  mobileNav.setAttribute('aria-label', '主な行き先');
+  document.body.appendChild(mobileNav);
+
+  /**
+   * 引き出しを開け閉めする。
+   *
+   * @param {boolean} open
+   */
+  function setNavDrawer(open) {
+    var was = sidebarEl.classList.contains('drawer-open');
+    sidebarEl.classList.toggle('drawer-open', open);
+    navScrim.hidden = !open;
+    var btn = document.getElementById('mobile-nav-menu');
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+
+    // 開いているあいだ、後ろの画面には焦点も読み上げも行かせない。行かせると
+    // Tab で見えない後ろのボタンへ抜ける
+    var main = document.querySelector('.main');
+    [main, mobileNav].forEach(function (el) {
+      if (!el) return;
+      if (open) el.setAttribute('inert', '');
+      else el.removeAttribute('inert');
+    });
+
+    // 開いたら引き出しそのものへ焦点を移す。キーボードや読み上げで開いたことが
+    // 分かる。行き先のボタンに移すと、その説明の吹き出しまで出て指の操作の邪魔になる
+    if (open) sidebarEl.focus();
+    // 閉じたら「メニュー」へ戻す (焦点が消えた場所に取り残されない)。行き先を
+    // 選んで閉じたときは、開いた画面のほうを読ませたいので戻さない
+    else if (was && btn && sidebarEl.contains(document.activeElement)) btn.focus();
+  }
+
+  /** 下の帯を組む。名前と印は左の行き先から写す (同じものを2か所に書かない) */
+  function buildMobileNav() {
+    MOBILE_NAV.forEach(function (tab) {
+      var src = sidebarEl.querySelector('.nav-item[data-tab="' + tab + '"]');
+      if (!src) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mobile-nav-item';
+      btn.dataset.go = tab;
+      btn.appendChild(makeIcon(TAB_ICONS[tab]));
+      var label = document.createElement('span');
+      label.textContent = src.querySelector('.nav-label').textContent.trim();
+      btn.appendChild(label);
+
+      // 件数 (やること・改訂中・確認依頼) も写す。左の行き先は引き出しの中なので、
+      // 写さないと開くまで見えない。数え直しは左の印に入るので、それを見張る
+      var srcCount = src.querySelector('.nav-count');
+      if (srcCount && typeof MutationObserver === 'function') {
+        var count = document.createElement('span');
+        count.className = 'mobile-nav-count';
+        count.setAttribute('aria-hidden', 'true');
+        var copy = function () {
+          count.textContent = srcCount.textContent;
+          count.hidden = srcCount.hidden || !srcCount.textContent;
+          btn.setAttribute('aria-label', label.textContent +
+            (count.hidden ? '' : ' (' + srcCount.textContent + ')'));
+        };
+        copy();
+        new MutationObserver(copy).observe(srcCount,
+          { childList: true, characterData: true, subtree: true, attributes: true });
+        btn.appendChild(count);
+      }
+
+      btn.addEventListener('click', function () { src.click(); });
+      mobileNav.appendChild(btn);
+    });
+
+    var menu = document.createElement('button');
+    menu.type = 'button';
+    menu.id = 'mobile-nav-menu';
+    menu.className = 'mobile-nav-item';
+    menu.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-controls', 'sidebar');
+    menu.appendChild(makeIcon('menu'));
+    var text = document.createElement('span');
+    text.textContent = 'メニュー';
+    menu.appendChild(text);
+    menu.addEventListener('click', function () {
+      setNavDrawer(!sidebarEl.classList.contains('drawer-open'));
+    });
+    mobileNav.appendChild(menu);
+  }
+
+  /**
+   * 下の帯の現在地をそろえ、引き出しを閉じる。行き先を選んだら閉じる (開いたまま
+   * だと選んだ画面が見えない)。
+   *
+   * @param {string} navName
+   */
+  function syncMobileNav(navName) {
+    // 起動のはじめ (下の帯を組む前) に画面を切り替えることがある
+    if (!mobileNav) return;
+    mobileNav.querySelectorAll('.mobile-nav-item[data-go]').forEach(function (btn) {
+      btn.setAttribute('aria-current', String(btn.dataset.go === navName));
+    });
+    var menu = document.getElementById('mobile-nav-menu');
+    // 下の帯に無い行き先にいるときは「メニュー」を現在地にする。見た目だけで
+    // なく読み上げにも伝える
+    if (menu) {
+      var here = MOBILE_NAV.indexOf(navName) < 0;
+      menu.classList.toggle('is-here', here);
+      menu.setAttribute('aria-current', String(here));
+    }
+    setNavDrawer(false);
+  }
+
+  sidebarEl.id = 'sidebar';
+  sidebarEl.tabIndex = -1;
+  navScrim.addEventListener('click', function () { setNavDrawer(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && sidebarEl.classList.contains('drawer-open')) setNavDrawer(false);
+  });
+  buildMobileNav();
+
+  fillBrand();
+  applyTerms();
+  applyHints();
+  // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
+  loadSettings();
+  // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
+  // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
+  // 返事では画面を切り替えない
+  loadFiles(function () { settleStartupFiles(true); }, function (err) {
+    failInto(docListEl)(err);
+    settleStartupFiles(false);
+  });
+  // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
+  // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
+  switchTab('home');
+  // 全画面のリンク (?doc=…&full=1) で開かれたら、その文書を開く。
+  // iframe の中なので location は使えない。ホームを出した時点から人が移ったら開かない
+  var startupNav = navCount;
+  if (google.script.url && google.script.url.getLocation) {
+    google.script.url.getLocation(function (loc) {
+      var param = (loc && loc.parameter) || {};
+      openFromLink(param, startupNav);
+      loadStartPrefs(!!param.doc, startupNav);
+    });
+  } else {
+    loadStartPrefs(false, startupNav);
+  }
+})();

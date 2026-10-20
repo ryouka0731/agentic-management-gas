@@ -1,0 +1,784 @@
+  // ===== 不具合を伝える =====
+
+  var REPORT_KINDS = [
+    ['bug', 'うまく動かない'],
+    ['request', 'こうしてほしい (機能の要望)'],
+    ['question', '使い方が分からない'],
+    ['other', 'その他'],
+  ];
+
+  /**
+   * 種類ごとの尋ね方。
+   *
+   * 不具合と要望では、聞くべきことが違う。「何をしましたか」は要望には
+   * 答えようがなく、白紙のまま送られる。
+   */
+  var REPORT_ASKS = {
+    bug: {
+      summary: ['ひとことで言うと', '例: 工程表の棒が伸ばせない'],
+      steps: ['何をしましたか', '例:\n1. やること → 工程表 を開く\n2. 棒の右端を掴む\n3. 右に引く'],
+      actual: ['どうなりましたか', '例: 棒が伸びず、幅が変わらなかった'],
+      expected: ['どうなってほしかったですか', '例: 期限が右に延びてほしかった'],
+    },
+    request: {
+      summary: ['ひとことで言うと', '例: 期限が近いやることを先に出したい'],
+      steps: ['いま何に困っていますか', '例: 一覧が番号順なので、急ぎのものを探すのに毎回スクロールしている'],
+      actual: ['どうなるとよいですか', '例: 期限の近い順に並べ替えられるとよい'],
+      expected: ['他に思いつくやり方があれば', '例: 期限が3日以内のものだけを出す絞り込みでもよい'],
+    },
+    question: {
+      summary: ['ひとことで言うと', '例: 改訂版の消し方が分からない'],
+      steps: ['何をしようとしていますか', '例: 使わなくなった改訂版を片付けたい'],
+      actual: ['どこまで試しましたか', '例: 「改訂中の版」を見たが、それらしい操作が見つからない'],
+      expected: ['補足があれば', ''],
+    },
+    other: {
+      summary: ['ひとことで言うと', ''],
+      steps: ['くわしく', ''],
+      actual: ['いま分かっていること', ''],
+      expected: ['補足があれば', ''],
+    },
+  };
+
+  /**
+   * どこで起きたかを集める。
+   *
+   * 「動かない」だけでは直せない。人に思い出させるより、そのとき
+   * 画面が持っている手がかりを添える。
+   *
+   * @returns {string}
+   */
+  function reportContext() {
+    var parts = ['画面: ' + currentTab];
+
+    if (current.docPath) parts.push('文書: ' + current.docPath);
+    if (current.branch) parts.push('版: ' + current.branch);
+    if (currentTab === 'issues') parts.push('見え方: ' + issueView);
+
+    parts.push('画面幅: ' + window.innerWidth + 'x' + window.innerHeight);
+    parts.push('環境: ' + window.navigator.userAgent);
+    return parts.join(' / ');
+  }
+
+  /**
+   * 報告を書いてもらう。
+   *
+   * 白紙の1枚に「詳しく書いてください」と頼んでも、何を書けば直せるのか
+   * は伝わらない。順番に尋ねて、こちらで1つの本文に組み立てる。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function createReport(sourceEl) {
+    var shots = [];
+
+    var form = openInlineForm(
+      '開発者に伝える',
+      [
+        { name: 'kind', label: '種類', choices: REPORT_KINDS },
+        {
+          name: 'summary',
+          label: 'ひとことで言うと',
+          required: true,
+          placeholder: '例: 工程表の棒が伸ばせない',
+        },
+        {
+          name: 'steps',
+          label: '何をしましたか',
+          required: true,
+          multiline: true,
+          placeholder: '例:\n1. やること → 工程表 を開く\n2. 棒の右端を掴む\n3. 右に引く',
+        },
+        {
+          name: 'actual',
+          label: 'どうなりましたか',
+          required: true,
+          multiline: true,
+          placeholder: '例: 棒が伸びず、幅が変わらなかった',
+        },
+        {
+          name: 'expected',
+          label: 'どうなってほしかったですか',
+          multiline: true,
+          placeholder: '例: 期限が右に延びてほしかった',
+        },
+      ],
+      '送る',
+      function (v) {
+        call('apiInquiryCreate', [v.kind, reportBody(v), reportContext(), shots], function (row) {
+          showSnack('受付 #' + row.number + ' として送りました', { kind: 'ok' });
+          closeSide();
+          loadReports();
+        });
+      },
+      sourceEl
+    );
+
+    form.insertBefore(makeShotPicker(shots, form),
+      form.querySelector('.inline-form-actions'));
+
+    // 本文の欄では人を呼べるようにする
+    var areas = form.querySelectorAll('textarea');
+    for (var i = 0; i < areas.length; i++) attachMentionPicker(areas[i]);
+
+    // 種類によって聞くべきことが違う。選び直したら尋ね方も変える
+    var kindSel = form.querySelector('select');
+    var labels = form.querySelectorAll('label');
+    var order = ['summary', 'steps', 'actual', 'expected'];
+
+    function askAs(kind) {
+      var asks = REPORT_ASKS[kind] || REPORT_ASKS.bug;
+
+      order.forEach(function (name, at) {
+        var label = labels[at + 1];
+        if (!label) return;
+
+        var field = label.querySelector('input, textarea');
+        label.firstChild.textContent = asks[name][0];
+        if (field) field.placeholder = asks[name][1];
+      });
+    }
+
+    kindSel.addEventListener('change', function () { askAs(kindSel.value); });
+    askAs(kindSel.value);
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '送ると、見ている画面と使っている環境も一緒に記録され、' +
+      '開発者のやることに積まれます。';
+    form.insertBefore(note, form.querySelector('.inline-form-actions'));
+
+    form.querySelector('input').focus();
+  }
+
+  /**
+   * 尋ねた答えを1つの本文に組み立てる。
+   *
+   * 見出しを揃えておくと、後から読む人が同じ順番で追える。
+   *
+   * @param {Object<string,string>} v
+   * @returns {string}
+   */
+  function reportBody(v) {
+    var parts = [v.summary];
+
+    parts.push('', '【何をしたか】', v.steps);
+    parts.push('', '【どうなったか】', v.actual);
+    if (String(v.expected || '').replace(/^\s+|\s+$/g, '')) {
+      parts.push('', '【どうなってほしかったか】', v.expected);
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * 画像を添える欄を作る。
+   *
+   * 選ぶだけでなく貼り付けでも入れられるようにする。画面の写真は
+   * 撮った直後がいちばん貼りやすい。
+   *
+   * @param {string[]} shots 入れ物。ここに data URL を貯める
+   * @param {HTMLElement} form 貼り付けを拾う相手
+   * @returns {HTMLElement}
+   */
+  function makeShotPicker(shots, form) {
+    var MAX = 4;
+    var wrap = document.createElement('div');
+    wrap.className = 'shot-picker';
+
+    var label = document.createElement('div');
+    label.className = 'row-meta';
+    label.textContent = '画面の写真 (任意・' + MAX + '枚まで)';
+    wrap.appendChild(label);
+
+    var list = document.createElement('div');
+    list.className = 'shot-list';
+    wrap.appendChild(list);
+
+    var pick = document.createElement('input');
+    pick.type = 'file';
+    pick.accept = 'image/png,image/jpeg,image/gif,image/webp';
+    pick.multiple = true;
+    pick.className = 'shot-input';
+    pick.setAttribute('aria-label', '画面の写真を選ぶ');
+    wrap.appendChild(pick);
+
+    var hint = document.createElement('div');
+    hint.className = 'row-meta';
+    hint.textContent = 'ここに貼り付け (Ctrl+V) でも入れられます';
+    wrap.appendChild(hint);
+
+    function draw() {
+      list.textContent = '';
+
+      shots.forEach(function (data, i) {
+        var item = document.createElement('div');
+        item.className = 'shot-item';
+
+        var img = document.createElement('img');
+        img.src = data;
+        img.alt = '添えた写真 ' + (i + 1) + '枚目';
+        item.appendChild(img);
+
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-danger';
+        del.appendChild(makeIcon('trash'));
+        del.title = 'この写真を外す';
+        del.setAttribute('aria-label', del.title);
+        del.addEventListener('click', function () {
+          shots.splice(i, 1);
+          draw();
+        });
+        item.appendChild(del);
+
+        list.appendChild(item);
+      });
+    }
+
+    function add(file) {
+      if (!file || String(file.type).indexOf('image/') !== 0) return;
+      if (shots.length >= MAX) {
+        showSnack('写真は' + MAX + '枚までです', { kind: 'ng' });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showSnack('写真は1枚5MBまでです', { kind: 'ng' });
+        return;
+      }
+
+      var reader = new FileReader();
+      reader.onload = function () {
+        shots.push(String(reader.result));
+        draw();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    pick.addEventListener('change', function () {
+      for (var i = 0; i < pick.files.length; i++) add(pick.files[i]);
+      pick.value = '';
+    });
+
+    form.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var i = 0; i < items.length; i++) {
+        if (String(items[i].type).indexOf('image/') !== 0) continue;
+        add(items[i].getAsFile());
+        e.preventDefault();
+      }
+    });
+
+    return wrap;
+  }
+
+  /**
+   * 画面に出す呼び名を決める。
+   *
+   * ふだんは名前だけで足りる。同じ名前が2人いるときだけ、どちらか
+   * 分かるようにアドレスごと出す。
+   *
+   * @param {string} email
+   * @returns {string}
+   */
+  function mentionLabel(email) {
+    var name = String(email || '').split('@')[0];
+    var same = roster.filter(function (one) {
+      return String(one).split('@')[0].toLowerCase() === name.toLowerCase();
+    });
+
+    return same.length > 1 ? String(email) : name;
+  }
+
+  /**
+   * 呼び名を名簿の誰かに結び付ける。src/core/Mention.js と同じもの。
+   *
+   * @param {string} token
+   * @returns {string}
+   */
+  function mentionMatch(token) {
+    var want = String(token || '').toLowerCase();
+    if (!want) return '';
+
+    for (var i = 0; i < roster.length; i++) {
+      var one = String(roster[i] || '');
+      var low = one.toLowerCase();
+
+      if (low === want) return one;
+      if (want.indexOf('@') < 0 && low.split('@')[0] === want) return one;
+    }
+    return '';
+  }
+
+  /**
+   * 呼び出しに色を付けた本文を作る。
+   *
+   * 画面は textContent だけで組み立てる決まりなので、切り分けてから
+   * 節ごとに要素にする。
+   *
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function makeBodyWithMentions(text) {
+    var box = document.createElement('div');
+    box.className = 'comment-body';
+
+    var src = String(text || '');
+    var re = /@([A-Za-z0-9._%+-]+(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?)/g;
+    var at = 0;
+    var m;
+
+    while ((m = re.exec(src)) !== null) {
+      var who = mentionMatch(m[1]);
+      if (!who) continue;
+
+      if (m.index > at) {
+        box.appendChild(document.createTextNode(src.substring(at, m.index)));
+      }
+
+      var tag = document.createElement('span');
+      tag.className = 'mention' + (who === currentUser ? ' me' : '');
+      tag.textContent = m[0];
+      tag.title = who;
+      box.appendChild(tag);
+
+      at = m.index + m[0].length;
+    }
+
+    if (at < src.length) box.appendChild(document.createTextNode(src.substring(at)));
+    return box;
+  }
+
+  /**
+   * 「@」を打ったら名簿から選べるようにする。
+   *
+   * 名簿に無い呼び出しは誰にも届かない。打ち間違いに気づけるよう、
+   * 候補を出して選ばせる。
+   *
+   * @param {HTMLTextAreaElement} input
+   */
+  function attachMentionPicker(input) {
+    var box = document.createElement('div');
+    box.className = 'mention-picker';
+    box.hidden = true;
+    input.parentNode.insertBefore(box, input.nextSibling);
+
+    function close() {
+      box.hidden = true;
+      box.textContent = '';
+    }
+
+    function pick(who, from) {
+      var before = input.value.substring(0, from);
+      var after = input.value.substring(input.selectionStart);
+      var name = mentionLabel(who);
+
+      input.value = before + '@' + name + ' ' + after;
+      input.focus();
+      input.selectionStart = input.selectionEnd = (before + '@' + name + ' ').length;
+      close();
+    }
+
+    input.addEventListener('input', function () {
+      var upto = input.value.substring(0, input.selectionStart);
+      var m = /@([A-Za-z0-9._%+-]*)$/.exec(upto);
+      if (!m) return close();
+
+      var want = m[1].toLowerCase();
+      var hits = roster.filter(function (one) {
+        if (!want) return true;
+
+        // 名前でもアドレスでも探せるようにする。どちらで覚えているかは人による
+        return String(one).toLowerCase().indexOf(want) >= 0 ||
+          personName(one).toLowerCase().indexOf(want) >= 0;
+      }).slice(0, 6);
+
+      if (!hits.length) return close();
+
+      box.textContent = '';
+      hits.forEach(function (who) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mention-option';
+        btn.appendChild(makeAvatar(who));
+
+        var name = document.createElement('span');
+        name.className = 'mention-name';
+        name.textContent = personName(who);
+        btn.appendChild(name);
+
+        var addr = document.createElement('span');
+        addr.className = 'row-meta';
+        addr.textContent = who;
+        btn.appendChild(addr);
+
+        btn.addEventListener('click', function () {
+          pick(who, m.index);
+        });
+        box.appendChild(btn);
+      });
+      box.hidden = false;
+    });
+
+    input.addEventListener('blur', function () {
+      // 候補を押すより先に閉じてしまわないよう、一拍おく
+      window.setTimeout(close, 150);
+    });
+  }
+
+  /**
+   * 添えられた写真を並べる。
+   *
+   * @param {Array<{url:string, thumb:string}>} shots
+   * @returns {HTMLElement|null}
+   */
+  function makeShotStrip(shots) {
+    if (!shots || !shots.length) return null;
+
+    var strip = document.createElement('div');
+    strip.className = 'shot-list';
+
+    shots.forEach(function (shot, i) {
+      var a = document.createElement('a');
+      a.className = 'shot-item';
+      a.href = shot.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.title = '大きく見る';
+
+      var img = document.createElement('img');
+      img.src = shot.thumb;
+      img.alt = '添えられた写真 ' + (i + 1) + '枚目';
+      img.loading = 'lazy';
+      // 見られないときは代わりに文字の手がかりを出す
+      img.addEventListener('error', function () {
+        img.remove();
+        a.textContent = '写真 ' + (i + 1) + '枚目を開く';
+      });
+      a.appendChild(img);
+
+      strip.appendChild(a);
+    });
+    return strip;
+  }
+
+  /**
+   * 報告を並べる。
+   *
+   * 全員が全部を読める。同じところでつまずいた人が先に答えを知って
+   * いることがあり、自分のぶんしか見えないと誰も助け合えない。
+   */
+  function loadReports() {
+    // 送ったり返したりするたびに取り直すので、先に頼んだぶんの返事で描き直さない
+    var still = latest('reports');
+    showSkeleton(reportListEl, 'list', 3);
+
+    call('apiInquiryList', [], function (list) {
+      if (!still()) return;
+      var rows = list || [];
+      reportListEl.textContent = '';
+      setCount('count-reports', rows.filter(function (r) {
+        return r.state === 'open';
+      }).length);
+
+      var shown = rows.filter(matchesReport);
+
+      if (rows.length && !shown.length) {
+        reportDetail.textContent = '';
+        reportListEl.appendChild(makeBlankState(
+          '絞り込みに合う報告がありません',
+          '絞り込みを消すか、「未解決だけ」を外してみてください。'
+        ));
+        return;
+      }
+
+      if (!rows.length) {
+        reportDetail.textContent = '';
+        reportListEl.appendChild(makeBlankState(
+          'まだ何も伝えていません',
+          'うまく動かないこと、こうしてほしいこと、分からないことを送って' +
+          'ください。見ている画面と環境も一緒に届き、開発者のやることに積まれます。',
+          { label: '開発者に伝える', onClick: createReport }
+        ));
+        return;
+      }
+
+      shown.forEach(function (r) {
+        var btn = document.createElement('button');
+        // 済んだものは一段沈める。まだ手の要るものを先に拾えるようにする
+        btn.className = 'row-item' + (r.state === 'done' ? ' resolved' : '');
+        btn.dataset.number = r.number;
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + r.number + ' ' + r.title;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = r.kindLabel + ' · ' + personName(r.by) + ' · ' +
+          tokyoDay(r.at) +
+          (r.replyCount ? ' · 返信 ' + r.replyCount + '件' : '');
+        main.appendChild(meta);
+
+        var open = document.createElement('div');
+        open.className = 'row-open';
+        open.appendChild(makeIcon(r.state === 'done' ? 'check' : 'inbox'));
+        open.appendChild(main);
+        btn.appendChild(open);
+
+        var state = document.createElement('span');
+        state.className = 'state' + (r.state === 'done' ? ' state-merged' : '');
+        state.textContent = r.state === 'done' ? '解決' : '未解決';
+        btn.appendChild(state);
+
+        btn.addEventListener('click', function () { openReport(r.number); });
+        reportListEl.appendChild(btn);
+      });
+
+      // 開いていた話を開き直す。返信するたび先頭に戻ると読み進められない
+      var keep = reportShown &&
+        shown.filter(function (r) { return r.number === reportShown; })[0];
+      openReport(keep ? keep.number : (shown[0] && shown[0].number));
+    }, still.only(failInto(reportListEl)));
+  }
+
+  /**
+   * 絞り込みに残すかを決める。
+   *
+   * @param {object} r
+   * @returns {boolean}
+   */
+  function matchesReport(r) {
+    if (reportOpenOnly && r.state === 'done') return false;
+
+    var q = String(reportFilterEl.value || '').toLowerCase()
+      .replace(/^\s+|\s+$/g, '');
+    if (!q) return true;
+
+    return ['#' + r.number, r.title, r.body, r.kindLabel, r.by]
+      .join(' ').toLowerCase().indexOf(q) >= 0;
+  }
+
+  /**
+   * 話を開く。
+   *
+   * @param {number} number
+   */
+  function openReport(number) {
+    reportShown = number || null;
+    // 続けて開いたとき・閉じたとき、前の話の返事で中身を上書きしない
+    var still = latest('reportThread');
+
+    var items = reportListEl.querySelectorAll('.row-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].setAttribute('aria-current',
+        String(Number(items[i].dataset.number) === Number(number)));
+    }
+
+    if (!number) {
+      reportDetail.textContent = '';
+      return;
+    }
+    showSkeleton(reportDetail, 'block');
+
+    call('apiInquiryThread', [number], function (thread) {
+      if (!still() || !thread) return;
+      renderReportThread(thread.inquiry, thread.replies || []);
+    }, still.only(failInto(reportDetail)));
+  }
+
+  /**
+   * 話の中身を描く。
+   *
+   * @param {object} q
+   * @param {object[]} replies
+   */
+  function renderReportThread(q, replies) {
+    reportDetail.textContent = '';
+
+    var head = document.createElement('div');
+    head.className = 'pr-title';
+    head.textContent = '#' + q.number + ' ' + q.title;
+    reportDetail.appendChild(head);
+
+    var meta = document.createElement('div');
+    meta.className = 'row-meta';
+    meta.textContent = q.kindLabel + ' · ' + personName(q.by) + ' · ' +
+      tokyoDay(q.at) +
+      (q.state === 'done'
+        ? ' · 解決' + (q.closedBy ? ' (' + personName(q.closedBy) + ')' : '') : '');
+    reportDetail.appendChild(meta);
+
+    if (q.issueNumber) {
+      var link = document.createElement('button');
+      link.className = 'rel-chip';
+      link.appendChild(makeIcon('corner-down-right'));
+      link.appendChild(document.createTextNode('やること #' + q.issueNumber));
+      attachHint(link, 'この報告から作られた、開発者のやることに移ります');
+
+      link.addEventListener('click', function () {
+        switchTab('issues');
+        setIssueView('list');
+        focusIssue(q.issueNumber);
+      });
+      reportDetail.appendChild(link);
+    }
+
+    if (q.canClose) {
+      var actions = document.createElement('div');
+      actions.className = 'pr-actions';
+
+      var toggle = document.createElement('button');
+      toggle.className = 'btn' + (q.state === 'done' ? '' : ' btn-primary');
+      toggle.appendChild(makeIcon(q.state === 'done' ? 'back' : 'check'));
+      toggle.appendChild(document.createTextNode(
+        q.state === 'done' ? 'まだ解決していない' : '解決した'));
+
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        // call() を通す。横断検索の一覧が、解決・取り消しを知る
+        call(q.state === 'done' ? 'apiInquiryReopen' : 'apiInquiryClose', [q.number],
+          function () { loadReports(); }, failEnable(toggle));
+      });
+
+      actions.appendChild(toggle);
+      reportDetail.appendChild(actions);
+    }
+
+    var first = document.createElement('div');
+    first.className = 'comment';
+    first.appendChild(makeCommentHead(q.by, 'が報告'));
+
+    first.appendChild(makeBodyWithMentions(q.body));
+
+    var firstShots = makeShotStrip(q.shots);
+    if (firstShots) first.appendChild(firstShots);
+
+    if (q.context) {
+      var ctx = document.createElement('details');
+      ctx.className = 'report-context';
+
+      var sum = document.createElement('summary');
+      sum.textContent = 'そのときの状況';
+      ctx.appendChild(sum);
+
+      var pre = document.createElement('div');
+      pre.className = 'comment-body';
+      pre.textContent = q.context;
+      ctx.appendChild(pre);
+      first.appendChild(ctx);
+    }
+    reportDetail.appendChild(first);
+
+    replies.forEach(function (r) {
+      var el = document.createElement('div');
+      el.className = 'comment';
+
+      var h = makeCommentHead(r.by, tokyoDay(r.at) +
+        (r.editedAt ? ' · 直しました' : ''));
+      if (r.canEdit) h.appendChild(makeReplyTools(r, el));
+      el.appendChild(h);
+
+      el.appendChild(makeBodyWithMentions(r.body));
+
+      var replyShots = makeShotStrip(r.shots);
+      if (replyShots) el.appendChild(replyShots);
+
+      reportDetail.appendChild(el);
+    });
+
+    reportDetail.appendChild(makeReplyForm(q));
+  }
+
+  /**
+   * 自分の返信を直す / 消す。
+   *
+   * @param {object} reply
+   * @param {HTMLElement} host
+   * @returns {HTMLElement}
+   */
+  function makeReplyTools(reply, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = 'この返信を直す';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        '返信を直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          call('apiInquiryReplyEdit', [reply.id, v.body], function () {
+            showSnack('返信を直しました', { kind: 'ok' });
+            closeSide();
+            openReport(reply.inquiryNumber);
+          });
+        },
+        host
+      );
+      form.querySelector('textarea').value = reply.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = 'この返信を消す';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(reportDetail,
+        'この返信を消します。元には戻せません。',
+        '消す',
+        function () {
+          call('apiInquiryReplyDelete', [reply.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            openReport(reply.inquiryNumber);
+          });
+        });
+    });
+    tools.appendChild(del);
+    return tools;
+  }
+
+  /**
+   * 返信を書く欄。
+   *
+   * @param {object} q
+   * @returns {HTMLElement}
+   */
+  function makeReplyForm(q) {
+    var shots = [];
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder =
+      '同じことが起きた、こうしたら直った、など (@ で人を呼べます)';
+    form.appendChild(input);
+    attachMentionPicker(input);
+
+    form.appendChild(makeShotPicker(shots, form));
+
+    var send = document.createElement('button');
+    send.className = 'btn btn-primary';
+    send.textContent = '返信する';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+
+      call('apiInquiryReply', [q.number, input.value, shots], function () {
+        showSnack('返信しました', { kind: 'ok' });
+        openReport(q.number);
+      }, failEnable(send));
+    });
+
+    form.appendChild(send);
+    return form;
+  }
+
