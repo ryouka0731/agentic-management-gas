@@ -897,9 +897,9 @@ npm run deploy -- "何を変えたか"
 
 **Claude Code のフックが止める** (`.claude/settings.json` → `scripts/guard-hook.mjs`、
 テストは `test/guard-hook.test.js`)。`-i` / `--deploymentId` 無しの `clasp create-deployment` /
-`clasp deploy`、いま居ない手元のブランチを名指しした `git push origin <名前>` (居る場所は
-入力の cwd で見るので worktree ごとに正しく決まる)、`src/KitFiles.gs` / `src/KitSigning.gs` を
-手で書くこと、署名の秘密鍵を読むこと。push と clasp は読み取れない形なら通し、生成物と鍵は
+`clasp deploy`、居るブランチに送っていない記録があるのに別の手元のブランチを名指しした
+`git push origin <名前>` (居る場所は入力の cwd で見るので worktree ごとに正しく決まる。わざと送るなら `<名前>:<名前>`)、`src/KitFiles.gs` / `src/KitSigning.gs` を
+手で書くこと (シェルはよくある書き方だけを見る)、署名の秘密鍵を読むこと。push と clasp は読み取れない形なら通し、生成物と鍵は
 迷ったら止める。止められたら回り道を探さず、理由に書いてある正しい道を使う。
 
 秘密の混入は `npm run secrets` (trufflehog。入っていなければ入れ方を出して止まる) で探す。

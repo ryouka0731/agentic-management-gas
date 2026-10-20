@@ -22,12 +22,12 @@
 
 | 止めるもの | 理由 |
 |---|---|
-| `git push origin <名前>` で、<名前> がいま居るブランチ (入力の cwd で見る) でない手元のブランチ | 居るブランチは送られない。`git push -u origin HEAD` を使う |
+| `git push origin <名前>` で、<名前> がいま居るブランチ (入力の cwd で見る) でない手元のブランチ、かつ居るブランチにまだ送っていない記録があるとき。タグ・知らない名前・送り先まで書いた形 (`a:b`) は通す | 居るブランチは送られない。`git push -u origin HEAD` を使う。わざと別のブランチを送るなら `git push origin <名前>:<名前>` |
 | `clasp create-deployment` / `clasp deploy` を `-i` / `--deploymentId` 無しで | 新しいデプロイができて URL が変わる。`npm run deploy` を使う |
-| `src/KitFiles.gs` / `src/KitSigning.gs` を手で書く (Edit / Write、シェルの `>` / `sed -i` など) | scripts が作るもの。`node scripts/build-kit.mjs` と `npm run deploy` は通る |
+| `src/KitFiles.gs` / `src/KitSigning.gs` を手で書く (Edit / Write と、シェルのよくある書き方 `>` / `>|` / `sed -i` / `cp` / `tee`。`python3 -c` などは見ていない) | scripts が作るもの。`node scripts/build-kit.mjs` と `npm run deploy` は通る |
 | 署名の秘密鍵 (`~/.config/softbanto/kit-signing-key.pem` / `$BANTO_SIGNING_KEY`) を読む・書く | 鍵は `scripts/deploy.mjs` だけが読む |
 
-`&&` / `;` / `|` でつないだ命令は1つずつ見る。push と clasp は、読み取れない形なら通す (止めすぎると使えない)。
+`&&` / `;` / `|` でつないだ命令は1つずつ見る。ヒアドキュメントの本文は命令として読まない。push と clasp は、読み取れない形なら通す (止めすぎると使えない)。
 生成物と鍵は、迷ったら止める側に倒す。`.claude/settings.local.json` は各自のもので、記録しない。
 
 ### 秘密の混入を探す
