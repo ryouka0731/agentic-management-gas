@@ -247,6 +247,45 @@ describe('確認依頼は変更の集まり', () => {
       .toThrow('反映する文書を選んでください');
   });
 
+  it('同じ文書を二度並べても1件にまとめる', () => {
+    const { ctx, a } = setup();
+    ctx.branchCreate('見直し', a);
+
+    const pr = ctx.prCreate('Aの改訂', '', '見直し', [a, '', a]);
+    expect(ctx.prTargetFiles(ctx.prGet(pr.number))).toEqual([a]);
+  });
+
+  it('作る前の断り (題名・改訂版・反映先・文書)', () => {
+    const { ctx, a, b } = setup();
+    ctx.branchCreate('見直し', a);
+    ctx.branchCreate('別の版', b);
+    ctx.branchCreate('閉じた版', a);
+    ctx.dbUpdate('branches', 'name', '閉じた版', { state: 'merged' });
+
+    expect(() => ctx.prCreate('', '', '見直し', a)).toThrow('タイトルを入力してください');
+    expect(() => ctx.prCreate('あ'.repeat(201), '', '見直し', a)).toThrow('タイトルを入力してください');
+    expect(() => ctx.prCreate('t', '', '無い版', a)).toThrow('改訂版が見つかりません: 無い版');
+    expect(() => ctx.prCreate('t', '', '閉じた版', a)).toThrow('この改訂版は既に閉じられています');
+    expect(() => ctx.prCreate('t', '', '見直し', a, '見直し')).toThrow('同じ版には反映できません');
+    expect(() => ctx.prCreate('t', '', '見直し', a, '無い先')).toThrow('反映先の版が見つかりません: 無い先');
+    expect(() => ctx.prCreate('t', '', '見直し', a, '閉じた版')).toThrow('反映先の版は既に閉じられています');
+    expect(() => ctx.prCreate('t', '', '見直し', 'nope')).toThrow('対象ファイルが管理対象にありません');
+    expect(() => ctx.prCreate('t', '', '見直し', ctx.branchWorkingFileId('見直し', a)))
+      .toThrow('正式版の文書を選んでください');
+    // 反映先の改訂版にもその文書が要る
+    expect(() => ctx.prCreate('t', '', '見直し', a, '別の版')).toThrow('反映先の「別の版」に入っていません');
+    expect(ctx.dbReadAll('pulls')).toEqual([]);
+  });
+
+  it('同じ組み合わせで閉じていない依頼があれば作れない', () => {
+    const { ctx, a } = setup();
+    ctx.branchCreate('見直し', a);
+    const pr = ctx.prCreate('Aの改訂', '', '見直し', a);
+
+    expect(() => ctx.prCreate('もう1つ', '', '見直し', a))
+      .toThrow('閉じていない確認依頼があります: #' + pr.number);
+  });
+
   it('列を足す前の依頼も1件の変更セットとして読める', () => {
     const { ctx, fake, a } = setup();
     ctx.branchCreate('見直し', a);

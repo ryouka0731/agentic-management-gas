@@ -836,6 +836,63 @@ function usage() {
   return lines.join('\n');
 }
 
+/**
+ * 手元で済む命令。番頭に命令を送らない (track install と update は中で命令を送る)。
+ *
+ * - setup: 下ごしらえ。設定が無い状態でも読めなければ案内の意味がない
+ * - doctor: 点検は番頭に頼まない。届かないときに使うものなので
+ */
+const LOCAL_COMMANDS = {
+  setup: async () => { process.stdout.write(setupGuide() + '\n'); },
+  track: async (argv) => { await runTrack(argv); },
+  update: async (argv) => { await runUpdate(argv); },
+  doctor: async () => {
+    const r = local.doctor({ config: findConfig(), home: bantoHome(), claude: track.claudeHome() });
+    process.stdout.write(r.text + '\n');
+    if (!r.ok) process.exitCode = 1;
+  },
+};
+
+/** --queue とその値を除く。値を残すと、ほかの引数に混ざって別のものを指す */
+function withoutQueueFlag(given) {
+  const rest = [];
+  for (let i = 0; i < given.length; i++) {
+    if (given[i] === '--queue') { i++; continue; }
+    rest.push(given[i]);
+  }
+  return rest;
+}
+
+/**
+ * 引数を命令の形にする。使い方の誤りは送る前に断り、終わりの番号を 2 にする。
+ *
+ * @returns {{ok: boolean, args?: *}}
+ */
+function entryArgs(entry, rest) {
+  try {
+    return { ok: true, args: entry.args(rest) };
+  } catch (e) {
+    if (!e.usage) throw e;
+    process.stderr.write(e.message + '\n');
+    process.exitCode = 2;
+    return { ok: false };
+  }
+}
+
+/** 返事を出す。見せ方のある命令 (VIEWS) と work は囲んで出す */
+function printResult(name, view, res, rest) {
+  // read の中身は write で書き戻すので、手を加えない
+  const shown = name === 'read' ? res : stripControl(res);
+  if (view && shown.ok) {
+    process.stdout.write(fenced(showView(view, shown.result, rest)) + '\n' +
+      (view.hint ? view.hint + '\n' : ''));
+  } else if (name === 'work' && shown.ok) {
+    process.stdout.write(fenced(dump(shown)) + '\n');
+  } else {
+    process.stdout.write(dump(shown) + '\n');
+  }
+}
+
 async function main() {
   // 抜いた残りを process.argv にする。--queue の値も track / update の引数も、ここから読む
   const taken = takePretty(process.argv);
@@ -847,22 +904,8 @@ async function main() {
     return;
   }
 
-  // 下ごしらえは向こう側に命令を送らない。設定が無い状態でも読めなければ
-  // 案内の意味がない
-  if (name === 'setup') {
-    process.stdout.write(setupGuide() + '\n');
-    return;
-  }
-
-  // 仕掛けと道具の更新は手元で済む (track install と update は中で命令を送る)
-  if (name === 'track') { await runTrack(process.argv.slice(3)); return; }
-  if (name === 'update') { await runUpdate(process.argv.slice(3)); return; }
-
-  // 点検は番頭に頼まない。届かないときに使うものなので
-  if (name === 'doctor') {
-    const r = local.doctor({ config: findConfig(), home: bantoHome(), claude: track.claudeHome() });
-    process.stdout.write(r.text + '\n');
-    if (!r.ok) process.exitCode = 1;
+  if (Object.prototype.hasOwnProperty.call(LOCAL_COMMANDS, name)) {
+    await LOCAL_COMMANDS[name](process.argv.slice(3));
     return;
   }
 
@@ -874,35 +917,12 @@ async function main() {
     return;
   }
 
-  // --queue とその値を除く。値を残すと、ほかの引数に混ざって別のものを指す
-  const rest = [];
-  const given = process.argv.slice(3);
-  for (let i = 0; i < given.length; i++) {
-    if (given[i] === '--queue') { i++; continue; }
-    rest.push(given[i]);
-  }
-  let args;
-  try {
-    args = entry.args(rest);
-  } catch (e) {
-    if (!e.usage) throw e;
-    process.stderr.write(e.message + '\n');
-    process.exitCode = 2;
-    return;
-  }
+  const rest = withoutQueueFlag(process.argv.slice(3));
+  const parsed = entryArgs(entry, rest);
+  if (!parsed.ok) return;
   const config = loadConfig();
-  const res = await send(config.queueDir, entry.op, args);
-
-  // read の中身は write で書き戻すので、手を加えない
-  const shown = name === 'read' ? res : stripControl(res);
-  if (view && shown.ok) {
-    process.stdout.write(fenced(showView(view, shown.result, rest)) + '\n' +
-      (view.hint ? view.hint + '\n' : ''));
-  } else if (name === 'work' && shown.ok) {
-    process.stdout.write(fenced(dump(shown)) + '\n');
-  } else {
-    process.stdout.write(dump(shown) + '\n');
-  }
+  const res = await send(config.queueDir, entry.op, parsed.args);
+  printResult(name, view, res, rest);
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();
 }

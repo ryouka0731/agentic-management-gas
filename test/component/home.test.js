@@ -645,7 +645,10 @@ describe('前進を見せる (意欲づけ)', () => {
   });
 
   it('工数の集計に、誰に何が見えるかを書く', () => {
-    mount({ apiTallyEffort: { periods: [{ key: '2026-10', label: '10月', planned: 1, actual: 1, diff: 0, count: 1, cumPlanned: 1, cumActual: 1 }],
+    // 区切りの形はサーバ (Tally.js) が返すものに合わせる。以前は古い形 (planned を直に持つ) を渡していて、
+    // 表を描くところで落ちていたのに、例外を拾っていなかったため通っていた
+    mount({ apiTallyEffort: { periods: [{ key: '2026-10', label: '10月',
+      sum: { planned: 1, actual: 1, diff: 0, count: 1 }, cumulative: { planned: 1, actual: 1, diff: 0, count: 1 }, byPerson: {} }],
       people: [], total: { planned: 1, actual: 1, diff: 0, count: 1 }, skipped: 0, hidden: 0 } });
     document.querySelector('[data-tab="issues"]').click();
     document.getElementById('view-tally').click();
