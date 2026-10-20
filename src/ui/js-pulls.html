@@ -1,0 +1,605 @@
+  // ===== 確認依頼 =====
+
+  function stateLabel(state) {
+    return {
+      open: '確認待ち', approved: '承認済み',
+      merged: '反映済み', closed: '取り下げ',
+    }[state] || state;
+  }
+
+  /**
+   * 確認依頼の一覧を出し、1件を開く。
+   *
+   * **返事の時点で、最後に頼んだ一覧か・まだこの画面かを見る。** 見ないと、
+   * ホームから #3 を開いたあとに届いた一覧の返事が先頭の #1 を開き直していた。
+   *
+   * @param {number} [selectNumber] 先頭の代わりに開く依頼の番号
+   */
+  function loadPulls(selectNumber) {
+    var still = latest('pulls');
+    showSkeleton(prListEl, 'list', 4);
+    prDetail.textContent = '';
+
+    call('apiPrList', [], function (list) {
+      if (!still() || panelPulls.hidden) return;
+      var prs = list || [];
+      var pick = null;
+      prListEl.textContent = '';
+
+      if (!prs.length) {
+        prListEl.appendChild(makeBlankState(
+          '確認依頼はありません',
+          '改訂版を直したら「改訂中の版」から確認を依頼してください。'
+        ));
+        return;
+      }
+
+      prs.forEach(function (pr) {
+        var btn = document.createElement('button');
+        btn.className = 'row-item';
+
+        var main = document.createElement('div');
+        main.className = 'row-main';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + pr.number + ' ' + pr.title;
+        main.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        meta.textContent = pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) +
+          ' · ' + personName(pr.author);
+
+        if (pr.reviewers && pr.reviewers.length) {
+          meta.appendChild(document.createTextNode(' · 確認 '));
+          meta.appendChild(makeAvatars(pr.reviewers));
+        }
+        main.appendChild(meta);
+
+        // 他の一覧と同じ器に入れる。入れないとこの行だけ背が低くなる
+        var open = document.createElement('span');
+        open.className = 'row-open';
+        open.appendChild(makeIcon('clipboard-check'));
+        open.appendChild(main);
+        btn.appendChild(open);
+
+        var state = document.createElement('span');
+        state.className = 'state state-' + pr.state;
+        state.textContent = stateLabel(pr.state);
+        btn.appendChild(state);
+
+        btn.addEventListener('click', function () {
+          var items = prListEl.querySelectorAll('.row-item');
+          for (var i = 0; i < items.length; i++) {
+            items[i].setAttribute('aria-current', String(items[i] === btn));
+          }
+          showPrDetail(pr);
+        });
+
+        if (selectNumber && Number(pr.number) === Number(selectNumber)) pick = btn;
+        prListEl.appendChild(btn);
+      });
+
+      if (selectNumber && !pick) showSnack('確認依頼 #' + selectNumber + ' が見つかりません', { kind: 'ng' });
+      (pick || prListEl.firstChild).click();
+    }, function (err) {
+      if (!still()) return;
+      failInto(prListEl)(err);
+    });
+  }
+
+  /**
+   * 食い違いの解決を選ばせる。
+   *
+   * @param {object[]} conflicts
+   * @param {HTMLElement} container
+   * @returns {function(): string[]}
+   */
+  function renderConflicts(conflicts, container) {
+    var selects = [];
+
+    conflicts.forEach(function (c, i) {
+      var block = document.createElement('div');
+      block.className = 'conflict-block';
+
+      var head = document.createElement('div');
+      head.className = 'conflict-head';
+      head.textContent = '同じ場所が両方で変わっています ' + (i + 1) + ' / ' + conflicts.length;
+      block.appendChild(head);
+
+      [[OFFICIAL + '側', c.ours], ['改訂版側', c.theirs]].forEach(function (pair) {
+        var side = document.createElement('div');
+        side.className = 'conflict-side';
+
+        var label = document.createElement('div');
+        label.className = 'conflict-label';
+        label.textContent = pair[0];
+        side.appendChild(label);
+
+        if (!pair[1] || !pair[1].length) {
+          var del = document.createElement('div');
+          del.className = 'conflict-label';
+          del.textContent = '(削除)';
+          side.appendChild(del);
+        } else {
+          pair[1].forEach(function (line) {
+            var div = document.createElement('div');
+            div.className = 'diff-line';
+            div.textContent = line;
+            side.appendChild(div);
+          });
+        }
+        block.appendChild(side);
+      });
+
+      var choiceWrap = document.createElement('div');
+      choiceWrap.className = 'conflict-choice';
+
+      var sel = document.createElement('select');
+      [['ours', OFFICIAL + '側を残す'], ['theirs', '改訂版側を採用'],
+       ['both', '両方を残す']].forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        sel.appendChild(o);
+      });
+
+      choiceWrap.appendChild(sel);
+      block.appendChild(choiceWrap);
+      selects.push(sel);
+
+      container.appendChild(block);
+    });
+
+    return function () {
+      return selects.map(function (s) { return s.value; });
+    };
+  }
+
+  /**
+   * 誰が書いたかを顔と名前で示す見出しを作る。
+   *
+   * 名前だけの行が縦に積まれると、どれが誰の発言か追いにくい。
+   *
+   * @param {string} who
+   * @param {string} what
+   * @returns {HTMLElement}
+   */
+  function makeCommentHead(who, what) {
+    var head = document.createElement('div');
+    head.className = 'comment-head';
+    head.appendChild(makeAvatar(who));
+
+    var name = document.createElement('span');
+    name.className = 'comment-who';
+    name.appendChild(makePersonLabel(who));
+    head.appendChild(name);
+
+    var note = document.createElement('span');
+    note.textContent = what;
+    head.appendChild(note);
+    return head;
+  }
+
+  /**
+   * 確認してもらう人の行。
+   *
+   * 誰に頼んだのかが残らないと、依頼が宙に浮いたまま誰も見ない。
+   *
+   * @param {object} pr
+   * @returns {HTMLElement}
+   */
+  function makeReviewerRow(pr) {
+    var row = document.createElement('div');
+    row.className = 'reviewer-row';
+
+    var label = document.createElement('span');
+    label.className = 'row-meta';
+    label.textContent = '確認してもらう人';
+    row.appendChild(label);
+
+    var people = (pr.reviewers || []);
+    if (!people.length) {
+      var none = document.createElement('span');
+      none.className = 'row-meta';
+      none.textContent = 'まだ誰にも頼んでいません';
+      row.appendChild(none);
+    } else {
+      people.forEach(function (who) {
+        var chip = document.createElement('span');
+        chip.className = 'reviewer-chip';
+        chip.appendChild(makeAvatar(who));
+        chip.appendChild(makePersonLabel(who));
+        row.appendChild(chip);
+      });
+    }
+
+    if (pr.state === 'merged' || pr.state === 'closed') return row;
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = '確認してもらう人を決める';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () { askReviewers(pr, edit); });
+    row.appendChild(edit);
+    return row;
+  }
+
+  /**
+   * 確認してもらう人を入力させる。
+   *
+   * @param {object} pr
+   * @param {HTMLElement} sourceEl
+   */
+  function askReviewers(pr, sourceEl) {
+    var form = openInlineForm(
+      '確認してもらう人',
+      [{
+        name: 'people',
+        label: 'メールアドレス (カンマ区切り)',
+        placeholder: 'a@example.com, b@example.com',
+      }],
+      '決める',
+      function (v) {
+        call('apiPrSetReviewers', [pr.number, String(v.people || '').split(',')], function (list) {
+          pr.reviewers = list || [];
+          showSnack((pr.reviewers.length || 0) + '人に頼みました', { kind: 'ok' });
+          showPrDetail(pr);
+        });
+      },
+      sourceEl
+    );
+
+    var input = form.querySelector('input');
+    input.value = (pr.reviewers || []).join(', ');
+    input.setAttribute('list', 'people-list');
+    attachPeopleList(form);
+  }
+
+  function renderConversation(pr, container) {
+    var first = document.createElement('div');
+    first.className = 'comment';
+    first.appendChild(makeCommentHead(pr.author, 'が依頼'));
+
+    var body = document.createElement('div');
+    body.className = 'comment-body';
+    body.textContent = pr.body || '(補足なし)';
+    first.appendChild(body);
+    container.appendChild(first);
+
+    call('apiPrReviews', [pr.number], function (list) {
+      var reviews = list || [];
+      var labels = {
+        approve: '承認', request_changes: '直してほしい', comment: 'コメント',
+      };
+
+      reviews.forEach(function (r) {
+        var el = document.createElement('div');
+        el.className = 'comment';
+
+        var h = makeCommentHead(r.reviewer,
+          (labels[r.state] || r.state) + (r.editedAt ? ' · 直しました' : ''));
+
+        if (r.canEdit) h.appendChild(makeCommentTools(pr, r, el));
+        el.appendChild(h);
+
+        if (r.body) {
+          var b = document.createElement('div');
+          b.className = 'comment-body';
+          b.textContent = r.body;
+          el.appendChild(b);
+        }
+        container.appendChild(el);
+      });
+
+      container.appendChild(makeCommentForm(pr));
+    }, failInto(container));
+  }
+
+  /**
+   * 自分のコメントを直す / 消す。
+   *
+   * 他人の発言は動かせない。動かせると、やりとりの記録が信じられなくなる。
+   *
+   * @param {object} pr
+   * @param {object} review
+   * @param {HTMLElement} host コメントの器
+   * @returns {HTMLElement}
+   */
+  function makeCommentTools(pr, review, host) {
+    var tools = document.createElement('span');
+    tools.className = 'comment-tools';
+
+    var edit = document.createElement('button');
+    edit.className = 'icon-btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.title = 'このコメントを直す';
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', function () {
+      var form = openInlineForm(
+        'コメントを直す',
+        [{ name: 'body', label: '中身', required: true, multiline: true }],
+        '直す',
+        function (v) {
+          call('apiReviewEdit', [review.id, v.body], function () {
+            showSnack('コメントを直しました', { kind: 'ok' });
+            showPrDetail(pr);
+          });
+        },
+        host
+      );
+      form.querySelector('textarea, input').value = review.body || '';
+    });
+    tools.appendChild(edit);
+
+    var del = document.createElement('button');
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.title = 'このコメントを消す';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(prDetail,
+        'このコメントを消します。元には戻せません。',
+        '消す',
+        function () {
+          call('apiReviewDelete', [review.id], function (msg) {
+            showSnack(msg, { kind: 'ok' });
+            showPrDetail(pr);
+          });
+        });
+    });
+    tools.appendChild(del);
+    return tools;
+  }
+
+  function makeCommentForm(pr) {
+    var form = document.createElement('div');
+    form.className = 'comment-form';
+
+    var input = document.createElement('textarea');
+    input.placeholder = 'コメントを書く';
+    form.appendChild(input);
+
+    var send = document.createElement('button');
+    send.className = 'btn btn-primary';
+    send.textContent = '書き込む';
+    send.addEventListener('click', function () {
+      if (!input.value) return;
+      send.disabled = true;
+      call('apiPrReview', [pr.number, 'comment', input.value],
+        function () { showPrDetail(pr); },
+        failEnable(send));
+    });
+
+    form.appendChild(send);
+    return form;
+  }
+
+  function renderPrCommits(pr, container) {
+    showSkeleton(container, 'list', 3);
+
+    call('apiPrCommits', [pr.number], function (list) {
+      var commits = list || [];
+      container.textContent = '';
+      if (!commits.length) {
+        container.textContent = '記録はありません';
+        return;
+      }
+
+      var paths = {};
+      commits.forEach(function (c) { if (c.path) paths[c.path] = true; });
+      var multi = Object.keys(paths).length > 1;
+
+      commits.forEach(function (c) {
+        var row = document.createElement('div');
+        row.className = 'row-item';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = c.message;
+        row.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        // 変更セットでは、どの文書の記録かも出す
+        meta.textContent = String(c.sha).substring(0, 7) + ' · ' + c.author +
+          (multi && c.path ? ' · ' + c.path : '');
+        row.appendChild(meta);
+
+        container.appendChild(row);
+      });
+    }, failInto(container));
+  }
+
+  function showPrDetail(pr) {
+    // 続けて押したとき、前の依頼の返事で後の依頼の中身を上書きしない
+    var still = latest('prDetail');
+    showSkeleton(prDetail, 'block');
+
+    call('apiPrPreview', [pr.number], function (preview) {
+      if (!still()) return;
+      prDetail.textContent = '';
+
+      var head = document.createElement('div');
+      head.className = 'pr-title';
+      head.textContent = '#' + pr.number + ' ' + pr.title;
+      prDetail.appendChild(head);
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent =
+        pr.sourceBranch + ' → ' + branchLabel(pr.targetBranch) + ' · ' +
+        personName(pr.author) +
+        ' · 承認 ' + preview.approvals + '件 · ' +
+        (preview.clean ? 'そのまま反映できます' : '同じ場所が両方で変わっています');
+      prDetail.appendChild(meta);
+
+      prDetail.appendChild(makeReviewerRow(pr));
+
+      var getChoices = function () { return []; };
+
+      if (preview.problems && preview.problems.length) {
+        var warn = document.createElement('div');
+        warn.className = 'confirm-strip';
+        warn.textContent = '反映できません: ' + preview.problems.join(' / ');
+        prDetail.appendChild(warn);
+      }
+
+      if (!preview.clean) getChoices = renderConflicts(preview.conflicts, prDetail);
+
+      if (pr.state !== 'merged' && pr.state !== 'closed') {
+        var actions = document.createElement('div');
+        actions.className = 'pr-actions';
+
+        var approveBtn = document.createElement('button');
+        approveBtn.className = 'btn';
+        approveBtn.textContent = '承認する';
+        hint(approveBtn, 'act:approve');
+
+        // 押せるのに失敗する状態を作らない
+        if (currentUser && String(pr.author) === currentUser) {
+          approveBtn.disabled = true;
+          approveBtn.title = '自分が出した依頼は自分で承認できません';
+        }
+
+        approveBtn.addEventListener('click', function () {
+          approveBtn.disabled = true;
+          call('apiPrReview', [pr.number, 'approve', ''],
+            function () { showPrDetail(pr); },
+            failEnable(approveBtn));
+        });
+
+        var mergeBtn = document.createElement('button');
+        mergeBtn.className = 'btn btn-primary';
+        mergeBtn.textContent = branchLabel(pr.targetBranch) + 'に反映する';
+
+        if (preview.problems && preview.problems.length) {
+          mergeBtn.disabled = true;
+          mergeBtn.title = '反映できない内容が含まれています';
+        } else if (preview.approvals < 1) {
+          mergeBtn.disabled = true;
+          // 承認したはずの人に「承認が必要」とだけ出すと首をかしげる
+          mergeBtn.title = preview.staleApprovals
+            ? '承認のあとに中身が変わっています。もう一度承認してもらってください'
+            : '反映には1件以上の承認が必要です';
+        }
+
+        // 文書が無くコードの証跡だけなら、書き戻すものが無い。それでも
+        // 「読んで進めてよいと決めた」記録は残す
+        var docCount = (preview.files || []).length;
+        if (!docCount && preview.patchCount) {
+          mergeBtn.textContent = '承認を記録する';
+        }
+
+        mergeBtn.addEventListener('click', function () {
+          var says = docCount
+            ? OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。'
+            : '読んで確かめたことを記録します。書き換える文書はありません。';
+
+          // 押したら入っていると思わせない。ここを書かないと
+          // 「承認したのに入っていない」になる
+          if (preview.patchCount) {
+            says += ' コードの変更は反映されません (手元の git で進めてください)。';
+          }
+
+          openConfirmStrip(
+            prDetail,
+            says,
+            docCount ? '反映する' : '記録する',
+            function () {
+              mergeBtn.disabled = true;
+              // 見比べたときの指紋を添える。進んでいたら断られる
+              call('apiPrMerge', [pr.number, getChoices(), preview.previewSha || ''], function () {
+                celebrateProgress('merge', '#' + pr.number + ' を' + OFFICIAL + 'に反映しました');
+                loadPulls();
+                loadOverview();
+              }, failEnable(mergeBtn, '反映できませんでした: '));
+            }
+          );
+        });
+
+        // 取り下げる道。出したあとに思い直せないと、誰も見ない依頼が
+        // 開いたまま残り、左の帯の件数が減らない
+        var offBtn = document.createElement('button');
+        offBtn.className = 'btn';
+        offBtn.textContent = '取り下げる';
+        hint(offBtn, 'act:pr-close');
+
+        // 押せるのに失敗する状態を作らない。誰が取り下げられるかは
+        // サーバが決めている
+        if (!pr.canClose) {
+          offBtn.disabled = true;
+          offBtn.title = '出した本人か、このアプリの管理者だけが取り下げられます';
+        }
+
+        offBtn.addEventListener('click', function () {
+          openConfirmStrip(
+            prDetail,
+            '#' + pr.number + ' を取り下げます。' +
+            '改訂版そのものは残るので、直した中身は消えません。' +
+            'また出したくなったら、改めて依頼できます。',
+            '取り下げる',
+            function () {
+              offBtn.disabled = true;
+              call('apiPrClose', [pr.number], function () {
+                showSnack('#' + pr.number + ' を取り下げました', { kind: 'ok' });
+                loadPulls();
+                loadOverview();
+              }, failEnable(offBtn, '取り下げられませんでした: '));
+            }
+          );
+        });
+
+        actions.appendChild(approveBtn);
+        actions.appendChild(offBtn);
+        actions.appendChild(mergeBtn);
+        prDetail.appendChild(actions);
+      }
+
+      var prTabs = document.createElement('div');
+      prTabs.className = 'pr-tabs';
+      var prBody = document.createElement('div');
+
+      var views = {
+        conversation: function () { renderConversation(pr, prBody); },
+        commits: function () { renderPrCommits(pr, prBody); },
+        files: function () { renderPrDiffs(preview, prBody); },
+        patches: function () { renderPrPatches(pr, prBody); },
+        work: function () { renderPrWork(pr, prBody); },
+      };
+
+      var tabNames = [
+        ['conversation', 'やりとり'], ['commits', '変更の記録'], ['files', '差分'],
+      ];
+      // 証跡が無い依頼に見出しだけ出すと、空の頁を開かせることになる
+      if (preview.patchCount) tabNames.push(['patches', 'コードの変更']);
+      // 頼みごとは証跡が無くても出す。「差分を出して」は証跡を作る前に頼む
+      tabNames.push(['work', '手元への頼みごと']);
+
+      tabNames.forEach(function (t) {
+          var b = document.createElement('button');
+          b.className = 'pr-tab';
+          b.textContent = t[1];
+          b.setAttribute('aria-current', String(t[0] === 'conversation'));
+          b.addEventListener('click', function () {
+            var all = prTabs.querySelectorAll('.pr-tab');
+            for (var i = 0; i < all.length; i++) {
+              all[i].setAttribute('aria-current', String(all[i] === b));
+            }
+            prBody.textContent = '';
+            views[t[0]]();
+          });
+          prTabs.appendChild(b);
+        });
+
+      prDetail.appendChild(prTabs);
+      prDetail.appendChild(prBody);
+      views.conversation();
+    }, function (err) {
+      if (!still()) return;
+      failInto(prDetail)(err);
+    });
+  }
+

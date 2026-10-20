@@ -3,7 +3,7 @@
 [手引きの目次](README.md)
 
 画面は1枚の Web アプリで、左に行き先、上に帯、真ん中に中身、右に詳細の欄がある。画面の部品は
-`src/ui/wiki.html`、動きは `src/ui/app.js.html`、見た目は `src/ui/app.css.html` にある。
+`src/ui/wiki.html`、動きは `src/ui/app.js.html` と `src/ui/js-*.html` (場所ごとに分けてあり、`wiki.html` が順につなぐ)、見た目は `src/ui/app.css.html` にある。
 
 ## 左の行き先
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { APP, APP_PARTS } from './ui-source.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -12,36 +13,39 @@ function read(rel) {
 /**
  * UI の部分HTMLが壊れていないかを見る。
  *
- * app.css.html は <style> だけ、app.js.html は <script> だけを含む
- * 部分ファイルである。末尾に追記すると閉じタグの外に出てしまい、
- * CSS や JS がページ本文としてそのまま表示される。実際に踏んだ。
+ * app.css.html は <style> だけを含む部分ファイルである。末尾に追記すると閉じタグの
+ * 外に出てしまい、CSS がページ本文としてそのまま表示される。実際に踏んだ (以前は
+ * app.js.html も同じ形だった)。画面の JS は wiki.html の <script> の中で部分ファイル
+ * (app.js.html / js-*.html) をつなぐ形にしたので、部分ファイルはタグを持たない。
  */
 describe('UI 部分HTMLの構造', () => {
   it('日報のひな形はサーバが本体で、画面は控えを1か所だけ持つ', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
     expect(js.split('📅明日やること').length - 1).toBe(1);
     expect(read('src/core/Home.gs')).toContain('function REPORT_TEMPLATES()');
   });
 
-  const cases = [
-    ['src/ui/app.css.html', 'style'],
-    ['src/ui/app.js.html', 'script'],
-  ];
+  it('app.css.html は <style> の内側だけで完結している', () => {
+    const src = read('src/ui/app.css.html').trim();
 
-  cases.forEach(([file, tag]) => {
-    it(file + ' は <' + tag + '> の内側だけで完結している', () => {
-      const src = read(file).trim();
+    expect(src.startsWith('<style>')).toBe(true);
+    expect(src.endsWith('</style>')).toBe(true);
 
-      expect(src.startsWith('<' + tag + '>')).toBe(true);
-      expect(src.endsWith('</' + tag + '>')).toBe(true);
+    // 開閉は1組だけ
+    expect(src.split('<style>').length - 1).toBe(1);
+    expect(src.split('</style>').length - 1).toBe(1);
 
-      // 開閉は1組だけ
-      expect(src.split('<' + tag + '>').length - 1).toBe(1);
-      expect(src.split('</' + tag + '>').length - 1).toBe(1);
+    // 閉じタグより後ろに中身が無い
+    expect(src.slice(src.lastIndexOf('</style>') + '</style>'.length).trim())
+      .toBe('');
+  });
 
-      // 閉じタグより後ろに中身が無い
-      expect(src.slice(src.lastIndexOf('</' + tag + '>') + tag.length + 3).trim())
-        .toBe('');
+  // 画面の JS の部分ファイルは JS だけを持つ。<script> は wiki.html の側にあり、
+  // 部分ファイルにタグを書くと、その先が script の外に出てページ本文として出る
+  it('画面の JS の部分ファイルは <script> を持たない', () => {
+    APP_PARTS.forEach((name) => {
+      const src = read('src/' + name + '.html');
+      expect(src, name).not.toMatch(/<\/?script/i);
     });
   });
 
@@ -196,7 +200,7 @@ describe('テーマのトークン', () => {
 
 describe('モードレスなUI', () => {
   it('ブラウザのモーダル (alert / confirm / prompt) を使っていない', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
 
     // モーダルは操作を中断させ、取り消しの手段も与えない。
     // バナー通知 (showSnack) と画面内フォーム (openInlineForm) を使う
@@ -205,7 +209,7 @@ describe('モードレスなUI', () => {
   });
 
   it('通知は読み上げに載る', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
     expect(js).toContain("setAttribute('role', 'status')");
     expect(js).toContain("setAttribute('aria-live', 'polite')");
   });
@@ -236,7 +240,7 @@ describe('色の指定', () => {
   });
 
   it('文書ビューの色をテーマから取っている', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
 
     // iframe の中には外側のCSS変数が届かないため、描画のたびに
     // 実際の値を読んで流し込む必要がある
@@ -344,7 +348,7 @@ describe('概念モデルとの対応', () => {
   });
 
   it('文書を選ぶまでタブを出さない', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
 
     // 対象が無ければそのビューは意味を持たない
     expect(js).toContain('tabsEl.hidden = !current.fileId');
@@ -352,13 +356,13 @@ describe('概念モデルとの対応', () => {
   });
 
   it('ホームは文書の一覧', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
     expect(js).toContain("loadFiles(function () { switchTab('docs'); })");
   });
 });
 
 describe('読み込み中の見せ方', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const css = read('src/ui/app.css.html');
 
   it('「読み込み中」の文字を画面に出さない', () => {
@@ -380,7 +384,7 @@ describe('読み込み中の見せ方', () => {
 });
 
 describe('やることの操作', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
 
   it('一覧・ボード・工程表のどこからでも中身を直せる', () => {
     // 対象が同じなら編集の場所も同じにする
@@ -414,7 +418,7 @@ describe('やることの操作', () => {
 
 describe('入力の置き場所', () => {
   const html = read('src/ui/wiki.html');
-  const js = read('src/ui/app.js.html');
+  const js = APP;
 
   it('入力は右のパネルで受ける', () => {
     // 一覧の上に差し込むと、書いている間に一覧が押し下げられ、
@@ -446,7 +450,7 @@ describe('入力の置き場所', () => {
 });
 
 describe('編集中の対象', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const css = read('src/ui/app.css.html');
 
   it('どれを編集しているかに印を付ける', () => {
@@ -469,7 +473,7 @@ describe('編集中の対象', () => {
 });
 
 describe('工程表の使い勝手', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const html = read('src/ui/wiki.html');
 
   it('長い名前は1行で切らず、3行まで折り返す', () => {
@@ -541,7 +545,7 @@ describe('線に頼らない表現', () => {
 });
 
 describe('骨組みの形', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const fn = js.slice(js.indexOf('function showSkeleton('),
     js.indexOf('// ===== 本文の描画'));
 
@@ -564,7 +568,7 @@ describe('骨組みの形', () => {
 
 describe('サイドバーと見え方', () => {
   const html = read('src/ui/wiki.html');
-  const js = read('src/ui/app.js.html');
+  const js = APP;
 
   it('左のメニューを役割で束ねる', () => {
     const sidebar = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>'));
@@ -637,7 +641,7 @@ describe('面と面の見分け', () => {
 });
 
 describe('やることの中身と操作', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const css = read('src/ui/app.css.html');
   const html = read('src/ui/wiki.html');
 
@@ -727,7 +731,7 @@ describe('やることの中身と操作', () => {
       css.indexOf('\n}', css.indexOf('\n.gantt-track {')));
     expect(track).not.toContain('repeating-linear-gradient');
 
-    const js = read('src/ui/app.js.html');
+    const js = APP;
     expect(js).toContain("grid.className = 'gantt-grid'");
     expect(js).toContain("rows.className = 'gantt-rows'");
   });
@@ -742,7 +746,7 @@ describe('やることの中身と操作', () => {
 });
 
 describe('改訂版を作る導線', () => {
-  const js = read('src/ui/app.js.html');
+  const js = APP;
 
   it('改訂中の版タブからも作れる', () => {
     // 文書を選んでいるのに「文書を開いてから」と言われるのは行き止まり
@@ -760,7 +764,7 @@ describe('改訂版を作る導線', () => {
 
 describe('履歴の列の畳み方', () => {
   const css = read('src/ui/app.css.html');
-  const js = read('src/ui/app.js.html');
+  const js = APP;
   const html = read('src/ui/wiki.html');
 
   it('列を減らす基準は画面幅ではなく器の幅', () => {
@@ -803,7 +807,7 @@ describe('履歴の列の畳み方', () => {
   it('畳む列は見出しと行の両方で同じクラスを使っている', () => {
     foldSteps().forEach((step) => {
       step.hidden.forEach((cls) => {
-        // 見出しは wiki.html、行は app.js.html が組み立てる
+        // 見出しは wiki.html、行は画面の JS が組み立てる
         expect(html).toContain('class="' + cls + '"');
         expect(js).toContain("className = '" + cls + "'");
       });
@@ -962,7 +966,7 @@ describe('押す前の補足', () => {
   const css = read('src/ui/app.css.html');
 
   it('触れたときとキーボードの焦点の両方で出る', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
 
     // 触れないと出ない補足は、キーボードだけの人には無いのと同じ
     expect(js).toContain("document.addEventListener('pointerover'");
@@ -1225,7 +1229,7 @@ describe('ヘッダーの検索欄', () => {
 
 describe('遅れて届いた返事の見分け方', () => {
   it('latest(key) の1か所だけ。画面ごとに番号の数え方を書き直さない', () => {
-    const js = read('src/ui/app.js.html');
+    const js = APP;
     expect(js).toContain('function latest(key)');
     // 以前は docGen / usageGen / pullsSeq / ganttLoadSeq … と画面ごとに数えていて、
     // 書き忘れた一覧だけが古い返事で描き直されていた。

@@ -1,0 +1,1058 @@
+  // ===== 設定とエージェンティックスクラム =====
+  //
+  // ai-scrum-gas から取り入れた。**既定はオフ**で、持ち主が「設定」でオンに
+  // したときだけ、左に「スクラム」の節が出て、やることにスプリント・ポイント・
+  // 受入基準の欄が増える。
+
+  var navScrum = document.getElementById('nav-scrum');
+  var panelSettings = document.getElementById('panel-settings');
+  var panelSprint = document.getElementById('panel-sprint');
+  var panelImpediments = document.getElementById('panel-impediments');
+  var settingsEl = document.getElementById('settings');
+  var sprintViewEl = document.getElementById('sprint-view');
+  var sprintSelect = document.getElementById('sprint-select');
+  var sprintCreateBtn = document.getElementById('sprint-create-btn');
+  var sprintEditBtn = document.getElementById('sprint-edit-btn');
+  var impedimentsEl = document.getElementById('impediments');
+  var impedimentSummaryEl = document.getElementById('impediment-summary');
+  var impedimentCreateBtn = document.getElementById('impediment-create-btn');
+  var impedimentCountEl = document.getElementById('count-impediments');
+
+  // ===== 設定の一覧 (#18) =====
+  //
+  // 変えられる項目はサーバの PREFS_SCHEMA() が唯一の定義。画面は apiPrefs の返りから欄を組み、
+  // 写しを持たない (写すと、足したときに「選べるのに保存できない」項目が出る)。
+
+  /** apiPrefs の返り。取れるまでは null (すべて既定 = 今の動きとして扱う) */
+  var prefs = null;
+
+  /**
+   * 起動のときの設定の返事が届いたか (取れなくても届いたことにする)。届くまではポイントの
+   * カードを描かない。描くと、隠した人にも一瞬出て、見たレベルまで覚えてしまう
+   */
+  var prefsSettled = false;
+
+  /**
+   * 設定を尋ねた順の番号と、当てた返事の番号。書き込みを続けて押すと返事が前後して届くので、
+   * 後から頼んだものより古い返事は当てない
+   */
+  var prefsSeq = 0;
+  var prefsAppliedSeq = 0;
+
+  // ===== スクラムまわりの言葉 (#21) =====
+  //
+  // TERMS / term / termFill は src/core/Terms.js の写し (test/ui-parity.test.js が同じ答えを返すかを見ている)。
+  // 画面のスクラムまわりの字は、すべて termOf(key) / termIn('…{key}…') を通す。字を直に書かない
+  // (test/terms.test.js が見ている)。表し方は自分の設定 terms.style。届くまでは一般の言葉。
+
+  /**
+   * 言葉の対応。key → {plain: 一般の言葉, scrum: スクラムの言葉}。
+   *
+   * @returns {Object<string, {plain: string, scrum: string}>}
+   */
+  function TERMS() {
+    return {
+      feature: { plain: '期間で進める', scrum: 'エージェンティックスクラム' },
+      sprint: { plain: '作業期間', scrum: 'スプリント' },
+      sprintGoal: { plain: 'この期間の目標', scrum: 'スプリントゴール' },
+      points: { plain: '大きさ', scrum: 'ポイント' },
+      velocity: { plain: '期間ごとに終えた量', scrum: 'ベロシティ' },
+      burndown: { plain: '残りの量の推移', scrum: 'バーンダウン' },
+      impediment: { plain: '困りごと', scrum: '障害物' },
+      productGoal: { plain: '目指すところ', scrum: 'プロダクトゴール' },
+      definitionOfDone: { plain: '終わったと言える条件', scrum: '完了の定義' },
+      acceptance: { plain: 'できたと言える条件', scrum: '受け入れ条件' },
+    };
+  }
+
+  /**
+   * 言葉を1つ返す。知らない表し方は一般の言葉。知らない key はそのまま返す
+   * (空にすると画面から字が消えて気づけない)。
+   *
+   * @param {string} key
+   * @param {string} [style] 'plain' | 'scrum'。省略すると一般の言葉
+   * @returns {string}
+   */
+  function term(key, style) {
+    var all = TERMS();
+    var k = String(key == null ? '' : key);
+    if (!Object.prototype.hasOwnProperty.call(all, k)) return k;
+    return style === 'scrum' ? all[k].scrum : all[k].plain;
+  }
+
+  /**
+   * 文の中の {key} を言葉に置き換える。文ごと両方の形を持たず、言葉だけを差し込むため。
+   * 知らない {key} は触らない。
+   *
+   * @param {string} text
+   * @param {string} [style]
+   * @returns {string}
+   */
+  function termFill(text, style) {
+    var all = TERMS();
+    return String(text == null ? '' : text).replace(/\{([A-Za-z]+)\}/g, function (whole, k) {
+      return Object.prototype.hasOwnProperty.call(all, k) ? term(k, style) : whole;
+    });
+  }
+
+  /** いまの言葉の表し方。設定が届くまでは一般の言葉 */
+  function termStyleNow() {
+    var s = prefs && prefs.effective && prefs.effective.termStyle;
+    return s === 'scrum' ? 'scrum' : 'plain';
+  }
+
+  /**
+   * いまの表し方での言葉。
+   *
+   * @param {string} key TERMS() の key
+   * @returns {string}
+   */
+  function termOf(key) {
+    return term(key, termStyleNow());
+  }
+
+  /**
+   * 文の中の {key} を、いまの表し方の言葉にする。
+   *
+   * @param {string} text
+   * @returns {string}
+   */
+  function termIn(text) {
+    return termFill(text, termStyleNow());
+  }
+
+  /**
+   * 字を {key} 入りのひな形から埋め、表し方が変わったら applyTerms が埋め直せるよう印を付ける。
+   * 人の書いた字 (題名など) は混ぜない (たまたま {sprint} と書いた題名まで置き換わる)。
+   *
+   * @param {Element} el
+   * @param {string} template
+   * @returns {Element} el
+   */
+  function termText(el, template) {
+    var raw = String(template == null ? '' : template);
+    el.textContent = termIn(raw);
+    if (raw.indexOf('{') >= 0) el.setAttribute('data-term', raw);
+    else el.removeAttribute('data-term');
+    return el;
+  }
+
+  /**
+   * 静の HTML に置いた言葉を埋める。data-term は字、data-term-label は aria-label。
+   * 起動のときと、表し方が変わったときに呼ぶ。
+   */
+  function applyTerms() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-term]'), function (el) {
+      el.textContent = termIn(el.getAttribute('data-term'));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-term-label]'), function (el) {
+      el.setAttribute('aria-label', termIn(el.getAttribute('data-term-label')));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-hint-key]'), function (el) {
+      setHintText(el, termIn(HINTS[el.getAttribute('data-hint-key')] || ''));
+    });
+  }
+
+  /**
+   * 言葉の表し方が変わった。静の字を埋め直し、開いているスクラムまわりの画面を描き直す
+   * (描いた字は描いたときの言葉のまま残る)。設定の画面も、スクラムの節に言葉があるので描き直す。
+   */
+  function refreshTerms() {
+    // 開いている右の欄 (やること・困りごとの詳細) も data-term で埋め直る
+    applyTerms();
+    updateCrumbs();
+    // 取り直さない。最後に届いた返事から描き直す (言葉が変わっただけで中身は同じ)
+    if (!panelSettings.hidden) renderSettingsPanel();
+    if (!panelSprint.hidden && lastSprintView) {
+      fillSprintSelect();
+      renderSprint(lastSprintView);
+    }
+    if (!panelImpediments.hidden && lastImpediments) renderImpediments(lastImpediments);
+    syncSprintGrouping();
+    if (!panelIssues.hidden) {
+      if (issueView === 'list') renderIssueList(lastIssues);
+      else if (issueView === 'board' && lastBoard) renderBoard(JSON.parse(lastBoard));
+    }
+  }
+
+  /** 最後に描いたホームのカードの材料。設定が届いたら同じ材料で描き直す */
+  var homeCardsLast = null;
+
+  /** ホームの区画と、home.cards.<key> の key */
+  var HOME_CARD_BLOCKS = [['turn', 'home-turn'], ['advice', 'home-advice'], ['activity', 'home-activity'],
+    ['recent', 'home-recent']];
+
+  /**
+   * そのホームのカードを出すか。設定が取れていなければ出す。
+   *
+   * @param {string} key
+   * @returns {boolean}
+   */
+  function homeCardOn(key) {
+    var cards = prefs && prefs.effective && prefs.effective.homeCards;
+    return !cards || cards[key] !== false;
+  }
+
+  /** 使われ方を数えるか。設定が取れていなければ数える (サーバでも見る) */
+  function prefUsageOn() {
+    return !(prefs && prefs.effective && prefs.effective.usageOn === false);
+  }
+
+  /** ホームの区画を設定に合わせて出し入れする */
+  function applyHomeCards() {
+    HOME_CARD_BLOCKS.forEach(function (b) {
+      var el = document.getElementById(b[1]);
+      if (el) el.hidden = !homeCardOn(b[0]);
+    });
+  }
+
+  /**
+   * 届いた設定を画面に当てる。止めた使われ方は溜めたぶんも捨てる。
+   *
+   * @param {object} res apiPrefs
+   * @param {number} [seq] 尋ねたときの prefsSeq。これより後に尋ねた返事を当てていれば何もしない
+   * @returns {boolean} 当てたか
+   */
+  function applyPrefs(res, seq) {
+    if (seq) {
+      if (seq < prefsAppliedSeq) return false;
+      prefsAppliedSeq = seq;
+    }
+    var styleBefore = termStyleNow();
+    prefs = res || prefs;
+    if (termStyleNow() !== styleBefore) refreshTerms();
+    applyHomeCards();
+    if (!prefUsageOn()) usageBuffer = {};
+    // 描いてあるカードのうち止めたものを外す。出すほうはホームを開き直したとき (loadHome) に描く。
+    // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
+    if (!homeCardOn('game')) removeAll(homeCardsEl, '.game-card');
+    if (!homeCardOn('team')) removeAll(homeCardsEl, '.team-progress');
+    return true;
+  }
+
+  /** 起動のときの設定が届いた (または取れなかった)。待たせていたポイントのカードを描く */
+  function settlePrefs() {
+    prefsSettled = true;
+    if (!panelHome.hidden && homeCardsLast && progressNotesOn()) renderHomeCards.apply(null, homeCardsLast);
+  }
+
+  /**
+   * @param {HTMLElement} host
+   * @param {string} selector
+   */
+  function removeAll(host, selector) {
+    if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll(selector), function (el) { el.remove(); });
+  }
+
+  /**
+   * 起動のときに設定を取り、自分の設定の「最初に出す画面」へ移る。
+   *
+   * 文書のリンクから開いたときと、返事を待つあいだに人が移ったときは移らない
+   * (押した先を奪わない)。取れなければホームのまま。
+   *
+   * @param {boolean} fromLink
+   * @param {number} since 起動のときの navCount
+   */
+  function loadStartPrefs(fromLink, since) {
+    var seq = ++prefsSeq;
+    call('apiPrefs', [], function (res) {
+      if (!res) {
+        settlePrefs();
+        return;
+      }
+      var fresh = applyPrefs(res, seq);
+      settlePrefs();
+      if (!fresh) return;
+      var tab = String((res.effective && res.effective.startTab) || 'home');
+      if (fromLink || navCount !== since || tab === 'home') return;
+      if (!document.querySelector('.nav-item[data-tab="' + tab + '"]')) return;
+      switchTab(tab);
+    }, function (err) {
+      failQuiet('設定が取れなくても、既定のまま使える')(err);
+      settlePrefs();
+    });
+  }
+
+  /** apiSettings の返り。取れるまではオフとして扱う */
+  var settings = { scrumEnabled: false, canEdit: false, productGoal: '', definitionOfDone: '' };
+
+  /** スクラムの欄の選択肢に使うスプリントの一覧 */
+  var scrumSprints = [];
+
+  /** いま見ているスプリントの名前 */
+  var scrumSprint = '';
+
+  /**
+   * スクラムがオンか。オフのあいだは欄も行き先も出さない。
+   *
+   * @returns {boolean}
+   */
+  function scrumOn() {
+    // 起動のはじめ (この節の変数がまだ用意されていないうち) に一覧を描くことが
+    // ある。そのあいだはオフとして扱う
+    return !!(settings && settings.scrumEnabled);
+  }
+
+  /**
+   * 設定を読み直し、左の行き先とスプリントの選択肢をそろえる。
+   *
+   * @param {function} [then]
+   */
+  function loadSettings(then) {
+    call('apiSettings', [], function (res) {
+      settings = res || settings;
+      navScrum.hidden = !scrumOn();
+      syncSprintGrouping();
+      // 一覧やボードを先に描いていたら描き直す。設定が遅れて届くと、スプリントの
+      // 札や合計が付かないまま残る
+      if (!panelIssues.hidden) reloadIssueView();
+      if (!scrumOn()) {
+        scrumSprints = [];
+        if (then) then();
+        return;
+      }
+      call('apiSprintList', [], function (list) {
+        scrumSprints = list || [];
+        if (then) then();
+      }, failQuiet('選択肢が出なくても、ほかの操作はできる'));
+    }, failQuiet('設定が読めなければ、期間で進めるはオフのまま'));
+  }
+
+  /**
+   * 言葉の説明を返す。中身はサーバの SCRUM_GLOSSARY() を設定と一緒に受け取る。
+   * 画面に写しを持つと、片方だけ直して食い違う。key は TERMS() の key (見出しの字は
+   * 言葉の表し方で変わるので、字では引かない)。
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  function scrumGlossaryOf(key) {
+    var all = settings.glossary || {};
+    var k = String(key == null ? '' : key);
+    return Object.prototype.hasOwnProperty.call(all, k) ? all[k] : '';
+  }
+
+  /**
+   * 用語の説明を、見出しの脇に出す「?」にする。
+   *
+   * ポップアップにはしない。開いたまま画面の操作を続けられるように、押すと
+   * すぐ下に説明を出す。
+   *
+   * @param {string} key 説明の key (TERMS() の key と roadmap / carryover)
+   * @param {string} [name] 見せる言葉。省略すると termOf(key)
+   * @returns {HTMLElement}
+   */
+  function makeTermHelp(key, name) {
+    var wrap = document.createElement('span');
+    wrap.className = 'term-help';
+
+    var text = scrumGlossaryOf(key);
+    if (!text) return wrap;
+    var term = name || termOf(key);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icon-btn term-help-btn';
+    btn.textContent = '?';
+    btn.setAttribute('aria-label', term + ' とは');
+    // ホバーでも出す。押すと下に開いたまま読める
+    attachHint(btn, text);
+    btn.setAttribute('aria-expanded', 'false');
+    wrap.appendChild(btn);
+
+    var note = document.createElement('span');
+    note.className = 'row-meta term-help-text';
+    note.textContent = text;
+    note.hidden = true;
+    wrap.appendChild(note);
+
+    btn.addEventListener('click', function () {
+      note.hidden = !note.hidden;
+      btn.setAttribute('aria-expanded', String(!note.hidden));
+    });
+    return wrap;
+  }
+
+  /**
+   * 見出しを作る。用語なら「?」を添える。
+   *
+   * @param {string} text
+   * @param {string} [key] 説明の key (makeTermHelp)
+   * @param {string} [name] 説明に添える言葉。省略すると termOf(key)
+   * @returns {HTMLElement}
+   */
+  function makeScrumHeading(text, key, name) {
+    var h = document.createElement('h3');
+    h.className = 'view-label scrum-heading';
+    h.appendChild(document.createTextNode(text));
+    if (key) h.appendChild(makeTermHelp(key, name));
+    return h;
+  }
+
+  /**
+   * やることの入力欄に足すスクラムの欄。オフなら何も足さない。
+   *
+   * 既存の欄は位置で値を入れているので、末尾に足し、値は名前で入れる。
+   *
+   * @param {object|null} issue 直すときはそのやること
+   * @returns {object[]} openInlineForm の欄
+   */
+  function scrumIssueFields(issue) {
+    if (!scrumOn()) return [];
+    var current = issue ? issue.sprint : '';
+    return [
+      { name: 'sprint', label: termOf('sprint'), choices: sprintChoices(current), value: current },
+      { name: 'points', label: termIn('{points} (ほかのやることと比べて選ぶ。時間ではありません)'),
+        choices: scrumPointChoices(issue ? issue.points : ''),
+        value: issue && issue.points !== '' && issue.points !== undefined ? String(issue.points) : '' },
+      { name: 'acceptance', label: termIn('{acceptance} (1行に1つ)'), multiline: true,
+        value: issue ? issue.acceptance : '' },
+    ];
+  }
+
+  /**
+   * スクラムの欄の値を、送る中身に足す。オフなら何もしない。
+   *
+   * @param {object} v 入力欄の値
+   * @param {object} patch 送る中身 (書き足す)
+   */
+  function scrumIssuePatch(v, patch) {
+    if (!scrumOn()) return;
+    patch.sprint = v.sprint || '';
+    patch.points = v.points;
+    patch.acceptance = v.acceptance || '';
+  }
+
+  // ----- 設定 -----
+
+  /**
+   * 設定の画面を描く。
+   */
+  function loadSettingsPanel() {
+    showSkeleton(settingsEl, 'list', 2);
+    loadSettings(function () {
+      // 設定の一覧が取れなくても、スクラム・ポイント・キューの節は出す
+      // 管理者かを尋ねるのはこの画面だけ (起動のたびに Drive を待たせない)
+      var seq = ++prefsSeq;
+      call('apiPrefs', [{ team: true }], function (res) {
+        if (res) applyPrefs(res, seq);
+        renderSettingsPanel();
+      }, function (err) {
+        failQuiet('一覧が出なくても、期間で進めるなどの節は使える')(err);
+        renderSettingsPanel();
+      });
+    });
+  }
+
+  /**
+   * 設定の画面を、自分の設定とチームの設定に分けて描く。
+   */
+  function renderSettingsPanel() {
+    settingsEl.textContent = '';
+    var items = (prefs && prefs.items) || [];
+    var canEditTeam = !!(prefs && prefs.canEditTeam);
+
+    var mine = makeSettingsGroup('settings-mine', '自分の設定',
+      'あなたにだけ効きます。どの端末で開いても同じです。');
+    mine.appendChild(makeNotifyWarning());
+    appendPrefSections(mine, items.filter(function (p) { return p.scope === 'me'; }), true);
+    if (!prefs) mine.appendChild(makePill('設定の一覧を取れませんでした', 'chip'));
+    settingsEl.appendChild(mine);
+
+    var team = makeSettingsGroup('settings-team', 'チームの設定',
+      canEditTeam ? '全員に効きます。変えられるのは管理者だけです。'
+        : '全員に効きます。変えられるのは管理者 (持ち主と、入れ物のフォルダを編集できる人) だけなので、' +
+          'ここでは今の値を出しています。変えたいときは管理者に頼んでください。');
+    if (prefs) team.appendChild(makeTeamGoalField(canEditTeam));
+    appendPrefSections(team, items.filter(function (p) { return p.scope === 'team'; }), canEditTeam);
+    team.appendChild(makeScrumSettings());
+    team.appendChild(makeGameSettings());
+    if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
+    settingsEl.appendChild(team);
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} title
+   * @param {string} about
+   * @returns {HTMLElement}
+   */
+  function makeSettingsGroup(id, title, about) {
+    var box = document.createElement('section');
+    box.className = 'settings-group';
+    box.id = id;
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.textContent = title;
+    box.appendChild(head);
+    var p = document.createElement('p');
+    p.className = 'row-meta';
+    p.textContent = about;
+    box.appendChild(p);
+    return box;
+  }
+
+  /**
+   * 確認を頼まれた知らせを止めた人への断り。止めていなければ空のまま (隠す)。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeNotifyWarning() {
+    var p = document.createElement('p');
+    p.className = 'settings-warning';
+    p.id = 'notify-warning';
+    syncNotifyWarning(p);
+    return p;
+  }
+
+  function syncNotifyWarning(el) {
+    var target = el || document.getElementById('notify-warning');
+    if (!target) return;
+    var off = (prefs && prefs.effective && prefs.effective.notifyOff) || [];
+    var reviewOff = off.indexOf('review') >= 0;
+    target.textContent = reviewOff
+      ? '確認を頼まれても知らせが届きません。ホームの「あなたの番」と、画面の中の知らせ (鈴) で確かめてください。'
+      : '';
+    target.hidden = !reviewOff;
+  }
+
+  /**
+   * 項目を見出し (section) ごとに並べる。並びは届いた順のまま。
+   *
+   * @param {HTMLElement} host
+   * @param {object[]} items
+   * @param {boolean} editable
+   */
+  function appendPrefSections(host, items, editable) {
+    var order = [];
+    var by = {};
+    items.forEach(function (p) {
+      // 言葉の表し方は、期間で進めるを使っていなければ意味が無い (一覧には残す)
+      if (p.key === 'terms.style' && !scrumOn()) return;
+      var key = String(p.section || '');
+      if (!by[key]) { by[key] = []; order.push(key); }
+      by[key].push(p);
+    });
+    order.forEach(function (name) {
+      var sec = document.createElement('section');
+      sec.className = 'settings-section';
+      if (name) {
+        var h = document.createElement('h3');
+        h.className = 'view-label';
+        h.textContent = name;
+        sec.appendChild(h);
+      }
+      by[name].forEach(function (p) { sec.appendChild(makePrefField(p, editable)); });
+      host.appendChild(sec);
+    });
+  }
+
+  /**
+   * 値を人の読む字にする (読むだけの欄)。
+   *
+   * @param {object} item
+   * @param {*} v
+   * @returns {string}
+   */
+  function prefValueText(item, v) {
+    if (item.type === 'bool') return v ? 'オン' : 'オフ';
+    if (item.type === 'steps') return (v || []).join(' / ');
+    if (item.type === 'enum') {
+      var hit = (item.options || []).filter(function (o) { return o.value === v; })[0];
+      // 選択肢の名前はサーバが {key} で渡すことがある (最初に出す画面のスクラムの画面)
+      return hit ? termIn(hit.label) : String(v);
+    }
+    return String(v);
+  }
+
+  /**
+   * 整数で範囲の中か。
+   *
+   * @param {object} item
+   * @param {string} text
+   * @returns {number|null}
+   */
+  function prefIntOf(item, text) {
+    if (!/^\s*\d+\s*$/.test(String(text))) return null;
+    var n = Number(text);
+    return n >= Number(item.min) && n <= Number(item.max) ? n : null;
+  }
+
+  /**
+   * 1つの項目の欄。bool はトグル、int は数、enum は選択、steps は3つの数。
+   * 欄ごとに書き、届いた一覧で欄の値と「既定に戻す」をそろえる。失敗したら元の値に戻す。
+   *
+   * @param {object} item apiPrefs の items の1つ
+   * @param {boolean} editable
+   * @returns {HTMLElement}
+   */
+  function makePrefField(item, editable) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field pref-field';
+    wrap.dataset.pref = item.key;
+    var current = item;
+
+    if (!editable) {
+      var line = document.createElement('p');
+      line.textContent = item.label + ': ' + prefValueText(item, item.value) + (item.type === 'steps' ? ' 日' : '');
+      wrap.appendChild(line);
+      appendPrefHelp(wrap, item);
+      return wrap;
+    }
+
+    var control;
+    var inputs = [];
+    var reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn pref-reset';
+    reset.textContent = '既定に戻す';
+
+    function sync(next) {
+      current = next || current;
+      if (item.type === 'bool') setToggle(control, !!current.value);
+      else if (item.type === 'steps') inputs.forEach(function (el, i) { el.value = String(current.value[i]); });
+      else control.value = String(current.value);
+      reset.hidden = !current.custom;
+      attachHint(reset, '既定 (' + prefValueText(item, item.def) + ') に戻します');
+    }
+
+    function save(value, busy) {
+      if (busy) busy.disabled = true;
+      var seq = ++prefsSeq;
+      call('apiPrefSet', [item.key, value], function (res) {
+        if (busy) busy.disabled = false;
+        if (res) applyPrefs(res, seq);
+        // 古い返事だったときも、いま当たっている設定で欄をそろえる
+        var next = ((prefs && prefs.items) || []).filter(function (p) { return p.key === item.key; })[0];
+        sync(next || current);
+        syncNotifyWarning();
+        showSnack(value === null ? '「' + item.label + '」を既定に戻しました' : '「' + item.label + '」を保存しました',
+          { kind: 'ok' });
+      }, function (err) {
+        sync(current);
+        if (busy) failEnable(busy, '保存できませんでした: ')(err);
+        else failSnack('保存できませんでした: ')(err);
+      });
+    }
+
+    if (item.type === 'bool') {
+      control = document.createElement('button');
+      control.type = 'button';
+      control.className = 'btn toggle-btn';
+      control.textContent = item.label;
+      control.addEventListener('click', function () {
+        var want = !current.value;
+        // 押した結果をすぐ形で返す。届かなければ sync で戻す
+        setToggle(control, want);
+        save(want, control);
+      });
+      wrap.appendChild(control);
+    } else {
+      var label = document.createElement('label');
+      label.className = 'pref-label';
+      label.appendChild(document.createTextNode(item.label));
+      if (item.type === 'enum') {
+        control = document.createElement('select');
+        (item.options || []).forEach(function (o) {
+          var opt = document.createElement('option');
+          opt.value = o.value;
+          opt.textContent = termIn(o.label);
+          control.appendChild(opt);
+        });
+        control.addEventListener('change', function () { save(control.value); });
+        label.appendChild(control);
+        wrap.appendChild(label);
+      } else if (item.type === 'int') {
+        control = makePrefNumber(item);
+        control.addEventListener('change', function () {
+          var n = prefIntOf(item, control.value);
+          if (n === null) {
+            showSnack('「' + item.label + '」は ' + item.min + '〜' + item.max + ' の整数で入れてください', { kind: 'ng' });
+            sync(current);
+            return;
+          }
+          save(n);
+        });
+        label.appendChild(control);
+        wrap.appendChild(label);
+      } else {
+        // steps: 小さい順に3つ
+        wrap.appendChild(label);
+        var row = document.createElement('div');
+        row.className = 'pref-steps';
+        for (var i = 0; i < 3; i++) {
+          var one = makePrefNumber(item);
+          one.setAttribute('aria-label', item.label + ' の ' + (i + 1) + ' 段目');
+          inputs.push(one);
+          row.appendChild(one);
+        }
+        inputs.forEach(function (el) {
+          el.addEventListener('change', function () {
+            var v = inputs.map(function (x) { return prefIntOf(item, x.value); });
+            var ok = v.every(function (n, k) { return n !== null && (k === 0 || n > v[k - 1]); });
+            if (!ok) {
+              showSnack('「' + item.label + '」は ' + item.min + '〜' + item.max + ' の整数を小さい順に3つ入れてください',
+                { kind: 'ng' });
+              sync(current);
+              return;
+            }
+            save(v);
+          });
+        });
+        wrap.appendChild(row);
+      }
+      if (item.type === 'int' || item.type === 'steps') {
+        var range = document.createElement('span');
+        range.className = 'row-meta';
+        range.textContent = item.min + '〜' + item.max;
+        wrap.appendChild(range);
+      }
+    }
+
+    reset.addEventListener('click', function () { save(null, reset); });
+    wrap.appendChild(reset);
+    appendPrefHelp(wrap, item);
+    sync(item);
+    return wrap;
+  }
+
+  /**
+   * @param {object} item
+   * @returns {HTMLInputElement}
+   */
+  function makePrefNumber(item) {
+    var el = document.createElement('input');
+    el.type = 'number';
+    el.min = String(item.min);
+    el.max = String(item.max);
+    el.step = '1';
+    el.inputMode = 'numeric';
+    return el;
+  }
+
+  function appendPrefHelp(wrap, item) {
+    if (!item.help) return;
+    var help = document.createElement('p');
+    help.className = 'row-meta';
+    help.textContent = item.help;
+    wrap.appendChild(help);
+  }
+
+  /**
+   * チームの毎月の目標。保存先はホームの「チームの前進」と同じ (apiSetTeamGoal)。
+   *
+   * @param {boolean} editable
+   * @returns {HTMLElement}
+   */
+  function makeTeamGoalField(editable) {
+    var sec = document.createElement('section');
+    sec.className = 'settings-section';
+    var h = document.createElement('h3');
+    h.className = 'view-label';
+    h.textContent = 'チームの前進';
+    sec.appendChild(h);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field pref-field';
+    wrap.id = 'team-goal-field';
+    var goal = Number(prefs && prefs.teamGoal) || 0;
+    var labelText = 'チームの毎月の目標 (片づけるやることの数)';
+    if (!editable) {
+      var line = document.createElement('p');
+      line.textContent = labelText + ': ' + (goal ? goal + ' 件' : '決めていません');
+      wrap.appendChild(line);
+      sec.appendChild(wrap);
+      return sec;
+    }
+    var label = document.createElement('label');
+    label.className = 'pref-label';
+    label.appendChild(document.createTextNode(labelText));
+    var input = makePrefNumber({ min: 0, max: 9999 });
+    input.value = String(goal);
+    input.addEventListener('change', function () {
+      var n = prefIntOf({ min: 0, max: 9999 }, input.value);
+      if (n === null) {
+        showSnack('目標は 0〜9999 の数で入れてください', { kind: 'ng' });
+        input.value = String(goal);
+        return;
+      }
+      call('apiSetTeamGoal', [n], function (p) {
+        goal = Number(p && p.goal) || 0;
+        if (prefs) prefs.teamGoal = goal;
+        input.value = String(goal);
+        showSnack(goal ? 'チームの目標を ' + goal + ' 件にしました' : 'チームの目標を消しました', { kind: 'ok' });
+      }, function (err) {
+        input.value = String(goal);
+        failSnack('保存できませんでした: ')(err);
+      });
+    });
+    label.appendChild(input);
+    wrap.appendChild(label);
+    var help = document.createElement('p');
+    help.className = 'row-meta';
+    help.textContent = '0 にすると目標を決めないことになります。ホームの「チームの前進」に出ます。';
+    wrap.appendChild(help);
+    sec.appendChild(wrap);
+    return sec;
+  }
+
+  /**
+   * エージェンティックスクラムの設定の節。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeScrumSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode(termOf('feature') + ' '));
+    head.appendChild(makePill(scrumOn() ? 'オン' : 'オフ',
+      scrumOn() ? 'state state-open' : 'state'));
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.textContent = termIn('AI のチームメンバー (手元の Claude Code) と一緒に、仕事を{sprint}に区切って進めるための機能です。' +
+      '使わない人が多いので、はじめはオフにしてあります。オンにすると、左に「{sprint}」と「{impediment}」が出て、' +
+      'やることに{sprint}・{points}・{acceptance}を入れられるようになります。');
+    box.appendChild(about);
+
+    var off = document.createElement('p');
+    off.className = 'row-meta';
+    off.textContent = termIn('オフにしても、書いた{sprint}や{impediment}は消えません。オンに戻せばそのまま使えます。');
+    box.appendChild(off);
+
+    if (settings.canEdit) {
+      /*
+       * 切り替えはトグルにする。「オフにする」と書いたボタンは、いまの状態を
+       * 言っているのか押した結果を言っているのかが読めない (フリップフロップ
+       * 問題)。名前は変えず、つまみの位置と aria-checked で状態を示す
+       */
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.id = 'scrum-toggle';
+      toggle.className = 'btn toggle-btn';
+      toggle.textContent = termIn('「{feature}」を使う');
+      setToggle(toggle, scrumOn());
+      hint(toggle, 'act:scrum-toggle');
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        // 押した結果をすぐ形で返す。届かなければ元に戻す
+        setToggle(toggle, !scrumOn());
+        call('apiSetScrumEnabled', [!scrumOn()], function (res) {
+          settings = res || settings;
+          showSnack(scrumOn()
+            ? termIn('「{feature}」をオンにしました。左に「{feature}」が出ます')
+            : termIn('「{feature}」をオフにしました'), { kind: 'ok' });
+          loadSettingsPanel();
+        }, function (err) {
+          setToggle(toggle, scrumOn());
+          failEnable(toggle, '切り替えられませんでした: ')(err);
+        });
+      });
+      box.appendChild(toggle);
+    } else {
+      var who = document.createElement('p');
+      who.className = 'row-meta';
+      who.textContent = '切り替えられるのは、このアプリの管理者 (持ち主と、入れ物のフォルダを編集できる人) だけです。使いたいときは管理者に頼んでください。';
+      box.appendChild(who);
+    }
+
+    if (scrumOn()) {
+      box.appendChild(makeScrumTextEditor('productGoal', termOf('productGoal'), settings.productGoal));
+      box.appendChild(makeScrumTextEditor('definitionOfDone', termOf('definitionOfDone'), settings.definitionOfDone));
+    }
+
+    box.appendChild(makeScrumKitGuide());
+    return box;
+  }
+
+  /**
+   * 手元からの命令を受け付ける仕掛け (コマンドキュー) の節。管理者にだけ出す。
+   *
+   * 仕掛けた人の権限で1分ごとに回る。その人が抜けると止まり、他人からは見えない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeQueueSettings() {
+    var q = settings.queue || {};
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'queue-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('手元からの命令の受付 '));
+    // 仕掛けた人 (runner) は setupCommandQueue() を実行し直すまで入らない。前から
+    // 動いている番頭では空なので、回った時刻 (lastRun) があれば動いているとみなす
+    var known = !!(q.runner || q.lastRun);
+    head.appendChild(makePill(!known ? '未設定' : q.stale ? '止まっています' : '動いています',
+      !known || q.stale ? 'state' : 'state state-open'));
+    box.appendChild(head);
+
+    var at = q.lastRun ? new Date(q.lastRun) : null;
+    // 台帳と同じく人が書き換えられる値なので、読めない時刻で Invalid Date と出さない
+    var when = !at ? 'まだありません' : isNaN(at.getTime()) ? '不明' : at.toLocaleString('ja-JP');
+    var who = document.createElement('p');
+    // 止まっているときに「動いています」と書かない (札と本文が食い違う)
+    var unknownWho = '仕掛けた人は分かりません。setupCommandQueue() を実行し直すと記録されます';
+    who.textContent = !known ? 'まだ仕掛けていません。'
+      : (q.stale
+        ? (q.runner
+          ? q.runner + ' さんの権限で動かしていましたが、止まっているようです。'
+          : '止まっているようです (' + unknownWho + ')。')
+        : (q.runner
+          ? q.runner + ' さんの権限で1分ごとに動いています。'
+          : '1分ごとに動いています (' + unknownWho + ')。')) +
+        '最後に動いたのは ' + when + '。';
+    box.appendChild(who);
+
+    if (!known || q.stale) {
+      var how = document.createElement('p');
+      how.className = 'row-meta';
+      // setupCommandQueue() は assertOwner_ で持ち主だけに通す。投稿者などの管理者には動かない
+      how.textContent = '持ち主 (共有ドライブでは管理者の役割の人) が Apps Script のエディタで ' +
+        'setupCommandQueue() を実行すると、その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
+      box.appendChild(how);
+    }
+    return box;
+  }
+
+  /**
+   * ポイント・レベル・週の上位の切り替え。既定はオフ。管理者だけ切り替えられる。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeGameSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('ポイントとレベル '));
+    head.appendChild(makePill(settings.gameEnabled ? 'オン' : 'オフ',
+      settings.gameEnabled ? 'state state-open' : 'state'));
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.textContent = 'やることを片づけると、重さに応じてポイントが付き、レベルが上がります。' +
+      '週の上位3人をホームに出します (載るのは自分で参加を選んだ人だけです)。人事の評価には使いません。';
+    box.appendChild(about);
+
+    if (settings.canEdit) {
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.id = 'game-toggle';
+      toggle.className = 'btn toggle-btn';
+      toggle.textContent = 'ポイントとレベルを使う';
+      setToggle(toggle, !!settings.gameEnabled);
+      toggle.addEventListener('click', function () {
+        toggle.disabled = true;
+        var want = !settings.gameEnabled;
+        setToggle(toggle, want);
+        call('apiSetGameEnabled', [want], function (res) {
+          settings = res || settings;
+          showSnack(settings.gameEnabled ? 'ポイントとレベルをオンにしました' : 'ポイントとレベルをオフにしました',
+            { kind: 'ok' });
+          loadSettingsPanel();
+          loadHomeCards();
+        }, function (err) {
+          setToggle(toggle, !!settings.gameEnabled);
+          failEnable(toggle, '切り替えられませんでした: ')(err);
+        });
+      });
+      box.appendChild(toggle);
+    } else {
+      var who = document.createElement('p');
+      who.className = 'row-meta';
+      who.textContent = '切り替えられるのは、このアプリの管理者だけです。';
+      box.appendChild(who);
+    }
+    return box;
+  }
+
+  /**
+   * プロダクトゴールか完了の定義を、読む・直す欄。直せるのは管理者だけ。
+   *
+   * @param {string} kind
+   * @param {string} label
+   * @param {string} value
+   * @returns {HTMLElement}
+   */
+  function makeScrumTextEditor(kind, label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field';
+    // kind は TERMS() の key でもある (productGoal / definitionOfDone)
+    wrap.appendChild(makeScrumHeading(label, kind));
+
+    if (!settings.canEdit) {
+      wrap.appendChild(value ? makeMarkdown(value) : makePill('まだ書かれていません', 'chip'));
+      return wrap;
+    }
+
+    var area = document.createElement('textarea');
+    area.id = 'scrum-text-' + kind;
+    area.value = value || '';
+    area.rows = 4;
+    area.setAttribute('aria-label', label);
+    wrap.appendChild(area);
+
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn';
+    save.textContent = label + 'を保存する';
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      call('apiSetScrumText', [kind, area.value], function (res) {
+        settings = res || settings;
+        save.disabled = false;
+        showSnack(label + 'を保存しました', { kind: 'ok' });
+      }, failEnable(save, '保存できませんでした: '));
+    });
+    wrap.appendChild(save);
+    return wrap;
+  }
+
+  /**
+   * 手元の道具から使う案内。オフでも出す (オンにする前に何ができるか分かるように)。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeScrumKitGuide() {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field';
+    wrap.appendChild(makeScrumHeading('手元の Claude Code をチームに加える'));
+
+    var steps = document.createElement('ol');
+    // `…` で囲んだところは打ち込む字なので、それと分かる形にする
+    [
+      '右上の自分の顔 →「手元から動かす道具を落とす」で道具を受け取り、案内どおりに置く',
+      '`node agent.mjs scrum` で、この設定がオンになっているかを確かめる',
+      termIn('Claude Code に「{sprint}の計画を立てて」などと頼む。道具に入っている') +
+        ' `.claude/skills` のイベントと `.claude/agents` の役割に沿って進めます (読み替えは `SCRUM.md`)',
+    ].forEach(function (text) {
+      var li = document.createElement('li');
+      text.split('`').forEach(function (part, i) {
+        if (!part) return;
+        if (i % 2) {
+          var code = document.createElement('code');
+          code.textContent = part;
+          li.appendChild(code);
+        } else {
+          li.appendChild(document.createTextNode(part));
+        }
+      });
+      steps.appendChild(li);
+    });
+    wrap.appendChild(steps);
+
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = termIn('{sprint}や{impediment}は、手元の Claude Code も画面と同じ台帳に書きます。') +
+      '会議の記録など文章の成果物は、手元の scrum/ フォルダに残ります。';
+    wrap.appendChild(note);
+    return wrap;
+  }
+

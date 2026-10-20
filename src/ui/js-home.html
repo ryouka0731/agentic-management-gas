@@ -1,0 +1,1099 @@
+  var homeTurnEl = document.getElementById('home-turn');
+  var homeActivityEl = document.getElementById('home-activity');
+  var homeRecentEl = document.getElementById('home-recent');
+  var homeSummaryEl = document.getElementById('home-summary');
+  var homeAdviceEl = document.getElementById('home-advice');
+
+  /**
+   * 上の1行に出す数。届いていないもの (null) は出さない ("undefined" と出さない)。
+   * turn はあなたの番の合計、today は今日片づけたものの数
+   */
+  var homeLine = { turn: null, today: null };
+
+  /**
+   * ホーム。各区画を並べて呼び、1つが取れなくてもほかは出す。
+   * あなたの番・草・最近の動きは、返事を描く前にまだホームを開いているかを見る
+   * (前の返事で別の画面の上に描かない)。全体の数は左の数字も兼ねるので、
+   * 開いていなくても入れる。
+   */
+  function loadHome() {
+    applyHomeCards();
+    homeLine = { turn: null, today: null };
+    renderHomeLine();
+    loadOverview();
+    loadHomeCards();
+    loadHomeSummary();
+    call('apiHomeActivity', [], function (act) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));
+    }, function (err) {
+      if (panelHome.hidden) return;
+      fillBlock(homeActivityEl, homeFailBlock('アクティビティ', err));
+    });
+  }
+
+  /** あなたの番と最近の動き。ホームから何かを片づけたあとにも取り直す */
+  function loadHomeSummary() {
+    call('apiHomeSummary', [], function (s) {
+      if (panelHome.hidden) return;
+      s = s || {};
+      var turn = s.myTurn || {};
+      fillBlock(homeTurnEl, makeTurnBlock(turn));
+      fillBlock(homeRecentEl, makeRecentBlock(s.recent || []));
+      renderAdvice(s.advice || []);
+      homeLine.turn = ['reviews', 'returned', 'due'].reduce(function (n, k) {
+        return n + (Number(turn[k] && turn[k].total) || 0);
+      }, 0);
+      renderHomeLine();
+    }, function (err) {
+      if (panelHome.hidden) return;
+      fillBlock(homeTurnEl, homeFailBlock('あなたの番', err));
+      fillBlock(homeRecentEl, homeFailBlock('最近の動き', err));
+      // 改善のヒントは無くても困らない。取れなかったことは出さずに隠す
+      homeAdviceEl.textContent = '';
+      homeLine.turn = null;
+      renderHomeLine();
+    });
+  }
+
+  // ===== 改善のヒント =====
+
+  /**
+   * ISO の週 ('2026-W42')。「今週は出さない」を週ごとに覚えるため。東京の暦日で数える。
+   *
+   * @param {Date} now
+   * @returns {string}
+   */
+  function adviceWeek(now) {
+    var t = new Date(now.getTime() + 9 * 3600000);
+    var d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+    // その週の木曜が属する年の週
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var year = d.getUTCFullYear();
+    var week = Math.ceil(((d.getTime() - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+    return year + '-W' + (week < 10 ? '0' : '') + week;
+  }
+
+  /**
+   * 隠した助言 {id: 週}。端末にだけ覚える。読めなければ何も隠していないことにする。
+   *
+   * @returns {object}
+   */
+  function adviceHiddenRead() {
+    try {
+      var v = JSON.parse(window.localStorage.getItem('adviceHidden') || '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  /**
+   * その助言を今週は出さない。前の週の覚え書きはついでに捨てる。
+   *
+   * @param {string} id
+   */
+  function adviceHide(id) {
+    var week = adviceWeek(new Date());
+    var all = adviceHiddenRead();
+    var keep = {};
+    Object.keys(all).forEach(function (k) { if (all[k] === week) keep[k] = week; });
+    keep[id] = week;
+    try {
+      window.localStorage.setItem('adviceHidden', JSON.stringify(keep));
+    } catch (e) { /* 覚えられなくても、この画面では消える */ }
+  }
+
+  /** 最後に届いた助言。隠したあと描き直すために持つ */
+  var adviceLast = [];
+
+  /**
+   * 改善のヒントのカード。今週隠したものは出さず、残りが無ければカードごと出さない。
+   *
+   * @param {Array} list apiHomeSummary の advice
+   */
+  function renderAdvice(list) {
+    adviceLast = list || [];
+    homeAdviceEl.textContent = '';
+    var week = adviceWeek(new Date());
+    var hidden = adviceHiddenRead();
+    var shown = adviceLast.filter(function (a) { return hidden[a.id] !== week; });
+    if (!shown.length) return;
+
+    homeAdviceEl.appendChild(homeHead('改善のヒント', [privatePill()]));
+    shown.forEach(function (a) {
+      var item = document.createElement('div');
+      item.className = 'advice-item';
+      item.dataset.advice = a.id;
+
+      var title = document.createElement('p');
+      title.className = 'advice-title';
+      title.textContent = a.title;
+      item.appendChild(title);
+
+      var why = document.createElement('p');
+      why.className = 'advice-why';
+      why.textContent = a.why;
+      item.appendChild(why);
+
+      var tip = document.createElement('p');
+      tip.className = 'advice-tip';
+      tip.textContent = a.tip;
+      item.appendChild(tip);
+
+      var actions = document.createElement('div');
+      actions.className = 'advice-actions';
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn btn-primary';
+      go.textContent = (a.action && a.action.label) || '開く';
+      go.addEventListener('click', function () { adviceGo(a.action || {}); });
+      actions.appendChild(go);
+
+      var hide = document.createElement('button');
+      hide.type = 'button';
+      hide.className = 'btn advice-hide';
+      hide.textContent = '今週は出さない';
+      hide.addEventListener('click', function () {
+        adviceHide(a.id);
+        renderAdvice(adviceLast);
+      });
+      actions.appendChild(hide);
+      item.appendChild(actions);
+
+      homeAdviceEl.appendChild(item);
+    });
+  }
+
+  /**
+   * 助言のボタンの行き先。kind はサーバの ADVICE_RULES() の action.kind と揃える。
+   *
+   * @param {{kind: string, arg: string}} action
+   */
+  function adviceGo(action) {
+    var kind = String(action.kind || '');
+    var arg = String(action.arg || '');
+    if (kind === 'pulls') {
+      switchTab('pulls', Number(arg) ? { pr: Number(arg) } : undefined);
+      return;
+    }
+    if (kind === 'report') {
+      switchTab('report');
+      return;
+    }
+    var views = { 'issues-overdue': 'list', 'issues-filter': 'list', board: 'board', gantt: 'gantt' };
+    if (!views[kind]) return;
+
+    setOverdueOnly(kind === 'issues-overdue');
+    // 期限切れと工程表は自分の担当のこと。繰り返しは自分が作っただけのものも数えるので外す
+    if (kind === 'issues-overdue' || kind === 'gantt') mineOnly = true;
+    if (kind === 'issues-filter') mineOnly = false;
+    setToggle(mineBtn, mineOnly);
+    issueFilterEl.value = kind === 'issues-filter' ? arg : '';
+    // ヒントから開いた見え方は、次に開いたときの見え方として覚えない
+    setIssueView(views[kind], true, { noSave: true, keepOverdue: true });
+    switchTab('issues');
+  }
+
+  /**
+   * 今日の日付 (東京)。端末の時計から求める。東京は夏時間が無いので9時間足すだけでよい。
+   *
+   * @param {Date} now
+   * @returns {string} 「10月14日 (水)」
+   */
+  function homeDateText(now) {
+    var t = new Date(now.getTime() + 9 * 3600000);
+    return (t.getUTCMonth() + 1) + '月' + t.getUTCDate() + '日 (' + '日月火水木金土'.charAt(t.getUTCDay()) + ')';
+  }
+
+  /** 上の1行。日付・あなたの番・今日片づけた。届いていない数は出さない */
+  function renderHomeLine() {
+    if (!homeSummaryEl) return;
+    homeSummaryEl.textContent = '';
+    var date = document.createElement('strong');
+    date.textContent = homeDateText(new Date());
+    homeSummaryEl.appendChild(date);
+    var parts = [];
+    if (homeLine.turn !== null) parts.push('あなたの番 ' + homeLine.turn + '件');
+    if (homeLine.today !== null) parts.push('今日片づけた ' + homeLine.today + '件');
+    if (parts.length) {
+      var rest = document.createElement('span');
+      rest.textContent = parts.join(' ・ ');
+      homeSummaryEl.appendChild(rest);
+    }
+  }
+
+  function fillBlock(host, el) {
+    host.textContent = '';
+    host.appendChild(el);
+  }
+
+  /**
+   * 区画の見出しの行。題は左、数や切り替えは右。**見出しの形はここだけで決める**
+   * (区画ごとに見出しを作ると、字の大きさや余白が少しずつずれる)。
+   *
+   * @param {string} text
+   * @param {Array<?HTMLElement>} [right] 右に置くもの
+   * @returns {HTMLElement}
+   */
+  function homeHead(text, right) {
+    var row = document.createElement('div');
+    row.className = 'home-head';
+    var h = document.createElement('h2');
+    h.className = 'home-section-head';
+    h.textContent = text;
+    row.appendChild(h);
+    (right || []).forEach(function (el) { if (el) row.appendChild(el); });
+    return row;
+  }
+
+  /** 本人にだけ見える区画の札。区画ごとに「あなたにだけ見えます」と書き並べない */
+  function privatePill() {
+    var pill = makePill('自分だけ', 'chip chip-accent');
+    pill.title = 'あなたにだけ見えます';
+    return pill;
+  }
+
+  /**
+   * 取れなかった区画。**見出しは残す** (消すと、何が出ていないのか分からない)。
+   *
+   * @param {string} title
+   * @param {Error} err
+   * @returns {HTMLElement}
+   */
+  function homeFailBlock(title, err) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead(title));
+    var p = document.createElement('p');
+    p.className = 'home-empty';
+    p.textContent = '出せませんでした: ' + String(err && err.message || '');
+    box.appendChild(p);
+    return box;
+  }
+
+  /**
+   * 区画の中の1行。押すと開く。題名は1行で切り、右に札や時刻を置く。
+   *
+   * @param {string} title
+   * @param {string} extraClass
+   * @returns {HTMLButtonElement}
+   */
+  function homeRow(title, extraClass) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'home-row' + (extraClass ? ' ' + extraClass : '');
+    var t = document.createElement('span');
+    t.className = 'home-row-title';
+    t.textContent = title;
+    row.appendChild(t);
+    return row;
+  }
+
+  // ===== 横断検索 =====
+
+  /**
+   * 比べるための形にそろえる。全角半角・大文字小文字・カタカナとひらがなの違いを消す。
+   * **1字ずつ置き換えるので、字の数は変わらない (NFKC で変わる字を除く)。**
+   *
+   * @param {string} s
+   * @returns {string}
+   */
+  function searchNormalize(s) {
+    return String(s || '').normalize('NFKC').toLowerCase()
+      .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  }
+
+  /**
+   * 1件の段。0 番号がぴったり / 1 先頭が合う / 2 途中が合う / -1 合わない。
+   *
+   * @param {object} item
+   * @param {string[]} words 正規化済みの語
+   * @returns {number}
+   */
+  function searchRank(item, words) {
+    var title = searchNormalize(item.title);
+    var num = words.length === 1 ? words[0].replace(/^#/, '') : '';
+    if (num && /^\d+$/.test(num) && Number(num) === Number(item.number) && item.number) return 0;
+    for (var i = 0; i < words.length; i++) {
+      if (title.indexOf(words[i]) < 0) return -1;
+    }
+    return title.indexOf(words[0]) === 0 ? 1 : 2;
+  }
+
+  /**
+   * 候補を種類ごとに並べる。種類ごとに5件・全体で20件まで。
+   *
+   * 枠は先に、合った種類どうしで分ける (20 ÷ 種類の数、切り捨て。切り上げると
+   * 6種類で 4×6=24 になり、最後の種類がまた0件になる)。前から5件ずつ
+   * 取ると、種類が5つ以上合ったとき後ろの種類が1件も出ない。余った枠は種類の
+   * 並び順に、5件まで足す。
+   *
+   * @param {object[]} index apiSearchIndex
+   * @param {string} query
+   * @returns {Array<{kind: string, items: object[]}>}
+   */
+  function searchFilter(index, query) {
+    var words = searchNormalize(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    // 同じ段の中の並び。種類ごとに持つ (確認依頼は取り下げを反映済みより後ろに)
+    var stateOrder = {
+      issue: { open: 0, closed: 1 },
+      pull: { open: 0, approved: 0, merged: 1, closed: 2 },
+      inquiry: { open: 0, done: 1 },
+      impediment: { open: 0, resolved: 1 },
+    };
+
+    var groups = {};
+    (index || []).forEach(function (item) {
+      var rank = searchRank(item, words);
+      if (rank < 0) return;
+      // 合った場所 (題名の字の位置)。正規化で字数が変わる字があれば印を付けない
+      var hit = null;
+      var norm = searchNormalize(item.title);
+      if (norm.length === String(item.title).length) {
+        var at = norm.indexOf(words[0]);
+        if (at >= 0) hit = [at, at + words[0].length];
+      }
+      (groups[item.kind] = groups[item.kind] || []).push(Object.assign({}, item, { rank: rank, hit: hit }));
+    });
+
+    var TOTAL = 20;
+    var PER_KIND = 5;
+    // 候補に出す種類の並び (ここだけが定義)
+    var kinds = ['doc', 'issue', 'pull', 'branch', 'inquiry', 'impediment'].filter(function (kind) {
+      return groups[kind];
+    });
+    if (!kinds.length) return [];
+    kinds.forEach(function (kind) {
+      groups[kind].sort(function (a, b) {
+        return a.rank - b.rank ||
+          (a.archived ? 1 : 0) - (b.archived ? 1 : 0) ||
+          ((stateOrder[kind] || {})[a.state] || 0) - ((stateOrder[kind] || {})[b.state] || 0) ||
+          b.number - a.number;
+      });
+    });
+
+    // 先に公平に分け、余りを並び順に足す
+    var share = Math.max(1, Math.floor(TOTAL / kinds.length));
+    var left = TOTAL;
+    var count = {};
+    kinds.forEach(function (kind) {
+      var n = Math.min(groups[kind].length, share, PER_KIND, left);
+      count[kind] = n;
+      left -= n;
+    });
+    kinds.forEach(function (kind) {
+      var more = Math.min(groups[kind].length, PER_KIND, count[kind] + left) - count[kind];
+      if (more > 0) { count[kind] += more; left -= more; }
+    });
+
+    var out = [];
+    kinds.forEach(function (kind) {
+      if (count[kind] > 0) out.push({ kind: kind, items: groups[kind].slice(0, count[kind]) });
+    });
+    return out;
+  }
+
+  // ===== 横断検索 (ヘッダーの欄) =====
+
+  var searchBox = document.getElementById('search-box');
+  var searchInput = document.getElementById('search-input');
+  var searchResults = document.getElementById('search-results');
+  var searchIndexRows = null;
+  var searchIndexAt = 0;
+  var searchActive = -1;
+  var searchLoading = false;
+  var searchError = '';
+  // 候補の全体の枠。searchFilter の TOTAL と同じ数 (あちらは手元の道具の写しなので触らない)
+  var SEARCH_TOTAL = 20;
+  var SEARCH_LABELS = { doc: '文書', issue: 'やること', pull: '確認依頼', branch: '改訂中の版', inquiry: '報告', impediment: '{impediment}', guide: '使い方' };
+
+  /**
+   * 使い方の節を見出しで探す。サーバの一覧には無いので、ここで足す。
+   *
+   * **searchFilter には混ぜない。** あれは手元の道具 (kit/track/local.mjs) と同じ答えを
+   * 返す写しで、種類を足すと両方を直して道具を配り直すことになる。並べ方は同じ
+   * searchRank で決め、種類の並びの最後に5件まで足す。全体の枠 (SEARCH_TOTAL) は
+   * 超えない (余った枠だけを使う)。
+   *
+   * @param {string} query
+   * @param {number} room 残っている枠
+   * @returns {?{kind: string, items: object[]}}
+   */
+  function guideSearchGroup(query, room) {
+    var words = searchNormalize(query).split(/\s+/).filter(Boolean);
+    if (!words.length || room <= 0) return null;
+    var items = [];
+    GUIDE.forEach(function (g, at) {
+      var item = { kind: 'guide', key: g.id, number: 0, title: g.title, state: '', archived: false };
+      var rank = searchRank(item, words);
+      if (rank < 0) return;
+      var hit = null;
+      var norm = searchNormalize(g.title);
+      if (norm.length === g.title.length) {
+        var pos = norm.indexOf(words[0]);
+        if (pos >= 0) hit = [pos, pos + words[0].length];
+      }
+      items.push(Object.assign(item, { rank: rank, hit: hit, at: at }));
+    });
+    if (!items.length) return null;
+    items.sort(function (a, b) { return a.rank - b.rank || a.at - b.at; });
+    return { kind: 'guide', items: items.slice(0, Math.min(5, room)) };
+  }
+  /**
+   * 状態の札。**それぞれの一覧と同じ言葉にする。** 違う言葉だと、開いた先で同じものだと分からない。
+   * 確認依頼は stateLabel に寄せる (一覧と同じ関数)。
+   */
+  function searchStateLabel(item) {
+    if (item.archived) return '置き場';
+    if (item.kind === 'pull') return stateLabel(item.state);
+    return ({
+      issue: { open: '対応中', closed: '完了' },
+      inquiry: { open: '未解決', done: '解決' },
+      impediment: { open: '未解決', resolved: '解決済み' },
+    }[item.kind] || {})[item.state] || '';
+  }
+
+  // Mac では ⌘K、ほかは Ctrl+K と案内する
+  var searchMac = /Mac|iPhone|iPad/.test(window.navigator.platform || '');
+  searchInput.placeholder = '探す (' + (searchMac ? '⌘K' : 'Ctrl+K') + ')';
+  document.getElementById('search-open').appendChild(makeIcon('search'));
+
+  /**
+   * 一覧を取る。60秒以内に取ったものがあれば取り直さない。
+   * **返事で画面を切り替えない。** 届いたとき欄が開いていれば今の字で絞り直す。
+   */
+  function loadSearchIndex() {
+    if (searchIndexRows && Date.now() - searchIndexAt < 60000) return;
+    if (searchLoading) return;
+    searchLoading = true;
+    var still = latest('searchIndex');
+    // 取りに行ってから返事までのあいだに一覧が古くなったら、届いたものは使うが
+    // 「取ったばかり」とは扱わない
+    var fresh = latestSoFar('searchIndexStale');
+    call('apiSearchIndex', [], function (rows) {
+      searchLoading = false;
+      if (!still()) return;
+      searchIndexRows = rows || [];
+      // 待つあいだに一覧を動かす操作があった。中身はその前のものなので、次に欄へ入ったとき取り直す
+      searchIndexAt = fresh() ? Date.now() : 0;
+      searchError = '';
+      if (document.activeElement === searchInput || searchBox.classList.contains('is-open')) renderSearch();
+    }, function (err) {
+      searchLoading = false;
+      if (!still()) return;
+      searchError = '探せませんでした: ' + ((err && err.message) || err);
+      if (document.activeElement !== searchInput && !searchBox.classList.contains('is-open')) return;
+      if (searchInput.value.replace(/\s+/g, '')) showSearchMessage(searchError);
+    });
+  }
+
+  /**
+   * 一覧を古いことにする。次に欄へ入ったとき取り直す。
+   * **呼ぶのは call() だけ** (searchIndexChangedBy が決める)。60秒待たないと
+   * 出てこないと、作ったはずのものが探せず、閉じたものを前の状態で開きに行く。
+   */
+  function searchIndexStale() {
+    searchIndexAt = 0;
+    latest('searchIndexStale');
+  }
+
+  /** 候補だけを畳む。狭い画面で開いた欄はそのまま */
+  function hideSearchResults() {
+    searchResults.hidden = true;
+    searchResults.textContent = '';
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    searchActive = -1;
+  }
+
+  /** 候補を畳み、狭い画面で開いた欄も閉じる */
+  function closeSearch() {
+    hideSearchResults();
+    searchBox.classList.remove('is-open');
+  }
+
+  function showSearchMessage(text) {
+    searchResults.textContent = '';
+    searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+    var p = document.createElement('p');
+    p.className = 'search-empty row-meta';
+    p.textContent = text;
+    searchResults.appendChild(p);
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  /** 題名を字のまま並べ、合った部分だけ mark で囲む */
+  function searchTitle(item) {
+    var span = document.createElement('span');
+    span.className = 'search-title';
+    var t = String(item.title);
+    if (!item.hit) { span.textContent = t; return span; }
+    span.appendChild(document.createTextNode(t.substring(0, item.hit[0])));
+    var mark = document.createElement('mark');
+    mark.textContent = t.substring(item.hit[0], item.hit[1]);
+    span.appendChild(mark);
+    span.appendChild(document.createTextNode(t.substring(item.hit[1])));
+    return span;
+  }
+
+  function renderSearch() {
+    var q = searchInput.value;
+    if (!q.replace(/\s+/g, '')) { hideSearchResults(); return; }
+    // 一覧がまだ無いとき (取りに行っている・取れなかった) も、使い方の節は手元にあるので出す。
+    // 取れなかったときは、打ち直しても知らせを消さない (次に欄へ入ったとき取り直す)
+    var pending = searchIndexRows ? '' : (searchLoading || !searchError ? '探しています…' : searchError);
+    var groups = pending ? [] : searchFilter(searchIndexRows, q);
+    var used = groups.reduce(function (sum, g) { return sum + g.items.length; }, 0);
+    var guideGroup = guideSearchGroup(q, SEARCH_TOTAL - used);
+    if (guideGroup) groups = groups.concat([guideGroup]);
+    if (!groups.length) { showSearchMessage(pending || '見つかりませんでした'); return; }
+
+    searchResults.textContent = '';
+    searchActive = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+    if (pending) {
+      var wait = document.createElement('p');
+      wait.className = 'search-empty row-meta';
+      wait.textContent = pending;
+      searchResults.appendChild(wait);
+    }
+    var n = 0;
+    groups.forEach(function (g) {
+      var head = document.createElement('div');
+      head.className = 'search-group-head row-meta';
+      head.setAttribute('role', 'presentation');
+      head.textContent = termIn(SEARCH_LABELS[g.kind]);
+      searchResults.appendChild(head);
+      g.items.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'search-row';
+        row.id = 'search-opt-' + (n++);
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', 'false');
+        row.dataset.kind = item.kind;
+        if (item.number) {
+          var num = document.createElement('span');
+          num.className = 'search-num row-meta';
+          num.textContent = '#' + item.number;
+          row.appendChild(num);
+        }
+        row.appendChild(searchTitle(item));
+        var label = searchStateLabel(item);
+        if (label) row.appendChild(makePill(label));
+        row.addEventListener('click', function () { openSearchItem(item); });
+        searchResults.appendChild(row);
+      });
+    });
+    searchResults.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function moveSearch(step) {
+    var rows = searchResults.querySelectorAll('.search-row');
+    if (!rows.length) return;
+    searchActive = Math.max(0, Math.min(rows.length - 1, searchActive + step));
+    for (var i = 0; i < rows.length; i++) rows[i].setAttribute('aria-selected', String(i === searchActive));
+    searchInput.setAttribute('aria-activedescendant', rows[searchActive].id);
+    if (rows[searchActive].scrollIntoView) rows[searchActive].scrollIntoView({ block: 'nearest' });
+  }
+
+  /** 選んだものを開く。開いたら欄を空にして閉じる */
+  function openSearchItem(item) {
+    searchInput.value = '';
+    closeSearch();
+    searchInput.blur();
+    if (item.kind === 'doc') openDocById(item.key, item.title);
+    else if (item.kind === 'issue' && item.archived) {
+      // 捨てたものは一覧に出ない (apiIssueList は置き場を返さない)。置き場を開いてその行を指す
+      trashFocus = item.number;
+      setIssueView('trash', true, { noSave: true });
+      switchTab('issues');
+    }
+    else if (item.kind === 'issue') openIssueByNumber(item.number);
+    else if (item.kind === 'pull') switchTab('pulls', { pr: item.number });
+    else if (item.kind === 'branch') switchTab('branches');
+    else if (item.kind === 'inquiry') {
+      // 絞り込みが残っていたり「未解決だけ」で済んだものが外れていたりすると、別の報告が開く
+      reportFilterEl.value = '';
+      if (reportOpenOnly && item.state === 'done') {
+        reportOpenOnly = false;
+        setToggle(reportOpenBtn, reportOpenOnly);
+      }
+      reportShown = item.number;
+      switchTab('report');
+    }
+    else if (item.kind === 'impediment') switchTab('impediments');
+    else if (item.kind === 'guide') openGuideAt(item.key);
+  }
+
+  // 一覧の中 (見出し・送りのつまみ・行) を押しても欄から抜けない。抜けると blur で閉じる
+  searchResults.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
+  // 狭い画面で開いた欄は、外側を押すと閉じる (広い画面は blur で閉じる)
+  document.addEventListener('pointerdown', function (e) {
+    if (!searchBox.classList.contains('is-open')) return;
+    if (searchBox.contains(e.target)) return;
+    closeSearch();
+  });
+
+  searchInput.addEventListener('focus', function () {
+    loadSearchIndex();
+    // 字を残したまま戻ってきたら、打ち直さなくても候補を出す
+    if (searchInput.value.replace(/\s+/g, '')) renderSearch();
+  });
+  searchInput.addEventListener('input', renderSearch);
+  searchInput.addEventListener('blur', function () {
+    // 候補を押したときは mousedown で blur を止めてある
+    if (!searchBox.classList.contains('is-open')) closeSearch();
+  });
+  searchInput.addEventListener('keydown', function (e) {
+    // かな漢字の変換中は何もしない。変換を決める Enter で候補が開き、Esc で欄が
+    // 閉じてしまう (Chrome は isComposing、Safari は確定直後に keyCode 229 で届く)
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    else if (e.key === 'Enter') {
+      var rows = searchResults.querySelectorAll('.search-row');
+      var pick = rows[searchActive >= 0 ? searchActive : 0];
+      if (pick) { e.preventDefault(); pick.click(); }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSearch();
+      searchInput.blur();
+    } else if (e.key === 'Tab') {
+      // 狭い画面で開いた欄は blur では閉じない。Tab で次へ移るときは閉じる (移動は止めない)
+      closeSearch();
+    }
+  });
+
+  document.getElementById('search-open').addEventListener('click', function () {
+    searchBox.classList.add('is-open');
+    searchInput.focus();
+    loadSearchIndex();
+  });
+  document.getElementById('search-close').addEventListener('click', function () {
+    searchInput.value = '';
+    closeSearch();
+  });
+
+  // Ctrl+K / ⌘K でどこからでも欄へ (入力欄の中でも効く)
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      // 全画面では探す欄が隠れている。抜けてから欄へ
+      if (document.body.classList.contains('doc-full')) setDocFull(false);
+      if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) searchBox.classList.add('is-open');
+      searchInput.focus();
+      loadSearchIndex();
+    }
+  });
+
+  /**
+   * 何分前・何時間前。1週間を超えたら月/日で出す。
+   *
+   * @param {string} iso
+   * @returns {string}
+   */
+  function relativeTime(iso) {
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 1) return 'いま';
+    if (min < 60) return min + '分前';
+    var hours = Math.floor(min / 60);
+    if (hours < 24) return hours + '時間前';
+    var days = Math.floor(hours / 24);
+    if (days < 7) return days + '日前';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  /** あなたの番。種類ごとに5件まで、見出しに総数。押すとそのものを開く */
+  function makeTurnBlock(turn) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('あなたの番'));
+    var groups = [
+      ['reviews', '確かめてほしい', 'pulls'],
+      ['returned', '戻ってきた', 'pulls'],
+      ['due', '期限が近い', 'issues'],
+    ];
+    var any = false;
+    groups.forEach(function (g) {
+      var part = turn[g[0]] || { items: [], total: 0 };
+      var items = part.items || [];
+      if (!items.length) return;
+      any = true;
+      var sec = document.createElement('div');
+      sec.className = 'home-turn-group';
+      var name = document.createElement('h3');
+      name.className = 'home-sub';
+      name.appendChild(document.createTextNode(g[1]));
+      name.appendChild(makePill(String(part.total || items.length)));
+      sec.appendChild(name);
+      items.forEach(function (it) {
+        var row = homeRow((g[2] === 'pulls' ? '確認依頼 #' : '#') + it.number + ' ' + it.title, 'home-turn-row');
+        if (g[0] === 'due') {
+          row.dataset.issue = String(it.number);
+          var due = String(it.due || '');
+          if (it.overdue) row.appendChild(makePill('期限切れ', 'chip chip-pri-high'));
+          else if (due) row.appendChild(makePill('期限 ' + Number(due.substring(5, 7)) + '/' + Number(due.substring(8, 10))));
+          row.addEventListener('click', function () { openIssueByNumber(it.number, row); });
+        } else {
+          row.dataset.pr = String(it.number);
+          row.addEventListener('click', function () { openPrByNumber(it.number); });
+        }
+        sec.appendChild(row);
+      });
+      if (part.total > items.length) {
+        var more = homeRow('ほか ' + (part.total - items.length) + ' 件', 'home-more');
+        more.addEventListener('click', function () { switchTab(g[2]); });
+        sec.appendChild(more);
+      }
+      box.appendChild(sec);
+    });
+    if (!any) {
+      var none = document.createElement('p');
+      none.className = 'home-empty';
+      none.textContent = 'いまあなたを待っているものはありません';
+      box.appendChild(none);
+    }
+    return box;
+  }
+
+  /**
+   * 確認依頼を番号で開く。画面はすぐ移り、一覧が届いたらその依頼を選ぶ
+   * (返事を待ってから移ると、待つあいだに別の画面へ移った人を引き戻す)。
+   */
+  function openPrByNumber(number) {
+    switchTab('pulls', { pr: number });
+  }
+
+  /**
+   * 文書を fileId で開く。文書の一覧がまだ届いていなければ取ってから開く
+   * (openDoc は allFiles から正式版を引く)。
+   *
+   * @param {string} fileId
+   * @param {string} title 一覧に見当たらないときの題名
+   */
+  function openDocById(fileId, title) {
+    function go() {
+      var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
+      openDoc(fileId, f ? f.path : title);
+    }
+    if (allFiles.length) go();
+    else loadFiles(go);
+  }
+
+  /**
+   * 草の色の段の切れ目。1件以上の日の分布の 1/4・2/4・3/4 (GitHub と同じ考え方) と、
+   * いちばん多い日・少ない日。
+   *
+   * @param {number[]} counts
+   * @returns {number[]} [1/4, 2/4, 3/4, 最多, 最少]
+   */
+  function activityCuts(counts) {
+    var on = counts.filter(function (n) { return n > 0; }).sort(function (a, b) { return a - b; });
+    if (!on.length) return [1, 1, 1, 1, 1];
+    function q(f) { return on[Math.min(on.length - 1, Math.floor(on.length * f))]; }
+    return [q(0.25), q(0.5), q(0.75), on[on.length - 1], on[0]];
+  }
+
+  /**
+   * いちばん多い日は必ず4段目。どの日も同じ数なら、全部を真ん中の段にする
+   * (全部を1段目にすると、いちばん動いた日まで薄く見える)。
+   *
+   * @param {number} n
+   * @param {number[]} cuts activityCuts
+   * @returns {number} 0〜4
+   */
+  function activityLevel(n, cuts) {
+    if (!n) return 0;
+    if (cuts[3] === cuts[4]) return 2;
+    if (n >= cuts[3]) return 4;
+    if (n <= cuts[0]) return 1;
+    if (n <= cuts[1]) return 2;
+    if (n <= cuts[2]) return 3;
+    return 4;
+  }
+
+  var WEEKDAYS = '月火水木金土日';
+
+  /** 「10月14日 (火) 3件」 */
+  function activityDayText(day, d, n) {
+    return Number(day.substring(5, 7)) + '月' + Number(day.substring(8, 10)) + '日 (' +
+      WEEKDAYS.charAt(d) + ') ' + n + '件';
+  }
+
+  /**
+   * 月の名を置く列。その月の1日を含む週に置き、近すぎる名は落とす (重なって読めない)。
+   * 左端の週は、すぐ右に名が来ないときだけ名を持つ。
+   *
+   * @param {Array<Array<{day: string}>>} weeks
+   * @returns {string[]} 週ごとの名 (無ければ '')
+   */
+  function activityMonths(weeks) {
+    var firsts = weeks.map(function (w) {
+      var hit = w.filter(function (c) { return String(c.day || '').substring(8, 10) === '01'; })[0];
+      return hit ? String(hit.day) : '';
+    });
+    var out = weeks.map(function () { return ''; });
+    var last = -99;
+    weeks.forEach(function (w, i) {
+      var day = firsts[i];
+      if (!day && i === 0 && !firsts.slice(1, 3).some(Boolean) && w.length) day = String(w[0].day || '');
+      if (!day || i - last < 3) return;
+      out[i] = Number(day.substring(5, 7)) + '月';
+      last = i;
+    });
+    return out;
+  }
+
+  /**
+   * 草。あなたとチームを切り替えて1つだけ描く。**日が続いた数・その最高は出さない。**
+   *
+   * マスは role="img" の中に置いて押せる形にはしない (img の中身は読み上げに出ない
+   * ので、中に押せるものを置くと「見えないのに押せる」になる)。代わりに外側の
+   * スクロールの枠に1つだけフォーカスを置き、矢印キーで日を選ぶ。選んだ日は下の
+   * 1行 (aria-live) に字で出す。指で押したマスも同じ行に出す。
+   * マスは列の幅いっぱいに広がる (CSS の --cell)。8px でも収まらない狭い画面でだけ
+   * 横に流し、右端 (今週) を見せる。
+   */
+  function makeActivityBlock(act) {
+    var box = document.createElement('div');
+    var weeks = act.weeks || [];
+    var view = 'me';
+    try { if (window.localStorage.getItem('activityView') === 'team') view = 'team'; } catch (e) { /* 既定はあなた */ }
+
+    var mine = privatePill();
+    var seg = document.createElement('div');
+    seg.className = 'segmented';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', '草に出す数');
+    var segs = [['me', 'あなた'], ['team', 'チーム']].map(function (pair) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg';
+      b.dataset.view = pair[0];
+      b.textContent = pair[1];
+      b.addEventListener('click', function () {
+        view = pair[0];
+        try { window.localStorage.setItem('activityView', view); } catch (e) { /* 覚えられなくても切り替わる */ }
+        draw();
+      });
+      seg.appendChild(b);
+      return b;
+    });
+    box.appendChild(homeHead('アクティビティ', [mine, seg]));
+
+    var body = document.createElement('div');
+    body.className = 'activity-body';
+    box.appendChild(body);
+
+    function draw() {
+      segs.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === view)); });
+      mine.hidden = view !== 'me';
+      body.textContent = '';
+      var key = view;
+      var name = view === 'me' ? 'あなた' : 'チーム (全員の合計)';
+
+      var days = [];
+      var counts = [];
+      weeks.forEach(function (w) { w.forEach(function (c) { if (!c.future) counts.push(Number(c[key]) || 0); }); });
+      var cuts = activityCuts(counts);
+      var total = view === 'me' && act.meTotal !== undefined ? Number(act.meTotal) || 0
+        : counts.reduce(function (s, n) { return s + n; }, 0);
+
+      var frame = document.createElement('div');
+      frame.className = 'activity-frame';
+      // マスの大きさは枠の幅を週の数で割って決まる (CSS の --cell)。既定は 53週
+      if (weeks.length) frame.style.setProperty('--weeks', String(weeks.length));
+
+      var dayNames = document.createElement('div');
+      dayNames.className = 'activity-days';
+      dayNames.setAttribute('aria-hidden', 'true');
+      ['月', '', '水', '', '金', '', ''].forEach(function (t) {
+        var s = document.createElement('span');
+        s.textContent = t;
+        dayNames.appendChild(s);
+      });
+      frame.appendChild(dayNames);
+
+      var scroll = document.createElement('div');
+      scroll.className = 'activity-scroll';
+      scroll.tabIndex = 0;
+      scroll.setAttribute('role', 'group');
+      scroll.setAttribute('aria-label', name + 'の日ごとの数。左右の矢印で週、上下の矢印で日を動かします');
+
+      var months = document.createElement('div');
+      months.className = 'activity-months';
+      months.setAttribute('aria-hidden', 'true');
+      activityMonths(weeks).forEach(function (m) {
+        var s = document.createElement('span');
+        s.className = 'activity-month';
+        s.textContent = m;
+        months.appendChild(s);
+      });
+      scroll.appendChild(months);
+
+      var grid = document.createElement('div');
+      grid.className = 'activity-grid';
+      grid.setAttribute('role', 'img');
+      grid.setAttribute('aria-label', name + 'の行い。直近1年で ' + total + ' 件');
+      weeks.forEach(function (w) {
+        var col = document.createElement('div');
+        col.className = 'activity-week';
+        w.forEach(function (c, d) {
+          var cell = document.createElement('span');
+          var n = Number(c[key]) || 0;
+          cell.className = 'activity-cell lv' + (c.future ? '-none' : activityLevel(n, cuts));
+          if (!c.future) {
+            var day = String(c.day || '');
+            cell.dataset.day = day;
+            cell.dataset.at = String(days.length);
+            cell.title = activityDayText(day, d, n);
+            days.push(cell);
+          }
+          col.appendChild(cell);
+        });
+        grid.appendChild(col);
+      });
+      scroll.appendChild(grid);
+      frame.appendChild(scroll);
+      body.appendChild(frame);
+
+      var live = document.createElement('p');
+      live.className = 'activity-live';
+      live.setAttribute('aria-live', 'polite');
+      body.appendChild(live);
+
+      var picked = days.length - 1;
+      function pick(i, mark) {
+        if (!days.length) return;
+        picked = Math.max(0, Math.min(days.length - 1, i));
+        days.forEach(function (c) { c.classList.remove('is-picked'); });
+        var cell = days[picked];
+        if (mark) {
+          cell.classList.add('is-picked');
+          if (cell.scrollIntoView) cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+        live.textContent = cell.title;
+      }
+      pick(picked, false);
+
+      // 日は週ごとに7つ並ぶので、上下は1日、左右は7日
+      var STEP = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 };
+      scroll.addEventListener('keydown', function (e) {
+        if (STEP[e.key]) pick(picked + STEP[e.key], true);
+        else if (e.key === 'Home') pick(0, true);
+        else if (e.key === 'End') pick(days.length - 1, true);
+        else return;
+        e.preventDefault();
+      });
+      grid.addEventListener('click', function (e) {
+        var at = e.target && e.target.dataset ? e.target.dataset.at : undefined;
+        if (at !== undefined) pick(Number(at), true);
+      });
+
+      var foot = document.createElement('div');
+      foot.className = 'activity-foot';
+      var sum = document.createElement('p');
+      sum.className = 'row-meta';
+      sum.textContent = '直近1年で ' + total + ' 件';
+      foot.appendChild(sum);
+      var legend = document.createElement('div');
+      legend.className = 'activity-legend';
+      legend.setAttribute('aria-hidden', 'true');
+      legend.appendChild(document.createTextNode('少'));
+      [0, 1, 2, 3, 4].forEach(function (lv) {
+        var c = document.createElement('span');
+        c.className = 'activity-cell lv' + lv;
+        legend.appendChild(c);
+      });
+      legend.appendChild(document.createTextNode('多'));
+      foot.appendChild(legend);
+      body.appendChild(foot);
+
+      // 開いたら右端 (今週) を見せる
+      window.requestAnimationFrame(function () { scroll.scrollLeft = scroll.scrollWidth; });
+    }
+    draw();
+    return box;
+  }
+
+  /** 最近の動きの種類の札。字と色の種類 */
+  var RECENT_KINDS = {
+    merged: ['反映', 'state state-merged'],
+    closed: ['完了', 'state state-open'],
+    pull: ['依頼', 'chip chip-accent'],
+    file: ['登録', 'chip'],
+  };
+
+  /** 最近の動き。種類の札・題・いつ。**名前を出さない。** 押すと開く */
+  function makeRecentBlock(list) {
+    var box = document.createElement('div');
+    box.appendChild(homeHead('最近の動き'));
+    if (!list.length) {
+      var none = document.createElement('p');
+      none.className = 'home-empty';
+      none.textContent = 'まだ動きはありません';
+      box.appendChild(none);
+      return box;
+    }
+    list.forEach(function (x) {
+      var kind = RECENT_KINDS[x.kind] || ['', 'chip'];
+      var what = x.kind === 'file' ? x.title : (x.kind === 'closed' ? '#' : '確認依頼 #') + x.number + ' ' + x.title;
+      var row = homeRow(what, 'home-recent-row');
+      if (kind[0]) row.insertBefore(makePill(kind[0], kind[1]), row.firstChild);
+      var when = document.createElement('span');
+      when.className = 'home-row-when';
+      when.textContent = relativeTime(x.at);
+      row.appendChild(when);
+      row.setAttribute('aria-label', (kind[0] ? kind[0] + ' ' : '') + what + (when.textContent ? ' (' + when.textContent + ')' : ''));
+      // 文書の行は番号を持たない (0) ので fileId で名指す
+      if (x.kind === 'file') {
+        row.dataset.file = x.fileId;
+        row.addEventListener('click', function () { openDocById(x.fileId, x.title); });
+      } else if (x.kind === 'closed') {
+        row.dataset.issue = String(x.number);
+        row.addEventListener('click', function () { openIssueByNumber(x.number, row); });
+      } else {
+        row.dataset.pr = String(x.number);
+        row.addEventListener('click', function () { openPrByNumber(x.number); });
+      }
+      box.appendChild(row);
+    });
+    return box;
+  }
+
+  /**
+   * 関係の流れに実数を入れる。
+   *
+   * 何がいくつあるかが見えないと、次に何をすればよいか分からない。
+   */
+  function loadOverview() {
+    // 何かを動かすたびに取り直すので、先に頼んだぶんの返事で古い数に戻さない
+    var still = latest('overview');
+    call('apiOverview', [], function (result) {
+      if (!still()) return;
+      var o = result || { openIssues: 0, branches: 0, openPrs: 0, docs: 0 };
+      document.getElementById('flow-issues').textContent = o.openIssues;
+      document.getElementById('flow-branches').textContent = o.branches;
+      document.getElementById('flow-prs').textContent = o.openPrs;
+      document.getElementById('flow-docs').textContent = o.docs;
+
+      setCount('count-drafts', o.branches);
+      setCount('count-requests', o.openPrs);
+      setCount('count-todos', o.openIssues);
+    }, failQuiet('数が出なくても操作はできる'));
+  }
+
+  function setCount(id, n) {
+    var el = document.getElementById(id);
+    el.textContent = n;
+    el.hidden = !n;
+  }
+

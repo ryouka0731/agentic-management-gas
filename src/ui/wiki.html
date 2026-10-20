@@ -489,6 +489,25 @@
       <div class="side-body" id="side-body"></div>
     </aside>
   </div>
+  <!-- 画面の JS は1つの (function () { … })() で、場所ごとのファイルに分けて置いてある。
+       ここで並べた順につながって1本の script になる (app.js が開き、js-start が閉じる)。
+       順番は読み込んだときに走る文の順そのものなので、入れ替えない。
+       js-*.html を足したらここにも足す (test/ui-assemble.test.js が見ている)。 -->
+  <script>
   <?!= include('ui/app.js') ?>
+  <?!= include('ui/js-home') ?>
+  <?!= include('ui/js-docs') ?>
+  <?!= include('ui/js-pulls') ?>
+  <?!= include('ui/js-issues') ?>
+  <?!= include('ui/js-board') ?>
+  <?!= include('ui/js-progress') ?>
+  <?!= include('ui/js-guide') ?>
+  <?!= include('ui/js-reports') ?>
+  <?!= include('ui/js-me') ?>
+  <?!= include('ui/js-init') ?>
+  <?!= include('ui/js-settings') ?>
+  <?!= include('ui/js-scrum') ?>
+  <?!= include('ui/js-start') ?>
+  </script>
 </body>
 </html>

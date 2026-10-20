@@ -24,7 +24,7 @@ src/
 ├── KitSigning.gs          道具の署名 (deploy のときに作る。git に記録しない)
 ├── core/                  中身の処理
 ├── render/                Docs / Sheets / Slides と正規化 HTML の行き来
-└── ui/                    wiki.html (部品) / app.js.html (動き) / app.css.html (見た目)
+└── ui/                    wiki.html (部品) / app.js.html と js-*.html (動き。1つの関数を場所ごとに分けたもの) / app.css.html (見た目)
 kit/                       配る道具の本物 (agent.mjs・説明・track/・スクラムのスキルとひな形)
 scripts/                   build-kit.mjs (焼き直し) / deploy.mjs / kit-key.mjs (署名の鍵)
 test/                      vitest。harness.js・fakegas.js (疑似GAS)・dom.js (jsdom の画面)
