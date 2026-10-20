@@ -298,6 +298,11 @@ function issueUpdate(number, patch) {
   dbWithLock_(30000, function () {
     var current = dbFindOne('issues', 'number', number);
     if (!current) throw new Error('やることが見つかりません: #' + number);
+    // 画面だけで確かめると、命令の列から入る道で輪を作れる。表は1回だけ読む
+    if (allowed.parent !== undefined && allowed.parent !== '' && allowed.parent !== null &&
+        issueWouldCycle(dbReadAll('issues'), number, allowed.parent)) {
+      throw new Error('親にすると輪になります: #' + allowed.parent);
+    }
     dbUpdate('issues', 'number', number, allowed);
     if (typeof historyDiff_ === 'function') {
       issueHistory_(number, 'update', historyDiff_(current, allowed));
