@@ -160,7 +160,7 @@ describe('resolveConflicts', () => {
 
   it('選択数がコンフリクト数と一致しなければエラー', () => {
     const r = merge3(['a', 'b', 'c'], ['a', 'X', 'c'], ['a', 'Y', 'c']);
-    expect(() => resolveConflicts(r, [])).toThrow(/選択の数/);
+    expect(() => resolveConflicts(r, [])).toThrow(/選んだ数/);
   });
 
   it('未知の選択肢はエラー', () => {

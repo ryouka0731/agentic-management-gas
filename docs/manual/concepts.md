@@ -60,8 +60,8 @@ agentic-management/          入れ物 (名前は改名前のまま)
     ├── queue/               手元からの命令と結果 (初めて使うときに作られる)
     ├── queue-done/          処理済みの命令
     ├── kit/                 配る道具の zip
-    └── shots/               要望・不具合に添えた画像
-agentic-management repo-db   台帳のスプレッドシート
+    ├── shots/               要望・不具合に添えた画像
+    └── agentic-management repo-db   台帳のスプレッドシート
 ```
 
 台帳には、文書・記録・改訂版・確認依頼・やりとり・やること・進捗ボード・タグ・下書き・人・知らせ・報告・

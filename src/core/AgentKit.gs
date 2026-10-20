@@ -14,7 +14,7 @@
  * @returns {string}
  */
 function AGENT_KIT_VERSION() {
-  return '1.9.0';
+  return '1.9.1';
 }
 
 /**

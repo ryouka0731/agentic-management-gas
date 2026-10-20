@@ -231,7 +231,7 @@ function branchCreate(name, fileId) {
  */
 function branchCreateLocked_(name, fileId) {
   if (String(name) === 'main') {
-    throw new Error('main は正式版の名前なので、改訂版の名前には使えません');
+    throw new Error('「main」は正式版に使っている名前なので、改訂版の名前には使えません');
   }
   if (!branchNameValid_(name)) {
     throw new Error(
@@ -239,13 +239,13 @@ function branchCreateLocked_(name, fileId) {
     );
   }
   if (dbFindOne('branches', 'name', name)) {
-    throw new Error('同名のブランチが既に存在します: ' + name);
+    throw new Error('同じ名前の改訂版が既にあります: ' + name);
   }
 
   var mainRow = dbFindOne('files', 'fileId', fileId);
   if (!mainRow) throw new Error('管理対象に登録されていません: ' + fileId);
   if (branchSplitPath_(mainRow.path).branch !== 'main') {
-    throw new Error('ブランチの作業コピーからは分岐できません。mainのファイルを選んでください');
+    throw new Error('改訂版の作業コピーからは改訂版を作れません。正式版の文書を選んでください');
   }
 
   var head = headCommit(fileId, 'main');
@@ -305,10 +305,10 @@ function branchCreateLocked_(name, fileId) {
  * @param {string} name
  */
 function branchDelete(name) {
-  if (name === 'main') throw new Error('main ブランチは削除できません');
+  if (name === 'main') throw new Error('正式版は捨てられません');
 
   var row = dbFindOne('branches', 'name', name);
-  if (!row) throw new Error('ブランチが見つかりません: ' + name);
+  if (!row) throw new Error('改訂版が見つかりません: ' + name);
 
   // この版から出ている・この版へ向かう依頼が開いていたら捨てない。捨てても
   // 依頼は開いたまま残り、反映すると状態が deleted から merged に書き換わって

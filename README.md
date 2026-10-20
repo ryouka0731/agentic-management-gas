@@ -23,7 +23,7 @@ Google Workspace の文書（Docs / Sheets / Slides）に、Git 相当の版管�
 | 確認依頼 | 複数の文書とコードの差分を1つにまとめて承認・反映。正式版は直接なおせない | [文書と確認依頼](docs/manual/documents-and-reviews.md) |
 | やること | 一覧・進捗ボード・工程表・集計・親子・工数・タグ・下書き・Google ToDo | [やること](docs/manual/tasks.md) |
 | ホーム | あなたの番・改善のヒント・草・最近の動き・チームの前進・ポイントとレベル (既定オフ) | [ホームとポイント](docs/manual/home-and-game.md) |
-| 要望・不具合 | 誰でも読めて返信できる相談板。持ち主のやることに自動で積まれる | [要望・不具合](docs/manual/inquiries.md) |
+| 要望・不具合 | 誰でも読めて返信できる相談板。持ち主のやることに自動で積まれる (持ち主が複数なら担当なし) | [要望・不具合](docs/manual/inquiries.md) |
 | 期間で進める | スプリント・バーンダウン・ベロシティ・困りごと (既定オフ) | [期間で進める](docs/manual/scrum.md) |
 | 人と工数 | 上下関係・表示名・頭数で割る工数 | [人と工数](docs/manual/people-and-effort.md) |
 | 使われ方 | どこが押され、どの画面が開かれたか。前の期間との比較・曜日・CSV | [使われ方](docs/manual/usage.md) |
@@ -62,7 +62,7 @@ clasp push --force
 ```
 
 1. GAS エディタで **`setupRepo()`** を一度だけ実行する。スクリプトと同じフォルダに入れ物
-   `agentic-management/` (`main/` `branches/` `.git/`) と台帳のスプレッドシートができる
+   `agentic-management/` (`main/` `branches/` `.git/`) ができ、台帳のスプレッドシートは `.git/` の中に置かれる
 2. 手元から動かすなら **`setupCommandQueue()`** も一度だけ実行する (1分ごとのトリガー。1日1回の片付けも載っている)
 3. 初回のデプロイを作り、その ID を `deployment.json` に書く。以後は **`npm run deploy -- "何を変えたか"`**
    だけを使う (`clasp create-deployment` を直に叩くと URL が変わる)。先に一度 `node scripts/kit-key.mjs` で

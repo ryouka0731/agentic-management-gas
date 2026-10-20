@@ -121,6 +121,58 @@ describe('Git の言葉を人に見せない', () => {
     });
   });
 
+  /**
+   * new Error(...) に渡す字だけを取り出す。断り文は画面の帯と手元の結果にそのまま出る。
+   * コメントと、エディタで持ち主だけが動かす debug* の関数は除く。字どうしを足した形は
+   * つなげて1つにする。'main' だけの字は比べる相手 (版の名前) であって、人に見せる字ではない。
+   */
+  function errorTexts(src) {
+    let s = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+    s = s.split(/\n(?=function )/).filter((p) => !/^\n?function debug/.test(p)).join('\n');
+    const out = [];
+    const re = /new Error\(/g;
+    let m;
+    while ((m = re.exec(s))) {
+      let i = m.index + m[0].length;
+      let depth = 1;
+      const parts = [];
+      while (i < s.length && depth) {
+        const c = s[i];
+        if (c === "'" || c === '"') {
+          let j = i + 1;
+          let lit = '';
+          while (j < s.length && s[j] !== c) {
+            if (s[j] === '\\') { lit += s[j + 1]; j += 2; continue; }
+            lit += s[j];
+            j++;
+          }
+          if (lit !== 'main') parts.push(lit);
+          i = j + 1;
+          continue;
+        }
+        if (c === '(') depth++;
+        if (c === ')') depth--;
+        i++;
+      }
+      out.push(parts.join(''));
+    }
+    return out;
+  }
+
+  const ERROR_WORDS = [
+    /(^|[^A-Z_])PR(?![A-Z_])/, /マージ/, /プルリクエスト/, /ブランチ/, /コミット/,
+    // 「main」と括った字は、名前そのものを指すので通す
+    /(^|[^「A-Za-z_])main(?![A-Za-z_」])/,
+  ];
+
+  it.each(['src/Main.gs', 'src/core/PullRequest.gs', 'src/core/Branch.gs'])(
+    '%s の断り文に残っていない', (file) => {
+      const texts = errorTexts(read(file));
+      expect(texts.length).toBeGreaterThan(0);
+      const bad = texts.filter((t) => ERROR_WORDS.some((w) => w.test(t)));
+      expect(bad).toEqual([]);
+    });
+
   it('言い換えの表は配る道具にある', () => {
     // 手元の Claude にも同じ言葉を使わせる
     const text = read('kit/AGENTS.md');

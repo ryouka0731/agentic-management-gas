@@ -232,7 +232,7 @@ function merge3Html(baseHtml, oursHtml, theirsHtml) {
 function resolveConflicts(result, choices) {
   if (result.conflicts.length !== choices.length) {
     throw new Error(
-      '選択の数がコンフリクトの数と一致しません: ' +
+      '選んだ数が、同じ場所が両方で変わっている数と合いません: ' +
       choices.length + ' / ' + result.conflicts.length
     );
   }

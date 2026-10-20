@@ -31,7 +31,9 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 なっていた（`'マージ: PR #12 …'` が履歴に残っていた）。
 
 `test/naming.test.js` の「Git の言葉を人に見せない」が、コメントを除いた
-`Notifier.gs` / `PullRequest.gs` / `Branch.gs` を走査している。
+`Notifier.gs` / `PullRequest.gs` / `Branch.gs` を走査している。**断り文 (`new Error(...)` の字) も人が読む**
+(画面の帯と手元の結果にそのまま出る)。同じテストが `Main.gs` / `PullRequest.gs` / `Branch.gs` の断り文を、
+コメントと `debug*` を除いて走査している。名前そのものを指すときは「main」と括る。
 
 **件名の接頭辞 `[SoftBanto]` は動かさない。** 受信側の振り分けはそこを見ている
 ので、言葉を直すときに一緒に動かすと既存のルールが全部外れる。
@@ -630,7 +632,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 
 `ai-scrum-gas` から取り入れた (`docs/superpowers/plans/2026-10-07-agentic-scrum.md`)。
 **使わない人が多いので既定はオフ。** スクリプトプロパティ `SCRUM_ENABLED` が
-`'true'` のときだけオンで、切り替えるのは持ち主だけ (画面の「設定」)。
+`'true'` のときだけオンで、切り替えるのは管理者 (`apiSetScrumEnabled` が `repoAssertAdmin_` で確かめる。画面の「設定」)。
 
 - オフのあいだ、スクラムの API と命令は `scrumAssertEnabled_()` で断り、画面には
   行き先も欄も出さない。**状態を見る `scrumState` だけはオフでも通す** (オンに
