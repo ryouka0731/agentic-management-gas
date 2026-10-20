@@ -341,7 +341,7 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
-  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),
   // 書いた値を返す (null で既定に戻す)
   apiPrefSet: (key, value) => prefsFixture({ values: value === null ? {} : { [key]: value } }),
@@ -398,7 +398,7 @@ export const DEFAULTS = {
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),
   apiGameLevelSeen: null,
-  apiSetGameEnabled: (on) => ({ scrumEnabled: false, gameEnabled: !!on, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }),
+  apiSetGameEnabled: (on) => ({ scrumEnabled: false, gameEnabled: !!on, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {} }),
   apiCommitGraph: {
     rows: [
       {

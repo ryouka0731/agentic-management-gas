@@ -4103,7 +4103,7 @@ describe('使われ方を前の期間と比べる', () => {
   it('スクラムがオンなら、その画面も並べる', () => {
     openBoard({ apiSettings: {
       scrumEnabled: true, gameEnabled: false, canEdit: true, queue: null,
-      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {},
+      productGoal: '', definitionOfDone: '', glossary: {}, 
     } });
     const names = [...blockOf('この期間に開かれなかった画面').querySelectorAll('.chip')]
       .map((c) => c.textContent);
@@ -5883,8 +5883,8 @@ describe('カードの幅', () => {
 describe('使い方の図', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  function openHelp() {
-    mount();
+  function openHelp(style) {
+    mount(style ? { apiPrefs: prefsFixture({ values: { 'terms.style': style } }) } : undefined);
     document.querySelector('[data-tab="help"]').click();
     return [...document.querySelectorAll('#guide .diagram')];
   }
@@ -5987,8 +5987,8 @@ describe('使い方の図', () => {
     expect(kit.querySelector('figcaption').textContent).toContain('Node.js 18');
   });
 
-  it('描いたものが枠から出ない', () => {
-    const figures = openHelp();
+  [undefined, 'scrum'].forEach((style) => it('描いたものが枠から出ない (' + (style || '一般の言葉') + ')', () => {
+    const figures = openHelp(style);
 
     figures.forEach((fig) => {
       const svg = fig.querySelector('svg');
@@ -6021,7 +6021,7 @@ describe('使い方の図', () => {
         expect(Number(el.getAttribute('cy')) + r).toBeLessThanOrEqual(h);
       });
     });
-  });
+  }));
 
   it('箱どうしが重ならない', () => {
     const figures = openHelp();
@@ -6594,7 +6594,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
   const ON = {
     scrumEnabled: true, canEdit: true, productGoal: '紙の稟議をなくす', definitionOfDone: '',
-    glossary: { velocity: '1つの作業期間で終えた大きさの合計。' }, glossaryAliases: {},
+    glossary: { velocity: '1つの作業期間で終えた大きさの合計。' }, 
   };
   const VIEW = {
     sprint: 'sprint001',
@@ -7035,7 +7035,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
       const row = document.querySelector('#issue-list .row-item[data-number="2"]');
       expect(row.querySelector('.scrum-chips').textContent).toContain('sprint002');
-      expect(row.querySelector('.scrum-chips').textContent).toContain('5pt');
+      expect(row.querySelector('.scrum-chips').textContent).toContain('大きさ 5');
 
       const sel = document.getElementById('issue-group');
       sel.value = 'sprint';
@@ -7043,7 +7043,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       // スプリントは名前の順、未定は最後。見出しに積んだポイントの合計
       const heads = [...document.querySelectorAll('#issue-list .group-head')].map((h) => h.textContent);
       expect(heads[0]).toContain('sprint001');
-      expect(heads[0]).toContain('3pt');
+      expect(heads[0]).toContain('大きさ 3');
       expect(heads[1]).toContain('sprint002');
       expect(heads[2]).toContain('作業期間未定');
     });
@@ -7079,7 +7079,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       document.getElementById('view-board').click();
 
       const col = document.querySelector('.board-column h3');
-      expect(col.textContent).toContain('7pt');
+      expect(col.textContent).toContain('大きさ 7');
       expect(document.querySelector('.board-card .scrum-chips').textContent).toContain('sprint001');
     });
   });
@@ -7370,6 +7370,135 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     expect(document.querySelector('.term-help-btn[aria-label="ベロシティ とは"]')).not.toBeNull();
   });
 
+  describe('言葉の表し方が届いたとき (起動の設定が遅れて届く)', () => {
+    const SCRUM = () => prefsFixture({ values: { 'terms.style': 'scrum' } });
+    const IMP = { number: 3, title: '承認者が不在', body: '', reportedBy: 'a@example.com',
+      reportedAt: '2026-10-02T00:00:00.000Z', state: 'open', resolvedAt: '', resolution: '',
+      sprint: 'sprint001', updatedAt: '', commentCount: 0 };
+    const ISSUES = [{ number: 2, title: '通勤手当の見直し', body: '', state: 'open', assignee: '', assignees: [],
+      labels: '', linkedFileIds: '', linkedPr: '', createdAt: '2026-09-01T00:00:00.000Z', closedAt: '',
+      dueDate: '', startDate: '', parent: '', estimate: '', plannedHours: '', actualHours: '',
+      sprint: 'sprint001', points: 3, acceptance: '承認まで通る' }];
+    const BOARD = { Backlog: [{ issueNumber: 2, order: 0, title: '通勤手当の見直し', state: 'open',
+      assignee: '', labels: '', dueDate: '', sprint: 'sprint001', points: 3 }],
+    'In Progress': [], 'In Review': [], Done: [] };
+
+    function late(over) {
+      let deliver = null;
+      const app = mount(Object.assign({ apiSettings: ON, apiScrumView: VIEW, apiImpedimentList: [IMP],
+        apiIssueList: ISSUES, apiProjectBoard: BOARD,
+        apiPrefs: () => ({ later: (ok) => { deliver = ok; } }) }, over));
+      return { app, deliver: (res) => deliver(res) };
+    }
+    const callsSince = (app, n) => app.calls.slice(n).map((c) => c.name).filter((x) => x !== 'apiUsageRecord');
+
+    it('作業期間の画面は、取り直さずに描き直す', () => {
+      const { app, deliver } = late();
+      document.querySelector('[data-tab="sprint"]').click();
+      expect(document.getElementById('sprint-view').textContent).toContain('今の作業期間');
+      const n = app.calls.length;
+      deliver(SCRUM());
+      expect(callsSince(app, n)).toEqual([]);
+      expect(document.getElementById('sprint-view').textContent).toContain('今のスプリント');
+      expect(document.getElementById('doc-title').textContent).toBe('スプリント');
+    });
+
+    it('困りごとの一覧と、開いている詳細を、取り直さずに描き直す。開いているかは番号で見る', () => {
+      const { app, deliver } = late({
+        apiImpedimentResolve: Object.assign({}, IMP, { state: 'resolved', resolution: '代理が承認' }) });
+      document.querySelector('[data-tab="impediments"]').click();
+      document.querySelector('.impediment-row').click();
+      expect(document.getElementById('side-title').textContent).toBe('困りごと #3');
+      const n = app.calls.length;
+      deliver(SCRUM());
+      expect(callsSince(app, n)).toEqual([]);
+      expect(document.getElementById('side-title').textContent).toBe('障害物 #3');
+      expect(document.getElementById('side-body').textContent).toContain('スプリント');
+      expect(document.getElementById('impediments').textContent).not.toContain('困りごと');
+
+      // 切り替えたあとも、解決したら同じ詳細に戻る
+      [...document.querySelectorAll('#side-body button')].find((b) => b.textContent === '解決する').click();
+      const form = document.querySelector('#side-body form');
+      form.querySelector('textarea').value = '代理が承認';
+      form.querySelector('.btn-primary').click();
+      expect(document.getElementById('side-title').textContent).toBe('障害物 #3');
+      expect(document.getElementById('side-body').textContent).toContain('解決済み');
+    });
+
+    it('やることの一覧・ボード・開いている詳細を、取り直さずに描き直す', () => {
+      const { app, deliver } = late();
+      document.querySelector('[data-tab="issues"]').click();
+      document.querySelector('.row-item[data-number="2"] .row-open').click();
+      expect(document.getElementById('side-body').textContent).toContain('できたと言える条件');
+      const n = app.calls.length;
+      deliver(SCRUM());
+      expect(callsSince(app, n)).toEqual([]);
+      expect(document.getElementById('side-body').textContent).toContain('受け入れ条件');
+      expect(document.getElementById('side-body').textContent).not.toContain('できたと言える条件');
+      expect(document.getElementById('issue-list').textContent).toContain('3pt');
+
+      document.getElementById('view-board').click();
+      expect(document.getElementById('board').textContent).toContain('3pt');
+    });
+
+    it('大きさの札: 一般の言葉では「大きさ 3」、スクラムの言葉では 3pt', () => {
+      mount({ apiSettings: ON, apiIssueList: ISSUES, apiProjectBoard: BOARD });
+      document.querySelector('[data-tab="issues"]').click();
+      const list = document.getElementById('issue-list').textContent;
+      expect(list).toContain('大きさ 3');
+      expect(list).not.toContain('3pt');
+      document.getElementById('view-board').click();
+      expect(document.getElementById('board').textContent).toContain('大きさ 3');
+      expect(document.getElementById('board').textContent).not.toContain('3pt');
+    });
+
+    it('使い方の絞り込みは、どちらの言葉でも節が見つかる', () => {
+      for (const prefsRes of [prefsFixture(), SCRUM()]) {
+        mount({ apiPrefs: prefsRes });
+        document.querySelector('.nav-item[data-tab="help"]').click();
+        for (const word of ['スプリント', '作業期間']) {
+          const input = document.getElementById('guide-filter');
+          input.value = word;
+          input.dispatchEvent(new window.Event('input'));
+          const shown = [...document.querySelectorAll('#guide h2')].filter((h) => !h.hidden).map((h) => h.id);
+          expect(shown, word).toContain('guide-sec-scrum');
+        }
+      }
+    });
+  });
+
+  it('言葉の表し方は、期間で進めるがオフなら設定の画面に出さない', () => {
+    const items = () => [...document.querySelectorAll('#settings select')]
+      .filter((el) => [...el.options].some((o) => o.value === 'scrum'));
+    mount();
+    document.querySelector('[data-tab="settings"]').click();
+    expect(items()).toHaveLength(0);
+    mount({ apiSettings: ON });
+    document.querySelector('[data-tab="settings"]').click();
+    expect(items()).toHaveLength(1);
+  });
+
+  it('最初に出す画面の選択肢は、サーバの {key} を言葉の表し方で埋める', () => {
+    const start = (res) => {
+      const p = res.items.filter((x) => x.key === 'start.tab')[0];
+      p.options = p.options.concat([{ value: 'sprint', label: '{sprint}' }, { value: 'impediments', label: '{impediment}' }]);
+      return res;
+    };
+    const labels = () => {
+      const sel = [...document.querySelectorAll('#settings select')]
+        .find((el) => [...el.options].some((o) => o.value === 'impediments'));
+      return [...sel.options].map((o) => o.textContent);
+    };
+    mount({ apiSettings: ON, apiPrefs: () => start(prefsFixture()) });
+    document.querySelector('[data-tab="settings"]').click();
+    expect(labels()).toContain('作業期間');
+    expect(labels()).toContain('困りごと');
+    mount({ apiSettings: ON, apiPrefs: () => start(prefsFixture({ values: { 'terms.style': 'scrum' } })) });
+    document.querySelector('[data-tab="settings"]').click();
+    expect(labels()).toContain('スプリント');
+    expect(labels()).toContain('障害物');
+  });
+
   it('やることの入力欄は、オンのときだけスクラムの欄が出る', () => {
     mount();
     document.querySelector('[data-tab="issues"]').click();
@@ -7386,7 +7515,7 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
 
 describe('上の見出し', () => {
   it('左の行き先を開くと、その名前が見出しに出る (どれも「文書」に倒れない)', () => {
-    mount({ apiSettings: { scrumEnabled: true, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} } });
+    mount({ apiSettings: { scrumEnabled: true, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {} } });
     // 名前の表に足し忘れると、既定の「文書」が出る (使われ方・要望で実際にそうなっていた)
     [...document.querySelectorAll('.sidebar .nav-item[data-tab]')].forEach((btn) => {
       btn.click();
@@ -8183,7 +8312,7 @@ describe('ポイント・レベル・週の上位', () => {
   it('管理者は設定で切り替えられる', () => {
     let set = null;
     mount({ apiSetGameEnabled: (on) => { set = on; return { scrumEnabled: false, gameEnabled: on, canEdit: true,
-      productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }; } });
+      productGoal: '', definitionOfDone: '', glossary: {} }; } });
     document.querySelector('[data-tab="settings"]').click();
     document.getElementById('game-toggle').click();
     expect(set).toBe(true);

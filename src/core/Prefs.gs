@@ -34,6 +34,7 @@ function NOTIFY_KINDS() {
 
 /**
  * 最初に出せる画面。左の行き先と同じ並び。スクラムの画面はオンのときだけ選べる。
+ * スクラムの画面の名前は {key} で渡し、画面が言葉の表し方で埋める (人ごとに字が変わるため)。
  *
  * @returns {Array<{value: string, label: string, scrum?: boolean}>}
  */
@@ -44,8 +45,8 @@ function PREF_START_TABS_() {
     { value: 'issues', label: 'やること' },
     { value: 'branches', label: '改訂中の版' },
     { value: 'pulls', label: '確認依頼' },
-    { value: 'sprint', label: '作業期間', scrum: true },
-    { value: 'impediments', label: '困りごと', scrum: true },
+    { value: 'sprint', label: '{sprint}', scrum: true },
+    { value: 'impediments', label: '{impediment}', scrum: true },
     { value: 'help', label: '使い方' },
     { value: 'usage', label: '使われ方' },
     { value: 'report', label: '要望・不具合' },

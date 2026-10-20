@@ -425,7 +425,7 @@ describe('入力の置き場所', () => {
   });
 
   it('何の入力かを見出しに出す', () => {
-    expect(js).toContain('sideTitle.textContent = title;');
+    expect(js).toContain('termText(sideTitle, title);');
     ['変更を記録する', 'やることを作る', '確認を依頼する'].forEach((t) => {
       expect(js).toContain(t);
     });

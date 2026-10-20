@@ -2138,12 +2138,19 @@
   var sideGeneration = 0;
 
   /**
+   * 右に読む形で開いているもの ({kind: 'issue' | 'impediment', number})。入力欄や別のものを
+   * 開いたら null。見出しの字では比べない (言葉の表し方で字が変わる)
+   */
+  var sideShowing = null;
+
+  /**
    * 右のパネルを閉じる。
    */
   function closeSide() {
     setSideOpen(false);
     sideBody.textContent = '';
-    sideTitle.textContent = '';
+    sideShowing = null;
+    termText(sideTitle, '');
     setSideEdit(null);
     setSideSource(null);
   }
@@ -2185,7 +2192,8 @@
     setSideEdit(null);
     setSideSource(sourceEl);
     sideBody.textContent = '';
-    sideTitle.textContent = title;
+    sideShowing = null;
+    termText(sideTitle, title);
     setSideOpen(true);
 
     var form = document.createElement('form');
@@ -6607,7 +6615,7 @@
     // スクラムがオンなら、そのまとまりに積んだポイントの合計も出す。
     // スプリントごとに束ねたとき、積みすぎていないかを一覧で見比べられる
     if (points !== undefined && points !== null) {
-      var pt = makePill(points + 'pt', 'chip group-points');
+      var pt = makePill(pointsLabel(points), 'chip group-points');
       pt.setAttribute('aria-label', termIn('{points}の合計 ') + points);
       head.appendChild(pt);
     }
@@ -6912,162 +6920,170 @@
   function loadIssues() {
     showSkeleton(issueListEl, 'list', 4);
 
-    call('apiIssueList', [''], function (list) {
-      var issues = list || [];
-      lastIssues = issues;
-      issueListEl.textContent = '';
+    call('apiIssueList', [''], renderIssueList, failInto(issueListEl));
+  }
 
-      // 件数は先に出す。0件のときだけ前の値が残っていた
-      var shown = issues.filter(matchesFilter);
-      issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+  /**
+   * やることの一覧を描く。言葉の表し方が変わったときは、取り直さずに最後の返事から描き直す
+   * (refreshTerms)。
+   *
+   * @param {object[]} list apiIssueList の返り
+   */
+  function renderIssueList(list) {
+    var issues = list || [];
+    lastIssues = issues;
+    issueListEl.textContent = '';
 
-      if (!issues.length) {
-        issueListEl.appendChild(makeBlankState(
-          'やることがありません',
-          '直したい文書を選んでから作ると、その文書に紐づきます。',
-          { label: 'やることを作る', onClick: createIssue }
-        ));
-        return;
+    // 件数は先に出す。0件のときだけ前の値が残っていた
+    var shown = issues.filter(matchesFilter);
+    issueCountEl.textContent = shown.length + ' / ' + issues.length + '件';
+
+    if (!issues.length) {
+      issueListEl.appendChild(makeBlankState(
+        'やることがありません',
+        '直したい文書を選んでから作ると、その文書に紐づきます。',
+        { label: 'やることを作る', onClick: createIssue }
+      ));
+      return;
+    }
+
+    if (!shown.length) {
+      issueListEl.appendChild(makeBlankState(
+        '絞り込みに合うやることがありません',
+        '絞り込みを消すか、別の言葉で試してください。'
+      ));
+      return;
+    }
+
+    groupIssues(shown, issueGroupSel.value).forEach(function (group) {
+      issueListEl.appendChild(
+        makeGroupHead(group.label, group.issues.length, group.key,
+          scrumOn() ? scrumPointsSum(group.issues) : null));
+      if (collapsed[group.key]) return;
+
+      // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
+      issueTreeRows(group.issues).forEach(renderIssueRow);
+    });
+
+    function renderIssueRow(issue) {
+      var row = document.createElement('div');
+      row.className = 'row-item';
+      row.dataset.number = issue.number;
+      makeIssueDraggable(row, issue);
+
+      if (issue.depth) {
+        row.classList.add('nested');
+        row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
       }
 
-      if (!shown.length) {
-        issueListEl.appendChild(makeBlankState(
-          '絞り込みに合うやることがありません',
-          '絞り込みを消すか、別の言葉で試してください。'
-        ));
-        return;
+      var main = document.createElement('div');
+      main.className = 'row-main';
+
+      var title = document.createElement('div');
+      title.className = 'row-title';
+      title.textContent = '#' + issue.number + ' ' + issue.title;
+      main.appendChild(title);
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
+        (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
+
+      var effort = rollupEffort(issue);
+      if (effort.planned || effort.actual || effort.estimate) {
+        var hours = document.createElement('span');
+        hours.className = 'effort';
+        hours.appendChild(makeIcon('clock'));
+
+        var text = [];
+        if (effort.estimate) text.push('見積 ' + effort.estimate);
+        if (effort.planned) text.push('予定 ' + effort.planned + '人日');
+        if (effort.actual) text.push('実績 ' + effort.actual + '人日');
+
+        hours.appendChild(document.createTextNode(text.join(' / ')));
+        if (issue.children.length) hours.title = '子の分を含めた合計';
+        meta.appendChild(hours);
       }
 
-      groupIssues(shown, issueGroupSel.value).forEach(function (group) {
-        issueListEl.appendChild(
-          makeGroupHead(group.label, group.issues.length, group.key,
-            scrumOn() ? scrumPointsSum(group.issues) : null));
-        if (collapsed[group.key]) return;
+      // 優先度は先に出す。後ろに付けると他の印に埋もれて拾えない
+      var pri = makePriorityChip(issue);
+      if (pri) meta.appendChild(pri);
 
-        // 親子は束ねの中で組む。束ね方を変えても入れ子は保たれる
-        issueTreeRows(group.issues).forEach(renderIssueRow);
+      var scrumChips = makeScrumChips(issue);
+      if (scrumChips) meta.appendChild(scrumChips);
+
+      meta.appendChild(makeRelationChips(issue.number));
+
+      var stale = makeStaleBadge(issue);
+      if (stale) meta.appendChild(stale);
+
+      var labelEls = makeLabels(issue.labels);
+      if (labelEls) meta.appendChild(labelEls);
+      main.appendChild(meta);
+      applyRot(row, issue);
+
+      var open = document.createElement('button');
+      open.className = 'row-open';
+      open.appendChild(makeIcon('circle-dot'));
+      open.appendChild(main);
+      open.addEventListener('click', function () {
+        openIssueDetail(issue, row);
       });
+      row.appendChild(open);
+      row.appendChild(makeAvatars(issue.assignees || issue.assignee));
 
-      function renderIssueRow(issue) {
-        var row = document.createElement('div');
-        row.className = 'row-item';
-        row.dataset.number = issue.number;
-        makeIssueDraggable(row, issue);
+      var edit = document.createElement('button');
+      edit.className = 'icon-btn';
+      edit.appendChild(makeIcon('pencil'));
+      edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
+      hint(edit, 'act:edit');
+      edit.addEventListener('click', function () { openIssueDetail(issue, row); });
+      row.appendChild(edit);
 
-        if (issue.depth) {
-          row.classList.add('nested');
-          row.style.marginLeft = (issue.depth * 24 + 16) + 'px';
-        }
-
-        var main = document.createElement('div');
-        main.className = 'row-main';
-
-        var title = document.createElement('div');
-        title.className = 'row-title';
-        title.textContent = '#' + issue.number + ' ' + issue.title;
-        main.appendChild(title);
-
-        var meta = document.createElement('div');
-        meta.className = 'row-meta';
-        meta.textContent = (issue.state === 'open' ? '対応中' : '完了') +
-          (issue.dueDate ? ' · 期限 ' + String(issue.dueDate).substring(0, 10) : '');
-
-        var effort = rollupEffort(issue);
-        if (effort.planned || effort.actual || effort.estimate) {
-          var hours = document.createElement('span');
-          hours.className = 'effort';
-          hours.appendChild(makeIcon('clock'));
-
-          var text = [];
-          if (effort.estimate) text.push('見積 ' + effort.estimate);
-          if (effort.planned) text.push('予定 ' + effort.planned + '人日');
-          if (effort.actual) text.push('実績 ' + effort.actual + '人日');
-
-          hours.appendChild(document.createTextNode(text.join(' / ')));
-          if (issue.children.length) hours.title = '子の分を含めた合計';
-          meta.appendChild(hours);
-        }
-
-        // 優先度は先に出す。後ろに付けると他の印に埋もれて拾えない
-        var pri = makePriorityChip(issue);
-        if (pri) meta.appendChild(pri);
-
-        var scrumChips = makeScrumChips(issue);
-        if (scrumChips) meta.appendChild(scrumChips);
-
-        meta.appendChild(makeRelationChips(issue.number));
-
-        var stale = makeStaleBadge(issue);
-        if (stale) meta.appendChild(stale);
-
-        var labelEls = makeLabels(issue.labels);
-        if (labelEls) meta.appendChild(labelEls);
-        main.appendChild(meta);
-        applyRot(row, issue);
-
-        var open = document.createElement('button');
-        open.className = 'row-open';
-        open.appendChild(makeIcon('circle-dot'));
-        open.appendChild(main);
-        open.addEventListener('click', function () {
-          openIssueDetail(issue, row);
+      if (issue.state === 'open') {
+        var done = document.createElement('button');
+        done.className = 'icon-btn ok';
+        done.appendChild(makeIcon('check'));
+        done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
+        hint(done, 'act:done');
+        done.addEventListener('click', function () {
+          call('apiIssueClose', [issue.number], function () {
+            celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
+            refreshIssueViews();
+          });
         });
-        row.appendChild(open);
-        row.appendChild(makeAvatars(issue.assignees || issue.assignee));
-
-        var edit = document.createElement('button');
-        edit.className = 'icon-btn';
-        edit.appendChild(makeIcon('pencil'));
-        edit.setAttribute('aria-label', '#' + issue.number + ' を直す');
-        hint(edit, 'act:edit');
-        edit.addEventListener('click', function () { openIssueDetail(issue, row); });
-        row.appendChild(edit);
-
-        if (issue.state === 'open') {
-          var done = document.createElement('button');
-          done.className = 'icon-btn ok';
-          done.appendChild(makeIcon('check'));
-          done.setAttribute('aria-label', '#' + issue.number + ' を完了にする');
-          hint(done, 'act:done');
-          done.addEventListener('click', function () {
-            call('apiIssueClose', [issue.number], function () {
-              celebrateProgress('close', '#' + issue.number + ' を完了にしました', issue.number);
-              refreshIssueViews();
-            });
-          });
-          row.appendChild(done);
-        } else {
-          var back = document.createElement('button');
-          back.className = 'icon-btn';
-          back.appendChild(makeIcon('back'));
-          back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
-          hint(back, 'act:reopen');
-          back.addEventListener('click', function () {
-            reopenIssue(issue.number);
-          });
-          row.appendChild(back);
-        }
-
-        row.appendChild(makeArchiveButton(issue, panelIssues));
-
-        if (issue.state === 'open' && current.docFileId) {
-          var branchBtn = document.createElement('button');
-          branchBtn.className = 'btn btn-primary';
-          branchBtn.textContent = 'この作業の改訂版を作る';
-          branchBtn.addEventListener('click', function () {
-            branchBtn.disabled = true;
-            call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
-              showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
-              loadFiles(function () { loadIssues(); });
-              loadOverview();
-            }, failEnable(branchBtn));
-          });
-          row.appendChild(branchBtn);
-        }
-
-        issueListEl.appendChild(row);
+        row.appendChild(done);
+      } else {
+        var back = document.createElement('button');
+        back.className = 'icon-btn';
+        back.appendChild(makeIcon('back'));
+        back.setAttribute('aria-label', '#' + issue.number + ' の完了を取り消す');
+        hint(back, 'act:reopen');
+        back.addEventListener('click', function () {
+          reopenIssue(issue.number);
+        });
+        row.appendChild(back);
       }
-    }, failInto(issueListEl));
+
+      row.appendChild(makeArchiveButton(issue, panelIssues));
+
+      if (issue.state === 'open' && current.docFileId) {
+        var branchBtn = document.createElement('button');
+        branchBtn.className = 'btn btn-primary';
+        branchBtn.textContent = 'この作業の改訂版を作る';
+        branchBtn.addEventListener('click', function () {
+          branchBtn.disabled = true;
+          call('apiIssueCreateBranch', [issue.number, current.docFileId], function (b) {
+            showSnack('改訂版「' + b.name + '」を作りました', { kind: 'ok' });
+            loadFiles(function () { loadIssues(); });
+            loadOverview();
+          }, failEnable(branchBtn));
+        });
+        row.appendChild(branchBtn);
+      }
+
+      issueListEl.appendChild(row);
+    }
   }
 
   /**
@@ -7230,7 +7246,8 @@
   function openSideView(title, sourceEl, onEdit) {
     setSideSource(sourceEl);
     sideBody.textContent = '';
-    sideTitle.textContent = title;
+    sideShowing = null;
+    termText(sideTitle, title);
     setSideOpen(true);
     setSideEdit(onEdit);
 
@@ -8090,6 +8107,7 @@
     var box = openSideView('やること #' + issue.number, sourceEl, function () {
       openIssueEdit(issue, sideSource);
     });
+    sideShowing = { kind: 'issue', number: Number(issue.number) };
 
     var title = document.createElement('h3');
     title.className = 'view-title';
@@ -8107,7 +8125,7 @@
     if (scrumOn() && issue.acceptance) {
       var acc = document.createElement('div');
       acc.className = 'row-meta view-label';
-      acc.textContent = termOf('acceptance');
+      termText(acc, '{acceptance}');
       box.appendChild(acc);
       box.appendChild(makeMarkdown(issue.acceptance));
     }
@@ -8129,7 +8147,7 @@
 
     function row(label, build) {
       var dt = document.createElement('dt');
-      dt.textContent = label;
+      termText(dt, label);
       wrap.appendChild(dt);
 
       var dd = document.createElement('dd');
@@ -8190,9 +8208,11 @@
 
     // エージェンティックスクラム。オンのときだけ出す
     if (scrumOn() && (issue.sprint || issue.points !== '')) {
-      row(termOf('sprint'), function (dd) {
-        dd.textContent = (issue.sprint || '未定') +
-          (issue.points !== '' && issue.points !== undefined ? termIn(' ・ {points} ') + issue.points : '');
+      row('{sprint}', function (dd) {
+        dd.appendChild(document.createTextNode(issue.sprint || '未定'));
+        if (issue.points === '' || issue.points === undefined) return;
+        dd.appendChild(termText(document.createElement('span'), ' ・ {points} '));
+        dd.appendChild(document.createTextNode(String(issue.points)));
       });
     }
 
@@ -9398,188 +9418,202 @@
     }
 
     call('apiProjectBoard', [], function (result) {
-      var board = result || {};
-      COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
-      boardEl.textContent = '';
-
-      // 絞り込む前の列の長さ。末尾に足す位置は、見えている枚数ではなくこちらで数える
-      var fullLen = {};
-      COLUMNS.forEach(function (c) { fullLen[c[0]] = board[c[0]].length; });
-
-      // 絞り込みは番号で当てる。カードは中身を全部持っていない
-      var keep = null;
-      if (String(issueFilterEl.value || '')) {
-        keep = {};
-        (lastIssues || []).filter(matchesFilter).forEach(function (i) {
-          keep[i.number] = true;
-        });
-        COLUMNS.forEach(function (c) {
-          board[c[0]] = board[c[0]].filter(function (card) {
-            return keep[card.issueNumber];
-          });
-        });
-      }
-
-      var total = 0;
-      COLUMNS.forEach(function (c) { total += board[c[0]].length; });
-      issueCountEl.textContent = total + '枚';
-
-      if (total === 0) {
-        boardEl.appendChild(makeBlankState(
-          'カードがありません',
-          'カードは「やること」です。作ると「これから」に並び、' +
-          '改訂版や確認依頼に応じて自動で右に動きます。列の「＋」からも足せます。',
-          { label: 'やることを作る', onClick: createIssue }
-        ));
-        // 空でも列は描く。列の「＋」から足せないと、最初の1枚の入口が減る
-      }
-
-      COLUMNS.forEach(function (pair) {
-        var column = pair[0];
-
-        var col = document.createElement('div');
-        col.className = 'board-column';
-
-        var head = document.createElement('h3');
-        head.textContent = pair[1] + ' (' + board[column].length + ')';
-        // 0 のときは出さない。ポイントを使っていない列に「0pt」が並ぶと、ただの雑音になる
-        if (scrumOn() && scrumPointsSum(board[column])) {
-          var colPoints = makePill(scrumPointsSum(board[column]) + 'pt', 'chip group-points');
-          colPoints.setAttribute('aria-label', termIn('{points}の合計 ') + scrumPointsSum(board[column]));
-          head.appendChild(document.createTextNode(' '));
-          head.appendChild(colPoints);
-        }
-        hint(head, 'board:' + column);
-
-        // 列ごとに、その場でやることを足す。題名だけ打てばその列に入る
-        var addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'icon-btn board-add';
-        addBtn.appendChild(makeIcon('plus'));
-        addBtn.setAttribute('aria-label', pair[1] + ' にやることを足す');
-        addBtn.title = pair[1] + ' にやることを足す';
-        addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], fullLen[column]); });
-        var headRow = document.createElement('div');
-        headRow.className = 'board-column-head';
-        headRow.appendChild(head);
-        headRow.appendChild(addBtn);
-        col.appendChild(headRow);
-
-        col.addEventListener('dragover', function (e) {
-          e.preventDefault();
-          col.classList.add('drop-target');
-          // どこに入るかを線で見せる。入る前に分かれば、落とし直さずに済む
-          showDropIndicator(col, boardDropIndex(col, e.clientY));
-        });
-        col.addEventListener('dragleave', function (e) {
-          if (e.relatedTarget && col.contains(e.relatedTarget)) return;
-          col.classList.remove('drop-target');
-          clearDropIndicator();
-        });
-        col.addEventListener('drop', function (e) {
-          e.preventDefault();
-          col.classList.remove('drop-target');
-          var index = boardDropIndex(col, e.clientY);
-          clearDropIndicator();
-
-          var issueNumber = Number(e.dataTransfer.getData('text/plain'));
-          if (!issueNumber) return;
-
-          // 落とした位置に入れる (以前は列の末尾にしか入らなかった)。絞り込んで
-          // いるときは見えている枚数と保存されている並びが食い違うので、
-          // 保存されている並びの位置に直してから送る
-          call('apiProjectMove', [issueNumber, column, boardSavedIndex(col, index, column, issueNumber, fullLen)],
-            function () { loadBoard(); });
-        });
-
-        board[column].forEach(function (card) {
-          var el = document.createElement('div');
-          el.className = 'board-card';
-          el.draggable = true;
-
-          var num = document.createElement('span');
-          num.className = 'card-number';
-          num.textContent = '#' + card.issueNumber;
-          el.appendChild(num);
-
-          var title = document.createElement('div');
-          title.className = 'card-title';
-          title.textContent = card.title;
-          el.appendChild(title);
-
-          el.dataset.number = card.issueNumber;
-          el.dataset.order = card.order;
-          el.dataset.column = column;
-
-          var rel = makeRelationChips(card.issueNumber);
-          if (rel.childNodes.length) {
-            var relBox = document.createElement('div');
-            relBox.className = 'card-rel';
-            relBox.appendChild(rel);
-            el.appendChild(relBox);
-          }
-
-          var cardScrum = makeScrumChips(card);
-          if (cardScrum) el.appendChild(cardScrum);
-
-          var labelEls = makeLabels(card.labels);
-          if (labelEls) el.appendChild(labelEls);
-          applyRot(el, card);
-
-          el.addEventListener('dragstart', function (e) {
-            e.dataTransfer.setData('text/plain', String(card.issueNumber));
-            // 掴んだカードは位置の数え方から外す (自分の前後に落としても動かない)
-            el.classList.add('dragging');
-          });
-          el.addEventListener('dragend', function () {
-            el.classList.remove('dragging');
-            clearDropIndicator();
-          });
-
-          // 掴んで動かすだけでなく、押して中身を直せるようにする
-          el.addEventListener('click', function () {
-            openIssueByNumber(card.issueNumber, el);
-          });
-          el.tabIndex = 0;
-          el.addEventListener('keydown', function (e) {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            e.preventDefault();
-            openIssueByNumber(card.issueNumber, el);
-          });
-
-          var foot = document.createElement('div');
-          foot.className = 'card-foot';
-
-          var when = document.createElement('span');
-          when.className = 'row-meta';
-          if (card.dueDate) {
-            // 字は札と並べて折り返すので、包んで1つの塊にする
-            var due = document.createElement('span');
-            due.textContent = '期限 ' + String(card.dueDate).substring(0, 10);
-            when.appendChild(due);
-          }
-
-          var cardPri = makePriorityChip(card);
-          if (cardPri) when.appendChild(cardPri);
-
-          var cardStale = makeStaleBadge(card);
-          if (cardStale) when.appendChild(cardStale);
-          foot.appendChild(when);
-          foot.appendChild(makeAvatars(card.assignees || card.assignee));
-
-          // 一覧と同じく、カードからも捨てられるようにする。
-          // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
-          foot.appendChild(makeArchiveButton(
-            { number: card.issueNumber, title: card.title }, panelIssues));
-
-          el.appendChild(foot);
-
-          col.appendChild(el);
-        });
-
-        boardEl.appendChild(col);
-      });
+      // 描くときに列を絞り込むので、写しを控える (言葉の表し方が変わったら写しから描き直す)
+      lastBoard = JSON.stringify(result || {});
+      renderBoard(result);
     }, failInto(boardEl));
+  }
+
+  /** 最後に届いた apiProjectBoard の返り (JSON の字)。まだ無ければ '' */
+  var lastBoard = '';
+
+  /**
+   * 進捗ボードを描く。
+   *
+   * @param {object} result apiProjectBoard の返り (中を書き換える)
+   */
+  function renderBoard(result) {
+    var board = result || {};
+    COLUMNS.forEach(function (c) { board[c[0]] = board[c[0]] || []; });
+    boardEl.textContent = '';
+
+    // 絞り込む前の列の長さ。末尾に足す位置は、見えている枚数ではなくこちらで数える
+    var fullLen = {};
+    COLUMNS.forEach(function (c) { fullLen[c[0]] = board[c[0]].length; });
+
+    // 絞り込みは番号で当てる。カードは中身を全部持っていない
+    var keep = null;
+    if (String(issueFilterEl.value || '')) {
+      keep = {};
+      (lastIssues || []).filter(matchesFilter).forEach(function (i) {
+        keep[i.number] = true;
+      });
+      COLUMNS.forEach(function (c) {
+        board[c[0]] = board[c[0]].filter(function (card) {
+          return keep[card.issueNumber];
+        });
+      });
+    }
+
+    var total = 0;
+    COLUMNS.forEach(function (c) { total += board[c[0]].length; });
+    issueCountEl.textContent = total + '枚';
+
+    if (total === 0) {
+      boardEl.appendChild(makeBlankState(
+        'カードがありません',
+        'カードは「やること」です。作ると「これから」に並び、' +
+        '改訂版や確認依頼に応じて自動で右に動きます。列の「＋」からも足せます。',
+        { label: 'やることを作る', onClick: createIssue }
+      ));
+      // 空でも列は描く。列の「＋」から足せないと、最初の1枚の入口が減る
+    }
+
+    COLUMNS.forEach(function (pair) {
+      var column = pair[0];
+
+      var col = document.createElement('div');
+      col.className = 'board-column';
+
+      var head = document.createElement('h3');
+      head.textContent = pair[1] + ' (' + board[column].length + ')';
+      // 0 のときは出さない。ポイントを使っていない列に「0pt」が並ぶと、ただの雑音になる
+      if (scrumOn() && scrumPointsSum(board[column])) {
+        var colPoints = makePill(pointsLabel(scrumPointsSum(board[column])), 'chip group-points');
+        colPoints.setAttribute('aria-label', termIn('{points}の合計 ') + scrumPointsSum(board[column]));
+        head.appendChild(document.createTextNode(' '));
+        head.appendChild(colPoints);
+      }
+      hint(head, 'board:' + column);
+
+      // 列ごとに、その場でやることを足す。題名だけ打てばその列に入る
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'icon-btn board-add';
+      addBtn.appendChild(makeIcon('plus'));
+      addBtn.setAttribute('aria-label', pair[1] + ' にやることを足す');
+      addBtn.title = pair[1] + ' にやることを足す';
+      addBtn.addEventListener('click', function () { openBoardComposer(col, column, pair[1], fullLen[column]); });
+      var headRow = document.createElement('div');
+      headRow.className = 'board-column-head';
+      headRow.appendChild(head);
+      headRow.appendChild(addBtn);
+      col.appendChild(headRow);
+
+      col.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        col.classList.add('drop-target');
+        // どこに入るかを線で見せる。入る前に分かれば、落とし直さずに済む
+        showDropIndicator(col, boardDropIndex(col, e.clientY));
+      });
+      col.addEventListener('dragleave', function (e) {
+        if (e.relatedTarget && col.contains(e.relatedTarget)) return;
+        col.classList.remove('drop-target');
+        clearDropIndicator();
+      });
+      col.addEventListener('drop', function (e) {
+        e.preventDefault();
+        col.classList.remove('drop-target');
+        var index = boardDropIndex(col, e.clientY);
+        clearDropIndicator();
+
+        var issueNumber = Number(e.dataTransfer.getData('text/plain'));
+        if (!issueNumber) return;
+
+        // 落とした位置に入れる (以前は列の末尾にしか入らなかった)。絞り込んで
+        // いるときは見えている枚数と保存されている並びが食い違うので、
+        // 保存されている並びの位置に直してから送る
+        call('apiProjectMove', [issueNumber, column, boardSavedIndex(col, index, column, issueNumber, fullLen)],
+          function () { loadBoard(); });
+      });
+
+      board[column].forEach(function (card) {
+        var el = document.createElement('div');
+        el.className = 'board-card';
+        el.draggable = true;
+
+        var num = document.createElement('span');
+        num.className = 'card-number';
+        num.textContent = '#' + card.issueNumber;
+        el.appendChild(num);
+
+        var title = document.createElement('div');
+        title.className = 'card-title';
+        title.textContent = card.title;
+        el.appendChild(title);
+
+        el.dataset.number = card.issueNumber;
+        el.dataset.order = card.order;
+        el.dataset.column = column;
+
+        var rel = makeRelationChips(card.issueNumber);
+        if (rel.childNodes.length) {
+          var relBox = document.createElement('div');
+          relBox.className = 'card-rel';
+          relBox.appendChild(rel);
+          el.appendChild(relBox);
+        }
+
+        var cardScrum = makeScrumChips(card);
+        if (cardScrum) el.appendChild(cardScrum);
+
+        var labelEls = makeLabels(card.labels);
+        if (labelEls) el.appendChild(labelEls);
+        applyRot(el, card);
+
+        el.addEventListener('dragstart', function (e) {
+          e.dataTransfer.setData('text/plain', String(card.issueNumber));
+          // 掴んだカードは位置の数え方から外す (自分の前後に落としても動かない)
+          el.classList.add('dragging');
+        });
+        el.addEventListener('dragend', function () {
+          el.classList.remove('dragging');
+          clearDropIndicator();
+        });
+
+        // 掴んで動かすだけでなく、押して中身を直せるようにする
+        el.addEventListener('click', function () {
+          openIssueByNumber(card.issueNumber, el);
+        });
+        el.tabIndex = 0;
+        el.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          openIssueByNumber(card.issueNumber, el);
+        });
+
+        var foot = document.createElement('div');
+        foot.className = 'card-foot';
+
+        var when = document.createElement('span');
+        when.className = 'row-meta';
+        if (card.dueDate) {
+          // 字は札と並べて折り返すので、包んで1つの塊にする
+          var due = document.createElement('span');
+          due.textContent = '期限 ' + String(card.dueDate).substring(0, 10);
+          when.appendChild(due);
+        }
+
+        var cardPri = makePriorityChip(card);
+        if (cardPri) when.appendChild(cardPri);
+
+        var cardStale = makeStaleBadge(card);
+        if (cardStale) when.appendChild(cardStale);
+        foot.appendChild(when);
+        foot.appendChild(makeAvatars(card.assignees || card.assignee));
+
+        // 一覧と同じく、カードからも捨てられるようにする。
+        // 板だけ捨てられないと、捨てるために一覧へ移る手間が要る
+        foot.appendChild(makeArchiveButton(
+          { number: card.issueNumber, title: card.title }, panelIssues));
+
+        el.appendChild(foot);
+
+        col.appendChild(el);
+      });
+
+      boardEl.appendChild(col);
+    });
   }
 
   /**
@@ -10828,7 +10862,9 @@
 
       guideSections.push({
         id: section.id, head: h, parts: parts, toc: tocBtn,
-        text: searchNormalize(section.title + '\n' + termIn(section.lines.join('\n'))),
+        // 両方の言葉で引けるようにする。表し方を変えても、人がどちらの言葉で探しても見つかる
+        text: searchNormalize(section.title + '\n' + termFill(section.lines.join('\n'), 'plain') +
+          '\n' + termFill(section.lines.join('\n'), 'scrum')),
       });
     });
 
@@ -13545,6 +13581,22 @@
   }
 
   /**
+   * 字を {key} 入りのひな形から埋め、表し方が変わったら applyTerms が埋め直せるよう印を付ける。
+   * 人の書いた字 (題名など) は混ぜない (たまたま {sprint} と書いた題名まで置き換わる)。
+   *
+   * @param {Element} el
+   * @param {string} template
+   * @returns {Element} el
+   */
+  function termText(el, template) {
+    var raw = String(template == null ? '' : template);
+    el.textContent = termIn(raw);
+    if (raw.indexOf('{') >= 0) el.setAttribute('data-term', raw);
+    else el.removeAttribute('data-term');
+    return el;
+  }
+
+  /**
    * 静の HTML に置いた言葉を埋める。data-term は字、data-term-label は aria-label。
    * 起動のときと、表し方が変わったときに呼ぶ。
    */
@@ -13565,12 +13617,21 @@
    * (描いた字は描いたときの言葉のまま残る)。設定の画面も、スクラムの節に言葉があるので描き直す。
    */
   function refreshTerms() {
+    // 開いている右の欄 (やること・困りごとの詳細) も data-term で埋め直る
     applyTerms();
+    updateCrumbs();
+    // 取り直さない。最後に届いた返事から描き直す (言葉が変わっただけで中身は同じ)
     if (!panelSettings.hidden) renderSettingsPanel();
-    if (!panelSprint.hidden) loadSprint();
-    if (!panelImpediments.hidden) loadImpediments();
-    if (!panelIssues.hidden) reloadIssueView();
+    if (!panelSprint.hidden && lastSprintView) {
+      fillSprintSelect();
+      renderSprint(lastSprintView);
+    }
+    if (!panelImpediments.hidden && lastImpediments) renderImpediments(lastImpediments);
     syncSprintGrouping();
+    if (!panelIssues.hidden) {
+      if (issueView === 'list') renderIssueList(lastIssues);
+      else if (issueView === 'board' && lastBoard) renderBoard(JSON.parse(lastBoard));
+    }
   }
 
   /** 最後に描いたホームのカードの材料。設定が届いたら同じ材料で描き直す */
@@ -13926,6 +13987,8 @@
     var order = [];
     var by = {};
     items.forEach(function (p) {
+      // 言葉の表し方は、期間で進めるを使っていなければ意味が無い (一覧には残す)
+      if (p.key === 'terms.style' && !scrumOn()) return;
       var key = String(p.section || '');
       if (!by[key]) { by[key] = []; order.push(key); }
       by[key].push(p);
@@ -13956,7 +14019,8 @@
     if (item.type === 'steps') return (v || []).join(' / ');
     if (item.type === 'enum') {
       var hit = (item.options || []).filter(function (o) { return o.value === v; })[0];
-      return hit ? hit.label : String(v);
+      // 選択肢の名前はサーバが {key} で渡すことがある (最初に出す画面のスクラムの画面)
+      return hit ? termIn(hit.label) : String(v);
     }
     return String(v);
   }
@@ -14052,7 +14116,7 @@
         (item.options || []).forEach(function (o) {
           var opt = document.createElement('option');
           opt.value = o.value;
-          opt.textContent = o.label;
+          opt.textContent = termIn(o.label);
           control.appendChild(opt);
         });
         control.addEventListener('change', function () { save(control.value); });
@@ -14461,6 +14525,12 @@
    */
   var sprintLoadSeq = 0;
 
+  /** 最後に描いた apiScrumView の返り。言葉の表し方が変わったら、ここから描き直す */
+  var lastSprintView = null;
+
+  /** 最後に描いた困りごとの一覧 */
+  var lastImpediments = null;
+
   /**
    * スプリントの画面を描く。
    */
@@ -14473,6 +14543,7 @@
       scrumSprints = v.sprints || [];
       scrumSprint = v.sprint || '';
       fillSprintSelect();
+      lastSprintView = v;
       renderSprint(v);
     }, function (err) {
       // 失敗の返事も、最後に頼んだぶんでなければ描かない
@@ -14827,6 +14898,17 @@
   }
 
   /**
+   * 大きさの札の字。スクラムの言葉では短く「3pt」、一般の言葉では「大きさ 3」
+   * (pt はスクラムの見積もりの単位で、一般の言葉では通じない)。
+   *
+   * @param {*} n
+   * @returns {string}
+   */
+  function pointsLabel(n) {
+    return termStyleNow() === 'scrum' ? n + 'pt' : termOf('points') + ' ' + n;
+  }
+
+  /**
    * やることのポイントを足し上げる。空や読めないものは数えない。
    *
    * @param {object[]} list やること (または進捗ボードのカード)
@@ -14862,7 +14944,7 @@
       wrap.appendChild(sp);
     }
     if (hasPoints) {
-      var pt = makePill(issue.points + 'pt', 'chip');
+      var pt = makePill(pointsLabel(issue.points), 'chip');
       pt.setAttribute('aria-label', termOf('points') + ' ' + issue.points);
       wrap.appendChild(pt);
     }
@@ -15571,18 +15653,18 @@
    * @returns {boolean}
    */
   function impedimentShowing(number) {
-    return impedimentOpenNumber === Number(number) &&
-      sideTitle.textContent === impedimentTitle(number);
+    return impedimentOpenNumber === Number(number) && !sidePanel.hidden && !!sideShowing &&
+      sideShowing.kind === 'impediment' && sideShowing.number === Number(number);
   }
 
   /**
-   * 右に開いたときの見出し。開くときと、開いているかを見るときで同じ字にする。
+   * 右に開いたときの見出しのひな形 ({impediment} は termText が埋める)。
    *
    * @param {number} number
    * @returns {string}
    */
   function impedimentTitle(number) {
-    return termOf('impediment') + ' #' + number;
+    return '{impediment} #' + Number(number);
   }
 
   /**
@@ -15606,6 +15688,7 @@
    * @param {object[]} list
    */
   function renderImpediments(list) {
+    lastImpediments = list;
     impedimentsEl.textContent = '';
     var open = list.filter(function (i) { return i.state === 'open'; });
     var closed = list.filter(function (i) { return i.state !== 'open'; });
@@ -15730,6 +15813,7 @@
       openImpedimentForm(imp, sideSource);
     });
     impedimentOpenNumber = Number(imp.number);
+    sideShowing = { kind: 'impediment', number: Number(imp.number) };
 
     var title = document.createElement('h3');
     title.className = 'view-title';
@@ -15740,7 +15824,7 @@
     facts.className = 'view-facts';
     function fact(label, fill) {
       var dt = document.createElement('dt');
-      dt.textContent = label;
+      termText(dt, label);
       facts.appendChild(dt);
       var dd = document.createElement('dd');
       fill(dd);
@@ -15756,7 +15840,7 @@
     fact('報告', function (dd) {
       dd.textContent = (personName(imp.reportedBy) || imp.reportedBy) + ' ・ ' + tokyoDay(imp.reportedAt);
     });
-    if (imp.sprint) fact(termOf('sprint'), function (dd) { dd.textContent = imp.sprint; });
+    if (imp.sprint) fact('{sprint}', function (dd) { dd.textContent = imp.sprint; });
     box.appendChild(facts);
 
     if (imp.body) box.appendChild(makeMarkdown(imp.body));
@@ -15991,12 +16075,14 @@
     var name = historyFieldName(h.field);
 
     if (!h.lines) {
-      box.textContent = historyLine(h);
+      // 項目の名前だけがひな形 ({sprint} など)。値は人の書いた字なので混ぜない
+      if (h.field) box.appendChild(termText(document.createElement('span'), name));
+      box.appendChild(document.createTextNode(historyLine(h)));
       return box;
     }
 
     var head = document.createElement('div');
-    head.textContent = name + ':';
+    termText(head, name + ':');
     box.appendChild(head);
 
     var diff = document.createElement('div');
@@ -16027,7 +16113,8 @@
       title: '題名', body: '補足', assignee: '担当', labels: 'タグ', priority: '優先度',
       dueDate: '期限', startDate: '開始日', parent: '親', estimate: '見積もり',
       plannedHours: '予定工数', actualHours: '実績工数', linkedFileIds: '結び付く文書',
-      sprint: termOf('sprint'), points: termOf('points'), acceptance: termOf('acceptance'),
+      // スクラムの言葉はひな形で返す。描くところが termText で埋める
+      sprint: '{sprint}', points: '{points}', acceptance: '{acceptance}',
       resolution: '解決策', reportedBy: '報告者', goal: '目標', endDate: '終わりの日', notes: '備考',
     };
     return fields[field] || field;
@@ -16051,7 +16138,8 @@
   function historyLine(h) {
     if (!h.field) return historyActionText(h.action);
     var cut = function (v) { return v === '' ? '(空)' : (v.length > 60 ? v.substring(0, 60) + '…' : v); };
-    return historyFieldName(h.field) + ': ' + cut(h.before) + ' → ' + cut(h.after);
+    // 項目の名前は呼ぶ側が先に置く (言葉の表し方で埋め直せるように)
+    return ': ' + cut(h.before) + ' → ' + cut(h.after);
   }
 
   sprintSelect.addEventListener('change', function () {
