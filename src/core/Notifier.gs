@@ -8,14 +8,21 @@
  * マージが成功したのにメールが送れなかっただけで書き戻しが無かったことに
  * なる、という事態を避ける。
  *
- * @param {string} to 宛先メールアドレス
+ * **受け取る人が止めた種類は送らない。** kind は NOTIFY_KINDS() のどれか。宛先の人ごとに
+ * 自分の設定 notify.<kind> を見て、止めた人を外す (notifyRecipients_)。kind を渡さない
+ * 呼び方は今までどおり送る。画面の中の知らせ (noticeAdd) は止めない。
+ *
+ * @param {string} to 宛先メールアドレス (カンマで並べてもよい)
  * @param {string} subject
  * @param {string} body
+ * @param {string} [kind] 通知の種類
  */
-function notify(to, subject, body) {
+function notify(to, subject, body, kind) {
   if (!to) return;
   try {
-    GmailApp.sendEmail(to, subject, body);
+    var send = notifyRecipients_(to, kind);
+    if (!send) return;
+    GmailApp.sendEmail(send, subject, body);
   } catch (e) {
     Logger.log('通知を送れませんでした: ' + e.message);
   }
@@ -158,7 +165,8 @@ function notifyPrCreated(pr) {
   notify(
     pr.author,
     notifySubject_('確認依頼', pr.number, 'が出されました'),
-    pr.title + '\n\n「確認依頼」から中身を見てください。'
+    pr.title + '\n\n「確認依頼」から中身を見てください。',
+    'review'
   );
 }
 
@@ -171,7 +179,8 @@ function notifyPrMerged(pr) {
   notify(
     pr.author,
     notifySubject_('確認依頼', pr.number, 'が反映されました'),
-    pr.title + '\n\n正式版の文書が書き換わりました。'
+    pr.title + '\n\n正式版の文書が書き換わりました。',
+    'result'
   );
 }
 
@@ -199,7 +208,8 @@ function notifyPrClosed(pr, reason) {
     notify(
       to,
       notifySubject_('確認依頼', pr.number, 'は取り下げられました'),
-      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。' + why
+      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。' + why,
+      'result'
     );
   }
 }
@@ -217,7 +227,8 @@ function notifyPrReviewRequested(pr, to) {
   notify(
     to,
     notifySubject_('確認依頼', pr.number, 'の確認を頼まれました'),
-    pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。'
+    pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。',
+    'review'
   );
 }
 
@@ -238,7 +249,8 @@ function notifyInquiry(row) {
       owners[i],
       notifySubject_('報告', row.number, 'が届きました'),
       INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
-      row.body + '\n\n' + (row.context || '')
+      row.body + '\n\n' + (row.context || ''),
+      'inquiry'
     );
   }
 }
@@ -252,7 +264,8 @@ function notifyInquiryAnswered(row) {
   notify(
     row.by,
     notifySubject_('報告', row.number, 'に返事がありました'),
-    row.body + '\n\n--- 返事 ---\n' + row.answer
+    row.body + '\n\n--- 返事 ---\n' + row.answer,
+    'inquiry'
   );
 }
 
@@ -274,7 +287,8 @@ function notifyInquiryReply(inquiry, reply, talkers) {
       talkers[i],
       notifySubject_('報告', inquiry.number, 'に返信がありました'),
       (inquiry.title || inquiry.body) + '\n\n' +
-      reply.by + ':\n' + reply.body
+      reply.by + ':\n' + reply.body,
+      'inquiry'
     );
     noticeAdd(talkers[i], 'reply',
       reply.by + ' が #' + inquiry.number + ' に返信しました',
@@ -297,7 +311,8 @@ function notifyInquiryMention(inquiry, post, people) {
       people[i],
       notifySubject_('報告', inquiry.number, 'であなたが呼ばれました'),
       (inquiry.title || inquiry.body) + '\n\n' +
-      post.by + ':\n' + post.body
+      post.by + ':\n' + post.body,
+      'mention'
     );
     noticeAdd(people[i], 'mention',
       post.by + ' があなたを呼びました',
@@ -320,7 +335,8 @@ function notifyPrMention(pr, review, to) {
   notify(
     to,
     notifySubject_('確認依頼', pr.number, 'であなたが呼ばれました'),
-    pr.title + '\n\n' + review.reviewer + ':\n' + review.body
+    pr.title + '\n\n' + review.reviewer + ':\n' + review.body,
+    'mention'
   );
 }
 
@@ -340,7 +356,8 @@ function notifyIssueComment(issue, row, people) {
     notify(
       people[i],
       notifySubject_('やること', issue.number, 'に書き込みがありました'),
-      issue.title + '\n\n' + row.by + ':\n' + row.body
+      issue.title + '\n\n' + row.by + ':\n' + row.body,
+      'comment'
     );
   }
 }
@@ -361,7 +378,8 @@ function notifyIssueCommentMention(issue, row, people) {
     notify(
       people[i],
       notifySubject_('やること', issue.number, 'であなたが呼ばれました'),
-      issue.title + '\n\n' + row.by + ':\n' + row.body
+      issue.title + '\n\n' + row.by + ':\n' + row.body,
+      'mention'
     );
   }
 }
