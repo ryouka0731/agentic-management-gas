@@ -86,6 +86,35 @@ function PREF_FUN_KINDS_() {
   ];
 }
 
+/**
+ * 集中のしかた。どれも自分の設定で、既定はオフ (今から始めるの知らせは「終わったときだけ」)。
+ * 「今から始める」がオフのあいだは、知らせの間隔と音は使わない (入口が出ない)。
+ *
+ * @returns {object[]}
+ */
+function PREF_FOCUS_ITEMS_() {
+  return [
+    { key: 'focus.start', scope: 'me', type: 'bool', section: '集中のしかた', label: '今から始める',
+      help: 'やることに「今から始める」が出ます。長さを選ぶと残り時間の輪が減っていきます。' +
+        '最初の一手を書くか、やりとり・記録・ボードの移動をすると「始めた」になります。記録はあなたにだけ見えます',
+      def: false },
+    { key: 'focus.remind', scope: 'me', type: 'enum', section: '集中のしかた', label: '時間の知らせ',
+      help: '集中しているあいだ、画面の隅に経った時間を出します (音は鳴りません)。夢中になりすぎて会議や食事を飛ばさないために',
+      options: [
+        { value: 'end', label: '終わったときだけ' },
+        { value: '30', label: '30分ごと' },
+        { value: '45', label: '45分ごと' },
+        { value: '60', label: '60分ごと' },
+        { value: '90', label: '90分ごと' },
+      ],
+      def: 'end' },
+    { key: 'focus.sound', scope: 'me', type: 'bool', section: '集中のしかた', label: '集中の音',
+      help: '集中しているあいだに、画面の中で作った音 (ノイズ・4つ打ちの拍) を流せます。合う人も合わない人もいます。' +
+        '合わなければ止めてください。押したときにだけ鳴り、イヤホンで聞く前提です',
+      def: false },
+  ];
+}
+
 /** 改善のヒントで変えられる数の範囲と名前 */
 function PREF_ADVICE_TUNABLE_() {
   return {
@@ -176,6 +205,9 @@ function PREF_GROUPS_() {
           label: f.label, help: f.help, def: false };
       });
     },
+    focus: function () {
+      return PREF_FOCUS_ITEMS_();
+    },
     style: function () {
       // 仕事のスタンス診断の結果を、ほかの人の画面に出すか。既定はオフ (結果は本人にだけ見える)。
       // 見せるのは型の名前と絵だけで、点数は見せない (workStyleShared_)
@@ -202,7 +234,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -442,6 +474,8 @@ function apiPrefs(opts) {
       termStyle: plainText(byKey['terms.style']),
       homeCards: cards,
       fun: fun,
+      focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
+        remind: plainText(byKey['focus.remind']) },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),
