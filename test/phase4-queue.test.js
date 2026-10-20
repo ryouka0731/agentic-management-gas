@@ -1,50 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
-import { APP_SOURCES } from './sources.js';
+import { APP_SOURCES, KIT_SOURCES } from './sources.js';
 
 /**
  * Phase 4a (コマンドキュー) の統合テスト。
  */
 
-const SOURCES = [
-  'src/core/Hash.js',
-  'src/core/HashGas.gs',
-  'src/core/Db.gs',
-  'src/core/Repo.gs',
-  'src/core/ObjectStore.gs',
-  'src/core/Normalize.js',
-  'src/core/Markdown.js',
-  'src/core/Diff.js',
-  'src/core/Merge.js',
-  'src/core/Commit.gs',
-  'src/core/Branch.gs',
-  'src/render/HtmlWriter.gs',
-  'src/render/SheetRenderer.gs',
-  'src/render/SheetWriter.gs',
-  'src/core/PullRequest.gs',
-  'src/core/PullPatch.gs',
-  'src/core/Outbox.gs',
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Issue.gs', 'src/core/IssueTree.js',
-  'src/core/IssueComment.gs',
-  'src/core/IssueBranch.gs',
-  'src/core/Project.gs',
-  'src/core/Mention.js',
-  'src/core/Inquiry.gs',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-  'src/core/CommandQueue.gs',
-  'src/KitFiles.gs',
-  'src/core/AgentKit.gs',
-  'src/core/Tally.js',
-  'src/core/Plain.js',
-  'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs', 'src/Main.gs',
-];
+const SOURCES = APP_SOURCES.concat(KIT_SOURCES);
 
 function setup() {
   const fake = createFakeGas();
@@ -434,10 +397,9 @@ describe('命令を置いた人', () => {
 
 describe('キューを動かしている人', () => {
   // apiSettings はスクラムの設定も読むので、API を動かすテストと同じ読み込み集合 (sources.js) を使う
-  const SCRUM_SOURCES = APP_SOURCES.concat(['src/core/CommandQueue.gs']);
   function setup() {
     const fake = createFakeGas();
-    const ctx = loadGasWith(fake, ...SCRUM_SOURCES);
+    const ctx = loadGasWith(fake, ...APP_SOURCES);
     ctx.repoInit('agentic-management');
     return { ctx, fake };
   }

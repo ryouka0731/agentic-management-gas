@@ -8,7 +8,7 @@ import { APP_SOURCES } from './sources.js';
  * 点数・順位はここでは返さない (Game.gs に守りを付けて分けてある)。予告された
  * 報酬は内発的動機を下げ、職場のランキングは晒しと受け取られる。
  */
-const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs']);
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();

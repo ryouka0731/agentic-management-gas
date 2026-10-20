@@ -17,7 +17,9 @@
 ```
 src/
 ├── appsscript.json        Web アプリの設定・拡張サービス・oauthScopes
-├── Main.gs                doGet・画面から呼ぶ api*・エディタ用の setup*/debug*
+├── Main.gs                doGet・include・エディタで一度だけ実行する setup*・持ち主の確かめ (assertOwner_)・1日1回の片付け (housekeepArchiveDaily_)
+├── Debug.gs               エディタ用の確かめ (debug*) とその手伝い
+├── api/                   画面から呼ぶ api* (Files / Commit / Pr / Outbox / Issue / Inquiry / People / Home / Settings / Scrum)
 ├── KitFiles.gs            配る道具の中身 (kit/ から焼き直す。手で直さない)
 ├── KitSigning.gs          道具の署名 (deploy のときに作る。git に記録しない)
 ├── core/                  中身の処理
@@ -30,6 +32,13 @@ docs/manual/               この手引き
 docs/superpowers/          設計 (specs) と計画 (plans)
 deployment.json            差し替える先のデプロイ ID
 ```
+
+### `src/api/`
+
+画面の `google.script.run` から呼ぶ `api*` を、扱うものごとに分けて置いている。中身の処理は `src/core/` に任せ、
+ここでは権限の確かめと画面に渡せる形への変換 (`Plain.js`) だけを行う。GAS は全ファイルを同じグローバルに読むので、
+ファイルを分けても呼び方は変わらない。**ファイルを足したら `test/sources.js` の `API_SOURCES` にも足す**
+(`test/sources.test.js` が src の並びと食い違っていないかを見ている)。
 
 ### `src/core/` と `src/render/`
 

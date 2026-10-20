@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
-import { APP_SOURCES } from './sources.js';
+import { APP_SOURCES, API_SOURCES } from './sources.js';
 
 /*
  * スクラムの言葉を一般の言葉にする (#21)。TERMS() が唯一の定義。
@@ -142,7 +142,7 @@ describe('サーバの文は一般の言葉に固定する', () => {
    * 設定の「言葉の表し方」は、スクラムの言葉そのものを選択肢として見せる。
    */
   const FILES = ['src/core/Scrum.gs', 'src/core/Issue.gs', 'src/core/IssueTree.js', 'src/core/Settings.gs', 'src/core/CommandQueue.gs',
-    'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/Prefs.gs', 'src/Main.gs'];
+    'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/Prefs.gs', ...API_SOURCES];
 
   FILES.forEach((path) => {
     it(path, () => {
