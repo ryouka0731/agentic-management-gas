@@ -184,6 +184,9 @@ export function prefsFixture(over) {
     { key: 'start.tab', scope: 'me', type: 'enum', section: '開いたとき', label: '最初に出す画面', help: '',
       options: [{ value: 'home', label: 'ホーム' }, { value: 'issues', label: 'やること' }, { value: 'pulls', label: '確認依頼' }],
       def: 'home' },
+    { key: 'terms.style', scope: 'me', type: 'enum', section: '表示', label: '言葉の表し方', help: '',
+      options: [{ value: 'plain', label: '一般の言葉' }, { value: 'scrum', label: 'スクラムの言葉 (エンジニア向け)' }],
+      def: 'plain' },
     { key: 'home.cards.turn', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'あなたの番', help: '', def: true },
     { key: 'home.cards.advice', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '改善のヒント', help: '', def: true },
     { key: 'home.cards.activity', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '草 (アクティビティ)', help: '', def: true },
@@ -215,6 +218,7 @@ export function prefsFixture(over) {
     teamGoal: (over && over.teamGoal) || 0,
     effective: {
       startTab: v('start.tab'),
+      termStyle: v('terms.style'),
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
@@ -337,7 +341,7 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
-  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} },
+  apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),
   // 書いた値を返す (null で既定に戻す)
   apiPrefSet: (key, value) => prefsFixture({ values: value === null ? {} : { [key]: value } }),
@@ -394,7 +398,7 @@ export const DEFAULTS = {
   apiGameTop: [],
   apiGameJoin: (on) => ({ enabled: true, total: 0, week: 0, level: 0, levelFrom: 0, nextAt: 5, playing: !!on }),
   apiGameLevelSeen: null,
-  apiSetGameEnabled: (on) => ({ scrumEnabled: false, gameEnabled: !!on, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {}, glossaryAliases: {} }),
+  apiSetGameEnabled: (on) => ({ scrumEnabled: false, gameEnabled: !!on, canEdit: true, productGoal: '', definitionOfDone: '', glossary: {} }),
   apiCommitGraph: {
     rows: [
       {
