@@ -1,15 +1,12 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 横断検索の一覧。題名・番号・状態だけ。人の名前とアドレスは入れない。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-})();
+const SOURCES = APP_SOURCES;
 
 function setup() {
   const fake = createFakeGas();

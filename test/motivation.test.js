@@ -1,17 +1,14 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 前進を見せる (意欲づけ)。チームの前進と、本人にだけ見える最初の一歩に限る。
  * 点数・順位はここでは返さない (Game.gs に守りを付けて分けてある)。予告された
  * 報酬は内発的動機を下げ、職場のランキングは晒しと受け取られる。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]).concat(['src/core/Motivation.gs']);
-})();
+const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs']);
 
 function setup() {
   const fake = createFakeGas();

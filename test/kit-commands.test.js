@@ -7,6 +7,7 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import { ui } from './ui-source.js';
 import * as local from '../kit/track/local.mjs';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 手元の道具を強くする (#13)。手元から「あなたの番」「改善のヒント」「横断検索」
@@ -15,10 +16,7 @@ import * as local from '../kit/track/local.mjs';
  * **頼んだ本人のぶんだけ返す。** 本人は命令ファイルを置いた人 (commandOwner_)。
  * 分からなければ断る。他人のぶんは返さない。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-})();
+const SOURCES = APP_SOURCES;
 
 const ME = 'tester@example.com';
 const OTHER = 'b@example.com';

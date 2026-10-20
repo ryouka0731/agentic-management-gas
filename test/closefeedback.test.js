@@ -1,16 +1,13 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 完了にした瞬間に「何が起きたか」を1つだけ返す。くじではなく、本当に
  * 起きたことで驚かせる (docs/superpowers/specs/2026-10-14-task-flow-motivation-design.md)。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  return eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]).concat(['src/core/Motivation.gs']);
-})();
+const SOURCES = APP_SOURCES.concat(['src/core/Motivation.gs']);
 
 function setup() {
   const fake = createFakeGas();
