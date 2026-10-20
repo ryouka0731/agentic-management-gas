@@ -204,33 +204,12 @@ function driveMembers_(driveId) {
  * @returns {{owners: string[], admins: string[]}}
  */
 function driveMembersRead_(driveId, key) {
-  var cache = null;
-  try {
-    cache = CacheService.getScriptCache();
-    var hit = cache.get(key);
-    if (hit) return JSON.parse(hit);
-  } catch (e) {
-    cache = null;
-  }
+  var cached = driveMembersCacheGet_(key);
+  if (cached.hit) return cached.hit;
 
-  var out = { owners: [], admins: [] };
+  var out;
   try {
-    var token = '';
-    do {
-      var res = Drive.Permissions.list(driveId, {
-        supportsAllDrives: true, pageSize: 100, pageToken: token || undefined,
-        fields: 'nextPageToken,permissions(emailAddress,role,type)',
-      });
-      var list = (res && res.permissions) || [];
-      for (var i = 0; i < list.length; i++) {
-        var p = list[i];
-        if (p.type !== 'user' || !p.emailAddress) continue;
-        var email = String(p.emailAddress).toLowerCase();
-        if (p.role === 'organizer') out.owners.push(email);
-        if (p.role === 'organizer' || p.role === 'fileOrganizer' || p.role === 'writer') out.admins.push(email);
-      }
-      token = (res && res.nextPageToken) || '';
-    } while (token);
+    out = driveMembersList_(driveId);
   } catch (e) {
     Logger.log('共有ドライブの役割が読めませんでした: ' + e.message);
     return { owners: [], admins: [] };
@@ -241,11 +220,52 @@ function driveMembersRead_(driveId, key) {
   }
 
   try {
-    if (cache) cache.put(key, JSON.stringify(out), 600);
+    if (cached.cache) cached.cache.put(key, JSON.stringify(out), 600);
   } catch (e2) {
     Logger.log('役割を覚えられませんでした: ' + e2.message);
   }
   return out;
+}
+
+/**
+ * CacheService に覚えた役割を引く。使えなければ cache は null。
+ *
+ * @returns {{cache: object|null, hit: object|null}}
+ */
+function driveMembersCacheGet_(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    return { cache: cache, hit: hit ? JSON.parse(hit) : null };
+  } catch (e) {
+    return { cache: null, hit: null };
+  }
+}
+
+/** Drive に役割を全頁ぶん問い合わせる。読めなければ投げる */
+function driveMembersList_(driveId) {
+  var out = { owners: [], admins: [] };
+  var token = '';
+  do {
+    var res = Drive.Permissions.list(driveId, {
+      supportsAllDrives: true, pageSize: 100, pageToken: token || undefined,
+      fields: 'nextPageToken,permissions(emailAddress,role,type)',
+    });
+    driveMembersAddPage_(out, (res && res.permissions) || []);
+    token = (res && res.nextPageToken) || '';
+  } while (token);
+  return out;
+}
+
+/** 1頁ぶんの役割を足す。グループとアドレスの無いものは数えない */
+function driveMembersAddPage_(out, list) {
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    if (p.type !== 'user' || !p.emailAddress) continue;
+    var email = String(p.emailAddress).toLowerCase();
+    if (p.role === 'organizer') out.owners.push(email);
+    if (p.role === 'organizer' || p.role === 'fileOrganizer' || p.role === 'writer') out.admins.push(email);
+  }
 }
 
 /**
