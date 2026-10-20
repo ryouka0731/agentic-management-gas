@@ -184,6 +184,9 @@ export function prefsFixture(over) {
     { key: 'start.tab', scope: 'me', type: 'enum', section: '開いたとき', label: '最初に出す画面', help: '',
       options: [{ value: 'home', label: 'ホーム' }, { value: 'issues', label: 'やること' }, { value: 'pulls', label: '確認依頼' }],
       def: 'home' },
+    { key: 'terms.style', scope: 'me', type: 'enum', section: '表示', label: '言葉の表し方', help: '',
+      options: [{ value: 'plain', label: '一般の言葉' }, { value: 'scrum', label: 'スクラムの言葉 (エンジニア向け)' }],
+      def: 'plain' },
     { key: 'home.cards.turn', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'あなたの番', help: '', def: true },
     { key: 'home.cards.advice', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '改善のヒント', help: '', def: true },
     { key: 'home.cards.activity', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '草 (アクティビティ)', help: '', def: true },
@@ -215,6 +218,7 @@ export function prefsFixture(over) {
     teamGoal: (over && over.teamGoal) || 0,
     effective: {
       startTab: v('start.tab'),
+      termStyle: v('terms.style'),
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,

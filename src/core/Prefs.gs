@@ -44,8 +44,8 @@ function PREF_START_TABS_() {
     { value: 'issues', label: 'やること' },
     { value: 'branches', label: '改訂中の版' },
     { value: 'pulls', label: '確認依頼' },
-    { value: 'sprint', label: 'スプリント', scrum: true },
-    { value: 'impediments', label: '障害物', scrum: true },
+    { value: 'sprint', label: '作業期間', scrum: true },
+    { value: 'impediments', label: '困りごと', scrum: true },
     { value: 'help', label: '使い方' },
     { value: 'usage', label: '使われ方' },
     { value: 'report', label: '要望・不具合' },
@@ -141,6 +141,17 @@ function PREF_GROUPS_() {
           .map(function (t) { return { value: t.value, label: t.label }; }),
         def: 'home' }];
     },
+    terms: function () {
+      // 言葉そのものは TERMS() (Terms.js) が唯一の定義。ここは表し方の選び方だけを持つ
+      return [{ key: 'terms.style', scope: 'me', type: 'enum', section: '表示',
+        label: '言葉の表し方',
+        help: '作業期間・困りごとなどを、一般の言葉で出すか、スクラムの言葉 (スプリント・障害物など) で出すか',
+        options: [
+          { value: 'plain', label: '一般の言葉' },
+          { value: 'scrum', label: 'スクラムの言葉 (エンジニア向け)' },
+        ],
+        def: 'plain' }];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -159,7 +170,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'home', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -393,6 +404,7 @@ function apiPrefs(opts) {
     teamGoal: plainNumber(teamGoal()),
     effective: {
       startTab: plainText(byKey['start.tab']),
+      termStyle: plainText(byKey['terms.style']),
       homeCards: cards,
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
