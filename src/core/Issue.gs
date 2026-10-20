@@ -138,45 +138,45 @@ function issueScrumFieldsCheck_(patch, before) {
    * 一緒に送ってくる。それまで断ると、読み込み直すまで誰もやることを直せ
    * なくなる。実際に値を変えようとしたときだけ断る。
    */
-  if (!on && before) {
-    for (var d = 0; d < keys.length; d++) {
-      if (!Object.prototype.hasOwnProperty.call(patch, keys[d])) continue;
-      var was = before[keys[d]] == null ? '' : String(before[keys[d]]);
-      var now = patch[keys[d]] == null ? '' : String(patch[keys[d]]);
-      if (was === now) delete patch[keys[d]];
-    }
-  }
+  if (!on && before) issueScrumDropUnchanged_(patch, before, keys);
 
-  var any = false;
-  for (var k = 0; k < keys.length; k++) {
-    if (Object.prototype.hasOwnProperty.call(patch, keys[k])) any = true;
-  }
-  if (!any) return;
+  var has = function (key) { return Object.prototype.hasOwnProperty.call(patch, key); };
+  if (!keys.some(has)) return;
 
   if (typeof scrumAssertEnabled_ !== 'function') {
     throw new Error('「期間で進める」はオフです');
   }
   scrumAssertEnabled_();
 
-  if (Object.prototype.hasOwnProperty.call(patch, 'sprint')) {
+  if (has('sprint')) {
     patch.sprint = String(patch.sprint || '');
     if (patch.sprint) sprintGet(patch.sprint);
   }
-  if (Object.prototype.hasOwnProperty.call(patch, 'points')) {
-    var raw = patch.points;
-    if (raw === '' || raw === null || raw === undefined) {
-      patch.points = '';
-    } else {
-      var n = Number(raw);
-      if (!isFinite(n) || n < 0 || String(raw).replace(/^\s+|\s+$/g, '') === '') {
-        throw new Error('大きさは0以上の数で入れてください: ' + raw);
-      }
-      patch.points = n;
-    }
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, 'acceptance')) {
+  if (has('points')) patch.points = issueScrumPoints_(patch.points);
+  if (has('acceptance')) {
     patch.acceptance = String(patch.acceptance || '').substring(0, 4000);
   }
+}
+
+/** patch のうち、before と同じ値の欄を落とす (空と null は同じに見る)。 */
+function issueScrumDropUnchanged_(patch, before, keys) {
+  for (var d = 0; d < keys.length; d++) {
+    if (!Object.prototype.hasOwnProperty.call(patch, keys[d])) continue;
+    var was = before[keys[d]] == null ? '' : String(before[keys[d]]);
+    var now = patch[keys[d]] == null ? '' : String(patch[keys[d]]);
+    if (was === now) delete patch[keys[d]];
+  }
+}
+
+/** ポイントの欄を整える。空は空のまま、それ以外は0以上の数でなければ断る。 */
+function issueScrumPoints_(raw) {
+  if (raw === '' || raw === null || raw === undefined) return '';
+
+  var n = Number(raw);
+  if (!isFinite(n) || n < 0 || String(raw).replace(/^\s+|\s+$/g, '') === '') {
+    throw new Error('大きさは0以上の数で入れてください: ' + raw);
+  }
+  return n;
 }
 
 /**
