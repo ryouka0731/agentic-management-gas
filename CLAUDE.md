@@ -454,7 +454,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 関数は、持ち主以外には動かない」に名前を足すこと。
 
 今は `access: MYSELF` なので害は出ない。`executeAs: ME` で共有すると、中の関数
-(`dbUpdate` など) まで持ち主の権限で呼べるので、その前に組み替えが要る (README)。
+(`dbUpdate` など) まで持ち主の権限で呼べるので、その前に組み替えが要る (`docs/manual/admin.md`)。
 
 人に関わる数（工数・使われ方）は、本人と部下のぶんだけ見せる (`memberVisibleTo`)。
 **使われ方の CSV (`apiUsageRows`) は、見られない人の行を入れない。** 名前を空にして数だけ残すと、
@@ -515,7 +515,7 @@ onOk, onFail)` は `onFail` を省くと短い帯で知らせる。
 - **共有ドライブでは** 持ち主 = `organizer` 全員、管理者 = `organizer` / `fileOrganizer` /
   `writer`。グループは数えない。役割は `driveMembers_` が10分覚える。読めないときは誰も
   持ち主・管理者ではない。**共有ドライブの管理者は個人で付ける** (グループだけで付けると持ち主が
-  0人になり、`setupCommandQueue` も `debug*` も誰にも動かせない。README にも書いてある)
+  0人になり、`setupCommandQueue` も `debug*` も誰にも動かせない。`docs/manual/setup.md` にも書いてある)
 - 報告の知らせは持ち主全員に届く。報告から作るやることは、持ち主が複数なら担当なし
 - Drive の `getEditors` は編集権限の無い人が呼ぶと空を返す。分からないときは投げずに
   「管理者ではない」と答える。一覧では1件ごとに問い合わせず、先に1回だけ求める
@@ -900,7 +900,7 @@ Drive はフォルダごとに1回だけ読み、見当たらないものだけ1
 ## 制約
 
 - **GAS 標準サービスのみ。GCP プロジェクトは使えない**ため `clasp run` は使用不可。
-  ローカルからの操作は `.git/queue/` のコマンドキュー経由（README 参照）
+  ローカルからの操作は `.git/queue/` のコマンドキュー経由（`docs/manual/command-queue.md` 参照）
 - 外部 API / 公開エンドポイントは使わない
 - **拡張サービスは2つだけの例外**: Google ToDo 連携 (`src/core/GoogleTasks.gs`) と
   Drive (v3。共有ドライブの役割を読む `driveMembers_` と、入れ物が共有ドライブかを見る
