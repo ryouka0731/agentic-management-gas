@@ -413,13 +413,12 @@ describe('通知', () => {
     ctx.notifyPrReviewRequested(pr, ME);
     ctx.notifyPrMerged(pr);
     ctx.notifyPrClosed(pr, '');
-    ctx.notifyInquiryAnswered({ number: 1, by: OTHER, body: 'b', answer: 'a' });
     ctx.notifyInquiryReply({ number: 1, body: 'b' }, { by: OTHER, body: 'r' }, [ME]);
     ctx.notifyInquiryMention({ number: 1, body: 'b' }, { by: OTHER, body: 'r' }, [ME]);
     ctx.notifyPrMention(pr, { reviewer: OTHER, body: 'r' }, ME);
     ctx.notifyIssueComment({ number: 1, title: 't' }, { by: OTHER, body: 'r' }, [ME]);
     ctx.notifyIssueCommentMention({ number: 1, title: 't' }, { by: OTHER, body: 'r' }, [ME]);
-    expect(kinds).toEqual(['review', 'review', 'result', 'result', 'inquiry', 'inquiry',
+    expect(kinds).toEqual(['review', 'review', 'result', 'result', 'inquiry',
       'mention', 'mention', 'comment', 'mention']);
   });
 });

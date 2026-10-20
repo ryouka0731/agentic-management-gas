@@ -449,7 +449,6 @@ body {
 .commit-item[aria-current="true"] { background: rgba(26, 115, 232, 0.08); }
 
 .commit-message { font-size: 13px; color: var(--ink); margin-bottom: 3px; }
-.commit-meta { font-size: 11px; color: var(--ink-2); }
 
 /*
  * 差分の器。
@@ -520,14 +519,6 @@ body {
   border-radius: 4px;
 }
 
-.tree-dir {
-  font-size: 11px;
-  color: var(--ink-2);
-  padding: 6px 16px 2px;
-}
-
-.tree-row { display: flex; align-items: center; }
-.tree-row .file-item { flex: 1; }
 .file-item.nested { padding-left: 28px; }
 
 .guide {
@@ -559,32 +550,10 @@ body {
   padding: 1px 4px;
 }
 
-.guide-table { border-collapse: collapse; margin: 8px 0; }
-
-.guide-table td {
-  border: 0;
-  padding: var(--sp-2) var(--sp-3);
-  font-size: 13px;
-}
-
-.guide-table tr:nth-child(odd) { background: var(--bg-2); }
-.guide-table tr:first-child td:first-child { border-top-left-radius: var(--radius); }
-.guide-table tr:first-child td:last-child { border-top-right-radius: var(--radius); }
-
-.guide-table td:first-child { color: var(--ink-2); white-space: nowrap; }
-
 .guide-foot {
   margin-top: 32px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
-}
-
-.type-badge {
-  font-size: 10px;
-  color: var(--ink-2);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 0 4px;
 }
 
 .file-link {
@@ -1044,8 +1013,6 @@ button:disabled {
 }
 
 .graph-cell { flex: 0 0 var(--graph-w); }
-
-.graph-body { flex: 1; min-width: 0; padding: var(--sp-1) 0; }
 
 .graph-line { stroke-width: 2; }
 .graph-dot { stroke-width: 2; fill: var(--bg); }
@@ -1686,12 +1653,6 @@ body.doc-full #doc-full-btn { margin-left: auto; }
   flex: 0 1 auto;
 }
 
-.crumb-repo {
-  font-size: 13px;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-
 .crumb-sep { flex: 0 0 auto; color: var(--ink-2); opacity: 0.6; }
 
 .crumbs h1 {
@@ -1709,15 +1670,6 @@ body.doc-full #doc-full-btn { margin-left: auto; }
   border-bottom: 1px solid var(--line);
   background: var(--bg-2);
 }
-
-.flow-lead {
-  margin: 0 0 var(--sp-3);
-  font-size: 13px;
-  color: var(--ink-2);
-  line-height: 1.8;
-}
-
-.flow-lead strong { color: var(--ink); }
 
 .flow-steps {
   display: flex;
@@ -2784,8 +2736,6 @@ button.gantt-name:hover { color: var(--accent); }
 }
 
 .btn-danger .icon { opacity: 1; }
-.btn-ok { color: var(--success); }
-.btn-ok:hover:not(:disabled) { background: var(--success-bg); }
 
 /*
  * 片側にしか中身が無い差分は1列で見せる。
