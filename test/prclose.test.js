@@ -21,7 +21,7 @@ const SOURCES = [
   'src/core/Outbox.gs',
   'src/core/Archive.js',
   'src/core/Tag.gs',
-  'src/core/Staleness.js',
+  'src/core/Staleness.js', 'src/core/Prefs.gs',
   'src/core/Issue.gs', 'src/core/Inquiry.gs',
   'src/core/Project.gs',
   'src/core/Brand.js',

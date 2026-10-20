@@ -327,6 +327,8 @@ export function createFakeGas() {
       getProperty: (k) => (map.has(k) ? map.get(k) : null),
       setProperty: (k, v) => { map.set(k, String(v)); },
       deleteProperty: (k) => { map.delete(k); },
+      // 実機と同じく、その時点の写しを返す (書き換えても返した値は変わらない)
+      getProperties: () => Object.fromEntries(map),
     };
   }
 

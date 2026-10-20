@@ -101,7 +101,7 @@ function HOME_TURN_MAX() {
   return 5;
 }
 
-/** 期限が近いとみなす日数 (今日から) */
+/** 期限が近いとみなす日数 (今日から) の既定。チームの設定 home.dueDays で変えられる */
 function HOME_DUE_DAYS() {
   return 3;
 }
@@ -203,7 +203,7 @@ function homeMyTurn_(email, now, tables) {
   var t = tables || homeTables_();
   var me = String(email || '');
   var today = motivationDay_(now);
-  var soon = homeAddDay_(today, HOME_DUE_DAYS());
+  var soon = homeAddDay_(today, prefGet_('home.dueDays'));
 
   var queue = homeReviewQueue_(me, t.pulls, t.reviews);
   function item(one) { return { number: Number(one.number), title: String(one.title || '') }; }
@@ -286,42 +286,63 @@ function homeRecent_(now, tables) {
  *
  * min: これ以上で当たる / days: 数える期間 (日) / weight: 重い順に出す
  *
+ * **ここは既定値の定義。** チームの設定で上書きしたものは adviceRulesEffective_() が返し、
+ * homeAdvice_ はそちらを読む。tunable に書いた数だけが設定の一覧 (PREFS_SCHEMA) に出る。
+ *
  * @returns {Array<object>}
  */
 function ADVICE_RULES() {
   return [
-    { id: 'reviews', weight: 60, min: 1, days: 3,
+    { id: 'reviews', weight: 60, min: 1, days: 3, tunable: ['min', 'days'],
       title: '確認を待たせています',
       why: '確かめてほしいと頼まれた依頼のうち {n}件が、{days}日以上そのままです',
       tip: '先に返すと、頼んだ人が先へ進めます',
       action: { kind: 'pulls', label: '確認依頼を開く' } },
-    { id: 'overdue', weight: 50, min: 3,
+    { id: 'overdue', weight: 50, min: 3, tunable: ['min'],
       title: '期限切れが溜まっています',
       why: 'あなたが担当の期限切れが {n}件あります',
       tip: '期限を見直すか、分けるか、手放しましょう',
       action: { kind: 'issues-overdue', label: '期限切れを見る' } },
-    { id: 'wip', weight: 40, min: 5, limit: 3,
+    { id: 'wip', weight: 40, min: 5, limit: 3, tunable: ['min', 'limit'],
       title: '抱えすぎています',
       why: 'あなたが担当で作業中のやることが {n}件あります',
       tip: '手を付けるのを{limit}件までに絞ると、早く終わります',
       action: { kind: 'board', label: 'ボードを開く' } },
     // share: 予定の ratio 倍以上かかったものの割合がこれ以上で当たる。sample: 工数を書いて片づけたものがこれ未満なら判断しない
-    { id: 'estimate', weight: 30, min: 1, days: 30, ratio: 2, share: 0.5, sample: 3,
+    { id: 'estimate', weight: 30, min: 1, days: 30, ratio: 2, share: 0.5, sample: 3, tunable: ['min', 'days'],
       title: '見積もりと実際がずれています',
       why: '{days}日で片づけた担当のうち工数を書いた {total}件の {n}件が、予定の{ratio}倍以上かかりました',
       tip: '見積もりを大きめにするか、分けて小さくしましょう',
       action: { kind: 'gantt', label: '工程表を開く' } },
-    { id: 'repeat', weight: 20, min: 5, days: 30,
+    { id: 'repeat', weight: 20, min: 5, days: 30, tunable: ['min', 'days'],
       title: '同じ作業を繰り返しています',
       why: '{days}日で「{key}」のやることが {n}件できました',
       tip: 'ひな形にするか、手元の道具で自動化できます',
       action: { kind: 'issues-filter', label: 'まとめて見る' } },
-    { id: 'questions', weight: 10, min: 3, days: 30, admin: true,
+    { id: 'questions', weight: 10, min: 3, days: 30, admin: true, tunable: ['min', 'days'],
       title: '使い方の問い合わせが続いています',
       why: '{days}日で「' + INQUIRY_KINDS().question + '」の報告が {n}件ありました',
       tip: '使い方に書き足すと減ります',
       action: { kind: 'report', label: '要望・不具合を開く' } },
   ];
+}
+
+/**
+ * チームの設定を重ねた規則。止めた規則は off: true を持つ。
+ * 設定は写しを1回だけ取って読む (規則ごとに読むと十数回読む)。
+ *
+ * @returns {Array<object>}
+ */
+function adviceRulesEffective_() {
+  var read = prefReader_();
+  return ADVICE_RULES().map(function (r) {
+    var out = Object.assign({}, r);
+    out.off = prefGet_('advice.' + r.id + '.on', '', read) === false;
+    (r.tunable || []).forEach(function (name) {
+      out[name] = prefGet_('advice.' + r.id + '.' + name, '', read);
+    });
+    return out;
+  });
 }
 
 /** 改善のヒントを一度に出す件数 */
@@ -443,10 +464,12 @@ function homeAdvice_(email, now, tables) {
   var t = tables || homeTables_();
   var today = motivationDay_(now);
   var rules = {};
-  ADVICE_RULES().forEach(function (r) { rules[r.id] = r; });
+  adviceRulesEffective_().forEach(function (r) { rules[r.id] = r; });
   var out = [];
 
   function hit(r, vars, arg) {
+    // チームの設定で止めた規則は出さない
+    if (r.off) return;
     var v = Object.assign({}, r, vars);
     out.push({
       id: r.id,
@@ -612,7 +635,8 @@ function REPORT_CUSTOM_MAX() {
  */
 function reportKind_(email) {
   var v = String(PropertiesService.getUserProperties().getProperty('REPORT_KIND:' + email) || '');
-  return reportKindValid_(v) ? v : 'three';
+  // 選んでいなければチームの既定の形 (report.defaultKind)
+  return reportKindValid_(v) ? v : prefGet_('report.defaultKind');
 }
 
 /**
@@ -660,9 +684,9 @@ function reportSetCustom_(email, text) {
   // 書いたら自分の形を選んだことにする。画面から2回に分けて送ると、2回目だけ
   // 落ちたとき書いた形と選んだ形が食い違う。空なら選ばない (空の形は 3節 で写る)
   if (t) props.setProperty('REPORT_KIND:' + email, 'custom');
-  // 自分の形を選んだまま空にしたら、選んだ形も先頭の形に戻す。戻さないと
-  // 「自分の形」を選んだことになっているのに 3節 で写る
-  else if (reportKind_(email) === 'custom') props.setProperty('REPORT_KIND:' + email, REPORT_TEMPLATES()[0].key);
+  // 自分の形を選んだまま空にしたら、選んだ形も消してチームの既定の形に戻す。戻さないと
+  // 「自分の形」を選んだことになっているのに既定の形で写る
+  else if (reportKind_(email) === 'custom') props.deleteProperty('REPORT_KIND:' + email);
   return t;
 }
 

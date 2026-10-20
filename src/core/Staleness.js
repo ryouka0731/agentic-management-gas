@@ -8,6 +8,9 @@
 /**
  * 段階の境目 (日数)。小さい順。
  *
+ * **これは既定値。** チームの設定 stale.steps で変えられる。サーバは staleSteps_() で読んで
+ * stalenessOf に渡す (このファイルは画面側のテストでも読むので、設定を読みに行かない)。
+ *
  * @returns {number[]}
  */
 function STALE_STEPS() {

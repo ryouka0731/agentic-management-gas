@@ -8,6 +8,7 @@ const SOURCES = [
   'src/core/Db.gs',
   'src/core/Repo.gs',
   'src/core/Usage.gs',
+  'src/core/Prefs.gs',
 ];
 
 function setup() {
