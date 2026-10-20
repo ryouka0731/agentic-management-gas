@@ -173,8 +173,11 @@ function PREFS_SCHEMA() {
  */
 function prefItem_(key) {
   var k = String(key || '');
-  var build = PREF_GROUPS_()[k.split('.')[0]];
-  if (!build) return null;
+  var groups = PREF_GROUPS_();
+  var head = k.split('.')[0];
+  // 自分の持ち物だけを見る。'__proto__.x' や 'toString.x' で Object の持ち物を組として呼ばない
+  if (!Object.prototype.hasOwnProperty.call(groups, head)) return null;
+  var build = groups[head];
   var list = build();
   for (var i = 0; i < list.length; i++) if (list[i].key === k) return list[i];
   return null;
@@ -317,13 +320,15 @@ function apiPrefSet(key, value) {
       (item.type === 'int' ? ' (' + item.min + '〜' + item.max + ' の整数)' : '') +
       (item.type === 'steps' ? ' (' + item.min + '〜' + item.max + ' の整数を小さい順に3つ)' : ''));
   }
+  // 既定値と同じなら消す。残すと、あとで既定値を変えたときにその人 (チーム) だけ古い値に留まる
+  if (!reset && JSON.stringify(value) === JSON.stringify(item.def)) reset = true;
 
   var props = PropertiesService.getScriptProperties();
   if (item.scope === 'team') {
     repoAssertAdmin_('チームの設定を変えること');
     if (reset) props.deleteProperty(prefTeamKey_(item.key));
     else props.setProperty(prefTeamKey_(item.key), JSON.stringify(value));
-    return apiPrefs();
+    return apiPrefs({ team: true });
   }
 
   var me = String(Session.getActiveUser().getEmail() || '');
@@ -338,7 +343,8 @@ function apiPrefSet(key, value) {
     if (Object.keys(mine).length) props.setProperty(prefMineKey_(me), JSON.stringify(mine));
     else props.deleteProperty(prefMineKey_(me));
   });
-  return apiPrefs();
+  // 書くのは設定の画面だけなので、管理者かも添えて返す
+  return apiPrefs({ team: true });
 }
 
 /**
@@ -347,9 +353,13 @@ function apiPrefSet(key, value) {
  * effective は画面がすぐ使う形にまとめたもの (最初の画面・ホームのカード・使われ方を数えるか・
  * 止めた通知の種類)。
  *
+ * **管理者か (canEditTeam) は opts.team のときだけ調べる。** 共有ドライブでは Drive に問い合わせる
+ * ので、起動のたびに待たせない。起動のときは false のまま返す (使わない)。
+ *
+ * @param {{team?: boolean}} [opts] 設定の画面からは {team: true}
  * @returns {object}
  */
-function apiPrefs() {
+function apiPrefs(opts) {
   var me = String(Session.getActiveUser().getEmail() || '');
   var read = prefReader_();
   var items = PREFS_SCHEMA().map(function (p) {
@@ -378,7 +388,7 @@ function apiPrefs() {
   PREF_HOME_CARDS_().forEach(function (c) { cards[c.key] = byKey['home.cards.' + c.key] !== false; });
 
   return {
-    canEditTeam: repoIsAdmin_(me),
+    canEditTeam: !!(opts && opts.team) && repoIsAdmin_(me),
     items: items,
     teamGoal: plainNumber(teamGoal()),
     effective: {

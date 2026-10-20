@@ -58,10 +58,13 @@ CLAUDE.md の守りはすべて保つ:
 | `report.defaultKind` | enum | three | `REPORT_TEMPLATES()` のキー | 自分の形を選んでいない人の日報の形 |
 
 - **`ADVICE_RULES()` は既定値の定義として残す。** 上書きを重ねたものは `adviceRulesEffective_()` が返し、
-  `homeAdvice_` はそちらを読む。変えられる数の名前は規則ごとに `tunable: ['min','days']` として
-  `ADVICE_RULES()` に書く (書いていない数は設定の一覧に出ない)
-- `STALE_STEPS()` は画面と両方にある。サーバの値を `apiPrefs` の返事 (`effective.staleSteps`) で画面へ渡し、
-  画面は `stalenessOf(..., steps)` に渡す。取れなかったときは今の `STALE_STEPS()` を使う
+  `homeAdvice_` はそちらを読む。変えられる数の名前は規則ごとに `tunable` として `ADVICE_RULES()` に書く
+  (書いていない数は設定の一覧に出ない):
+  reviews `['min','days']` / overdue `['min']` / wip `['min','limit']` / estimate `['min','days']` /
+  repeat `['min','days']` / questions `['min','days']`
+- 「動きなし」の段階はサーバで当てる。画面は段階を数えておらず、`issueToPlain_` と `projectBoard` が
+  `stalenessOf(..., staleSteps_())` で数えた `staleDays` / `staleLevel` を受け取るだけなので、画面へは送らない。
+  `STALE_STEPS()` は既定値の定義として残す
 - チームの月の目標 (`apiSetTeamGoal`) は、設定の画面からも変えられるようにする (保存先は今と同じ)
 
 **自分の設定 (本人が変える)**
@@ -69,7 +72,7 @@ CLAUDE.md の守りはすべて保つ:
 | key | 型 | 既定 | 効く先 |
 |---|---|---|---|
 | `start.tab` | enum | home | 開いたときに最初に出す画面。選べるのは左の行き先のうち、スクラムがオフなら出ないものを除いたもの |
-| `home.cards` | 各 bool | 全部 true | ホームのカード: あなたの番 / 改善のヒント / 草 / ポイント / 最近の動き / チームの前進 |
+| `home.cards.<card>` | bool | true | ホームのカード。6つの鍵に分ける: `turn` あなたの番 / `advice` 改善のヒント / `activity` 草 / `game` ポイント / `recent` 最近の動き / `team` チームの前進 |
 | `notify.<kind>` | bool | true | 通知メールを種類ごとに受け取るか (下) |
 | `usage.self` | bool | true | 自分の使われ方を記録するか |
 

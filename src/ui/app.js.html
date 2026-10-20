@@ -9661,12 +9661,14 @@
   }
 
   function renderHomeCards(p, steps, today, game, top, report) {
+    homeCardsLast = [p, steps, today, game, top, report];
     homeCardsEl.textContent = '';
     // カードはそれぞれ見出しを持つ。まとめの見出しは置かない (同じ形の見出しが重なる)
     homeCardsEl.appendChild(makeTodayCard(today || [], report || null));
     homeLine.today = todayItemsOf(today || [], report || null).length;
     renderHomeLine();
-    var g = homeCardOn('game') ? makeGameCard(game || {}, top || []) : null;
+    // 設定が届くまでは描かない (隠した人に一瞬出て、見たレベルまで覚えてしまう)
+    var g = prefsSettled && homeCardOn('game') ? makeGameCard(game || {}, top || []) : null;
     if (g) {
       homeCardsEl.appendChild(g);
       // 見せたレベルを覚える。覚えないと、次の完了で同じレベルに「なりました」と言う
@@ -12731,6 +12733,22 @@
   /** apiPrefs の返り。取れるまでは null (すべて既定 = 今の動きとして扱う) */
   var prefs = null;
 
+  /**
+   * 起動のときの設定の返事が届いたか (取れなくても届いたことにする)。届くまではポイントの
+   * カードを描かない。描くと、隠した人にも一瞬出て、見たレベルまで覚えてしまう
+   */
+  var prefsSettled = false;
+
+  /**
+   * 設定を尋ねた順の番号と、当てた返事の番号。書き込みを続けて押すと返事が前後して届くので、
+   * 後から頼んだものより古い返事は当てない
+   */
+  var prefsSeq = 0;
+  var prefsAppliedSeq = 0;
+
+  /** 最後に描いたホームのカードの材料。設定が届いたら同じ材料で描き直す */
+  var homeCardsLast = null;
+
   /** ホームの区画と、home.cards.<key> の key */
   var HOME_CARD_BLOCKS = [['turn', 'home-turn'], ['advice', 'home-advice'], ['activity', 'home-activity'],
     ['recent', 'home-recent']];
@@ -12763,8 +12781,14 @@
    * 届いた設定を画面に当てる。止めた使われ方は溜めたぶんも捨てる。
    *
    * @param {object} res apiPrefs
+   * @param {number} [seq] 尋ねたときの prefsSeq。これより後に尋ねた返事を当てていれば何もしない
+   * @returns {boolean} 当てたか
    */
-  function applyPrefs(res) {
+  function applyPrefs(res, seq) {
+    if (seq) {
+      if (seq < prefsAppliedSeq) return false;
+      prefsAppliedSeq = seq;
+    }
     prefs = res || prefs;
     applyHomeCards();
     if (!prefUsageOn()) usageBuffer = {};
@@ -12772,6 +12796,13 @@
     // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
     if (!homeCardOn('game')) removeAll(homeCardsEl, '.game-card');
     if (!homeCardOn('team')) removeAll(homeCardsEl, '.team-progress');
+    return true;
+  }
+
+  /** 起動のときの設定が届いた (または取れなかった)。待たせていたポイントのカードを描く */
+  function settlePrefs() {
+    prefsSettled = true;
+    if (!panelHome.hidden && homeCardsLast && progressNotesOn()) renderHomeCards.apply(null, homeCardsLast);
   }
 
   /**
@@ -12793,14 +12824,23 @@
    * @param {number} since 起動のときの navCount
    */
   function loadStartPrefs(fromLink, since) {
+    var seq = ++prefsSeq;
     call('apiPrefs', [], function (res) {
-      if (!res) return;
-      applyPrefs(res);
+      if (!res) {
+        settlePrefs();
+        return;
+      }
+      var fresh = applyPrefs(res, seq);
+      settlePrefs();
+      if (!fresh) return;
       var tab = String((res.effective && res.effective.startTab) || 'home');
       if (fromLink || navCount !== since || tab === 'home') return;
       if (!document.querySelector('.nav-item[data-tab="' + tab + '"]')) return;
       switchTab(tab);
-    }, failQuiet('設定が取れなくても、既定のまま使える'));
+    }, function (err) {
+      failQuiet('設定が取れなくても、既定のまま使える')(err);
+      settlePrefs();
+    });
   }
 
   /** apiSettings の返り。取れるまではオフとして扱う */
@@ -12960,8 +13000,10 @@
     showSkeleton(settingsEl, 'list', 2);
     loadSettings(function () {
       // 設定の一覧が取れなくても、スクラム・ポイント・キューの節は出す
-      call('apiPrefs', [], function (res) {
-        if (res) applyPrefs(res);
+      // 管理者かを尋ねるのはこの画面だけ (起動のたびに Drive を待たせない)
+      var seq = ++prefsSeq;
+      call('apiPrefs', [{ team: true }], function (res) {
+        if (res) applyPrefs(res, seq);
         renderSettingsPanel();
       }, function (err) {
         failQuiet('一覧が出なくても、スクラムなどの節は使える')(err);
@@ -13141,10 +13183,12 @@
 
     function save(value, busy) {
       if (busy) busy.disabled = true;
+      var seq = ++prefsSeq;
       call('apiPrefSet', [item.key, value], function (res) {
         if (busy) busy.disabled = false;
-        if (res) applyPrefs(res);
-        var next = ((res && res.items) || []).filter(function (p) { return p.key === item.key; })[0];
+        if (res) applyPrefs(res, seq);
+        // 古い返事だったときも、いま当たっている設定で欄をそろえる
+        var next = ((prefs && prefs.items) || []).filter(function (p) { return p.key === item.key; })[0];
         sync(next || current);
         syncNotifyWarning();
         showSnack(value === null ? '「' + item.label + '」を既定に戻しました' : '「' + item.label + '」を保存しました',
