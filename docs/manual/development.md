@@ -17,7 +17,7 @@
 ```
 src/
 ├── appsscript.json        Web アプリの設定・拡張サービス・oauthScopes
-├── Main.gs                doGet・エディタで一度だけ実行する setup*・持ち主の確かめ (assertOwner_)
+├── Main.gs                doGet・include・エディタで一度だけ実行する setup*・持ち主の確かめ (assertOwner_)・1日1回の片付け (housekeepArchiveDaily_)
 ├── Debug.gs               エディタ用の確かめ (debug*) とその手伝い
 ├── api/                   画面から呼ぶ api* (Files / Commit / Pr / Outbox / Issue / Inquiry / People / Home / Settings / Scrum)
 ├── KitFiles.gs            配る道具の中身 (kit/ から焼き直す。手で直さない)

@@ -39,7 +39,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 手元の道具の「よく出る断り」の表は `kit/AGENTS.md` と `docs/manual/agent-kit.md` の
 2か所にある。断り文を言い換えたら両方を直す (`test/docs.test.js` が、表の字が実際に
 出るかと、2つの表が揃っているかを見ている)。**断り文 (`new Error(...)` の字) も人が読む**
-(画面の帯と手元の結果にそのまま出る)。同じテストが `src/` のすべて (`Main.gs` / `src/api/*.gs` / `PullRequest.gs` / `Branch.gs` など) の断り文を、
+(画面の帯と手元の結果にそのまま出る)。`test/naming.test.js` が `src/` のすべて (`Main.gs` / `src/api/*.gs` / `PullRequest.gs` / `Branch.gs` など) の断り文を、
 コメントと `debug*` を除いて走査している。名前そのものを指すときは「main」と括る。
 
 **件名の接頭辞 `[SoftBanto]` は動かさない。** 受信側の振り分けはそこを見ている
@@ -113,7 +113,7 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 同じ名前の関数が2つのファイルに無いか (後に読んだほうが黙って勝つ) を見ている。
 
 画面から呼ぶ `api*` は `src/api/<扱うもの>.gs`、エディタ用の `debug*` は `src/Debug.gs`、
-`doGet` と `setup*` は `src/Main.gs` に置く。
+`doGet` / `include` / `setup*` / `assertOwner_` / `housekeepArchiveDaily_` は `src/Main.gs` に置く。
 
 ## 破壊的操作の前には必ず検証する
 

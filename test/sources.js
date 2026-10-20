@@ -9,7 +9,10 @@
  * - ISSUE_SOURCES: 台帳・やること・やりとり・通知まで。文書の記録は含まない
  * - CORE_SOURCES:  画面の API を除く本体すべて (配る道具の中身を除く)
  * - API_SOURCES:   画面から呼ぶ入口 (Main.gs と src/api/*.gs、エディタ用の Debug.gs)
- * - APP_SOURCES:   CORE + API。画面の API をまるごと動かすときはこれ
+ * - APP_SOURCES:   CORE + API。画面の API をまるごと動かすときはこれ。コマンドキュー (CommandQueue)・
+ *                  ホーム (Home)・横断検索 (Search)・ポイント (Game) を動かすテストもこれで読む。
+ *                  キューは api* と homeTurnPlain_ / reportPartsPlain_ を、ホーム・検索・ポイントは
+ *                  画面の入口と同じ並びを前提にしているので、CORE だけでは足りない
  * - KIT_SOURCES:   配る道具。中身が大きいので、要るテストだけが足す
  */
 export const ISSUE_SOURCES = [
