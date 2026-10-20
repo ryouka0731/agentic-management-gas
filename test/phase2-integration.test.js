@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { CORE_SOURCES } from './sources.js';
 
 /**
  * Phase 2 の「組み立ての層」(commit / branch / PR / merge / 書き戻し) を
@@ -11,36 +12,9 @@ import { createFakeGas } from './fakegas.js';
  * 「どの順序で、どの条件を満たしたときに書き戻すか」だから。
  */
 
-const SOURCES = [
-  'src/core/Hash.js',
-  'src/core/HashGas.gs',
-  'src/core/Db.gs',
-  'src/core/Repo.gs',
-  'src/core/ObjectStore.gs',
-  'src/core/Normalize.js',
-  'src/core/Diff.js',
-  'src/core/Merge.js',
-  'src/core/Commit.gs',
-  'src/core/Branch.gs',
-  'src/render/HtmlWriter.gs',
-  'src/core/PullRequest.gs',
-  'src/core/PullPatch.gs',
-  'src/core/Plain.js', 'src/core/Outbox.gs',
-  // PullRequest.gs は Issue とボードと通知を呼ぶ。GAS は全ファイルを
-  // 同じグローバルに読むため、テストでも同じ集合を読ませる
-  'src/core/Archive.js',
-  'src/core/Staleness.js', 'src/core/Prefs.gs',
-  'src/core/Tag.gs',
-  'src/core/Template.gs',
-  'src/core/Member.gs',
-  'src/core/Issue.gs',
-  'src/core/IssueComment.gs',
-  'src/core/Project.gs',
-  'src/core/Mention.js',
-  'src/core/Inquiry.gs',
-  'src/core/Brand.js',
-  'src/core/Notifier.gs',
-];
+// PullRequest.gs は Issue とボードと通知を呼ぶ。GAS は全ファイルを
+// 同じグローバルに読むため、テストでも同じ集合を読ませる
+const SOURCES = CORE_SOURCES;
 
 const P1 = '<p>第1条 目的</p>';
 const P2 = '<p>第2条 勤務時間</p>';
