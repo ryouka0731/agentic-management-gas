@@ -1,0 +1,1291 @@
+  // ===== 集中のしかた (既定はオフ) =====
+  //
+  // 自分の設定の「集中のしかた」(focus.start / focus.remind / focus.sound) をオンにした人の画面にだけ出す。
+  // 設定の定義はサーバの PREFS_SCHEMA() が持ち、ここは prefs.effective.focus を読むだけ。
+  //
+  // いちばん難しいのは始めること。気合いに頼らず、**始めたことをその場で返す**:
+  // - 「今から始める」で長さを選び (決まった刻みは無い)、最初の一手を1行だけ書ける (空でよい)
+  // - 減っていく輪と残りの分 (タブの題名にも) で、時間を目に見える形にする
+  // - 始めたかは番頭の中の手 (やりとり・直す・ボードで作業中へ・記録) か最初の一手で確かめる。カメラは使わない
+  //
+  // 守ること:
+  // - 字は textContent だけ。色はトークンだけ
+  // - 記録は本人にだけ見せる。連続日数は出さない
+  // - 音は押したときにだけ鳴らす (読み込みで AudioContext を作らない)。ファイルも外の取得も使わず、画面の中で作る。
+  //   1小節 (ノイズは数秒) を AudioBuffer に描いて繰り返す (背景のタブでは時計が間引かれるので、拍を時計で打たない)
+  // - 知らせを捨てない。集中の画面は隠すだけ (Esc で戻る)
+
+  /** 「もう少し」で延ばす分。サーバの FOCUS_EXTEND_MINUTES と同じ */
+  var FOCUS_EXTEND = 10;
+  /** 時間の知らせを出しておく長さ (ミリ秒) */
+  var FOCUS_NOTE_MS = 15000;
+  /** 音の大きさの上限 (0〜1 の音量をこの倍率で下げる)。耳を守るため、上げきっても大きくならない */
+  var FOCUS_GAIN_MAX = 0.5;
+
+  /**
+   * 選べる長さ (分)。サーバの FOCUS_LENGTHS と同じ。ほかの長さは数の欄に書ける。
+   *
+   * @returns {number[]}
+   */
+  function FOCUS_LENGTH_CHOICES() {
+    return [15, 25, 45, 60];
+  }
+
+  /**
+   * 選べる音。none が既定。
+   *
+   * @returns {Array<{value: string, label: string, beat?: boolean}>}
+   */
+  function FOCUS_SOUNDS() {
+    return [
+      { value: 'none', label: '無音' },
+      { value: 'pink', label: 'ピンクノイズ' },
+      { value: 'brown', label: 'ブラウンノイズ' },
+      { value: 'beat', label: '4つ打ちビート', beat: true },
+      { value: 'euro', label: 'ユーロビート風', beat: true },
+    ];
+  }
+
+  // ----- 設定 -----
+
+  /** @returns {object} prefs.effective.focus (届くまでは全部オフ) */
+  function focusPrefs() {
+    var f = prefs && prefs.effective && prefs.effective.focus;
+    return f || {};
+  }
+
+  /** 「今から始める」がオンか */
+  function focusOn() {
+    return focusPrefs().start === true;
+  }
+
+  /** 「集中の音」がオンか (今から始めるがオンのときだけ) */
+  function focusSoundOn() {
+    return focusOn() && focusPrefs().sound === true;
+  }
+
+  /** 時間の知らせの間隔 (分)。終わったときだけなら 0 */
+  function focusRemindEvery() {
+    var n = Number(focusPrefs().remind);
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+
+  // ----- 計算 (画面に依らないもの。test/focus-ui.test.js が切り出して確かめる) -----
+
+  /**
+   * 長さの欄の値を分にする。1〜180 の整数でなければ 0。
+   *
+   * @param {*} v
+   * @returns {number}
+   */
+  function focusClampMinutes(v) {
+    var n = Number(v);
+    if (!isFinite(n) || Math.floor(n) !== n || n < 1 || n > 180) return 0;
+    return n;
+  }
+
+  /**
+   * 残りのミリ秒 (過ぎていれば負)。時刻の差で数える (時計が間引かれても狂わない)。
+   *
+   * @param {number} startMs
+   * @param {number} planned 分
+   * @param {number} extended 分
+   * @param {number} nowMs
+   * @returns {number}
+   */
+  function focusRemainingMs(startMs, planned, extended, nowMs) {
+    return startMs + ((Number(planned) || 0) + (Number(extended) || 0)) * 60000 - nowMs;
+  }
+
+  /**
+   * 残りの分 (切り上げ)。過ぎていれば 0。
+   *
+   * @param {number} ms
+   * @returns {number}
+   */
+  function focusMinutesLeft(ms) {
+    return ms > 0 ? Math.ceil(ms / 60000) : 0;
+  }
+
+  /**
+   * 輪の欠け (stroke-dashoffset)。残りが減るほど欠けが増え、0 で一周ぶん欠ける。
+   *
+   * @param {number} remainingMs
+   * @param {number} totalMs
+   * @param {number} circumference
+   * @returns {number}
+   */
+  function focusRingOffset(remainingMs, totalMs, circumference) {
+    if (!(totalMs > 0)) return circumference;
+    var left = Math.max(0, Math.min(1, remainingMs / totalMs));
+    return circumference * (1 - left);
+  }
+
+  /**
+   * タブの題名。別のタブ (Docs など) に居ても残りが見えるように前に付ける。
+   *
+   * @param {string} base 元の題名
+   * @param {number} remainingMs
+   * @returns {string}
+   */
+  function focusTitleOf(base, remainingMs) {
+    var head = remainingMs > 0 ? '残り' + focusMinutesLeft(remainingMs) + '分' : '時間です';
+    return base ? head + ' · ' + base : head;
+  }
+
+  /**
+   * 時間の知らせの何回目まで来たか。every が 0 なら 0。
+   *
+   * @param {number} elapsedMs
+   * @param {number} every 分
+   * @returns {number}
+   */
+  function focusRemindMarks(elapsedMs, every) {
+    if (!(every > 0) || !(elapsedMs > 0)) return 0;
+    return Math.floor(elapsedMs / (every * 60000));
+  }
+
+  /** 音の大きさ (0〜1) を、実際に掛ける倍率にする。上限を超えない */
+  function focusVolumeGain(v) {
+    var n = Number(v);
+    if (!isFinite(n)) n = 0;
+    return Math.max(0, Math.min(1, n)) * FOCUS_GAIN_MAX;
+  }
+
+  /** 拍の速さを 120〜150 の整数に収める。読めなければ 128 */
+  function focusClampBpm(v) {
+    var n = Math.round(Number(v));
+    if (!isFinite(n)) return 128;
+    return Math.max(120, Math.min(150, n));
+  }
+
+  /**
+   * 1拍の標本の数。
+   *
+   * @param {number} bpm
+   * @param {number} rate 1秒の標本の数
+   * @returns {number}
+   */
+  function focusSamplesPerBeat(bpm, rate) {
+    return Math.round(rate * 60 / focusClampBpm(bpm));
+  }
+
+  /**
+   * キックの音の高さ (Hz)。打った瞬間は高く (150Hz)、すぐに低く (45Hz) 落ちる。低音の重さはここで出す。
+   *
+   * @param {number} t 打ってからの秒
+   * @returns {number}
+   */
+  function focusKickFreq(t) {
+    return 45 + 105 * Math.exp(-t * 28);
+  }
+
+  /**
+   * キックの大きさの包み。2ミリ秒で立ち上がり、ゆっくり減る。
+   *
+   * @param {number} t 打ってからの秒
+   * @returns {number} 0〜1
+   */
+  function focusKickEnv(t) {
+    if (t < 0) return 0;
+    var attack = Math.min(1, t / 0.002);
+    return attack * Math.exp(-t * 7);
+  }
+
+  /**
+   * キック1つの標本 (0.4秒)。
+   *
+   * @param {number} rate
+   * @returns {Float32Array}
+   */
+  function focusRenderKick(rate) {
+    var n = Math.round(rate * 0.4);
+    var out = new Float32Array(n);
+    var phase = 0;
+    for (var i = 0; i < n; i++) {
+      var t = i / rate;
+      phase += 2 * Math.PI * focusKickFreq(t) / rate;
+      out[i] = Math.sin(phase) * focusKickEnv(t);
+    }
+    return out;
+  }
+
+  /**
+   * いちばん大きいところを peak に揃える。無音なら変えない。
+   *
+   * @param {Float32Array} data
+   * @param {number} peak
+   * @returns {Float32Array}
+   */
+  function focusNormalize(data, peak) {
+    var top = 0;
+    for (var i = 0; i < data.length; i++) top = Math.max(top, Math.abs(data[i]));
+    if (!(top > 0)) return data;
+    var k = peak / top;
+    for (var j = 0; j < data.length; j++) data[j] *= k;
+    return data;
+  }
+
+  /**
+   * 1小節 (4拍) を描く。繰り返して鳴らす前提なので、最後の音は小節の頭へ回り込ませる (継ぎ目が切れない)。
+   *
+   * - beat: 拍ごとにキック。hat なら裏拍にハイハット
+   * - euro: キック + 裏拍のハイハット + 裏拍で1オクターブ跳ねるベース + 2・4拍の手拍子 (ユーロビート風の型)
+   *
+   * @param {{kind: string, bpm: number, hat: boolean}} opts
+   * @param {number} rate
+   * @param {function(): number} rand 0〜1 の乱数 (確かめるときは決まった並びを渡す)
+   * @returns {Float32Array}
+   */
+  function focusRenderBar(opts, rate, rand) {
+    var beat = focusSamplesPerBeat(opts.bpm, rate);
+    var len = beat * 4;
+    var out = new Float32Array(len);
+    function put(at, sample, gain) {
+      for (var i = 0; i < sample.length; i++) out[(at + i) % len] += sample[i] * gain;
+    }
+    var kick = focusRenderKick(rate);
+    var euro = opts.kind === 'euro';
+    var hatOn = euro || !!opts.hat;
+    // ハイハット: ノイズの差分 (高いところだけ残る) を短く減らす
+    var hatLen = Math.round(rate * 0.05);
+    var hat = new Float32Array(hatLen);
+    var prev = 0;
+    for (var h = 0; h < hatLen; h++) {
+      var w = rand() * 2 - 1;
+      hat[h] = (w - prev) * Math.exp(-h / rate * 70);
+      prev = w;
+    }
+    // 手拍子: 少し長いノイズ
+    var clapLen = Math.round(rate * 0.12);
+    var clap = new Float32Array(clapLen);
+    for (var c = 0; c < clapLen; c++) clap[c] = (rand() * 2 - 1) * Math.exp(-c / rate * 30);
+    // ベース: 低い A (55Hz) と1オクターブ上を裏拍で
+    var bassLen = Math.round(beat / 2);
+    function bass(freq) {
+      var b = new Float32Array(bassLen);
+      for (var i = 0; i < bassLen; i++) {
+        var t = i / rate;
+        // のこぎり波を少し丸めた音。終わりで消えるように包む
+        var saw = 2 * ((t * freq) % 1) - 1;
+        b[i] = saw * Math.min(1, t / 0.003) * Math.exp(-t * 9);
+      }
+      return b;
+    }
+    var bassLow = euro ? bass(55) : null;
+    var bassHigh = euro ? bass(110) : null;
+
+    for (var k = 0; k < 4; k++) {
+      var at = k * beat;
+      put(at, kick, 1);
+      var off = at + Math.round(beat / 2);
+      if (hatOn) put(off, hat, 0.35);
+      if (euro) {
+        put(off, k % 2 === 0 ? bassLow : bassHigh, 0.32);
+        if (k === 1 || k === 3) put(at, clap, 0.28);
+      }
+    }
+    return focusNormalize(out, 0.9);
+  }
+
+  /**
+   * 繰り返す継ぎ目をなめらかにする。終わりの fade 個を頭に重ねて、その分だけ短くする。
+   *
+   * @param {Float32Array} data
+   * @param {number} fade
+   * @returns {Float32Array}
+   */
+  function focusLoopSeam(data, fade) {
+    var f = Math.max(0, Math.min(Math.floor(fade), Math.floor(data.length / 2)));
+    if (!f) return data;
+    var n = data.length - f;
+    var out = new Float32Array(n);
+    for (var i = 0; i < n; i++) out[i] = data[i];
+    for (var j = 0; j < f; j++) {
+      var a = j / f;
+      out[j] = data[j] * a + data[n + j] * (1 - a);
+    }
+    return out;
+  }
+
+  /**
+   * ノイズを seconds 秒ぶん描く。pink は Paul Kellet のフィルタ、brown は白いノイズを積み重ねる (低い音が多い)。
+   *
+   * @param {string} kind pink / brown
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function focusRenderNoise(kind, rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var out = new Float32Array(n);
+    var b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    var last = 0;
+    for (var i = 0; i < n; i++) {
+      var w = rand() * 2 - 1;
+      if (kind === 'brown') {
+        last = (last + 0.02 * w) / 1.02;
+        out[i] = last;
+      } else {
+        b0 = 0.99886 * b0 + w * 0.0555179;
+        b1 = 0.99332 * b1 + w * 0.0750759;
+        b2 = 0.96900 * b2 + w * 0.1538520;
+        b3 = 0.86650 * b3 + w * 0.3104856;
+        b4 = 0.55000 * b4 + w * 0.5329522;
+        b5 = -0.7616 * b5 - w * 0.0168980;
+        out[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362;
+        b6 = w * 0.115926;
+      }
+    }
+    return focusNormalize(focusLoopSeam(out, rate * 0.05), 0.8);
+  }
+
+  // ----- 音 (押したときにだけ作る) -----
+
+  var focusAudio = null;
+
+  /** 音を作れる環境か。無ければ (jsdom など) 音の欄を出さない */
+  function focusAudioClass() {
+    return window.AudioContext || window.webkitAudioContext || null;
+  }
+
+  /** 端末に覚えた音の選び方 (無ければ無音) */
+  function focusSoundChoice() {
+    var def = { kind: 'none', bpm: 128, hat: true, volume: 0.4 };
+    try {
+      var raw = JSON.parse(window.localStorage.getItem('focusSound') || 'null');
+      if (raw && typeof raw === 'object') {
+        var kinds = FOCUS_SOUNDS().map(function (s) { return s.value; });
+        return {
+          kind: kinds.indexOf(raw.kind) >= 0 ? raw.kind : 'none',
+          bpm: focusClampBpm(raw.bpm),
+          hat: raw.hat !== false,
+          volume: Math.max(0, Math.min(1, Number(raw.volume) || 0)),
+        };
+      }
+    } catch (e) { /* 覚えられない環境では既定 */ }
+    return def;
+  }
+
+  /** @param {object} choice */
+  function focusSoundRemember(choice) {
+    try {
+      window.localStorage.setItem('focusSound', JSON.stringify(choice));
+    } catch (e) { /* 覚えられなくても鳴らせる */ }
+  }
+
+  /**
+   * 鳴らす。**押した聞き手の中から呼ぶ** (枠の中の画面では、押した中で作らないと鳴らない)。
+   *
+   * @param {object} choice
+   * @returns {boolean} 鳴らし始めたか
+   */
+  function focusSoundPlay(choice) {
+    var Ctor = focusAudioClass();
+    if (!Ctor || !choice || choice.kind === 'none') return false;
+    focusSoundStop(0);
+    try {
+      var ctx = focusAudio && focusAudio.ctx ? focusAudio.ctx : new Ctor();
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+      var rate = ctx.sampleRate;
+      var data = choice.kind === 'pink' || choice.kind === 'brown'
+        ? focusRenderNoise(choice.kind, rate, 4, Math.random)
+        : focusRenderBar({ kind: choice.kind, bpm: choice.bpm, hat: choice.hat }, rate, Math.random);
+      var buf = ctx.createBuffer(1, data.length, rate);
+      buf.getChannelData(0).set(data);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      var gain = ctx.createGain();
+      // 始まりはゆっくり上げる (いきなり大きな音を出さない)
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(focusVolumeGain(choice.volume), ctx.currentTime + 4);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+      focusAudio = { ctx: ctx, src: src, gain: gain, choice: choice };
+      return true;
+    } catch (e) {
+      if (window.console) console.warn('音を鳴らせませんでした', e);
+      return false;
+    }
+  }
+
+  /** 鳴っているか */
+  function focusSoundPlaying() {
+    return !!(focusAudio && focusAudio.src);
+  }
+
+  /**
+   * 止める。fade 秒かけて下げる。
+   *
+   * @param {number} fade
+   */
+  function focusSoundStop(fade) {
+    if (!focusAudio || !focusAudio.src) return;
+    var a = focusAudio;
+    try {
+      var t = a.ctx.currentTime;
+      a.gain.gain.cancelScheduledValues(t);
+      a.gain.gain.setValueAtTime(a.gain.gain.value, t);
+      a.gain.gain.linearRampToValueAtTime(0, t + Math.max(0.05, fade || 0));
+      a.src.stop(t + Math.max(0.05, fade || 0) + 0.05);
+    } catch (e) { /* 既に止まっている */ }
+    a.src = null;
+  }
+
+  /** @param {number} v 0〜1 */
+  function focusSoundVolume(v) {
+    if (!focusSoundPlaying()) return;
+    try {
+      focusAudio.gain.gain.setTargetAtTime(focusVolumeGain(v), focusAudio.ctx.currentTime, 0.2);
+    } catch (e) { /* 変えられなくても鳴り続ける */ }
+  }
+
+  // ----- 入口 -----
+
+  /**
+   * やることの「今から始める」。オフ・完了したもの・既に集中しているものには出さない (null)。
+   *
+   * @param {object} issue
+   * @param {boolean} compact 一覧の行 (印だけ)
+   * @returns {HTMLElement|null}
+   */
+  function makeFocusStartButton(issue, compact) {
+    if (!focusOn() || String(issue.state) !== 'open') return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = compact ? 'icon-btn focus-start-btn' : 'btn focus-start-btn';
+    btn.dataset.track = 'focus-start';
+    btn.appendChild(makeIcon('play'));
+    if (compact) {
+      btn.setAttribute('aria-label', '#' + issue.number + ' を今から始める');
+      attachHint(btn, '今から始める (長さを選んで、残り時間の輪で集中する)');
+    } else {
+      btn.appendChild(document.createTextNode('今から始める'));
+    }
+    btn.addEventListener('click', function () { focusOpenPanel(issue, btn); });
+    return btn;
+  }
+
+  // ----- 置き場 (右下の小さな窓) -----
+
+  var focusSession = null;
+  var focusTimer = null;
+  /** 集中する前のタブの題名。null なら控えていない */
+  var focusBaseTitle = null;
+  var focusMarksShown = 0;
+  var focusTimeUpShown = false;
+  var focusSoundWasOn = false;
+  var focusResumed = false;
+  var focusWasOn = false;
+
+  /** 置き場。初めて要るときに作る (使わない人の画面には何も足さない) */
+  function focusDock() {
+    var el = document.getElementById('focus-dock');
+    if (el) return el;
+    el = document.createElement('section');
+    el.id = 'focus-dock';
+    el.className = 'focus-dock';
+    el.setAttribute('aria-label', '集中');
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** 置き場を外す */
+  function focusDockRemove() {
+    var el = document.getElementById('focus-dock');
+    if (el) el.remove();
+  }
+
+  /**
+   * 長さを選ぶ・最初の一手を書く窓を開く。開いた時刻を控える (始めるまでの時間を数えるため)。
+   *
+   * @param {object} issue
+   * @param {HTMLElement} [sourceEl]
+   */
+  function focusOpenPanel(issue, sourceEl) {
+    if (focusSession) {
+      showSnack('いまは #' + focusSession.issueNumber + ' に集中しています。終えてから始めてください', { kind: 'ng' });
+      return;
+    }
+    var openedAt = Date.now();
+    var dock = focusDock();
+    dock.textContent = '';
+    dock.className = 'focus-dock is-setup';
+
+    var head = document.createElement('div');
+    head.className = 'focus-head';
+    var h = document.createElement('h3');
+    h.textContent = '今から始める';
+    head.appendChild(h);
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'side-close';
+    x.setAttribute('aria-label', '始めずに閉じる');
+    x.textContent = '×';
+    head.appendChild(x);
+    dock.appendChild(head);
+
+    var what = document.createElement('p');
+    what.className = 'focus-what';
+    what.textContent = '#' + issue.number + ' ' + issue.title;
+    dock.appendChild(what);
+
+    // 長さ: 決まった刻みは無い。選ぶか書く
+    var lenLabel = document.createElement('div');
+    lenLabel.className = 'row-meta view-label';
+    lenLabel.textContent = '長さ';
+    dock.appendChild(lenLabel);
+    var lens = document.createElement('div');
+    lens.className = 'focus-lengths';
+    lens.setAttribute('role', 'group');
+    lens.setAttribute('aria-label', '集中する長さ');
+    var custom = document.createElement('input');
+    custom.type = 'number';
+    custom.min = '1';
+    custom.max = '180';
+    custom.step = '1';
+    custom.className = 'focus-custom';
+    custom.setAttribute('aria-label', 'ほかの長さ (分)');
+    custom.placeholder = '分';
+    var picked = 15;
+    try {
+      picked = focusClampMinutes(Number(window.localStorage.getItem('focusMinutes'))) || 15;
+    } catch (e) { picked = 15; }
+    var segs = [];
+    function pick(n) {
+      picked = n;
+      segs.forEach(function (s) { s.setAttribute('aria-pressed', String(Number(s.dataset.minutes) === n)); });
+    }
+    FOCUS_LENGTH_CHOICES().forEach(function (n) {
+      var s = document.createElement('button');
+      s.type = 'button';
+      s.className = 'seg';
+      s.dataset.minutes = String(n);
+      s.textContent = n + '分';
+      s.addEventListener('click', function () { custom.value = ''; pick(n); });
+      segs.push(s);
+      lens.appendChild(s);
+    });
+    if (FOCUS_LENGTH_CHOICES().indexOf(picked) < 0) custom.value = String(picked);
+    pick(picked);
+    custom.addEventListener('input', function () {
+      var n = focusClampMinutes(Number(custom.value));
+      if (n) pick(n);
+    });
+    lens.appendChild(custom);
+    dock.appendChild(lens);
+
+    // 最初の一手 (任意)。「〜したら〜する」の形が始めやすい
+    var stepLabel = document.createElement('label');
+    stepLabel.className = 'focus-step-field';
+    var stepText = document.createElement('span');
+    stepText.className = 'row-meta view-label';
+    stepText.textContent = '最初の一手 (書かなくても始められます)';
+    stepLabel.appendChild(stepText);
+    var step = document.createElement('input');
+    step.type = 'text';
+    step.maxLength = 200;
+    step.placeholder = '例: 席に戻ったら、第3条を開く';
+    stepLabel.appendChild(step);
+    dock.appendChild(stepLabel);
+    var tip = document.createElement('p');
+    tip.className = 'row-meta';
+    tip.textContent = '「〜したら〜する」の形で、すぐできる小さなことを1つ。書いたらその場で「始めた」になります';
+    dock.appendChild(tip);
+
+    var sound = focusSoundOn() ? makeFocusSoundControls(false) : null;
+    if (sound) dock.appendChild(sound.el);
+
+    var actions = document.createElement('div');
+    actions.className = 'inline-form-actions';
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn btn-primary focus-go';
+    go.appendChild(makeIcon('play'));
+    go.appendChild(document.createTextNode('始める'));
+    actions.appendChild(go);
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'やめておく';
+    actions.appendChild(cancel);
+    dock.appendChild(actions);
+
+    function close() {
+      focusDockRemove();
+      if (sourceEl && sourceEl.focus && document.body.contains(sourceEl)) sourceEl.focus();
+    }
+    x.addEventListener('click', close);
+    cancel.addEventListener('click', close);
+    dock.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && dock.classList.contains('is-setup')) {
+        e.stopPropagation();
+        close();
+      }
+    });
+
+    go.addEventListener('click', function () {
+      var minutes = focusClampMinutes(picked);
+      if (!minutes) {
+        showSnack('長さは1〜180分で選んでください', { kind: 'ng' });
+        return;
+      }
+      try {
+        window.localStorage.setItem('focusMinutes', String(minutes));
+      } catch (e) { /* 覚えられなくても始められる */ }
+      go.disabled = true;
+      // 音は押したこの中で鳴らす (返事を待ってからでは鳴らない)
+      var choice = sound ? sound.choice() : null;
+      if (choice) {
+        focusSoundRemember(choice);
+        focusSoundPlay(choice);
+      }
+      var failed = failEnable(go, '始められませんでした: ');
+      call('apiFocusStart', [issue.number, minutes, step.value, new Date(openedAt).toISOString()], function (res) {
+        if (!res) return;
+        focusRun(res, issue.title);
+        if (!funOn('cheer')) {
+          showSnack('始めました。' + minutes + '分' + (res.provedAt ? '。最初の一手を書いたので「始めた」です' : '') +
+            (res.points ? ' (+' + res.points + ')' : ''), { kind: 'ok' });
+        } else if (res.points) {
+          showSnack('始めました (+' + res.points + ')', { kind: 'ok' });
+        }
+      }, function (err) {
+        focusSoundStop(0);
+        failed(err);
+      });
+    });
+    step.focus();
+  }
+
+  /**
+   * 音の欄。作れない環境では断りだけ。
+   *
+   * @param {boolean} running 集中しているあいだ (鳴らす・止めるボタンを出す)
+   * @returns {{el: HTMLElement, choice: function(): object}}
+   */
+  function makeFocusSoundControls(running) {
+    var wrap = document.createElement('div');
+    wrap.className = 'focus-sound';
+    var saved = (focusAudio && focusAudio.choice) || focusSoundChoice();
+    if (!focusAudioClass()) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = 'この端末では集中の音を作れません';
+      wrap.appendChild(none);
+      return { el: wrap, choice: function () { return null; } };
+    }
+    var row = document.createElement('label');
+    row.className = 'focus-sound-row';
+    var name = document.createElement('span');
+    name.className = 'row-meta';
+    name.textContent = '集中の音';
+    row.appendChild(name);
+    var sel = document.createElement('select');
+    sel.className = 'focus-sound-kind';
+    FOCUS_SOUNDS().forEach(function (s) {
+      var o = document.createElement('option');
+      o.value = s.value;
+      o.textContent = s.label;
+      sel.appendChild(o);
+    });
+    sel.value = saved.kind;
+    row.appendChild(sel);
+    wrap.appendChild(row);
+
+    var beatRow = document.createElement('div');
+    beatRow.className = 'focus-sound-row';
+    var bpmLabel = document.createElement('label');
+    bpmLabel.className = 'row-meta';
+    bpmLabel.textContent = '速さ ';
+    var bpm = document.createElement('input');
+    bpm.type = 'range';
+    bpm.min = '120';
+    bpm.max = '150';
+    bpm.step = '1';
+    bpm.value = String(saved.bpm);
+    bpm.className = 'focus-bpm';
+    bpmLabel.appendChild(bpm);
+    var bpmText = document.createElement('span');
+    bpmText.textContent = ' ' + saved.bpm + ' BPM';
+    bpmLabel.appendChild(bpmText);
+    beatRow.appendChild(bpmLabel);
+    var hatLabel = document.createElement('label');
+    hatLabel.className = 'row-meta';
+    var hat = document.createElement('input');
+    hat.type = 'checkbox';
+    hat.checked = saved.hat;
+    hat.className = 'focus-hat';
+    hatLabel.appendChild(hat);
+    hatLabel.appendChild(document.createTextNode(' 裏拍のハイハット'));
+    beatRow.appendChild(hatLabel);
+    wrap.appendChild(beatRow);
+
+    var volLabel = document.createElement('label');
+    volLabel.className = 'focus-sound-row row-meta';
+    volLabel.textContent = '大きさ ';
+    var vol = document.createElement('input');
+    vol.type = 'range';
+    vol.min = '0';
+    vol.max = '1';
+    vol.step = '0.05';
+    vol.value = String(saved.volume);
+    vol.className = 'focus-volume';
+    volLabel.appendChild(vol);
+    wrap.appendChild(volLabel);
+
+    var ear = document.createElement('p');
+    ear.className = 'row-meta focus-ear';
+    ear.textContent = 'イヤホンで聞いてください。合わなければ止めてください (合う人も合わない人もいます)';
+    wrap.appendChild(ear);
+
+    function choice() {
+      return { kind: sel.value, bpm: focusClampBpm(bpm.value), hat: hat.checked, volume: Number(vol.value) || 0 };
+    }
+    function syncBeat() {
+      var isBeat = FOCUS_SOUNDS().some(function (s) { return s.value === sel.value && s.beat; });
+      beatRow.hidden = !isBeat;
+    }
+    syncBeat();
+    sel.addEventListener('change', syncBeat);
+    bpm.addEventListener('input', function () { bpmText.textContent = ' ' + focusClampBpm(bpm.value) + ' BPM'; });
+    vol.addEventListener('input', function () { focusSoundVolume(Number(vol.value)); });
+
+    if (running) {
+      var play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'btn focus-sound-toggle';
+      function label() { play.textContent = focusSoundPlaying() ? '音を止める' : '音を流す'; }
+      label();
+      play.addEventListener('click', function () {
+        if (focusSoundPlaying()) {
+          focusSoundStop(2);
+        } else {
+          var c = choice();
+          if (c.kind === 'none') {
+            showSnack('流す音を選んでください', { kind: 'ng' });
+            return;
+          }
+          focusSoundRemember(c);
+          focusSoundPlay(c);
+        }
+        label();
+      });
+      // 選び直したら、鳴っているものを差し替える (押した中なので鳴らせる)
+      [sel, bpm, hat].forEach(function (el) {
+        el.addEventListener('change', function () {
+          if (!focusSoundPlaying()) return;
+          var c = choice();
+          focusSoundRemember(c);
+          if (c.kind === 'none') focusSoundStop(2);
+          else focusSoundPlay(c);
+          label();
+        });
+      });
+      wrap.appendChild(play);
+    }
+    return { el: wrap, choice: choice };
+  }
+
+  // ----- 集中しているあいだ -----
+
+  /**
+   * 集中を描き始める (始めた返事・開き直したときの続き)。
+   *
+   * @param {object} s apiFocusStart / apiFocusMine().active の形
+   * @param {string} [title]
+   */
+  function focusRun(s, title) {
+    focusSession = {
+      id: s.id,
+      issueNumber: s.issueNumber,
+      title: title || s.title || '',
+      planned: Number(s.plannedMinutes) || 0,
+      extended: Number(s.extendedMinutes) || 0,
+      startMs: Date.parse(s.startedAt) || Date.now(),
+      firstStep: s.firstStep || '',
+      provedAt: s.provedAt || '',
+      proving: false,
+    };
+    focusMarksShown = 0;
+    focusTimeUpShown = false;
+    if (focusBaseTitle === null) focusBaseTitle = document.title;
+    focusDrawRun();
+    if (focusTimer) clearInterval(focusTimer);
+    focusTimer = setInterval(focusTick, 1000);
+    focusTick();
+  }
+
+  /** 集中しているあいだの窓を描く */
+  function focusDrawRun() {
+    var s = focusSession;
+    var dock = focusDock();
+    dock.textContent = '';
+    dock.className = 'focus-dock is-running';
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var ringBox = document.createElement('div');
+    ringBox.className = 'focus-ring';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 120 120');
+    svg.setAttribute('aria-hidden', 'true');
+    var track = document.createElementNS(ns, 'circle');
+    track.setAttribute('class', 'focus-ring-track');
+    var bar = document.createElementNS(ns, 'circle');
+    bar.setAttribute('class', 'focus-ring-bar');
+    [track, bar].forEach(function (c) {
+      c.setAttribute('cx', '60');
+      c.setAttribute('cy', '60');
+      c.setAttribute('r', '52');
+    });
+    var circ = 2 * Math.PI * 52;
+    bar.setAttribute('stroke-dasharray', String(circ));
+    bar.setAttribute('transform', 'rotate(-90 60 60)');
+    svg.appendChild(track);
+    svg.appendChild(bar);
+    ringBox.appendChild(svg);
+    var center = document.createElement('div');
+    center.className = 'focus-ring-text';
+    var big = document.createElement('span');
+    big.className = 'focus-left';
+    center.appendChild(big);
+    var unit = document.createElement('span');
+    unit.className = 'focus-unit';
+    unit.textContent = '分';
+    center.appendChild(unit);
+    ringBox.appendChild(center);
+    // 読み上げには「残り◯分」を1つの字で渡す (毎秒は読ませない)
+    var live = document.createElement('span');
+    live.className = 'sr-only focus-live';
+    live.setAttribute('role', 'timer');
+    ringBox.appendChild(live);
+    dock.appendChild(ringBox);
+
+    var side = document.createElement('div');
+    side.className = 'focus-side';
+    var what = document.createElement('p');
+    what.className = 'focus-what';
+    what.textContent = '#' + s.issueNumber + ' ' + s.title;
+    side.appendChild(what);
+    if (s.firstStep) {
+      var st = document.createElement('p');
+      st.className = 'row-meta focus-first';
+      st.textContent = '最初の一手: ' + s.firstStep;
+      side.appendChild(st);
+    }
+    var proof = document.createElement('div');
+    proof.className = 'focus-proof';
+    side.appendChild(proof);
+    dock.appendChild(side);
+
+    var note = document.createElement('div');
+    note.className = 'focus-note';
+    note.setAttribute('role', 'status');
+    note.setAttribute('aria-live', 'polite');
+    note.hidden = true;
+    dock.appendChild(note);
+
+    var timeup = document.createElement('div');
+    timeup.className = 'focus-timeup';
+    timeup.hidden = true;
+    dock.appendChild(timeup);
+
+    var controls = document.createElement('div');
+    controls.className = 'focus-controls';
+    var mode = document.createElement('button');
+    mode.type = 'button';
+    mode.className = 'btn toggle-btn focus-mode-toggle';
+    mode.textContent = '集中の画面';
+    setToggle(mode, document.body.classList.contains('focus-mode'));
+    attachHint(mode, '横の帯と知らせの数を隠します (知らせは届いています)。Esc で戻ります');
+    mode.addEventListener('click', function () {
+      focusSetMode(!document.body.classList.contains('focus-mode'));
+    });
+    controls.appendChild(mode);
+    if (focusSoundOn()) controls.appendChild(makeFocusSoundControls(true).el);
+    var actions = document.createElement('div');
+    actions.className = 'inline-form-actions';
+    actions.appendChild(makeFocusDoneButton());
+    actions.appendChild(makeFocusStopButton());
+    controls.appendChild(actions);
+    dock.appendChild(controls);
+
+    focusDrawProof();
+  }
+
+  /** 始めたかの印 */
+  function focusDrawProof() {
+    var el = document.querySelector('#focus-dock .focus-proof');
+    if (!el || !focusSession) return;
+    el.textContent = '';
+    if (focusSession.provedAt) {
+      el.appendChild(makePill('始めた', 'chip focus-proved', 'check'));
+    } else {
+      var p = document.createElement('p');
+      p.className = 'row-meta';
+      p.textContent = 'やりとりを書く・中身を直す・ボードで作業中へ動かす・記録する、のどれかで「始めた」になります';
+      el.appendChild(p);
+    }
+  }
+
+  /** 「終わった (完了にする)」 */
+  function makeFocusDoneButton() {
+    var done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'btn btn-primary focus-done';
+    done.appendChild(makeIcon('check'));
+    done.appendChild(document.createTextNode('終わった (完了にする)'));
+    done.addEventListener('click', function () {
+      if (!focusSession) return;
+      var n = focusSession.issueNumber;
+      done.disabled = true;
+      // 完了にしたあとの終わり方は focusAfterCall が決める (一覧の完了から済ませたときと同じ道)
+      call('apiIssueClose', [n], function () {
+        celebrateProgress('close', '#' + n + ' を完了にしました', n);
+        refreshIssueViews();
+      }, failEnable(done, '完了にできませんでした: '));
+    });
+    return done;
+  }
+
+  /** 「やめる」 */
+  function makeFocusStopButton() {
+    var stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'btn focus-stop';
+    stop.textContent = 'やめる';
+    stop.addEventListener('click', function () { focusEndAs('stopped'); });
+    return stop;
+  }
+
+  /** 1秒ごと。残りは時刻の差で数える */
+  function focusTick() {
+    var s = focusSession;
+    if (!s) return;
+    var now = Date.now();
+    var total = (s.planned + s.extended) * 60000;
+    var left = focusRemainingMs(s.startMs, s.planned, s.extended, now);
+    var bar = document.querySelector('#focus-dock .focus-ring-bar');
+    if (bar) bar.setAttribute('stroke-dashoffset', String(focusRingOffset(left, total, 2 * Math.PI * 52)));
+    var big = document.querySelector('#focus-dock .focus-left');
+    var minutes = focusMinutesLeft(left);
+    if (big && big.textContent !== String(minutes)) big.textContent = String(minutes);
+    var live = document.querySelector('#focus-dock .focus-live');
+    var say = left > 0 ? '残り' + minutes + '分' : '時間です';
+    if (live && live.textContent !== say) live.textContent = say;
+    document.title = focusTitleOf(focusBaseTitle, left);
+
+    var marks = focusRemindMarks(now - s.startMs, focusRemindEvery());
+    if (left > 0 && marks > focusMarksShown) {
+      focusMarksShown = marks;
+      focusNote(Math.round((now - s.startMs) / 60000) + '分たちました。顔を上げて、時間を確かめるころです');
+    }
+    if (left <= 0 && !focusTimeUpShown) focusTimeUp();
+  }
+
+  /**
+   * 時間の知らせ (目で見るものだけ)。しばらくして消す。
+   *
+   * @param {string} text
+   */
+  function focusNote(text) {
+    var note = document.querySelector('#focus-dock .focus-note');
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = false;
+    var stamp = String(Date.now());
+    note.dataset.stamp = stamp;
+    setTimeout(function () {
+      if (note.dataset.stamp === stamp) note.hidden = true;
+    }, FOCUS_NOTE_MS);
+  }
+
+  /** 時間になった。控えめな帯と、終わった・もう少し・やめるの3つ。音は、流していた人だけ下げて知らせる */
+  function focusTimeUp() {
+    focusTimeUpShown = true;
+    var s = focusSession;
+    var box = document.querySelector('#focus-dock .focus-timeup');
+    if (!box || !s) return;
+    focusSoundWasOn = focusSoundPlaying();
+    if (focusSoundWasOn) focusSoundStop(3);
+    box.textContent = '';
+    var text = document.createElement('p');
+    text.className = 'focus-timeup-text';
+    text.setAttribute('role', 'status');
+    text.textContent = (s.planned + s.extended) + '分たちました。どうしますか';
+    box.appendChild(text);
+    var actions = document.createElement('div');
+    actions.className = 'inline-form-actions';
+    actions.appendChild(makeFocusDoneButton());
+    var more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'btn focus-more';
+    more.textContent = 'もう少し (+' + FOCUS_EXTEND + '分)';
+    more.addEventListener('click', function () {
+      more.disabled = true;
+      // 流していた音は、押したこの中で戻す
+      if (focusSoundWasOn && focusAudio && focusAudio.choice) focusSoundPlay(focusAudio.choice);
+      call('apiFocusExtend', [s.id, FOCUS_EXTEND], function (res) {
+        if (!focusSession || focusSession.id !== s.id) return;
+        focusSession.extended = Number(res && res.extendedMinutes) || (focusSession.extended + FOCUS_EXTEND);
+        focusTimeUpShown = false;
+        box.hidden = true;
+        focusTick();
+      }, failEnable(more, '延ばせませんでした: '));
+    });
+    actions.appendChild(more);
+    actions.appendChild(makeFocusStopButton());
+    box.appendChild(actions);
+    box.hidden = false;
+  }
+
+  /**
+   * 終える (やめる・完了にした)。画面はすぐ片づけ、記録は返事を待たない。
+   *
+   * @param {string} result done / stopped
+   */
+  function focusEndAs(result) {
+    var s = focusSession;
+    if (!s) return;
+    focusClear();
+    call('apiFocusEnd', [s.id, result], function () {
+      if (result === 'stopped') showSnack('ここまでにしました。おつかれさまでした', { kind: 'ok' });
+    });
+  }
+
+  /** 画面の集中を片づける (記録はそのまま)。音・時計・題名・集中の画面を戻す */
+  function focusClear() {
+    focusSession = null;
+    if (focusTimer) clearInterval(focusTimer);
+    focusTimer = null;
+    focusSoundStop(2);
+    if (focusBaseTitle !== null) document.title = focusBaseTitle;
+    focusBaseTitle = null;
+    focusSetMode(false);
+    focusDockRemove();
+  }
+
+  /**
+   * 集中の画面。横の帯・右のペイン・知らせの数を隠す (知らせそのものは届いている)。
+   *
+   * @param {boolean} on
+   */
+  function focusSetMode(on) {
+    var want = !!on && !!focusSession;
+    document.body.classList.toggle('focus-mode', want);
+    var t = document.querySelector('#focus-dock .focus-mode-toggle');
+    if (t) setToggle(t, want);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.body.classList.contains('focus-mode')) focusSetMode(false);
+  });
+
+  // ----- 番頭の中の手で「始めた」を確かめる -----
+
+  /**
+   * call() が成功したあとに呼ぶ (app.js の call)。集中しているやることへの手なら確かめに行く。
+   * そのやることを完了にしたなら、集中を「やりきった」で終える。
+   *
+   * @param {string} name
+   * @param {Array} args
+   */
+  function focusAfterCall(name, args) {
+    var s = focusSession;
+    if (!s) return;
+    try {
+      var a = args || [];
+      var same = Number(a[0]) === Number(s.issueNumber);
+      if (name === 'apiIssueClose' && same) {
+        focusEndAs('done');
+        return;
+      }
+      if (s.provedAt || s.proving) return;
+      var kind = '';
+      if (name === 'apiIssueComment' && same) kind = 'comment';
+      else if (name === 'apiIssueUpdate' && same) kind = 'edit';
+      else if (name === 'apiProjectMove' && same && a[1] === 'In Progress') kind = 'move';
+      else if (name === 'apiCommit' || name === 'apiCommitMany') kind = 'record';
+      if (kind) focusProve(kind);
+    } catch (e) {
+      // 飾りが落ちても、本来の返事の扱いは止めない
+      if (window.console) console.warn('集中の確かめができませんでした', e);
+    }
+  }
+
+  /**
+   * 確かめる。台帳に手が見つかったときだけ「始めた」になる。
+   *
+   * @param {string} kind
+   */
+  function focusProve(kind) {
+    var s = focusSession;
+    s.proving = true;
+    call('apiFocusProve', [s.id, kind], function (res) {
+      s.proving = false;
+      if (!res || !res.fresh || focusSession !== s) return;
+      s.provedAt = res.session.provedAt;
+      focusDrawProof();
+      if (funOn('cheer')) funBanner('NICE START!', 'small', 'success', null);
+      showSnack('始めました。この調子です' + (res.points ? ' (+' + res.points + ')' : ''), { kind: 'ok' });
+    }, function (err) {
+      s.proving = false;
+      failQuiet('確かめられなくても、集中は続けられる')(err);
+    });
+  }
+
+  // ----- 設定が届いた・変わった -----
+
+  /** applyPrefs から呼ぶ。オフにしたら片づけ、オンなら続いている集中を1回だけ取りに行く */
+  function focusPrefsChanged() {
+    var on = focusOn();
+    var changed = on !== focusWasOn;
+    focusWasOn = on;
+    if (!on) {
+      if (focusSession) focusClear();
+      focusDockRemove();
+    } else if (!focusResumed) {
+      focusResumed = true;
+      call('apiFocusMine', [], function (res) {
+        if (res && res.active && !focusSession && focusOn()) focusRun(res.active, res.active.title);
+      }, failQuiet('続いている集中を描き直せなくても、始め直せる'));
+    } else if (focusSession && !focusSoundOn()) {
+      focusSoundStop(1);
+    }
+    // 入口を出し入れする。開いている一覧だけ描き直す
+    if (changed && typeof panelIssues !== 'undefined' && panelIssues && !panelIssues.hidden) reloadIssueView();
+  }
+
+  // ----- 自分の記録と技の図鑑 (本人にだけ) -----
+
+  /**
+   * 自分まわりの「集中の記録と技の図鑑」。オフなら null。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeFocusRecordButton() {
+    if (!focusOn()) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn focus-record-btn';
+    btn.appendChild(makeIcon('clock'));
+    btn.appendChild(document.createTextNode('集中の記録と技の図鑑'));
+    btn.addEventListener('click', function () {
+      closeMe();
+      openFocusRecord(btn);
+    });
+    return btn;
+  }
+
+  /**
+   * 右のペインに、今週の数・始めるまでの時間・技の図鑑を出す。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openFocusRecord(sourceEl) {
+    var box = openSideView('集中の記録', sourceEl, null);
+    box.classList.add('focus-record');
+    var wait = document.createElement('p');
+    wait.className = 'row-meta';
+    wait.textContent = '読み込んでいます…';
+    box.appendChild(wait);
+    call('apiFocusMine', [], function (res) {
+      box.textContent = '';
+      drawFocusRecord(box, res || {});
+    }, failInto(box));
+  }
+
+  /**
+   * @param {HTMLElement} box
+   * @param {object} res apiFocusMine
+   */
+  function drawFocusRecord(box, res) {
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = 'この記録はあなたにだけ見えます。続けた日数は数えません';
+    box.appendChild(lead);
+
+    function heading(text) {
+      var h = document.createElement('h3');
+      h.className = 'focus-record-head';
+      h.textContent = text;
+      box.appendChild(h);
+    }
+
+    heading('今週');
+    var week = res.week || {};
+    var facts = document.createElement('dl');
+    facts.className = 'focus-week';
+    [['始めた', week.started], ['「始めた」を確かめた', week.proved], ['やりきった', week.finished]].forEach(function (p) {
+      var item = document.createElement('div');
+      var dt = document.createElement('dt');
+      dt.textContent = p[0];
+      var dd = document.createElement('dd');
+      dd.textContent = String(Number(p[1]) || 0);
+      item.appendChild(dt);
+      item.appendChild(dd);
+      facts.appendChild(item);
+    });
+    box.appendChild(facts);
+
+    heading('始めるまでの時間');
+    var note = document.createElement('p');
+    note.className = 'row-meta';
+    note.textContent = '「今から始める」を開いてから「始めた」になるまで。これまでの ' + (Number(res.measured) || 0) + ' 回';
+    box.appendChild(note);
+    var bars = document.createElement('div');
+    bars.className = 'focus-bars';
+    var rows = res.toStart || [];
+    var top = 0;
+    rows.forEach(function (r) { top = Math.max(top, Number(r.count) || 0); });
+    rows.forEach(function (r) {
+      var line = document.createElement('div');
+      line.className = 'focus-bar-row';
+      var label = document.createElement('span');
+      label.className = 'focus-bar-label';
+      label.textContent = r.label;
+      var track = document.createElement('span');
+      track.className = 'focus-bar-track';
+      var fill = document.createElement('span');
+      fill.className = 'focus-bar-fill';
+      fill.style.width = (top ? Math.round((Number(r.count) || 0) / top * 100) : 0) + '%';
+      track.appendChild(fill);
+      var count = document.createElement('span');
+      count.className = 'focus-bar-count';
+      count.textContent = String(Number(r.count) || 0);
+      line.appendChild(label);
+      line.appendChild(track);
+      line.appendChild(count);
+      bars.appendChild(line);
+    });
+    box.appendChild(bars);
+
+    var list = res.badges || [];
+    var got = list.filter(function (b) { return b.done; }).length;
+    heading('技の図鑑 ' + got + ' / ' + list.length);
+    var grid = document.createElement('ul');
+    grid.className = 'focus-badges';
+    list.forEach(function (b) {
+      var li = document.createElement('li');
+      li.className = 'focus-badge' + (b.done ? ' is-done' : '');
+      li.dataset.badge = b.key;
+      var medal = document.createElement('span');
+      medal.className = 'focus-medal';
+      medal.setAttribute('aria-hidden', 'true');
+      medal.textContent = b.done ? String(b.label).charAt(0) : '?';
+      li.appendChild(medal);
+      var name = document.createElement('span');
+      name.className = 'focus-badge-name';
+      name.textContent = b.done ? b.label : '???';
+      li.appendChild(name);
+      var sub = document.createElement('span');
+      sub.className = 'focus-badge-sub';
+      sub.textContent = b.done ? b.about + (b.at ? ' (' + b.at + ')' : '') : 'まだ見つけていない技';
+      li.appendChild(sub);
+      grid.appendChild(li);
+    });
+    box.appendChild(grid);
+  }

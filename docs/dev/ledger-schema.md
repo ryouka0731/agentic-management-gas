@@ -14,6 +14,9 @@
   (`reviewBackfillIds_`) 形にした
 - `test/schema.test.js` が全テーブルの列と順序を固定している
 
+`focus_sessions` (集中のしかた) は `id` を `dbAppendNumbered` で振る通し番号にしている。`who` は小文字のアドレス。
+時刻の欄 (`startedAt` / `openedAt` / `provedAt` / `endedAt`) は Date で書く。やることを `issuePurge` で消すと一緒に消す。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

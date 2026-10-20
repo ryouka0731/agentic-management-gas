@@ -263,6 +263,9 @@
 - **引き続き入れないもの:** 決まった刻み (25分固定)、知らずに鳴る効果音、くじ、連続記録
 
 演出は `src/ui/js-fun.html` (`docs/dev/ui.md` の「楽しい演出」) にある。
+集中の時計・最初の一手・始めたことの確かめ・環境音・技の図鑑は `src/ui/js-focus.html` と `src/core/Focus.gs`
+(`docs/dev/ui.md` の「集中のしかた」、使う人向けは `docs/manual/focus.md`)。段階②の「最初の一手」は `issues` の列ではなく
+集中の記録 (`focus_sessions`) に置いた (始めるたびに書くもので、やることの持ち物ではないため)。
 
 ## 文献
 
