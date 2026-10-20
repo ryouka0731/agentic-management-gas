@@ -957,6 +957,10 @@
         row.appendChild(back);
       }
 
+      // 集中のしかた (自分の設定でオンの人だけ)
+      var focusBtn = makeFocusStartButton(issue, true);
+      if (focusBtn) row.appendChild(focusBtn);
+
       row.appendChild(makeArchiveButton(issue, panelIssues));
 
       if (issue.state === 'open' && current.docFileId) {
@@ -2110,6 +2114,10 @@
     wrap.className = 'inline-form-actions';
 
     if (String(issue.state) === 'open') {
+      // 集中のしかた (自分の設定でオンの人だけ)。いちばん先に置く
+      var focusBtn = makeFocusStartButton(issue, false);
+      if (focusBtn) wrap.appendChild(focusBtn);
+
       var done = document.createElement('button');
       done.className = 'btn';
       done.appendChild(makeIcon('check'));

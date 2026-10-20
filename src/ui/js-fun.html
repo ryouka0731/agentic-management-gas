@@ -57,6 +57,10 @@
       apiCommitMany: { text: 'SAVED', size: 'small', tone: 'success', glyphs: ['✨'] },
       apiSaveMarkdown: { text: 'SAVED', size: 'small', tone: 'success', glyphs: ['✨'] },
       apiIssueCreate: { text: 'NEW!', size: 'small', tone: 'accent', glyphs: ['✨'] },
+      // 集中のしかた (js-focus)。始めた瞬間と、集中したままやりきった瞬間
+      apiFocusStart: { text: "LET'S GO!!", size: 'big', tone: 'accent', glyphs: ['🔥', '⚡', '✨'] },
+      apiFocusEnd: { text: 'SUPER COMPLETE!!', size: 'big', tone: 'merged', glyphs: ['🏆', '🎉', '✨'],
+        when: function (args) { return args && args[1] === 'done'; } },
     };
   }
 
@@ -511,6 +515,8 @@
    */
   function funCheerAfter(name, args) {
     if (!funOn('cheer')) return;
+    // 集中しているやることの完了は、集中の終わり (apiFocusEnd) の SUPER COMPLETE!! だけにする (js-focus)
+    if (focusClosesSession(name, args)) return;
     // 飾りが落ちても、本来の返事の扱い (call の ok) は止めない
     try {
       funCheer(name, args);

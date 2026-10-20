@@ -137,8 +137,10 @@ function gameLastOfSplit_(row, kids) {
 /**
  * 台帳のうち、ポイントと称号に要る表。**表ごとに1回だけ読む。** 既に読んだものは読み直さない。
  *
- * @param {{issues?: object[], closers?: Object<string, string>, pulls?: object[], reviews?: object[]}} [pre]
- * @returns {{issues: object[], closers: Object<string, string>, pulls: object[], reviews: object[]}}
+ * @param {{issues?: object[], closers?: Object<string, string>, pulls?: object[], reviews?: object[],
+ *   focus?: object[]}} [pre]
+ * @returns {{issues: object[], closers: Object<string, string>, pulls: object[], reviews: object[],
+ *   focus: object[]}}
  */
 function gameLedger_(pre) {
   var got = pre || {};
@@ -147,6 +149,8 @@ function gameLedger_(pre) {
     closers: got.closers || motivationClosers_(),
     pulls: got.pulls || dbReadAll('pulls'),
     reviews: got.reviews || dbReadAll('reviews'),
+    // 集中のしかた (Focus.gs) の「始めた」。ポイントに入れるのは参加している人のぶんだけ
+    focus: got.focus || dbReadAll('focus_sessions'),
   };
 }
 
@@ -244,6 +248,16 @@ function gamePointsBySpans_(spans, pre) {
 
   var credits = gameReviewCredits_(led.pulls, led.reviews);
   for (var r = 0; r < credits.length; r++) add(credits[r].day, credits[r].who, 1);
+
+  // 集中のしかたの「始めた」(Focus.gs)。**週の上位に参加している人のぶんだけ** 数える
+  // (集中の記録は本人が選んで付けるもので、参加していない人の点数にはしない)。
+  // 記録のアドレスは小文字なので、参加者の一覧の書き方に戻して足す
+  var players = {};
+  gamePlayers_().forEach(function (p) { players[String(p).toLowerCase()] = p; });
+  var starts = focusCredits_(led.focus, issues);
+  for (var f = 0; f < starts.length; f++) {
+    if (players[starts[f].who]) add(starts[f].day, players[starts[f].who], starts[f].points);
+  }
 
   // 浮動小数の端数 (1/3 を3回足して 0.9999999999999999) だけ落とす。0.1 刻みに
   // 丸めると、3人で分けた1点が 0.3 ずつになり合計が 0.9 に減る。レベルの境目や

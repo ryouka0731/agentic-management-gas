@@ -296,6 +296,9 @@
     });
     out.push(again);
     out.push(makeProgressToggle());
+    // 集中のしかたの記録と技の図鑑 (本人にだけ。オフなら出さない)
+    var focusRecord = makeFocusRecordButton();
+    if (focusRecord) out.push(focusRecord);
     // ゲームがオンのときだけ、参加の切り替えを出す。設定でオフと分かっていれば
     // 尋ねない (設定より先に描かれるときは settings がまだ無い)。切り替えは隠して
     // 並びに直に置き、返事で出す (包む箱に入れると、並びのボタンと幅が揃わない)
