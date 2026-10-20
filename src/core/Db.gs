@@ -48,7 +48,7 @@ function DB_SCHEMA() {
     change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
     // 集中のしかた (Focus.gs)。自分の設定でオンにした人の「今から始める」の記録。本人にだけ見せる
     focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
-      'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind'],
+      'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
   };
 }
 
