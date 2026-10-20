@@ -70,6 +70,22 @@ function PREF_HOME_CARDS_() {
   ];
 }
 
+/**
+ * 楽しい演出の種類。key は fun.<key>。どれも既定はオフ。
+ *
+ * @returns {Array<{key: string, label: string, help: string}>}
+ */
+function PREF_FUN_KINDS_() {
+  return [
+    { key: 'combo', label: '打つと盛り上がる',
+      help: '字を打ち続けると、欄の近くに続けて打った数 (COMBO) が出て、10・30… で大きな字が出ます。消すと途切れます' },
+    { key: 'words', label: '言葉に反応する',
+      help: '「完成」「ありがとう」「締切」などを打つと、小さな絵と字が飛びます' },
+    { key: 'cheer', label: '済ませたらお祝い',
+      help: '反映した・やることを済ませた・承認したときなどに、お祝いの字が出ます' },
+  ];
+}
+
 /** 改善のヒントで変えられる数の範囲と名前 */
 function PREF_ADVICE_TUNABLE_() {
   return {
@@ -153,6 +169,13 @@ function PREF_GROUPS_() {
         ],
         def: 'plain' }];
     },
+    fun: function () {
+      // 楽しい演出。どれも既定はオフ (使う人が選ぶ)。演出そのものは画面の js-fun が持つ
+      return PREF_FUN_KINDS_().map(function (f) {
+        return { key: 'fun.' + f.key, scope: 'me', type: 'bool', section: '楽しい演出',
+          label: f.label, help: f.help, def: false };
+      });
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -171,7 +194,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -396,6 +419,9 @@ function apiPrefs(opts) {
   var byKey = {};
   items.forEach(function (p) { byKey[p.key] = p.value; });
 
+  var fun = {};
+  PREF_FUN_KINDS_().forEach(function (f) { fun[f.key] = byKey['fun.' + f.key] === true; });
+
   var cards = {};
   PREF_HOME_CARDS_().forEach(function (c) { cards[c.key] = byKey['home.cards.' + c.key] !== false; });
 
@@ -407,6 +433,7 @@ function apiPrefs(opts) {
       startTab: plainText(byKey['start.tab']),
       termStyle: plainText(byKey['terms.style']),
       homeCards: cards,
+      fun: fun,
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),
