@@ -4,11 +4,11 @@ import { createFakeGas } from './fakegas.js';
 import { APP_SOURCES } from './sources.js';
 
 /*
- * 仕事のスタンス診断。問い・軸・型は src/core/WorkStyle.js が唯一の定義。
+ * 仕事のスタンス診断。問い・軸・型は src/core/WorkStyleTypes.js が唯一の定義。
  * 結果は本人のもの (STYLE:<アドレス>)。ほかの人に見せるのは、本人が style.share をオンにしたときの型の名前だけ。
  */
 
-const pure = loadGas('src/core/WorkStyle.js');
+const pure = loadGas('src/core/WorkStyleTypes.js');
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
 /** 全部の問いに同じ答え */

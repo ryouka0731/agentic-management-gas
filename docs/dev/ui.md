@@ -163,7 +163,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 
 ## 仕事のスタンス診断 (`js-style`)
 
-自分まわりの「仕事のスタンス診断」から右のパネルで開く。問い・軸・型・おすすめは `src/core/WorkStyle.js` が唯一の定義で、
+自分まわりの「仕事のスタンス診断」から右のパネルで開く。問い・軸・型・おすすめは `src/core/WorkStyleTypes.js` が唯一の定義で、
 画面は `apiWorkStyle` で受け取って描く。**画面は数えない** (答えを `apiWorkStyleSave` に送り、型はサーバが決める)。
 
 - **`js-init` より前に読む** (`wiki.html` の並び)。`peopleStyles` の初期化 (`var … = {}`) が `js-init` の `apiWorkStyleTeam` の
