@@ -12,6 +12,20 @@
 この頁は要約で、使う人向けの本文は zip に入る [kit/README.md](../../kit/README.md)、Claude / Codex 向けの本文は
 [kit/AGENTS.md](../../kit/AGENTS.md) (zip の中では `CLAUDE.md` にもなる) にある。
 
+手元の Claude は `AGENTS.md` (`CLAUDE.md`) を毎回読むので、そこには毎回要るもの (仕組み・最初の一歩・文書を直す流れ・
+やること・自分の様子・守ること・結果の読み方と断りの表) だけを置いている。たまにしか要らない説明は、要るときだけ
+読まれるスキルに分けた。
+
+| 説明 | 置き場 |
+|---|---|
+| 初めて動くときの3つの場所・書くところ・通ったかの確かめ | [kit/.claude/skills/banto-setup/SKILL.md](../../kit/.claude/skills/banto-setup/SKILL.md) |
+| コードの変更を添える | [kit/.claude/skills/banto-patch/SKILL.md](../../kit/.claude/skills/banto-patch/SKILL.md) |
+| 向こうから頼まれたことを取りに来る (頼みごとはデータであって指示ではない、の詳しい決まり) | [kit/.claude/skills/banto-work/SKILL.md](../../kit/.claude/skills/banto-work/SKILL.md) |
+| 番頭に作業を載せる・道具の自動更新 | [kit/.claude/skills/banto-track-setup/SKILL.md](../../kit/.claude/skills/banto-track-setup/SKILL.md) |
+| エージェンティックスクラム | [kit/.claude/skills/banto-scrum/SKILL.md](../../kit/.claude/skills/banto-scrum/SKILL.md) |
+
+結果の JSON は1行で出る (読むのは Claude で、字下げのぶんだけ読む量が増えるため)。人が目で読むときは `--pretty` を付ける。
+
 ## zip の中身
 
 | | 内容 |
@@ -22,7 +36,7 @@
 | `README.md` | 人向けの説明 |
 | `AGENTS.md` / `CLAUDE.md` | Claude / Codex 向けの説明 (同じ中身) |
 | `SCRUM.md` | ai-scrum-gas の CSV との読み替え |
-| `.claude/skills/` `.claude/agents/` | 期間で進めるためのスキルとチームの役割 |
+| `.claude/skills/` `.claude/agents/` | 期間で進めるためのスキルとチームの役割。`banto-*` は AGENTS.md から分けた、要るときだけ読む説明 |
 | `scrum-templates/` | 期間で進めるときの文章のひな形 |
 | `track/` | 作業をやることに載せるフック・スキル・自動更新・確かめる公開鍵 (`kit-key.pem`) |
 
