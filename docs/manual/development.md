@@ -79,7 +79,7 @@ npm run coverage
 |---|---|
 | ピュアな `.js` | vitest で直接 |
 | GAS に依存する `.gs` | `test/fakegas.js` の疑似GAS (DriveApp / SpreadsheetApp / PropertiesService / Session / LockService / Utilities など) で通しの統合テスト |
-| 画面 | `test/dom.js` で jsdom に画面を組み、実際に押す (`test/component.test.js` など) |
+| 画面 | `test/dom.js` で jsdom に画面を組み、実際に押す (`test/component/*.test.js` など。組む口は `test/component/mount.js`) |
 | Docs / Slides の描画の忠実さ | 実機の `debug*` ([実機で確かめる](verification.md)) |
 
 - ランタイムコードに `import` / `export` / `require` を書かない。`test/harness.js` の `loadGas` / `loadGasWith` が
