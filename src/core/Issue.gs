@@ -187,7 +187,7 @@ function issueScrumFieldsCheck_(patch, before) {
  */
 function issueGet(number) {
   var row = dbFindOne('issues', 'number', number);
-  if (!row) throw new Error('Issueが見つかりません: #' + number);
+  if (!row) throw new Error('やることが見つかりません: #' + number);
   return row;
 }
 

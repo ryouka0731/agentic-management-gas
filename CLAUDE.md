@@ -31,7 +31,14 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 なっていた（`'マージ: PR #12 …'` が履歴に残っていた）。
 
 `test/naming.test.js` の「Git の言葉を人に見せない」が、コメントを除いた
-`Notifier.gs` / `PullRequest.gs` / `Branch.gs` を走査している。**断り文 (`new Error(...)` の字) も人が読む**
+`Notifier.gs` の全文と、`src/` のすべての `.gs` と `src/core/*.js` (配る道具の中身
+`KitFiles.gs` と、エディタ専用の `debug*` / `setup*` を除く) の断り文 (`new Error`) と
+変更の記録の文 (`commitFile` の3つ目) を走査している。**断り文を変数に入れてから
+渡すと追えない** (`msg` / `message` / `reason` という名前の変数だけは拾う)。
+
+手元の道具の「よく出る断り」の表は `kit/AGENTS.md` と `docs/manual/agent-kit.md` の
+2か所にある。断り文を言い換えたら両方を直す (`test/docs.test.js` が、表の字が実際に
+出るかと、2つの表が揃っているかを見ている)。**断り文 (`new Error(...)` の字) も人が読む**
 (画面の帯と手元の結果にそのまま出る)。同じテストが `Main.gs` / `PullRequest.gs` / `Branch.gs` の断り文を、
 コメントと `debug*` を除いて走査している。名前そのものを指すときは「main」と括る。
 

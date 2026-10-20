@@ -237,7 +237,7 @@ describe('Phase 2 統合: 楽観的並行制御', () => {
 
     fake._docs.set(mainFileId, html([P1, P2, '<p>2回目の変更</p>']));
     expect(() => ctx.commitFile(mainFileId, 'main', '2回目', staleSha))
-      .toThrow(/HEADが進んでいます/);
+      .toThrow(/ほかの記録が先に入りました/);
 
     const current = ctx.headCommit(mainFileId, 'main').sha;
     expect(() => ctx.commitFile(mainFileId, 'main', '2回目', current)).not.toThrow();

@@ -1,18 +1,14 @@
-import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 共有ドライブに置いたとき。ファイルは親を1つしか持てず、持ち主が無く、
  * 投稿者はゴミ箱へ移せない。
  */
-const SOURCES = (() => {
-  const src = fs.readFileSync(new URL('./scrum-api.test.js', import.meta.url), 'utf8');
-  const base = eval(src.match(/const SOURCES = (\[[\s\S]*?\]);/)[1]);
-  // GAS は全ファイルを同じグローバルに読む。zip は AgentKit を使う
-  return [...base, 'src/KitFiles.gs', 'src/core/AgentKit.gs'];
-})();
+// GAS は全ファイルを同じグローバルに読む。zip は AgentKit を使う
+const SOURCES = [...APP_SOURCES, 'src/KitFiles.gs', 'src/core/AgentKit.gs'];
 
 /** 疑似GASに zip が無ければ足す */
 function withZip(fake) {
