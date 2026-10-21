@@ -1,4 +1,4 @@
-  // ===== 推し (既定はオフ) =====
+  // ===== 推し (既定はオン。利用者が決めた例外。既定のキャラはタク) =====
   //
   // 自分の設定の「推し」(oshi.on) をオンにした人の画面にだけ出す。自分で作ったキャラクターの絵を上げると、
   // 済ませたときに隅の吹き出しでほめ、ホームであいさつし、活動に合わせて育つ。
@@ -396,6 +396,43 @@
     } catch (e) {
       if (window.console) console.warn('推しを出せませんでした', e);
     }
+  }
+
+  /**
+   * 使うキャラに選ばれたときの吹き出し。選び直した設定で推しを取り直してから、そのキャラの「選んでもらった」の
+   * せりふと、そのキャラの絵からでたらめに選んだ表情を出す。オフなら何もしない。吹き出しは手元の焦点を奪わない。
+   */
+  function oshiSayChosen() {
+    if (!oshiOn()) return;
+    try {
+      oshiLoad(function () {
+        if (!oshiOn()) return;
+        var ev = oshiEventOf('chosen');
+        if (!ev) return;
+        oshiShowBubble(ev.key, oshiChosenState() || ev.state, oshiLine(ev.key));
+      });
+    } catch (e) {
+      if (window.console) console.warn('推しを出せませんでした', e);
+    }
+  }
+
+  /**
+   * 選ばれたときに出す表情。最初からいるキャラならどの表情からでも、自分のキャラなら絵を入れた表情から選ぶ。
+   * 自分のキャラに絵が1枚も無ければ、絵が無い表情に出す最初からいるキャラのどの表情からでも。どれも無ければ空。
+   *
+   * @returns {string}
+   */
+  function oshiChosenState() {
+    var all = ((oshiData && oshiData.states) || []).map(function (s) { return s.key; });
+    var pool = all;
+    var mine = oshiActiveMine();
+    if (mine) {
+      pool = (mine.images || []).map(function (i) { return i.state; })
+        .filter(function (k) { return all.indexOf(k) >= 0; });
+      if (!pool.length) pool = oshiPictureBuiltin() ? all : [];
+    }
+    if (!pool.length) return '';
+    return pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))];
   }
 
   /** 吹き出しの器。初めて要るときに1つだけ作る */
@@ -940,6 +977,8 @@
       if (btn) btn.disabled = false;
       showSnack('「' + name + '」を使います', { kind: 'ok' });
       ok(res);
+      // 選んだキャラが、その口調で礼を言う (どんなキャラか分かるように)。オフなら何も取らない
+      oshiSayChosen();
     }, btn ? failEnable(btn, '選べませんでした: ') : failSnack('選べませんでした: '));
   }
 

@@ -217,12 +217,12 @@ function PREF_GROUPS_() {
         def: false }];
     },
     oshi: function () {
-      // 推し。既定はオフ。中身 (表情・せりふ・頼み文) は Oshi.js、画面は js-oshi が持つ
+      // 推し。既定はオン (ほかの楽しい飾りは既定オフだが、これは利用者が決めた例外)。中身 (表情・せりふ・頼み文) は Oshi.js、画面は js-oshi が持つ
       return [
         { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し',
           label: '推しに応援してもらう',
-          help: '自分で作ったキャラクターの絵を上げると、済ませたときにほめてくれます。オンにすると、右上の自分の顔から開く欄に「推し」が出ます',
-          def: false },
+          help: '済ませたときに、選んだキャラクターがほめてくれます。右上の自分の顔から開く欄の「推し」で、自分のキャラも作れます',
+          def: true },
         { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し',
           label: 'ホームであいさつする', help: '推しがオンのとき、ホームに推しのカードを出します', def: true },
         { key: 'oshi.char', scope: 'me', type: 'char', section: '推し',

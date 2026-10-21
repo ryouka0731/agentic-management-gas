@@ -252,13 +252,13 @@ export function prefsFixture(over) {
       def: 'end' },
     { key: 'focus.sound', scope: 'me', type: 'bool', section: '集中のしかた', label: '集中の音', help: '', def: false },
     { key: 'style.share', scope: 'me', type: 'bool', section: '仕事のスタンス診断', label: '診断の型の名前をチームに見せる', help: '', def: false },
-    { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し', label: '推しに応援してもらう', help: '', def: false },
+    { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し', label: '推しに応援してもらう', help: '', def: true },
     { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し', label: 'ホームであいさつする', help: '', def: true },
     { key: 'oshi.char', scope: 'me', type: 'char', section: '推し', label: '使うキャラ', help: '',
-      options: [{ value: 'builtin:itsuki', label: 'イツキ' }, { value: 'builtin:taku', label: 'タク' }], def: 'builtin:itsuki' },
+      options: [{ value: 'builtin:taku', label: 'タク' }, { value: 'builtin:itsuki', label: 'イツキ' }], def: 'builtin:taku' },
     { key: 'oshi.fallback', scope: 'me', type: 'enum', section: '推し', label: '自分のキャラの絵が無い表情', help: '',
-      options: [{ value: 'builtin:itsuki', label: 'イツキの絵を出す' }, { value: 'builtin:taku', label: 'タクの絵を出す' },
-        { value: 'none', label: '出さない' }], def: 'builtin:itsuki' },
+      options: [{ value: 'builtin:taku', label: 'タクの絵を出す' }, { value: 'builtin:itsuki', label: 'イツキの絵を出す' },
+        { value: 'none', label: '出さない' }], def: 'builtin:taku' },
     { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し', label: '最初からいるキャラの絵', help: '',
       options: [{ value: 'chibi', label: '2頭身' }, { value: 'normal', label: '等身' }], def: 'chibi' },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
@@ -301,6 +301,15 @@ export function prefsFixture(over) {
 
 /** よく使う既定の応答 */
 export const DEFAULTS = {
+  // 推しは既定でオン (既定のキャラはタク)。中身を確かめるテストは test/component/oshi.test.js が本物のサーバの返事で上書きする。
+  // 空で返すと、設定が届くたびに取り直してしまう (本物は必ず返す)
+  apiOshiGet: {
+    char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', charId: 0, fallback: '', name: 'タク', tone: 'buddy',
+    events: [], images: [], builtins: [{ key: 'taku', name: 'タク', tone: 'buddy' }, { key: 'itsuki', name: 'イツキ', tone: 'gothic' }],
+    mine: [], mineMax: 5, styles: [], tones: [], states: [], basePrompt: '', luckyOneIn: 0,
+    growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 1, points: 0, source: 'count', stages: [] },
+    limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
+  },
   apiListFiles: [
     { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
     { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
