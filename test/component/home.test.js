@@ -44,6 +44,45 @@ describe('起動', () => {
     expect(document.getElementById('doc-title').textContent).toBe('ホーム');
   });
 
+  it('返事が届くまでは区画に骨組み (スケルトン) を置き、届いたら置き換わる', () => {
+    let lateSummary = null;
+    let lateActivity = null;
+    let lateProgress = null;
+    mount({
+      apiHomeSummary: () => ({ later: (ok) => { lateSummary = ok; } }),
+      apiHomeActivity: () => ({ later: (ok) => { lateActivity = ok; } }),
+      apiProgress: () => ({ later: (ok) => { lateProgress = ok; } }),
+    });
+    const turn = document.getElementById('home-turn');
+    const activity = document.getElementById('home-activity');
+    const recent = document.getElementById('home-recent');
+    const cards = document.getElementById('home-cards');
+    [turn, activity, recent].forEach((el) => {
+      expect(el.querySelector('.home-skel'), el.id).toBeTruthy();
+      expect(el.getAttribute('aria-busy'), el.id).toBe('true');
+      expect(el.querySelector('.home-skel .sr-only').textContent).toBe('読み込んでいます');
+      expect(el.querySelector('.home-skel-lines').getAttribute('aria-hidden')).toBe('true');
+    });
+    expect(turn.querySelectorAll('.home-skel-line').length).toBe(3);
+    expect(cards.querySelector('.home-skel-card')).toBeTruthy();
+    // 届いたら置き換わる
+    lateSummary(DEFAULTS.apiHomeSummary);
+    expect(turn.querySelector('.home-skel')).toBe(null);
+    expect(turn.getAttribute('aria-busy')).toBe(null);
+    expect(recent.querySelector('.home-skel')).toBe(null);
+    expect(activity.querySelector('.home-skel')).toBeTruthy();
+    lateActivity(DEFAULTS.apiHomeActivity);
+    expect(activity.querySelector('.home-skel')).toBe(null);
+    lateProgress(DEFAULTS.apiProgress);
+    expect(cards.querySelector('.home-skel-card')).toBe(null);
+    expect(cards.querySelector('.home-card')).toBeTruthy();
+  });
+
+  it('前進が取れなくても、カードの骨組みは残さない', () => {
+    mount({ apiProgress: new Error('取れません') });
+    expect(document.getElementById('home-cards').querySelector('.home-skel-card')).toBe(null);
+  });
+
   it('ホームを開いたまま返事を待つあいだに やること へ移り、届いても戻されない', () => {
     // 開いた直後は返事に数秒かかる。届いた時点で最初の画面へ切り替えて
     // いたため、そのあいだに押した行き先が押した直後に戻されていた
@@ -1125,7 +1164,10 @@ describe('ホームの区画', () => {
     document.querySelector('.nav-item[data-tab="issues"]').click();
     late(DEFAULTS.apiHomeSummary);
     expect(document.getElementById('panel-issues').hidden).toBe(false);
-    expect(document.getElementById('home-turn').textContent).toBe('');
+    // 骨組みは残るが、届いた中身は描かない (隠れた面に描くと、次に開いたときの読み込みと二重になる)
+    const turn = document.getElementById('home-turn');
+    expect(turn.querySelector('.home-skel')).toBeTruthy();
+    expect(turn.querySelector('.home-turn-group')).toBe(null);
   });
 });
 
