@@ -98,8 +98,13 @@ describe('推しのプロフィールとクリア', () => {
     play.click();
     const f = clear.querySelector('iframe.oshi-clear-frame');
     expect(f.getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/' + VIDEO + '?rel=0&modestbranding=1');
+    expect(f.hasAttribute('sandbox')).toBe(false);
     expect(play.hidden).toBe(true);
     expect(youtubeFrames()).toEqual([f]);
+    // 再生できないときの逃げ道 (新しいタブで YouTube を開く)
+    const open = clear.querySelector('.oshi-clear-open');
+    expect(open.getAttribute('href')).toBe('https://www.youtube.com/watch?v=' + VIDEO);
+    expect(open.target).toBe('_blank');
   });
 
   it('お祝いの言葉が無いキャラは、口調の「実績を全部取った」のせりふを言う。動画が無ければボタンも無い', () => {
