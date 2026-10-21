@@ -122,7 +122,11 @@ export function mountApp(responses, options) {
   trackGlobals();
   dropLeftovers();
 
-  document.documentElement.innerHTML = compiled().html;
+  // 文書のリンク (?doc=…&full=1) で開かれたときに doGet が body に付けるもの (options.link = { doc })
+  const link = (options && options.link) || null;
+  document.documentElement.innerHTML = compiled().html
+    .replace('<?= bodyClass ?>', link && link.doc ? 'doc-link doc-full' : '')
+    .replace('<?= linkDoc ?>', link && link.doc ? String(link.doc) : '');
 
   const calls = [];
   const table = Object.assign({}, responses);
