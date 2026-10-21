@@ -346,7 +346,7 @@ describe('キャラ作成キットと機嫌', () => {
     for (const k of ['mood_sulky', 'mood_pouty', 'mood_recover']) {
       expect(p.split('\n').find((l) => l.startsWith('  - ' + k + ':')), k).toContain('機嫌がオンのときだけ');
     }
-    // 絵が無くてもよい表情 (むっ と、育ちの達人・師範) のほかは「無くてもよい」と書かない
+    // 絵が無くてもよい表情 (むっ と、育ちのべったり・家族) のほかは「無くてもよい」と書かない
     expect(p.split('\n').filter((l) => l.includes('無くてもよい')).map((l) => l.split(' ')[1])).toEqual(['pout', 'grow4', 'grow5']);
   });
 

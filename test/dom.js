@@ -341,7 +341,7 @@ export function prefsFixture(over) {
  * 中身を確かめるテストは test/component/achievements.test.js が本物のサーバの返事で上書きする。
  */
 export const ACH_EMPTY = {
-  on: true, level: 1, stage: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, floored: false }, crossed: false, days: 0,
+  on: true, level: 1, stage: { index: 0, key: 'grow1', label: 'よそよそしい', meter: 0, toNext: 4, floored: false }, crossed: false, days: 0,
   total: 0, got: 0, cleared: false, clearedNow: false, groups: [], items: [], unlocked: [], newly: [], next: [],
 };
 
@@ -361,7 +361,7 @@ export const DEFAULTS = {
     kitTools: [{ key: 'chatgpt', label: 'ChatGPT' }, { key: 'gemini', label: 'Gemini' }, { key: 'claude', label: 'Claude' },
       { key: 'codex', label: 'Codex' }],
     sheet: { rows: 4, cols: 4 },
-    growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
+    growth: { index: 0, key: 'grow1', label: 'よそよそしい', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
     limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
     reveal: { items: [], open: 0, total: 0,
       limits: { itemsMax: 40, labelMax: 20, textMax: 200, lvMin: 2, lvMax: 99, clearLineMax: 200 } },
