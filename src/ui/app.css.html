@@ -4351,6 +4351,11 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 .pref-field > .row-meta:last-child { flex-basis: 100%; }
 .pref-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .pref-steps { display: inline-flex; gap: var(--sp-2); }
+/* 予定に入れる (js-calendar): 組み直す・カレンダーで開く・作る・貼るを1行に並べ、狭ければ折り返す */
+.calendar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.calendar-id { flex: 1 1 240px; min-width: 0; }
+.calendar-link { text-decoration: none; }
+.calendar-late { padding: 0 var(--sp-3) var(--sp-2); }
 .pref-field select { min-width: 72px; }
 .pref-field input[type="number"] {
   min-width: 72px;

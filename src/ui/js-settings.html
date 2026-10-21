@@ -226,6 +226,7 @@
     funPrefsChanged();
     focusPrefsChanged();
     oshiPrefsChanged();
+    calendarPrefsChanged();
     // 描いてあるカードのうち止めたものを外す。出すほうはホームを開き直したとき (loadHome) に描く。
     // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
     if (!homeCardOn('game')) removeAll(homeCardsEl, '.game-card');
@@ -474,6 +475,7 @@
     if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
     settingsEl.appendChild(team);
     prefFocusPending();
+    refreshCalendarStatus();
   }
 
   /** 開いたら印を付ける設定の名前 (診断のおすすめから開いたとき)。描いたら空に戻す */
@@ -582,9 +584,14 @@
         sec.appendChild(h);
       }
       by[name].forEach(function (p) {
-        // 使うキャラ (推し) は人ごとに選べるものが違い、絵で選ぶので、選び方は js-oshi が組む
-        sec.appendChild(p.type === 'char' ? makeOshiCharPicker(p) : makePrefField(p, editable));
+        // 使うキャラ (推し) は人ごとに選べるものが違い、絵で選ぶので、選び方は js-oshi が組む。
+        // 共有カレンダー (calendar.shared) は作る・貼るボタンで決めるので、js-calendar が組む
+        if (p.type === 'char') sec.appendChild(makeOshiCharPicker(p));
+        else if (p.type === 'calendar') sec.appendChild(makeCalendarTeamField(p, editable));
+        else sec.appendChild(makePrefField(p, editable));
       });
+      // 予定に入れるの節には、様子と「予定を組み直す」を添える (js-calendar)
+      if (by[name].some(function (p) { return p.key === 'calendar.plan'; })) sec.appendChild(makeCalendarMinePanel());
       host.appendChild(sec);
     });
   }
