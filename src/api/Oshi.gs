@@ -83,7 +83,7 @@ function apiOshiGet() {
     styles: OSHI_STYLES().map(function (s) { return { key: plainText(s.key), label: plainText(s.label) }; }),
     tones: OSHI_TONES().map(function (t) { return { key: plainText(t.key), label: plainText(t.label) }; }),
     states: OSHI_STATES().map(function (s) {
-      return { key: plainText(s.key), label: plainText(s.label), when: plainText(s.when), grow: !!s.grow,
+      return { key: plainText(s.key), label: plainText(s.label), when: plainText(s.when), grow: !!s.grow, scene: !!s.scene,
         prompt: plainText(oshiPrompt(s.key)) };
     }),
     basePrompt: plainText(OSHI_PROMPT_BASE()),

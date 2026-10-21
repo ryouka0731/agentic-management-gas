@@ -500,7 +500,8 @@ describe('選んだキャラがあいさつする', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   const pure = loadGasWith(createFakeGas(), 'src/core/Oshi.js');
-  const STATES = pure.OSHI_STATES().map((x) => x.key);
+  // 決まった場面でだけ出す表情 (作業中) は、でたらめには選ばない
+  const STATES = pure.OSHI_STATES().filter((x) => !x.scene).map((x) => x.key);
   const picker = () => document.querySelector('[data-pref="oshi.char"]');
   const card = (v) => [...picker().querySelectorAll('.oshi-choice')].find((b) => b.dataset.char === v);
   const openSettings = () => document.querySelector('.nav-item[data-tab="settings"]').click();
@@ -523,6 +524,16 @@ describe('選んだキャラがあいさつする', () => {
     expect(defaultCalls(app)).toContainEqual(['itsuki', 'chibi', want]);
     // 吹き出しは焦点を奪わない
     expect(document.activeElement).toBe(focused);
+  });
+
+  it('でたらめに選ぶ表情に、作業中 (作業部屋でだけ出す) を入れない', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9999);
+    const app = mountOshi({ 'oshi.on': true, 'oshi.home': false });
+    openSettings();
+    app.respond('apiOshiGet', oshiFixture({ char: 'builtin:itsuki' }));
+    card('builtin:itsuki').click();
+    expect(bubble().dataset.state).not.toBe('work');
+    expect(bubble().dataset.state).toBe(STATES[STATES.length - 1]);
   });
 
   it('等身を選んでいれば、等身の絵から', () => {
