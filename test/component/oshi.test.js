@@ -362,6 +362,56 @@ describe('最初からいるキャラ', () => {
     expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'celebrate'));
   });
 
+  // ----- 推しの頁の顔。頭をなでると笑顔になる (makeOshiHero) -----
+  const hero = () => document.querySelector('.oshi-page .oshi-hero');
+  /** jsdom の PointerEvent は clientX を持たせにくいので、同じ名前の MouseEvent を送る */
+  const move = (el, x, y) => el.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+  const patLines = (data) => data.events.find((e) => e.key === 'pat').lines;
+
+  it('推しの頁のいちばん上に、いま使うキャラの絵が大きく出て、「なでる」を押すと笑顔になってひとこと言い、しばらくで戻る', () => {
+    vi.useFakeTimers();
+    const data = oshiFixture({ noImages: true });
+    mountOshi(NO_HOME, { apiOshiGet: data });
+    openPage();
+    const sec = hero();
+    expect(sec).toBeTruthy();
+    expect(sec.dataset.state).toBe('idle');
+    expect(sec.querySelector('.oshi-hero-figure img').getAttribute('alt')).toContain('ルナ');
+    expect(sec.querySelector('.oshi-hero-line').textContent).toContain('なでると喜びます');
+    sec.querySelector('.oshi-pat').click();
+    expect(sec.dataset.state).toBe('praise');
+    expect(sec.classList.contains('is-patted')).toBe(true);
+    expect(sec.querySelector('.oshi-hero-figure img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'praise'));
+    expect(patLines(data)).toContain(sec.querySelector('.oshi-hero-line').textContent);
+    vi.advanceTimersByTime(4000);
+    expect(sec.dataset.state).toBe('idle');
+    expect(sec.classList.contains('is-patted')).toBe(false);
+    expect(sec.querySelector('.oshi-hero-line').textContent).toContain('なでると喜びます');
+  });
+
+  it('絵の上半分で指を左右に往復させると、なでたと数える。下半分や笑顔のあいだは数えない', () => {
+    vi.useFakeTimers();
+    const data = oshiFixture({ noImages: true });
+    mountOshi(NO_HOME, { apiOshiGet: data });
+    openPage();
+    const sec = hero();
+    const fig = sec.querySelector('.oshi-hero-figure');
+    fig.getBoundingClientRect = () => ({ top: 0, left: 0, width: 200, height: 200, right: 200, bottom: 200 });
+    // 下半分 (体) をなでても変わらない
+    move(fig, 20, 150); move(fig, 80, 150); move(fig, 20, 150); move(fig, 80, 150);
+    expect(sec.dataset.state).toBe('idle');
+    // 頭を一往復半 (向きが2回変わる)
+    move(fig, 20, 40); move(fig, 80, 40); move(fig, 20, 40); move(fig, 80, 40);
+    expect(sec.dataset.state).toBe('praise');
+    const said = sec.querySelector('.oshi-hero-line').textContent;
+    expect(patLines(data)).toContain(said);
+    // 笑顔のあいだにもう一度なでても、せりふは変わらない
+    move(fig, 20, 40); move(fig, 80, 40); move(fig, 20, 40); move(fig, 80, 40);
+    expect(sec.querySelector('.oshi-hero-line').textContent).toBe(said);
+    vi.advanceTimersByTime(4000);
+    expect(sec.dataset.state).toBe('idle');
+  });
+
   // 絵は要るときに取る作りなので、そのままだと場面が来た瞬間にせりふの後から絵が遅れて出る。
   // 読み込んでから少し待ち、いま使うキャラの絵を全部の表情ぶん裏で取っておく (oshiWarmImages)
   it('読み込んでから少し待つと、いま使うキャラの絵を全部の表情ぶん裏で取っておく。場面が来たときは取りに行かず、すぐ出す', () => {
