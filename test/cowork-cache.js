@@ -48,6 +48,8 @@ export function installCoworkCache(fake, opts = {}) {
   fake.coworkNow_ = () => new Date(now);
   return {
     store,
+    /** 台帳の読み取りの覚え (Db.gs の DB:<表>:<版> / DBV:<表>) を除いた鍵。作業雑談部屋が置いたものだけを見る */
+    keys: () => [...store.keys()].filter((k) => !/^DBV?:/.test(k)),
     puts,
     now: () => now,
     advance: (ms) => { now += ms; },

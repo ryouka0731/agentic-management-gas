@@ -153,6 +153,8 @@ function usageRecord(rows) {
         for (var d = 0; d < dropped; d++) {
           sheet.deleteRow(values.length + merged.added.length + 2);
         }
+        // 台帳に直に書いたので、読み取りの覚えを捨てる (Db.gs の dbInvalidate_)
+        if (merged.added.length || merged.touched || dropped > 0) dbInvalidate_('usage');
         return merged.done;
   }, function () { return 0; });
 }

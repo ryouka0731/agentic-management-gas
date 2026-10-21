@@ -484,6 +484,8 @@
     if (settings.canEdit) team.appendChild(makeOutcomesSettings());
     // 最初からいるキャラのプロフィールも管理者だけ (中身はスクリプトの設定にだけ置く。js-oshi)
     if (settings.canEdit) team.appendChild(makeOshiBuiltinProfileSettings());
+    // 台帳の読み取りの覚えを捨てる (apiCacheClear も管理者でなければ断る)
+    if (settings.canEdit) team.appendChild(makeCacheSettings());
     settingsEl.appendChild(team);
     prefFocusPending();
     refreshCalendarStatus();
@@ -1035,6 +1037,44 @@
         'setupCommandQueue() を実行すると、その人の権限で動き始めます (前の人が抜けた場合も、これで引き継げます)。';
       box.appendChild(how);
     }
+    return box;
+  }
+
+  /**
+   * 台帳の読み取りの覚え (キャッシュ) を捨てる欄。管理者だけ。
+   *
+   * 台帳 (スプレッドシート) を直に開いて書き換えたぶんは、覚えの期限 (5分) まで画面に出ない
+   * (docs/dev/ledger-schema.md)。待てないときに押す。台帳そのものは変えない。
+   */
+  function makeCacheSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'cache-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.textContent = '台帳の読み取りの覚え';
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.className = 'row-meta';
+    about.textContent = '速く開けるように、台帳から読んだ中身を5分のあいだ覚えています。画面からの操作はすぐ反映されますが、' +
+      '台帳のスプレッドシートを直に書き換えたぶんは、5分たつか、ここで覚えを捨てるまで画面に出ません。';
+    box.appendChild(about);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'cache-clear';
+    btn.className = 'btn';
+    btn.textContent = '覚えを捨てて読み直す';
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      call('apiCacheClear', [], function () {
+        btn.disabled = false;
+        showSnack('覚えを捨てました。次に開いたときは台帳から読み直します', { kind: 'ok' });
+      }, failEnable(btn, '覚えを捨てられませんでした: '));
+    });
+    box.appendChild(btn);
     return box;
   }
 

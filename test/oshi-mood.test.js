@@ -39,6 +39,8 @@ function setup(opts) {
   const ctx = loadGasWith(fake, ...APP_SOURCES);
   ctx.repoInit('agentic-management');
   if (!opts || opts.mood !== false) ctx.apiPrefSet('oshi.mood', true);
+  // noCache: キャッシュの無い環境 (疑似GASの CacheService を外す。機嫌の覚えも台帳の読み取りの覚えも使わない)
+  if (opts && opts.noCache) ctx.CacheService = undefined;
   const cache = opts && opts.noCache ? null : fakeCache(ctx);
   return { ctx, fake, cache };
 }
