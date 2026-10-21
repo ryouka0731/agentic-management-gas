@@ -5412,6 +5412,20 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .oshi-lines summary { cursor: pointer; }
 .oshi-lines-input { width: -webkit-fill-available; width: -moz-available; width: stretch; margin: var(--sp-1) 0; }
+/* プロフィール (Lv で少しずつ分かる)。まだの項目は ??? と「Lv ◯ で分かる」だけ */
+/* 罫線を足さず、面で分ける (test/ui-structure.test.js の「罫線の総数」) */
+.oshi-reveal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.oshi-reveal-item { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--bg-2); }
+.oshi-reveal-item p { margin: 0; }
+.oshi-reveal-item[data-open="false"] strong { color: var(--ink-2); }
+.oshi-reveal-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.oshi-clear { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--success-bg); }
+.oshi-clear .row-meta { color: var(--ink); margin: 0; }
+.oshi-clear-line { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.oshi-clear-play { align-self: flex-start; }
+.oshi-clear-frame { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: var(--radius-sm); background: var(--bg); }
+.oshi-builtin-profile { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+.oshi-builtin-profile .oshi-field { align-self: stretch; }
 .oshi-mine-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .oshi-mine-tab[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .oshi-create { align-self: flex-start; }

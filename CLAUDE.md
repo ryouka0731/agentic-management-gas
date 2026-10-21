@@ -223,9 +223,11 @@ npm run deploy -- "何を変えたか"
 - **GAS 標準サービスのみ。GCP プロジェクトは使えない**ため `clasp run` は使用不可。
   ローカルからの操作は `.git/queue/` のコマンドキュー経由（`docs/manual/command-queue.md` 参照）
 - 外部 API / 公開エンドポイントは使わない
-- **画面が外から取ってくるのは1つだけの例外**: 集中のしかたの「自分の曲」で、YouTube / SoundCloud の公式の埋め込みの
+- **画面が外から取ってくるのは2つだけの例外**: 集中のしかたの「自分の曲」で、YouTube / SoundCloud の公式の埋め込みの
   再生機を置く (`src/core/FocusMusic.js` と `js-focus`)。本人が「読み込む」を押したときだけ、貼られた URL から読み解いた
-  id だけで URL を組み直し、YouTube は nocookie の場所 (`www.youtube-nocookie.com`) を使う。ほかに広げない (`docs/dev/ui.md`)
+  id だけで URL を組み直し、YouTube は nocookie の場所 (`www.youtube-nocookie.com`) を使う。もう1つは推しのクリアの
+  「動画を見る」(`js-oshi` の `makeOshiClear`) で、同じ決まり (押したときだけ・読み解いた id から・nocookie・YouTube の動画1本だけ)。
+  ほかに広げない (`docs/dev/ui.md`)
 - **拡張サービスは2つだけの例外**: Google ToDo 連携 (`src/core/GoogleTasks.gs`) と
   Drive (v3。共有ドライブの役割を読む `driveMembers_` と、入れ物が共有ドライブかを見る
   `repoDriveId_`)。Drive は `appsscript.json` で足してあるので利用者は何もしない。
