@@ -57,6 +57,8 @@ function repoInit(rootFolderName) {
   }
   var sheet1 = db.getSheetByName('シート1') || db.getSheetByName('Sheet1');
   if (sheet1) db.deleteSheet(sheet1);
+  // 台帳を作り直したので、前の台帳の読み取りの覚えを捨てる (同じ表の名前で前の中身が当たらないように)
+  dbInvalidateAll_();
 
   // main ブランチをテーブルに登録する。これが無いと commitFile が
   // headSha を更新できない

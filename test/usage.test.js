@@ -370,6 +370,8 @@ describe('日付に変えられた日を読む', () => {
       row[0] = new Date(y, m - 1, d);
     }
     sheet.getRange(2, 1, last - 1, 5).setValues(v);
+    // 人がシートを直にいじったのと同じ。台帳の読み取りの覚えは期限 (300秒) まで古いので、待つ代わりに捨てる
+    ctx.dbInvalidate_('usage');
   }
 
   it('同じ日の同じ場所に足し込む', () => {

@@ -38,7 +38,7 @@ describe('作業雑談部屋の入口', () => {
       expectRefused(() => e.ctx.apiCoworkLeave(id), /使っていません/);
       expectRefused(() => e.ctx.apiCoworkBeat(id), /使っていません/);
     });
-    expect(e.clock.store.size).toBe(0);
+    expect(e.clock.keys()).toEqual([]);
   });
 
   it('部屋を決めるのは管理者だけ。管理者はオフのあいだも用意できる', () => {

@@ -41,7 +41,27 @@
       { key: 'wind', label: '風', seconds: 30, rate: 24000 },
       // 声らしいものを6つ重ねるので、低い標本の数で描く (話し声の帯なら 6kHz までで足りる)
       { key: 'cafe', label: 'カフェのざわめき', seconds: 30, rate: 12000 },
+      { key: 'mouse', label: 'マウス', seconds: 30, rate: 24000 },
     ];
+  }
+
+  /**
+   * キーボードの種類。並びは選ぶ欄の並び。最初は赤軸。
+   *
+   * @returns {Array<{key: string, label: string}>}
+   */
+  function ROOM_KEYS_KINDS() {
+    return [
+      { key: 'red', label: '赤軸 (リニア)' },
+      { key: 'blue', label: '青軸 (カチカチ)' },
+      { key: 'membrane', label: 'メンブレン' },
+      { key: 'laptop', label: 'ノートパソコン' },
+    ];
+  }
+
+  /** 知らない種類は赤軸にする */
+  function roomKeysKindClean(kind) {
+    return ROOM_KEYS_KINDS().some(function (k) { return k.key === kind; }) ? kind : 'red';
   }
 
   // ----- 設定 -----
@@ -74,28 +94,28 @@
   }
 
   /**
-   * 既定の混ぜ方。最初は雨だけ。
+   * 既定の混ぜ方。最初は雨だけ。キーボードは赤軸。
    *
-   * @returns {{master: number, sounds: Object<string, {on: boolean, volume: number}>}}
+   * @returns {{master: number, keysKind: string, sounds: Object<string, {on: boolean, volume: number}>}}
    */
   function roomMixDefault() {
-    var vol = { rain: 0.6, keys: 0.45, fire: 0.5, wind: 0.4, cafe: 0.4 };
+    var vol = { rain: 0.6, keys: 0.45, fire: 0.5, wind: 0.4, cafe: 0.4, mouse: 0.4 };
     var sounds = {};
     ROOM_SOUNDS().forEach(function (s) { sounds[s.key] = { on: s.key === 'rain', volume: vol[s.key] }; });
-    return { master: 0.6, sounds: sounds };
+    return { master: 0.6, keysKind: 'red', sounds: sounds };
   }
 
   /**
-   * 端末に覚えた混ぜ方を読める形にそろえる。知らない音は捨て、欠けた音は既定で埋める。
+   * 端末に覚えた混ぜ方を読める形にそろえる。知らない音は捨て、欠けた音は既定で埋める。知らないキーボードの種類は赤軸。
    *
    * @param {*} raw
-   * @returns {{master: number, sounds: Object<string, {on: boolean, volume: number}>}}
+   * @returns {{master: number, keysKind: string, sounds: Object<string, {on: boolean, volume: number}>}}
    */
   function roomMixClean(raw) {
     var def = roomMixDefault();
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
     var given = raw.sounds && typeof raw.sounds === 'object' ? raw.sounds : {};
-    var out = { master: roomClamp01(raw.master, def.master), sounds: {} };
+    var out = { master: roomClamp01(raw.master, def.master), keysKind: roomKeysKindClean(raw.keysKind), sounds: {} };
     ROOM_SOUNDS().forEach(function (s) {
       var d = def.sounds[s.key];
       var r = Object.prototype.hasOwnProperty.call(given, s.key) ? given[s.key] : null;
@@ -354,37 +374,95 @@
   }
 
   /**
-   * キーを1つ打つ音 (押した「かち」と底の「とん」、少しあとに離した軽い「かち」)。space はスペースキー (低く大きい)。
+   * キーボードの種類ごとの描き方の数。
+   *
+   * - gap: 打つ間隔 (秒) = gap[0] + rand × gap[1]
+   * - level: 描き終わりの最大振幅 (種類ごとの大きさの違いを残す)
+   *
+   * @param {string} kind ROOM_KEYS_KINDS の key
+   * @returns {{gap: number[], level: number}}
+   */
+  function roomKeysTone(kind) {
+    return {
+      red: { gap: [0.08, 0.13], level: 0.68 },
+      blue: { gap: [0.08, 0.13], level: 0.8 },
+      membrane: { gap: [0.09, 0.14], level: 0.52 },
+      laptop: { gap: [0.065, 0.1], level: 0.55 },
+    }[roomKeysKindClean(kind)];
+  }
+
+  /**
+   * こもった短い雑音 (帯を絞ったはじけを、さらに高いところで切る)。
+   *
+   * @returns {Float32Array}
+   */
+  function roomThud(rate, freq, q, decay, cut, rand) {
+    return focusNormalize(roomFilter(roomClick(rate, freq, q, decay, rand), roomBiquad('lowpass', cut, 0.7, rate)), 1);
+  }
+
+  /**
+   * キーを1つ打つ音。space はスペースキー (低く大きい)。種類ごとに作りが違う。
+   *
+   * - red 赤軸: 高い「カチッ」は無し。底打ちの柔らかい「トッ」(700〜1100Hz の雑音 約7ms + 150〜220Hz の鳴り)。離した音は小さい
+   * - blue 青軸: 押したとき 3〜5kHz の鋭い「カチッ」(約2ms)、少しあとに底打ち、離したときにも小さい「カチッ」。大きめ
+   * - membrane メンブレン: 1.2kHz までに切った雑音 10〜14ms と 120〜160Hz の小さい鳴り。離した音は無し。静か
+   * - laptop ノートパソコン: 2〜4kHz 寄り (6kHz で切る) のとても短い「タッ」(約4ms)。小さい
    *
    * @param {Float32Array} out
    * @param {number} at
    * @param {number} rate
    * @param {function(): number} rand
    * @param {boolean} space
+   * @param {string} [kind] 既定は赤軸
    */
-  function roomKeyStroke(out, at, rate, rand, space) {
-    var amp = space ? 1 : 0.55 + 0.35 * rand();
-    roomPut(out, at, roomClick(rate, space ? 1300 : 2200 + 1600 * rand(), 1.4, 0.0018, rand), amp);
-    roomPut(out, at, roomPing(rate, space ? 120 : 170 + 80 * rand(), 0.007, rand, 0.15), amp * 0.45);
+  function roomKeyStroke(out, at, rate, rand, space, kind) {
+    var k = roomKeysKindClean(kind);
     var up = at + Math.round(rate * (0.05 + 0.04 * rand()));
-    roomPut(out, up, roomClick(rate, 3200 + 1500 * rand(), 1.8, 0.0012, rand), amp * 0.35);
+    var amp;
+    if (k === 'blue') {
+      amp = space ? 1 : 0.75 + 0.25 * rand();
+      roomPut(out, at, roomClick(rate, space ? 2400 : 3000 + 2000 * rand(), 2.5, 0.0003, rand), amp);
+      var bottom = at + Math.round(rate * 0.006);
+      roomPut(out, bottom, roomClick(rate, space ? 800 : 1000 + 400 * rand(), 1, 0.001, rand), amp * 0.35);
+      roomPut(out, bottom, roomPing(rate, space ? 130 : 180 + 60 * rand(), 0.006, rand, 0.15), amp * 0.3);
+      roomPut(out, up, roomClick(rate, 3500 + 1500 * rand(), 2.5, 0.0003, rand), amp * 0.45);
+    } else if (k === 'membrane') {
+      amp = space ? 1 : 0.5 + 0.3 * rand();
+      roomPut(out, at, roomThud(rate, space ? 400 : 500 + 300 * rand(), 0.6, 0.0013 + 0.0006 * rand(), 1200, rand), amp);
+      roomPut(out, at, roomPing(rate, space ? 110 : 120 + 40 * rand(), 0.008, rand, 0.2), amp * 0.25);
+    } else if (k === 'laptop') {
+      amp = space ? 0.9 : 0.5 + 0.3 * rand();
+      roomPut(out, at, roomThud(rate, space ? 1800 : 2000 + 2000 * rand(), 1.6, 0.0006, 6000, rand), amp);
+      roomPut(out, at, roomPing(rate, space ? 220 : 280 + 80 * rand(), 0.002, rand, 0.3), amp * 0.15);
+    } else {
+      amp = space ? 1 : 0.55 + 0.35 * rand();
+      roomPut(out, at, roomThud(rate, space ? 550 : 700 + 400 * rand(), 0.9, 0.0009, 2000, rand), amp);
+      roomPut(out, at, roomPing(rate, space ? 120 : 150 + 70 * rand(), 0.008, rand, 0.15), amp * 0.5);
+      roomPut(out, up, roomThud(rate, 1200 + 600 * rand(), 1, 0.0008, 2500, rand), amp * 0.15);
+    }
   }
 
   /**
    * キーボード。ひとしきり打って (1.5〜6秒)、手を止める (0.7〜3.3秒) をくり返す。言葉の切れ目にスペースキー。
    *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @param {string} [kind] キーボードの種類 (ROOM_KEYS_KINDS。既定は赤軸)
    * @returns {Array<function()>}
    */
-  function roomStepsKeys(rate, seconds, rand) {
+  function roomStepsKeys(rate, seconds, rand, kind) {
+    var k = roomKeysKindClean(kind);
+    var tone = roomKeysTone(k);
     var n = Math.round(rate * seconds);
     var f = Math.round(rate * 0.1);
     var out = null;
     var strokes = [];
     var steps = [
       function () {
-        var tone = roomNoise('brown', n + f, rand);
-        roomFilter(tone, roomBiquad('lowpass', 300, 0.7, rate));
-        out = focusNormalize(focusLoopSeam(tone, f), 0.03);
+        var bed = roomNoise('brown', n + f, rand);
+        roomFilter(bed, roomBiquad('lowpass', 300, 0.7, rate));
+        out = focusNormalize(focusLoopSeam(bed, f), 0.03);
         // いつ打つかを先に決める (軽い)。音を重ねるのは次の手順から
         var t = 0.2 + rand() * 0.6;
         while (t < seconds - 0.4) {
@@ -392,7 +470,7 @@
           while (t < end) {
             var space = rand() < 0.14;
             strokes.push({ at: Math.floor(t * rate), space: space });
-            t += space ? 0.18 + rand() * 0.2 : 0.08 + rand() * 0.13;
+            t += space ? 0.18 + rand() * 0.2 : tone.gap[0] + rand() * tone.gap[1];
           }
           t += 0.7 + rand() * 2.6;
         }
@@ -404,7 +482,79 @@
         steps.push(function () {
           var size = Math.ceil(strokes.length / 6);
           for (var i = p * size; i < Math.min(strokes.length, (p + 1) * size); i++) {
-            roomKeyStroke(out, strokes[i].at, rate, rand, strokes[i].space);
+            roomKeyStroke(out, strokes[i].at, rate, rand, strokes[i].space, k);
+          }
+        });
+      })(part);
+    }
+    steps.push(function () { return focusNormalize(out, tone.level); });
+    return steps;
+  }
+
+  /**
+   * マウスをいつ鳴らすか (秒)。クリックは押す (press) と離す (release) の2つで、間は 60〜90ms。
+   * ときどきダブルクリック、ときどきホイール (30ms おきの wheel を3〜8個)。次の操作までは 0.6〜4秒。
+   *
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Array<{at: number, kind: string}>} at の順
+   */
+  function roomMousePlan(seconds, rand) {
+    var out = [];
+    var t = 0.3 + rand();
+    function click(at) {
+      out.push({ at: at, kind: 'press' });
+      var rel = at + 0.06 + 0.03 * rand();
+      out.push({ at: rel, kind: 'release' });
+      return rel;
+    }
+    while (t < seconds - 0.6) {
+      var r = rand();
+      if (r < 0.15) {
+        var ticks = 3 + Math.floor(rand() * 6);
+        for (var i = 0; i < ticks; i++) out.push({ at: t + i * 0.03, kind: 'wheel' });
+      } else {
+        var last = click(t);
+        if (r < 0.3) click(last + 0.07 + 0.06 * rand());
+      }
+      t += 0.6 + rand() * 3.4;
+    }
+    return out;
+  }
+
+  /**
+   * マウス。押す「カチ」と離す「カチ」(2〜3kHz 寄りの鋭い雑音 約2ms)、ときどきダブルクリック、ときどきホイールの小さい「カリカリ」。
+   *
+   * @returns {Array<function()>}
+   */
+  function roomStepsMouse(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var out = null;
+    var plan = [];
+    var steps = [
+      function () {
+        var bed = roomNoise('brown', n + f, rand);
+        roomFilter(bed, roomBiquad('lowpass', 300, 0.7, rate));
+        out = focusNormalize(focusLoopSeam(bed, f), 0.02);
+        plan = roomMousePlan(seconds, rand);
+      },
+    ];
+    for (var part = 0; part < 3; part++) {
+      (function (p) {
+        steps.push(function () {
+          var size = Math.ceil(plan.length / 3);
+          for (var i = p * size; i < Math.min(plan.length, (p + 1) * size); i++) {
+            var e = plan[i];
+            var at = Math.floor(e.at * rate);
+            if (e.kind === 'wheel') {
+              roomPut(out, at, roomClick(rate, 2500 + 1000 * rand(), 3, 0.0002, rand), 0.18 + 0.08 * rand());
+            } else {
+              var press = e.kind === 'press';
+              var amp = (press ? 0.85 : 0.6) + 0.15 * rand();
+              roomPut(out, at, roomClick(rate, (press ? 2000 : 2500) + 1000 * rand(), 2.2, 0.0003, rand), amp);
+              roomPut(out, at, roomPing(rate, 500 + 200 * rand(), 0.002, rand, 0.3), amp * 0.12);
+            }
           }
         });
       })(part);
@@ -574,14 +724,16 @@
 
   /** @returns {Float32Array} 雨を一度に描く */
   function roomRenderRain(rate, seconds, rand) { return roomRunSteps(roomStepsRain(rate, seconds, rand)); }
-  /** @returns {Float32Array} キーボードを一度に描く */
-  function roomRenderKeys(rate, seconds, rand) { return roomRunSteps(roomStepsKeys(rate, seconds, rand)); }
+  /** @returns {Float32Array} キーボードを一度に描く (kind はキーボードの種類) */
+  function roomRenderKeys(rate, seconds, rand, kind) { return roomRunSteps(roomStepsKeys(rate, seconds, rand, kind)); }
   /** @returns {Float32Array} たき火を一度に描く */
   function roomRenderFire(rate, seconds, rand) { return roomRunSteps(roomStepsFire(rate, seconds, rand)); }
   /** @returns {Float32Array} 風を一度に描く */
   function roomRenderWind(rate, seconds, rand) { return roomRunSteps(roomStepsWind(rate, seconds, rand)); }
   /** @returns {Float32Array} カフェのざわめきを一度に描く */
   function roomRenderCafe(rate, seconds, rand) { return roomRunSteps(roomStepsCafe(rate, seconds, rand)); }
+  /** @returns {Float32Array} マウスを一度に描く */
+  function roomRenderMouse(rate, seconds, rand) { return roomRunSteps(roomStepsMouse(rate, seconds, rand)); }
 
   /**
    * 音を描く手順。画面ではこれを1つずつ別の刻みで走らせる (一度に描くと、そのあいだ画面が固まる)。
@@ -590,11 +742,13 @@
    * @param {number} rate
    * @param {number} seconds
    * @param {function(): number} rand
+   * @param {string} [keysKind] キーボードの種類 (key が keys のときだけ効く。混ぜ方の keysKind)
    * @returns {Array<function()>|null} 知らない key なら null
    */
-  function roomRenderSteps(key, rate, seconds, rand) {
-    var fn = { rain: roomStepsRain, keys: roomStepsKeys, fire: roomStepsFire, wind: roomStepsWind, cafe: roomStepsCafe }[key];
-    return fn ? fn(rate, seconds, rand) : null;
+  function roomRenderSteps(key, rate, seconds, rand, keysKind) {
+    var fn = { rain: roomStepsRain, keys: roomStepsKeys, fire: roomStepsFire, wind: roomStepsWind, cafe: roomStepsCafe,
+      mouse: roomStepsMouse }[key];
+    return fn ? fn(rate, seconds, rand, keysKind) : null;
   }
 
   /**
@@ -602,8 +756,8 @@
    *
    * @returns {Float32Array|null} 知らない key なら null
    */
-  function roomRender(key, rate, seconds, rand) {
-    var steps = roomRenderSteps(key, rate, seconds, rand);
+  function roomRender(key, rate, seconds, rand, keysKind) {
+    var steps = roomRenderSteps(key, rate, seconds, rand, keysKind);
     return steps ? roomRunSteps(steps) : null;
   }
 
@@ -637,8 +791,19 @@
 
   /** {ctx, master, voices: {key: {src, gain}}, jobs: {key: job}, playing, released} */
   var roomAudio = null;
-  /** 描いた音 (key → AudioBuffer)。同じ音の仕組みのあいだは描き直さない。閉じたら手放す */
+  /** 描いた音 (roomBufferKey → AudioBuffer)。同じ音の仕組みのあいだは描き直さない。閉じたら手放す */
   var roomBuffers = {};
+
+  /**
+   * 描いた音の入れ物の鍵。キーボードは種類ごとに別の音なので種類を含める (keys:blue)。
+   *
+   * @param {string} key
+   * @param {object} mix
+   * @returns {string}
+   */
+  function roomBufferKey(key, mix) {
+    return key === 'keys' ? 'keys:' + roomKeysKindClean(mix.keysKind) : key;
+  }
 
   /** 鳴っているか (描いている最中も含む) */
   function roomSoundPlaying() {
@@ -722,21 +887,23 @@
     if (!a || !a.playing || a.voices[key] || a.jobs[key]) return;
     var spec = roomSpecOf(key);
     if (!spec) return;
-    if (roomBuffers[key]) {
-      roomVoiceRun(a, key, roomBuffers[key]);
+    var mix = roomMix();
+    var bk = roomBufferKey(key, mix);
+    if (roomBuffers[bk]) {
+      roomVoiceRun(a, key, roomBuffers[bk]);
       return;
     }
-    a.jobs[key] = roomRunLater(roomRenderSteps(key, spec.rate, spec.seconds, Math.random), function (data) {
+    a.jobs[key] = roomRunLater(roomRenderSteps(key, spec.rate, spec.seconds, Math.random, mix.keysKind), function (data) {
       delete a.jobs[key];
-      // 描いているあいだに止めた・外した・別の流しになったなら鳴らさない
-      if (roomAudio !== a || !a.playing || !roomMix().sounds[key].on) {
+      // 描いているあいだに止めた・外した・別の流しになった・種類を変えたなら鳴らさない
+      if (roomAudio !== a || !a.playing || !roomMix().sounds[key].on || roomBufferKey(key, roomMix()) !== bk) {
         roomSyncPlayButton();
         return;
       }
       try {
         var buf = a.ctx.createBuffer(1, data.length, spec.rate);
         buf.getChannelData(0).set(data);
-        roomBuffers[key] = buf;
+        roomBuffers[bk] = buf;
         roomVoiceRun(a, key, buf);
       } catch (e) {
         if (window.console) console.warn('作業部屋の音を鳴らせませんでした', e);
@@ -1252,7 +1419,16 @@
     say.className = 'room-oshi-say';
     say.setAttribute('aria-live', 'polite');
     say.textContent = oshiLine('pat') || '';
-    el.querySelector('.room-stage').appendChild(say);
+    var stage = el.querySelector('.room-stage');
+    // 絵の高さはキャラごとに違うので、吹き出しは絵の実際の箱から頭の右上に置く (重ねない)。箱が測れない (jsdom) ときは CSS の既定
+    var fr = fig.getBoundingClientRect();
+    var sr = stage.getBoundingClientRect();
+    if (sr.width > 0 && sr.height > 0 && fr.height > 0) {
+      var pct = function (v) { return Math.round(v * 10) / 10; };
+      say.style.left = pct(Math.min(70, (fr.right - sr.left) / sr.width * 100 + 1)) + '%';
+      say.style.bottom = pct(Math.max(5, Math.min(85, (sr.bottom - fr.top) / sr.height * 100 - 6))) + '%';
+    }
+    stage.appendChild(say);
     if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
     roomPatTimer = setTimeout(function () {
       roomPatTimer = null;
@@ -1623,6 +1799,37 @@
     note.hidden = !text;
   }
 
+  /**
+   * キーボードの種類を選ぶ欄。変えたら端末に覚え、鳴っている最中なら描き直して差し替える (描いた音は種類ごとに取っておく)。
+   *
+   * @param {object} mix
+   * @returns {HTMLSelectElement}
+   */
+  function makeRoomKeysKind(mix) {
+    var sel = document.createElement('select');
+    sel.className = 'room-sound-kind';
+    sel.setAttribute('aria-label', 'キーボードの種類');
+    ROOM_KEYS_KINDS().forEach(function (k) {
+      var o = document.createElement('option');
+      o.value = k.key;
+      o.textContent = k.label;
+      sel.appendChild(o);
+    });
+    sel.value = roomKeysKindClean(mix.keysKind);
+    sel.addEventListener('change', function () {
+      var kind = roomKeysKindClean(sel.value);
+      if (kind === mix.keysKind) return;
+      mix.keysKind = kind;
+      roomMixSave(mix);
+      if (roomSoundPlaying() && mix.sounds.keys.on) {
+        roomVoiceStop('keys', 0.3);
+        roomVoiceStart('keys');
+        roomSyncPlayButton();
+      }
+    });
+    return sel;
+  }
+
   /** 混ぜる欄。作れない環境では断りだけ */
   function makeRoomMixer() {
     var box = document.createElement('aside');
@@ -1725,6 +1932,7 @@
         roomSetVolume(s.key, mix.sounds[s.key].volume);
       });
       row.appendChild(r);
+      if (s.key === 'keys') row.appendChild(makeRoomKeysKind(mix));
       list.appendChild(row);
     });
     box.appendChild(list);

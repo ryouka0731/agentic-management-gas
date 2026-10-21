@@ -89,6 +89,8 @@ describe('この環境では取れない実績', () => {
     ctx.dbAppend('members', { email: 'other@example.com', manager: ME, note: '', updatedAt: new Date(), name: '' });
     ctx.dbAppend('reviews', { prNumber: 1, reviewer: ME, state: 'approve', at: new Date(), id: 'r1' });
     ctx.dbAppend('pulls', { number: 1, title: 'x', state: 'open', author: 'other@example.com' });
+    // 「1人か」はキャッシュに10分覚える (ACH_PEOPLE)。覚えが切れたあと (数え直す) にする
+    ctx.CacheService.getScriptCache().remove('ACH_PEOPLE:' + ME);
     const check = wire(ctx.apiAchievementsCheck());
     expect(check.newly.length).toBeGreaterThan(0);
     expect(check).toMatchObject({ cleared: true, clearedNow: false });

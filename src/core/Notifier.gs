@@ -158,7 +158,11 @@ function noticeMarkRead(ids) {
       marks.push([mark]);
     }
 
-    if (done) sheet.getRange(2, readCol + 1, marks.length, 1).setValues(marks);
+    if (done) {
+      sheet.getRange(2, readCol + 1, marks.length, 1).setValues(marks);
+      // 台帳に直に書いたので、読み取りの覚えを捨てる (Db.gs の dbInvalidate_)
+      dbInvalidate_('notifications');
+    }
     return done;
   });
 }

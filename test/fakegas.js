@@ -235,6 +235,9 @@ export function createFakeGas() {
   }
 
   // --- スプレッドシート (メタDB) ---
+  // シートを読んだ回数 (シートの名前 → 回数)。台帳の読み取りのキャッシュ (Db.gs の dbReadAll) が効いているかを数える
+  const sheetReads = new Map();
+  const countRead = (name) => { sheetReads.set(name, (sheetReads.get(name) || 0) + 1); };
   function makeSheet(name) {
     const rows = [];
     const sheet = {
@@ -286,6 +289,7 @@ export function createFakeGas() {
       clear: () => { rows.length = 0; sheet._format = null; return sheet; },
       getRange: (row, col, numRows, numCols) => ({
         getValues: () => {
+          countRead(name);
           const out = [];
           for (let i = 0; i < numRows; i++) {
             const src = rows[row - 1 + i] || [];
@@ -335,6 +339,62 @@ export function createFakeGas() {
       if (!ss) throw new Error('スプレッドシートが見つかりません: ' + id);
       return ss;
     },
+    // 疑似GASは書いたらすぐ見えるので、送るものは無い
+    flush: () => {},
+  };
+
+  /*
+   * --- CacheService ---
+   * メモリの上の素朴な実装。実機と同じく1つの値は 100KB (バイト) まで、鍵は 250 字までで、超えると投げる。
+   * 期限は疑似の時計で見る。時計は止まっていて、`_cacheAdvance(秒)` で進める (実際の時刻は見ない。
+   * テストの途中で期限が切れて、当たったり外れたりしないため)。3つの入れ物 (スクリプト・利用者・文書) は別々。
+   */
+  let cacheClock = 0;
+  function makeCache() {
+    const store = new Map();
+    const LIMIT = 100 * 1024;
+    const alive = (k) => {
+      const e = store.get(String(k));
+      if (!e) return null;
+      if (e.until <= cacheClock) {
+        store.delete(String(k));
+        return null;
+      }
+      return e.value;
+    };
+    const put = (k, v, ttl) => {
+      const key = String(k);
+      const value = String(v);
+      if (key.length > 250) throw new Error('Argument too large: key');
+      if (Buffer.byteLength(value, 'utf8') > LIMIT) throw new Error('Argument too large: value');
+      const sec = Math.min(Number(ttl) || 600, 21600);
+      store.set(key, { value, until: cacheClock + sec * 1000 });
+    };
+    return {
+      _store: store,
+      get: (k) => alive(k),
+      getAll: (keys) => {
+        const out = {};
+        (keys || []).forEach((k) => { const v = alive(k); if (v !== null) out[k] = v; });
+        return out;
+      },
+      put,
+      putAll: (obj, ttl) => { Object.keys(obj || {}).forEach((k) => put(k, obj[k], ttl)); },
+      remove: (k) => { store.delete(String(k)); },
+      removeAll: (keys) => { (keys || []).forEach((k) => store.delete(String(k))); },
+    };
+  }
+  const scriptCache = makeCache();
+  const userCaches = new Map();
+  const documentCache = makeCache();
+  const CacheService = {
+    getScriptCache: () => scriptCache,
+    // 利用者ごとに別の入れ物 (実機でも人ごとに分かれる)
+    getUserCache: () => {
+      if (!userCaches.has(activeUser)) userCaches.set(activeUser, makeCache());
+      return userCaches.get(activeUser);
+    },
+    getDocumentCache: () => documentCache,
   };
 
   // --- その他のサービス ---
@@ -695,6 +755,7 @@ export function createFakeGas() {
     _makeDrive: makeDrive,
     DriveApp,
     SpreadsheetApp,
+    CacheService,
     PropertiesService,
     Utilities,
     MimeType: {
@@ -752,6 +813,13 @@ export function createFakeGas() {
       return file.getId();
     },
     _parseLikeSheets: (on) => { parseLikeSheets = !!on; },
+    /** シートを読んだ回数。名前を渡せばその表だけ、無ければ全部の合計 */
+    _sheetReads: (table) => (table ? (sheetReads.get(table) || 0)
+      : Array.from(sheetReads.values()).reduce((a, b) => a + b, 0)),
+    /** キャッシュの疑似の時計を進める (秒) */
+    _cacheAdvance: (sec) => { cacheClock += Number(sec) * 1000; },
+    /** スクリプトのキャッシュを空にする (人がシートを直にいじったあと、期限まで待つ代わり) */
+    _cacheClear: () => { scriptCache._store.clear(); },
     /** Drive から完全に消す (ゴミ箱も空にした状態)。getFileById が投げる */
     _purgeFile: (id) => { files.delete(id); },
     _setUser: (email) => { activeUser = email; },
