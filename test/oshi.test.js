@@ -33,7 +33,7 @@ const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' +
 describe('定義 (Oshi.js)', () => {
   it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
     const keys = pure.OSHI_STATES().map((s) => s.key);
-    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3']);
+    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work']);
     expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3']);
   });
 

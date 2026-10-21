@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-goals` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-room` / `js-oshi` / `js-goals` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -213,6 +213,36 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 試すのは `test/component/focus.test.js` (押して確かめる)・`test/focus-ui.test.js` (計算と音の形)・
   `test/focus.test.js` (サーバ)・`test/e2e/focus.test.js` (通し)
 
+## 作業部屋 (`js-room`)
+
+自分の設定の「作業部屋を使う」(`room.on`、`PREFS_SCHEMA()` の `room`) をオンにした人の画面にだけ出す。**既定はオフ。**
+画面は `prefs.effective.room.on` を `roomOn()` で読むだけ。オフのあいだは入口 (`makeRoomOpenButton`) が null を返し、
+`applyPrefs` の `roomPrefsChanged` が開いている部屋を閉じ、集中の窓の入口を外す (`roomSyncDockButton`)。手引きは `docs/manual/focus.md` の「作業部屋」。
+
+- **音は画面の中で作る** (ファイルも外の取得も使わない)。雨・キーボード・たき火・風・カフェ (`ROOM_SOUNDS()`) を、
+  でたらめに起きる音 (雨粒・打鍵・はぜる音・器の音) も含めて 20〜30秒ぶん `AudioBuffer` に描き (`ROOM_RATE` = 24000)、
+  `loop` で繰り返す (背景のタブでは時計が間引かれるので、時計で鳴らさない)。継ぎ目は、ノイズを少し長く描いて頭に重ね
+  (`focusLoopSeam`)、揺れは一周で頭に戻る値 (`roomSmoothAt`)、短い音ははみ出しを頭へ回す (`roomPut`) ことで切れないようにする。
+  カフェは帯を絞ったノイズで、**言葉は作らない**
+- 音の形は画面に依らない関数 (`roomRender*` / `roomBiquad` / `roomMixClean` …) で、`test/room-ui.test.js` が `ui()` で切り出して
+  決まった乱数で確かめる (長さ・範囲・NaN が無い・同じ乱数なら同じ音・継ぎ目)
+- **押した聞き手の中でだけ作って鳴らす** (`roomSoundPlay`)。開いただけでは `AudioContext` を作らない。全体の大きさは
+  `ROOM_GAIN_MAX` を超えない。始めは `ROOM_FADE_IN`、止めは `ROOM_FADE_OUT` で上げ下げし、止めたら音の仕組みを休ませる
+- **集中の音・自分の曲とは同時に流さない。** `roomSoundPlay` が `focusSoundHush` (作る音を止めて窓のボタンの字を戻す) と
+  `focusMusicClose` を呼び、`focusSoundPlay` / `focusMusicLoad` が `roomSoundStop` を呼ぶ
+- 混ぜ方は端末の `localStorage` (`roomMix`) にだけ覚える。読むときは `roomMixClean` で知らない音を捨て、欠けを既定で埋める
+- 部屋 (`#room`) は開くときに作り、閉じると外す (音・時計・顔の入れ替えも止める)。絵は `makeRoomScene` がその場で SVG に描き、
+  色は `--room-*` のトークン (`docs/dev/design.md`)。窓の外は端末の時計 (`roomPhaseOf`) で `data-phase` を変え、CSS が色を当てる
+- **全画面は押した中で頼む** (`roomToggleFullscreen`)。`requestFullscreen` が無い・`document.fullscreenEnabled` が false の画面
+  (jsdom、全画面を許していない枠) ではボタンを押せなくして理由を添える。Esc は全画面ならブラウザが戻し、そうでなければ部屋を閉じる。
+  **確かめていないこと**: HtmlService の枠 (IFRAME モード) が全画面を許しているか。許していなければボタンが押せないだけ
+- 推しは `oshiFillFigure` で描く。作業中 (`work`) の絵があればそれ (自分のキャラに無ければ `oshi.fallback` の最初からいるキャラの絵)、
+  無ければ `oshiPickState('idle')`。推しがオフなら人影 (`makeRoomSilhouette`) で、絵を取りに行かない
+- 動き: 作業中だけ息をする揺れ (`.is-breathing`)、35〜70秒ごとに4秒だけふつう・ほめるの顔、窓の雨 (`.room-drop`、`ROOM_DROPS_MAX` まで)。
+  **動きを減らす設定では付けない** (`.is-moving` を付けず、雨は止めた粒を少しだけ)。見ていないタブでは雨を止め (`visibilitychange`)、顔も替えない
+- 集中しているあいだは隅に残りの輪 (`.room-focus`、`focusRemainingMs` で数える)。**部屋は集中を始めない**
+- 試すのは `test/component/room.test.js` (押して確かめる) と `test/room-ui.test.js` (音の形)
+
 ## 仕事のスタンス診断 (`js-style`)
 
 自分まわりの「仕事のスタンス診断」から右のパネルで開く。問い・軸・型・おすすめは `src/core/WorkStyleTypes.js` が唯一の定義で、
@@ -284,6 +314,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     取りに行っている最中の同じ絵は待ち合わせる)。オフの人・絵を出さない設定の人は1度も取らない。キャラ・形・表情は定義に
     あるものだけを通す
   - テストで読むときは `OSHI_DEFAULT_SOURCES` (`test/sources.js`) を足す。大きいので `APP_SOURCES` には入れていない
+  - 表情 `work` (作業中) は作業部屋 (`js-room`) のために末尾に足した。最初からいるキャラの絵も焼いてある
   - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`

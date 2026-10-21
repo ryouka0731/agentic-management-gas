@@ -1,0 +1,375 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { prefsFixture, DEFAULTS } from '../dom.js';
+import { mount } from './mount.js';
+
+/*
+ * 作業部屋 (js-room)。自分の設定の room.on をオンにした人の画面にだけ出す。
+ * 音は画面の中で作り、押したときにだけ鳴らす。集中の音・自分の曲とは同時に流さない。
+ */
+
+const ON = { 'room.on': true };
+const STATES = ['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work'];
+const defaultUrl = (char, style, state) => 'data:image/webp;base64,' + Buffer.from(char + ':' + style + ':' + state).toString('base64');
+const OSHI = Object.assign({}, DEFAULTS.apiOshiGet, { states: STATES.map((k) => ({ key: k, label: k })) });
+
+/** 音の仕組みの疑似。作った数・描いた長さ・鳴らした・止めたを覚える */
+class FakeAudio {
+  constructor() {
+    this.sampleRate = 48000; this.currentTime = 0; this.state = 'running'; this.destination = {}; this.sources = [];
+    FakeAudio.made.push(this);
+  }
+  createBuffer(ch, len, rate) { const d = new Float32Array(len); return { len, rate, getChannelData: () => d }; }
+  createBufferSource() {
+    const src = { connect() {}, start(t, off) { src.started = true; src.offset = off; }, stop() { src.stopped = true; } };
+    this.sources.push(src);
+    this.src = src;
+    return src;
+  }
+  suspend() { this.state = 'suspended'; }
+  resume() { this.state = 'running'; }
+  createGain() {
+    const p = { value: 0, setValueAtTime() {}, linearRampToValueAtTime: (v) => { p.last = v; }, cancelScheduledValues() {},
+      setTargetAtTime: (v) => { p.last = v; } };
+    return { gain: p, connect() {} };
+  }
+}
+
+function mountRoom(values, over) {
+  const v = Object.assign({ 'oshi.on': true }, values || {});
+  return mount(Object.assign({
+    apiPrefs: prefsFixture({ values: v }),
+    apiPrefSet: (key, value) => prefsFixture({ values: Object.assign({}, v, { [key]: value }) }),
+    apiOshiGet: OSHI,
+    apiOshiDefaultImage: (char, style, state) => ({ char, style, state, dataUrl: defaultUrl(char, style, state) }),
+    apiOshiImage: (charId, state) => ({ charId, state, sha: 's-' + state, dataUrl: 'data:image/png;base64,' + Buffer.from('mine:' + state).toString('base64') }),
+  }, over || {}));
+}
+
+const q = (sel) => document.querySelector(sel);
+const room = () => document.getElementById('room');
+const callsOf = (app, name) => app.calls.filter((c) => c.name === name).map((c) => c.args);
+
+/** 自分まわりを開く (開いていれば閉じてから開き直す。開くときに描き直す) */
+function openMe() {
+  if (!q('#me-panel').hidden) q('#me-btn').click();
+  q('#me-btn').click();
+}
+
+function openFromMe() {
+  openMe();
+  q('.room-open-btn').click();
+}
+
+describe('作業部屋', () => {
+  let savedAudio;
+  beforeEach(() => {
+    window.localStorage.clear();
+    FakeAudio.made = [];
+    savedAudio = window.AudioContext;
+  });
+  afterEach(() => {
+    window.AudioContext = savedAudio;
+    delete window.matchMedia;
+    delete document.hidden;
+    vi.useRealTimers();
+  });
+
+  it('既定はオフ。自分まわりに入口が出ず、設定の「作業部屋」でオンにするとその場で出る', () => {
+    const app = mountRoom();
+    q('#me-btn').click();
+    expect(q('.room-open-btn')).toBe(null);
+    q('.nav-item[data-tab="settings"]').click();
+    const mine = document.getElementById('settings-mine');
+    expect(mine.contains(q('[data-pref="room.on"]'))).toBe(true);
+    expect([...mine.querySelectorAll('h3')].map((h) => h.textContent)).toContain('作業部屋');
+    q('[data-pref="room.on"] button[role="switch"]').click();
+    expect(callsOf(app, 'apiPrefSet')).toEqual([['room.on', true]]);
+    openMe();
+    expect(q('.room-open-btn')).toBeTruthy();
+  });
+
+  it('自分まわりから開き、推しが作業中の絵で座る。開いただけでは音を作らない。× で閉じて入口へ焦点を戻す', () => {
+    window.AudioContext = FakeAudio;
+    const app = mountRoom(ON);
+    openFromMe();
+    const el = room();
+    expect(el.getAttribute('role')).toBe('dialog');
+    expect(el.querySelector('.room-scene title').textContent).toBe('作業部屋');
+    expect(['morning', 'day', 'evening', 'night']).toContain(el.dataset.phase);
+    const fig = el.querySelector('.room-oshi');
+    expect(fig.dataset.state).toBe('work');
+    expect(fig.querySelector('.oshi-img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'work'));
+    expect(fig.classList.contains('is-breathing')).toBe(true);
+    expect(el.classList.contains('is-moving')).toBe(true);
+    expect(callsOf(app, 'apiOshiDefaultImage')).toContainEqual(['taku', 'chibi', 'work']);
+    expect(FakeAudio.made.length).toBe(0);
+    // 雨は最初からオン。窓に雨粒 (上限まで)
+    expect(el.querySelector('.room-stage').dataset.rain).toBe('on');
+    expect(el.querySelectorAll('.room-drop').length).toBe(60);
+    el.querySelector('.room-close').click();
+    expect(room()).toBe(null);
+    q('#me-btn').click();
+    expect(q('.room-open-btn')).toBeTruthy();
+  });
+
+  it('Esc で閉じる', () => {
+    mountRoom(ON);
+    openFromMe();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(room()).toBe(null);
+  });
+
+  it('全画面にできない画面 (jsdom など) ではボタンを押せなくし、理由を添える。できる画面では押した中で頼む', () => {
+    mountRoom(ON);
+    openFromMe();
+    const full = room().querySelector('.room-full');
+    expect(full.disabled).toBe(true);
+    expect(full.getAttribute('data-hint')).toContain('全画面にできません');
+    room().querySelector('.room-close').click();
+
+    const asked = [];
+    window.HTMLElement.prototype.requestFullscreen = function () { asked.push(this.id); return Promise.resolve(); };
+    try {
+      mountRoom(ON);
+      openFromMe();
+      const btn = room().querySelector('.room-full');
+      expect(btn.disabled).toBe(false);
+      btn.click();
+      expect(asked).toEqual(['room']);
+    } finally {
+      delete window.HTMLElement.prototype.requestFullscreen;
+    }
+  });
+
+  it('動きを減らす設定では、揺れも雨の動きも付けない (止めた雨粒だけ)', () => {
+    window.matchMedia = (query) => ({ matches: /reduce/.test(query), addEventListener() {}, removeEventListener() {} });
+    vi.useFakeTimers();
+    mountRoom(ON);
+    openFromMe();
+    const el = room();
+    expect(el.classList.contains('is-moving')).toBe(false);
+    expect(el.querySelector('.room-oshi').classList.contains('is-breathing')).toBe(false);
+    expect(el.querySelector('.room-stage').dataset.rain).toBe('still');
+    const drops = [...el.querySelectorAll('.room-drop')];
+    expect(drops.length).toBeLessThan(60);
+    expect(drops.every((d) => !d.style.animationDuration)).toBe(true);
+    // 顔を上げる入れ替えもしない
+    vi.advanceTimersByTime(120000);
+    expect(el.querySelector('.room-oshi').dataset.state).toBe('work');
+  });
+
+  it('ときどき顔を上げ (ふつう・ほめる)、しばらくして作業に戻る', () => {
+    vi.useFakeTimers();
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      mountRoom(ON);
+      openFromMe();
+      const fig = room().querySelector('.room-oshi');
+      expect(fig.dataset.state).toBe('work');
+      vi.advanceTimersByTime(34000);
+      expect(fig.dataset.state).toBe('work');
+      vi.advanceTimersByTime(1001);
+      expect(fig.dataset.state).toBe('idle');
+      expect(fig.classList.contains('is-breathing')).toBe(false);
+      vi.advanceTimersByTime(4001);
+      expect(fig.dataset.state).toBe('work');
+      expect(fig.classList.contains('is-breathing')).toBe(true);
+    } finally {
+      rnd.mockRestore();
+    }
+  });
+
+  it('推しがオフなら、人影を置く (絵を取りに行かない)', () => {
+    const app = mountRoom(Object.assign({ 'oshi.on': false }, ON));
+    openFromMe();
+    const fig = room().querySelector('.room-oshi');
+    expect(fig.dataset.state).toBe('none');
+    expect(fig.querySelector('.room-silhouette')).toBeTruthy();
+    expect(callsOf(app, 'apiOshiDefaultImage')).toEqual([]);
+  });
+
+  describe('自分のキャラ', () => {
+    const mine = Object.assign({}, OSHI, { kind: 'mine', charId: 1, builtinKey: '', name: 'ルナ', char: 'mine:1',
+      images: [{ state: 'idle', sha: 's-idle' }], mine: [{ charId: 1, name: 'ルナ', images: [{ state: 'idle', sha: 's-idle' }] }] });
+
+    it('作業中の絵が無く、ほかのキャラの絵も出さない設定なら、ふつうの絵で座る', () => {
+      mountRoom(Object.assign({ 'oshi.char': 'mine:1', 'oshi.fallback': 'none' }, ON), { apiOshiGet: mine });
+      openFromMe();
+      const fig = room().querySelector('.room-oshi');
+      expect(fig.dataset.state).toBe('idle');
+      expect(fig.querySelector('.oshi-img').getAttribute('src')).toContain(Buffer.from('mine:idle').toString('base64'));
+    });
+
+    it('絵が無い表情に最初からいるキャラを出す設定なら、そのキャラの作業中の絵', () => {
+      const app = mountRoom(Object.assign({ 'oshi.char': 'mine:1', 'oshi.fallback': 'builtin:itsuki' }, ON), { apiOshiGet: mine });
+      openFromMe();
+      expect(room().querySelector('.room-oshi').dataset.state).toBe('work');
+      expect(callsOf(app, 'apiOshiDefaultImage')).toContainEqual(['itsuki', 'chibi', 'work']);
+    });
+  });
+
+  it('見ていないタブでは窓の雨を止め、戻ったら動かす', () => {
+    mountRoom(ON);
+    openFromMe();
+    const stage = room().querySelector('.room-stage');
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    expect(stage.dataset.rain).toBe('paused');
+    expect(room().querySelector('.room-rain').classList.contains('is-paused')).toBe(true);
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    expect(stage.dataset.rain).toBe('on');
+  });
+
+  describe('まわりの音', () => {
+    it('押すと音を作って繰り返す (雨だけ、20秒以上)。全体の大きさは上限を超えない。止めると下げて止める', () => {
+      window.AudioContext = FakeAudio;
+      mountRoom(ON);
+      openFromMe();
+      const play = room().querySelector('.room-play');
+      expect(play.textContent).toBe('音を流す');
+      play.click();
+      expect(FakeAudio.made.length).toBe(1);
+      const ctx = FakeAudio.made[0];
+      expect(ctx.sources.length).toBe(1);
+      expect(ctx.sources[0].loop).toBe(true);
+      expect(ctx.sources[0].buffer.len).toBe(24 * 24000);
+      expect(play.textContent).toBe('音を止める');
+      // 鳴らしながら足す
+      room().querySelector('[data-sound="keys"] .room-sound-toggle').click();
+      expect(ctx.sources.length).toBe(2);
+      const master = room().querySelector('.room-master');
+      master.value = '1';
+      master.dispatchEvent(new window.Event('input'));
+      play.click();
+      expect(ctx.sources.every((s) => s.stopped)).toBe(true);
+      expect(play.textContent).toBe('音を流す');
+    });
+
+    it('混ぜ方はこの端末に覚え、開き直すと戻る。全部オフで押すと断る', () => {
+      window.AudioContext = FakeAudio;
+      mountRoom(ON);
+      openFromMe();
+      room().querySelector('[data-sound="rain"] .room-sound-toggle').click();
+      const vol = room().querySelector('[data-sound="cafe"] .room-sound-volume');
+      vol.value = '0.15';
+      vol.dispatchEvent(new window.Event('input'));
+      const saved = JSON.parse(window.localStorage.getItem('roomMix'));
+      expect(saved.sounds.rain.on).toBe(false);
+      expect(saved.sounds.cafe.volume).toBe(0.15);
+      expect(room().querySelector('.room-stage').dataset.rain).toBe('off');
+      room().querySelector('.room-play').click();
+      expect(FakeAudio.made.length).toBe(0);
+      expect(q('#snackbar').textContent).toContain('1つ以上オンに');
+
+      mountRoom(ON);
+      openFromMe();
+      expect(room().querySelector('[data-sound="rain"] .room-sound-toggle').getAttribute('aria-checked')).toBe('false');
+      expect(room().querySelector('[data-sound="cafe"] .room-sound-volume').value).toBe('0.15');
+    });
+
+    it('閉じると音も止める', () => {
+      window.AudioContext = FakeAudio;
+      mountRoom(ON);
+      openFromMe();
+      room().querySelector('.room-play').click();
+      room().querySelector('.room-close').click();
+      expect(FakeAudio.made[0].sources[0].stopped).toBe(true);
+    });
+
+    it('音を作れない端末では断りだけ出す', () => {
+      delete window.AudioContext;
+      mountRoom(ON);
+      openFromMe();
+      expect(room().querySelector('.room-play')).toBe(null);
+      expect(room().querySelector('.room-mixer').textContent).toContain('音を作れません');
+    });
+  });
+
+  describe('集中のしかたと', () => {
+    const FOCUS = Object.assign({ 'focus.start': true, 'focus.sound': true, 'focus.music': 'own' }, ON);
+    const session = (n, minutes) => ({ id: 7, issueNumber: n, title: '通勤手当の見直し', plannedMinutes: minutes, extendedMinutes: 0,
+      startedAt: new Date().toISOString(), openedAt: '', provedAt: '', endedAt: '', result: '', firstStep: '', proofKind: '', points: 0 });
+    const mountFocusRoom = () => mountRoom(FOCUS, {
+      apiPrefs: prefsFixture({ values: Object.assign({ 'oshi.on': true }, FOCUS), musicParts: { kind: 'youtube', video: 'dQw4w9WgXcQ' } }),
+      apiFocusStart: (n, minutes) => session(n, minutes),
+      apiFocusMine: { active: null, week: {}, toStart: [], measured: 0, badges: [] },
+    });
+    const dock = () => document.getElementById('focus-dock');
+    function start() {
+      q('.nav-item[data-tab="issues"]').click();
+      q('#issue-list [aria-label="#2 を今から始める"]').click();
+      dock().querySelector('.seg[data-minutes="25"]').click();
+      dock().querySelector('.focus-go').click();
+    }
+
+    it('集中しているあいだの窓から開け、隅に残りの輪を出す。部屋は集中を始めない', () => {
+      const app = mountFocusRoom();
+      q('#me-btn').click();
+      q('.room-open-btn').click();
+      expect(room().querySelector('.room-focus').hidden).toBe(true);
+      room().querySelector('.room-close').click();
+      expect(callsOf(app, 'apiFocusStart')).toEqual([]);
+      start();
+      dock().querySelector('.room-open-btn').click();
+      const corner = room().querySelector('.room-focus');
+      expect(corner.hidden).toBe(false);
+      expect(corner.querySelector('.room-focus-left').textContent).toBe('残り25分');
+      expect(corner.querySelector('.room-focus-what').textContent).toBe('#2 通勤手当の見直し');
+    });
+
+    it('集中の音とは同時に流さない (片方を始めると、もう片方を止める)', () => {
+      window.AudioContext = FakeAudio;
+      mountFocusRoom();
+      start();
+      const kind = dock().querySelector('.focus-sound-kind');
+      kind.value = 'pink';
+      const focusPlay = dock().querySelector('.focus-sound-toggle');
+      focusPlay.click();
+      const focusSrc = FakeAudio.made[0].src;
+      expect(focusSrc.started).toBe(true);
+      dock().querySelector('.room-open-btn').click();
+      const roomPlay = room().querySelector('.room-play');
+      roomPlay.click();
+      expect(focusSrc.stopped).toBe(true);
+      expect(focusPlay.textContent).toBe('音を流す');
+      const roomCtx = FakeAudio.made[FakeAudio.made.length - 1];
+      const roomSrc = roomCtx.sources[0];
+      expect(roomSrc.started).toBe(true);
+      focusPlay.click();
+      expect(roomSrc.stopped).toBe(true);
+      expect(roomPlay.textContent).toBe('音を流す');
+    });
+
+    it('自分の曲とも同時に流さない', () => {
+      window.AudioContext = FakeAudio;
+      mountFocusRoom();
+      start();
+      const frames = () => [...document.querySelectorAll('iframe')].filter((f) => f.id !== 'viewer');
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames().length).toBe(1);
+      dock().querySelector('.room-open-btn').click();
+      room().querySelector('.room-play').click();
+      expect(frames()).toEqual([]);
+      const roomSrc = FakeAudio.made[0].sources[0];
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames().length).toBe(1);
+      expect(roomSrc.stopped).toBe(true);
+    });
+
+    it('設定で作業部屋をやめると、開いている部屋を閉じ、窓の入口も外す', () => {
+      const app = mountFocusRoom();
+      start();
+      dock().querySelector('.room-open-btn').click();
+      expect(room()).toBeTruthy();
+      app.respond('apiPrefSet', () => prefsFixture({ values: Object.assign({}, FOCUS, { 'room.on': false }) }));
+      room().querySelector('.room-close').click();
+      q('.nav-item[data-tab="settings"]').click();
+      dock().querySelector('.room-open-btn').click();
+      q('[data-pref="room.on"] button[role="switch"]').click();
+      expect(room()).toBe(null);
+      expect(dock().querySelector('.room-open-btn')).toBe(null);
+    });
+  });
+});

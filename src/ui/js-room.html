@@ -1,0 +1,1306 @@
+  // ===== 作業部屋 (既定はオフ) =====
+  //
+  // 自分の設定の「作業部屋を使う」(room.on) をオンにした人の画面にだけ出す。設定の定義はサーバの PREFS_SCHEMA() が持つ。
+  // 雨・キーボード・たき火・風・カフェのざわめきを流し、推しが机で作業している部屋を描く。
+  //
+  // 守ること:
+  // - 音は**画面の中で作る** (ファイルも外の取得も使わない)。押した聞き手の中でだけ作って鳴らす (自動では鳴らさない)。
+  //   でたらめに起きる音 (雨粒・打鍵・はぜる音) も、20〜30秒を AudioBuffer に描いて繰り返す
+  //   (背景のタブでは時計が間引かれるので、時計で鳴らさない)。音の形は画面に依らない関数にしてあり、
+  //   test/room-ui.test.js が切り出して確かめる
+  // - 大きさは ROOM_GAIN_MAX を超えない。始めと止めはゆっくり上げ下げする
+  // - 集中の音・自分の曲とは同時に流さない (片方を始めたら、もう片方を止める)
+  // - 字は textContent だけ。色はトークンだけ。動きを減らす設定では、雨も揺れも止めた絵にする
+  // - 部屋は集中を始めない。集中しているあいだだけ、隅に残りの輪を出す
+
+  /** 全体の大きさの上限 (0〜1 の大きさをこの倍率で下げる)。耳を守るため、上げきっても大きくならない */
+  var ROOM_GAIN_MAX = 0.5;
+  /** 音を描く1秒の標本の数。まわりの音には十分で、描く手間が半分になる */
+  var ROOM_RATE = 24000;
+  /** 始めるとき・止めるときに上げ下げする秒 */
+  var ROOM_FADE_IN = 2;
+  var ROOM_FADE_OUT = 1.5;
+  /** 窓の雨粒の数の上限 */
+  var ROOM_DROPS_MAX = 60;
+  /** 推しが手を止めて別の顔をする長さ (ミリ秒) */
+  var ROOM_GLANCE_MS = 4000;
+
+  /**
+   * 流せる音。並びは画面の並び。seconds は描いて繰り返す長さ。
+   *
+   * @returns {Array<{key: string, label: string, seconds: number}>}
+   */
+  function ROOM_SOUNDS() {
+    return [
+      { key: 'rain', label: '雨', seconds: 24 },
+      { key: 'keys', label: 'キーボード', seconds: 24 },
+      { key: 'fire', label: 'たき火', seconds: 20 },
+      { key: 'wind', label: '風', seconds: 30 },
+      { key: 'cafe', label: 'カフェのざわめき', seconds: 30 },
+    ];
+  }
+
+  // ----- 設定 -----
+
+  /** 作業部屋がオンか。設定が届くまではオフ */
+  function roomOn() {
+    var r = prefs && prefs.effective && prefs.effective.room;
+    return !!(r && r.on === true);
+  }
+
+  // ----- 計算 (画面に依らないもの。test/room-ui.test.js が切り出して確かめる) -----
+
+  /**
+   * 0〜1 に収める。数でなければ def。
+   *
+   * @param {*} v
+   * @param {number} def
+   * @returns {number}
+   */
+  function roomClamp01(v, def) {
+    if (typeof v !== 'number' && typeof v !== 'string') return def;
+    var n = Number(v);
+    if (v === '' || !isFinite(n)) return def;
+    return Math.max(0, Math.min(1, n));
+  }
+
+  /** 全体の大きさ (0〜1) を、実際に掛ける倍率にする。上限を超えない */
+  function roomMasterGain(v) {
+    return roomClamp01(v, 0) * ROOM_GAIN_MAX;
+  }
+
+  /**
+   * 既定の混ぜ方。最初は雨だけ。
+   *
+   * @returns {{master: number, sounds: Object<string, {on: boolean, volume: number}>}}
+   */
+  function roomMixDefault() {
+    var vol = { rain: 0.6, keys: 0.45, fire: 0.5, wind: 0.4, cafe: 0.4 };
+    var sounds = {};
+    ROOM_SOUNDS().forEach(function (s) { sounds[s.key] = { on: s.key === 'rain', volume: vol[s.key] }; });
+    return { master: 0.6, sounds: sounds };
+  }
+
+  /**
+   * 端末に覚えた混ぜ方を読める形にそろえる。知らない音は捨て、欠けた音は既定で埋める。
+   *
+   * @param {*} raw
+   * @returns {{master: number, sounds: Object<string, {on: boolean, volume: number}>}}
+   */
+  function roomMixClean(raw) {
+    var def = roomMixDefault();
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
+    var given = raw.sounds && typeof raw.sounds === 'object' ? raw.sounds : {};
+    var out = { master: roomClamp01(raw.master, def.master), sounds: {} };
+    ROOM_SOUNDS().forEach(function (s) {
+      var d = def.sounds[s.key];
+      var r = Object.prototype.hasOwnProperty.call(given, s.key) ? given[s.key] : null;
+      out.sounds[s.key] = r && typeof r === 'object'
+        ? { on: r.on === true, volume: roomClamp01(r.volume, d.volume) }
+        : { on: d.on, volume: d.volume };
+    });
+    return out;
+  }
+
+  /**
+   * 時刻から窓の外の様子。朝 (5〜9時)・昼 (10〜15時)・夕方 (16〜18時)・夜。
+   *
+   * @param {number} hour 0〜23 (端末の時計)
+   * @returns {string} morning / day / evening / night
+   */
+  function roomPhaseOf(hour) {
+    var h = Number(hour);
+    if (h >= 5 && h < 10) return 'morning';
+    if (h >= 10 && h < 16) return 'day';
+    if (h >= 16 && h < 19) return 'evening';
+    return 'night';
+  }
+
+  /** @returns {string} 窓の外の様子の名前 */
+  function roomPhaseLabel(phase) {
+    return { morning: '朝', day: '昼', evening: '夕方', night: '夜' }[phase] || '';
+  }
+
+  /**
+   * ノイズを count 個。white / pink / brown。
+   *
+   * @param {string} kind
+   * @param {number} count
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomNoise(kind, count, rand) {
+    var out = new Float32Array(count);
+    var b0 = 0, b1 = 0, b2 = 0, last = 0;
+    for (var i = 0; i < count; i++) {
+      var w = rand() * 2 - 1;
+      if (kind === 'brown') {
+        last = (last + 0.02 * w) / 1.02;
+        out[i] = last * 3.5;
+      } else if (kind === 'pink') {
+        b0 = 0.99765 * b0 + w * 0.0990460;
+        b1 = 0.96300 * b1 + w * 0.2965164;
+        b2 = 0.57000 * b2 + w * 1.0526913;
+        out[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+      } else {
+        out[i] = w;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 2次のフィルタの係数 (lowpass / highpass / bandpass)。
+   *
+   * @param {string} type
+   * @param {number} freq Hz
+   * @param {number} q
+   * @param {number} rate
+   * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
+   */
+  function roomBiquad(type, freq, q, rate) {
+    var f = Math.max(10, Math.min(Number(freq) || 10, rate * 0.45));
+    var w0 = 2 * Math.PI * f / rate;
+    var cos = Math.cos(w0);
+    var alpha = Math.sin(w0) / (2 * Math.max(0.1, Number(q) || 0.7));
+    var b0, b1, b2;
+    if (type === 'lowpass') {
+      b0 = (1 - cos) / 2; b1 = 1 - cos; b2 = (1 - cos) / 2;
+    } else if (type === 'highpass') {
+      b0 = (1 + cos) / 2; b1 = -(1 + cos); b2 = (1 + cos) / 2;
+    } else {
+      b0 = alpha; b1 = 0; b2 = -alpha;
+    }
+    var a0 = 1 + alpha;
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: -2 * cos / a0, a2: (1 - alpha) / a0 };
+  }
+
+  /**
+   * フィルタを通す (その場で書き換える)。
+   *
+   * @param {Float32Array} data
+   * @param {{b0: number, b1: number, b2: number, a1: number, a2: number}} c
+   * @returns {Float32Array}
+   */
+  function roomFilter(data, c) {
+    var x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (var i = 0; i < data.length; i++) {
+      var x = data[i];
+      var y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      data[i] = y;
+    }
+    return data;
+  }
+
+  /**
+   * ゆっくり揺れる値の節。roomSmoothAt で読む。一周すると頭に戻るので、繰り返しても継ぎ目が出ない。
+   *
+   * @param {number} steps 一周の節の数
+   * @param {function(): number} rand
+   * @returns {number[]}
+   */
+  function roomSmoothPoints(steps, rand) {
+    var n = Math.max(2, Math.round(steps));
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(rand());
+    return out;
+  }
+
+  /**
+   * 節の間をなめらかにつないだ値 (0〜1)。x は一周を 1 とした位置。
+   *
+   * @param {number[]} points
+   * @param {number} x
+   * @returns {number}
+   */
+  function roomSmoothAt(points, x) {
+    var n = points.length;
+    var pos = (x - Math.floor(x)) * n;
+    var k = Math.floor(pos);
+    var t = pos - k;
+    var a = points[k % n];
+    var b = points[(k + 1) % n];
+    return a + (b - a) * (1 - Math.cos(Math.PI * t)) / 2;
+  }
+
+  /**
+   * 短い音を重ねる。はみ出したぶんは頭へ回り込ませる (繰り返すので継ぎ目で切れない)。
+   *
+   * @param {Float32Array} out
+   * @param {number} at
+   * @param {Float32Array} sample
+   * @param {number} gain
+   */
+  function roomPut(out, at, sample, gain) {
+    var n = out.length;
+    var start = ((Math.floor(at) % n) + n) % n;
+    for (var i = 0; i < sample.length; i++) out[(start + i) % n] += sample[i] * gain;
+  }
+
+  /**
+   * 短く減っていく音 (音程のある「ぽつ」)。noise の割合だけざらつかせる。
+   *
+   * @param {number} rate
+   * @param {number} freq
+   * @param {number} decay 秒
+   * @param {function(): number} rand
+   * @param {number} noise 0〜1
+   * @returns {Float32Array}
+   */
+  function roomPing(rate, freq, decay, rand, noise) {
+    var len = Math.max(1, Math.round(rate * decay * 6));
+    var out = new Float32Array(len);
+    var phase = rand() * 2 * Math.PI;
+    for (var i = 0; i < len; i++) {
+      var t = i / rate;
+      var env = Math.min(1, t / 0.0005) * Math.exp(-t / decay);
+      out[i] = (Math.sin(phase + 2 * Math.PI * freq * t) * (1 - noise) + (rand() * 2 - 1) * noise) * env;
+    }
+    return out;
+  }
+
+  /**
+   * 帯を絞ったノイズの短いはじけ (「かち」)。
+   *
+   * @param {number} rate
+   * @param {number} freq
+   * @param {number} q
+   * @param {number} decay 秒
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomClick(rate, freq, q, decay, rand) {
+    var len = Math.max(2, Math.round(rate * (decay * 6 + 0.002)));
+    var out = new Float32Array(len);
+    for (var i = 0; i < len; i++) out[i] = (rand() * 2 - 1) * Math.exp(-i / rate / decay);
+    return focusNormalize(roomFilter(out, roomBiquad('bandpass', freq, q, rate)), 1);
+  }
+
+  /**
+   * 雨。高いところを抑えたノイズの上に、雨粒の「ぽつ」と、窓の縁から落ちる重いしずくを重ねる。
+   *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomRenderRain(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var bed = roomNoise('pink', n + f, rand);
+    roomFilter(bed, roomBiquad('lowpass', 2800, 0.7, rate));
+    roomFilter(bed, roomBiquad('highpass', 180, 0.7, rate));
+    var out = focusNormalize(focusLoopSeam(bed, f), 0.5);
+    var swell = roomSmoothPoints(seconds / 3, rand);
+    for (var i = 0; i < n; i++) out[i] *= 0.7 + 0.3 * roomSmoothAt(swell, i / n);
+    var drops = Math.round(seconds * 45);
+    for (var d = 0; d < drops; d++) {
+      var at = Math.floor(rand() * n);
+      var amp = 0.04 + 0.3 * Math.pow(rand(), 3);
+      var s = rand() < 0.7
+        ? roomPing(rate, 2200 + 3500 * rand(), 0.002 + 0.004 * rand(), rand, 0.6)
+        : roomClick(rate, 3000 + 3000 * rand(), 2, 0.0015, rand);
+      roomPut(out, at, s, amp);
+    }
+    var drips = Math.round(seconds * 1.2);
+    for (var k = 0; k < drips; k++) {
+      roomPut(out, Math.floor(rand() * n), roomPing(rate, 700 + 600 * rand(), 0.012 + 0.01 * rand(), rand, 0.2), 0.25 + 0.2 * rand());
+    }
+    return focusNormalize(out, 0.8);
+  }
+
+  /**
+   * キーを1つ打つ音 (押した「かち」と底の「とん」、少しあとに離した軽い「かち」)。space はスペースキー (低く大きい)。
+   *
+   * @param {Float32Array} out
+   * @param {number} at
+   * @param {number} rate
+   * @param {function(): number} rand
+   * @param {boolean} space
+   */
+  function roomKeyStroke(out, at, rate, rand, space) {
+    var amp = space ? 1 : 0.55 + 0.35 * rand();
+    roomPut(out, at, roomClick(rate, space ? 1300 : 2200 + 1600 * rand(), 1.4, 0.0018, rand), amp);
+    roomPut(out, at, roomPing(rate, space ? 120 : 170 + 80 * rand(), 0.007, rand, 0.15), amp * 0.45);
+    var up = at + Math.round(rate * (0.05 + 0.04 * rand()));
+    roomPut(out, up, roomClick(rate, 3200 + 1500 * rand(), 1.8, 0.0012, rand), amp * 0.35);
+  }
+
+  /**
+   * キーボード。ひとしきり打って (1.5〜6秒)、手を止める (0.7〜3.3秒) をくり返す。言葉の切れ目にスペースキー。
+   *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomRenderKeys(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var tone = roomNoise('brown', n + f, rand);
+    roomFilter(tone, roomBiquad('lowpass', 300, 0.7, rate));
+    var out = focusNormalize(focusLoopSeam(tone, f), 0.03);
+    var t = 0.2 + rand() * 0.6;
+    while (t < seconds - 0.4) {
+      var end = Math.min(seconds - 0.4, t + 1.5 + rand() * 4.5);
+      while (t < end) {
+        var space = rand() < 0.14;
+        roomKeyStroke(out, Math.floor(t * rate), rate, rand, space);
+        t += space ? 0.18 + rand() * 0.2 : 0.08 + rand() * 0.13;
+      }
+      t += 0.7 + rand() * 2.6;
+    }
+    return focusNormalize(out, 0.8);
+  }
+
+  /**
+   * たき火。低いごうごうという音 (揺れる) と細かいしゅうしゅう、ぱちっとはぜる音 (ときどき続けて)、まれに大きくはぜる音。
+   *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomRenderFire(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var bed = roomNoise('brown', n + f, rand);
+    roomFilter(bed, roomBiquad('lowpass', 500, 0.7, rate));
+    var out = focusNormalize(focusLoopSeam(bed, f), 0.45);
+    var hiss = roomNoise('white', n + f, rand);
+    roomFilter(hiss, roomBiquad('highpass', 2500, 0.7, rate));
+    hiss = focusNormalize(focusLoopSeam(hiss, f), 0.05);
+    var roar = roomSmoothPoints(seconds * 1.5, rand);
+    for (var i = 0; i < n; i++) {
+      var x = i / n;
+      out[i] = out[i] * (0.55 + 0.45 * roomSmoothAt(roar, x)) + hiss[i] * roomSmoothAt(roar, x + 0.37);
+    }
+    var pops = Math.round(seconds * 7);
+    for (var p = 0; p < pops; p++) {
+      var at = Math.floor(rand() * n);
+      var cluster = rand() < 0.3 ? 2 + Math.floor(rand() * 3) : 1;
+      for (var c = 0; c < cluster; c++) {
+        roomPut(out, at + Math.round(c * rate * (0.008 + 0.02 * rand())),
+          roomClick(rate, 900 + 3200 * rand(), 0.9, 0.0006 + 0.0015 * rand(), rand), 0.15 + 0.75 * Math.pow(rand(), 2));
+      }
+    }
+    var cracks = Math.round(seconds * 0.35);
+    for (var k = 0; k < cracks; k++) {
+      roomPut(out, Math.floor(rand() * n), roomClick(rate, 500 + 700 * rand(), 0.7, 0.006 + 0.006 * rand(), rand), 0.8 + 0.3 * rand());
+    }
+    return focusNormalize(out, 0.8);
+  }
+
+  /**
+   * 風。ノイズの帯の高さをゆっくり動かし (すき間を抜ける音)、強弱を波のように揺らす。細い笛のような音を少し重ねる。
+   *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomRenderWind(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var src = roomNoise('white', n + f, rand);
+    var raw = new Float32Array(n + f);
+    var tone = roomSmoothPoints(seconds / 4, rand);
+    var whistle = roomSmoothPoints(seconds / 5, rand);
+    var gust = roomSmoothPoints(seconds / 2.5, rand);
+    var c = null, c2 = null, wv = 0;
+    var x1 = 0, x2 = 0, y1 = 0, y2 = 0, u1 = 0, u2 = 0, v1 = 0, v2 = 0;
+    for (var i = 0; i < n + f; i++) {
+      if (i % 64 === 0) {
+        // 一周の中の位置で決める (繰り返したとき、同じ位置は同じ音色になる)
+        var x = (i % n) / n;
+        c = roomBiquad('bandpass', 260 + 640 * roomSmoothAt(tone, x), 0.9, rate);
+        c2 = roomBiquad('bandpass', 900 + 500 * roomSmoothAt(whistle, x), 9, rate);
+        wv = 0.35 * roomSmoothAt(whistle, x + 0.5);
+      }
+      var w = src[i];
+      var y = c.b0 * w + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+      x2 = x1; x1 = w; y2 = y1; y1 = y;
+      var v = c2.b0 * w + c2.b1 * u1 + c2.b2 * u2 - c2.a1 * v1 - c2.a2 * v2;
+      u2 = u1; u1 = w; v2 = v1; v1 = v;
+      raw[i] = y + v * wv;
+    }
+    var out = focusLoopSeam(raw, f);
+    for (var j = 0; j < n; j++) out[j] *= 0.25 + 0.75 * Math.pow(roomSmoothAt(gust, j / n), 1.5);
+    return focusNormalize(out, 0.8);
+  }
+
+  /**
+   * カフェのざわめき。帯を絞ったノイズの「声らしいもの」を6つ、音節ほどの速さで強弱を付け、話す・黙るをくり返す。
+   * 言葉は作らない (聞き取れる声は無い)。ときどき器の触れ合う「ちん」。
+   *
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array}
+   */
+  function roomRenderCafe(rate, seconds, rand) {
+    var n = Math.round(rate * seconds);
+    var f = Math.round(rate * 0.1);
+    var bed = roomNoise('pink', n + f, rand);
+    roomFilter(bed, roomBiquad('lowpass', 700, 0.7, rate));
+    var out = focusNormalize(focusLoopSeam(bed, f), 0.12);
+    for (var v = 0; v < 6; v++) {
+      var hi = roomNoise('white', n + f, rand);
+      var lo = new Float32Array(hi);
+      roomFilter(lo, roomBiquad('bandpass', 280 + 420 * rand(), 1.4, rate));
+      roomFilter(hi, roomBiquad('bandpass', 1100 + 1300 * rand(), 2.2, rate));
+      for (var a = 0; a < n + f; a++) lo[a] += hi[a] * 0.35;
+      var voice = focusNormalize(focusLoopSeam(lo, f), 1);
+      var syl = roomSmoothPoints(seconds * (3.5 + 2 * rand()), rand);
+      var phrase = roomSmoothPoints(seconds / (2 + 3 * rand()), rand);
+      var level = 0.25 + 0.35 * rand();
+      for (var i = 0; i < n; i++) {
+        var x = i / n;
+        var s = roomSmoothAt(syl, x);
+        var p = roomSmoothAt(phrase, x);
+        var gate = p < 0.4 ? 0 : p > 0.6 ? 1 : (p - 0.4) / 0.2;
+        out[i] += voice[i] * s * s * gate * level;
+      }
+    }
+    var clinks = Math.round(seconds * 0.3);
+    for (var k = 0; k < clinks; k++) {
+      var at = Math.floor(rand() * n);
+      var freq = 2600 + 1600 * rand();
+      roomPut(out, at, roomPing(rate, freq, 0.09 + 0.06 * rand(), rand, 0.02), 0.12 + 0.08 * rand());
+      roomPut(out, at, roomPing(rate, freq * 2.76, 0.05, rand, 0), 0.05);
+    }
+    return focusNormalize(out, 0.8);
+  }
+
+  /**
+   * 音を描く。
+   *
+   * @param {string} key ROOM_SOUNDS の key
+   * @param {number} rate
+   * @param {number} seconds
+   * @param {function(): number} rand
+   * @returns {Float32Array|null} 知らない key なら null
+   */
+  function roomRender(key, rate, seconds, rand) {
+    var fn = { rain: roomRenderRain, keys: roomRenderKeys, fire: roomRenderFire, wind: roomRenderWind, cafe: roomRenderCafe }[key];
+    return fn ? fn(rate, seconds, rand) : null;
+  }
+
+  // ----- 混ぜ方を覚える (この端末にだけ) -----
+
+  var roomMixNow = null;
+
+  /** @returns {object} 覚えた混ぜ方 (無ければ既定) */
+  function roomMixRead() {
+    try {
+      return roomMixClean(JSON.parse(window.localStorage.getItem('roomMix') || 'null'));
+    } catch (e) {
+      return roomMixDefault();
+    }
+  }
+
+  /** @param {object} mix */
+  function roomMixSave(mix) {
+    try {
+      window.localStorage.setItem('roomMix', JSON.stringify(mix));
+    } catch (e) { /* 覚えられなくても流せる */ }
+  }
+
+  /** @returns {object} いまの混ぜ方 */
+  function roomMix() {
+    if (!roomMixNow) roomMixNow = roomMixRead();
+    return roomMixNow;
+  }
+
+  // ----- 音 (押したときにだけ作る) -----
+
+  /** {ctx, master, voices: {key: {src, gain}}, playing} */
+  var roomAudio = null;
+  /** 描いた音 (key → AudioBuffer)。同じ音の仕組みのあいだは描き直さない */
+  var roomBuffers = {};
+
+  /** 鳴っているか */
+  function roomSoundPlaying() {
+    return !!(roomAudio && roomAudio.playing);
+  }
+
+  /**
+   * 鳴らす。**押した聞き手の中から呼ぶ。** 集中の音と自分の曲は止める。
+   *
+   * @returns {boolean} 鳴らし始めたか
+   */
+  function roomSoundPlay() {
+    var Ctor = focusAudioClass();
+    if (!Ctor) return false;
+    var mix = roomMix();
+    var any = ROOM_SOUNDS().some(function (s) { return mix.sounds[s.key].on; });
+    if (!any) return false;
+    roomSoundStop(0);
+    focusSoundHush(1);
+    focusMusicClose();
+    try {
+      var ctx = roomAudio && roomAudio.ctx ? roomAudio.ctx : new Ctor();
+      if (!roomAudio || roomAudio.ctx !== ctx) roomBuffers = {};
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+      var master = ctx.createGain();
+      master.gain.setValueAtTime(0, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(roomMasterGain(mix.master), ctx.currentTime + ROOM_FADE_IN);
+      master.connect(ctx.destination);
+      roomAudio = { ctx: ctx, master: master, voices: {}, playing: true };
+      ROOM_SOUNDS().forEach(function (s) {
+        if (mix.sounds[s.key].on) roomVoiceStart(s.key, 0);
+      });
+      return true;
+    } catch (e) {
+      if (window.console) console.warn('作業部屋の音を鳴らせませんでした', e);
+      return false;
+    }
+  }
+
+  /**
+   * 1つの音を足す (鳴らしているときだけ)。
+   *
+   * @param {string} key
+   * @param {number} fade 秒。0 なら全体の上げ下げに任せる
+   */
+  function roomVoiceStart(key, fade) {
+    var a = roomAudio;
+    if (!a || !a.playing || a.voices[key]) return;
+    var spec = ROOM_SOUNDS().filter(function (s) { return s.key === key; })[0];
+    if (!spec) return;
+    var buf = roomBuffers[key];
+    if (!buf) {
+      var data = roomRender(key, ROOM_RATE, spec.seconds, Math.random);
+      buf = a.ctx.createBuffer(1, data.length, ROOM_RATE);
+      buf.getChannelData(0).set(data);
+      roomBuffers[key] = buf;
+    }
+    var src = a.ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    var gain = a.ctx.createGain();
+    var vol = roomMix().sounds[key].volume;
+    var t = a.ctx.currentTime;
+    gain.gain.setValueAtTime(fade ? 0 : vol, t);
+    if (fade) gain.gain.linearRampToValueAtTime(vol, t + fade);
+    src.connect(gain);
+    gain.connect(a.master);
+    // 同じ所から鳴り始めないよう、繰り返しの途中から始める
+    src.start(t, Math.random() * spec.seconds);
+    a.voices[key] = { src: src, gain: gain };
+  }
+
+  /**
+   * 1つの音を外す。
+   *
+   * @param {string} key
+   * @param {number} fade
+   */
+  function roomVoiceStop(key, fade) {
+    var a = roomAudio;
+    var v = a && a.voices[key];
+    if (!v) return;
+    try {
+      var t = a.ctx.currentTime;
+      v.gain.gain.cancelScheduledValues(t);
+      v.gain.gain.setValueAtTime(v.gain.gain.value, t);
+      v.gain.gain.linearRampToValueAtTime(0, t + Math.max(0.05, fade));
+      v.src.stop(t + Math.max(0.05, fade) + 0.05);
+    } catch (e) { /* 既に止まっている */ }
+    delete a.voices[key];
+  }
+
+  /**
+   * 止める。fade 秒かけて下げ、下げ終わったら音の仕組みを休ませる。鳴っていなければ何もしない。
+   *
+   * @param {number} fade
+   */
+  function roomSoundStop(fade) {
+    var a = roomAudio;
+    if (!a || !a.playing) return;
+    var len = Math.max(0.05, fade || 0);
+    try {
+      var t = a.ctx.currentTime;
+      a.master.gain.cancelScheduledValues(t);
+      a.master.gain.setValueAtTime(a.master.gain.value, t);
+      a.master.gain.linearRampToValueAtTime(0, t + len);
+      Object.keys(a.voices).forEach(function (k) { a.voices[k].src.stop(t + len + 0.05); });
+    } catch (e) { /* 既に止まっている */ }
+    a.voices = {};
+    a.playing = false;
+    roomSyncPlayButton();
+    setTimeout(function () {
+      if (roomAudio !== a || a.playing) return;
+      try {
+        if (a.ctx && a.ctx.suspend && a.ctx.state !== 'suspended') a.ctx.suspend();
+      } catch (e) { /* 休ませられなくても困らない */ }
+    }, (len + 0.1) * 1000);
+  }
+
+  /** 全体の大きさを変える (鳴らしているときだけ) */
+  function roomSetMaster(v) {
+    if (!roomSoundPlaying()) return;
+    try {
+      roomAudio.master.gain.setTargetAtTime(roomMasterGain(v), roomAudio.ctx.currentTime, 0.2);
+    } catch (e) { /* 変えられなくても鳴り続ける */ }
+  }
+
+  /** 1つの音の大きさを変える (鳴らしているときだけ) */
+  function roomSetVolume(key, v) {
+    var voice = roomSoundPlaying() && roomAudio.voices[key];
+    if (!voice) return;
+    try {
+      voice.gain.gain.setTargetAtTime(roomClamp01(v, 0), roomAudio.ctx.currentTime, 0.2);
+    } catch (e) { /* 変えられなくても鳴り続ける */ }
+  }
+
+  // ----- 入口 -----
+
+  /**
+   * 「作業部屋」のボタン。オフなら null。
+   *
+   * @param {boolean} inDock 集中の窓の中か (自分まわりの欄なら、押したら欄を閉じる)
+   * @returns {HTMLElement|null}
+   */
+  function makeRoomOpenButton(inDock) {
+    if (!roomOn()) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn room-open-btn';
+    btn.appendChild(makeIcon('coffee'));
+    btn.appendChild(document.createTextNode('作業部屋'));
+    attachHint(btn, '雨やキーボードの音を流し、推しが作業している部屋を開きます');
+    btn.addEventListener('click', function () {
+      if (!inDock) closeMe();
+      roomOpen(btn);
+    });
+    return btn;
+  }
+
+  /** 集中しているあいだの窓の「作業部屋」を、いまの設定に合わせて出し入れする */
+  function roomSyncDockButton() {
+    var controls = document.querySelector('#focus-dock.is-running .focus-controls');
+    if (!controls) return;
+    var have = controls.querySelector('.room-open-btn');
+    if (roomOn() && !have) {
+      var btn = makeRoomOpenButton(true);
+      var mode = controls.querySelector('.focus-mode-toggle');
+      controls.insertBefore(btn, mode ? mode.nextSibling : controls.firstChild);
+    } else if (!roomOn() && have) {
+      have.remove();
+    }
+  }
+
+  /** applyPrefs から呼ぶ。オフにしたら部屋を閉じて入口を外す */
+  function roomPrefsChanged() {
+    if (!roomOn()) roomClose();
+    roomSyncDockButton();
+  }
+
+  // ----- 部屋 -----
+
+  var roomTimer = null;
+  var roomGlanceTimer = null;
+  var roomReturnTo = null;
+
+  /** @returns {HTMLElement|null} */
+  function roomEl() {
+    return document.getElementById('room');
+  }
+
+  /** 動きを減らす設定か */
+  function roomReduced() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** この画面で全画面にできるか (枠の中では許されていないことがある。jsdom には仕組みが無い) */
+  function roomFullscreenAvailable(el) {
+    return !!(el && typeof el.requestFullscreen === 'function' && document.fullscreenEnabled !== false);
+  }
+
+  /** @returns {Element|null} 全画面になっているもの */
+  function roomFullscreenElement() {
+    return document.fullscreenElement || null;
+  }
+
+  /**
+   * 開く。既に開いていれば、そこへ焦点を戻すだけ。
+   *
+   * @param {HTMLElement} [sourceEl] 閉じたら焦点を戻す先
+   */
+  function roomOpen(sourceEl) {
+    if (!roomOn()) return;
+    var el = roomEl();
+    if (el) {
+      var c = el.querySelector('.room-close');
+      if (c) c.focus();
+      return;
+    }
+    roomReturnTo = sourceEl || null;
+    el = document.createElement('section');
+    el.id = 'room';
+    el.className = 'room';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-label', '作業部屋');
+    el.dataset.phase = roomPhaseOf(new Date().getHours());
+    if (!roomReduced()) el.classList.add('is-moving');
+
+    el.appendChild(makeRoomBar(el));
+    var body = document.createElement('div');
+    body.className = 'room-body';
+    var wrap = document.createElement('div');
+    wrap.className = 'room-stage-wrap';
+    wrap.appendChild(makeRoomStage());
+    body.appendChild(wrap);
+    body.appendChild(makeRoomMixer());
+    el.appendChild(body);
+    document.body.appendChild(el);
+
+    roomSyncRain();
+    roomFillCharacter('work');
+    roomScheduleGlance();
+    roomTick();
+    roomTimer = setInterval(roomTick, 1000);
+    var close = el.querySelector('.room-close');
+    if (close) close.focus();
+  }
+
+  /** 閉じる。音は下げて止め、動きと時計を止め、全画面なら戻す */
+  function roomClose() {
+    var el = roomEl();
+    roomSoundStop(ROOM_FADE_OUT);
+    if (roomTimer) clearInterval(roomTimer);
+    roomTimer = null;
+    if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
+    roomGlanceTimer = null;
+    if (!el) return;
+    if (roomFullscreenElement() === el && document.exitFullscreen) {
+      try {
+        var p = document.exitFullscreen();
+        if (p && p.catch) p.catch(function () { /* 既に戻っている */ });
+      } catch (e) { /* 戻せなくても閉じる */ }
+    }
+    el.remove();
+    var back = roomReturnTo;
+    roomReturnTo = null;
+    if (back && back.focus && document.body.contains(back)) back.focus();
+  }
+
+  /** 全画面にする・戻す。**押した聞き手の中から呼ぶ** (そうでないとブラウザが断る) */
+  function roomToggleFullscreen() {
+    var el = roomEl();
+    if (!el || !roomFullscreenAvailable(el)) return;
+    try {
+      var p = roomFullscreenElement() === el ? document.exitFullscreen() : el.requestFullscreen();
+      if (p && p.catch) p.catch(function () { showSnack('全画面にできませんでした', { kind: 'ng' }); });
+    } catch (e) {
+      showSnack('全画面にできませんでした', { kind: 'ng' });
+    }
+  }
+
+  /** 全画面の切り替えの字を、いまの状態に合わせる */
+  function roomSyncFullscreenButton() {
+    var el = roomEl();
+    var btn = el && el.querySelector('.room-full');
+    if (!btn || btn.disabled) return;
+    var on = roomFullscreenElement() === el;
+    btn.lastChild.textContent = on ? '全画面をやめる' : '全画面';
+    btn.setAttribute('aria-pressed', String(on));
+  }
+
+  /** 上の帯 (名前・窓の外の様子・全画面・閉じる) */
+  function makeRoomBar(el) {
+    var bar = document.createElement('div');
+    bar.className = 'room-bar';
+    var h = document.createElement('h2');
+    h.className = 'room-title';
+    h.textContent = '作業部屋';
+    bar.appendChild(h);
+    var phase = document.createElement('span');
+    phase.className = 'row-meta room-phase';
+    phase.textContent = roomPhaseLabel(el.dataset.phase);
+    bar.appendChild(phase);
+    var space = document.createElement('span');
+    space.className = 'room-bar-space';
+    bar.appendChild(space);
+
+    var full = document.createElement('button');
+    full.type = 'button';
+    full.className = 'btn room-full';
+    full.appendChild(makeIcon('maximize'));
+    full.appendChild(document.createTextNode('全画面'));
+    if (roomFullscreenAvailable(el)) {
+      full.setAttribute('aria-pressed', 'false');
+      attachHint(full, '部屋を画面いっぱいに広げます。Esc で戻ります');
+      full.addEventListener('click', roomToggleFullscreen);
+    } else {
+      full.disabled = true;
+      attachHint(full, 'この画面では全画面にできません (番頭を開いている枠が許していないことがあります)');
+    }
+    bar.appendChild(full);
+
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'side-close room-close';
+    x.setAttribute('aria-label', '作業部屋を閉じる (音も止まります)');
+    x.textContent = '×';
+    x.addEventListener('click', roomClose);
+    bar.appendChild(x);
+    return bar;
+  }
+
+  // ----- 絵 (その場で描く。色はトークンを CSS のクラスで当てる) -----
+
+  var ROOM_SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /**
+   * SVG の要素を作って parent に足す。
+   *
+   * @param {Element} parent
+   * @param {string} tag
+   * @param {Object<string, string|number>} attrs
+   * @returns {Element}
+   */
+  function roomSvg(parent, tag, attrs) {
+    var node = document.createElementNS(ROOM_SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, String(attrs[k])); });
+    parent.appendChild(node);
+    return node;
+  }
+
+  /** 部屋の舞台 (絵・窓の雨・推し・集中の残り) */
+  function makeRoomStage() {
+    var stage = document.createElement('div');
+    stage.className = 'room-stage';
+    stage.dataset.rain = 'off';
+    stage.appendChild(makeRoomScene());
+
+    var rain = document.createElement('div');
+    rain.className = 'room-rain';
+    rain.setAttribute('aria-hidden', 'true');
+    rain.hidden = true;
+    stage.appendChild(rain);
+
+    var fig = document.createElement('div');
+    fig.className = 'room-oshi';
+    stage.appendChild(fig);
+
+    stage.appendChild(makeRoomFocusCorner());
+    return stage;
+  }
+
+  /** 部屋の絵。机・ランプ・本棚・窓 (時刻で空が変わる) */
+  function makeRoomScene() {
+    var svg = document.createElementNS(ROOM_SVG_NS, 'svg');
+    svg.setAttribute('class', 'room-scene');
+    svg.setAttribute('viewBox', '0 0 1600 900');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+    svg.setAttribute('role', 'img');
+    var title = roomSvg(svg, 'title', {});
+    title.textContent = '作業部屋';
+    var desc = roomSvg(svg, 'desc', {});
+    desc.textContent = '窓のある部屋。机の上にランプとマグカップ、壁に本棚。窓の外の空は時刻で変わる';
+
+    var defs = roomSvg(svg, 'defs', {});
+    var sky = roomSvg(defs, 'linearGradient', { id: 'room-sky-grad', x1: 0, y1: 0, x2: 0, y2: 1 });
+    roomSvg(sky, 'stop', { offset: 0, 'class': 'room-sky-a' });
+    roomSvg(sky, 'stop', { offset: 1, 'class': 'room-sky-b' });
+    var glow = roomSvg(defs, 'radialGradient', { id: 'room-lamp-grad' });
+    roomSvg(glow, 'stop', { offset: 0, 'class': 'room-glow-a' });
+    roomSvg(glow, 'stop', { offset: 1, 'class': 'room-glow-b' });
+    var clip = roomSvg(defs, 'clipPath', { id: 'room-glass-clip' });
+    roomSvg(clip, 'rect', { x: 970, y: 110, width: 440, height: 380 });
+
+    // 壁と床
+    roomSvg(svg, 'rect', { x: 0, y: 0, width: 1600, height: 900, 'class': 'room-wall' });
+    roomSvg(svg, 'rect', { x: 0, y: 690, width: 1600, height: 100, 'class': 'room-wall-2' });
+    roomSvg(svg, 'rect', { x: 0, y: 780, width: 1600, height: 120, 'class': 'room-floor' });
+    roomSvg(svg, 'ellipse', { cx: 800, cy: 850, rx: 520, ry: 40, 'class': 'room-rug' });
+
+    // 窓
+    roomSvg(svg, 'rect', { x: 880, y: 62, width: 620, height: 10, rx: 4, 'class': 'room-wood-2' });
+    roomSvg(svg, 'rect', { x: 950, y: 90, width: 480, height: 420, rx: 10, 'class': 'room-wood' });
+    var glass = roomSvg(svg, 'g', { 'clip-path': 'url(#room-glass-clip)' });
+    roomSvg(glass, 'rect', { x: 970, y: 110, width: 440, height: 380, fill: 'url(#room-sky-grad)' });
+    roomSvg(glass, 'circle', { cx: 1300, cy: 200, r: 36, 'class': 'room-sun' });
+    roomSvg(glass, 'circle', { cx: 1320, cy: 180, r: 26, 'class': 'room-moon' });
+    roomSvg(glass, 'circle', { cx: 1333, cy: 172, r: 22, 'class': 'room-moon-cut' });
+    [[1010, 150], [1070, 210], [1130, 140], [1220, 250], [1380, 260], [1040, 300], [1170, 190]].forEach(function (p) {
+      roomSvg(glass, 'circle', { cx: p[0], cy: p[1], r: 2.5, 'class': 'room-star' });
+    });
+    [[970, 400, 70, 90], [1045, 360, 60, 130], [1110, 420, 80, 70], [1195, 330, 55, 160], [1255, 390, 90, 100], [1350, 350, 60, 140]]
+      .forEach(function (b, i) {
+        roomSvg(glass, 'rect', { x: b[0], y: b[1], width: b[2], height: b[3], 'class': 'room-city' });
+        for (var k = 0; k < 3; k++) {
+          roomSvg(glass, 'rect', { x: b[0] + 10 + (k * 17) % (b[2] - 16), y: b[1] + 14 + ((i + k) % 3) * 22,
+            width: 8, height: 10, 'class': 'room-city-light' });
+        }
+      });
+    roomSvg(svg, 'rect', { x: 1186, y: 110, width: 8, height: 380, 'class': 'room-wood' });
+    roomSvg(svg, 'rect', { x: 970, y: 296, width: 440, height: 8, 'class': 'room-wood' });
+    roomSvg(svg, 'rect', { x: 930, y: 500, width: 520, height: 22, rx: 4, 'class': 'room-wood-2' });
+    // カーテン
+    roomSvg(svg, 'path', { d: 'M890 72 H985 Q955 290 990 540 H890 Z', 'class': 'room-curtain' });
+    roomSvg(svg, 'path', { d: 'M1395 72 H1490 V540 H1390 Q1425 290 1395 72 Z', 'class': 'room-curtain' });
+    // 窓辺の鉢
+    roomSvg(svg, 'rect', { x: 1030, y: 456, width: 44, height: 44, rx: 6, 'class': 'room-pot' });
+    roomSvg(svg, 'ellipse', { cx: 1040, cy: 440, rx: 14, ry: 28, transform: 'rotate(-20 1040 440)', 'class': 'room-plant' });
+    roomSvg(svg, 'ellipse', { cx: 1066, cy: 436, rx: 14, ry: 30, transform: 'rotate(18 1066 436)', 'class': 'room-plant' });
+    roomSvg(svg, 'ellipse', { cx: 1052, cy: 425, rx: 12, ry: 30, 'class': 'room-plant' });
+
+    // 本棚と額
+    roomSvg(svg, 'rect', { x: 110, y: 250, width: 400, height: 16, rx: 3, 'class': 'room-wood' });
+    roomSvg(svg, 'rect', { x: 110, y: 400, width: 400, height: 16, rx: 3, 'class': 'room-wood' });
+    var books = ['a', 'b', 'c', 'd', 'e', 'b', 'a', 'd'];
+    var bx = 130;
+    books.forEach(function (b, i) {
+      var w = 22 + (i * 7) % 14;
+      var hgt = 90 + (i * 13) % 40;
+      roomSvg(svg, 'rect', { x: bx, y: 250 - hgt, width: w, height: hgt, rx: 2, 'class': 'room-book room-book-' + b });
+      bx += w + 4;
+    });
+    roomSvg(svg, 'rect', { x: bx + 10, y: 226, width: 60, height: 24, rx: 4, 'class': 'room-pot' });
+    roomSvg(svg, 'ellipse', { cx: bx + 40, cy: 210, rx: 40, ry: 22, 'class': 'room-plant' });
+    [['c', 140, 60], ['e', 175, 40], ['a', 230, 75], ['d', 270, 50]].forEach(function (b) {
+      roomSvg(svg, 'rect', { x: b[1], y: 400 - b[2] * 1.4, width: 30, height: b[2] * 1.4, rx: 2, 'class': 'room-book room-book-' + b[0] });
+    });
+    roomSvg(svg, 'rect', { x: 340, y: 300, width: 140, height: 100, rx: 4, 'class': 'room-frame' });
+    roomSvg(svg, 'rect', { x: 352, y: 312, width: 116, height: 76, 'class': 'room-poster' });
+    roomSvg(svg, 'circle', { cx: 430, cy: 340, r: 14, 'class': 'room-poster-sun' });
+
+    // ランプの明かり (机の右)
+    roomSvg(svg, 'circle', { cx: 1180, cy: 560, r: 340, fill: 'url(#room-lamp-grad)', 'class': 'room-glow' });
+
+    // 机
+    roomSvg(svg, 'rect', { x: 300, y: 666, width: 30, height: 150, 'class': 'room-wood-2' });
+    roomSvg(svg, 'rect', { x: 1270, y: 666, width: 30, height: 150, 'class': 'room-wood-2' });
+    roomSvg(svg, 'rect', { x: 280, y: 622, width: 1040, height: 46, 'class': 'room-wood-2' });
+    roomSvg(svg, 'rect', { x: 260, y: 600, width: 1080, height: 26, rx: 6, 'class': 'room-wood' });
+
+    // 机の上: 本の山・マグ・ランプ
+    roomSvg(svg, 'rect', { x: 330, y: 572, width: 140, height: 14, rx: 2, 'class': 'room-book room-book-c' });
+    roomSvg(svg, 'rect', { x: 340, y: 586, width: 130, height: 14, rx: 2, 'class': 'room-book room-book-a' });
+    roomSvg(svg, 'rect', { x: 335, y: 558, width: 120, height: 14, rx: 2, 'class': 'room-book room-book-e' });
+    roomSvg(svg, 'rect', { x: 500, y: 552, width: 46, height: 48, rx: 7, 'class': 'room-mug' });
+    roomSvg(svg, 'path', { d: 'M546 564 q22 0 22 14 q0 14 -22 14', 'class': 'room-mug-handle' });
+    ['M512 540 q-10 -16 0 -30 q10 -14 0 -28', 'M530 540 q-10 -16 0 -30 q10 -14 0 -28'].forEach(function (d) {
+      roomSvg(svg, 'path', { d: d, 'class': 'room-steam' });
+    });
+    roomSvg(svg, 'ellipse', { cx: 1200, cy: 598, rx: 52, ry: 10, 'class': 'room-lamp-metal' });
+    roomSvg(svg, 'path', { d: 'M1200 596 L1160 470 L1222 410', 'class': 'room-lamp-arm' });
+    roomSvg(svg, 'path', { d: 'M1190 392 L1262 372 L1290 440 L1214 456 Z', 'class': 'room-lamp-shade' });
+    roomSvg(svg, 'circle', { cx: 1250, cy: 450, r: 12, 'class': 'room-lamp-bulb' });
+    return svg;
+  }
+
+  /** 推しがオフのときの人影 (机に向かう形だけ) */
+  function makeRoomSilhouette() {
+    var svg = document.createElementNS(ROOM_SVG_NS, 'svg');
+    svg.setAttribute('class', 'room-silhouette');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('aria-hidden', 'true');
+    roomSvg(svg, 'circle', { cx: 100, cy: 66, r: 34, 'class': 'room-silhouette-body' });
+    roomSvg(svg, 'path', { d: 'M28 200 Q30 118 100 112 Q170 118 172 200 Z', 'class': 'room-silhouette-body' });
+    roomSvg(svg, 'path', { d: 'M40 200 L58 150 H142 L160 200 Z', 'class': 'room-laptop' });
+    return svg;
+  }
+
+  /** 部屋の推しの置き場。部屋が無ければ null */
+  function roomFigure() {
+    var el = roomEl();
+    return el ? el.querySelector('.room-oshi') : null;
+  }
+
+  /**
+   * 作業中の絵が無ければ、ふつうの絵 (自分のキャラの絵が無い表情は、設定で選んだ最初からいるキャラの絵)。
+   *
+   * @param {string} state 出したい表情
+   * @returns {string|null}
+   */
+  function roomPickState(state) {
+    if (oshiHasPicture(state)) return state;
+    return oshiPickState('idle');
+  }
+
+  /**
+   * 推しを描く。オフなら人影。breathe は作業中にだけ付ける (動きを減らす設定では付けない)。
+   *
+   * @param {string} want work / idle / praise
+   */
+  function roomFillCharacter(want) {
+    var fig = roomFigure();
+    if (!fig) return;
+    if (!oshiOn()) {
+      fig.textContent = '';
+      fig.dataset.state = 'none';
+      fig.classList.remove('is-breathing');
+      fig.appendChild(makeRoomSilhouette());
+      fig.setAttribute('role', 'img');
+      fig.setAttribute('aria-label', '机に向かう人影');
+      return;
+    }
+    fig.removeAttribute('role');
+    fig.removeAttribute('aria-label');
+    oshiLoad(function (d) {
+      var now = roomFigure();
+      if (!now || now !== fig) return;
+      var state = roomPickState(want);
+      fig.dataset.state = state || 'none';
+      fig.classList.toggle('is-breathing', want === 'work' && !roomReduced());
+      oshiFillFigure(fig, state, d.name, function () { return roomFigure() === fig && fig.dataset.state === (state || 'none'); });
+    });
+  }
+
+  /** 次に手を止めて別の顔をするまで (35〜70秒)。動きを減らす設定では何もしない */
+  function roomScheduleGlance() {
+    if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
+    roomGlanceTimer = null;
+    if (roomReduced() || !oshiOn()) return;
+    roomGlanceTimer = setTimeout(roomGlance, 35000 + Math.random() * 35000);
+  }
+
+  /** 少しのあいだ顔を上げる (ふつう・ほめる)。見ていないタブでは替えない */
+  function roomGlance() {
+    roomGlanceTimer = null;
+    if (!roomEl()) return;
+    if (!document.hidden) {
+      var pick = Math.random() < 0.5 ? 'idle' : 'praise';
+      if (oshiHasPicture(pick)) {
+        roomFillCharacter(pick);
+        roomGlanceTimer = setTimeout(function () {
+          roomGlanceTimer = null;
+          if (!roomEl()) return;
+          roomFillCharacter('work');
+          roomScheduleGlance();
+        }, ROOM_GLANCE_MS);
+        return;
+      }
+    }
+    roomScheduleGlance();
+  }
+
+  /** 窓の雨。雨を流す設定のときだけ。動きを減らす設定では止めた線、見ていないタブでは止める */
+  function roomSyncRain() {
+    var el = roomEl();
+    if (!el) return;
+    var stage = el.querySelector('.room-stage');
+    var layer = el.querySelector('.room-rain');
+    if (!roomMix().sounds.rain.on) {
+      layer.textContent = '';
+      layer.hidden = true;
+      stage.dataset.rain = 'off';
+      return;
+    }
+    var still = roomReduced();
+    if (!layer.childNodes.length || layer.classList.contains('is-still') !== still) {
+      layer.textContent = '';
+      layer.classList.toggle('is-still', still);
+      var count = still ? 14 : ROOM_DROPS_MAX;
+      for (var i = 0; i < count; i++) {
+        var d = document.createElement('span');
+        d.className = 'room-drop';
+        d.style.left = (Math.random() * 100).toFixed(1) + '%';
+        if (still) {
+          d.style.top = (Math.random() * 80).toFixed(1) + '%';
+        } else {
+          d.style.animationDuration = (0.55 + Math.random() * 0.6).toFixed(2) + 's';
+          d.style.animationDelay = (-Math.random() * 1.2).toFixed(2) + 's';
+        }
+        layer.appendChild(d);
+      }
+    }
+    layer.hidden = false;
+    var paused = !still && !!document.hidden;
+    layer.classList.toggle('is-paused', paused);
+    stage.dataset.rain = still ? 'still' : paused ? 'paused' : 'on';
+  }
+
+  /** 隅の集中の残り (部屋は集中を始めない。集中しているあいだだけ出す) */
+  function makeRoomFocusCorner() {
+    var box = document.createElement('div');
+    box.className = 'room-focus';
+    box.hidden = true;
+    var svg = document.createElementNS(ROOM_SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 120 120');
+    svg.setAttribute('aria-hidden', 'true');
+    roomSvg(svg, 'circle', { cx: 60, cy: 60, r: 52, 'class': 'focus-ring-track' });
+    var bar = roomSvg(svg, 'circle', { cx: 60, cy: 60, r: 52, 'class': 'focus-ring-bar room-focus-bar',
+      'stroke-dasharray': 2 * Math.PI * 52, transform: 'rotate(-90 60 60)' });
+    bar.setAttribute('stroke-dashoffset', '0');
+    box.appendChild(svg);
+    var text = document.createElement('div');
+    text.className = 'room-focus-text';
+    var left = document.createElement('span');
+    left.className = 'room-focus-left';
+    text.appendChild(left);
+    var what = document.createElement('span');
+    what.className = 'room-focus-what';
+    text.appendChild(what);
+    box.appendChild(text);
+    return box;
+  }
+
+  /** 1秒ごと。窓の外の様子と、集中の残り */
+  function roomTick() {
+    var el = roomEl();
+    if (!el) return;
+    var phase = roomPhaseOf(new Date().getHours());
+    if (el.dataset.phase !== phase) {
+      el.dataset.phase = phase;
+      var label = el.querySelector('.room-phase');
+      if (label) label.textContent = roomPhaseLabel(phase);
+    }
+    var box = el.querySelector('.room-focus');
+    if (!box) return;
+    var s = focusSession;
+    if (!s) {
+      box.hidden = true;
+      return;
+    }
+    var total = (s.planned + s.extended) * 60000;
+    var left = focusRemainingMs(s.startMs, s.planned, s.extended, Date.now());
+    box.hidden = false;
+    box.querySelector('.room-focus-bar').setAttribute('stroke-dashoffset', String(focusRingOffset(left, total, 2 * Math.PI * 52)));
+    var say = left > 0 ? '残り' + focusMinutesLeft(left) + '分' : '時間です';
+    var leftEl = box.querySelector('.room-focus-left');
+    if (leftEl.textContent !== say) leftEl.textContent = say;
+    var what = box.querySelector('.room-focus-what');
+    var name = '#' + s.issueNumber + ' ' + s.title;
+    if (what.textContent !== name) what.textContent = name;
+  }
+
+  // ----- 音の欄 -----
+
+  /** 「音を流す」の字を、いまの状態に合わせる */
+  function roomSyncPlayButton() {
+    var btn = document.querySelector('#room .room-play');
+    if (!btn) return;
+    btn.lastChild.textContent = roomSoundPlaying() ? '音を止める' : '音を流す';
+    btn.setAttribute('aria-pressed', String(roomSoundPlaying()));
+  }
+
+  /** 混ぜる欄。作れない環境では断りだけ */
+  function makeRoomMixer() {
+    var box = document.createElement('aside');
+    box.className = 'room-mixer';
+    box.setAttribute('aria-label', 'まわりの音');
+    var h = document.createElement('h3');
+    h.className = 'room-mixer-head';
+    h.textContent = 'まわりの音';
+    box.appendChild(h);
+    if (!focusAudioClass()) {
+      var none = document.createElement('p');
+      none.className = 'row-meta';
+      none.textContent = 'この端末では音を作れません。部屋の絵だけ出します';
+      box.appendChild(none);
+      return box;
+    }
+    var mix = roomMix();
+
+    var play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'btn btn-primary room-play';
+    play.appendChild(makeIcon('play'));
+    play.appendChild(document.createTextNode('音を流す'));
+    play.setAttribute('aria-pressed', 'false');
+    play.addEventListener('click', function () {
+      if (roomSoundPlaying()) {
+        roomSoundStop(ROOM_FADE_OUT);
+      } else if (!roomSoundPlay()) {
+        showSnack('流す音を1つ以上オンにしてください', { kind: 'ng' });
+      }
+      roomSyncPlayButton();
+    });
+    box.appendChild(play);
+
+    var master = document.createElement('label');
+    master.className = 'room-row room-master-row';
+    var mName = document.createElement('span');
+    mName.className = 'room-row-name';
+    mName.textContent = '全体の大きさ';
+    master.appendChild(mName);
+    var mRange = document.createElement('input');
+    mRange.type = 'range';
+    mRange.min = '0';
+    mRange.max = '1';
+    mRange.step = '0.05';
+    mRange.value = String(mix.master);
+    mRange.className = 'room-master';
+    mRange.addEventListener('input', function () {
+      mix.master = roomClamp01(mRange.value, mix.master);
+      roomMixSave(mix);
+      roomSetMaster(mix.master);
+    });
+    master.appendChild(mRange);
+    box.appendChild(master);
+
+    var list = document.createElement('div');
+    list.className = 'room-sounds';
+    ROOM_SOUNDS().forEach(function (s) {
+      var row = document.createElement('div');
+      row.className = 'room-sound';
+      row.dataset.sound = s.key;
+      var t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'btn toggle-btn room-sound-toggle';
+      t.appendChild(document.createTextNode(s.label));
+      setToggle(t, mix.sounds[s.key].on);
+      t.addEventListener('click', function () {
+        var on = !mix.sounds[s.key].on;
+        mix.sounds[s.key].on = on;
+        roomMixSave(mix);
+        setToggle(t, on);
+        if (roomSoundPlaying()) {
+          if (on) roomVoiceStart(s.key, ROOM_FADE_IN);
+          else roomVoiceStop(s.key, ROOM_FADE_OUT);
+          // 全部外したら止める (鳴っていないのに「止める」と出さない)
+          if (!Object.keys(roomAudio.voices).length) roomSoundStop(0.3);
+        }
+        if (s.key === 'rain') roomSyncRain();
+      });
+      row.appendChild(t);
+      var r = document.createElement('input');
+      r.type = 'range';
+      r.min = '0';
+      r.max = '1';
+      r.step = '0.05';
+      r.value = String(mix.sounds[s.key].volume);
+      r.className = 'room-sound-volume';
+      r.setAttribute('aria-label', s.label + 'の大きさ');
+      r.addEventListener('input', function () {
+        mix.sounds[s.key].volume = roomClamp01(r.value, mix.sounds[s.key].volume);
+        roomMixSave(mix);
+        roomSetVolume(s.key, mix.sounds[s.key].volume);
+      });
+      row.appendChild(r);
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    [
+      '音はすべてこの画面の中で作っています (ファイルも外のサイトも使いません)。押したときにだけ鳴ります',
+      'イヤホンで聞いてください。合わなければ止めてください (合う人も合わない人もいます)',
+      '集中の音・自分の曲とは同時に流れません。どちらかを始めると、もう片方は止まります',
+    ].forEach(function (text) {
+      var p = document.createElement('p');
+      p.className = 'row-meta room-note';
+      p.textContent = text;
+      box.appendChild(p);
+    });
+    return box;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !roomEl()) return;
+    // 全画面ならまず全画面だけ戻す (ふつうはブラウザが戻す)。そうでなければ部屋を閉じる
+    if (roomFullscreenElement() === roomEl() && document.exitFullscreen) return;
+    roomClose();
+  });
+  document.addEventListener('fullscreenchange', roomSyncFullscreenButton);
+  document.addEventListener('visibilitychange', roomSyncRain);

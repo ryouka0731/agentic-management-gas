@@ -75,6 +75,34 @@
   /* 報告の一覧と話の分け目 */
   --report-pane-w: 38%;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  /* 作業部屋の絵 (js-room)。部屋は明暗のテーマに依らず、ランプの灯った夕暮れの色で描く */
+  --room-wall: #4a3f55;
+  --room-wall-2: #3d3347;
+  --room-floor: #2e2633;
+  --room-rug: #6b4a5a;
+  --room-wood: #8a5d3b;
+  --room-wood-2: #6a4429;
+  --room-curtain: #b0697a;
+  --room-plant: #6fa877;
+  --room-pot: #c98b5f;
+  --room-lamp: #ffd58a;
+  --room-lamp-shade: #e8a85a;
+  --room-metal: #9aa0aa;
+  --room-glow: rgba(255, 213, 138, 0.42);
+  --room-glow-0: rgba(255, 213, 138, 0);
+  --room-steam: rgba(255, 255, 255, 0.35);
+  --room-silhouette: #2a2230;
+  --room-city: #262338;
+  --room-star: #fff6d8;
+  --room-rain: rgba(214, 228, 255, 0.6);
+  --room-sky-morning: #f6c9a5;
+  --room-sky-morning-2: #a9d3f0;
+  --room-sky-day: #6fb3e8;
+  --room-sky-day-2: #d4ecfb;
+  --room-sky-evening: #6c4f8c;
+  --room-sky-evening-2: #f08a5d;
+  --room-sky-night: #0f1730;
+  --room-sky-night-2: #2b3866;
   /* 選択肢や巻き取りにもテーマを伝える。OS 側の明暗に引きずられない */
   color-scheme: light;
 }
@@ -5105,6 +5133,114 @@ body.focus-mode .mobile-nav { display: none !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .focus-ring-bar { transition: none; }
+}
+/* ===== 作業部屋 (js-room。自分の設定でオンにした人だけ) =====
+   画面いっぱいの重ね。左に部屋の絵 (16:9)、右に音の欄。狭い画面では縦に積む */
+.room { position: fixed; inset: 0; z-index: 390; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--ink); }
+.room-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-2); box-shadow: var(--elev-1); position: relative; z-index: 1; }
+.room-title { margin: 0; font-size: 16px; }
+.room-bar-space { flex: 1; }
+.room-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+.room-stage-wrap { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0;
+  padding: var(--sp-4); background: var(--room-floor); }
+.room-stage { position: relative; width: 100%; max-width: calc((100vh - 120px) * 16 / 9); aspect-ratio: 16 / 9;
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--elev-2); background: var(--room-wall); }
+.room-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.room-wall { fill: var(--room-wall); }
+.room-wall-2 { fill: var(--room-wall-2); }
+.room-floor { fill: var(--room-floor); }
+.room-rug { fill: var(--room-rug); }
+.room-wood { fill: var(--room-wood); }
+.room-wood-2 { fill: var(--room-wood-2); }
+.room-curtain { fill: var(--room-curtain); }
+.room-plant { fill: var(--room-plant); }
+.room-pot { fill: var(--room-pot); }
+.room-book-a { fill: var(--accent); }
+.room-book-b { fill: var(--success); }
+.room-book-c { fill: var(--warn); }
+.room-book-d { fill: var(--merged); }
+.room-book-e { fill: var(--danger); }
+.room-book { opacity: 0.85; }
+.room-frame { fill: var(--room-wood-2); }
+.room-poster { fill: var(--room-sky-evening-2); }
+.room-mug { fill: var(--room-curtain); }
+.room-mug-handle { fill: none; stroke: var(--room-curtain); stroke-width: 7; }
+.room-steam { fill: none; stroke: var(--room-steam); stroke-width: 4; stroke-linecap: round; }
+.room-lamp-metal { fill: var(--room-metal); }
+.room-lamp-arm { fill: none; stroke: var(--room-metal); stroke-width: 9; stroke-linejoin: round; }
+.room-lamp-shade { fill: var(--room-lamp-shade); }
+.room-lamp-bulb { fill: var(--room-lamp); }
+.room-glow-a { stop-color: var(--room-glow); }
+.room-glow-b { stop-color: var(--room-glow-0); }
+.room-city { fill: var(--room-city); }
+.room-city-light { fill: var(--room-lamp); opacity: 0; }
+.room-sun, .room-poster-sun { fill: var(--room-lamp); }
+.room-moon, .room-star { fill: var(--room-star); }
+.room-moon, .room-moon-cut, .room-star { opacity: 0; }
+.room-moon-cut { fill: var(--room-sky-night); }
+/* 窓の外は時刻で変わる (朝・昼・夕方・夜)。夜は月と星、街の灯り。ランプは暗いほど明るく見せる */
+.room-sky-a { stop-color: var(--room-sky-day); }
+.room-sky-b { stop-color: var(--room-sky-day-2); }
+.room[data-phase="morning"] .room-sky-a { stop-color: var(--room-sky-morning-2); }
+.room[data-phase="morning"] .room-sky-b { stop-color: var(--room-sky-morning); }
+.room[data-phase="evening"] .room-sky-a { stop-color: var(--room-sky-evening); }
+.room[data-phase="evening"] .room-sky-b { stop-color: var(--room-sky-evening-2); }
+.room[data-phase="night"] .room-sky-a { stop-color: var(--room-sky-night); }
+.room[data-phase="night"] .room-sky-b { stop-color: var(--room-sky-night-2); }
+.room[data-phase="night"] .room-sun { opacity: 0; }
+.room[data-phase="night"] .room-moon, .room[data-phase="night"] .room-moon-cut { opacity: 1; }
+.room[data-phase="night"] .room-star { opacity: 0.85; }
+.room[data-phase="night"] .room-city-light { opacity: 0.9; }
+.room[data-phase="evening"] .room-city-light { opacity: 0.6; }
+.room-glow { opacity: 0.55; }
+.room[data-phase="night"] .room-glow, .room[data-phase="evening"] .room-glow { opacity: 1; }
+/* 窓の雨。粒の数は ROOM_DROPS_MAX まで。見ていないタブでは止める */
+.room-rain { position: absolute; left: 60.625%; top: 12.22%; width: 27.5%; height: 42.22%; overflow: hidden;
+  pointer-events: none; }
+.room-drop { position: absolute; top: -15%; width: 1px; height: 12%; background: var(--room-rain); opacity: 0.8;
+  animation: room-fall 0.8s linear infinite; }
+.room-rain.is-paused .room-drop { animation-play-state: paused; }
+.room-rain.is-still .room-drop { animation: none; height: 6%; }
+@keyframes room-fall { from { transform: translateY(0); } to { transform: translateY(1000%); } }
+/* 推し。机の上に座る。作業中はゆっくり息をする (動きを減らす設定では止める) */
+.room-oshi { position: absolute; left: 31%; bottom: 30%; width: 25%; display: flex; align-items: flex-end;
+  justify-content: center; pointer-events: none; }
+.room-oshi .oshi-img, .room-oshi .room-silhouette { display: block; width: 100%; height: auto; }
+.room-oshi .oshi-avatar { width: 72px; height: 72px; font-size: 28px; }
+.room-silhouette-body { fill: var(--room-silhouette); }
+.room-laptop { fill: var(--room-metal); }
+.room.is-moving .room-oshi.is-breathing { animation: room-breathe 4.5s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes room-breathe { 0%, 100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-1%) scaleY(1.01); } }
+.room.is-moving .room-steam { animation: room-steam 3.5s ease-in-out infinite; }
+@keyframes room-steam { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.7; } }
+/* 集中しているあいだの残り (部屋は集中を始めない) */
+.room-focus { position: absolute; left: var(--sp-3); top: var(--sp-3); display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-raised); box-shadow: var(--elev-1);
+  max-width: 45%; }
+.room-focus svg { width: 44px; height: 44px; flex: 0 0 44px; }
+.room-focus-text { display: flex; flex-direction: column; min-width: 0; }
+.room-focus-left { font-weight: 700; font-variant-numeric: tabular-nums; }
+.room-focus-what { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-mixer { overflow: auto; padding: var(--sp-4); background: var(--bg-2);
+  display: flex; flex-direction: column; gap: var(--sp-3); }
+.room-mixer-head { margin: 0; font-size: 15px; }
+.room-play { align-self: flex-start; }
+.room-row { display: flex; flex-direction: column; gap: var(--sp-1); }
+.room-row-name { font-size: 12px; color: var(--ink-2); }
+.room-sounds { display: flex; flex-direction: column; gap: var(--sp-2); }
+.room-sound { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: var(--sp-2); }
+.room-sound-toggle { justify-content: flex-start; }
+.room-master, .room-sound-volume { width: 100%; min-width: 0; }
+.room-note { margin: 0; }
+.room:fullscreen .room-stage { max-width: calc((100vh - 64px) * 16 / 9); }
+@media (max-width: 767px) {
+  .room-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .room-stage-wrap { padding: var(--sp-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-oshi, .room-steam, .room-drop { animation: none !important; }
 }
 /* ----- 仕事のスタンス診断 (js-style) -----
    右のパネルで開く。問いは5段の選択、結果は軸の帯・強み・おすすめ・共有の札 */
