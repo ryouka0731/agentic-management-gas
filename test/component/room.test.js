@@ -103,6 +103,18 @@ describe('作業部屋', () => {
     expect(el.querySelector('.room-oshi-say')).toBe(null);
   });
 
+  it('部屋の絵の入れ物は指の動きを受ける (pointer-events: none のままだと、なでても何も起きない。jsdom は CSS を見ないので字で確かめる)', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+    const rules = [...css.matchAll(/\.room-oshi\s*\{[^}]*\}/g)].map((m) => m[0]);
+    const none = rules.findIndex((r) => /pointer-events:\s*none/.test(r));
+    const auto = rules.findIndex((r) => /pointer-events:\s*auto/.test(r));
+    expect(none).toBeGreaterThanOrEqual(0);
+    expect(auto).toBeGreaterThan(none); // 後の規則が勝つ
+    // 絵そのものは受けない (入れ物が受ける)
+    expect(/\.room-oshi \.oshi-img\s*\{[^}]*pointer-events:\s*none/.test(css)).toBe(true);
+  });
+
   it('推しがオフの人影は、なでても何も起きない', () => {
     mountRoom(Object.assign({ 'oshi.on': false }, ON));
     openFromMe();
