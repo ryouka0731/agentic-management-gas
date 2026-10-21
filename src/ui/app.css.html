@@ -5426,6 +5426,16 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-clear-frame { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: var(--radius-sm); background: var(--bg); }
 .oshi-builtin-profile { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .oshi-builtin-profile .oshi-field { align-self: stretch; }
+/* キャラ作成キット: 道具を選んでコピー・AI の答えを貼る・緑の背景を抜く・1枚の表から切り分ける */
+.oshi-kit .oshi-actions, .oshi-import .oshi-actions { align-items: flex-end; }
+.oshi-image-tools { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); padding-bottom: var(--sp-2); }
+.oshi-image-tools > .row-meta { margin: 0; }
+.oshi-sheet { align-self: stretch; display: flex; flex-direction: column; gap: var(--sp-2); }
+.oshi-sheet summary { cursor: pointer; font-size: 13px; }
+.oshi-sheet-cells { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2); }
+.oshi-sheet-cell { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--radius); background: var(--bg-2); }
+.oshi-sheet-cell .oshi-field { align-self: stretch; }
+.oshi-sheet-status:empty { display: none; }
 .oshi-mine-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .oshi-mine-tab[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .oshi-create { align-self: flex-start; }

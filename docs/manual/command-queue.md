@@ -120,6 +120,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | `workStyle` | なし | 仕事のスタンス診断の型・ひとこと・強み・気をつけたいこと・軸ごとの手伝い方 (点数は入れない)。診断していなければ `taken: false` と、診断の仕方 |
 | `reportDraft` | `kind` (任意: `three` / `today` / `plain` / `custom`) | 今日の日報の下書きの中身と形 |
 | `searchIndex` | なし | 横断検索の一覧 (題名・番号・状態だけ。絞るのは手元) |
+| `oshiPrompt` | `tool` (`chatgpt` / `gemini` / `claude` / `codex`) | 推しのキャラ作成キットの頼み文 (`{tool, label, prompt}`)。読むだけ。中身は番頭の定義の字で、人の字を含まない |
 
 ### 管理者だけ
 

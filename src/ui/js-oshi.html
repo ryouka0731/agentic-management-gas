@@ -43,6 +43,10 @@
   var oshiBackChecked = false;
   /** 吹き出しが消えたら出す次の場面 (oshiSayNext)。{key, state} */
   var oshiQueued = null;
+  /** キャラ作成キットの頼み文。道具の key → 字 (apiOshiCharKitPrompt の返事。開いているあいだだけ覚える) */
+  var oshiKitPrompts = {};
+  /** 絵を入れる前に緑の背景を抜くか (推しの頁の「緑の背景を抜く」)。覚えない */
+  var oshiGreenOn = false;
 
   /**
    * 済ませた操作 → 場面。**唯一の表。** 名前で引き、値は場面の key か、引数を見て決める関数。
@@ -745,8 +749,10 @@
    *
    * @param {string} text
    * @param {HTMLElement} [shown] 選んでおく字の要素
+   * @param {string} [done] 写せたときの字
    */
-  function oshiCopy(text, shown) {
+  function oshiCopy(text, shown, done) {
+    var said = done || '写しました。画像を作る道具に貼ってください';
     var area = document.createElement('textarea');
     area.value = text;
     area.setAttribute('readonly', '');
@@ -760,12 +766,12 @@
     }
     area.remove();
     if (ok) {
-      showSnack('写しました。画像を作る道具に貼ってください', { kind: 'ok' });
+      showSnack(said, { kind: 'ok' });
       return;
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () {
-        showSnack('写しました。画像を作る道具に貼ってください', { kind: 'ok' });
+        showSnack(said, { kind: 'ok' });
       }, function () { oshiCopyByHand(shown); });
       return;
     }
@@ -934,6 +940,8 @@
     var c = oshiEditingChar(d);
     box.appendChild(makeOshiMineList(box, d, c));
     if (c) box.appendChild(makeOshiProfile(box, d, c));
+    box.appendChild(makeOshiKit(d));
+    box.appendChild(makeOshiImport(box, d, c));
     box.appendChild(makeOshiSteps(d));
     if (c) {
       box.appendChild(makeOshiStates(d, c));
@@ -1180,6 +1188,558 @@
     return sec;
   }
 
+  // ----- キャラ作成キット (AI に作ってもらう・AI の答えを貼る) -----
+
+  /**
+   * 「AI に作ってもらう」。道具を選んで「コピー」で頼み文を写す。**頼み文の字は番頭が返す** (apiOshiCharKitPrompt。
+   * 画面は写しを持たない)。一度取った字は覚え、2回目からは押した中で写す (返事を待つと写せない画面がある)。
+   *
+   * @param {object} d apiOshiGet
+   * @returns {HTMLElement}
+   */
+  function makeOshiKit(d) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-kit';
+    sec.appendChild(oshiHeading('AI に作ってもらう'));
+    sec.appendChild(oshiNote('手がかりになる写真とプロフィールの頁のリンクを AI の道具に添え、頼み文を貼ると、プロフィール・せりふ・' +
+      '表情ごとの絵を作ってもらえます。写真の人をそのまま描かず、オリジナルのキャラにするよう頼んでいます。答えは下の「AI の答えを貼る」に貼ります。'));
+    var row = document.createElement('div');
+    row.className = 'oshi-actions';
+    var label = document.createElement('label');
+    label.className = 'oshi-field';
+    label.appendChild(document.createTextNode('道具'));
+    var pick = document.createElement('select');
+    pick.className = 'oshi-kit-tool';
+    (d.kitTools || []).forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t.key;
+      o.textContent = t.label;
+      pick.appendChild(o);
+    });
+    label.appendChild(pick);
+    row.appendChild(label);
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn oshi-kit-copy';
+    copy.textContent = 'コピー';
+    row.appendChild(copy);
+    sec.appendChild(row);
+
+    var wrap = document.createElement('details');
+    wrap.className = 'oshi-prompt oshi-kit-prompt';
+    var sum = document.createElement('summary');
+    sum.textContent = '頼み文を見る';
+    wrap.appendChild(sum);
+    var pre = document.createElement('pre');
+    pre.className = 'oshi-prompt-text';
+    wrap.appendChild(pre);
+    sec.appendChild(wrap);
+
+    function labelOf(key) {
+      var hit = (d.kitTools || []).filter(function (t) { return t.key === key; })[0];
+      return hit ? hit.label : key;
+    }
+    function show(key) {
+      pre.textContent = oshiKitPrompts[key] || '';
+      copy.setAttribute('aria-label', labelOf(key) + 'の頼み文をコピー');
+    }
+    function done(key) { return '写しました。' + labelOf(key) + 'に写真とリンクを添えて貼ってください'; }
+    function fetch(key, then) {
+      call('apiOshiCharKitPrompt', [key], function (res) {
+        oshiKitPrompts[key] = res.prompt;
+        if (pick.value === key) show(key);
+        if (then) then(res.prompt);
+      }, then ? failEnable(copy, '頼み文を取れませんでした: ') : failQuiet('頼み文は「コピー」を押したときに取り直せる'));
+    }
+    pick.addEventListener('change', function () {
+      show(pick.value);
+      if (!oshiKitPrompts[pick.value]) fetch(pick.value);
+    });
+    wrap.addEventListener('toggle', function () {
+      if (wrap.open && !oshiKitPrompts[pick.value]) fetch(pick.value);
+    });
+    copy.addEventListener('click', function () {
+      var key = pick.value;
+      if (oshiKitPrompts[key]) {
+        oshiCopy(oshiKitPrompts[key], pre, done(key));
+        return;
+      }
+      copy.disabled = true;
+      fetch(key, function (text) {
+        copy.disabled = false;
+        oshiCopy(text, pre, done(key));
+      });
+    });
+    show(pick.value);
+    return sec;
+  }
+
+  /**
+   * 「AI の答えを貼る」。AI の答え (JSON) を貼り、新しいキャラとして作るか、作ってあるキャラを直す。
+   * **確かめるのはサーバだけ** (apiOshiCharImport → oshiCharImportValid_)。画面は字をそのまま送る。
+   *
+   * @param {HTMLElement} box
+   * @param {object} d
+   * @param {object|null} c 直している自分のキャラ
+   * @returns {HTMLElement}
+   */
+  function makeOshiImport(box, d, c) {
+    var list = d.mine || [];
+    var full = list.length >= d.mineMax;
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-import';
+    sec.appendChild(oshiHeading('AI の答えを貼る'));
+    sec.appendChild(oshiNote('AI の答えを、まわりの説明ごと貼ってかまいません (最初の JSON を取り出します)。名前・口調・せりふ・' +
+      'プロフィールを番頭が確かめ、知らない欄は捨てます。実在の人の名前や所属が入っていたら、消してから取り込んでください。'));
+    var area = document.createElement('textarea');
+    area.className = 'oshi-lines-input oshi-import-text';
+    area.rows = 6;
+    area.placeholder = '```json\n{"name": "…", "tone": "genki", "lines": {…}, "profile": {…}}\n```';
+    area.setAttribute('aria-label', 'AI の答え');
+    sec.appendChild(area);
+
+    var row = document.createElement('div');
+    row.className = 'oshi-actions';
+    var label = document.createElement('label');
+    label.className = 'oshi-field';
+    label.appendChild(document.createTextNode('入れ先'));
+    var target = document.createElement('select');
+    target.className = 'oshi-import-target';
+    var fresh = document.createElement('option');
+    fresh.value = '0';
+    fresh.textContent = full ? '新しいキャラとして作る (' + d.mineMax + '人まで。いまは作れません)' : '新しいキャラとして作る';
+    fresh.disabled = full;
+    target.appendChild(fresh);
+    list.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = String(m.charId);
+      o.textContent = oshiMineName(m) + ' を直す';
+      target.appendChild(o);
+    });
+    target.value = full && c ? String(c.charId) : '0';
+    label.appendChild(target);
+    row.appendChild(label);
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn btn-primary oshi-import-go';
+    go.textContent = '取り込む';
+    go.disabled = full && !list.length;
+    go.addEventListener('click', function () {
+      go.disabled = true;
+      call('apiOshiCharImport', [Number(target.value), area.value], function (res) {
+        go.disabled = false;
+        oshiEditing = res.charId;
+        showSnack('「' + res.name + '」を' + (res.created ? '作りました' : '直しました') + ' (せりふ ' + res.lines + ' 場面・プロフィール ' +
+          res.items + ' 項目)。絵は「表情ごとの絵」から入れてください', { kind: 'ok' });
+        oshiReload(function (nd) { if (box.isConnected) drawOshiPage(box, nd); });
+      }, failEnable(go, '取り込めませんでした: '));
+    });
+    row.appendChild(go);
+    sec.appendChild(row);
+    return sec;
+  }
+
+  /**
+   * 緑 (#00FF00 に近い色) の画素を透明にする。ImageData の data (RGBA の並び) をその場で書き換える。
+   * 緑が強いほど透明にし、縁の半端な画素は少しだけ透かして緑のにじみを落とす (緑の値を赤と青の大きいほうに揃える)。
+   *
+   * @param {Uint8ClampedArray|number[]} data
+   * @returns {number} 透明にした画素の数 (すっかり抜いたもの)
+   */
+  function oshiKeyGreen(data) {
+    var cleared = 0;
+    for (var i = 0; i + 3 < data.length; i += 4) {
+      var r = data[i];
+      var g = data[i + 1];
+      var b = data[i + 2];
+      var lead = g - Math.max(r, b);
+      if (lead >= 90 && g >= 140) {
+        data[i + 3] = 0;
+        cleared++;
+      } else if (lead >= 40 && g >= 100) {
+        // 縁。緑の強さに合わせて透かし、緑のにじみを落とす
+        data[i + 3] = Math.min(data[i + 3], Math.round(255 * (90 - lead) / 50));
+        data[i + 1] = Math.max(r, b);
+      }
+    }
+    return cleared;
+  }
+
+  /**
+   * 1枚の表を rows × cols に分けたマス。端数は丸め、隣のマスと隙間も重なりも作らない (左上から右へ、行ごとに)。
+   *
+   * @param {number} width
+   * @param {number} height
+   * @param {number} rows
+   * @param {number} cols
+   * @returns {Array<{index: number, row: number, col: number, x: number, y: number, w: number, h: number}>}
+   */
+  function oshiSheetCells(width, height, rows, cols) {
+    var out = [];
+    var R = Math.max(1, Math.floor(rows) || 1);
+    var C = Math.max(1, Math.floor(cols) || 1);
+    for (var r = 0; r < R; r++) {
+      var y = Math.round(r * height / R);
+      var y2 = Math.round((r + 1) * height / R);
+      for (var c = 0; c < C; c++) {
+        var x = Math.round(c * width / C);
+        var x2 = Math.round((c + 1) * width / C);
+        out.push({ index: out.length, row: r, col: c, x: x, y: y, w: x2 - x, h: y2 - y });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * マスに当てる表情の最初の並び。表情の並びの順に左上から当て、余ったマスは「使わない」('')。
+   *
+   * @param {number} count マスの数
+   * @param {Array<{key: string}>} states
+   * @returns {string[]}
+   */
+  function oshiSheetDefaults(count, states) {
+    var out = [];
+    for (var i = 0; i < count; i++) out.push(states[i] ? states[i].key : '');
+    return out;
+  }
+
+  /** 行・列の数の欄の値 (1〜8)。読めなければ def */
+  function oshiSheetClamp(v, def) {
+    var n = Math.floor(Number(v));
+    return isFinite(n) && n >= 1 ? Math.min(8, n) : def;
+  }
+
+  /**
+   * 描ける 2d の器。描けない環境 (jsdom・古い端末) では null。
+   *
+   * @param {number} w
+   * @param {number} h
+   * @returns {{canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D}|null}
+   */
+  function oshiCanvas(w, h) {
+    var canvas = document.createElement('canvas');
+    var ctx = null;
+    try {
+      ctx = canvas.getContext ? canvas.getContext('2d') : null;
+    } catch (e) {
+      ctx = null;
+    }
+    if (!ctx) return null;
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    return { canvas: canvas, ctx: ctx };
+  }
+
+  /**
+   * 絵の1か所を切り出して PNG にする。長い辺は maxPx まで縮め、green なら緑を抜く。描けなければ null。
+   *
+   * @param {HTMLImageElement} img 読み込み済み
+   * @param {{x: number, y: number, w: number, h: number}} cell
+   * @param {number} maxPx
+   * @param {boolean} green
+   * @returns {string|null} data URL
+   */
+  function oshiCutPng(img, cell, maxPx, green) {
+    var scale = Math.min(1, maxPx / Math.max(cell.w, cell.h, 1));
+    var box = oshiCanvas(cell.w * scale, cell.h * scale);
+    if (!box) return null;
+    try {
+      box.ctx.drawImage(img, cell.x, cell.y, cell.w, cell.h, 0, 0, box.canvas.width, box.canvas.height);
+      if (green) {
+        var px = box.ctx.getImageData(0, 0, box.canvas.width, box.canvas.height);
+        oshiKeyGreen(px.data);
+        box.ctx.putImageData(px, 0, 0);
+      }
+      return box.canvas.toDataURL('image/png');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * data URL を絵として読む。読めなければ null (止まらないよう時間でも切る)。
+   *
+   * @param {string} src
+   * @param {function(HTMLImageElement|null)} cb
+   */
+  function oshiLoadImage(src, cb) {
+    var done = false;
+    function finish(v) { if (!done) { done = true; cb(v); } }
+    if (typeof Image === 'undefined') {
+      finish(null);
+      return;
+    }
+    var img = new Image();
+    img.onload = function () { finish((img.naturalWidth || img.width) ? img : null); };
+    img.onerror = function () { finish(null); };
+    window.setTimeout(function () { finish(null); }, 8000);
+    img.src = src;
+  }
+
+  /**
+   * 「緑の背景を抜く」がオンなら、選んだ絵の緑を抜いて PNG にする (GIF は動きが消えるので抜かない)。
+   *
+   * @param {string} dataUrl
+   * @param {object} limits
+   * @param {function(string)} ok
+   * @param {function(string)} ng
+   */
+  function oshiMaybeGreen(dataUrl, limits, ok, ng) {
+    if (!oshiGreenOn) {
+      ok(dataUrl);
+      return;
+    }
+    if (/^data:image\/gif/.test(dataUrl)) {
+      ng('GIF は緑の背景を抜けません。「緑の背景を抜く」を切るか、PNG にしてください');
+      return;
+    }
+    var cant = 'この画面では緑の背景を抜けませんでした。抜かずに入れるときは「緑の背景を抜く」を切ってください';
+    // 描けない画面では、絵を読み込むのを待たずに断る
+    if (!oshiCanvas(1, 1)) {
+      ng(cant);
+      return;
+    }
+    oshiLoadImage(dataUrl, function (img) {
+      var w = img ? (img.naturalWidth || img.width) : 0;
+      var h = img ? (img.naturalHeight || img.height) : 0;
+      var out = img ? oshiCutPng(img, { x: 0, y: 0, w: w, h: h }, limits.maxPx, true) : null;
+      if (!out) {
+        ng(cant);
+        return;
+      }
+      if (oshiDataBytes(out) > limits.maxBytes) {
+        ng('画像は' + Math.round(limits.maxBytes / 1024 / 1024) + 'MBまでにしてください');
+        return;
+      }
+      ok(out);
+    });
+  }
+
+  /**
+   * 表情ごとの絵の上に置く道具。「緑の背景を抜く」(切り替え) と「1枚の表から切り分ける」。
+   *
+   * @param {object} d
+   * @param {object} c 自分のキャラ
+   * @param {function(string)} redrawRow その表情の行を描き直す
+   * @returns {HTMLElement}
+   */
+  function makeOshiImageTools(d, c, redrawRow) {
+    var wrap = document.createElement('div');
+    wrap.className = 'oshi-image-tools';
+    var green = document.createElement('button');
+    green.type = 'button';
+    green.className = 'btn toggle-btn oshi-green';
+    green.appendChild(document.createTextNode('緑の背景を抜く'));
+    setToggle(green, oshiGreenOn);
+    green.addEventListener('click', function () {
+      oshiGreenOn = !oshiGreenOn;
+      setToggle(green, oshiGreenOn);
+    });
+    wrap.appendChild(green);
+    wrap.appendChild(oshiNote('オンにすると、入れる前に緑 (#00FF00 に近い色) を透明にします。Gemini などで緑一色の背景にした絵に使います。' +
+      'キャラに緑を使っていると、そこも抜けます。'));
+    wrap.appendChild(makeOshiSheet(d, c, redrawRow));
+    return wrap;
+  }
+
+  /**
+   * 「1枚の表から切り分ける」。表の画像を選び、行と列の数を決めると、マスごとに見本と表情の選び方が出る。
+   * 「切り分けて入れる」で、表情を選んだマスを1枚ずつ切り出し、ふだんの入れ方 (apiOshiSetImage) で順に送る。
+   *
+   * @param {object} d
+   * @param {object} c
+   * @param {function(string)} redrawRow
+   * @returns {HTMLElement}
+   */
+  function makeOshiSheet(d, c, redrawRow) {
+    var sec = document.createElement('details');
+    sec.className = 'oshi-sheet';
+    var sum = document.createElement('summary');
+    sum.textContent = '1枚の表から切り分ける';
+    sec.appendChild(sum);
+    sec.appendChild(oshiNote('表情を1枚に並べた表の画像を、マスごとに切り分けて入れます。マスは左上から右へ、行ごとに数えます。'));
+    var states = d.states || [];
+    var grid = d.sheet || { rows: 3, cols: 4 };
+    var img = null;
+    var map = [];
+
+    var controls = document.createElement('div');
+    controls.className = 'oshi-actions';
+    var pickLabel = document.createElement('label');
+    pickLabel.className = 'btn oshi-pick';
+    pickLabel.textContent = '表の画像を選ぶ';
+    var pick = document.createElement('input');
+    pick.type = 'file';
+    pick.accept = (d.limits.mimes || []).filter(function (m) { return m !== 'image/gif'; }).join(',');
+    pick.className = 'oshi-file oshi-sheet-file';
+    pick.setAttribute('aria-label', '表の画像を選ぶ');
+    pickLabel.appendChild(pick);
+    controls.appendChild(pickLabel);
+    function numberField(text, cls, value) {
+      var label = document.createElement('label');
+      label.className = 'oshi-field';
+      label.appendChild(document.createTextNode(text));
+      var input = document.createElement('input');
+      input.type = 'number';
+      input.min = '1';
+      input.max = '8';
+      input.className = cls;
+      input.value = String(value);
+      label.appendChild(input);
+      controls.appendChild(label);
+      return input;
+    }
+    var rowsIn = numberField('行', 'oshi-sheet-rows', grid.rows);
+    var colsIn = numberField('列', 'oshi-sheet-cols', grid.cols);
+    sec.appendChild(controls);
+
+    var cellsBox = document.createElement('ol');
+    cellsBox.className = 'oshi-sheet-cells';
+    cellsBox.setAttribute('aria-label', '表のマスと表情');
+    sec.appendChild(cellsBox);
+    var status = document.createElement('p');
+    status.className = 'row-meta oshi-sheet-status';
+    status.setAttribute('role', 'status');
+    sec.appendChild(status);
+
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn btn-primary oshi-sheet-go';
+    go.textContent = '切り分けて入れる';
+    go.disabled = true;
+    sec.appendChild(go);
+
+    function cells() {
+      if (!img) return [];
+      return oshiSheetCells(img.naturalWidth || img.width, img.naturalHeight || img.height,
+        oshiSheetClamp(rowsIn.value, grid.rows), oshiSheetClamp(colsIn.value, grid.cols));
+    }
+    function draw() {
+      cellsBox.textContent = '';
+      var list = cells();
+      map = oshiSheetDefaults(list.length, states);
+      list.forEach(function (cell) {
+        var li = document.createElement('li');
+        li.className = 'oshi-sheet-cell';
+        li.dataset.index = String(cell.index);
+        var fig = document.createElement('div');
+        fig.className = 'oshi-figure';
+        var shown = oshiCutPng(img, cell, 96, oshiGreenOn);
+        if (shown) {
+          var pic = document.createElement('img');
+          pic.className = 'oshi-img';
+          pic.alt = (cell.row + 1) + '行目・' + (cell.col + 1) + '列目の見本';
+          pic.src = shown;
+          fig.appendChild(pic);
+        } else {
+          var none = document.createElement('span');
+          none.className = 'oshi-avatar oshi-empty';
+          none.textContent = String(cell.index + 1);
+          fig.appendChild(none);
+        }
+        li.appendChild(fig);
+        var label = document.createElement('label');
+        label.className = 'oshi-field';
+        label.appendChild(document.createTextNode((cell.row + 1) + '行目・' + (cell.col + 1) + '列目'));
+        var sel = document.createElement('select');
+        sel.className = 'oshi-sheet-state';
+        var skip = document.createElement('option');
+        skip.value = '';
+        skip.textContent = '使わない';
+        sel.appendChild(skip);
+        states.forEach(function (s) {
+          var o = document.createElement('option');
+          o.value = s.key;
+          o.textContent = s.label;
+          sel.appendChild(o);
+        });
+        sel.value = map[cell.index];
+        sel.addEventListener('change', function () { map[cell.index] = sel.value; });
+        label.appendChild(sel);
+        li.appendChild(label);
+        cellsBox.appendChild(li);
+      });
+      go.disabled = !list.length;
+      status.textContent = list.length ? list.length + ' マス。表情を選んだマスを入れます (同じ表情を2つ選ぶと、後のマスが入ります)' : '';
+    }
+    rowsIn.addEventListener('change', draw);
+    colsIn.addEventListener('change', draw);
+    pick.addEventListener('change', function () {
+      var file = pick.files && pick.files[0];
+      pick.value = '';
+      if (!file) return;
+      if ((d.limits.mimes || []).indexOf(String(file.type)) < 0 || file.type === 'image/gif') {
+        showSnack('表の画像は PNG・JPEG・WebP にしてください', { kind: 'ng' });
+        return;
+      }
+      if (!oshiCanvas(1, 1)) {
+        showSnack('この画面では表を切り分けられません。表情ごとの「絵を選ぶ」から入れてください', { kind: 'ng' });
+        return;
+      }
+      var reader = new FileReader();
+      reader.onerror = function () { showSnack('画像を読めませんでした', { kind: 'ng' }); };
+      reader.onload = function () {
+        oshiLoadImage(String(reader.result || ''), function (got) {
+          if (!got) {
+            showSnack('この画面では表の画像を読めませんでした', { kind: 'ng' });
+            return;
+          }
+          img = got;
+          draw();
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+    go.addEventListener('click', function () {
+      var list = cells();
+      var jobs = [];
+      list.forEach(function (cell) { if (map[cell.index]) jobs.push({ cell: cell, state: map[cell.index] }); });
+      if (!jobs.length) {
+        status.textContent = '表情を選んだマスがありません';
+        return;
+      }
+      go.disabled = true;
+      var put = 0;
+      function next(i) {
+        if (i >= jobs.length) {
+          go.disabled = false;
+          status.textContent = put + ' 枚入れました';
+          showSnack('表から ' + put + ' 枚の絵を入れました', { kind: 'ok' });
+          return;
+        }
+        var job = jobs[i];
+        var url = oshiCutPng(img, job.cell, d.limits.maxPx, oshiGreenOn);
+        var label = oshiStateLabel(job.state);
+        if (!url) {
+          go.disabled = false;
+          status.textContent = 'この画面では切り分けられませんでした';
+          return;
+        }
+        if (oshiDataBytes(url) > d.limits.maxBytes) {
+          go.disabled = false;
+          status.textContent = '「' + label + '」のマスが ' + Math.round(d.limits.maxBytes / 1024 / 1024) + 'MB を超えました。ここで止めました (' + put + ' 枚入れました)';
+          return;
+        }
+        status.textContent = '「' + label + '」を入れています… (' + (i + 1) + ' / ' + jobs.length + ')';
+        call('apiOshiSetImage', [c.charId, job.state, url], function (res) {
+          oshiImgs[res.sha] = url;
+          var imgs = (c.images || []).filter(function (r) { return r.state !== job.state; });
+          imgs.push({ state: res.state, sha: res.sha, mime: res.mime, updatedAt: '' });
+          oshiSetMineImages(d, c, imgs);
+          redrawRow(job.state);
+          put++;
+          next(i + 1);
+        }, function (err) {
+          go.disabled = false;
+          status.textContent = '「' + label + '」で止まりました (' + put + ' 枚入れました)';
+          failSnack('絵を入れられませんでした: ')(err);
+        });
+      }
+      next(0);
+    });
+    return sec;
+  }
+
   /** 作り方と、最初に1回の頼み文 */
   function makeOshiSteps(d) {
     var sec = document.createElement('section');
@@ -1250,6 +1810,11 @@
     sec.className = 'oshi-section oshi-states';
     sec.dataset.charId = String(c.charId);
     sec.appendChild(oshiHeading(oshiMineName(c) + ' の表情ごとの絵'));
+    sec.appendChild(makeOshiImageTools(d, c, function (key) {
+      var old = sec.querySelector('.oshi-state[data-state="' + key + '"]');
+      var s = (d.states || []).filter(function (x) { return x.key === key; })[0];
+      if (old && s) old.parentNode.replaceChild(makeOshiStateRow(d, c, s), old);
+    }));
     (d.states || []).forEach(function (s) { sec.appendChild(makeOshiStateRow(d, c, s)); });
     return sec;
   }
@@ -1320,7 +1885,8 @@
       var file = pick.files && pick.files[0];
       pick.value = '';
       if (!file) return;
-      oshiReadFile(file, d.limits, function (dataUrl) {
+      var fail = function (why) { showSnack(why, { kind: 'ng' }); };
+      oshiReadFile(file, d.limits, function (read) { oshiMaybeGreen(read, d.limits, function (dataUrl) {
         call('apiOshiSetImage', [c.charId, s.key, dataUrl], function (res) {
           oshiImgs[res.sha] = dataUrl;
           var list = (c.images || []).filter(function (r) { return r.state !== s.key; });
@@ -1329,7 +1895,7 @@
           showSnack('「' + s.label + '」の絵を入れました', { kind: 'ok' });
           if (row.parentNode) row.parentNode.replaceChild(makeOshiStateRow(d, c, s), row);
         }, failSnack('絵を入れられませんでした: '));
-      }, function (why) { showSnack(why, { kind: 'ng' }); });
+      }, fail); }, fail);
     });
 
     if (has) {

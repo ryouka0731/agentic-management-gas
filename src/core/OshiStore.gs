@@ -879,6 +879,87 @@ function oshiSetCharProfile_(email, id, value) {
   return empty ? null : p;
 }
 
+// ----- キャラ作成キットの答えを取り込む -----
+
+/**
+ * AI の答え (キャラ作成キットの JSON) を確かめて整える。**ここが唯一の検査** (画面の「AI の答えを貼る」はここを通す。
+ * 画面では確かめない)。```json の囲みや前後の説明の字があってもよい (最初の JSON の物を取り出す)。
+ *
+ * - 知らない欄は捨てる (上の欄・場面・プロフィールの中)。AI はよく欄を足すので、断ると貼るたびに直すことになる
+ * - name は要る (OSHI_TEXT_LIMITS の長さまで)、tone は OSHI_TONES の key だけ
+ * - lines は知っている場面だけ。長さと数は oshiCleanLines で見る
+ * - profile は items と clearLine だけを拾い、oshiProfileValid_ で見る (lv の "2" のような数の字は数にする)。
+ *   動画 (clearVideo) は取り込まない (AI に動画のリンクを作らせない。あとで「プロフィール (JSON)」で足せる)
+ *
+ * @param {*} text
+ * @returns {{name: string, tone: string, lines: Object<string, string[]>, profile: {items: object[], clearLine: string}}}
+ */
+function oshiCharImportValid_(text) {
+  var raw = oshiExtractJson(text);
+  if (!raw) throw new Error('AI の答えの中に JSON が見つかりませんでした。{ から } までを全部貼ってください');
+  var got = JSON.parse(raw);
+  if (!got || typeof got !== 'object' || Array.isArray(got)) throw new Error('AI の答えの JSON は、欄を { } で囲んだ形にしてください');
+  var name = oshiCleanName_(typeof got.name === 'string' ? got.name : '');
+  if (!name) throw new Error('名前 (name) が書かれていません');
+  var tone = typeof got.tone === 'string' ? got.tone.replace(/^\s+|\s+$/g, '') : '';
+  if (!oshiToneKnown(tone)) {
+    throw new Error('知らない口調です: ' + tone + '。tone は ' + OSHI_TONES().map(function (t) { return t.key; }).join(' / ') + ' のどれかにしてください');
+  }
+  var lines = {};
+  var given = got.lines && typeof got.lines === 'object' && !Array.isArray(got.lines) ? got.lines : {};
+  OSHI_EVENTS().forEach(function (e) {
+    if (!Object.prototype.hasOwnProperty.call(given, e.key)) return;
+    var v = given[e.key];
+    if (!Array.isArray(v) && typeof v !== 'string') throw new Error('「' + e.label + '」のせりふは字の並び (["…"]) にしてください');
+    var clean;
+    try {
+      clean = oshiCleanLines(Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? x : ''; }) : v);
+    } catch (err) {
+      throw new Error('「' + e.label + '」のせりふを直してください。' + err.message);
+    }
+    if (clean.length) lines[e.key] = clean;
+  });
+  var p = got.profile && typeof got.profile === 'object' && !Array.isArray(got.profile) ? got.profile : {};
+  var items = Array.isArray(p.items) ? p.items.map(function (it) {
+    if (!it || typeof it !== 'object' || Array.isArray(it)) return it;
+    var lv = typeof it.lv === 'string' && /^\s*\d+\s*$/.test(it.lv) ? Number(it.lv) : it.lv;
+    return { lv: lv, label: it.label, text: it.text };
+  }) : [];
+  var profile = oshiProfileValid_({ items: items, clearLine: p.clearLine === undefined ? null : p.clearLine });
+  return { name: name, tone: tone, lines: lines, profile: { items: profile.items, clearLine: profile.clearLine } };
+}
+
+/**
+ * キャラ作成キットの答えで、自分のキャラを作る (id が 0) か、作ってあるキャラを書き直す。
+ * 書き直すときは、答えにある場面のせりふだけ置き換え (ほかの場面の自分のせりふは残す)、プロフィールの動画は残す。
+ * **確かめるのは鍵の外、作る・書くのは1つの鍵の中** (途中で断られて、名前だけのキャラが残らないように)。
+ *
+ * @param {string} email
+ * @param {number} id 0 なら新しく作る
+ * @param {*} text AI の答え
+ * @returns {{id: number, created: boolean, name: string, tone: string, lines: number, items: number}}
+ */
+function oshiCharImport_(email, id, text) {
+  var who = oshiWho_(email);
+  if (!who) throw new Error('誰の推しか分かりません');
+  var v = oshiCharImportValid_(text);
+  return dbWithLock_(30000, function () {
+    var created = !id;
+    var cid = created ? oshiCharCreate_(who, v.name, v.tone).id : id;
+    if (!created) oshiAssertMine_(who, cid);
+    var cur = oshiProfile_(who, cid);
+    var lines = created ? {} : cur.lines;
+    Object.keys(v.lines).forEach(function (k) { lines[k] = v.lines[k]; });
+    var video = cur.profile ? cur.profile.clearVideo : '';
+    var empty = !v.profile.items.length && !v.profile.clearLine && !video;
+    oshiProfileWrite_(who, cid, {
+      name: v.name, tone: v.tone, lines: lines,
+      profile: empty ? '' : JSON.stringify({ items: v.profile.items, clearLine: v.profile.clearLine, clearVideo: video }),
+    });
+    return { id: cid, created: created, name: v.name, tone: v.tone, lines: Object.keys(v.lines).length, items: v.profile.items.length };
+  });
+}
+
 /**
  * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) を全部取っていれば true。
  *

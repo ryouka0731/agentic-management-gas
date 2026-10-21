@@ -367,6 +367,19 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   実績で Lv が変わったら `achSyncOshi` が `oshiRevealRefresh` で取り直し、知らせには `oshiProfileOpening` の数を添える
 - 自分のキャラのプロフィールは JSON の欄 (`makeOshiCharProfileEditor` → `apiOshiSetCharProfile`)。最初からいるキャラのぶんは設定の
   画面の管理者の節 (`makeOshiBuiltinProfileSettings`。`settings.canEdit` のときだけ組み、`apiOshiBuiltinProfiles` を取る)
+- **キャラ作成キット (やること #50)。** 頼み文は `oshiCharKitPrompt` (`src/core/Oshi.js`) が唯一の定義で、道具 (`OSHI_CHARKIT_TOOLS()`) の
+  一覧だけを `apiOshiGet` の `kitTools` で渡し、中身は「コピー」を押したときに `apiOshiCharKitPrompt` で取る (画面は写しを持たない)。
+  一度取った字は `oshiKitPrompts` に覚え、2回目からは押した中で写す (返事を待ってから写すと、写せない画面がある。そのときは字を選んだままにする)。
+  プロフィールの項目の Lv は `oshiCharKitLevels(1 + 実績の数)` (2 から 2 ずつ)。表情の絵の決まりは `OSHI_PROMPT_LOOK_RULES()` を
+  表情ごとの頼み文と共用し、「参考画像と同じキャラクター」は入れない (写真の人をそのまま描かせない)
+  - 「AI の答えを貼る」(`makeOshiImport`) は字をそのまま `apiOshiCharImport(charId | 0, text)` に送る。**取り出し (`oshiExtractJson`) と検査
+    (`oshiCharImportValid_`) はサーバだけ**。知らない欄は捨て、口調・長さは断る。書き直すときは答えにある場面だけ置き換え、動画は残す
+  - 「緑の背景を抜く」(`oshiGreenOn`) は切り替え (`setToggle`)。`oshiKeyGreen` が ImageData の data を書き換える (画面に依らない関数。
+    `test/oshi-charkit-ui.test.js`)。描けない画面 (jsdom) では、絵を読み込む前に断る (`oshiCanvas(1, 1)` が null)。GIF は抜かない
+  - 「1枚の表から切り分ける」(`makeOshiSheet`) はマスを `oshiSheetCells` で決め (端数は丸め、隙間も重なりも作らない)、既定の行と列は
+    サーバの `oshiSheetGrid` (`apiOshiGet` の `sheet`)。選んだマスを `oshiCutPng` で切り、いつもの `apiOshiSetImage` で1枚ずつ順に送る
+    (上限もいつもどおり。失敗したらそこで止め、入れた枚数を出す)
+  - 試すのは `test/component/oshi-charkit.test.js` (返事は本物のサーバ。描く器と絵は疑似)・`test/oshi-charkit.test.js` (サーバ)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`。
   プロフィールとクリアは `test/component/oshi-profile.test.js` と `test/oshi-profile.test.js`
 
