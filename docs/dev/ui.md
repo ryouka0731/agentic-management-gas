@@ -117,6 +117,37 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - テストは `test/component/doc-link.test.js` (`mountApp(…, { link: { doc } })` が doGet の印を body に付ける) と
   `test/api/main.test.js` (doGet)。`test/ui-assemble.test.js` と `test/dom.js` は `<?= bodyClass ?>` / `<?= linkDoc ?>` を空で埋める
 
+## 開いたときの呼び出しの波 (最初の波 / 要るとき / 急がない)
+
+2026-10-22 の依頼「番頭全体の性能をもっと上げられない?」。開いた直後に **api を30本同時に投げていた** (やることの一覧・名簿・札・
+ひな形・置き場の日数… を、ホームしか見ていないのに。`apiGameState` は自分の欄を描くたびに取り、3回呼んでいた)。1本ごとにサーバの
+起動代 (0.3〜1秒) と台帳の読み取りがかかり、ブラウザは同じ相手への同時の接続を6本ほどに絞るので、ホームに要るものまで後ろで待たされる。
+3つに分けた (仕組みは `app.js.html` の「開いたときの呼び出しの波」、起動の流れは `js-start`):
+
+| 波 | いつ | 何を |
+|---|---|---|
+| 最初の波 (16本) | 開いてすぐ | 文書の一覧 (`apiListFiles`。やることの絞り込みの文書名・改訂版を作る画面が `allFiles` を引く)・左上の名前 (`apiWorkspace`)・左の行き先 (`apiSettings`)・自分の顔 (`apiWhoAmI`)・ベルの数 (`apiNotifications`)・ホームの中身 (`apiOverview` は左の行き先の数も兼ねる・`apiHomeSummary`・`apiHomeActivity`・`apiProgress` とカードの5本)・設定 (`apiPrefs`)・推し (`apiOshiGet`、設定が届いてから) |
+| 要るとき | その画面・欄を開いたとき | 人の名前と型 (`apiPeopleNames` / `apiWorkStyleTeam`。ホーム以外の画面と自分の欄)・やることの札と優先度 (`apiTagList` / `apiIssuePriorities`)・名簿 / ひな形 / Google ToDo / 置き場の日数 (`apiKnownPeople` / `apiTemplateList` / `apiTasksState` / `apiArchiveKeepDays`。やることを開いたときに待たずに取る)・集計の範囲 (`apiTallyScope`。集計を開いたとき)・やることの一覧 (`apiIssueList`。やることを開いたとき)・ポイントの参加 (`apiGameState`。自分の欄を開いたとき) |
+| 急がない (2本) | 最初の波の返事がそろってから (`bootLater`) | 実績の数え直し (`apiAchievementsCheck`。開いた日も数える)・道具の更新の印 (`apiKitStatus`) |
+
+- **新しい api* を開いた直後に呼ばない。** 画面や欄を開くところで取る。何度も開くもので中身が変わらないもの (一覧の候補・名前など) は
+  `onceSpecOf` に足して `needOnce(names, then)` で取る。取ったら覚えて二度と取らず、取りに行っている最中なら待ち合わせる。取れなかった
+  ものは覚えず、次に要るときに取り直す (then は呼ぶので、控えの値で描ける)。全部取ってあれば then はその場で呼ぶ (待たない)
+- **画面を切り替えるときは `loadTabWhenReady` が待つ。** ホームは何も待たない。ほかの画面は名前と型を、やることは札と優先度も待ってから
+  中身を取る (名前の無い一覧を描いてから描き直さない)。待つあいだに別の画面へ移ったら、離れた画面の中身は取らない
+- **ホームから開く欄も待つ。** やることの詳しい欄 (`openIssueDetail`) と作る欄 (`createIssue`。近道の n とカードから開く) は、やることの
+  画面を開いていなくても `needIssues` で札・優先度 (作る欄はひな形も) を取ってから組む。番号だけで開くとき (`openIssueByNumber`) は、
+  取った一覧で `lastIssues` を埋める (親と子の行き先がそこから引く。以前は起動のときに隠れた一覧を取っていたので引けていた)
+- **自分の欄の中身は開いたときに描く** (`openMe` → `drawMe`)。閉じているあいだは上の段のボタン (`drawMeButton`) だけ描く
+- **最初の波は `call()` が数える** (`bootWaveCount` / `bootWaveDone`)。返事が投げた続き (前進 → カードの5本、設定 → 推し) も数える。
+  js-start が投げ終えた印 (`bootWaveArm`) のあと、返事がそろったら急がないものを走らせる。返事の来ない1本に止められないよう、15秒で
+  走らせる (`BOOT_LATER_MAX_MS`)。疑似の返事は同期で返るので、テストでは組み終えた時点で急がないものまで呼ばれている
+- **文書のリンクで開いたとき** (`doc-link`) は、文書に要るもの (文書の一覧・本文・状態・設定) だけを取る。隠れている欄 (つながったやること・
+  リンクをコピー) は取らない。知らせは急がない波で取りはじめる。開けずにふつうの画面へ戻すとき (`leaveDocLink`) に最初の波の残り
+  (`bootHomeWave`) を取る
+- テストは `test/component/boot.test.js` (開いた直後の本数と順番・やることを開いたとき・2回開いても1回・待ち合わせ・文書のリンク)。
+  呼ぶものを足すと、開いた直後の並びの検査で落ちる。足すなら、上の表のどの波かを決めてからテストの並びを直す
+
 ## ホーム (`js-home` / `js-progress`)
 
 - **返事が届くまでは骨組み (スケルトン) を置く** (`homeSkeletonInto(host, title, lines)`。2026-10-22 の依頼)。区画が空のときだけ置き、
