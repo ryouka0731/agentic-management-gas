@@ -42,7 +42,8 @@ function mountOshi(values, over) {
 
 /** サーバの今の推しと実績で組む (開いたときの数え直しも同じ Lv を返す) */
 function mountWith(ctx, values, over) {
-  const ach = wire(ctx.apiAchievements());
+  // 頁を開いた返事 (apiAchievements) は「実績の頁を見た」を取って Lv が1つ上がるので、頁を開かないときの返事で組む
+  const ach = wire(ctx.achPlain_(ctx.achCheck_(ME, new Date(), { useNeg: true }), ME));
   return mountOshi(values, Object.assign({ apiOshiGet: wire(ctx.apiOshiGet()), apiAchievementsCheck: ach, apiAchievements: ach }, over || {}));
 }
 

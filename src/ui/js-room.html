@@ -870,6 +870,8 @@
         if (mix.sounds[s.key].on) roomVoiceStart(s.key);
       });
       roomSyncPlayButton();
+      // 実績 (作業部屋で音を流した) のための使われ方
+      usageCount('action', 'room-sound');
       return true;
     } catch (e) {
       if (window.console) console.warn('作業部屋の音を鳴らせませんでした', e);
@@ -1171,6 +1173,8 @@
     roomTimer = setInterval(roomTick, 1000);
     var close = el.querySelector('.room-close');
     if (close) close.focus();
+    // 実績 (作業部屋を開いた・通算) のための使われ方。開き直しだけを数え、既に開いているときは数えない
+    usageCount('action', 'room-open');
   }
 
   /** 閉じる。音は下げて止め、動きと時計を止め、全画面なら戻す */
@@ -1412,6 +1416,8 @@
     var el = roomEl();
     var fig = roomFigure();
     if (!el || !fig || !oshiOn() || roomPatTimer) return;
+    // 実績 (推しの頭をなでた・通算) のための使われ方。笑顔のあいだの往復は数えない (上で返している)
+    usageCount('action', 'oshi-pat');
     if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
     roomGlanceTimer = null;
     roomFillCharacter('praise');

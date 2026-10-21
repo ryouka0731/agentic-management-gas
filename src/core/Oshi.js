@@ -789,16 +789,29 @@ function OSHI_CHARKIT_ORIGINAL_RULES() {
 }
 
 /**
- * プロフィールの項目に使う Lv。いちばん早い Lv (OSHI_PROFILE_LIMITS の lvMin) から、最高の Lv の1つ手前まで 2 ずつ
- * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最後の項目は最高の Lv の1つ手前 (実績を全部取る1つ前) で
- * 分かり、最高の Lv (実績を全部取った = クリア) では項目は増えず、お祝いの言葉 (clearLine) と動画が出る。
+ * キャラ作成キットが頼むプロフィールの項目の、いちばん遅い Lv。**実績を足しても上げない** (36)。
+ * 実績が 36 個だったときに決めた並び (Lv 2〜36 の 18 項目) のまま留める。理由:
+ * - 実績を足すたびに頼み文の項目の数が変わると、前に作ったキャラ (18 項目) と新しく作るキャラで分かり方がそろわない
+ * - 項目が増えすぎると、1回の頼みで書く量が増え、中身が薄くなる
+ * - 実績が増えても、項目は Lv 36 までに全部分かる。クリア (最高の Lv) で出るのはお祝いの言葉と動画だけ (前と同じ)
+ *
+ * @returns {number}
+ */
+function OSHI_CHARKIT_LV_TOP() {
+  return 36;
+}
+
+/**
+ * プロフィールの項目に使う Lv。いちばん早い Lv (OSHI_PROFILE_LIMITS の lvMin) から 2 ずつ、最高の Lv の1つ手前か
+ * OSHI_CHARKIT_LV_TOP の早いほうまで (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。
+ * 最高の Lv (実績を全部取った = クリア) では項目は増えず、お祝いの言葉 (clearLine) と動画が出る。
  *
  * @param {number} maxLevel 最高の Lv (1 + 実績の数)
  * @returns {number[]}
  */
 function oshiCharKitLevels(maxLevel) {
   var lim = OSHI_PROFILE_LIMITS();
-  var top = Math.min(lim.lvMax, Math.floor(Number(maxLevel) || 0) - 1);
+  var top = Math.min(lim.lvMax, OSHI_CHARKIT_LV_TOP(), Math.floor(Number(maxLevel) || 0) - 1);
   var out = [];
   for (var lv = lim.lvMin; lv <= top && out.length < lim.itemsMax; lv += 2) out.push(lv);
   return out;
@@ -881,7 +894,7 @@ function oshiCharKitPrompt(tool, maxLevel) {
       ' 項目 (1つの lv に1項目)。label (見出し) は' + prof.labelMax + '字まで、text (中身) は' + prof.textMax +
       '字まで。好きなもの・苦手なもの・口ぐせ・小さな秘密など、Lv が上がるほど深い話にする',
     '- profile.clearLine: 実績を全部取ったとき (クリア。Lv ' + top + ') のお祝いの言葉。プロフィールの最後の項目 (Lv ' +
-      (levels.length ? levels[levels.length - 1] : top) + ') はその1つ手前で分かっているので、項目には無い言葉にする。' +
+      (levels.length ? levels[levels.length - 1] : top) + ') はクリアより前に分かっているので、項目には無い言葉にする。' +
       prof.clearLineMax + '字まで',
     '- どの字にも、実在の人の名前・所属・肩書きを書かない'
   );
