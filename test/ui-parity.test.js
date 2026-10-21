@@ -68,6 +68,25 @@ describe('画面とサーバで同じ答えになる', () => {
     }
   });
 
+  it('errorKindOf / nextStepOf / errorTextOf (断りの型と次にすること)', () => {
+    // 型の表は src/core/ErrorKind.js。画面の写しが1つでもずれると、同じ断りに別の「次にすること」が出る
+    const core = loadGas('src/core/ErrorKind.js');
+    const names = ['ERROR_KIND_ENGLISH_', 'ERROR_KIND_PHRASES_', 'errorBareOf_', 'errorKindOf', 'nextStepOf', 'errorTextOf'];
+    const view = ui(names);
+    const words = ['混み合っています', '見つかりません', '開いたあとで', 'だけが行えます', '入れてください', '既にあります',
+      'Exceeded maximum execution time', 'Lock timeout', 'Authorization is required', 'not found', 'boom', ''];
+    const glue = ['', ': ', 'Error: ', 'Exception: ', '。', ' #3', '「x」'];
+    for (let t = 0; t < 2000; t++) {
+      const text = pick(glue) + pick(words) + pick(glue) + pick(words);
+      expect(view.errorKindOf(text)).toBe(core.errorKindOf(text));
+      expect(view.errorTextOf(text)).toBe(core.errorTextOf(text));
+    }
+    for (const k of ['busy', 'timeout', 'forbidden', 'gone', 'stale', 'invalid', 'unknown', '', 'constructor']) {
+      expect(same(view.nextStepOf(k), core.nextStepOf(k))).toBe(true);
+    }
+    for (const v of [null, undefined, 3]) expect(view.errorKindOf(v)).toBe(core.errorKindOf(v));
+  });
+
   it('diffPairs', () => {
     const core = loadGas('src/core/Diff.js');
     const view = ui(['diffPairs']);

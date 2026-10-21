@@ -56,6 +56,28 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   本番と同じ順につなぐ。テストに並びを写さない。`test/ui-assemble.test.js` が、`Main.gs` の
   `include()` でテンプレートを評価したものと同じ字になるかを見ている
 
+## 断りに「次にすること」を添える
+
+`call()` の失敗の見せ方 (既定の帯・`failSnack` / `failInto` / `failEnable`) は、断りの字の下に1行
+「次にすること: …」を出す。**`failQuiet` は出さない** (黙ってよいものに次の一手は要らない)。型と言葉は
+`src/core/ErrorKind.js` が唯一の定義で、画面の `errorKindOf` / `nextStepOf` / `errorTextOf` はその写し
+(`test/ui-parity.test.js`)。設計は `docs/superpowers/specs/2026-10-21-motivation-review-2.md` の D.1。
+
+- 型は busy / timeout / forbidden / gone / stale / invalid / unknown。**断りの字は変えずに、決まった言い回しから引く。**
+  日本語の文は最初の「: 」より前だけを見る (後ろに人の書いた名前が入るため)。英語の実行時エラー
+  (`Exceeded maximum execution time` など) は先に見る
+- **今ある断り文 (new Error の字) は全部どれかの型に当たる** (`test/errorkind.test.js` が `test/naming.test.js` と同じ拾い方で走査する)。
+  当たらない断りを足すとそこで落ちる。そのときは断り文ではなく `ERROR_KIND_PHRASES_` の言い回しを足す
+- **[もう一度] は busy のときだけ、1回だけ。** 混み合いは何も変えずに断っているので押し直してよい。押すと同じ api を同じ引数で
+  呼び直し (`callOnce`)、また失敗しても2回目は出さない。**timeout と unknown には出さない** (途中まで済んでいることがあり、
+  押し直すと同じものが2つできる)。入力欄から送ったものは、押し直す前に開き直した入力欄を閉じる (残すと同じものをもう一度送れる)。
+  `failEnable` のボタンは押し直すあいだも押せなくする
+- 失敗の見せ方は `err` しか受け取らないので、型と押し直す手立ては `call()` が失敗のハンドラを呼ぶあいだだけ `callFailure` に置く
+- **英語の実行時エラーはそのまま出さず日本語に言い換える** (`errorTextOf`)。元の字は `console.warn` に残す
+- 時間切れはサーバでは数えられないので、画面が使われ方の場所 `error:timeout` として数える (毎日の成果の数の `timeoutErrors`)
+- 帯は文と次の行を `.snackbar-body` にまとめ (ボタンは右のまま)、器は `.fail-text` / `.fail-next` / `.fail-again` に分けて置く
+- 試すのは `test/component/error-recovery.test.js` (型ごとの出方・押し直し) と `test/e2e/errors.test.js` (混み合い → もう一度 → 1件だけできる)
+
 ## 画面の落とし穴
 
 (元は「落とし穴」の項目)
@@ -78,7 +100,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **サーバ側と UI 側の両方にある関数がある**。`google.script.run` の往復を
   減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**:
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
-  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill`
+  `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
+  `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`)
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
   図が消える。図の座標は手で置いているため、`test/component/settings-usage-guide.test.js` の

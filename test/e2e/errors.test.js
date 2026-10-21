@@ -49,6 +49,57 @@ describe('サーバに断られたとき', () => {
     expect($('#issue-list').textContent).toContain('就業規則の読み合わせ');
   }, LONG);
 
+  it('混み合ったら「次にすること」と [もう一度] を出す。押せば1回だけやり直し、やることは1件だけできる', async () => {
+    const e2e = mountFullstack();
+    await e2e.settle();
+    go('issues'); await e2e.settle();
+
+    const free = busy(e2e);
+    click($('#issue-create-btn')); await e2e.settle();
+    fillSideForm({ title: '賃金規程の読み合わせ', body: '' });
+    submitSideForm();
+    await e2e.settle();
+
+    expect(e2e.rows('issues')).toHaveLength(0);
+    expect($('#snackbar .snackbar-next').textContent).toMatch(/^次にすること: 少し待ってから/);
+    const again = Array.from(document.querySelectorAll('#snackbar button')).find((b) => b.textContent === 'もう一度');
+    expect(again).toBeTruthy();
+    // 書いたまま開き直してある (押し直さずに直して送ることもできる)
+    expect($('#side-body form.inline-form')).not.toBe(null);
+    // 断った回数はその日の数に入る (成果の数の busyErrors)
+    const key = 'OUTCOME_BUSY:' + e2e.ctx.usageDay(new Date());
+    expect(Number(e2e.ctx.PropertiesService.getScriptProperties().getProperty(key))).toBe(1);
+
+    free();
+    click(again); await e2e.settle();
+    expect(e2e.rows('issues').map((i) => i.title)).toEqual(['賃金規程の読み合わせ']);
+    // やり直したら、開き直した入力欄は閉じる (残すと同じものをもう一度送れてしまう)
+    expect($('#side-body form.inline-form')).toBe(null);
+    expect($('#issue-list').textContent).toContain('賃金規程の読み合わせ');
+    expect(e2e.failures.map((f) => f.name)).toEqual(['apiIssueCreate']);
+  }, LONG);
+
+  it('時間切れには [もう一度] を出さない (途中まで済んでいて、二重に作るため)', async () => {
+    const e2e = mountFullstack();
+    await e2e.settle();
+    go('issues'); await e2e.settle();
+    const real = e2e.ctx.apiIssueCreate;
+    // 実機では書いたあとに6分の上限で打ち切られることがある。書いてから投げる
+    e2e.ctx.apiIssueCreate = function () {
+      real.apply(this, arguments);
+      throw new Error('Exceeded maximum execution time');
+    };
+    click($('#issue-create-btn')); await e2e.settle();
+    fillSideForm({ title: '退職金規程', body: '' });
+    submitSideForm();
+    await e2e.settle();
+
+    expect(e2e.snacks.join(' ')).toContain('時間がかかりすぎて、途中で止まりました');
+    expect($('#snackbar .snackbar-next').textContent).toContain('確かめて');
+    expect(Array.from(document.querySelectorAll('#snackbar button')).some((b) => b.textContent === 'もう一度')).toBe(false);
+    expect(e2e.rows('issues')).toHaveLength(1);
+  }, LONG);
+
   it('同じ名前の改訂版は作れない。断りを帯で出し、名前を書いたまま開き直す', async () => {
     const server = createServer();
     const docId = placeDoc(server, '就業規則', '<p>第1条</p>\n');

@@ -590,6 +590,8 @@
   function usageLabel(target) {
     var known = {
       'row-open': 'やること・報告の行を開く',
+      // 時間切れで止まった操作 (call() の失敗で数える。毎日の成果の数の timeoutErrors に入る)
+      'error:timeout': '時間切れで止まった操作',
       'board-card': '進捗ボードのカード',
       'gantt-bar': '工程表の棒',
       'doc-open': '文書を開く',

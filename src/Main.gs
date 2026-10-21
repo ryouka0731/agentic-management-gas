@@ -151,6 +151,14 @@ function housekeepArchiveDaily_() {
     }
     var gone = issueHousekeep(new Date());
 
+    // 成果の数 (Outcomes.gs)。台帳を読んで数えるのは鍵の外、書くところだけ短く鍵を取る。
+    // 数えられなくても片付けは済ませる (次の日に直近8日を数え直すので戻る)
+    try {
+      outcomesDaily_(new Date());
+    } catch (e2) {
+      Logger.log('成果の数を数えられませんでした: ' + e2.message);
+    }
+
     // 済みの印は、終わってから付ける。先に付けると、途中で落ちた日は
     // やり直されないまま次の日になる
     props.setProperty('ARCHIVE_HOUSEKEPT_ON', today);
