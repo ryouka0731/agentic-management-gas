@@ -470,6 +470,31 @@ describe('見直し (レビューで見つかったもの)', () => {
     expect(read).toEqual([]);
   });
 
+  it('その日2回目に開いたときも、「まだ」と分かった「はじめて」は読み直さない (その日の最初に開いたときは全部数える)', () => {
+    const { ctx } = setup();
+    withCache(ctx);
+    let read = readsOf(ctx);
+    ctx.apiAchievementsCheck();
+    expect(read).toContain('branches');
+    read.length = 0;
+    ctx.apiAchievementsCheck();
+    expect(read).not.toContain('branches');
+    expect(read).not.toContain('goals');
+    // まだのものは、その次の頁でも読まない (2回目に開いたときに覚えを消さない)
+    read.length = 0;
+    ctx.apiAchievements();
+    expect(read).not.toContain('branches');
+  });
+
+  it('手元からの命令の覚え (outcomesQueueWindows_) は、1回の数え直しで1回だけ読む', () => {
+    const { ctx } = setup();
+    let n = 0;
+    const real = ctx.outcomesQueueWindows_;
+    ctx.outcomesQueueWindows_ = () => { n++; return real(); };
+    ctx.apiAchievementsCheck();
+    expect(n).toBe(1);
+  });
+
   it('「はじめて」がまだのことは、その日のうちは覚えておき、頁を開くたびに読み直さない (開いたときは全部数える)', () => {
     const { ctx } = setup();
     withCache(ctx);

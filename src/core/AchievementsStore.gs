@@ -397,6 +397,12 @@ function achCounts_(who, have, days, only, skip) {
     return usage[place] ? 1 : 0;
   }
   var places = ACH_USAGE_PLACES();
+  // 手元からの命令の覚え (スクリプトプロパティ) は、反映した・手元の道具 の両方が使うので1回だけ読む
+  var queueWindows = null;
+  function windowsOnce() {
+    if (!queueWindows) queueWindows = outcomesQueueWindows_();
+    return queueWindows;
+  }
   var props = null;
   function prop(key) {
     if (!props) props = prefReader_();
@@ -423,7 +429,7 @@ function achCounts_(who, have, days, only, skip) {
     // 反映すると、反映した人の名で「反映: 確認依頼 #…」の記録が残る (PullRequest.gs)
     // 手元からの命令で反映したものは持ち主の名で残るので、命令を置いた人のものにする
     merge: function () {
-      var windows = outcomesQueueWindows_();
+      var windows = windowsOnce();
       return rows('commits').some(function (c) {
         return String(c.message || '').indexOf('反映: 確認依頼 #') === 0 && achPersonOf_(c.author, c.timestamp, windows) === who;
       }) ? 1 : 0;
@@ -444,7 +450,7 @@ function achCounts_(who, have, days, only, skip) {
     goal: function () { return any('goals', 'who'); },
     calendar: function () { return calendarPlannedOf_(who).day ? 1 : 0; },
     // 手元からの命令は持ち主の名で走るので、命令を置いた人の覚え (outcomesQueueNote_) で見る
-    kit: function () { return outcomesQueueWindows_().some(function (q) { return mine(q.by); }) ? 1 : 0; },
+    kit: function () { return windowsOnce().some(function (q) { return mine(q.by); }) ? 1 : 0; },
     search: function () { return used(places.search); },
   };
   Object.keys(need).forEach(function (m) {
@@ -465,7 +471,7 @@ function achCounts_(who, have, days, only, skip) {
  *
  * - countDay: 開いた日を数える (開いたときに1回だけ)
  * - metrics: 数えるものを絞る (済ませたあと)。無ければ全部数え、「はじめて」でまだなものをその日の覚えに書く
- * - useNeg: その日に「まだ」と分かった「はじめて」を数えない (頁を開いたとき)
+ * - useNeg: その日に「まだ」と分かった「はじめて」を数えない (頁を開いたとき。countDay のときも、覚えがあれば数えない)
  *
  * @param {string} email
  * @param {Date} now
@@ -486,11 +492,14 @@ function achCheck_(email, now, opts) {
     only = {};
     o.metrics.forEach(function (m) { if (Object.prototype.hasOwnProperty.call(known, String(m))) only[String(m)] = true; });
   }
-  var counts = achCounts_(who, have, days, only, o.useNeg && !only ? achNegRead_(who, today) : null);
+  // 頁を開いたときと、その日2回目からの開いたとき (覚えがあるとき) は、その日に「まだ」と分かった「はじめて」を数えない
+  var useNeg = (o.useNeg || o.countDay) && !only;
+  var negKnown = useNeg ? achNegRead_(who, today) : null;
+  var counts = achCounts_(who, have, days, only, negKnown);
   if (!only) {
     var metrics = ACH_METRICS();
     var neg = Object.keys(counts).filter(function (m) { return metrics[m].first && !counts[m]; });
-    if (o.useNeg) Object.keys(achNegRead_(who, today)).forEach(function (m) { if (neg.indexOf(m) < 0) neg.push(m); });
+    if (negKnown) Object.keys(negKnown).forEach(function (m) { if (neg.indexOf(m) < 0) neg.push(m); });
     achNegWrite_(who, today, neg);
   }
   var reached = achNewly(counts, have);
