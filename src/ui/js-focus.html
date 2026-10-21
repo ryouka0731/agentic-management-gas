@@ -682,6 +682,36 @@
   }
 
   /**
+   * 埋め込みが再生できないときに、YouTube の頁をそのまま開くための URL (読み解いた id から組む。貼られた字は使わない)。
+   * SoundCloud は '' (再生機の中の題名から開ける)。
+   *
+   * @param {*} p
+   * @returns {string}
+   */
+  function focusMusicWatchUrl_(p) {
+    if (!focusMusicPartsValid_(p) || p.kind !== 'youtube') return '';
+    return p.video ? 'https://www.youtube.com/watch?v=' + p.video : 'https://www.youtube.com/playlist?list=' + p.list;
+  }
+
+  /**
+   * 「YouTube で開く」のリンク。枠の中の再生機が「再生できません」(Apps Script の枠の中では送り元や枠の制限で
+   * 断られることがある) のときの逃げ道。新しいタブで開き、番頭の頁は差し替えない。
+   *
+   * @param {string} href
+   * @param {string} className
+   * @returns {HTMLElement}
+   */
+  function makeWatchLink(href, className) {
+    var a = document.createElement('a');
+    a.className = className;
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'YouTube で開く (再生できないとき)';
+    return a;
+  }
+
+  /**
    * 設定の画面に出すリンク (部品から組み直したもの)。部品が正しくなければ ''。
    *
    * @param {*} p
@@ -724,19 +754,26 @@
     var f = document.createElement('iframe');
     f.className = 'focus-music-frame' + (parts.kind === 'youtube' ? ' is-youtube' : ' is-soundcloud');
     f.title = '自分の曲 (' + (parts.kind === 'youtube' ? 'YouTube' : 'SoundCloud') + ')';
-    f.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
+    // 公式の埋め込みと同じ allow。sandbox は付けない (実機で「再生できません」になった。番頭の枠 (HtmlService) 自体が
+    // sandbox の中にあり、src は読み解いた id からだけ組む。docs/dev/ui.md)
+    f.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen');
     f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-    // 埋め込みの再生機は自分の場所のスクリプトと保存が要る。開いた先 (YouTube の頁) は枠の外で開かせる
-    f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation');
     f.src = src;
     holder.appendChild(f);
+    var watch = focusMusicWatchUrl_(parts);
+    if (watch) holder.appendChild(makeWatchLink(watch, 'focus-music-open'));
     focusMusicFrame = f;
     return true;
   }
 
   /** 止めて閉じる (枠ごと外すので、音も止まる) */
   function focusMusicClose() {
-    if (focusMusicFrame) focusMusicFrame.remove();
+    if (focusMusicFrame) {
+      var holder = focusMusicFrame.parentNode;
+      var open = holder && holder.querySelector('.focus-music-open');
+      if (open) open.remove();
+      focusMusicFrame.remove();
+    }
     focusMusicFrame = null;
     var btn = document.querySelector('#focus-dock .focus-music-toggle');
     if (btn) btn.textContent = '読み込む';
