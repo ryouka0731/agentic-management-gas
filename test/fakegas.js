@@ -608,6 +608,13 @@ export function createFakeGas() {
         return kitFiles.get(name);
       },
     }),
+    // include() が使う。そのままの字を返す (本物は HTML として読み直さない)
+    createTemplateFromFile: (name) => ({
+      getRawContent: () => {
+        if (!kitFiles.has(name)) throw new Error('ファイルがありません: ' + name);
+        return kitFiles.get(name);
+      },
+    }),
   };
 
   return {

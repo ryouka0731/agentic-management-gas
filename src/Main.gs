@@ -29,7 +29,11 @@ function doGet(e) {
  * @returns {string}
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  // **そのままの字を返す (getRawContent)。** createHtmlOutputFromFile(...).getContent() は部分ファイルを HTML として
+  // 読み直してから返し、2026-10-22 から JS の `<` を `&lt;` に、CSS のコメントを消すようになった。画面の JS 全体が
+  // 文法エラーになり、ボタンもアイコンも動かなくなった。部分ファイルは <script> / <style> の中身なので、HTML として
+  // 読ませない (docs/dev/ui.md)
+  return HtmlService.createTemplateFromFile(filename).getRawContent();
 }
 
 /**
