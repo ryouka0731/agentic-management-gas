@@ -24,10 +24,12 @@ function apiGoalState() {
   var keys = [goalPeriodShift(now, -1), now, goalPeriodShift(now, 1)];
   if (enabled) {
     var me = currentEmailLower_();
-    // 前に立てた目標の期も選べるようにする (区切りを変えたあとでも辿れるように)
+    var people = goalPeople_();
+    // 前に立てた目標の期も選べるようにする (区切りを変えたあとでも辿れるように)。上長には、見られる下の人の目標の期も出す
     dbReadAll('goals').forEach(function (g) {
       var p = String(g.period);
-      if (goalLower_(g.who) === me && goalPeriodParse_(p) && keys.indexOf(p) < 0) keys.push(p);
+      if (!goalPeriodParse_(p) || keys.indexOf(p) >= 0) return;
+      if (goalCanView_(me, goalLower_(g.who), people)) keys.push(p);
     });
   }
   keys.sort();
@@ -60,7 +62,7 @@ function apiGoalMine(period) {
     period: plainText(key),
     periodLabel: plainText(goalPeriodLabel(key)),
     goals: goalMine_(me, key),
-    linkable: goalLinkable_(me),
+    linkable: goalLinkable_(me, goalPeriodRange(key, goalFyStartNow_())),
   };
 }
 
@@ -103,6 +105,18 @@ function apiGoalDelete(id) {
 function apiGoalSubmit(id) {
   goalsAssertEnabled_();
   goalSubmit_(goalMe_(), Number(id));
+  return goalOnePlain_(Number(id));
+}
+
+/**
+ * 承認の頼みを取り下げる (本人)。下書きに戻る。
+ *
+ * @param {number} id
+ * @returns {object}
+ */
+function apiGoalWithdraw(id) {
+  goalsAssertEnabled_();
+  goalWithdraw_(goalMe_(), Number(id));
   return goalOnePlain_(Number(id));
 }
 

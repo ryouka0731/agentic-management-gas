@@ -35,6 +35,12 @@ function okr(env, extra) {
   }, extra || {})));
 }
 
+/** 保存し直すときの項目 (今のまま) */
+function keepItems(g) {
+  return g.items.map((i) => ({ id: i.id, title: i.title, measure: i.measure, target: i.target, unit: i.unit,
+    weight: i.weight, filter: i.filter }));
+}
+
 /** MEMBER の担当のやることを作る */
 function issueFor(env, title, who) {
   return asUser(env.fake, OWNER, () => {
@@ -231,7 +237,7 @@ describe('承認の流れ', () => {
     expect(input.items[1].percent).toBe(30);
     const before = env.fake._sentMails().filter((m) => m.to === BOSS).length;
     const edited = asUser(env.fake, MEMBER, () => env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: '手続きをもっと速くする',
-      items: goal.items.map((i) => ({ id: i.id, title: i.title, measure: i.measure, target: i.target, unit: i.unit })) }));
+      items: keepItems(goal) }));
     expect(edited.status).toBe('submitted');
     expect(edited.changedAfterApproval).toBe(true);
     const mails = env.fake._sentMails().filter((m) => m.to === BOSS);
@@ -286,30 +292,51 @@ describe('承認の流れ', () => {
 });
 
 describe('誰が何をできるか', () => {
-  /** 承認済みの目標と、ほかの人 */
+  /**
+   * 承認済みの目標 (振り返りまで書いたもの。評価は期の終わりか振り返りのあと) と、
+   * 承認を待っている目標 (pendingId)・下書き (draftId)・つないだ本人のやること (issue)・まだつないでいないもの (issue2)
+   */
   function approved() {
     const env = on();
     const goal = okr(env);
-    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSubmit(goal.id));
+    goal.issue = issueFor(env, '本人のやること');
+    goal.issue2 = issueFor(env, '本人のやること2');
+    asUser(env.fake, MEMBER, () => {
+      env.ctx.apiGoalLink(goal.items[0].id, goal.issue);
+      env.ctx.apiGoalSubmit(goal.id);
+    });
     asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(goal.id, 'approve', ''));
+    asUser(env.fake, MEMBER, () => {
+      env.ctx.apiGoalReview(goal.id, '振り返り');
+      goal.pendingId = env.ctx.apiGoalSubmit(okr(env).id).id;
+      goal.draftId = okr(env).id;
+    });
     return { env, goal };
   }
 
   const ACTS = {
     view: (c, g) => c.apiGoalReport(g.id),
-    edit: (c, g) => c.apiGoalSave({ id: g.id, kind: 'okr', title: 'x', items: [] }),
+    edit: (c, g) => c.apiGoalSave({ id: g.id, kind: 'okr', title: 'x', items: keepItems(g) }),
     input: (c, g) => c.apiGoalProgressInput(g.items[1].id, { actual: 1 }),
     review: (c, g) => c.apiGoalReview(g.id, '振り返り'),
     grade: (c, g) => c.apiGoalGrade(g.id, 'A', 'よかった'),
+    link: (c, g) => c.apiGoalLink(g.items[0].id, g.issue2),
+    unlink: (c, g) => c.apiGoalUnlink(g.items[0].id, g.issue),
+    decide: (c, g) => c.apiGoalDecide(g.pendingId, 'approve', ''),
+    'delete': (c, g) => c.apiGoalDelete(g.draftId),
+    withdraw: (c, g) => c.apiGoalWithdraw(g.pendingId),
   };
   // 本人 / 直属の上長 / 上の上 / ほかの人 / 管理者 (連なりの外) / 持ち主 (上長がいるので承認はしない)
+  const NONE = { view: false, edit: false, input: false, review: false, grade: false, link: false, unlink: false,
+    decide: false, 'delete': false, withdraw: false };
   const MATRIX = [
-    [MEMBER, { view: true, edit: true, input: true, review: true, grade: false }],
-    [BOSS, { view: true, edit: false, input: false, review: false, grade: true }],
-    [TOP, { view: true, edit: false, input: false, review: false, grade: false }],
-    [OTHER, { view: false, edit: false, input: false, review: false, grade: false }],
-    [ADMIN, { view: false, edit: false, input: false, review: false, grade: false }],
-    [OWNER, { view: false, edit: false, input: false, review: false, grade: false }],
+    [MEMBER, { view: true, edit: true, input: true, review: true, grade: false, link: true, unlink: true,
+      decide: false, 'delete': true, withdraw: true }],
+    [BOSS, Object.assign({}, NONE, { view: true, grade: true, decide: true })],
+    [TOP, Object.assign({}, NONE, { view: true })],
+    [OTHER, NONE],
+    [ADMIN, NONE],
+    [OWNER, NONE],
   ];
 
   MATRIX.forEach(([who, can]) => {
@@ -330,7 +357,7 @@ describe('誰が何をできるか', () => {
       expect(out.goals).toEqual([]);
       expect(out.pending).toEqual([]);
     });
-    expect(asUser(env.fake, BOSS, () => env.ctx.apiGoalTeam('')).goals.map((g) => g.id)).toEqual([goal.id]);
+    expect(asUser(env.fake, BOSS, () => env.ctx.apiGoalTeam('')).goals.map((g) => g.id)).toContain(goal.id);
   });
 
   it('ほかの人のやることのつなぎ先には、自分の項目しか出ない', () => {
@@ -439,6 +466,8 @@ describe('期末', () => {
     const goal = okr(env);
     asUser(env.fake, MEMBER, () => env.ctx.apiGoalSubmit(goal.id));
     asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(goal.id, 'approve', ''));
+    // 期の途中で振り返りが無ければ、まだ評価できない (画面と同じ決まり)
+    asUser(env.fake, BOSS, () => expectRefused(() => env.ctx.apiGoalGrade(goal.id, 'A', 'よい'), /期が終わったか/));
     asUser(env.fake, MEMBER, () => env.ctx.apiGoalReview(goal.id, '問い合わせは半分になった'));
     asUser(env.fake, BOSS, () => {
       expectRefused(() => env.ctx.apiGoalGrade(goal.id, 'Z', 'x'), /から選んでください/);
@@ -483,5 +512,174 @@ describe('画面に渡せる形か (台帳から Date で返る欄)', () => {
       expectScreenSafe(env.ctx.apiGoalReview(goal.id, 'x'));
       expectScreenSafe(env.ctx.apiGoalDelete(env.ctx.apiGoalSave({ kind: 'okr', title: 'y', items: [] }).id));
     });
+  });
+});
+
+
+describe('確認の指摘 (c614b18 のあと)', () => {
+  /** 承認済みの OKR (やることを1つつないだもの) */
+  function approvedOkr(env) {
+    const goal = okr(env);
+    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSubmit(goal.id));
+    asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(goal.id, 'approve', ''));
+    return goal;
+  }
+
+  it('承認済みを直して頼み直すときも、頼むときと同じ検査を通す (項目なし・MBO の重み)', () => {
+    const env = on();
+    const goal = approvedOkr(env);
+    asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: 'x', items: [] }),
+      /1つ以上/));
+    expect(env.ctx.goalGet_(goal.id).status).toBe('approved');
+    const mbo = asUser(env.fake, MEMBER, () => env.ctx.apiGoalSave({ kind: 'mbo', title: 'M', items: [
+      { title: 'a', measure: 'check', weight: 60 }, { title: 'b', measure: 'check', weight: 40 }] }));
+    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSubmit(mbo.id));
+    asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(mbo.id, 'approve', ''));
+    asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalSave({ id: mbo.id, kind: 'mbo', title: 'M', items: [
+      { id: mbo.items[0].id, title: 'a', measure: 'check', weight: 60 },
+      { id: mbo.items[1].id, title: 'b', measure: 'check', weight: 30 }] }), /合わせて100.*いまは 90/));
+    expect(env.ctx.goalGet_(mbo.id).status).toBe('approved');
+  });
+
+  it('承認済みを何も変えずに保存しても、承認し直しにならず知らせも出ない', () => {
+    const env = on();
+    const goal = approvedOkr(env);
+    const before = env.fake._sentMails().length;
+    const out = asUser(env.fake, MEMBER, () => env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: goal.title,
+      items: keepItems(goal) }));
+    expect(out.status).toBe('approved');
+    expect(env.fake._sentMails()).toHaveLength(before);
+  });
+
+  it('つなげるのは本人が担当のやること (担当なしなら本人が作ったもの) だけ', () => {
+    const env = on();
+    const goal = okr(env);
+    const others = issueFor(env, 'ほかの人の', OTHER);
+    const ownerMade = asUser(env.fake, OWNER, () => env.ctx.apiIssueCreate('持ち主が作った担当なし', '', []).number);
+    const selfMade = asUser(env.fake, MEMBER, () => env.ctx.apiIssueCreate('本人が作った担当なし', '', []).number);
+    asUser(env.fake, MEMBER, () => {
+      expectRefused(() => env.ctx.apiGoalLink(goal.items[0].id, others), /担当/);
+      expectRefused(() => env.ctx.apiGoalLink(goal.items[0].id, ownerMade), /担当/);
+      env.ctx.apiGoalLink(goal.items[0].id, selfMade);
+      const mine = env.ctx.apiGoalMine('');
+      expect(mine.linkable.map((i) => i.number)).toContain(selfMade);
+      expect(mine.linkable.map((i) => i.number)).not.toContain(others);
+    });
+    // やることの詳細の「目標につなぐ」も、本人のやることでなければ選べない
+    expect(asUser(env.fake, MEMBER, () => env.ctx.apiGoalIssueLinks(others)).choices).toEqual([]);
+    expect(asUser(env.fake, MEMBER, () => env.ctx.apiGoalIssueLinks(selfMade)).linked).toHaveLength(1);
+  });
+
+  it('期より前に済ませたやることはつなげず、数えもしない', () => {
+    const env = on();
+    const goal = okr(env);
+    const old = issueFor(env, '前の期に済んだ');
+    asUser(env.fake, OWNER, () => env.ctx.apiIssueClose(old));
+    env.ctx.dbUpdate('issues', 'number', old, { closedAt: new Date(2000, 0, 1) });
+    asUser(env.fake, MEMBER, () => {
+      expectRefused(() => env.ctx.apiGoalLink(goal.items[0].id, old), /期より前に完了/);
+      expect(env.ctx.apiGoalMine('').linkable.map((i) => i.number)).not.toContain(old);
+    });
+    // 手で台帳に書いた結び付きでも数えない
+    env.ctx.dbAppendNumbered('goal_links', 'id', { itemId: goal.items[0].id, issueNumber: old });
+    const g = asUser(env.fake, MEMBER, () => env.ctx.apiGoalMine('')).goals[0];
+    expect(g.items[0].done).toBe(0);
+  });
+
+  it('承認済みから済んだやることを外すと承認し直し、まだのものを外すのは自由', () => {
+    const env = on();
+    const goal = okr(env);
+    const done = issueFor(env, '済んだ');
+    const open = issueFor(env, 'まだ');
+    asUser(env.fake, MEMBER, () => {
+      env.ctx.apiGoalLink(goal.items[0].id, done);
+      env.ctx.apiGoalLink(goal.items[0].id, open);
+      env.ctx.apiGoalSubmit(goal.id);
+    });
+    asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(goal.id, 'approve', ''));
+    asUser(env.fake, OWNER, () => env.ctx.apiIssueClose(done));
+    const a = asUser(env.fake, MEMBER, () => env.ctx.apiGoalUnlink(goal.items[0].id, open));
+    expect(a.status).toBe('approved');
+    const mails = env.fake._sentMails().filter((m) => m.to === BOSS).length;
+    const b = asUser(env.fake, MEMBER, () => env.ctx.apiGoalUnlink(goal.items[0].id, done));
+    expect(b.status).toBe('submitted');
+    expect(b.changedAfterApproval).toBe(true);
+    expect(env.fake._sentMails().filter((m) => m.to === BOSS)).toHaveLength(mails + 1);
+  });
+
+  it('承認を待っている目標を本人が取り下げると下書きに戻り、上長に知らせる', () => {
+    const env = on();
+    const goal = okr(env);
+    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSubmit(goal.id));
+    asUser(env.fake, BOSS, () => expectRefused(() => env.ctx.apiGoalWithdraw(goal.id), /本人だけ/));
+    const out = asUser(env.fake, MEMBER, () => expectScreenSafe(env.ctx.apiGoalWithdraw(goal.id)));
+    expect(out.status).toBe('draft');
+    expect(env.fake._sentMails().some((m) => m.to === BOSS && /取り下げ/.test(m.subject))).toBe(true);
+    asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalWithdraw(goal.id), /承認を待っている目標だけ/));
+  });
+
+  it('上長の欄に自分 (大文字小文字違い) を入れられず、入っていても自分では承認できない', () => {
+    const env = on();
+    expectRefused(() => env.ctx.memberSet('self@example.com', 'SELF@example.com'), /自分を自分の上長/);
+    // 台帳を手で直して自分を上長にしても、承認する人にはならない (持ち主へ倒す)
+    env.ctx.dbAppend('members', { email: 'self@example.com', manager: 'Self@Example.com', note: '', updatedAt: new Date(), name: '' });
+    const g = asUser(env.fake, 'self@example.com', () => env.ctx.apiGoalSave({ kind: 'kpi', title: 'K', items: [{ title: 'a', measure: 'check' }] }));
+    asUser(env.fake, 'self@example.com', () => env.ctx.apiGoalSubmit(g.id));
+    asUser(env.fake, 'self@example.com', () => expectRefused(() => env.ctx.apiGoalDecide(g.id, 'approve', ''), /上長だけ/));
+    asUser(env.fake, OWNER, () => env.ctx.apiGoalDecide(g.id, 'approve', ''));
+  });
+
+  it('上長のいない持ち主は、自分の目標を自分で承認できない', () => {
+    const env = on();
+    const own = asUser(env.fake, OWNER, () => env.ctx.apiGoalSave({ kind: 'kpi', title: 'K', items: [{ title: 'a', measure: 'check' }] }));
+    env.ctx.dbUpdate('goals', 'id', own.id, { status: 'submitted' });
+    asUser(env.fake, OWNER, () => expectRefused(() => env.ctx.apiGoalDecide(own.id, 'approve', ''), /上長だけ/));
+  });
+
+  it('年度の始まりの月を変えても、立てた目標の期の日付は動かない', () => {
+    const env = on();
+    const goal = okr(env);
+    expect(Number(env.ctx.goalGet_(goal.id).fyStart)).toBe(4);
+    const before = env.ctx.goalRangeOf_(env.ctx.goalGet_(goal.id)).start.getTime();
+    env.ctx.apiPrefSet('goals.fyStart', 1);
+    expect(env.ctx.goalRangeOf_(env.ctx.goalGet_(goal.id)).start.getTime()).toBe(before);
+    // 列を足す前の行 (空) は、いまの設定で読む
+    env.ctx.dbUpdate('goals', 'id', goal.id, { fyStart: '' });
+    const period = String(env.ctx.goalGet_(goal.id).period);
+    expect(env.ctx.goalRangeOf_(env.ctx.goalGet_(goal.id)).start.getTime())
+      .toBe(env.ctx.goalPeriodRange(period, 1).start.getTime());
+    expect(env.ctx.goalPeriodRange(period, 1).start.getTime()).not.toBe(before);
+    expect(env.ctx.prefItem_('goals.fyStart').help).toMatch(/立てた目標/);
+  });
+
+  it('一度承認された目標は、差し戻されても消せない', () => {
+    const env = on();
+    const goal = approvedOkr(env);
+    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: '直した', items: keepItems(goal) }));
+    asUser(env.fake, BOSS, () => env.ctx.apiGoalDecide(goal.id, 'return', '戻して'));
+    asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalDelete(goal.id), /承認された目標は消せません/));
+    expect(env.ctx.dbReadAll('goals')).toHaveLength(1);
+  });
+
+  it('知らせの関数は画面から呼べない名前 (末尾 _)', () => {
+    const env = on();
+    ['notifyGoalSubmitted', 'notifyGoalDecided', 'notifyGoalGraded'].forEach((n) => expect(typeof env.ctx[n]).toBe('undefined'));
+    ['notifyGoalSubmitted_', 'notifyGoalDecided_', 'notifyGoalGraded_', 'notifyGoalWithdrawn_']
+      .forEach((n) => expect(typeof env.ctx[n]).toBe('function'));
+  });
+
+  it('評価したときの OKR の見立ては、台帳に数で入っていても小数1桁で返す', () => {
+    const env = on();
+    const goal = approvedOkr(env);
+    env.ctx.dbUpdate('goals', 'id', goal.id, { autoScore: 1 });
+    const g = asUser(env.fake, MEMBER, () => env.ctx.apiGoalMine('')).goals[0];
+    expect(g.autoScoreAtGrade).toBe('1.0');
+  });
+
+  it('上長の期の選び方には、下の人の目標の期も出る', () => {
+    const env = on();
+    asUser(env.fake, MEMBER, () => env.ctx.apiGoalSave({ kind: 'kpi', title: '昔', period: '2020H1', items: [] }));
+    expect(asUser(env.fake, BOSS, () => env.ctx.apiGoalState()).periods.map((p) => p.key)).toContain('2020H1');
+    expect(asUser(env.fake, OTHER, () => env.ctx.apiGoalState()).periods.map((p) => p.key)).not.toContain('2020H1');
   });
 });

@@ -78,6 +78,16 @@ describe('項目の進み具合', () => {
     expect(g.goalRemainingText({ measure: 'issues' }, p)).toBe('あと2件');
   });
 
+  it('期の始まりより前に済ませたものは数えない', () => {
+    const linked = [
+      { state: 'closed', closedAt: day(2026, 9, 30) },
+      { state: 'closed', closedAt: day(2026, 10, 1) },
+    ];
+    const p = g.goalItemProgress({ measure: 'issues' }, { linked, start: day(2026, 10, 1), end }, 'okr');
+    expect(p.done).toBe(1);
+    expect(p.progress).toBe(0.5);
+  });
+
   it('つないだやることが無ければ 0、全部済んでも 1 を超えない', () => {
     expect(g.goalItemProgress({ measure: 'issues' }, { linked: [], end }, 'kpi').progress).toBe(0);
     const all = g.goalItemProgress({ measure: 'issues' },
@@ -199,14 +209,14 @@ describe('状態の移り方', () => {
   const cases = [
     ['draft', 'submit', 'submitted'], ['returned', 'submit', 'submitted'],
     ['submitted', 'approve', 'approved'], ['submitted', 'return', 'returned'],
-    ['approved', 'edit', 'submitted'], ['approved', 'grade', 'closed'],
+    ['approved', 'edit', 'submitted'], ['approved', 'grade', 'closed'], ['submitted', 'withdraw', 'draft'],
   ];
   it.each(cases)('%s で %s すると %s', (from, act, to) => {
     expect(g.goalNext(from, act)).toBe(to);
   });
 
   it('表に無い移り方は無い', () => {
-    const acts = ['submit', 'approve', 'return', 'edit', 'grade', 'toString'];
+    const acts = ['submit', 'approve', 'return', 'edit', 'grade', 'withdraw', 'toString'];
     const ok = new Set(cases.map((c) => c[0] + ':' + c[1]));
     ['draft', 'submitted', 'approved', 'returned', 'closed', '__proto__', 'x'].forEach((from) => {
       acts.forEach((act) => {

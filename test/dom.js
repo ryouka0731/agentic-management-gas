@@ -226,7 +226,7 @@ const API_NAMES = [
   'apiOutcomes',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
-  'apiGoalIssueLinks',
+  'apiGoalIssueLinks', 'apiGoalWithdraw',
 ];
 
 /**

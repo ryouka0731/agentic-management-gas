@@ -257,7 +257,7 @@ function PREF_GROUPS_() {
           options: [{ value: 'half', label: '半期ごと' }, { value: 'quarter', label: '四半期ごと' }],
           def: 'half' },
         { key: 'goals.fyStart', scope: 'team', type: 'int', section: '目標',
-          label: '年度の始まる月', help: '期はこの月から数えます (4 なら 4月〜9月が上期)',
+          label: '年度の始まる月', help: '期はこの月から数えます (4 なら 4月〜9月が上期)。変えても、立てた目標の期の日付は立てたときの月のまま変わりません',
           min: 1, max: 12, def: TALLY_FISCAL_START() },
       ];
     },

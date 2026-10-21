@@ -388,7 +388,7 @@ function notifyIssueCommentMention(issue, row, people) {
  * @param {string} name 本人の名前
  * @param {boolean} changed 承認のあとに直したか
  */
-function notifyGoalSubmitted(goal, to, name, changed) {
+function notifyGoalSubmitted_(goal, to, name, changed) {
   var what = changed ? 'の直したところの承認を頼まれました' : 'の承認を頼まれました';
   for (var i = 0; i < (to || []).length; i++) {
     noticeAdd(to[i], 'goal', name + ' さんの目標 #' + goal.id + what, goal.title, 'goal:' + goal.id);
@@ -407,7 +407,7 @@ function notifyGoalSubmitted(goal, to, name, changed) {
  * @param {object} goal goals 行
  * @param {string} decision 'approve' | 'return'
  */
-function notifyGoalDecided(goal, decision) {
+function notifyGoalDecided_(goal, decision) {
   var happened = decision === 'approve' ? 'が承認されました' : 'が差し戻されました';
   var note = goal.managerNote ? '\n\n上長のひとこと:\n' + goal.managerNote : '';
   noticeAdd(goal.who, 'goal', '目標 #' + goal.id + happened, goal.title + note, 'goal:' + goal.id);
@@ -419,8 +419,23 @@ function notifyGoalDecided(goal, decision) {
  *
  * @param {object} goal goals 行
  */
-function notifyGoalGraded(goal) {
+function notifyGoalGraded_(goal) {
   var body = goal.title + '\n\n評価: ' + goal.finalGrade + '\n上長のひとこと:\n' + goal.managerNote;
   noticeAdd(goal.who, 'goal', '目標 #' + goal.id + ' に評価が付きました', body, 'goal:' + goal.id);
   notify(goal.who, notifySubject_('目標', goal.id, 'に評価が付きました'), body, 'goal');
+}
+
+/**
+ * 目標の承認を頼んだのを本人が取り下げたことを、承認する人に知らせる (見ようとしていたものが黙って消えないように)。
+ *
+ * @param {object} goal goals 行
+ * @param {string[]} to 承認する人
+ * @param {string} name 本人の名前
+ */
+function notifyGoalWithdrawn_(goal, to, name) {
+  for (var i = 0; i < (to || []).length; i++) {
+    noticeAdd(to[i], 'goal', name + ' さんが目標 #' + goal.id + ' の承認の頼みを取り下げました', goal.title, 'goal:' + goal.id);
+    notify(to[i], notifySubject_('目標', goal.id, 'の承認の頼みが取り下げられました'),
+      name + ' さんの目標: ' + goal.title + '\n\n承認は要らなくなりました。本人が直して頼み直すと、また届きます。', 'goal');
+  }
 }

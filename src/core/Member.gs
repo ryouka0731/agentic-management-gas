@@ -40,7 +40,8 @@ function memberSetLocked_(email, manager, name) {
   if (boss && !/^[^\s,@]+@[^\s,@]+$/.test(boss)) {
     throw new Error('メールアドレスの形になっていません: ' + manager);
   }
-  if (boss && boss === who) {
+  // 大文字小文字だけ違う同じ人も断る (自分の目標を自分で承認できてしまう)
+  if (boss && boss.toLowerCase() === who.toLowerCase()) {
     throw new Error('自分を自分の上長にはできません');
   }
 
