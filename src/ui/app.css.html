@@ -5060,14 +5060,16 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   animation: luck-glow 2400ms ease-in-out infinite alternate;
 }
 @keyframes luck-glow { 0% { opacity: 0.3; } 100% { opacity: 0.7; } }
+/* 右下に置く (左下は推しの吹き出し)。集中の置き場が出ていればその上に積む (実機では js-luck が高さを合わせる) */
 .luck-fever-chip {
-  position: fixed; left: var(--sp-4); bottom: var(--sp-4); z-index: 391;
+  position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 391;
   display: flex; align-items: center; gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3); border-radius: 999px;
   font-size: 12px; font-weight: 700; color: var(--warn);
   background: var(--warn-bg); box-shadow: var(--hairline), var(--elev-1);
 }
-.luck-fever-left { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.luck-fever-chip.is-above-dock { bottom: 240px; }
+.reward-changed { margin: var(--sp-2) 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--bg-2); }
 .luck-fever-hide { width: 24px; height: 24px; border-radius: 999px; background: transparent; cursor: pointer; }
 .luck-fever-hide:hover { background: var(--bg-3); }
 @media (prefers-reduced-motion: reduce) {

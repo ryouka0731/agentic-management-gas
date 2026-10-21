@@ -35,6 +35,9 @@ function rewardPlain_(st) {
     spends: st.spends.slice(0, 30).map(function (sp) {
       return { id: plainId(sp.id), title: plainText(sp.title), cost: plainNumber(sp.cost), at: plainDate(sp.at) };
     }),
+    archived: st.archived ? { count: plainNumber(st.archived.count), total: plainNumber(st.archived.total),
+      at: plainDate(st.archived.at) } : null,
+    ruleChanged: !!st.ruleChanged,
     undoId: plainId(st.undoId),
     undoUntil: plainDate(st.undoUntil),
   };
@@ -49,7 +52,7 @@ function apiRewardGet() {
   var me = currentEmail_();
   rewardAssertOn_(me);
   var now = new Date();
-  return rewardPlain_(rewardState_(me, now, rewardStart_(me, now)));
+  return rewardPlain_(rewardState_(me, now, rewardSync_(me, now)));
 }
 
 /**

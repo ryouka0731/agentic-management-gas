@@ -30,14 +30,14 @@
   }
 
   /**
-   * 当たりを引く「済ませた手」。完了・反映・承認・記録・始めた。引数で当たるかは FUN_CHEERS() の when で見る
-   * (同じ操作の判定を2つ持たない)。
+   * 当たりを引く「済ませた手」。完了・反映・承認・記録。引数で当たるかは FUN_CHEERS() の when で見る
+   * (同じ操作の判定を2つ持たない)。**集中を始めた (apiFocusStart) は入れない**: 始めてすぐやめるのを繰り返すと引けてしまう。
    *
    * @returns {string[]}
    */
   function LUCK_ACTIONS() {
     return ['apiIssueClose', 'apiProjectMove', 'apiPrMerge', 'apiPrReview', 'apiCommit', 'apiCommitMany',
-      'apiSaveMarkdown', 'apiFocusStart'];
+      'apiSaveMarkdown'];
   }
 
   /** リールの絵。3つとも同じ絵で止まる (揃わない並びは描かない) */
@@ -69,7 +69,10 @@
   /** 推しに「思いがけない当たり」を言ってもらう印 (当たった時刻) */
   var luckOshiAt = 0;
   var luckFeverTimer = null;
-  var luckChipTimer = null;
+  /** 集中の置き場 (#focus-dock) が出入りするのを見張る (札をその上に積むため) */
+  var luckDockWatch = null;
+  /** ご褒美の取り消しの帯を消す時計 (描き直すたびに1つに戻す) */
+  var rewardUndoTimer = null;
 
   /** 端末の日 'YYYY-MM-DD' (1日の数え直しに使う) */
   function luckDay(ms) {
@@ -169,6 +172,8 @@
     if (!luckOn()) return false;
     try {
       if (!luckIsAction(name, args)) return false;
+      // 集中しているやることの完了は、集中の終わりの SUPER COMPLETE!! だけにする (重ねない。js-focus)
+      if (focusClosesSession(name, args)) return false;
       var now = Date.now();
       var s = luckLoad();
       var feverIn = luckNoteAction(s, now);
@@ -263,9 +268,9 @@
   /** 静かに終える (知らせは出さない) */
   function luckFeverEnd() {
     if (luckFeverTimer) clearTimeout(luckFeverTimer);
-    if (luckChipTimer) clearTimeout(luckChipTimer);
     luckFeverTimer = null;
-    luckChipTimer = null;
+    if (luckDockWatch) luckDockWatch.disconnect();
+    luckDockWatch = null;
     document.body.classList.remove('luck-fever-on');
     var el = document.getElementById('luck-fever');
     if (el) el.remove();
@@ -298,11 +303,9 @@
       chip.className = 'luck-fever-chip';
       var label = document.createElement('span');
       label.className = 'luck-fever-label';
+      // 残りの時間は出さない (秒読みは急かす)
       label.textContent = 'ノリノリタイム';
       chip.appendChild(label);
-      var rest = document.createElement('span');
-      rest.className = 'luck-fever-left';
-      chip.appendChild(rest);
       var hide = document.createElement('button');
       hide.type = 'button';
       hide.className = 'luck-fever-hide';
@@ -321,20 +324,27 @@
     document.body.classList.add('luck-fever-on');
     var chipEl = host.querySelector('.luck-fever-chip');
     chipEl.hidden = !!s.chipHidden;
-    luckChipTick(s.feverUntil);
+    luckChipPlace();
+    if (!luckDockWatch && window.MutationObserver) {
+      luckDockWatch = new MutationObserver(luckChipPlace);
+      luckDockWatch.observe(document.body, { childList: true });
+    }
     if (luckFeverTimer) clearTimeout(luckFeverTimer);
     luckFeverTimer = setTimeout(luckFeverEnd, left);
   }
 
-  /** 札の「あと◯分」を分の刻みで書き直す (秒は出さない。急かさない) */
-  function luckChipTick(until) {
-    if (luckChipTimer) clearTimeout(luckChipTimer);
-    var el = document.querySelector('#luck-fever .luck-fever-left');
-    if (!el) return;
-    var left = until - Date.now();
-    if (left <= 0) return;
-    el.textContent = 'あと ' + Math.max(1, Math.ceil(left / 60000)) + ' 分';
-    luckChipTimer = setTimeout(function () { luckChipTick(until); }, Math.min(60000, left));
+  /**
+   * 札は右下 (左下は推しの吹き出し)。集中の置き場 (#focus-dock、右下) が出ていれば、その上に積む。
+   * 置き場の高さが測れれば (実機) その上端に合わせ、測れなければ CSS の控えの高さに置く。
+   */
+  function luckChipPlace() {
+    var chip = document.querySelector('#luck-fever .luck-fever-chip');
+    if (!chip) return;
+    var dock = document.getElementById('focus-dock');
+    var on = !!(dock && !dock.hidden);
+    chip.classList.toggle('is-above-dock', on);
+    var r = on && dock.getBoundingClientRect ? dock.getBoundingClientRect() : null;
+    chip.style.bottom = r && r.height ? Math.round((window.innerHeight || 0) - r.top + 8) + 'px' : '';
   }
 
   /** 設定が届いた・変わった (applyPrefs から呼ぶ)。オフなら消し、オンで続いていれば描き直す */
@@ -394,6 +404,8 @@
    */
   function drawReward(box, res, editing) {
     box.textContent = '';
+    if (rewardUndoTimer) clearTimeout(rewardUndoTimer);
+    rewardUndoTimer = null;
     var lead = document.createElement('p');
     lead.className = 'row-meta';
     lead.textContent = 'あなたが決めた小さなご褒美と、たまったポイントを交換します。お金や会社からの賞品ではなく、' +
@@ -416,11 +428,25 @@
     rule.className = 'row-meta reward-rule';
     var since = String(res.since || '');
     var from = since ? Number(since.substring(5, 7)) + '月' + Number(since.substring(8, 10)) + '日から' : '今日から';
-    rule.textContent = (res.rule === 'points'
+    rule.textContent = (res.rule === 'game'
       ? from + 'のポイント (週の上位に参加しているので、ポイントで数えます)'
       : from + '、済ませたやること1件を1ポイントとして数えます') +
       '。たまったのは ' + (Number(res.earned) || 0) + '、交換したのは ' + (Number(res.spent) || 0) + '。取り消されたやることのぶんは減ります';
     box.appendChild(rule);
+
+    // 数え方が変わった (ポイントに参加した・やめた)。単位が変わるので数え直したことを、落ち着いた言葉で伝える
+    if (res.ruleChanged) {
+      var changed = document.createElement('p');
+      changed.className = 'reward-changed';
+      changed.textContent = '数え方が変わったので、ここから数え直します';
+      box.appendChild(changed);
+    }
+    if (res.archived && res.archived.count) {
+      var arch = document.createElement('p');
+      arch.className = 'row-meta reward-archived';
+      arch.textContent = '前の数え方で ' + res.archived.count + ' 回 (' + res.archived.total + ' ポイント) 交換しました';
+      box.appendChild(arch);
+    }
 
     // 最後の交換の取り消し (5分のあいだ。サーバが決める)
     if (res.undoId) {
@@ -443,6 +469,14 @@
       bar.appendChild(t);
       bar.appendChild(undo);
       box.appendChild(bar);
+      // 取り消せる時刻を過ぎたら帯を外す (押しても断られるだけになる)
+      var until = Date.parse(res.undoUntil);
+      if (!isNaN(until)) {
+        rewardUndoTimer = setTimeout(function () {
+          rewardUndoTimer = null;
+          bar.remove();
+        }, Math.max(0, until - Date.now()));
+      }
     }
 
     var head = document.createElement('h3');
@@ -474,9 +508,8 @@
       spend.className = 'btn btn-primary reward-spend';
       spend.textContent = '交換する';
       spend.setAttribute('aria-label', '「' + it.title + '」と交換する');
-      var enough = (Number(res.available) || 0) >= it.cost;
-      spend.disabled = !enough;
-      if (!enough) attachHint(spend, 'あと ' + Math.round((it.cost - (Number(res.available) || 0)) * 10) / 10 + ' ポイントで交換できます');
+      // 足りないものは押せないだけにする (「あと◯で」と近さを見せて急かさない)
+      spend.disabled = (Number(res.available) || 0) < it.cost;
       spend.addEventListener('click', function () {
         spend.disabled = true;
         call('apiRewardSpend', [it.id], function (next) {
