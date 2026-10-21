@@ -40,7 +40,9 @@ function oshiImagesPlain_(imgs) {
  *
  * - char / kind / builtinKey / charId / name / tone / events / images: いま使うキャラ (自分の設定 oshi.char)
  * - fallback: 自分のキャラを使っているとき、絵の無い表情に出す最初からいるキャラの key (出さないなら空)
- * - builtins: 最初からいるキャラ。mine: 自分のキャラ (頁で直すため、せりふと絵の行もそれぞれに入れる)
+ * - builtins: 最初からいるキャラ。mine: 自分のキャラ (頁で直すため、せりふと絵の行・プロフィールの JSON もそれぞれに入れる)
+ * - reveal: いま使うキャラのプロフィール。Lv (実績の数) が届いた項目だけ名前と中身を入れる (サーバが決める)
+ * - cleared: 実績を全部取ったか。clear: クリアしたときだけ、キャラのお祝いの言葉と動画の id (それまでは null)
  *
  * @returns {object}
  */
@@ -58,6 +60,9 @@ function apiOshiGet() {
       charId: plainNumber(id), name: plainText(p.name), tone: plainText(p.tone),
       events: oshiEventsPlain_(p.tone, p.lines),
       images: oshiImagesPlain_(oshiImageRows_(me, id, imgRows)),
+      // 本人が書いたものなので、直す欄にはそのまま出す (動画もリンクで)
+      profileJson: plainText(oshiProfileJson_(p.profile)),
+      profile: p.profile,
     };
   });
   var active = null;
@@ -65,6 +70,9 @@ function apiOshiGet() {
     for (var i = 0; i < mine.length; i++) if (mine[i].charId === choice.id) active = mine[i];
   }
   var builtin = active ? null : oshiBuiltinOf(choice.key);
+  var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
+  mine.forEach(function (m) { delete m.profile; });
+  var cleared = oshiClearedOf_(achUnlockedRead_(me));
   return {
     char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
     kind: plainText(active ? 'mine' : 'builtin'),
@@ -100,7 +108,81 @@ function apiOshiGet() {
       nameMax: plainNumber(text.nameMax), lineMax: plainNumber(text.lineMax),
       linesPerEvent: plainNumber(text.linesPerEvent),
     },
+    reveal: oshiRevealPlain_(profile, g.level, cleared),
+    achOn: prefGet_('ach.on', me) !== false,
+    cleared: cleared,
+    // クリアの言葉と動画は、クリアしたときだけ入れる (動画の id もそれまで画面に渡さない)
+    clear: cleared ? {
+      line: plainText(profile ? profile.clearLine : ''),
+      video: plainText(profile ? profile.clearVideo : ''),
+    } : null,
   };
+}
+
+/**
+ * プロフィールの見せ方 (oshiProfileReveal)。届いていない項目は Lv だけ。
+ *
+ * @param {?object} profile
+ * @param {number} level
+ * @param {boolean} cleared
+ * @returns {{items: object[], open: number, total: number, limits: object}}
+ */
+function oshiRevealPlain_(profile, level, cleared) {
+  var lim = OSHI_PROFILE_LIMITS();
+  var items = oshiProfileReveal(profile ? profile.items : [], level, cleared).map(function (it) {
+    return { lv: plainNumber(it.lv), open: !!it.open, label: plainText(it.label), text: plainText(it.text) };
+  });
+  return {
+    items: items,
+    open: plainNumber(items.filter(function (it) { return it.open; }).length),
+    total: plainNumber(items.length),
+    limits: {
+      itemsMax: plainNumber(lim.itemsMax), labelMax: plainNumber(lim.labelMax), textMax: plainNumber(lim.textMax),
+      lvMin: plainNumber(lim.lvMin), lvMax: plainNumber(lim.lvMax), clearLineMax: plainNumber(lim.clearLineMax),
+    },
+  };
+}
+
+/**
+ * 自分のキャラのプロフィールを決める (JSON の字。空で外す)。形は oshiProfileValid_ (OshiStore.gs)。
+ *
+ * @param {number} charId
+ * @param {string} json
+ * @returns {{charId: number, items: number, profileJson: string}}
+ */
+function apiOshiSetCharProfile(charId, json) {
+  var id = oshiCharIdArg_(charId);
+  var p = oshiSetCharProfile_(currentEmail_(), id, json);
+  return { charId: plainNumber(id), items: plainNumber(p ? p.items.length : 0), profileJson: plainText(oshiProfileJson_(p)) };
+}
+
+/**
+ * 最初からいるキャラのプロフィールの一覧 (設定の画面の管理者の欄)。**管理者だけ。** 中身はスクリプトプロパティにだけある。
+ *
+ * @returns {{chars: Array<{key: string, name: string, json: string, items: number}>}}
+ */
+function apiOshiBuiltinProfiles() {
+  repoAssertAdmin_('最初からいるキャラのプロフィールを見ること');
+  return {
+    chars: OSHI_BUILTINS().map(function (c) {
+      var p = oshiBuiltinProfileRead_(c.key);
+      return { key: plainText(c.key), name: plainText(c.name), json: plainText(oshiProfileJson_(p)),
+        items: plainNumber(p ? p.items.length : 0) };
+    }),
+  };
+}
+
+/**
+ * 最初からいるキャラのプロフィールを決める (JSON の字。空で外す)。**管理者だけ。**
+ *
+ * @param {string} key OSHI_BUILTINS の key
+ * @param {string} json
+ * @returns {{key: string, name: string, json: string, items: number}}
+ */
+function apiOshiBuiltinProfileSet(key, json) {
+  var got = oshiBuiltinProfileSet_(currentEmail_(), key, json);
+  return { key: plainText(got.key), name: plainText(oshiBuiltinOf(got.key).name), json: plainText(oshiProfileJson_(got.profile)),
+    items: plainNumber(got.items) };
 }
 
 /**

@@ -143,6 +143,15 @@ function COMMAND_OPS() {
     // 題名・番号・状態だけ (人の名前もアドレスも入らない)。絞るのは手元
     searchIndex: function () { return apiSearchIndex(); },
     /*
+     * 最初からいるキャラのプロフィールを入れる (中身はリポジトリに置かず、スクリプトプロパティにだけ置く)。
+     * **置いた人が管理者でなければ断る** (by で決める、ただ1つの命令。置いた人は持ち主と最後に書いた人が
+     * 同じときだけ決まる。COMMAND_ADMIN_OPS)。返事には中身を入れない (結果は queue に置かれ、共有している人が読める)
+     */
+    oshiProfileSet: function (a, by) {
+      var got = oshiBuiltinProfileSet_(commandBy_(by), String(a.key || ''), a.profile === undefined ? null : a.profile);
+      return { key: got.key, items: got.items, clearLine: got.clearLine, clearVideo: got.clearVideo };
+    },
+    /*
      * 日報の下書きの中身と、本人の形。当てはめるのは手元 (画面の reportFill と同じ式)。
      * 形を渡されなければ本人が選んでいる形。本人の形は UserProperties にあるので、
      * キューを仕掛けた人以外では読めず、先頭の形 (3節) に倒れる
@@ -197,7 +206,17 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle'];
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle'].concat(COMMAND_ADMIN_OPS());
+}
+
+/**
+ * 置いた人が管理者のときだけ走る命令。置いた人は COMMAND_PERSONAL_OPS と同じく持ち主と最後に書いた人を見比べて決め、
+ * **見比べられない (Drive の拡張サービスが無い) ときは決めない** (持ち主を移したファイルで管理者になりすませないように)。
+ *
+ * @returns {string[]}
+ */
+function COMMAND_ADMIN_OPS() {
+  return ['oshiProfileSet'];
 }
 
 /**
@@ -209,12 +228,13 @@ function COMMAND_PERSONAL_OPS() {
  *
  * @param {GoogleAppsScript.Drive.File} file
  * @param {string} by commandOwner_(file)
+ * @param {boolean} [strict] 見比べられないときは決めない (管理者だけの命令。COMMAND_ADMIN_OPS)
  * @returns {string}
  */
-function commandPersonOf_(file, by) {
+function commandPersonOf_(file, by, strict) {
   var who = String(by || '');
   if (!who) return '';
-  if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return who;
+  if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return strict ? '' : who;
   try {
     var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });
     var last = String((meta && meta.lastModifyingUser && meta.lastModifyingUser.emailAddress) || '');
@@ -368,7 +388,7 @@ function runCommandFileLocked_(file, queue, done) {
     var cmd = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
     op = String(cmd && cmd.op ? cmd.op : '');
     var by = commandOwner_(file);
-    if (COMMAND_PERSONAL_OPS().indexOf(op) >= 0) by = commandPersonOf_(file, by);
+    if (COMMAND_PERSONAL_OPS().indexOf(op) >= 0) by = commandPersonOf_(file, by, COMMAND_ADMIN_OPS().indexOf(op) >= 0);
     var ranFrom = Date.now();
     try {
       result = { ok: true, op: op, result: runCommand_(cmd, by) };
@@ -411,7 +431,8 @@ function commandOwner_(file) {
   }
   // 使い道は「誰の道具が古いか」(kitRemember_) と「誰から見た様子を返すか」(commandBy_) だけ。
   // **権限の判断には使わない。** 誰の見え方かを決めるだけで、結果は queue に置かれ、共有している
-  // 人なら誰でも読める (中身は台帳を読める人に見えているものと同じ)
+  // 人なら誰でも読める (中身は台帳を読める人に見えているものと同じ)。ただ1つの例外が管理者だけの命令
+  // (COMMAND_ADMIN_OPS) で、持ち主と最後に書いた人が同じと確かめられたときだけ (commandPersonOf_ の strict)
   if (typeof driveApiAvailable_ !== 'function' || !driveApiAvailable_()) return '';
   try {
     var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });

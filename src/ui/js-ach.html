@@ -153,9 +153,11 @@
     if (!res || !res.on) return;
     achLast = res;
     try {
+      // 揃える前の Lv (上がった分で新しく分かるプロフィールを数える)
+      var before = oshiData && oshiData.growth ? Number(oshiData.growth.level) || 0 : 0;
       achSyncOshi(res);
       achRefreshViews(res);
-      if (res.newly && res.newly.length) achCelebrate(res);
+      if (res.newly && res.newly.length) achCelebrate(res, before);
     } catch (e) {
       if (window.console) console.warn('実績を出せませんでした', e);
     }
@@ -177,6 +179,8 @@
     Array.prototype.forEach.call(document.querySelectorAll('.oshi-growth'), function (old) {
       old.parentNode.replaceChild(makeOshiGrowth(g), old);
     });
+    // 推しの頁が出ていれば、Lv で分かるプロフィールとクリアを取り直す (どこまで見せるかはサーバが決める)
+    oshiRevealRefresh();
   }
 
   /** 出ている実績の頁とホームのカードを描き直す。絞って数え直した返事 (partial) では頁を描き直さない (手がかりが欠ける) */
@@ -191,16 +195,23 @@
    * 取ったときの知らせ。隅の小さな知らせはいつも (ach.cheer がオンなら)、大きな字は楽しい演出のお祝いもオンのとき。
    * 推しがオンなら、推しが「実績を取った」(段が上がったら「育ちの段が上がった」と上がった段の絵) で言う。
    *
+   * 上がった Lv で推しのプロフィールが新しく分かれば、その数を添える。全部取ったら「クリア」と添える。
+   *
    * @param {object} res
+   * @param {number} [before] 揃える前の推しの Lv (分からなければ 0)
    */
-  function achCelebrate(res) {
+  function achCelebrate(res, before) {
     if (!achCheerOn()) return;
     var got = res.newly;
     var first = got[0];
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
-    achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : ''));
+    var opened = oshiProfileOpening(Number(before) || 0, Number(res.level) || 0);
+    var all = (res.items || []).length > 0 && res.items.every(function (it) { return it.done; });
+    achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
+      (opened ? ' ・ 推しのプロフィールが ' + opened + ' つ分かりました' : '') +
+      (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : ''));
     if (typeof funOn === 'function' && funOn('cheer') && typeof funBanner === 'function') {
       try { funBanner('BADGE GET!', 'big', 'success', null, first.title); } catch (e) { /* 飾りが落ちても知らせは出ている */ }
     }

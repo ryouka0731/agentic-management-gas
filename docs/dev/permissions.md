@@ -70,6 +70,16 @@
 育たない。実績は消さないので段も下がらない (前の `OSHI_STAGE_MAX:` は読まない)。**ただし台帳 (`oshi` / `oshi_images`) と
 `objects/` は入れ物の中にあり、Drive で共有している人は直に開ける。** 画面と手引きにもそう書いてある (隠せるとは言わない)。
 
+**推しのプロフィール (Lv で少しずつ分かる) とクリア。** どこまで見せるかはサーバが決める (`oshiProfileReveal`。Lv = `achLevel_`、
+クリア = 今の `ACHIEVEMENTS()` を全部取った `oshiClearedOf_`)。届いていない項目は名前も中身も返さず (Lv だけ)、クリアのお祝いの
+言葉と動画の id は**クリアするまで返さない** (`apiOshiGet` の `clear` は null)。**最初からいるキャラのプロフィールはリポジトリに
+置かない** (実在の人に寄せた中身になりうるため。スクリプトプロパティ `OSHI_PROFILE:<key>` にだけ置き、1つ 9KB を超えるときは
+`{"parts": N}` と続き `OSHI_PROFILE:<key>:0`〜 に分ける)。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
+命令 `oshiProfileSet`。どれも `oshiBuiltinProfileSet_` → `repoAssertAdmin_`)。テストの中身は作り話 (「テストの好物」など) にする。
+自分のキャラのプロフィールは台帳 (`oshi.profile`) にあり、Drive で台帳を開ける人は直に読める (手引きにそう書いた)。
+検査は `oshiProfileValid_` だけ (設定の欄・命令・自分のキャラの欄・置き場から読むとき)。動画のリンクは `focusMusicParse_` で読み解き、
+YouTube の動画1本の id だけを残す。
+
 **実績 (`src/core/Achievements.js` / `src/core/AchievementsStore.gs` / `src/api/Achievements.gs`) は本人にだけ。**
 `apiAchievements` / `apiAchievementsCheck` はアドレスを受けず、開いている本人のぶんだけを数えて返す。ほかの人の実績を読む入口・
 順位・チームの合計は作らない (上長・管理者にも返さない)。アドレスを受ける関数は末尾 `_`。**連続日数は持たない** (開いた日は通算)。

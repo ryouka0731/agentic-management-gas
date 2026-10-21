@@ -514,9 +514,10 @@ function repoIsAdmin_(email) {
  * 管理者でなければ断る。
  *
  * @param {string} [what] 何ができないのか (断るときの言葉に入れる)
+ * @param {string} [who] 誰か。省くと開いている本人。手元からの命令 (oshiProfileSet) は置いた人を渡す
  */
-function repoAssertAdmin_(what) {
-  var me = currentEmail_();
+function repoAssertAdmin_(what, who) {
+  var me = who === undefined ? currentEmail_() : String(who || '');
   if (!repoIsAdmin_(me)) {
     throw new Error((what || 'この操作') + 'は、このアプリの管理者 (持ち主と、入れ物のフォルダを' +
       '編集できる人) だけが行えます');
