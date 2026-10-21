@@ -288,6 +288,9 @@ export function prefsFixture(over) {
     { key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報', label: '日報の形の既定', help: '',
       options: [{ value: 'three', label: '3節' }, { value: 'today', label: '今日だけ' }], def: 'three' },
     { key: 'goals.enabled', scope: 'team', type: 'bool', section: '目標', label: '目標 (OKR・MBO・KPI) を使う', help: '', def: false },
+    { key: 'cowork.enabled', scope: 'team', type: 'bool', section: '作業雑談部屋', label: '作業雑談部屋を使う', help: '', def: false },
+    { key: 'cowork.showFocus', scope: 'me', type: 'bool', section: '作業雑談部屋', label: '部屋にいるとき「集中中」を添える',
+      help: '', def: false },
   ].map((p) => Object.assign({ min: '', max: '', options: [] }, p, { value: p.def, custom: false }));
   const values = (over && over.values) || {};
   items.forEach((p) => {
@@ -316,12 +319,16 @@ export function prefsFixture(over) {
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
       goals: { enabled: v('goals.enabled') === true },
+      cowork: { enabled: v('cowork.enabled') === true, showFocus: v('cowork.showFocus') === true },
     },
   };
 }
 
 /** よく使う既定の応答 */
 export const DEFAULTS = {
+  // 作業雑談部屋 (既定はオフなので、ふだんは呼ばれない。設定の画面の管理者の欄は部屋の一覧を取る)
+  apiCoworkRooms: { rooms: [], myRoomId: '', beatSeconds: 60, expireSeconds: 120, available: true },
+  apiCoworkRoomSettings: { rooms: [], max: 10, nameMax: 30 },
   // 推しは既定でオン (既定のキャラはタク)。中身を確かめるテストは test/component/oshi.test.js が本物のサーバの返事で上書きする。
   // 空で返すと、設定が届くたびに取り直してしまう (本物は必ず返す)
   apiOshiGet: {

@@ -227,6 +227,7 @@
     focusPrefsChanged();
     oshiPrefsChanged();
     goalsPrefsChanged();
+    coworkPrefsChanged();
     calendarPrefsChanged();
     // 描いてあるカードのうち止めたものを外す。出すほうはホームを開き直したとき (loadHome) に描く。
     // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
@@ -573,6 +574,8 @@
     items.forEach(function (p) {
       // 言葉の表し方は、期間で進めるを使っていなければ意味が無い (一覧には残す)
       if (p.key === 'terms.style' && !scrumOn()) return;
+      // 「集中中」を添えるかは、作業雑談部屋を使っていなければ意味が無い
+      if (p.key === 'cowork.showFocus' && !coworkOn()) return;
       var key = String(p.section || '');
       if (!by[key]) { by[key] = []; order.push(key); }
       by[key].push(p);
@@ -595,6 +598,8 @@
       });
       // 予定に入れるの節には、様子と「予定を組み直す」を添える (js-calendar)
       if (by[name].some(function (p) { return p.key === 'calendar.plan'; })) sec.appendChild(makeCalendarMinePanel());
+      // 作業雑談部屋の節には、部屋の一覧の欄を添える (js-cowork。決めるのは管理者だけ)
+      if (by[name].some(function (p) { return p.key === 'cowork.enabled'; })) sec.appendChild(makeCoworkRoomsEditor(editable));
       host.appendChild(sec);
     });
   }
