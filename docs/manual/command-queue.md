@@ -128,7 +128,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 
 | op | args | 内容 |
 |---|---|---|
-| `oshiProfileSet` | `key` (`taku` / `itsuki`), `profile` (`{items: [{lv, label, text}], clearLine, clearVideo}`。JSON の字でもよい。空の字で外す) | 最初からいるキャラのプロフィールを入れる。返事は項目の数と、お祝いの言葉・動画があるかだけ (中身は返さない) |
+| `oshiProfileSet` | `key` (`taku` / `itsuki` / `tsujippi` / `ikkun` / `ryoka` / `satomi`), `profile` (`{items: [{lv, label, text}], clearLine, clearVideo}`。JSON の字でもよい。空の字で外す) | 最初からいるキャラのプロフィールを入れる。返事は項目の数と、お祝いの言葉・動画があるかだけ (中身は返さない) |
 
 ### 手元への頼みごと (outbox)
 
