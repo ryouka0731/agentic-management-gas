@@ -5313,8 +5313,22 @@ body.focus-mode .mobile-nav { display: none !important; }
   justify-content: center; pointer-events: none; }
 .room-oshi .oshi-img, .room-oshi .room-silhouette { display: block; width: 100%; height: auto; }
 .room-oshi .oshi-avatar { width: 72px; height: 72px; font-size: 28px; }
+/* ときどき様子を変える (roomFidget)。向きは絵を左右反転、傾き・ずれは入れ物。transform は息の動きが使うので、
+   個別の rotate / translate / scale で重ねる。動きを減らす設定では仕掛けない (切り替えも瞬時) */
+.room-oshi { transition: rotate 600ms ease-in-out, translate 600ms ease-in-out; }
+.room-oshi .oshi-img { transition: scale 500ms ease-in-out; }
+.room-oshi.is-flipped .oshi-img { scale: -1 1; }
+.room-oshi.is-lean-l { rotate: -3deg; }
+.room-oshi.is-lean-r { rotate: 3deg; }
+.room-oshi.is-shift-l { translate: -3% 0; }
+.room-oshi.is-shift-r { translate: 3% 0; }
+@media (prefers-reduced-motion: reduce) {
+  .room-oshi, .room-oshi .oshi-img { transition: none; }
+}
 /* 部屋でも頭をなでられる (oshiAttachPat)。絵のドラッグと選択は切り、指の動きは入れ物が受ける */
-.room-oshi { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+/* 入れ物は上で pointer-events: none にしてある (舞台の押し物を隠さないため) が、なでるには指の動きが要る。
+   絵 (.oshi-img) は none のままなので、動きは入れ物が受ける。jsdom はこの CSS を見ないので、テストは字で確かめる */
+.room-oshi { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; pointer-events: auto; }
 .room-oshi .oshi-img { -webkit-user-drag: none; pointer-events: none; }
 .room-oshi-say {
   position: absolute; left: 31%; bottom: 62%; max-width: 40%; margin: 0; padding: var(--sp-2) var(--sp-3);
