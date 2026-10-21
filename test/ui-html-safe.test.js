@@ -4,9 +4,10 @@ import path from 'node:path';
 import { ROOT, WIKI, includesIn } from './ui-source.js';
 
 /*
- * 画面の JS (app.js / js-*.html) は、GAS の HtmlService が「HTML のファイル」として読んでから <script> の中に
- * つながれる。HtmlService は読むときに HTML として壊れていないかを検査し、壊れていると「形式が正しくない
- * HTML コンテンツ」で画面全体が開けなくなる。
+ * 画面の JS (app.js / js-*.html) は include() で <script> の中につながれる。include() は getRawContent() で
+ * そのままの字を返す (test/ui-assemble.test.js が固定している) が、createHtmlOutputFromFile(...).getContent() に
+ * 戻ると、HtmlService が「HTML のファイル」として読み直し、壊れていると「形式が正しくない HTML コンテンツ」で
+ * 画面全体が開けなくなる。ここはその二重の守り。
  *
  * 2026-10-22 に Google 側の検査が厳しくなり、前日まで通っていた字で画面が開けなくなった (@188 → @189 で直した)。
  * 本番で1行ずつ確かめた結果、拒まれるのは次の2つ:
