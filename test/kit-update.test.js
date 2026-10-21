@@ -66,7 +66,7 @@ async function installed(d) {
 describe('指紋', () => {
   it('番頭の kitPrint_ と同じ値になる', () => {
     const fake = createFakeGas();
-    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs', 'src/KitFiles.gs', 'src/core/AgentKit.gs');
+    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/AgentKit.gs');
     expect(kitPrintOf(ctx.KIT_FILES())).toBe(ctx.kitPrint_());
   });
 });

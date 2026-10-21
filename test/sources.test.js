@@ -33,10 +33,10 @@ describe('読み込む並び', () => {
   });
 
   it('画面の入口 (src/*.gs と src/api/*.gs) は API_SOURCES に全部ある', () => {
-    // KitFiles は KIT_SOURCES、KitSigning は deploy のときに作る (記録しない)
+    // KitSigning は deploy のときに作る (記録しない)
     const entry = runtimeFiles()
       .filter((f) => /^src\/[^/]+\.gs$/.test(f) || /^src\/api\//.test(f))
-      .filter((f) => !/\/(KitFiles|KitSigning)\.gs$/.test(f));
+      .filter((f) => !/\/KitSigning\.gs$/.test(f));
     expect([...API_SOURCES].sort()).toEqual(entry);
   });
 
@@ -87,7 +87,7 @@ describe('読み込む並び', () => {
     const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
     const direct = /Session\s*\.\s*getActiveUser\s*\(/;
     const found = runtimeFiles()
-      .filter((f) => f !== helper && !/\/KitFiles\.gs$/.test(f))
+      .filter((f) => f !== helper)
       .filter((f) => direct.test(strip(fs.readFileSync(f, 'utf8'))));
     expect(found).toEqual([]);
     // 見張りそのものが効いていること (helper の中では読んでいる)

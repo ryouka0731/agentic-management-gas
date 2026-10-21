@@ -17,6 +17,41 @@ function AGENT_KIT_VERSION() {
   return '1.14.0';
 }
 
+/** 同じ実行の中で読んだ配る中身 (読めたあとだけ持つ) */
+var KIT_FILES_MEMO_ = null;
+
+/**
+ * zip の中の名前 → base64 にした中身。中身は src/ui/kit-files.html の JSON の字
+ * (**scripts/build-kit.mjs が kit/ から作る。手で直さない。**)。
+ *
+ * **スクリプト (.gs) に焼かない。** GAS はどの呼び出しでも全部のスクリプトを読み込むので、以前の src/KitFiles.gs
+ * (400KB) が画面のどの api* も遅くしていた。HTML のファイルは読むときだけ読まれる。読むのは getRawContent
+ * (そのままの字)。createHtmlOutputFromFile は HTML として読み直して中身を変えることがある (src/Main.gs の include と
+ * 同じ理由)。中身を base64 のまま持つのは、署名と指紋 (kitPrint_) がこの並びの JSON に付くため。
+ * 同じ実行の中では1回だけ読み、写しを返す (呼んだ側が書き換えても次の呼び出しに残らない)。
+ *
+ * @returns {Object<string,string>}
+ */
+function KIT_FILES() {
+  if (!KIT_FILES_MEMO_) {
+    var parsed;
+    try {
+      parsed = JSON.parse(HtmlService.createTemplateFromFile('ui/kit-files').getRawContent());
+    } catch (e) {
+      throw new Error('配る道具の中身を読めませんでした。管理者に知らせてください (' + e.message + ')');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('配る道具の中身を読めませんでした。管理者に知らせてください');
+    }
+    KIT_FILES_MEMO_ = parsed;
+  }
+  var out = {};
+  for (var k in KIT_FILES_MEMO_) {
+    if (Object.prototype.hasOwnProperty.call(KIT_FILES_MEMO_, k)) out[k] = KIT_FILES_MEMO_[k];
+  }
+  return out;
+}
+
 /**
  * 配る中身の指紋。zip の名前と、手元の道具が古いかの判定に使う。
  *

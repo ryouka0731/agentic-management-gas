@@ -99,7 +99,7 @@ npm run deploy -- "何を変えたか"
 
 `scripts/deploy.mjs` が次の順で行う。
 
-1. `kit/` を `src/KitFiles.gs` に焼き直す (配る道具の本体は `kit/`)
+1. `kit/` を `src/ui/kit-files.html` に、推しの最初からいるキャラの絵 (`assets/oshi-default/`) を `src/ui/oshi-default/` に焼き直す (配る道具の本体は `kit/`)
 2. 道具の中身に手元で署名し、署名と版と指紋だけを `src/KitSigning.gs` に書く (秘密鍵は入れない。このファイルは git に記録しない)
 3. `clasp push -f`
 4. `deployment.json` の ID に対して `clasp create-deployment -i <ID>` で差し替える。**URL は変わらない**
