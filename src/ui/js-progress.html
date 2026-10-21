@@ -186,6 +186,13 @@
       renderHomeLine();
       return;
     }
+    // 返事が届くまでの骨組み (カード1枚ぶん)。空のときだけ置く (js-home の homeSkeletonInto と同じ考え)
+    if (!homeCardsEl.childNodes.length) {
+      var skel = document.createElement('div');
+      skel.className = 'home-card home-skel-card';
+      homeSkeletonInto(skel, '今日片づけたもの', 2);
+      homeCardsEl.appendChild(skel);
+    }
     // 前進が取れなければ描かない。ほかの4つは、どれが取れなくても空で補って描く
     // (任意のカード1枚のために、ホーム全体を消さない)
     call('apiProgress', [], function (p) {
@@ -213,6 +220,7 @@
       });
     }, function (err) {
       failQuiet('前進が出なくても使える')(err);
+      removeAll(homeCardsEl, '.home-skel-card');
       homeLine.today = null;
       renderHomeLine();
     });

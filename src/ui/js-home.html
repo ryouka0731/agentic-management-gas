@@ -20,6 +20,10 @@
     applyHomeCards();
     homeLine = { turn: null, today: null };
     renderHomeLine();
+    // 返事が届くまでの骨組み (スケルトン)。空のときだけ置く (開き直したときは、前の中身を新しい返事が来るまで残す)
+    homeSkeletonInto(homeTurnEl, 'あなたの番', 3);
+    homeSkeletonInto(homeActivityEl, 'アクティビティ', 4);
+    homeSkeletonInto(homeRecentEl, '最近の動き', 3);
     loadOverview();
     loadHomeCards();
     loadHomeSummary();
@@ -226,7 +230,38 @@
 
   function fillBlock(host, el) {
     host.textContent = '';
+    host.removeAttribute('aria-busy');
     host.appendChild(el);
+  }
+
+  /**
+   * 返事が届くまでの骨組み (スケルトン)。見出しと、薄い横棒を何本か。区画が空のときだけ置く。
+   * 届いたら fillBlock が置き換える。読み上げには「読み込んでいます」と伝え、棒は読ませない。
+   *
+   * @param {HTMLElement} host 区画
+   * @param {string} title 見出し
+   * @param {number} lines 棒の数
+   */
+  function homeSkeletonInto(host, title, lines) {
+    if (!host || host.childNodes.length) return;
+    var box = document.createElement('div');
+    box.className = 'home-skel';
+    box.appendChild(homeHead(title));
+    var sr = document.createElement('span');
+    sr.className = 'sr-only';
+    sr.textContent = '読み込んでいます';
+    box.appendChild(sr);
+    var bars = document.createElement('div');
+    bars.className = 'home-skel-lines';
+    bars.setAttribute('aria-hidden', 'true');
+    for (var i = 0; i < lines; i++) {
+      var bar = document.createElement('span');
+      bar.className = 'home-skel-line';
+      bars.appendChild(bar);
+    }
+    box.appendChild(bars);
+    host.setAttribute('aria-busy', 'true');
+    host.appendChild(box);
   }
 
   /**
