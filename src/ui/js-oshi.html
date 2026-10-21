@@ -1242,6 +1242,8 @@
       lastX = e.clientX;
     });
     fig.addEventListener('pointerleave', reset);
+    // 絵の上で指を動かすと、ブラウザが画像のドラッグ&ドロップを始めてしまう (なでられない)。絵は運ばせない
+    fig.addEventListener('dragstart', function (e) { e.preventDefault(); });
     show('idle');
     return sec;
   }
