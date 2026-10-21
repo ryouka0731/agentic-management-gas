@@ -100,6 +100,23 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 試すのは `test/component/error-recovery.test.js` (型ごとの出方・押し直し・1つだけ使える)、`test/api/partial-busy.test.js`
   (途中まで書いてからの断り) と `test/e2e/errors.test.js` (混み合い → もう一度 → 1件だけできる・途中まで済んだら出さない)
 
+## 文書のリンク (文書だけの画面)
+
+`?doc=<fileId>&full=1` で開かれたときは、番頭の画面を出さず文書だけを出す (2026-10-22 の指摘「リンクを踏むとホームに一瞬
+飛んでから文書に移り、左の行き先や上の操作も出る」)。
+
+- **印はサーバが付ける。** `Main.gs` の `doGet` が `?doc` と `?full` を読み (`doGetLink_`。id は Drive の id の字だけ通す)、
+  `wiki.html` の `<body class="<?= bodyClass ?>" data-link-doc="<?= linkDoc ?>">` に `doc-link doc-full` と id を入れる。
+  画面側は iframe の中で URL を同期では読めない (`google.script.url.getLocation` は返事待ち) ので、最初の描画から周りを隠すには
+  サーバで付けるしかない。`<?= ?>` は逃がすが、id の字も絞っている
+- **`js-start` は印があればホームを出さない。** `enterDocLink` で面を全部隠し「文書を開いています…」を出し、`openFromLink` で
+  文書を開く (`switchTab('home')` も `loadHome` も呼ばない)。印が無ければ今までどおり (ホーム → `getLocation` → 古い形の `?doc=` だけのリンク)
+- **`body.doc-link` は `doc-full` と同じものを隠し、さらに全画面のボタンとホームの面も隠す。** 全画面を閉じても (Esc) 周りは出ない
+  (戻る先が無い)。題名 (`.crumbs h1`) だけ残す
+- **開けなければ `leaveDocLink` でふつうの画面に戻して帯で知らせる** (見られない・登録されていない・一覧が取れない・本文が取れない)
+- テストは `test/component/doc-link.test.js` (`mountApp(…, { link: { doc } })` が doGet の印を body に付ける) と
+  `test/api/main.test.js` (doGet)。`test/ui-assemble.test.js` と `test/dom.js` は `<?= bodyClass ?>` / `<?= linkDoc ?>` を空で埋める
+
 ## 画面の落とし穴
 
 (元は「落とし穴」の項目)
