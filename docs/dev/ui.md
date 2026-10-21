@@ -318,7 +318,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 画面は `prefs.effective.room.on` を `roomOn()` で読むだけ。オフのあいだは入口 (`makeRoomOpenButton`) が null を返し、
 `applyPrefs` の `roomPrefsChanged` が開いている部屋を閉じ、集中の窓の入口を外す (`roomSyncDockButton`)。手引きは `docs/manual/focus.md` の「作業部屋」。
 
-- **音は画面の中で作る** (ファイルも外の取得も使わない)。雨・キーボード・たき火・風・カフェ (`ROOM_SOUNDS()`) を、
+- **音は画面の中で作る** (ファイルも外の取得も使わない)。雨・キーボード・たき火・風・カフェ・マウス (`ROOM_SOUNDS()`) を、
   でたらめに起きる音 (雨粒・打鍵・はぜる音・器の音) も含めて 20〜30秒ぶん `AudioBuffer` に描き (1秒の標本の数は
   `ROOM_SOUNDS()` の `rate`。カフェは声らしいものを6つ重ねるので 12000、ほかは 24000)、`loop` で繰り返す (背景のタブでは時計が間引かれるので、時計で鳴らさない)。継ぎ目は、ノイズを少し長く描いて頭に重ね
   (`focusLoopSeam`)、揺れは一周で頭に戻る値 (`roomSmoothAt`)、短い音ははみ出しを頭へ回す (`roomPut`) ことで切れないようにする。
@@ -335,6 +335,16 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **閉じたら手放す。** 部屋を閉じると下げ終わってから音の仕組みを `close()` し、描いた音 (`roomBuffers`) も捨てる。
   開き直して流すと作り直す。止めて流し直すたびに作る全体の大きさの節は、下げ終わったら `disconnect` する
 - 混ぜ方は端末の `localStorage` (`roomMix`) にだけ覚える。読むときは `roomMixClean` で知らない音を捨て、欠けを既定で埋める
+- **キーボードの種類** (`roomMix.keysKind`。`ROOM_KEYS_KINDS()` の red 赤軸 / blue 青軸 / membrane メンブレン / laptop ノートパソコン、
+  既定 red。知らない値は `roomKeysKindClean` が red にする。2026-10-22 の依頼)。描き方は `roomRenderSteps('keys', …, keysKind)` →
+  `roomStepsKeys(rate, seconds, rand, kind)` → `roomKeyStroke(…, kind)` で、打つ間隔と描き終わりの大きさは `roomKeysTone`。
+  **描いた音の入れ物 (`roomBuffers`) の鍵は `roomBufferKey` で、キーボードだけ種類を含める (`keys:blue`)。** 種類を鍵に入れないと、
+  変えても前の種類の音が鳴り続ける。選ぶ欄 (`makeRoomKeysKind`、キーボードの行の `select.room-sound-kind`) で変えると覚え、鳴っている
+  最中なら `roomVoiceStop('keys')` → `roomVoiceStart('keys')` で差し替える (描いてある種類はすぐ、無ければ刻みに分けて描く。
+  描いているあいだに種類を変えたら、描き終わった前の種類は鳴らさない)。種類ごとの違いは `test/room-ui.test.js` が数で比べる
+  (2.5kHz より上の割合・最大振幅・1打の長さ)
+- マウス (`mouse`、既定オフ) は、いつ鳴らすかを `roomMousePlan` が先に決める (押す・離すは 60〜90ms、ときどきダブルクリック、
+  ときどき 30ms おきのホイール3〜8個、操作の間は 0.6〜4秒)。音は `roomStepsMouse` が重ねる
 - 部屋 (`#room`) は開くときに作り、閉じると外す (音・時計・顔の入れ替えも止める)。絵は `makeRoomScene` がその場で SVG に描き、
   色は `--room-*` のトークン (`docs/dev/design.md`)。窓の外は端末の時計 (`roomPhaseOf`) で `data-phase` を変え、CSS が色を当てる
 - **部屋は画面の上にかぶせる窓 (`role="dialog"`)。** 開いているあいだ、ほかの body の子を `inert` にし (帯と補足の吹き出しは除く)、

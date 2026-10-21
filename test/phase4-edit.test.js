@@ -880,6 +880,8 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     ['apiIssueComments', (ctx, env) => ctx.apiIssueComments(env.issue.number)],
+    // 台帳の読み取りの覚えを捨てる (管理者だけ)
+    ['apiCacheClear', (ctx) => ctx.apiCacheClear()],
     // 成果の数。台帳の日は Date で返る。数えた行があるとき (3人に届いた週) を検査する
     ['apiOutcomes', (ctx) => {
       const today = ctx.usageDay(new Date());
@@ -952,6 +954,8 @@ describe('画面に渡せる形か', () => {
         if (table === 'pulls' && col === 'sourceBranch') continue;
         sheet.getRange(r, c, 1, 1).setValues([[new Date(2026, 9, 1)]]);
       }
+      // 人がシートを直にいじったのと同じ。台帳の読み取りの覚えは期限 (300秒) まで古いので、待つ代わりに捨てる
+      env.ctx.dbInvalidate_(table);
     }
     return env;
   }
@@ -1088,6 +1092,8 @@ describe('番号を持たない古いやりとり', () => {
     const values = sheet.getRange(2, idCol, last - 1, 1).getValues();
     values.forEach((r) => { r[0] = ''; });
     sheet.getRange(2, idCol, last - 1, 1).setValues(values);
+    // 人がシートを直にいじったのと同じ。台帳の読み取りの覚えは期限 (300秒) まで古いので、待つ代わりに捨てる
+    ctx.dbInvalidate_('reviews');
   }
 
   it('読むときに番号を埋める', () => {
@@ -1436,7 +1442,7 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
     'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
     'debugListWorkingCopies', 'debugFindConvertedCells', 'debugVerifyScrum',
-    'debugVerifySharedDrive', 'debugVerifyCalendar',
+    'debugVerifySharedDrive', 'debugVerifyCalendar', 'debugCacheClear',
   ];
 
   it('エディタ用の関数はすべて上に並んでいる', () => {
@@ -1744,6 +1750,8 @@ describe('以前に化けた字を探す', () => {
     const row = ctx.dbReadAll('issues').findIndex((r) => r.number === made.number) + 2;
     sheet.getRange(row, cols.indexOf('title') + 1, 1, 1).setValues([[new Date(2026, 0, 2)]]);
     sheet.getRange(row, cols.indexOf('body') + 1, 1, 1).setValues([[7]]);
+    // 人がシートを直にいじったのと同じ。台帳の読み取りの覚えは期限 (300秒) まで古いので、待つ代わりに捨てる
+    ctx.dbInvalidate_('issues');
 
     const text = ctx.debugFindConvertedCells();
 

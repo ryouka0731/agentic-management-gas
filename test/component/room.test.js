@@ -103,6 +103,24 @@ describe('作業部屋', () => {
     expect(el.querySelector('.room-oshi-say')).toBe(null);
   });
 
+  it('なでたときの吹き出しは、絵の実際の箱から頭の右上に置く (絵に重ねない)', () => {
+    mountRoom(ON);
+    openFromMe();
+    const el = room();
+    const fig = el.querySelector('.room-oshi');
+    const stage = el.querySelector('.room-stage');
+    // 舞台 1600×900 の中で、絵は左 496〜896、上 270〜630 (縦に長い絵)
+    stage.getBoundingClientRect = () => ({ top: 0, left: 0, width: 1600, height: 900, right: 1600, bottom: 900 });
+    fig.getBoundingClientRect = () => ({ top: 270, left: 496, width: 400, height: 360, right: 896, bottom: 630 });
+    const move = (x, y) => fig.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+    move(520, 300); move(600, 300); move(520, 300); move(600, 300);
+    const say = el.querySelector('.room-oshi-say');
+    expect(say).toBeTruthy();
+    // 右上: 左は絵の右端 (896/1600 = 56%) + 1、下は絵の上端 (900-270 = 630 → 70%) - 6
+    expect(say.style.left).toBe('57%');
+    expect(say.style.bottom).toBe('64%');
+  });
+
   it('部屋の絵の入れ物は指の動きを受ける (pointer-events: none のままだと、なでても何も起きない。jsdom は CSS を見ないので字で確かめる)', async () => {
     const fs = await import('node:fs');
     const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
@@ -470,6 +488,86 @@ describe('作業部屋', () => {
       flush();
       const buf = FakeAudio.made[0].sources[0].buffer;
       expect([buf.len, buf.rate]).toEqual([30 * 12000, 12000]);
+    });
+
+    it('キーボードの種類を選べる (最初は赤軸)。端末に覚え、鳴っている最中に変えると描き直して差し替える。描いた音は種類ごとに取っておく', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      window.localStorage.setItem('roomMix', JSON.stringify({ sounds: { rain: { on: false }, keys: { on: true, volume: 0.45 } } }));
+      mountRoom(ON);
+      openFromMe();
+      const sel = room().querySelector('[data-sound="keys"] select.room-sound-kind');
+      expect(sel.getAttribute('aria-label')).toBe('キーボードの種類');
+      expect([...sel.options].map((o) => o.textContent)).toEqual(['赤軸 (リニア)', '青軸 (カチカチ)', 'メンブレン', 'ノートパソコン']);
+      expect(sel.value).toBe('red');
+      // キーボードの行にだけ置く
+      expect(room().querySelectorAll('select.room-sound-kind').length).toBe(1);
+
+      room().querySelector('.room-play').click();
+      flush();
+      const ctx = FakeAudio.made[0];
+      expect(ctx.sources.length).toBe(1);
+      const red = ctx.sources[0].buffer;
+
+      sel.value = 'blue';
+      sel.dispatchEvent(new window.Event('change'));
+      expect(JSON.parse(window.localStorage.getItem('roomMix')).keysKind).toBe('blue');
+      expect(ctx.sources[0].stopped).toBe(true);
+      // 青軸はまだ描いていないので、刻みに分けて描いてから鳴らす
+      expect(ctx.sources.length).toBe(1);
+      expect(room().querySelector('.room-play').textContent).toBe('準備中…');
+      flush();
+      expect(ctx.sources.length).toBe(2);
+      expect(ctx.sources[1].buffer).not.toBe(red);
+
+      // 赤軸に戻すと、描いてある音をそのまま使う (描き直さない)
+      sel.value = 'red';
+      sel.dispatchEvent(new window.Event('change'));
+      expect(ctx.sources.length).toBe(3);
+      expect(ctx.sources[2].buffer).toBe(red);
+      expect(ctx.sources[1].stopped).toBe(true);
+
+      // 開き直すと覚えた種類
+      sel.value = 'laptop';
+      sel.dispatchEvent(new window.Event('change'));
+      mountRoom(ON);
+      openFromMe();
+      expect(room().querySelector('select.room-sound-kind').value).toBe('laptop');
+    });
+
+    it('止めているあいだに種類を変えても鳴らさず、次に流すとその種類で描く', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      window.localStorage.setItem('roomMix', JSON.stringify({ keysKind: 'brown', sounds: { rain: { on: false }, keys: { on: true, volume: 0.45 } } }));
+      mountRoom(ON);
+      openFromMe();
+      const sel = room().querySelector('select.room-sound-kind');
+      // 知らない種類は赤軸
+      expect(sel.value).toBe('red');
+      sel.value = 'membrane';
+      sel.dispatchEvent(new window.Event('change'));
+      expect(FakeAudio.made.length).toBe(0);
+      room().querySelector('.room-play').click();
+      flush();
+      expect(FakeAudio.made[0].sources.length).toBe(1);
+      expect(JSON.parse(window.localStorage.getItem('roomMix')).keysKind).toBe('membrane');
+    });
+
+    it('マウスの音がある (最初はオフ)。オンにすると 30秒ぶんを描いて繰り返す', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      mountRoom(ON);
+      openFromMe();
+      const t = room().querySelector('[data-sound="mouse"] .room-sound-toggle');
+      expect(t.textContent).toBe('マウス');
+      expect(t.getAttribute('aria-checked')).toBe('false');
+      expect(room().querySelector('[data-sound="mouse"] .room-sound-volume').value).toBe('0.4');
+      room().querySelector('[data-sound="rain"] .room-sound-toggle').click();
+      t.click();
+      room().querySelector('.room-play').click();
+      flush();
+      const buf = FakeAudio.made[0].sources[0].buffer;
+      expect([buf.len, buf.rate]).toEqual([30 * 24000, 24000]);
     });
 
     it('音を作れない端末では断りだけ出す', () => {

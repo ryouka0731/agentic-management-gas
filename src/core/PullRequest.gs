@@ -1159,7 +1159,11 @@ function reviewBackfillIdsLocked_() {
     filled++;
   }
 
-  if (filled) sheet.getRange(2, idCol, last - 1, 1).setValues(values);
+  if (filled) {
+    sheet.getRange(2, idCol, last - 1, 1).setValues(values);
+    // 台帳に直に書いたので、読み取りの覚えを捨てる (Db.gs の dbInvalidate_)
+    dbInvalidate_('reviews');
+  }
   return filled;
 }
 
