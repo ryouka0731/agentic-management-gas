@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { API_SOURCES, CORE_SOURCES, ISSUE_SOURCES, KIT_SOURCES, OSHI_DEFAULT_SOURCES, FULL_SOURCES } from './sources.js';
+import { API_SOURCES, CORE_SOURCES, ISSUE_SOURCES, KIT_SOURCES, FULL_SOURCES } from './sources.js';
 
 /*
  * 読み込む並び (sources.js) と、src の実際のファイルが食い違っていないか。
@@ -27,16 +27,16 @@ function runtimeFiles() {
 describe('読み込む並び', () => {
   it('並びに書いたファイルはすべて在る', () => {
     const all = new Set(runtimeFiles());
-    for (const f of [...ISSUE_SOURCES, ...CORE_SOURCES, ...API_SOURCES, ...KIT_SOURCES, ...OSHI_DEFAULT_SOURCES]) {
+    for (const f of [...ISSUE_SOURCES, ...CORE_SOURCES, ...API_SOURCES, ...KIT_SOURCES]) {
       expect(all.has(f), f).toBe(true);
     }
   });
 
   it('画面の入口 (src/*.gs と src/api/*.gs) は API_SOURCES に全部ある', () => {
-    // KitFiles は KIT_SOURCES、KitSigning は deploy のときに作る (記録しない)
+    // KitSigning は deploy のときに作る (記録しない)
     const entry = runtimeFiles()
       .filter((f) => /^src\/[^/]+\.gs$/.test(f) || /^src\/api\//.test(f))
-      .filter((f) => !/\/(KitFiles|KitSigning)\.gs$/.test(f));
+      .filter((f) => !/\/KitSigning\.gs$/.test(f));
     expect([...API_SOURCES].sort()).toEqual(entry);
   });
 
@@ -49,8 +49,7 @@ describe('読み込む並び', () => {
   });
 
   it('src/core のファイルは、どれかの並びにある (通しで動かす FULL_SOURCES に全部ある)', () => {
-    // 焼いた絵 (OshiDefault*.gs) のように大きなものは、要るテストだけが足す。足し忘れると、
-    // 通しのテストでも呼べずに黙って絵が出ない
+    // 足し忘れると、通しのテストでも呼べずに黙って動かない
     const full = new Set(FULL_SOURCES);
     const missing = runtimeFiles().filter((f) => /^src\/core\//.test(f) && !full.has(f));
     expect(missing).toEqual([]);
@@ -88,7 +87,7 @@ describe('読み込む並び', () => {
     const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
     const direct = /Session\s*\.\s*getActiveUser\s*\(/;
     const found = runtimeFiles()
-      .filter((f) => f !== helper && !/\/KitFiles\.gs$/.test(f))
+      .filter((f) => f !== helper)
       .filter((f) => direct.test(strip(fs.readFileSync(f, 'utf8'))));
     expect(found).toEqual([]);
     // 見張りそのものが効いていること (helper の中では読んでいる)

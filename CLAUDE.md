@@ -16,7 +16,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | `src/core/PullRequest.gs` / `src/core/Branch.gs` / `src/core/Commit.gs` / `src/core/Merge.js` / `src/api/Pr.gs` / `src/api/Commit.gs` (確認依頼・反映・反映先・main の保護) | `docs/dev/changeset-and-merge.md` |
 | `src/core/PullPatch.gs` / `src/core/Outbox.gs` / `src/api/Outbox.gs` | `docs/dev/outbox-and-patches.md` |
 | `src/core/CommandQueue.gs` (`processCommandQueue` / `setupCommandQueue`) | `docs/dev/command-queue.md` |
-| `kit/` / `scripts/build-kit.mjs` / `scripts/kit-key.mjs` / `scripts/deploy.mjs` の署名 / `src/core/AgentKit.gs` / `src/KitFiles.gs` / `src/KitSigning.gs` | `docs/dev/kit.md` |
+| `kit/` / `scripts/build-kit.mjs` / `scripts/kit-key.mjs` / `scripts/deploy.mjs` の署名 / `src/core/AgentKit.gs` / `src/ui/kit-files.html` / `src/KitSigning.gs` | `docs/dev/kit.md` |
 | `src/core/Scrum.gs` / `src/core/ScrumView.js` / `src/core/Terms.js` / `src/api/Scrum.gs` / `src/ui/js-scrum.html` | `docs/dev/scrum.md` |
 | `src/ui/*.html` の JS (`app.js.html` / `js-*.html` / `wiki.html`)・`src/core/Plain.js`・`api*` の返す形 | `docs/dev/ui.md` |
 | `src/ui/app.css.html`・`makePill`・`makeDiagram`・ボタンや一覧の幅 | `docs/dev/design.md` |
@@ -58,7 +58,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 
 `test/naming.test.js` の「Git の言葉を人に見せない」が、コメントを除いた
 `Notifier.gs` の全文と、`src/` のすべての `.gs` と `src/core/*.js` (配る道具の中身
-`KitFiles.gs` と、エディタ専用の `debug*` / `setup*` を除く) の断り文 (`new Error`) と
+`src/ui/kit-files.html` は元から入らない。エディタ専用の `debug*` / `setup*` を除く) の断り文 (`new Error`) と
 変更の記録の文 (`commitFile` の3つ目) を走査している。**断り文を変数に入れてから
 渡すと追えない** (`msg` / `message` / `reason` という名前の変数だけは拾う)。
 
@@ -212,7 +212,7 @@ npm run deploy -- "何を変えたか"
 **Claude Code のフックが止める** (`.claude/settings.json` → `scripts/guard-hook.mjs`、
 テストは `test/guard-hook.test.js`)。`-i` / `--deploymentId` 無しの `clasp create-deployment` /
 `clasp deploy`、居るブランチに送っていない記録があるのに別の手元のブランチを名指しした
-`git push origin <名前>` (居る場所は入力の cwd で見るので worktree ごとに正しく決まる。わざと送るなら `<名前>:<名前>`)、`src/KitFiles.gs` / `src/KitSigning.gs` を
+`git push origin <名前>` (居る場所は入力の cwd で見るので worktree ごとに正しく決まる。わざと送るなら `<名前>:<名前>`)、`src/ui/kit-files.html` / `src/KitSigning.gs` を
 手で書くこと (シェルはよくある書き方だけを見る)、署名の秘密鍵を読むこと。push と clasp は読み取れない形なら通し、生成物と鍵は
 迷ったら止める。止められたら回り道を探さず、理由に書いてある正しい道を使う。
 

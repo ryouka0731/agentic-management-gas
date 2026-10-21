@@ -10,7 +10,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeKitSource, kitFilesMap } from './build-kit.mjs';
+import { writeKitSource, kitFilesMap, KIT_OUT } from './build-kit.mjs';
 import { writeOshiDefaultSources } from './build-oshi-default.mjs';
 import { prepareSigning, kitVersionOf, signingKeyPath, PUBLIC_KEY, SIGNING_SOURCE } from './kit-key.mjs';
 import fs from 'node:fs';
@@ -61,7 +61,7 @@ function main() {
 
   // 配る道具は kit/ が本物。焼き直してから送らないと、古い中身が配られる
   if (writeKitSource()) {
-    process.stdout.write('src/KitFiles.gs を作り直しました\n');
+    process.stdout.write(KIT_OUT + ' を作り直しました\n');
   }
   // 推しの最初からいるキャラの絵は assets/oshi-default/ が本物。同じく焼き直してから送る
   for (const f of writeOshiDefaultSources()) process.stdout.write(f + ' を作り直しました\n');

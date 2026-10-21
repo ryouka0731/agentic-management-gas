@@ -25,7 +25,7 @@
 |---|---|
 | `git push origin <名前>` で、<名前> がいま居るブランチ (入力の cwd で見る) でない手元のブランチ、かつ居るブランチにまだ送っていない記録があるとき。タグ・知らない名前・送り先まで書いた形 (`a:b`) は通す | 居るブランチは送られない。`git push -u origin HEAD` を使う。わざと別のブランチを送るなら `git push origin <名前>:<名前>` |
 | `clasp create-deployment` / `clasp deploy` を `-i` / `--deploymentId` 無しで | 新しいデプロイができて URL が変わる。`npm run deploy` を使う |
-| `src/KitFiles.gs` / `src/KitSigning.gs` を手で書く (Edit / Write と、シェルのよくある書き方 `>` / `>|` / `sed -i` / `cp` / `tee`。`python3 -c` などは見ていない) | scripts が作るもの。`node scripts/build-kit.mjs` と `npm run deploy` は通る |
+| `src/ui/kit-files.html` / `src/KitSigning.gs` を手で書く (Edit / Write と、シェルのよくある書き方 `>` / `>|` / `sed -i` / `cp` / `tee`。`python3 -c` などは見ていない) | scripts が作るもの。`node scripts/build-kit.mjs` と `npm run deploy` は通る |
 | 署名の秘密鍵 (`~/.config/softbanto/kit-signing-key.pem` / `$BANTO_SIGNING_KEY`) を読む・書く | 鍵は `scripts/deploy.mjs` だけが読む |
 
 `&&` / `;` / `|` でつないだ命令は1つずつ見る。ヒアドキュメントの本文は命令として読まない。push と clasp は、読み取れない形なら通す (止めすぎると使えない)。
@@ -50,11 +50,11 @@ src/
 ├── Main.gs                doGet・include・エディタで一度だけ実行する setup*・持ち主の確かめ (assertOwner_)・1日1回の片付け (housekeepArchiveDaily_)
 ├── Debug.gs               エディタ用の確かめ (debug*) とその手伝い
 ├── api/                   画面から呼ぶ api* (Files / Commit / Pr / Outbox / Issue / Inquiry / People / Home / Settings / Scrum)
-├── KitFiles.gs            配る道具の中身 (kit/ から焼き直す。手で直さない)
 ├── KitSigning.gs          道具の署名 (deploy のときに作る。git に記録しない)
 ├── core/                  中身の処理
 ├── render/                Docs / Sheets / Slides と正規化 HTML の行き来
 └── ui/                    wiki.html (部品) / app.js.html と js-*.html (動き。1つの関数を場所ごとに分けたもの) / app.css.html (見た目)
+                           kit-files.html (配る道具の中身。kit/ から焼き直す) と oshi-default/ (推しの最初からいるキャラの絵。assets/ から焼き直す)。どちらも手で直さない
 kit/                       配る道具の本物 (agent.mjs・説明・track/・スクラムのスキルとひな形)
 scripts/                   build-kit.mjs (焼き直し) / deploy.mjs / kit-key.mjs (署名の鍵) / guard-hook.mjs (Claude Code のフック)
 test/                      vitest。harness.js・fakegas.js (疑似GAS)・dom.js (jsdom の画面)
@@ -146,7 +146,7 @@ npm run coverage
 
 ## 配る道具を直す
 
-1. `kit/` の本物を直す (`src/KitFiles.gs` は手で直さない)
+1. `kit/` の本物を直す (`src/ui/kit-files.html` は手で直さない)
 2. `src/core/AgentKit.gs` の `AGENT_KIT_VERSION()` と、`kit/track/local.mjs` の `KIT_VERSION` を上げる (2か所)
 3. `node scripts/build-kit.mjs` で焼き直す (`npm run deploy` も自動で走らせる)。`test/agentkit.test.js` が `kit/` と
    焼き直したものの一致を見ている
@@ -154,7 +154,8 @@ npm run coverage
 5. スキル (`kit/.claude/skills/`) を直したら、版を上げる前に、何も知らない Claude (別のセッションやサブエージェント) に
    実際にありそうな頼み方で走らせ、思った通りに動くかを確かめる
 
-中身をそのまま GAS の HTML ファイルとして置かない (`<id>` がタグと読まれて壊れる)。base64 にして `KitFiles.gs` に入れている。
+中身をそのまま GAS の HTML ファイルとして置かない (`<id>` がタグと読まれて壊れる)。base64 の JSON にして `src/ui/kit-files.html` に入れている。
+スクリプト (.gs) にしないのは、GAS がどの呼び出しでも全部のスクリプトを読み込み、画面のどの操作も遅くなるため。
 
 ## デプロイ
 

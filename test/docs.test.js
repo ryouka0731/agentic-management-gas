@@ -196,8 +196,8 @@ describe('よく出る断りの表', () => {
     (function walk(dir) {
       for (const ent of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
         const rel = dir + '/' + ent.name;
-        if (ent.isDirectory()) walk(rel);
-        else if (/\.(gs|js|mjs|html)$/.test(ent.name) && !/KitFiles\.gs$/.test(ent.name)) out.push(rel);
+        if (ent.isDirectory()) { if (rel !== 'src/ui/oshi-default') walk(rel); } // 焼いた絵は読まない
+        else if (/\.(gs|js|mjs|html)$/.test(ent.name) && rel !== 'src/ui/kit-files.html') out.push(rel);
       }
     })('src');
     out.push('kit/agent.mjs');

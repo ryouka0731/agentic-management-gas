@@ -14,13 +14,11 @@
  *                  キューは api* と homeTurnPlain_ / reportPartsPlain_ を、ホーム・検索・ポイントは
  *                  画面の入口と同じ並びを前提にしているので、CORE だけでは足りない
  * - KIT_SOURCES:   配る道具。中身が大きいので、要るテストだけが足す
- * - OSHI_DEFAULT_SOURCES: 推しの最初からいるキャラの絵 (焼いた data URL。キャラと形ごとに1つで、合わせて 1.4MB ほど)。要るテストだけが足す
  * - FULL_SOURCES:  APP + 残りの全部 (ToDo 連携・配る道具など)。実物は src を全部同じグローバルに
  *                  読むので、画面とサーバを通しで動かす test/e2e/ はこれで読む (画面の起動で
  *                  apiTasksState / apiKitStatus も呼ばれる)
  */
 
-import { oshiDefaultTargets } from '../scripts/build-oshi-default.mjs';
 export const ISSUE_SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/Plain.js', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/FocusMusic.js', 'src/core/Prefs.gs',
@@ -62,13 +60,9 @@ export const API_SOURCES = [
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
 
-export const KIT_SOURCES = ['src/KitFiles.gs', 'src/core/AgentKit.gs'];
-
-// 最初からいるキャラの絵 (焼いたもの)。キャラ×形の並びは scripts/build-oshi-default.mjs (Oshi.js の OSHI_BUILTINS × OSHI_STYLES) が
-// 唯一の定義なので、そこから作る。キャラを足しても、ここは直さない
-export const OSHI_DEFAULT_SOURCES = oshiDefaultTargets().map((t) => t.file);
+export const KIT_SOURCES = ['src/core/AgentKit.gs'];
 
 export const FULL_SOURCES = APP_SOURCES.concat([
   'src/core/GoogleTasks.gs', 'src/core/FileUrl.js', 'src/core/MarkdownView.js', 'src/core/Terms.js',
   'src/core/ErrorKind.js',
-], KIT_SOURCES, OSHI_DEFAULT_SOURCES);
+], KIT_SOURCES);
