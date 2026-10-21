@@ -323,6 +323,9 @@
     else if (diffPane.classList.contains('full')) setDiffFull(false);
   });
 
+  // 実績: 開いたときに1回だけ数え直す (開いた日もここで数える)。設定が届くまで待つ (js-ach)
+  achOpenCheck();
+
   call('apiWhoAmI', [], function (who) {
     currentUser = (who || {}).activeUser || '';
     drawMe();

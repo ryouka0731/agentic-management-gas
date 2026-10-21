@@ -20,7 +20,7 @@
  * - busyErrors:   D に鍵が取れずに投げた数 (Db.gs の dbBusyNote_)。**上限の数**: 呼んだ側が握って画面に届かないもの
  *                 (履歴・知らせ・使われ方) も入る。鍵なしで足すので数え漏れもある — 見張り
  * - timeoutErrors: D に画面で時間切れになった操作の数 (使われ方の場所 error:timeout。使われ方を止めた人は数えない) — 見張り
- * - fxOff:        楽しい演出・集中のしかた・推し・ポイントのどれかを、自分の設定ではっきり切っている人の数
+ * - fxOff:        楽しい演出・集中のしかた・推し・実績・ポイントのどれかを、自分の設定ではっきり切っている人の数
  *                 (数えた時点の数。前日の行にだけ入れ、数え直しでは前の値を残す) — 見張り
  *
  * 設計: docs/superpowers/specs/2026-10-21-motivation-review.md の §7・§8。
@@ -299,7 +299,7 @@ function outcomesMovedOn_(acts, start, end) {
 /**
  * 楽しさの層をはっきり切っている人の数 (いまの数)。
  *
- * 自分の設定 (MYPREF:<アドレス>) に、fun.* / focus.* / oshi.* / game.* か home.cards.game を false と
+ * 自分の設定 (MYPREF:<アドレス>) に、fun.* / focus.* / oshi.* / ach.* / game.* か home.cards.game を false と
  * 書いている人を数える。既定のまま (書いていない) の人は数えない。
  *
  * @returns {number}
@@ -312,7 +312,7 @@ function outcomesFxOff_() {
     var mine = prefParse_(all[k]);
     if (!mine || typeof mine !== 'object' || Array.isArray(mine)) return;
     var off = Object.keys(mine).some(function (key) {
-      return mine[key] === false && (/^(fun|focus|oshi|game)\./.test(key) || key === 'home.cards.game');
+      return mine[key] === false && (/^(fun|focus|oshi|ach|game)\./.test(key) || key === 'home.cards.game');
     });
     if (off) n++;
   });

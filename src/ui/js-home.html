@@ -603,6 +603,8 @@
 
   /** 選んだものを開く。開いたら欄を空にして閉じる */
   function openSearchItem(item) {
+    // 実績「探す (Ctrl+K) を使った」は使われ方の場所で確かめる (js-ach)
+    usageCount('action', 'search-open');
     searchInput.value = '';
     closeSearch();
     searchInput.blur();

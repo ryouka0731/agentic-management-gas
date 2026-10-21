@@ -274,7 +274,7 @@ describe('前進を見せる (意欲づけ)', () => {
 
     // まとめの見出しは置かず (同じ形の見出しが重なる)、カードがそれぞれ見出しを持つ
     const heads = Array.from(cards.children).filter((c) => !c.classList.contains('oshi-card')).map((c) => c.querySelector(':scope > .home-head > h2').textContent);
-    expect(heads).toEqual(['今日片づけたもの', 'チームの前進']);
+    expect(heads).toEqual(['今日片づけたもの', '最近の実績', 'チームの前進']);
   });
 
   it('今日まだ何も無いときは「これから」と書く', () => {

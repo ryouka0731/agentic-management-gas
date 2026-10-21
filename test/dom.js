@@ -228,6 +228,7 @@ const API_NAMES = [
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
   'apiGoalIssueLinks', 'apiGoalWithdraw',
+  'apiAchievements', 'apiAchievementsCheck',
 ];
 
 /**
@@ -248,6 +249,7 @@ export function prefsFixture(over) {
     { key: 'home.cards.game', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'ポイントとレベル', help: '', def: true },
     { key: 'home.cards.recent', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '最近の動き', help: '', def: true },
     { key: 'home.cards.team', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'チームの前進', help: '', def: true },
+    { key: 'home.cards.ach', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '最近の実績', help: '', def: true },
     { key: 'fun.combo', scope: 'me', type: 'bool', section: '楽しい演出', label: '打つと盛り上がる', help: '', def: false },
     { key: 'fun.words', scope: 'me', type: 'bool', section: '楽しい演出', label: '言葉に反応する', help: '', def: false },
     { key: 'fun.cheer', scope: 'me', type: 'bool', section: '楽しい演出', label: '済ませたらお祝い', help: '', def: false },
@@ -278,6 +280,8 @@ export function prefsFixture(over) {
         { value: 'none', label: '出さない' }], def: 'builtin:taku' },
     { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し', label: '最初からいるキャラの絵', help: '',
       options: [{ value: 'chibi', label: '2頭身' }, { value: 'normal', label: '等身' }], def: 'chibi' },
+    { key: 'ach.on', scope: 'me', type: 'bool', section: '実績', label: '実績を集める', help: '', def: true },
+    { key: 'ach.cheer', scope: 'me', type: 'bool', section: '実績', label: '実績を取ったら知らせる', help: '', def: true },
     { key: 'notify.review', scope: 'me', type: 'bool', section: '通知メール', label: '確認を頼まれた・確認依頼が出た', help: '', def: true },
     { key: 'usage.self', scope: 'me', type: 'bool', section: '使われ方', label: '自分の使われ方を記録する', help: '', def: true },
     { key: 'usage.enabled', scope: 'team', type: 'bool', section: '使われ方', label: '使われ方を記録する', help: '', def: true },
@@ -291,6 +295,9 @@ export function prefsFixture(over) {
     { key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報', label: '日報の形の既定', help: '',
       options: [{ value: 'three', label: '3節' }, { value: 'today', label: '今日だけ' }], def: 'three' },
     { key: 'goals.enabled', scope: 'team', type: 'bool', section: '目標', label: '目標 (OKR・MBO・KPI) を使う', help: '', def: false },
+    { key: 'cowork.enabled', scope: 'team', type: 'bool', section: '作業雑談部屋', label: '作業雑談部屋を使う', help: '', def: false },
+    { key: 'cowork.showFocus', scope: 'me', type: 'bool', section: '作業雑談部屋', label: '部屋にいるとき「集中中」を添える',
+      help: '', def: false },
   ].map((p) => Object.assign({ min: '', max: '', options: [] }, p, { value: p.def, custom: false }));
   const values = (over && over.values) || {};
   items.forEach((p) => {
@@ -307,7 +314,7 @@ export function prefsFixture(over) {
     effective: {
       startTab: v('start.tab'),
       termStyle: v('terms.style'),
-      homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
+      homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team', 'ach']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
       luck: { on: v('luck.on') === true, reward: v('luck.reward') === true },
@@ -317,23 +324,39 @@ export function prefsFixture(over) {
       oshi: { on: v('oshi.on') === true, home: v('oshi.home') !== false,
         char: v('oshi.char'), fallback: v('oshi.fallback'), style: v('oshi.style') },
       room: { on: v('room.on') === true },
+      ach: { on: v('ach.on') !== false, cheer: v('ach.cheer') !== false },
       calendar: { plan: v('calendar.plan') === true },
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
       goals: { enabled: v('goals.enabled') === true },
+      cowork: { enabled: v('cowork.enabled') === true, showFocus: v('cowork.showFocus') === true },
     },
   };
 }
 
+/**
+ * 実績の返事 (apiAchievements / apiAchievementsCheck) の既定。何も取っていない人。
+ * 中身を確かめるテストは test/component/achievements.test.js が本物のサーバの返事で上書きする。
+ */
+export const ACH_EMPTY = {
+  on: true, level: 1, stage: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4 }, crossed: false, days: 0,
+  groups: [], items: [], unlocked: [], newly: [], next: [],
+};
+
 /** よく使う既定の応答 */
 export const DEFAULTS = {
+  apiAchievements: ACH_EMPTY,
+  apiAchievementsCheck: ACH_EMPTY,
+  // 作業雑談部屋 (既定はオフなので、ふだんは呼ばれない。設定の画面の管理者の欄は部屋の一覧を取る)
+  apiCoworkRooms: { rooms: [], myRoomId: '', beatSeconds: 60, expireSeconds: 120, available: true },
+  apiCoworkRoomSettings: { rooms: [], max: 10, nameMax: 30 },
   // 推しは既定でオン (既定のキャラはタク)。中身を確かめるテストは test/component/oshi.test.js が本物のサーバの返事で上書きする。
   // 空で返すと、設定が届くたびに取り直してしまう (本物は必ず返す)
   apiOshiGet: {
     char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', charId: 0, fallback: '', name: 'タク', tone: 'buddy',
     events: [], images: [], builtins: [{ key: 'taku', name: 'タク', tone: 'buddy' }, { key: 'itsuki', name: 'イツキ', tone: 'gothic' }],
     mine: [], mineMax: 5, styles: [], tones: [], states: [], basePrompt: '', luckyOneIn: 0,
-    growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 1, points: 0, source: 'count', stages: [] },
+    growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
     limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
   },
   apiListFiles: [
