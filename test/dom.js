@@ -224,6 +224,7 @@ const API_NAMES = [
   'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared',
+  'apiOutcomes',
 ];
 
 /**
@@ -438,6 +439,8 @@ export const DEFAULTS = {
   apiGetFileHtml: { html: '<p>第1条</p>\n', name: '就業規則', url: 'https://example.invalid/d/DOC1', path: '就業規則.doc' },
   apiFileStatus: { dirty: false, headSha: 'a', branch: 'main' },
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
+  // 成果の数 (管理者だけ)。まだ数えていない形。数のある形は test/component/outcomes.test.js が渡す
+  apiOutcomes: { weeks: [], since: '', minPeople: 3 },
   apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),
   // 書いた値を返す (null で既定に戻す)

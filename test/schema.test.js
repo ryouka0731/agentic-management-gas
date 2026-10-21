@@ -46,6 +46,8 @@ const EXPECTED = {
   // 推し (既定はオフ)。画像の中身は objects/ に置き、ここには誰のどの表情かだけ
   oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId'],
   oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
+  outcomes_daily: ['day', 'moved', 'closedClean', 'mergedClean', 'reopened', 'overdue', 'activePeople',
+    'busyErrors', 'timeoutErrors', 'fxOff'],
 };
 
 describe('メタDBの列順', () => {

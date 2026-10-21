@@ -473,6 +473,8 @@
     team.appendChild(makeScrumSettings());
     team.appendChild(makeGameSettings());
     if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
+    // 成果の数は管理者だけが見る (apiOutcomes も管理者でなければ断る)
+    if (settings.canEdit) team.appendChild(makeOutcomesSettings());
     settingsEl.appendChild(team);
     prefFocusPending();
     refreshCalendarStatus();
@@ -966,6 +968,186 @@
       box.appendChild(how);
     }
     return box;
+  }
+
+  /**
+   * 成果の数の並び。数え方そのものはサーバ (src/core/Outcomes.gs) が持ち、ここは見出しと説明だけ。
+   * watch は見張り (悪くなったら、入れた仕掛けを止める合図)。
+   *
+   * @returns {Array<{key: string, label: string, about: string, watch: boolean}>}
+   */
+  function OUTCOME_ROWS() {
+    return [
+      { key: 'moved', label: '止まっていた仕事が動いた', watch: false,
+        about: '7日以上だれも触っていなかったやること・確認依頼に、動きがあった数' },
+      { key: 'closedClean', label: 'きれいに終わったやること', watch: false,
+        about: '完了にして、7日のうちに開き直されなかったやること' },
+      { key: 'mergedClean', label: '差し戻し無しで反映した確認依頼', watch: false,
+        about: '一度も差し戻されずに反映まで進んだ確認依頼' },
+      { key: 'reopened', label: '開き直したやること', watch: true,
+        about: '完了にしたあとで開き直した数。増えたら、早めに完了にしすぎていないかを見ます' },
+      { key: 'overdue', label: '期限切れ', watch: true,
+        about: '週の終わりに、期限を過ぎて開いたままだったやること' },
+      { key: 'busyErrors', label: '「混み合っています」', watch: true,
+        about: '同時に書き込もうとして断った数 (おおよその数です)' },
+      { key: 'timeoutErrors', label: '時間切れ', watch: true,
+        about: '画面で時間がかかりすぎて止まった操作の数 (使われ方を止めた人のぶんは入りません)' },
+      { key: 'fxOff', label: '演出などを切った人', watch: true,
+        about: '楽しい演出・集中のしかた・推し・ポイントのどれかを、自分の設定で切っている人の数' },
+    ];
+  }
+
+  /**
+   * 成果の数の節。管理者にだけ出す。週ごとの棒と、それぞれの数の意味を出す。名前は出さない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeOutcomesSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'outcomes-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('成果の数 '));
+    head.appendChild(makePill('管理者だけ', 'chip'));
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.textContent = 'チーム全体の数を、週ごと (月曜から日曜。終わった週だけ) に出します。人の名前とアドレスは持っていません。' +
+      '記録した人が3人に届かない週は、1人の分が引き算で分かってしまうので数を出しません。' +
+      '数は毎日1回、前の8日ぶんを数え直します (「7日のうちに開き直されなかった」は7日たってから決まるため)。' +
+      '「混み合っています」は多めに出ます (裏で黙って済ませた分も入る、上限の数です)。' +
+      'やることと、それに結び付いた確認依頼が両方動けば、どちらも「動いた」に数えます。' +
+      '「止まっていた仕事が動き、7日のうちにきれいに終わった」の結び付きは、まだ数えていません。';
+    box.appendChild(about);
+
+    var refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.id = 'outcomes-refresh';
+    refresh.className = 'btn';
+    refresh.textContent = '読み込み直す';
+    box.appendChild(refresh);
+
+    var body = document.createElement('div');
+    body.id = 'outcomes-body';
+    body.className = 'outcomes-body';
+    box.appendChild(body);
+    refresh.addEventListener('click', function () { loadOutcomes(body); });
+    loadOutcomes(body);
+    return box;
+  }
+
+  /**
+   * 成果の数を取って、同じ器に描く。続けて頼んだら、最後に頼んだぶんの返事だけを描く。
+   *
+   * @param {HTMLElement} body
+   */
+  function loadOutcomes(body) {
+    showSkeleton(body, 'list', 2);
+    var still = latest('outcomes');
+    call('apiOutcomes', [8], still.only(function (res) {
+      renderOutcomes(body, res || { weeks: [], since: '', minPeople: 3 });
+    }), still.only(failInto(body)));
+  }
+
+  /**
+   * 成果の数を描く。
+   *
+   * @param {HTMLElement} host
+   * @param {{weeks: object[], since: string, minPeople: number}} res
+   */
+  function renderOutcomes(host, res) {
+    host.textContent = '';
+    var weeks = (res.weeks || []).slice().reverse();
+    if (!res.since) {
+      host.appendChild(makeBlankState('まだ数えていません',
+        '1日1回の片付けのときに数えます。手元からの命令の受付 (1分ごとの仕掛け) が動いていれば、次の日から貯まります。'));
+      return;
+    }
+    var since = document.createElement('p');
+    since.className = 'row-meta';
+    since.textContent = res.since + ' から数えています。見張りの数が増えたら、入れた仕掛けを止める合図です。';
+    host.appendChild(since);
+
+    var list = document.createElement('div');
+    list.className = 'outcomes-list';
+    OUTCOME_ROWS().forEach(function (m) {
+      var row = document.createElement('div');
+      row.className = 'outcome-row';
+      row.setAttribute('data-outcome', m.key);
+
+      var text = document.createElement('div');
+      text.className = 'outcome-text';
+      var label = document.createElement('div');
+      label.className = 'outcome-label';
+      label.appendChild(document.createTextNode(m.label + ' '));
+      if (m.watch) label.appendChild(makePill('見張り', 'state'));
+      text.appendChild(label);
+      var why = document.createElement('div');
+      why.className = 'row-meta';
+      why.textContent = m.about;
+      text.appendChild(why);
+      row.appendChild(text);
+
+      row.appendChild(makeOutcomeBars(m, weeks, res.minPeople || 3));
+
+      var newest = weeks.length ? weeks[weeks.length - 1] : null;
+      var now = document.createElement('div');
+      now.className = 'outcome-now';
+      now.textContent = !newest ? '—' : newest.hidden ? '出しません' : '先週 ' + newest[m.key];
+      row.appendChild(now);
+      list.appendChild(row);
+    });
+    host.appendChild(list);
+  }
+
+  /**
+   * 週ごとの棒 (古い週が左)。3人に届かない週は点線の枠だけを置く。字は textContent だけ。
+   *
+   * @param {{key: string, label: string, watch: boolean}} m
+   * @param {object[]} weeks 古い順
+   * @param {number} minPeople
+   * @returns {SVGElement}
+   */
+  function makeOutcomeBars(m, weeks, minPeople) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var w = 18;
+    var gap = 6;
+    var h = 40;
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'outcome-bars');
+    svg.setAttribute('viewBox', '0 0 ' + Math.max(1, weeks.length * (w + gap) - gap) + ' ' + h);
+    svg.setAttribute('role', 'img');
+    var title = document.createElementNS(ns, 'title');
+    title.textContent = m.label + ' (週ごと)';
+    svg.appendChild(title);
+    var desc = document.createElementNS(ns, 'desc');
+    desc.textContent = weeks.map(function (wk) {
+      return wk.start + '〜' + wk.end + ': ' + (wk.hidden ? '出しません' : String(wk[m.key]));
+    }).join('、');
+    svg.appendChild(desc);
+
+    var max = 0;
+    weeks.forEach(function (wk) { if (!wk.hidden) max = Math.max(max, Number(wk[m.key]) || 0); });
+    weeks.forEach(function (wk, i) {
+      var v = Number(wk[m.key]) || 0;
+      var bh = wk.hidden ? h - 2 : (max ? Math.max(v ? 2 : 0, Math.round(v / max * (h - 2))) : 0);
+      var rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', String(i * (w + gap)));
+      rect.setAttribute('y', String(h - bh - (wk.hidden ? 1 : 0)));
+      rect.setAttribute('width', String(w));
+      rect.setAttribute('height', String(bh));
+      rect.setAttribute('rx', '2');
+      rect.setAttribute('class', wk.hidden ? 'outcome-bar outcome-bar-hidden'
+        : 'outcome-bar' + (m.watch ? ' outcome-bar-watch' : ''));
+      var tip = document.createElementNS(ns, 'title');
+      tip.textContent = wk.start + '〜' + wk.end + ': ' +
+        (wk.hidden ? '記録した人が' + minPeople + '人に届かないので出しません' : String(v));
+      rect.appendChild(tip);
+      svg.appendChild(rect);
+    });
+    return svg;
   }
 
   /**
