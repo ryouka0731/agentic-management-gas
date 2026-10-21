@@ -224,6 +224,9 @@ const API_NAMES = [
   'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
   'apiOutcomes',
+  'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
+  'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
+  'apiGoalIssueLinks',
 ];
 
 /**
@@ -272,6 +275,7 @@ export function prefsFixture(over) {
       min: 1, max: 180, def: [7, 14, 30] },
     { key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報', label: '日報の形の既定', help: '',
       options: [{ value: 'three', label: '3節' }, { value: 'today', label: '今日だけ' }], def: 'three' },
+    { key: 'goals.enabled', scope: 'team', type: 'bool', section: '目標', label: '目標 (OKR・MBO・KPI) を使う', help: '', def: false },
   ].map((p) => Object.assign({ min: '', max: '', options: [] }, p, { value: p.def, custom: false }));
   const values = (over && over.values) || {};
   items.forEach((p) => {
@@ -296,6 +300,7 @@ export function prefsFixture(over) {
         char: v('oshi.char'), fallback: v('oshi.fallback'), style: v('oshi.style') },
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
+      goals: { enabled: v('goals.enabled') === true },
     },
   };
 }

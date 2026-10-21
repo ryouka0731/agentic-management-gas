@@ -518,6 +518,8 @@ function issuePurge(number) {
     dbDelete('change_log', 'target', 'issue:' + number);
     // 集中の記録 (本人にだけ見せるもの) も消す。技の図鑑とポイントは台帳から数えるので、一緒に消える
     dbDelete('focus_sessions', 'issueNumber', number);
+    // 目標の項目との結び付きも外す (番号は使い回さないが、消したものを数え続けないように)
+    dbDelete('goal_links', 'issueNumber', number);
     dbDelete('issues', 'number', number);
   });
 }

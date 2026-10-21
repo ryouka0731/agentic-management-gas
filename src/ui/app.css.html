@@ -4278,6 +4278,93 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 .tally-table tbody tr.is-selected td { background: var(--accent-bg); }
 
 .burndown { padding: var(--sp-3); }
+
+/* ===== 目標 (js-goals) =====
+   届いていない数を赤くしない (責める色にしない)。帯は --accent、超えた分は字で示す */
+.goal-bar { flex-wrap: wrap; }
+.goal-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.goal-section h3 { margin: var(--sp-4) var(--sp-4) 0; font-size: 13px; color: var(--ink-2); }
+.goal-card {
+  display: flow-root;
+  min-width: 0;
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+}
+.goal-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.goal-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; color: var(--ink); }
+.goal-card p { margin: var(--sp-1) 0; font-size: 12px; line-height: 1.6; color: var(--ink); }
+.goal-card p.row-meta { color: var(--ink-2); font-size: 11px; }
+.goal-auto { margin-top: var(--sp-2); font-size: 12px; color: var(--ink); }
+.goal-changed, .goal-note { padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); }
+.goal-pace-slight, .goal-pace-behind { color: var(--ink-2); }
+.goal-meter-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.goal-meter {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.goal-meter span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.goal-meter-num { flex: 0 0 auto; min-width: 40px; text-align: right; font-size: 11px; color: var(--ink-2); }
+.goal-items { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.goal-item { padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); min-width: 0; }
+.goal-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.goal-item-title { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--ink); }
+.goal-input, .goal-link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.goal-link span:not(.state) { flex: 1 1 auto; min-width: 0; font-size: 12px; }
+.goal-link-select, .issue-goal-select { min-width: 0; max-width: 100%; }
+.goal-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.goal-decide { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.goal-decide textarea, .goal-note-form textarea {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--hairline);
+  font: inherit;
+}
+.goal-editor { padding: var(--sp-3) var(--sp-4); display: grid; gap: var(--sp-2); max-width: 760px; }
+.goal-editor h3, .goal-editor h4 { margin: var(--sp-2) 0 0; font-size: 13px; color: var(--ink); }
+.goal-field { display: grid; gap: var(--sp-1); }
+.goal-field input, .goal-field select { min-width: 0; }
+.goal-editor-items { display: grid; gap: var(--sp-2); }
+.goal-item-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+.goal-item-editor p { grid-column: 1 / -1; margin: 0; }
+.goal-report { padding: var(--sp-3) var(--sp-4); display: grid; gap: var(--sp-3); }
+.goal-report-pick { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.goal-report-text {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.goal-team { margin: var(--sp-3) var(--sp-4) 0; }
+.issue-goals { margin-top: var(--sp-3); }
+.issue-goals p { margin: var(--sp-1) 0; font-size: 12px; }
 .burndown-chart { display: block; width: 100%; max-width: 760px; min-width: 480px; height: auto; }
 .burndown-axis { stroke: var(--line-strong); }
 .burndown-grid { stroke: var(--line); stroke-dasharray: 2 4; }

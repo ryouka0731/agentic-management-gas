@@ -1239,6 +1239,8 @@
       openReport(Number(parts[1]));
     } else if (parts[0] === 'pull') {
       switchTab('pulls');
+    } else if (parts[0] === 'goal' && goalsOn()) {
+      switchTab('goals');
     }
     noticePanel.hidden = true;
     bellBtn.setAttribute('aria-expanded', 'false');
@@ -1301,7 +1303,7 @@
       return;
     }
 
-    var labels = { mention: '呼ばれました', reply: '返信', review: '確認の依頼' };
+    var labels = { mention: '呼ばれました', reply: '返信', review: '確認の依頼', goal: '目標' };
 
     items.forEach(function (n) {
       var row = document.createElement('button');

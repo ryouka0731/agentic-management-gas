@@ -48,6 +48,11 @@ const EXPECTED = {
   oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
   outcomes_daily: ['day', 'moved', 'closedClean', 'mergedClean', 'reopened', 'overdue', 'activePeople',
     'busyErrors', 'timeoutErrors', 'fxOff'],
+  // 目標 (既定はオフ)。本人と上長の連なりにだけ見せる
+  goals: ['id', 'who', 'period', 'kind', 'title', 'status', 'submittedAt', 'approver', 'approvedAt',
+    'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt'],
+  goal_items: ['id', 'goalId', 'title', 'weight', 'measure', 'target', 'unit', 'actual', 'checked', 'filter', 'order'],
+  goal_links: ['id', 'itemId', 'issueNumber'],
 };
 
 describe('メタDBの列順', () => {

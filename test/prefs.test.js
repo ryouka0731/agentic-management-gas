@@ -80,7 +80,7 @@ describe('一覧', () => {
   it('通知の種類は NOTIFY_KINDS ごとに1つずつ、自分の設定にある', () => {
     const { ctx } = setup();
     const kinds = ctx.NOTIFY_KINDS().map((k) => k.key);
-    expect(kinds).toEqual(['review', 'result', 'inquiry', 'mention', 'comment']);
+    expect(kinds).toEqual(['review', 'result', 'inquiry', 'mention', 'comment', 'goal']);
     kinds.forEach((k) => expect(item(ctx, 'notify.' + k).scope).toBe('me'));
   });
 
