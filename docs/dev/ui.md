@@ -393,12 +393,17 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   `src/core/OshiMood.gs` の `oshiMood_`)。`apiOshiGet` の `mood` (オフなら null) を、しょんぼり・むっ・直ったばかりのときだけ
   ホームのカード (あいさつの代わり) と推しの頁の「機嫌」の節 (`makeOshiMood`) に出す。「どうして？」(`makeOshiMoodWhy`) はわけを数だけで
   出し、期限切れには改善のヒントと同じ `adviceGo({kind: 'issues-overdue'})` の「見る」を付ける (ほかのわけには合う絞り込みが無いので付けない)。
-  済ませた・取り消した・直した・捨てた・戻したあと (`oshiMoodAfter`) に `apiOshiMood` で取り直し、直っていたら `oshiSayNext('mood_recover')`
-  (済ませたほめ言葉に重ねない)。**変わるのは表情とせりふだけで、何も取り上げない・知らせない**
+  機嫌が変わりうる操作 (`OSHI_MOOD_CALLS()`: 済ませた・取り消した・直した・捨てた・戻した・ボードで動かした・反映した) のあと
+  (`oshiMoodAfter`) に `apiOshiMood` で取り直し、直っていたら `oshiSayNext('mood_recover')` (済ませたほめ言葉に重ねない)。
+  返事は `latest('oshiMood')` の `.only` で受け、取りに行っている間に推しを取り直していた (`oshiData` が替わった) ら捨てる。
+  サーバの覚えは Issue.gs の `issueMoodForget_` が消す (`projectMove` は「完了」の列に出入りしたときだけ、鍵の外で呼ぶ)。
+  機嫌の場面 (`events[].mood`) は、機嫌を見ていない人の自分のキャラのせりふの欄に出さない。**変わるのは表情とせりふだけで、何も取り上げない・知らせない**
 - 表情 `pout` (むっ) は `optional` (絵が無くてもよい) で `fallback: 'worry'`。最初からいるキャラにはまだ絵が無いので、
   `build-oshi-default.mjs` は optional の表情の絵が無ければ焼かず、`apiOshiDefaultImage` は null を返す。画面は `oshiPickState` が
-  `fallback` を先に試し、最初からいるキャラの絵が null なら `oshiDefaultMissing` に覚えて代わりの表情の絵を出す (2回取りに行かない)。
-  `scene: true` なので、でたらめに選ぶ表情には入れない。試すのは `test/component/oshi-mood.test.js` と `test/oshi-mood.test.js`
+  `fallback` を先に試し (自分のキャラに むっ が無く代わりの表情の絵があれば、最初からいるキャラより自分の絵を先に)、最初からいるキャラの絵が null なら `oshiDefaultMissing` に覚えて代わりの表情の絵を出す (2回取りに行かない)。
+  代わりの絵を出したときは、`img.alt` も出した絵の表情の名前にする (`oshiImage` の cb の2つ目)。
+  `scene: true` なので、でたらめに選ぶ表情には入れない。キャラ作成キットの頼み文は むっ を「無くてもよい」、機嫌の場面を
+  「機嫌がオンのときだけ」と書く (表情が12になり、1枚の表は 4 × 3 がちょうど埋まる)。試すのは `test/component/oshi-mood.test.js` と `test/oshi-mood.test.js`
 
 ## 実績 (`js-ach`)
 

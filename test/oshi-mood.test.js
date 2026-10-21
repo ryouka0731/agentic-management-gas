@@ -54,7 +54,7 @@ function issue(ctx, patch, now) {
 }
 
 describe('決め方 (OSHI_MOOD_RULES / oshiMoodOf)', () => {
-  const base = { open: 1, overdue: 0, stale: 0, lastDoneDays: null };
+  const base = { open: 1, overdue: 0, stale: 0, lastDoneDays: null, idleDays: 0 };
   const of = (p) => pure.oshiMoodOf(Object.assign({}, base, p));
 
   it('段は良い順に ごきげん・ふつう・しょんぼり・むっ。しょんぼりはしんぱいの絵、むっはむっの絵', () => {
@@ -75,20 +75,20 @@ describe('決め方 (OSHI_MOOD_RULES / oshiMoodOf)', () => {
     expect(of({ stale: R.stale.sulky - 1 }).level).toBe('normal');
     expect(of({ stale: R.stale.sulky }).level).toBe('sulky');
     expect(of({ stale: R.stale.pouty }).level).toBe('pouty');
-    expect(of({ lastDoneDays: R.idle.sulky - 1 }).level).toBe('normal');
-    expect(of({ lastDoneDays: R.idle.sulky })).toEqual({ level: 'sulky', reasons: [{ kind: 'idle', count: R.idle.sulky }] });
-    expect(of({ lastDoneDays: R.idle.pouty }).level).toBe('pouty');
+    expect(of({ idleDays: R.idle.sulky - 1 }).level).toBe('normal');
+    expect(of({ idleDays: R.idle.sulky })).toEqual({ level: 'sulky', reasons: [{ kind: 'idle', count: R.idle.sulky }] });
+    expect(of({ idleDays: R.idle.pouty }).level).toBe('pouty');
   });
 
   it('いちばん悪いわけに合わせ、わけは届いたものだけを数で返す', () => {
-    const got = of({ overdue: R.overdue.sulky, stale: R.stale.pouty, lastDoneDays: 0 });
+    const got = of({ overdue: R.overdue.sulky, stale: R.stale.pouty, lastDoneDays: 0, idleDays: 0 });
     expect(got.level).toBe('pouty');
     expect(got.reasons).toEqual([{ kind: 'overdue', count: R.overdue.sulky }, { kind: 'stale', count: R.stale.pouty }]);
   });
 
-  it('一度も済ませていなければ日数は見ない。開いているやることが無ければ「ふつう」より下にしない', () => {
+  it('開いているやることが無ければ「ふつう」より下にしない', () => {
     expect(of({ lastDoneDays: null }).level).toBe('normal');
-    expect(pure.oshiMoodOf({ open: 0, overdue: 9, stale: 9, lastDoneDays: 99 })).toEqual({ level: 'normal', reasons: [] });
+    expect(pure.oshiMoodOf({ open: 0, overdue: 9, stale: 9, lastDoneDays: 99, idleDays: 99 })).toEqual({ level: 'normal', reasons: [] });
     expect(pure.oshiMoodOf({ open: 0, overdue: 0, stale: 0, lastDoneDays: R.happyDays }).level).toBe('happy');
   });
 
@@ -101,7 +101,7 @@ describe('決め方 (OSHI_MOOD_RULES / oshiMoodOf)', () => {
   it('わけの字は数だけ (題名・名前を入れない)', () => {
     expect(pure.oshiMoodReasonText('overdue', 2)).toBe('期限を過ぎたやること 2件');
     expect(pure.oshiMoodReasonText('stale', 3)).toBe('しばらく動いていないやること 3件');
-    expect(pure.oshiMoodReasonText('idle', 9)).toBe('最後に済ませてから 9日');
+    expect(pure.oshiMoodReasonText('idle', 9)).toBe('やることを済ませないまま 9日');
   });
 
   it('機嫌のせりふは口調ごとにあり、叱らない・責めない', () => {
@@ -141,7 +141,7 @@ describe('数える (OshiMood.gs)', () => {
     const n = issue(ctx, {}, NOW);
     ctx.dbUpdate('issues', 'number', n, { state: 'closed', closedAt: new Date('2026-10-11T16:00:00Z') }); // 東京 10/12
     const s = ctx.oshiMoodSignals_(ME, NOW);
-    expect(s).toEqual({ open: 4, overdue: 2, stale: 0, lastDoneDays: 2 });
+    expect(s).toEqual({ open: 4, overdue: 2, stale: 0, lastDoneDays: 2, idleDays: 0 });
   });
 
   it('動きなしは、チームの設定の最初の段 (stale.steps) より長くそのままのもの', () => {
@@ -154,19 +154,55 @@ describe('数える (OshiMood.gs)', () => {
     expect(ctx.oshiMoodOf(s).level).toBe('sulky');
   });
 
-  it('本人のぶんだけ数える (ほかの人の担当・ほかの人が作った担当なし・捨てたものは数えない)', () => {
+  it('本人のぶんだけ数える (ほかの人の担当・ほかの人が作った担当なし・捨てたものは数えない)。期限切れは担当だけ (「見る」の一覧と同じ)', () => {
     const { ctx, fake } = setup({ noCache: true });
     const late = tokyoMidnight('2026-10-01');
     issue(ctx, { dueDate: late }, NOW);
     issue(ctx, { dueDate: late, assignee: OTHER }, NOW);
-    issue(ctx, { dueDate: late, assignee: OTHER + ', ' + ME.toUpperCase() }, NOW); // 2人の担当 (大文字でも本人)
+    issue(ctx, { dueDate: late, assignee: OTHER + ', ' + ME }, NOW); // 2人の担当
     issue(ctx, { dueDate: late, archivedAt: new Date() }, NOW);
     issue(ctx, { dueDate: late, assignee: '' }, NOW); // 本人が作った担当なし
     fake._setUser(OTHER);
     issue(ctx, { dueDate: late, assignee: '' }, NOW); // ほかの人が作った担当なし
     fake._setUser(ME);
-    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 3, overdue: 3 });
-    expect(ctx.oshiMoodSignals_(OTHER, NOW)).toMatchObject({ open: 3, overdue: 3 });
+    // 担当なしで本人が作ったものは、開いている数には入るが、期限切れには数えない (「見る」は担当の期限切れだけを出す)
+    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 3, overdue: 2 });
+    expect(ctx.oshiMoodSignals_(OTHER, NOW)).toMatchObject({ open: 3, overdue: 2 });
+  });
+
+  it('ボードの「完了」の列にあるものは、開いているものに数えない (表は1回だけ読む)', () => {
+    const { ctx } = setup({ noCache: true });
+    const late = tokyoMidnight('2026-10-01');
+    const a = issue(ctx, { dueDate: late }, NOW);
+    issue(ctx, { dueDate: late }, NOW);
+    ctx.projectPlace(a, 'Done');
+    const reads = countReads(ctx);
+    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 1, overdue: 1 });
+    expect(reads.filter((t) => t === 'project_items').length).toBe(1);
+  });
+
+  it('やることを足しても機嫌は悪くならない (日数は、いちばん古い開いているやることより長くしない)', () => {
+    const { ctx } = setup({ noCache: true });
+    const old = issue(ctx, {}, NOW);
+    ctx.dbUpdate('issues', 'number', old, { state: 'closed', closedAt: new Date(NOW.getTime() - 20 * DAY) });
+    expect(ctx.oshiMood_(ME, NOW).level).toBe('normal');
+    // 新しく足したやること (今日作った) は、20日前に済ませたことを責める理由にしない
+    issue(ctx, { createdAt: NOW }, NOW);
+    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 1, lastDoneDays: 20, idleDays: 0 });
+    expect(ctx.oshiMood_(ME, NOW).level).toBe('normal');
+    // 前からある (10日前に作った) やることが片づいていないなら、10日
+    issue(ctx, { createdAt: new Date(NOW.getTime() - 10 * DAY) }, NOW);
+    expect(ctx.oshiMoodSignals_(ME, NOW).idleDays).toBe(10);
+    expect(ctx.oshiMood_(ME, NOW).level).toBe('sulky');
+  });
+
+  it('済ませてから捨てたものも、済ませた日に数える', () => {
+    const { ctx } = setup({ noCache: true });
+    issue(ctx, {}, NOW);
+    const n = issue(ctx, {}, NOW);
+    ctx.dbUpdate('issues', 'number', n, { state: 'closed', closedAt: NOW, archivedAt: NOW });
+    expect(ctx.oshiMoodSignals_(ME, NOW).lastDoneDays).toBe(0);
+    expect(ctx.oshiMood_(ME, NOW).level).toBe('happy');
   });
 
   it('オフなら null で、台帳を読まない (推しを止めた人も)', () => {
@@ -224,6 +260,34 @@ describe('数える (OshiMood.gs)', () => {
     expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', event: 'mood_recover', recovered: true });
   });
 
+  it('ほかの人がわたしの担当を外したときも、わたしの覚えを消して数え直す', () => {
+    const { ctx, fake } = setup();
+    const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
+    expect(ctx.apiOshiMood().level).toBe('sulky');
+    fake._setUser(OTHER);
+    ctx.issueUpdate(n, { assignee: OTHER });
+    fake._setUser(ME);
+    expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', recovered: true });
+  });
+
+  it('ボードで「完了」の列に移したら (反映でやることが閉じたときも)、覚えを消して数え直す', () => {
+    const { ctx } = setup();
+    const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
+    ctx.projectPlace(n, 'In Progress');
+    expect(ctx.apiOshiMood().level).toBe('sulky');
+    ctx.apiProjectMove(n, 'Done', 0);
+    expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', recovered: true });
+    ctx.apiProjectMove(n, 'In Progress', 0);
+    expect(ctx.apiOshiMood().level).toBe('sulky');
+  });
+
+  it('覚えは東京の日をまたいだら使わない (0時に期限が切れたら、すぐしょんぼり)', () => {
+    const { ctx } = setup();
+    issue(ctx, { dueDate: tokyoMidnight('2026-10-13') }, NOW);
+    expect(ctx.oshiMood_(ME, new Date('2026-10-13T14:59:00Z')).level).toBe('normal'); // 東京 10/13 23:59 に覚える
+    expect(ctx.oshiMood_(ME, new Date('2026-10-13T15:00:00Z')).level).toBe('sulky'); // 1分後の東京 10/14 0:00
+  });
+
   it('自分のキャラを使っていれば、そのキャラの口調と自分のせりふ', () => {
     const { ctx } = setup({ noCache: true });
     const c = ctx.apiOshiCharCreate('ソラ', 'kansai').charId;
@@ -257,5 +321,27 @@ describe('数える (OshiMood.gs)', () => {
     expect(ctx.apiOshiGet().mood).toBe(null);
     ctx.apiPrefSet('oshi.mood', true);
     expect(ctx.apiPrefs().effective.oshi.mood).toBe(true);
+  });
+});
+
+describe('キャラ作成キットと機嫌', () => {
+  it('頼み文は むっ を「無くてもよい」と書き、機嫌のせりふの場面は機嫌がオンのときだけ出ると書く', () => {
+    const p = pure.oshiCharKitPrompt('chatgpt', 10);
+    const pout = p.split('\n').find((l) => l.startsWith('- pout '));
+    expect(pout).toContain('無くてもよい');
+    for (const k of ['mood_sulky', 'mood_pouty', 'mood_recover']) {
+      expect(p.split('\n').find((l) => l.startsWith('  - ' + k + ':')), k).toContain('機嫌がオンのときだけ');
+    }
+    // むっ 以外は「無くてもよい」と書かない
+    expect(p.split('\n').filter((l) => l.includes('無くてもよい')).length).toBe(1);
+  });
+
+  it('取り込みは機嫌のせりふも受け取り、無くても断らない', () => {
+    const { ctx } = setup({ mood: false });
+    const got = ctx.oshiCharImportValid_(JSON.stringify({ name: 'テストのミント', tone: 'genki',
+      lines: { done: ['テストできた'], mood_pouty: ['テストのむっ', 'テストのむっむっ'] } }));
+    expect(got.lines.mood_pouty).toEqual(['テストのむっ', 'テストのむっむっ']);
+    const none = ctx.oshiCharImportValid_(JSON.stringify({ name: 'テストのミント', tone: 'genki', lines: { done: ['テスト'] } }));
+    expect(none.lines.mood_pouty).toBe(undefined);
   });
 });

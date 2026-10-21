@@ -67,14 +67,23 @@ function oshiMoodDays_(from, to) {
 /**
  * 本人のぶんを数える。表は1回ずつ読み、行ごとに台帳を引かない。
  *
+ * - 開いている: 状態が open で、捨てておらず、ボードの「完了」の列にも無いもの
+ * - 期限切れ: 開いているもののうち、**担当に本人がいるものだけ** (改善のヒントと同じ。「見る」で開く一覧
+ *   (自分の担当・期限切れ) と同じものを数える。担当なしで本人が作ったものは、一覧に出ないので数えない)
+ * - 動きなし: 開いているもの (担当に本人、担当なしなら本人が作ったもの) のうち、stale.steps の最初の段の日数以上そのまま
+ * - lastDoneDays: 最後に済ませてからの日数 (済ませてから捨てたものも数える)。一度も無ければ null
+ * - idleDays: 最後に済ませてからの日数と、いちばん古い開いているやることを作ってからの日数の小さいほう
+ *   (一度も済ませていなければ後者)。**やることを足しても機嫌が悪くならない** (足したものは今日作ったので、古いほうは変わらない)
+ *
  * @param {string} email
  * @param {Date} now
  * @param {object[]} [issues] issues の行。無ければ読む
- * @returns {{open: number, overdue: number, stale: number, lastDoneDays: (number|null)}}
+ * @returns {{open: number, overdue: number, stale: number, lastDoneDays: (number|null), idleDays: number}}
  */
 function oshiMoodSignals_(email, now, issues) {
   var who = oshiWho_(email);
-  var rows = (issues || dbReadAll('issues')).filter(function (r) { return !r.archivedAt; });
+  var me = String(email || '');
+  var all = issues || dbReadAll('issues');
   var made = null;
   function mine(row) {
     var as = issueAssignees(row);
@@ -85,26 +94,41 @@ function oshiMoodSignals_(email, now, issues) {
   }
 
   var today = plainDay(now);
+  // 済ませた日は捨てる前に見る (済ませてから捨てても、済ませたことは残る)
+  var lastDone = '';
+  all.forEach(function (row) {
+    if (String(row.state) !== 'closed' || !mine(row)) return;
+    var d = oshiMoodDay_(row.closedAt);
+    if (d && d <= today && d > lastDone) lastDone = d;
+  });
+
+  var openRows = all.filter(function (r) { return String(r.state) === 'open' && !r.archivedAt; });
+  // ボードの「完了」の列に置いたものは、済ませたものとして開いている数から外す (表は1回だけ、開いているものがあるときだけ読む)
+  var done = {};
+  if (openRows.length) {
+    dbReadAll('project_items').forEach(function (it) {
+      if (String(it.column) === 'Done') done[String(it.issueNumber)] = true;
+    });
+  }
   var steps = staleSteps_();
   var open = 0;
   var overdue = 0;
   var stale = 0;
-  var lastDone = '';
-  rows.forEach(function (row) {
-    var st = String(row.state);
-    if (st !== 'open' && st !== 'closed') return;
-    if (!mine(row)) return;
-    if (st === 'closed') {
-      var d = oshiMoodDay_(row.closedAt);
-      if (d && d <= today && d > lastDone) lastDone = d;
-      return;
-    }
+  var oldest = '';
+  openRows.forEach(function (row) {
+    if (done[String(row.number)] || !mine(row)) return;
     open++;
     var due = oshiMoodDay_(row.dueDate);
-    if (due && due < today) overdue++;
+    if (due && due < today && issueAssignees(row).indexOf(me) >= 0) overdue++;
     if (stalenessOf(row, now, steps).level >= 1) stale++;
+    var made = oshiMoodDay_(row.createdAt) || today;
+    if (made > today) made = today;
+    if (!oldest || made < oldest) oldest = made;
   });
-  return { open: open, overdue: overdue, stale: stale, lastDoneDays: lastDone ? oshiMoodDays_(lastDone, today) : null };
+  var lastDoneDays = lastDone ? oshiMoodDays_(lastDone, today) : null;
+  var idleDays = oldest ? oshiMoodDays_(oldest, today) : 0;
+  if (lastDoneDays !== null && lastDoneDays < idleDays) idleDays = lastDoneDays;
+  return { open: open, overdue: overdue, stale: stale, lastDoneDays: lastDoneDays, idleDays: idleDays };
 }
 
 /**

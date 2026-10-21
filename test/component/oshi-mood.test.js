@@ -171,6 +171,86 @@ describe('推しの機嫌', () => {
     expect(card().querySelector('.oshi-mood-why')).toBe(null);
   });
 
+  it('むっ の代わりに出したしんぱいの絵には「しんぱい」と名乗る (出した絵と字を合わせる)', () => {
+    const s = server(3);
+    mountMood(MOOD_ON, { apiOshiGet: s.get() });
+    expect(card().querySelector('img.oshi-img').alt).toBe('タクの「しんぱい」');
+  });
+
+  it('自分のキャラに むっ の絵が無くしんぱいの絵があれば、最初からいるキャラの絵より自分のしんぱいの絵を出す', () => {
+    const s = server(3);
+    const c = s.ctx.apiOshiCharCreate('ルナ', 'genki').charId;
+    s.ctx.apiOshiSetImage(c, 'worry', PNG_URL);
+    s.ctx.apiPrefSet('oshi.char', 'mine:' + c);
+    const d = s.get();
+    expect(d.fallback).toBe('taku');
+    const app = mountMood(Object.assign({ 'oshi.char': 'mine:' + c }, MOOD_ON), {
+      apiOshiGet: d,
+      apiOshiImage: (charId, state) => ({ charId, state, sha: 'f'.repeat(64), dataUrl: PNG_URL }),
+    });
+    expect(card().querySelector('img.oshi-img').getAttribute('src')).toBe(PNG_URL);
+    expect(card().querySelector('img.oshi-img').alt).toBe('ルナの「しんぱい」');
+    expect(app.calls.filter((x) => x.name === 'apiOshiDefaultImage').map((x) => x.args[2])).not.toContain('pout');
+  });
+
+  it('取り直している間に推しを取り直した (別の返事になった) ら、遅れて届いた機嫌は捨てる', () => {
+    const s = server(1);
+    const held = [];
+    const app = mountMood(MOOD_ON, {
+      apiOshiGet: s.get(),
+      apiIssueClose: () => { s.ctx.apiIssueClose(s.numbers[0]); return {}; },
+      apiOshiMood: () => ({ later: (ok) => held.push(ok) }),
+    });
+    closeOneIssue();
+    expect(held.length).toBe(1);
+    // 推しの頁を開くと、推しを取り直す (oshiData が替わる)
+    document.getElementById('me-btn').click();
+    [...document.querySelectorAll('#me-body button')].find((b) => b.textContent === '推し').click();
+    const sec = document.querySelector('.oshi-page .oshi-mood');
+    expect(sec.dataset.mood).toBe('sulky');
+    held[0](s.mood());
+    expect(document.querySelector('.oshi-page .oshi-mood').dataset.mood).toBe('sulky');
+    expect(card().dataset.mood).toBe('sulky');
+    expect(names(app).filter((n) => n === 'apiOshiMood').length).toBe(1);
+  });
+
+  it('ボードで「完了」の列に移したときも機嫌を取り直す', () => {
+    const s = server(1);
+    const app = mountMood(MOOD_ON, {
+      apiOshiGet: s.get(),
+      apiOshiMood: () => s.mood(),
+      apiProjectBoard: { Backlog: [{ issueNumber: 5, order: 0, title: 'a', state: 'open', assignee: '', labels: '', dueDate: '' }],
+        'In Progress': [], 'In Review': [], Done: [] },
+    });
+    document.querySelector('[data-tab="issues"]').click();
+    document.getElementById('view-board').click();
+    const done = document.querySelectorAll('.board-column')[3];
+    const drop = new window.Event('drop', { cancelable: true });
+    drop.clientY = 0;
+    drop.dataTransfer = { getData: () => '5' };
+    done.dispatchEvent(drop);
+    expect(app.calls.find((c) => c.name === 'apiProjectMove').args.slice(0, 2)).toEqual([5, 'Done']);
+    expect(names(app)).toContain('apiOshiMood');
+  });
+
+  it('自分のキャラのせりふの欄に、機嫌の場面は機嫌を見ている人にだけ出す', () => {
+    const s = server(0);
+    const c = s.ctx.apiOshiCharCreate('ルナ', 'genki').charId;
+    s.ctx.apiPrefSet('oshi.char', 'mine:' + c);
+    const open = (values) => {
+      mountMood(Object.assign({ 'oshi.char': 'mine:' + c }, values), { apiOshiGet: s.get() });
+      document.getElementById('me-btn').click();
+      [...document.querySelectorAll('#me-body button')].find((b) => b.textContent === '推し').click();
+      return [...document.querySelectorAll('.oshi-page .oshi-lines')].map((x) => x.dataset.event);
+    };
+    const on = open(MOOD_ON);
+    expect(on).toContain('mood_pouty');
+    document.body.textContent = '';
+    const off = open({ 'oshi.on': true });
+    expect(off).toContain('done');
+    expect(off.filter((k) => k.startsWith('mood_'))).toEqual([]);
+  });
+
   it('機嫌を見ていない人には、ホームはいつものあいさつで、済ませても機嫌を取りに行かない', () => {
     const s = server(1);
     const d = s.get();

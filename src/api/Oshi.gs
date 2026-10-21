@@ -17,7 +17,7 @@ function oshiEventsPlain_(tone, mine) {
   var defaults = OSHI_LINES()[tone] || OSHI_LINES().polite;
   return OSHI_EVENTS().map(function (e) {
     return { key: plainText(e.key), label: plainText(e.label), state: plainText(e.state), praise: !!e.praise,
-      randomState: !!e.randomState,
+      randomState: !!e.randomState, mood: !!e.mood,
       lines: (defaults[e.key] || []).map(plainText),
       mine: ((mine || {})[e.key] || []).map(plainText) };
   });
@@ -137,9 +137,9 @@ function apiOshiMood() {
   if (!m) return null;
   var choice = oshiChoice_(me);
   var events = null;
-  var profRows = choice.kind === 'mine' ? dbReadAll('oshi') : [];
-  if (choice.kind === 'mine' && oshiMineIds_(me, profRows).indexOf(choice.id) >= 0) {
-    var p = oshiProfile_(me, choice.id, profRows);
+  // 自分のキャラが在るかは oshiChoice_ (設定の検査) が見てある。ここでは名前と口調の表だけを読み、絵の表は読まない
+  if (choice.kind === 'mine') {
+    var p = oshiProfile_(me, choice.id, dbReadAll('oshi'));
     events = oshiEventsPlain_(p.tone, p.lines);
   } else {
     var b = oshiBuiltinOf(choice.key) || OSHI_BUILTINS()[0];
