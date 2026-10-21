@@ -44,7 +44,7 @@ export const CORE_SOURCES = [
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Reward.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
-  'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
+  'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/OshiMood.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs',
   'src/core/CoworkLink.js', 'src/core/Cowork.gs',
 ];
