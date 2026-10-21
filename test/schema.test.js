@@ -44,7 +44,7 @@ const EXPECTED = {
   focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
     'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
   // 推し (既定はオフ)。画像の中身は objects/ に置き、ここには誰のどの表情かだけ
-  oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId', 'profile'],
+  oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId', 'profile', 'shared'],
   oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
   outcomes_daily: ['day', 'moved', 'closedClean', 'mergedClean', 'reopened', 'overdue', 'activePeople',
     'busyErrors', 'timeoutErrors', 'fxOff'],

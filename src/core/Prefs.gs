@@ -318,8 +318,8 @@ function PREF_GROUPS_() {
         { key: 'oshi.char', scope: 'me', type: 'char', section: '推し',
           label: '使うキャラ',
           help: '最初からいるキャラ (' + OSHI_BUILTINS().map(function (c) { return c.name; }).join('・') +
-            ') か、推しの頁で作った自分のキャラから選びます',
-          // 選べるのは最初からいるキャラと、その人が作った自分のキャラ。人ごとに違うので、検査は oshiCharKnownFor_ が行う
+            ')、推しの頁で作った自分のキャラ、ほかの人がみんなに公開したキャラから選びます',
+          // 選べるのは最初からいるキャラ・その人が作った自分のキャラ・ほかの人が公開したキャラ。人ごとに違うので、検査は oshiCharKnownFor_ が行う
           options: OSHI_BUILTINS().map(function (c) { return { value: 'builtin:' + c.key, label: c.name }; }),
           def: 'builtin:' + OSHI_BUILTINS()[0].key },
         { key: 'oshi.fallback', scope: 'me', type: 'enum', section: '推し',
