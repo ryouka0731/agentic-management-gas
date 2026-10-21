@@ -49,6 +49,10 @@ function DB_SCHEMA() {
     // 集中のしかた (Focus.gs)。自分の設定でオンにした人の「今から始める」の記録。本人にだけ見せる
     focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
       'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
+    // 成果の数 (Outcomes.gs)。日ごとのチーム全体の数だけで、人の名前もアドレスも持たない。
+    // 1日1回の片付けが、直近8日を数え直して日ごとに上書きする。列の意味は docs/dev/ledger-schema.md
+    outcomes_daily: ['day', 'moved', 'closedClean', 'mergedClean', 'reopened', 'overdue', 'activePeople',
+      'busyErrors', 'timeoutErrors', 'fxOff'],
   };
 }
 
@@ -148,6 +152,8 @@ function dbWithLock_(waitMs, fn, onBusy) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(waitMs)) {
     if (onBusy) return onBusy();
+    // 人に断る「混み合っています」だけを数える (成果の数の busyErrors)。onBusy で黙って次に回すものは数えない
+    dbBusyNote_();
     throw new Error('混み合っています。少し待ってからもう一度お試しください');
   }
 
@@ -157,6 +163,33 @@ function dbWithLock_(waitMs, fn, onBusy) {
   } finally {
     dbLockDepth_--;
     lock.releaseLock();
+  }
+}
+
+/**
+ * 「混み合っています」を数える日ごとの鍵 (スクリプトプロパティ)。1日1回の成果の数 (Outcomes.gs) が読む。
+ *
+ * @param {string} day 'yyyy-MM-dd' (東京)
+ * @returns {string}
+ */
+function dbBusyKey_(day) {
+  return 'OUTCOME_BUSY:' + day;
+}
+
+/**
+ * 「混み合っています」で断った数を、その日の数に1つ足す。
+ *
+ * **鍵を取らずに足す。** 鍵が取れなかったから断っているので、ここで鍵を待つと断りがさらに遅れる。
+ * そのかわり、ほぼ同時に2人が断られると1つ数え漏れる (読んで足して書くあいだに重なる)。見張りの数なので
+ * それでよい (docs/dev/ledger-schema.md の outcomes_daily)。数えられなくても断りは出す。
+ */
+function dbBusyNote_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = dbBusyKey_(Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    props.setProperty(key, String((Number(props.getProperty(key)) || 0) + 1));
+  } catch (e) {
+    // 数えられなくても、断りそのものは出す
   }
 }
 

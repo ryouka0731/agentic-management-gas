@@ -43,6 +43,8 @@ const EXPECTED = {
   change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
   focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
     'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
+  outcomes_daily: ['day', 'moved', 'closedClean', 'mergedClean', 'reopened', 'overdue', 'activePeople',
+    'busyErrors', 'timeoutErrors', 'fxOff'],
 };
 
 describe('メタDBの列順', () => {

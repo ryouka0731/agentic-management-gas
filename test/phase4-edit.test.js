@@ -677,6 +677,16 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     ['apiIssueComments', (ctx, env) => ctx.apiIssueComments(env.issue.number)],
+    // 成果の数。台帳の日は Date で返る。数えた行があるとき (3人に届いた週) を検査する
+    ['apiOutcomes', (ctx) => {
+      const today = ctx.usageDay(new Date());
+      const day = ctx.outcomesShiftDay_(today, -7);
+      ctx.dbAppend('outcomes_daily', { day, moved: 1, closedClean: 1, mergedClean: 0, reopened: 0, overdue: 2,
+        activePeople: 3, busyErrors: 0, timeoutErrors: 0, fxOff: 1 });
+      const out = ctx.apiOutcomes(2);
+      if (!out.weeks.some((w) => !w.hidden)) throw new Error('成果の数が空のまま検査されている');
+      return out;
+    }],
     // 消す側も走査する。返す形を間違えても、成功した以上は気づかれない
     ['apiPrClose', (ctx, env) => ctx.apiPrClose(env.pr.number)],
     // 外せるのは改訂版の無いものだけなので、別にもう1つ登録して外す

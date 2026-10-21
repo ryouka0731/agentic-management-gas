@@ -1095,6 +1095,13 @@ button:disabled {
 .snackbar.ng { border-left-color: var(--danger); }
 
 .snackbar-text { flex: 1; min-width: 0; }
+/* 断りの帯は、文の下に「次にすること」を添える (failShown)。文と同じ塊にして、ボタンは右に残す */
+.snackbar-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.snackbar-next { color: var(--ink-2); font-size: 12px; }
+/* 器に出す断り (failInto) の、次にすることと [もう一度] */
+.fail-text { display: block; }
+.fail-next { display: block; margin-top: var(--sp-1); color: var(--ink-2); font-size: 12px; }
+.fail-again { margin-top: var(--sp-2); }
 .snack-mark { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .snack-check { width: 18px; height: 18px; }
 .snack-check path {
@@ -1115,6 +1122,7 @@ button:disabled {
 @media (max-width: 420px) {
   .snackbar { flex-wrap: wrap; justify-content: flex-end; }
   .snackbar-text { flex: 1 1 calc(100% - 18px - var(--sp-3)); }
+  .snackbar-body { flex: 1 1 calc(100% - 18px - var(--sp-3)); }
   .snack-progress { display: none; }
 }
 
@@ -4301,6 +4309,16 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 .settings-field code { font-family: var(--mono); font-size: 12px; padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--bg-3); }
 /* 設定の一覧 (#18)。自分の設定とチームの設定の2つに分け、その中を見出しごとに並べる */
 .settings-group { padding-top: var(--sp-3); }
+/* 成果の数 (管理者だけ)。見出しと説明・週ごとの棒・先週の数を1行に並べ、狭い画面では折り返す */
+.outcomes-list { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); }
+.outcome-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--line); }
+.outcome-text { flex: 1 1 260px; min-width: 0; }
+.outcome-label { font-weight: 600; }
+.outcome-bars { flex: none; width: 186px; height: 40px; }
+.outcome-bar { fill: var(--accent); }
+.outcome-bar-watch { fill: var(--warn); }
+.outcome-bar-hidden { fill: none; stroke: var(--line); stroke-dasharray: 3 2; }
+.outcome-now { flex: none; min-width: 72px; color: var(--ink-2); font-size: 12px; text-align: right; }
 .settings-group > .view-title,
 .settings-group > .row-meta { max-width: 760px; margin-left: var(--sp-4); margin-right: var(--sp-4); }
 /* 2つの区切りは線ではなく間で分ける (罫線を増やさない) */
