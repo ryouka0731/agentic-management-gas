@@ -185,8 +185,10 @@ var DRIVE_MEMBERS_MEMO_ = {};
  * 違うことがあり、そのまま比べると持ち主が全員締め出される。比べる側も小文字にする。
  * 読めたものは10分覚える。一覧で1行ごとに問い合わせると、行の数だけ待つ。
  *
+ * グループ・ドメイン・リンクでの共有があれば wide: true も付く (無ければ付けない)。
+ *
  * @param {string} driveId
- * @returns {{owners: string[], admins: string[]}}
+ * @returns {{owners: string[], admins: string[], wide?: boolean}}
  */
 function driveMembers_(driveId) {
   var key = 'driveMembers:' + driveId;
@@ -257,10 +259,14 @@ function driveMembersList_(driveId) {
   return out;
 }
 
-/** 1頁ぶんの役割を足す。グループとアドレスの無いものは数えない */
+/**
+ * 1頁ぶんの役割を足す。グループ・ドメイン・リンクとアドレスの無いものは数えない。
+ * グループ・ドメイン・リンクでの共有があれば wide を立てる (何人いるか分からない。実績の「1人かどうか」が見る)
+ */
 function driveMembersAddPage_(out, list) {
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
+    if (p.type && p.type !== 'user') out.wide = true;
     if (p.type !== 'user' || !p.emailAddress) continue;
     var email = String(p.emailAddress).toLowerCase();
     if (p.role === 'organizer') out.owners.push(email);

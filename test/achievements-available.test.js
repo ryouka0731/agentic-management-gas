@@ -110,6 +110,40 @@ describe('この環境では取れない実績', () => {
     expect(s2.get('ACH_PEOPLE:' + ME).ttl).toBeLessThanOrEqual(120);
   });
 
+  it('グループ・ドメイン・リンクで共有していれば、名指しの人が1人でも1人と言わない', () => {
+    // マイドライブ: 入れ物がリンクやドメインに開いている
+    for (const access of ['ANYONE_WITH_LINK', 'DOMAIN', 'DOMAIN_WITH_LINK', 'ANYONE']) {
+      const { ctx, fake } = setup();
+      expect(off(ctx)['reviews-1'], access).toBeTruthy();
+      fake.DriveApp.getFolderById(ctx.repoConfig().rootId)._setAccess(access);
+      expect(off(ctx)['reviews-1'], access).toBeUndefined();
+    }
+    // 共有の広さが読めなければ1人と言わない
+    let { ctx, fake } = setup();
+    fake.DriveApp.getFolderById(ctx.repoConfig().rootId).getSharingAccess = () => { throw new Error('読めません'); };
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    // 共有ドライブ: 管理する人は自分だけでも、グループ・ドメイン・リンクに役割がある
+    for (const type of ['group', 'domain', 'anyone']) {
+      ({ ctx, fake } = setup());
+      ctx.repoDriveIdSafe_ = () => 'drive-1';
+      const perms = [{ emailAddress: ME, role: 'organizer', type: 'user' }];
+      fake.Drive = fake._makeDrive({ members: { 'drive-1': perms } });
+      expect(off(ctx)['reviews-1'], type).toBeTruthy();
+      ctx.DRIVE_MEMBERS_MEMO_ = {};
+      perms.push(type === 'group' ? { emailAddress: 'team@example.com', role: 'writer', type } : { role: 'reader', type, domain: 'example.com' });
+      expect(off(ctx)['reviews-1'], type).toBeUndefined();
+    }
+  });
+
+  it('確認を頼まれた人 (reviewers) にほかの人がいれば、1人ではない', () => {
+    const { ctx } = setup();
+    ctx.dbAppend('pulls', { number: 1, title: 'x', state: 'open', author: ME, reviewers: ME + ',' + OTHER });
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    const solo = setup();
+    solo.ctx.dbAppend('pulls', { number: 1, title: 'x', state: 'open', author: ME, reviewers: ME });
+    expect(off(solo.ctx)['reviews-1']).toBeTruthy();
+  });
+
   it('上下関係の名簿にほかの人がいれば、1人ではない', () => {
     const { ctx } = setup();
     ctx.memberSet(OTHER, ME);

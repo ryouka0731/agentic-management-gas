@@ -384,6 +384,28 @@ describe('見直しで直したところ', () => {
     expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('テストの見出し0あと');
   });
 
+  it('外してから違う大きいものを置き直しても、覚えに残った前の中身を返さない (版は前の数に戻らない)', () => {
+    const e = env();
+    const big = (t) => ({ items: Array.from({ length: 40 }, (_, i) => ({ lv: 2 + i, label: t + i, text: 'て'.repeat(200) })) });
+    const store = new Map();
+    e.ctx.CacheService = { getScriptCache: () => ({
+      get: (k) => (store.has(k) ? store.get(k) : null),
+      put: (k, v) => { store.set(k, String(v)); },
+      remove: (k) => { store.delete(k); },
+    }) };
+    e.ctx.apiOshiBuiltinProfileSet('taku', big('まえ'));
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('まえ0');
+    // 外すと頭も続きも消える。覚え (CacheService) は残る
+    e.ctx.apiOshiBuiltinProfileSet('taku', '');
+    expect(e.ctx.oshiBuiltinProfileRead_('taku')).toBeNull();
+    expect(store.size).toBeGreaterThan(0);
+    // 同じ ms のうちに置き直すと版の時刻が同じになるので、時刻が進むのを待つ
+    const t = Date.now();
+    while (Date.now() === t) { /* 待つ */ }
+    e.ctx.apiOshiBuiltinProfileSet('taku', big('あと'));
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('あと0');
+  });
+
   it('版の無い分け方 ({"parts": N} と :0〜) も読める', () => {
     const e = env();
     const json = JSON.stringify({ items: SAMPLE.items, clearLine: '', clearVideo: '' });
