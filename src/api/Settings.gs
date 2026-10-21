@@ -54,6 +54,20 @@ function apiSettings() {
 }
 
 /**
+ * 台帳の読み取りのキャッシュを捨てる (Web App API)。管理者だけ。
+ *
+ * 台帳 (スプレッドシート) を人が直にいじったぶんは、キャッシュの期限 (DB_CACHE_SEC、300秒) まで画面に出ない。
+ * 待てないときに押す (docs/dev/ledger-schema.md の「台帳の読み取りはキャッシュに置く」)。捨てるだけで台帳は変えない。
+ *
+ * @returns {{cleared: boolean}}
+ */
+function apiCacheClear() {
+  repoAssertAdmin_('読み取りの覚えを捨てること');
+  dbInvalidateAll_();
+  return { cleared: true };
+}
+
+/**
  * エージェンティックスクラムを切り替える (Web App API)。管理者だけ。
  *
  * @param {boolean} on

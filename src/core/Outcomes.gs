@@ -406,6 +406,8 @@ function outcomesWrite_(rows) {
         values.push(cells);
       }
     });
+    // 台帳に直に書いたので、読み取りの覚えを捨てる (Db.gs の dbInvalidate_)
+    if (rows.length) dbInvalidate_('outcomes_daily');
     return true;
   }, function () { return false; });
 }
