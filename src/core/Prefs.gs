@@ -216,6 +216,34 @@ function PREF_GROUPS_() {
         help: 'オンにすると、ほかの人の画面であなたの顔に型の名前が添えられます。点数や答えは誰にも見せません',
         def: false }];
     },
+    oshi: function () {
+      // 推し。既定はオン (ほかの楽しい飾りは既定オフだが、これは利用者が決めた例外)。中身 (表情・せりふ・頼み文) は Oshi.js、画面は js-oshi が持つ
+      return [
+        { key: 'oshi.on', scope: 'me', type: 'bool', section: '推し',
+          label: '推しに応援してもらう',
+          help: '済ませたときに、選んだキャラクターがほめてくれます。右上の自分の顔から開く欄の「推し」で、自分のキャラも作れます',
+          def: true },
+        { key: 'oshi.home', scope: 'me', type: 'bool', section: '推し',
+          label: 'ホームであいさつする', help: '推しがオンのとき、ホームに推しのカードを出します', def: true },
+        { key: 'oshi.char', scope: 'me', type: 'char', section: '推し',
+          label: '使うキャラ',
+          help: '最初からいるキャラ (' + OSHI_BUILTINS().map(function (c) { return c.name; }).join('・') +
+            ') か、推しの頁で作った自分のキャラから選びます',
+          // 選べるのは最初からいるキャラと、その人が作った自分のキャラ。人ごとに違うので、検査は oshiCharKnownFor_ が行う
+          options: OSHI_BUILTINS().map(function (c) { return { value: 'builtin:' + c.key, label: c.name }; }),
+          def: 'builtin:' + OSHI_BUILTINS()[0].key },
+        { key: 'oshi.fallback', scope: 'me', type: 'enum', section: '推し',
+          label: '自分のキャラの絵が無い表情',
+          help: '自分のキャラを使っていて、その表情の絵をまだ入れていないときに出す絵です。「出さない」なら名前の頭文字になります',
+          options: OSHI_BUILTINS().map(function (c) { return { value: 'builtin:' + c.key, label: c.name + 'の絵を出す' }; })
+            .concat([{ value: 'none', label: '出さない' }]),
+          def: 'builtin:' + OSHI_BUILTINS()[0].key },
+        { key: 'oshi.style', scope: 'me', type: 'enum', section: '推し',
+          label: '最初からいるキャラの絵', help: '2頭身か、等身か。自分のキャラに入れた絵は変わりません',
+          options: OSHI_STYLES().map(function (s) { return { value: s.key, label: s.label }; }),
+          def: OSHI_STYLES()[0].key },
+      ];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -234,7 +262,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -263,9 +291,10 @@ function prefItem_(key) {
  *
  * @param {object} item
  * @param {*} v
+ * @param {string} [email] 誰の設定か。使うキャラ (type 'char') は人ごとに選べるものが違うので要る
  * @returns {boolean}
  */
-function prefValid_(item, v) {
+function prefValid_(item, v, email) {
   if (!item) return false;
   function intIn(n) {
     return typeof n === 'number' && isFinite(n) && Math.floor(n) === n && n >= item.min && n <= item.max;
@@ -275,6 +304,8 @@ function prefValid_(item, v) {
   if (item.type === 'enum') {
     return typeof v === 'string' && (item.options || []).some(function (o) { return o.value === v; });
   }
+  // 使うキャラ: 最初からいるキャラか、その人が作った自分のキャラ。自分のキャラのときだけ台帳を読む
+  if (item.type === 'char') return typeof v === 'string' && oshiCharKnownFor_(email, v);
   if (item.type === 'steps') {
     if (!Array.isArray(v) || v.length !== 3) return false;
     for (var i = 0; i < v.length; i++) {
@@ -356,15 +387,16 @@ function prefGet_(key, email, read) {
  */
 function prefValueOf_(item, email, read) {
   var v;
+  var who = '';
   if (item.scope === 'me') {
-    var who = String(email || currentEmail_());
+    who = String(email || currentEmail_());
     var mine = who ? prefParse_(read(prefMineKey_(who))) : undefined;
     if (mine && typeof mine === 'object' && !Array.isArray(mine) &&
         Object.prototype.hasOwnProperty.call(mine, item.key)) v = mine[item.key];
   } else {
     v = prefParse_(read(prefTeamKey_(item.key)));
   }
-  if (v !== undefined && prefValid_(item, v)) return { value: v, custom: true };
+  if (v !== undefined && prefValid_(item, v, who)) return { value: v, custom: true };
   return { value: item.def, custom: false };
 }
 
@@ -390,7 +422,11 @@ function apiPrefSet(key, value) {
   var item = prefItem_(key);
   if (!item) throw new Error('知らない設定です: ' + key);
   var reset = value === null || value === undefined;
-  if (!reset && !prefValid_(item, value)) {
+  // 検査は1回だけ (oshi.char の検査は台帳を読むので、2回呼ぶと2回読む)
+  if (!reset && !prefValid_(item, value, currentEmail_())) {
+    if (item.type === 'char') {
+      throw new Error('そのキャラは選べません。最初からいるキャラか、推しの頁で作った自分のキャラを選んでください');
+    }
     throw new Error('「' + item.label + '」に入れられない値です' +
       (item.type === 'int' ? ' (' + item.min + '〜' + item.max + ' の整数)' : '') +
       (item.type === 'steps' ? ' (' + item.min + '〜' + item.max + ' の整数を小さい順に3つ)' : ''));
@@ -476,6 +512,9 @@ function apiPrefs(opts) {
       fun: fun,
       focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
         remind: plainText(byKey['focus.remind']) },
+      oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
+        char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
+        style: plainText(byKey['oshi.style']) },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),

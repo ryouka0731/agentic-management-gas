@@ -225,6 +225,9 @@
     homeCardsEl.appendChild(makeTodayCard(today || [], report || null));
     homeLine.today = todayItemsOf(today || [], report || null).length;
     renderHomeLine();
+    // 推し (自分の設定でオンの人だけ)。設定が届くまでは描かない
+    var oshi = prefsSettled ? makeOshiHomeCard() : null;
+    if (oshi) homeCardsEl.appendChild(oshi);
     // 設定が届くまでは描かない (隠した人に一瞬出て、見たレベルまで覚えてしまう)
     var g = prefsSettled && homeCardOn('game') ? makeGameCard(game || {}, top || []) : null;
     if (g) {
