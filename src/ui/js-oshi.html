@@ -1,7 +1,7 @@
   // ===== 推し (既定はオン。利用者が決めた例外。既定のキャラはタク) =====
   //
   // 自分の設定の「推し」(oshi.on) をオンにした人の画面にだけ出す。自分で作ったキャラクターの絵を上げると、
-  // 済ませたときに隅の吹き出しでほめ、ホームであいさつし、活動に合わせて育つ。
+  // 済ませたときに隅の吹き出しでほめ、ホームであいさつし、実績を取るたびに Lv が上がって育つ (js-ach)。
   //
   // 表情・口調・場面・せりふ・作り方の頼み文・上限はサーバの src/core/Oshi.js が唯一の定義で、
   // ここは apiOshiGet の返事を使うだけ (写しを持たない)。ここが持つのは「成功した api の名前 → 場面」
@@ -41,6 +41,8 @@
   /** 吹き出しを出した回数。遅れて届いた画像が、もう別の吹き出しなら差し込まない */
   var oshiBubbleShown = 0;
   var oshiBackChecked = false;
+  /** 吹き出しが消えたら出す次の場面 (oshiSayNext)。{key, state} */
+  var oshiQueued = null;
 
   /**
    * 済ませた操作 → 場面。**唯一の表。** 名前で引き、値は場面の key か、引数を見て決める関数。
@@ -153,6 +155,7 @@
     if (oshiDefaultSeen !== null && seen !== oshiDefaultSeen) oshiData = null;
     oshiDefaultSeen = seen;
     if (!oshiOn()) {
+      oshiQueued = null;
       oshiHide(true);
       var card = document.querySelector('.oshi-card');
       if (card) card.remove();
@@ -400,6 +403,50 @@
   }
 
   /**
+   * 表情を決めて吹き出しを出す (実績で段が上がったとき、上がった段の絵で言う。js-ach)。オフなら何もしない。
+   *
+   * @param {string} key 場面
+   * @param {string} state 表情 (無ければ場面の表情)
+   */
+  function oshiSayAs(key, state) {
+    if (!oshiOn()) return;
+    try {
+      oshiLoad(function () {
+        if (!oshiOn()) return;
+        var ev = oshiEventOf(key);
+        if (!ev) return;
+        oshiShowBubble(ev.key, state || ev.state, oshiLine(ev.key));
+      });
+    } catch (e) {
+      if (window.console) console.warn('推しを出せませんでした', e);
+    }
+  }
+
+  /**
+   * いま吹き出しが出ていれば、消えてから出す (実績のお祝いが、済ませたときのほめ言葉を上書きしない)。
+   * 待てるのは1つだけ (新しいものが前のものに代わる)。
+   *
+   * @param {string} key 場面
+   * @param {string} state 表情 (空なら場面の表情)
+   */
+  function oshiSayNext(key, state) {
+    if (!oshiOn()) return;
+    var el = document.getElementById('oshi-bubble');
+    if (el && !el.hidden) {
+      oshiQueued = { key: key, state: state };
+      return;
+    }
+    oshiSayAs(key, state);
+  }
+
+  /** 待っている場面があれば出す (吹き出しが消えたとき) */
+  function oshiSayQueued() {
+    var q = oshiQueued;
+    oshiQueued = null;
+    if (q) oshiSayAs(q.key, q.state);
+  }
+
+  /**
    * 使うキャラに選ばれたときの吹き出し。選び直した設定で推しを取り直してから、そのキャラの「選んでもらった」の
    * せりふと、そのキャラの絵からでたらめに選んだ表情を出す。オフなら何もしない。吹き出しは手元の焦点を奪わない。
    */
@@ -569,11 +616,16 @@
     if (!el || el.hidden) return;
     if (now) {
       el.hidden = true;
+      oshiSayQueued();
       return;
     }
     el.classList.add('is-out');
     var seq = oshiBubbleShown;
-    window.setTimeout(function () { if (seq === oshiBubbleShown) el.hidden = true; }, 400);
+    window.setTimeout(function () {
+      if (seq !== oshiBubbleShown) return;
+      el.hidden = true;
+      oshiSayQueued();
+    }, 400);
   }
 
   // ----- ホームのカード -----
@@ -650,7 +702,7 @@
   }
 
   /**
-   * 育ちの段となかよしの棒。
+   * Lv・育ちの段となかよしの棒。Lv は 1 + 取った実績の数 (js-ach が返事で揃える)。
    *
    * @param {object} g apiOshiGet の growth
    * @returns {HTMLElement}
@@ -662,8 +714,8 @@
     var head = document.createElement('div');
     head.className = 'oshi-stage';
     head.dataset.stage = grow.key || '';
-    head.textContent = '育ち: ' + (grow.label || '') +
-      (grow.toNext > 0 ? ' ・ 次の段まであと ' + grow.toNext : ' ・ いちばん上の段です');
+    head.textContent = 'Lv ' + (Number(grow.level) || 1) + ' ・ 育ち: ' + (grow.label || '') +
+      (grow.toNext > 0 ? ' ・ 次の段まであと ' + grow.toNext + ' Lv' : ' ・ いちばん上の段です');
     box.appendChild(head);
 
     var bar = document.createElement('div');
@@ -680,9 +732,8 @@
 
     var note = document.createElement('div');
     note.className = 'row-meta';
-    note.textContent = 'なかよし ' + (Number(grow.meter) || 0) + '% ・ ' + (grow.source === 'game'
-      ? 'ポイントで育ちます'
-      : '済ませたやることと、反映した確認依頼の数で育ちます') + '。取り消しても下がりません';
+    note.textContent = 'なかよし ' + (Number(grow.meter) || 0) + '% ・ 実績を1つ取るたびに Lv が1つ上がります。' +
+      '取った実績は消えないので、下がりません';
     box.appendChild(note);
     return box;
   }
@@ -893,8 +944,9 @@
     grow.className = 'oshi-section';
     grow.appendChild(oshiHeading('育ち'));
     grow.appendChild(makeOshiGrowth(d.growth));
-    grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label; }).join(' → ') +
-      '。どのキャラでも同じ段です。段ごとの絵 (育ち1〜3) を入れると、ホームと吹き出しでその段の姿になります。'));
+    grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label + ' (Lv' + s.min + '〜)'; })
+      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜3) を入れると、' +
+      'ホームと吹き出しでその段の姿になります。'));
     box.appendChild(grow);
 
     if (!(d.mine || []).length) return;

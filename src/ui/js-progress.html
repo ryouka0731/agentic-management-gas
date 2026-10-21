@@ -228,6 +228,9 @@
     // 推し (自分の設定でオンの人だけ)。設定が届くまでは描かない
     var oshi = prefsSettled ? makeOshiHomeCard() : null;
     if (oshi) homeCardsEl.appendChild(oshi);
+    // 最近の実績 (本人だけ)。設定が届くまでは描かない
+    var ach = prefsSettled ? makeAchHomeCard() : null;
+    if (ach) homeCardsEl.appendChild(ach);
     // 設定が届くまでは描かない (隠した人に一瞬出て、見たレベルまで覚えてしまう)
     var g = prefsSettled && homeCardOn('game') ? makeGameCard(game || {}, top || []) : null;
     if (g) {
@@ -533,6 +536,8 @@
     copy.type = 'button';
     copy.className = 'btn';
     copy.textContent = '日報にコピー';
+    // 押した数を使われ方に数える。実績「日報をコピーした」はこの場所で確かめる (js-ach)
+    copy.dataset.track = 'report-copy';
     actions.appendChild(copy);
 
     var pick = null;

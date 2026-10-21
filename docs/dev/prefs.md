@@ -26,6 +26,11 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 「思いがけない当たり」(`luck.on` / `luck.reward`) はどちらも自分の設定で既定オフ。`apiPrefs` の `effective.luck` で画面に渡し、
 当たりとノリノリタイムは画面 (js-luck) が、ご褒美は `Reward.gs` が `prefGet_('luck.reward', …)` で見る。
 
+実績 (`ach.on` / `ach.cheer`、ホームの `home.cards.ach`) は自分の設定で、どれも既定でオン (本人にだけ見え、順位も無いので)。
+`ach.on` を切ると、開いた日も数えず (`apiAchievementsCheck` が `on: false` を返す)、頁とカードも出ない。取った印は消さない。
+`ach.cheer` は取ったときの知らせ・推しのお祝い・大きな字 (楽しい演出の `fun.cheer` がオンのとき) をまとめて止める。
+成果の数の `fxOff` は `ach.*` を切った人も数える。
+
 「予定に入れる」(`calendar.*`、`PREF_CALENDAR_ITEMS_`) は `calendar.shared` だけがチームの設定 (型 `calendar` = カレンダーの ID。
 `''` は決まっていない)。汎用の欄には出さず `js-calendar` が組む。ほかは自分の設定で `calendar.plan` は既定オフ。
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
@@ -38,3 +43,8 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `prefValid_` は部品の形 (`focusMusicPartsValid_`) を見るので、台帳を手で書き換えた崩れた値は既定に倒れる。
 画面へは `items` の value に部品から組み直したリンク、`effective.focus.musicParts` に部品を渡す (埋め込みの URL は画面が組む)。
 `Prefs.gs` が `FocusMusic.js` を呼ぶので、`Prefs.gs` を読むテストの SOURCES には `src/core/FocusMusic.js` も要る。
+
+「作業雑談部屋」は `cowork.enabled` (チームの設定、既定オフ) と `cowork.showFocus` (自分の設定、既定オフ) だけが `PREFS_SCHEMA()` に入る。
+**部屋の一覧は項目にしない。** 名前とリンクの部品の並びで、汎用の欄では組めないので、スクリプトプロパティ `COWORK_ROOMS` に置き、
+書くのは `apiCoworkSetRooms` (管理者だけ) だけにしてある。画面の欄は `js-cowork` の `makeCoworkRoomsEditor` が `cowork.enabled` の節に添える。
+`Prefs.gs` は `CoworkLink.js` を呼ばない (`Prefs.gs` を読むテストの SOURCES を増やさないため)。

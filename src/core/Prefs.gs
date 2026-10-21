@@ -68,6 +68,8 @@ function PREF_HOME_CARDS_() {
     { key: 'game', label: 'ポイントとレベル' },
     { key: 'recent', label: '最近の動き' },
     { key: 'team', label: 'チームの前進' },
+    // 最近の実績 (本人だけ)。実績を集める (ach.on) がオンのときだけ出す
+    { key: 'ach', label: '最近の実績' },
   ];
 }
 
@@ -332,6 +334,20 @@ function PREF_GROUPS_() {
           def: OSHI_STYLES()[0].key },
       ];
     },
+    ach: function () {
+      // 実績 (バッジ)。どちらも既定でオン (本人にだけ見え、順位も無いので)。中身は Achievements.js、画面は js-ach
+      return [
+        { key: 'ach.on', scope: 'me', type: 'bool', section: '実績',
+          label: '実績を集める',
+          help: '番頭を開いた日 (通算)・済ませた数・はじめて使った機能で実績 (バッジ) が取れます。あなたにだけ見え、' +
+            '続けた日数や順位は数えません。推しのレベルは取った実績の数で上がります',
+          def: true },
+        { key: 'ach.cheer', scope: 'me', type: 'bool', section: '実績',
+          label: '実績を取ったら知らせる',
+          help: '取ったときに画面の隅に小さく知らせ、推しがお祝いします。楽しい演出の「済ませたらお祝い」がオンなら大きな字も出ます',
+          def: true },
+      ];
+    },
     goals: function () {
       // 目標 (OKR・MBO・KPI)。既定はオフ (使わない人が多い。スクラムと同じ考え方)。中身は Goal.gs / GoalScore.js
       return [
@@ -346,6 +362,21 @@ function PREF_GROUPS_() {
         { key: 'goals.fyStart', scope: 'team', type: 'int', section: '目標',
           label: '年度の始まる月', help: '期はこの月から数えます (4 なら 4月〜9月が上期)。変えても、立てた目標の期の日付は立てたときの月のまま変わりません',
           min: 1, max: 12, def: TALLY_FISCAL_START() },
+      ];
+    },
+    cowork: function () {
+      // 作業雑談部屋。既定はオフ (目標と同じ考え方)。部屋の一覧はリンクの部品の並びなので、ここには置かず
+      // スクリプトプロパティ COWORK_ROOMS に置く (src/core/Cowork.gs。書くのは apiCoworkSetRooms だけ)
+      return [
+        { key: 'cowork.enabled', scope: 'team', type: 'bool', section: '作業雑談部屋',
+          label: '作業雑談部屋を使う',
+          help: 'オンにすると、左に「作業雑談部屋」が出ます。管理者が決めた Google Meet か Slack の部屋に「入る」と、' +
+            'いまいる人の名前がチームに見えます。話すのは Meet / Slack の中で、番頭は誰が入ったかを記録しません',
+          def: false },
+        { key: 'cowork.showFocus', scope: 'me', type: 'bool', section: '作業雑談部屋',
+          label: '部屋にいるとき「集中中」を添える',
+          help: 'オンにすると、集中のしかたで集中しているあいだ、部屋のあなたの名前の横に「集中中」が出ます (話しかけてよいかの目安)',
+          def: false },
       ];
     },
     notify: function () {
@@ -366,7 +397,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'focus', 'room', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -650,9 +681,11 @@ function apiPrefs(opts) {
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']) },
       room: { on: byKey['room.on'] === true },
+      ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
       calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },
+      cowork: { enabled: byKey['cowork.enabled'] === true, showFocus: byKey['cowork.showFocus'] === true },
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),
     },

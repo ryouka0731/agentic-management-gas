@@ -1,0 +1,459 @@
+  // ===== 実績 (バッジ。既定はオン) =====
+  //
+  // 自分の設定の「実績を集める」(ach.on) がオンの人に出す。何を・いくつで取れるかはサーバの src/core/Achievements.js が
+  // 唯一の定義で、ここは apiAchievements / apiAchievementsCheck の返事を描くだけ (写しを持たない)。
+  // ここが持つのは「成功した api の名前 → 数え直すか」(ACH_CALL_EVENTS) と、数えてもらう使われ方の場所の名前だけ。
+  //
+  // 守ること:
+  // - 見せるのは本人にだけ。まだの実績は ??? (名前を出さない)。続けた日数・順位は出さない
+  // - 字は textContent だけで置く。知らせは焦点を奪わない。動きを減らす設定では動かさない (CSS)
+  // - 取ったときの知らせは ach.cheer がオンのときだけ。大きな字は楽しい演出の「済ませたらお祝い」(fun.cheer) もオンのときだけ
+  //
+  // **下の状態の var に初期値を書かない。** js-init が読み込みの途中 (この部分ファイルより前) で achOpenCheck() を呼ぶので、
+  // `var x = false;` と書くと、そこで付けた印がこの行で消える (`var x;` は値を消さない)。
+
+  /** 最後の返事 (apiAchievements の形) */
+  var achLast;
+  /** 開いたときの数え直しを、設定が届くまで待っている */
+  var achWaitPrefs;
+  /** 開いたときの数え直しを頼んだ */
+  var achOpened;
+  /** 数え直しの返事を待っている。待つあいだに頼まれた数えるものは、返事のあとにまとめてもう1回 */
+  var achBusy;
+  var achAgain;
+  var achToastTimer;
+
+  /**
+   * 済ませた操作 → その操作で変わりうる数えるもの (サーバの ACH_METRICS の key)。**唯一の表。** 値は配列か、引数を見て
+   * 決める関数 (当たらなければ空)。数え直しはここに挙げたものだけを数える (全部を数え直すのは開いたときだけ)。
+   * 関数にしてあるのは、call() が読み込みの途中で呼ばれても引けるようにするため。
+   *
+   * @returns {Object<string, string[]|function(Array): string[]>}
+   */
+  function ACH_CALL_EVENTS() {
+    return {
+      apiIssueClose: ['done'],
+      apiProjectMove: function (args) { return args && args[1] === 'Done' ? ['done'] : []; },
+      apiPrMerge: ['merge', 'merged'],
+      apiPrCreate: ['pull'],
+      apiPrReview: ['approve', 'reviews'],
+      apiBranchCreate: ['branch'],
+      apiIssueCreateBranch: ['branch'],
+      apiIssueComment: ['comment'],
+      apiInquiryCreate: ['inquiry'],
+      apiInquiryReply: ['comment'],
+      apiFocusStart: ['focus'],
+      apiWorkStyleSave: ['style'],
+      apiGoalSave: ['goal'],
+      apiCalendarPlan: ['calendar'],
+      apiPrefSet: function (args) { return args && args[0] === 'oshi.char' ? ['oshi'] : []; },
+      // 使われ方で確かめる実績 (Markdown で保存・日報をコピー・探す・推しを選ぶ) は、送ったあとに数え直す
+      apiUsageRecord: function (args) {
+        var rows = (args && args[0]) || [];
+        var map = ACH_USAGE_METRICS();
+        var out = [];
+        rows.forEach(function (r) {
+          var m = r && map[r.target];
+          if (m && out.indexOf(m) < 0) out.push(m);
+        });
+        return out;
+      },
+    };
+  }
+
+  /** 使われ方の場所 → 数えるもの */
+  function ACH_USAGE_METRICS() {
+    return { 'md-save': 'markdown', 'report-copy': 'reportCopy', 'search-open': 'search', 'oshi-choose': 'oshi' };
+  }
+
+  /**
+   * 実績のために数えてもらう使われ方の場所。サーバの ACH_USAGE_PLACES と同じ名前 (test/achievements.test.js が見ている)。
+   *
+   * @returns {string[]}
+   */
+  function ACH_USAGE_TARGETS() {
+    return Object.keys(ACH_USAGE_METRICS());
+  }
+
+  /** 実績がオンか。設定が取れなければ既定 (オン) */
+  function achOn() {
+    var a = prefs && prefs.effective && prefs.effective.ach;
+    return !(a && a.on === false);
+  }
+
+  /** 取ったときに知らせるか */
+  function achCheerOn() {
+    var a = prefs && prefs.effective && prefs.effective.ach;
+    return achOn() && !(a && a.cheer === false);
+  }
+
+  /**
+   * 開いたときに1回だけ数え直す (開いた日もこのときだけ数える)。設定が届くまで待つ (js-settings の settlePrefs が呼び直す)。
+   */
+  function achOpenCheck() {
+    if (achOpened) return;
+    if (!prefsSettled) {
+      achWaitPrefs = true;
+      return;
+    }
+    achOpened = true;
+    achWaitPrefs = false;
+    if (!achOn()) return;
+    call('apiAchievementsCheck', [], achGot, failQuiet('実績を数えられなくても使える'));
+  }
+
+  /**
+   * call() が成功したあとに呼ぶ。表 (ACH_CALL_EVENTS) に当たれば数え直す。推しを選んだら使われ方の場所も数える。
+   *
+   * @param {string} name
+   * @param {Array} args
+   */
+  function achAfterCall(name, args) {
+    if (name === 'apiPrefSet' && args && args[0] === 'oshi.char') usageCount('action', 'oshi-choose');
+    if (!achOpened || !achOn()) return;
+    var table = ACH_CALL_EVENTS();
+    if (!Object.prototype.hasOwnProperty.call(table, name)) return;
+    var v = table[name];
+    var metrics = typeof v === 'function' ? v(args || []) : v;
+    if (metrics && metrics.length) achRecheck(metrics);
+  }
+
+  /**
+   * 名指した数えるものだけ数え直す (開いた日は数えない)。待っているあいだに頼まれたものは、返事のあとにまとめて1回だけ。
+   *
+   * @param {string[]} metrics
+   */
+  function achRecheck(metrics) {
+    if (achBusy) {
+      if (!achAgain) achAgain = [];
+      metrics.forEach(function (m) { if (achAgain.indexOf(m) < 0) achAgain.push(m); });
+      return;
+    }
+    achBusy = true;
+    var quiet = failQuiet('実績を数えられなくても使える');
+    call('apiAchievementsCheck', [{ metrics: metrics }], function (res) {
+      achBusy = false;
+      achGot(res);
+      var again = achAgain;
+      achAgain = null;
+      if (again && again.length) achRecheck(again);
+    }, function (err) {
+      achBusy = false;
+      achAgain = null;
+      quiet(err);
+    });
+  }
+
+  /**
+   * 返事を受け取る。推しのレベルを揃え、出ている頁とカードを描き直し、今回取ったものがあれば知らせる。
+   *
+   * @param {object} res apiAchievements の形
+   */
+  function achGot(res) {
+    if (!res || !res.on) return;
+    achLast = res;
+    try {
+      achSyncOshi(res);
+      achRefreshViews(res);
+      if (res.newly && res.newly.length) achCelebrate(res);
+    } catch (e) {
+      if (window.console) console.warn('実績を出せませんでした', e);
+    }
+  }
+
+  /** 推しの育ち (Lv・段) を、取り直さずに返事で揃える。出ている育ちの棒も描き直す */
+  function achSyncOshi(res) {
+    if (!oshiData || !oshiData.growth || !res.stage) return;
+    var g = oshiData.growth;
+    // 同じ Lv なら推しの返事のまま (描き直さない)
+    if (Number(g.level) === Number(res.level)) return;
+    g.index = res.stage.index;
+    g.key = res.stage.key;
+    g.label = res.stage.label;
+    g.meter = res.stage.meter;
+    g.toNext = res.stage.toNext;
+    g.level = res.level;
+    g.unlocked = (res.unlocked || []).length;
+    Array.prototype.forEach.call(document.querySelectorAll('.oshi-growth'), function (old) {
+      old.parentNode.replaceChild(makeOshiGrowth(g), old);
+    });
+  }
+
+  /** 出ている実績の頁とホームのカードを描き直す。絞って数え直した返事 (partial) では頁を描き直さない (手がかりが欠ける) */
+  function achRefreshViews(res) {
+    var page = document.querySelector('.ach-page');
+    if (page && !res.partial) drawAchPage(page, res);
+    var card = document.querySelector('.ach-card');
+    if (card) fillAchHomeCard(card, res);
+  }
+
+  /**
+   * 取ったときの知らせ。隅の小さな知らせはいつも (ach.cheer がオンなら)、大きな字は楽しい演出のお祝いもオンのとき。
+   * 推しがオンなら、推しが「実績を取った」(段が上がったら「育ちの段が上がった」と上がった段の絵) で言う。
+   *
+   * @param {object} res
+   */
+  function achCelebrate(res) {
+    if (!achCheerOn()) return;
+    var got = res.newly;
+    var first = got[0];
+    var text = got.length === 1
+      ? '実績「' + first.title + '」を取りました'
+      : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
+    achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : ''));
+    if (typeof funOn === 'function' && funOn('cheer') && typeof funBanner === 'function') {
+      try { funBanner('BADGE GET!', 'big', 'success', null, first.title); } catch (e) { /* 飾りが落ちても知らせは出ている */ }
+    }
+    // 済ませたときのほめ言葉が出ていれば、それが消えてから言う (上書きしない)
+    if (oshiOn()) {
+      if (res.crossed) oshiSayNext('levelup', res.stage.key);
+      else oshiSayNext('badge', '');
+    }
+  }
+
+  /**
+   * 隅の小さな知らせの器。**読み込んだときに空で置く** (role="status" の器は、字を入れる前から在るものでないと、
+   * 最初の知らせを読み上げない)。出していないあいだは見えないだけで、器は残す。
+   *
+   * @returns {HTMLElement}
+   */
+  function achToastEl() {
+    var el = document.getElementById('ach-toast');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'ach-toast';
+    el.className = 'ach-toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.addEventListener('click', achToastHide);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function achToastHide() {
+    var el = document.getElementById('ach-toast');
+    if (!el) return;
+    el.classList.remove('is-shown');
+    el.textContent = '';
+  }
+
+  /**
+   * 隅の小さな知らせ。帯 (#snackbar) とは別に出す (済ませたときの帯の「取り消す」を消さない)。焦点は奪わない。
+   *
+   * @param {string} icon
+   * @param {string} text
+   */
+  function achToast(icon, text) {
+    var el = achToastEl();
+    el.textContent = '';
+    var mark = document.createElement('span');
+    mark.className = 'ach-toast-icon';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = icon || '';
+    el.appendChild(mark);
+    var span = document.createElement('span');
+    span.className = 'ach-toast-text';
+    span.textContent = text;
+    el.appendChild(span);
+    el.classList.add('is-shown');
+    if (achToastTimer) window.clearTimeout(achToastTimer);
+    achToastTimer = window.setTimeout(achToastHide, 6000);
+  }
+
+  achToastEl();
+
+  // ----- 自分まわりの「実績」と、その頁 -----
+
+  /**
+   * 自分まわりの「実績」。オフなら null。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeAchMeButton() {
+    if (!achOn()) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn ach-open';
+    btn.appendChild(makeIcon('clipboard-check'));
+    btn.appendChild(document.createTextNode('実績'));
+    attachHint(btn, '取った実績 (バッジ) と推しのレベルを見ます。あなたにだけ見えます');
+    btn.addEventListener('click', function () {
+      closeMe();
+      openAchievements(btn);
+    });
+    return btn;
+  }
+
+  /**
+   * 右のペインに実績を出す。開くたびに数え直す (取れたものがあればここでも知らせる)。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openAchievements(sourceEl) {
+    var box = openSideView('実績', sourceEl || null, null);
+    box.classList.add('ach-page');
+    var wait = document.createElement('p');
+    wait.className = 'row-meta';
+    wait.textContent = '読み込んでいます…';
+    box.appendChild(wait);
+    var still = latest('ach');
+    call('apiAchievements', [], function (res) {
+      if (!still() || !box.isConnected) return;
+      if (!res || !res.on) {
+        box.textContent = '';
+        box.appendChild(achNote('実績は止めてあります。設定の「実績を集める」で始められます'));
+        return;
+      }
+      achGot(res);
+    }, failInto(box));
+  }
+
+  /** @returns {HTMLElement} 添えの字 */
+  function achNote(text) {
+    var p = document.createElement('p');
+    p.className = 'row-meta';
+    p.textContent = text;
+    return p;
+  }
+
+  /**
+   * 推しの Lv と次の段までの棒。
+   *
+   * @param {object} res
+   * @returns {HTMLElement}
+   */
+  function makeAchLevel(res) {
+    var box = document.createElement('div');
+    box.className = 'ach-level';
+    var head = document.createElement('div');
+    head.className = 'ach-level-head';
+    head.textContent = '推しの Lv ' + res.level + ' ・ ' + res.stage.label +
+      (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です');
+    box.appendChild(head);
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar ach-meter';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', '次の段までの進み具合');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-valuenow', String(Number(res.stage.meter) || 0));
+    var fill = document.createElement('span');
+    fill.style.width = (Number(res.stage.meter) || 0) + '%';
+    bar.appendChild(fill);
+    box.appendChild(bar);
+    return box;
+  }
+
+  /**
+   * 実績の頁を描く。
+   *
+   * @param {HTMLElement} box
+   * @param {object} res
+   */
+  function drawAchPage(box, res) {
+    box.textContent = '';
+    box.appendChild(achNote('実績はあなたにだけ見えます。順位も、続けた日数もありません。一度取った実績は消えません。' +
+      '推しのレベルは 1 + 取った実績の数です'));
+    box.appendChild(makeAchLevel(res));
+    box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
+
+    if ((res.next || []).length) {
+      var nh = document.createElement('h3');
+      nh.className = 'ach-head';
+      nh.textContent = '次に近い実績';
+      box.appendChild(nh);
+      var nl = document.createElement('ul');
+      nl.className = 'ach-next';
+      res.next.forEach(function (n) {
+        var li = document.createElement('li');
+        li.dataset.ach = n.key;
+        li.textContent = n.groupLabel + ': ' + n.have + ' / ' + n.need + ' ' + n.unit + ' ・ ' + n.hint;
+        nl.appendChild(li);
+      });
+      box.appendChild(nl);
+    }
+
+    (res.groups || []).forEach(function (g) {
+      var h = document.createElement('h3');
+      h.className = 'ach-head';
+      h.textContent = g.label + ' ' + g.got + ' / ' + g.total;
+      box.appendChild(h);
+      var grid = document.createElement('ul');
+      grid.className = 'ach-badges';
+      grid.dataset.group = g.key;
+      (res.items || []).filter(function (a) { return a.group === g.key; }).forEach(function (a) {
+        grid.appendChild(makeAchBadge(a));
+      });
+      box.appendChild(grid);
+    });
+  }
+
+  /**
+   * 実績1つ。まだのものは ??? (名前は出さない)。数のある実績は、いちばん近い1つにだけ手がかり。
+   *
+   * @param {object} a items の1つ
+   * @returns {HTMLElement}
+   */
+  function makeAchBadge(a) {
+    var li = document.createElement('li');
+    li.className = 'ach-badge' + (a.done ? ' is-done' : '');
+    li.dataset.ach = a.key;
+    var medal = document.createElement('span');
+    medal.className = 'ach-medal';
+    medal.setAttribute('aria-hidden', 'true');
+    medal.textContent = a.done ? a.icon : '?';
+    li.appendChild(medal);
+    var name = document.createElement('span');
+    name.className = 'ach-name';
+    name.textContent = a.done ? a.title : '???';
+    li.appendChild(name);
+    var sub = document.createElement('span');
+    sub.className = 'ach-sub';
+    sub.textContent = a.done
+      ? a.desc + (a.at ? ' (' + a.at + ')' : '')
+      : (a.hint || a.groupLabel);
+    li.appendChild(sub);
+    return li;
+  }
+
+  // ----- ホームの「最近の実績」 -----
+
+  /**
+   * ホームの「最近の実績」。オフ・止めた人には出さない。中身は返事が来てから埋める。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeAchHomeCard() {
+    if (!achOn() || !homeCardOn('ach')) return null;
+    var card = document.createElement('section');
+    card.className = 'home-card ach-card';
+    card.setAttribute('aria-label', '最近の実績');
+    if (achLast) fillAchHomeCard(card, achLast);
+    else card.appendChild(homeHead('最近の実績', [privatePill()]));
+    return card;
+  }
+
+  /**
+   * @param {HTMLElement} card
+   * @param {object} res
+   */
+  function fillAchHomeCard(card, res) {
+    card.textContent = '';
+    card.appendChild(homeHead('最近の実績', [privatePill()]));
+    card.appendChild(makeAchLevel(res));
+    var list = (res.unlocked || []).slice(0, 3);
+    if (!list.length) {
+      card.appendChild(achNote('まだ実績はありません。やることを1つ済ませると、最初の実績が取れます'));
+    } else {
+      var ul = document.createElement('ul');
+      ul.className = 'ach-badges ach-recent';
+      list.forEach(function (a) { ul.appendChild(makeAchBadge(a)); });
+      card.appendChild(ul);
+    }
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.textContent = '実績を全部見る';
+    open.addEventListener('click', function () { openAchievements(open); });
+    card.appendChild(open);
+  }
