@@ -23,6 +23,11 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `prefValueOf_` で人ごとに読む (全員の `STYLE:` を1回の写しで読むので、`prefReader_` と同じ形の口を渡す)。結果の画面の切り替えも
 `apiPrefSet` を呼ぶ (書くのはここだけ、のまま)。`apiWorkStyleForget` は `apiPrefSet('style.share', null)` で既定に戻す。
 
+実績 (`ach.on` / `ach.cheer`、ホームの `home.cards.ach`) は自分の設定で、どれも既定でオン (本人にだけ見え、順位も無いので)。
+`ach.on` を切ると、開いた日も数えず (`apiAchievementsCheck` が `on: false` を返す)、頁とカードも出ない。取った印は消さない。
+`ach.cheer` は取ったときの知らせ・推しのお祝い・大きな字 (楽しい演出の `fun.cheer` がオンのとき) をまとめて止める。
+成果の数の `fxOff` は `ach.*` を切った人も数える。
+
 「予定に入れる」(`calendar.*`、`PREF_CALENDAR_ITEMS_`) は `calendar.shared` だけがチームの設定 (型 `calendar` = カレンダーの ID。
 `''` は決まっていない)。汎用の欄には出さず `js-calendar` が組む。ほかは自分の設定で `calendar.plan` は既定オフ。
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。

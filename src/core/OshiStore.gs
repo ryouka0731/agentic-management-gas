@@ -11,7 +11,7 @@
  * - `charId` は後から足した列。それより前の行は空で、その人の1人目 (1) として読む (oshiCharIdOf_)
  * - 最初からいるキャラ (OSHI_BUILTINS) は台帳に置かない。名前・口調は決まっていて、絵は焼いたファイルにある
  * - どのキャラを使うかは自分の設定 oshi.char、自分のキャラの絵が無い表情に出す最初からいるキャラは oshi.fallback
- * - 育ちの最高の段だけを UserProperties (`OSHI_STAGE_MAX:<アドレス>`) に覚える (取り消しで戻さない)
+ * - 育ちの段は取った実績の数 (Lv) で決まる (oshiGrowth_)。実績は消えないので段も戻らない
  *
  * **番頭の画面では本人にだけ見せる。** 末尾が _ の関数はアドレスを受けるので画面から呼べない。
  * api は開いている本人のアドレスだけを渡す。ただし台帳と objects/ は入れ物の中にあり、
@@ -498,7 +498,7 @@ function oshiCharDeleteRows_(who, id, drop) {
 }
 
 /**
- * 自分のキャラを全部消す (名前・口調・せりふ・画像・育ちの覚え)。
+ * 自分のキャラを全部消す (名前・口調・せりふ・画像)。育ちは実績で決まるので消さない (前の育ちの覚えだけ片付ける)。
  * 出した番号の覚え (OSHI_CHAR_HIGH) は残す (消した番号を次のキャラに回さない)。
  *
  * @param {string} email
@@ -545,56 +545,16 @@ function oshiImageData_(email, id, state) {
 }
 
 /**
- * 育ちの数。**台帳から数え、保存しない。**
- *
- * ポイントとレベルに参加している人はそのポイント (gamePointsByPerson_)。参加していない人は、
- * 済ませたやること (担当。担当が空なら閉じた人) と反映した確認依頼 (出した人) の数。
- * どちらも本人のぶんだけ。
+ * 育ちの段。**Lv = 1 + 取った実績の数** (achLevel_。src/core/AchievementsStore.gs) から決める。
+ * 取った実績は消さないので、段は下がらない (前は届いた最高の段を OSHI_STAGE_MAX: に覚えていた。もう読まない)。
  *
  * @param {string} email
- * @returns {{points: number, source: string}}
- */
-function oshiPoints_(email) {
-  var who = oshiWho_(email);
-  if (!who) return { points: 0, source: 'count' };
-  var playing = gameEnabled() && gamePlayers_().some(function (p) { return oshiWho_(p) === who; });
-  if (playing) {
-    var pts = gamePointsByPerson_('', '');
-    var sum = 0;
-    Object.keys(pts).forEach(function (k) { if (oshiWho_(k) === who) sum += pts[k]; });
-    return { points: Math.round(sum * 1e9) / 1e9, source: 'game' };
-  }
-  var n = 0;
-  var closers = motivationClosers_();
-  dbReadAll('issues').forEach(function (row) {
-    if (String(row.state) !== 'closed') return;
-    if (motivationCredited_(row, closers).some(function (p) { return oshiWho_(p) === who; })) n++;
-  });
-  dbReadAll('pulls').forEach(function (pr) {
-    if (String(pr.state) === 'merged' && oshiWho_(pr.author) === who) n++;
-  });
-  return { points: n, source: 'count' };
-}
-
-/**
- * 育ちの段。届いた最高の段を覚えて、それより下には戻さない (取り消しで下がらない)。
- *
- * @param {string} email
- * @returns {{index: number, key: string, label: string, meter: number, toNext: number, points: number, source: string}}
+ * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number}}
  */
 function oshiGrowth_(email) {
-  var who = oshiWho_(email);
-  var got = oshiPoints_(who);
-  var props = PropertiesService.getUserProperties();
-  var key = 'OSHI_STAGE_MAX:' + who;
-  var seen = Number(props.getProperty(key));
-  if (!isFinite(seen) || seen < 0) seen = 0;
-  var st = oshiStageOf(got.points, seen);
-  if (who && st.index > seen) props.setProperty(key, String(st.index));
-  return {
-    index: st.index, key: st.key, label: st.label, meter: st.meter, toNext: st.toNext,
-    points: got.points, source: got.source,
-  };
+  var lv = achLevel_(oshiWho_(email));
+  return { index: lv.index, key: lv.key, label: lv.label, meter: lv.meter, toNext: lv.toNext, level: lv.level,
+    unlocked: lv.unlocked };
 }
 
 /**

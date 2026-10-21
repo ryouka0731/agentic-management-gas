@@ -68,6 +68,8 @@ function PREF_HOME_CARDS_() {
     { key: 'game', label: 'ポイントとレベル' },
     { key: 'recent', label: '最近の動き' },
     { key: 'team', label: 'チームの前進' },
+    // 最近の実績 (本人だけ)。実績を集める (ach.on) がオンのときだけ出す
+    { key: 'ach', label: '最近の実績' },
   ];
 }
 
@@ -294,6 +296,20 @@ function PREF_GROUPS_() {
           def: OSHI_STYLES()[0].key },
       ];
     },
+    ach: function () {
+      // 実績 (バッジ)。どちらも既定でオン (本人にだけ見え、順位も無いので)。中身は Achievements.js、画面は js-ach
+      return [
+        { key: 'ach.on', scope: 'me', type: 'bool', section: '実績',
+          label: '実績を集める',
+          help: '番頭を開いた日 (通算)・済ませた数・はじめて使った機能で実績 (バッジ) が取れます。あなたにだけ見え、' +
+            '続けた日数や順位は数えません。推しのレベルは取った実績の数で上がります',
+          def: true },
+        { key: 'ach.cheer', scope: 'me', type: 'bool', section: '実績',
+          label: '実績を取ったら知らせる',
+          help: '取ったときに画面の隅に小さく知らせ、推しがお祝いします。楽しい演出の「済ませたらお祝い」がオンなら大きな字も出ます',
+          def: true },
+      ];
+    },
     goals: function () {
       // 目標 (OKR・MBO・KPI)。既定はオフ (使わない人が多い。スクラムと同じ考え方)。中身は Goal.gs / GoalScore.js
       return [
@@ -328,7 +344,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'oshi', 'ach', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -596,6 +612,7 @@ function apiPrefs(opts) {
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']) },
+      ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
       calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },

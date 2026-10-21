@@ -20,7 +20,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | `src/core/Scrum.gs` / `src/core/ScrumView.js` / `src/core/Terms.js` / `src/api/Scrum.gs` / `src/ui/js-scrum.html` | `docs/dev/scrum.md` |
 | `src/ui/*.html` の JS (`app.js.html` / `js-*.html` / `wiki.html`)・`src/core/Plain.js`・`api*` の返す形 | `docs/dev/ui.md` |
 | `src/ui/app.css.html`・`makePill`・`makeDiagram`・ボタンや一覧の幅 | `docs/dev/design.md` |
-| 末尾が `_` でない関数を足す・`src/Main.gs` / `src/Debug.gs`・持ち主と管理者 (`src/core/Repo.gs` / `src/core/CurrentUser.gs` / `src/core/Member.gs`)・人に関わる数 (`src/core/Game.gs` / `src/core/Home.gs` / `src/core/Search.gs` / `src/core/Focus.gs`)・仕事のスタンス診断 (`src/core/WorkStyle.gs` / `src/core/WorkStyleTypes.js` / `src/api/WorkStyle.gs`) | `docs/dev/permissions.md` |
+| 末尾が `_` でない関数を足す・`src/Main.gs` / `src/Debug.gs`・持ち主と管理者 (`src/core/Repo.gs` / `src/core/CurrentUser.gs` / `src/core/Member.gs`)・人に関わる数 (`src/core/Game.gs` / `src/core/Home.gs` / `src/core/Search.gs` / `src/core/Focus.gs` / 実績 `src/core/AchievementsStore.gs`)・仕事のスタンス診断 (`src/core/WorkStyle.gs` / `src/core/WorkStyleTypes.js` / `src/api/WorkStyle.gs`) | `docs/dev/permissions.md` |
 | 目標 (`src/core/Goal.gs` / `src/core/GoalScore.js` / `src/api/Goals.gs` / `src/ui/js-goals.html`) | `docs/dev/permissions.md` と `docs/dev/ledger-schema.md` (画面は `docs/dev/ui.md`) |
 | `src/core/Prefs.gs` (`PREFS_SCHEMA()`)・`notify` の kind・`src/api/Settings.gs` | `docs/dev/prefs.md` |
 | 登録・外す・取り下げ・消えた文書の扱い (`src/api/Files.gs` / `prClose` / `filesVisibleInWiki` / `prWithdrawOrphans`) | `docs/dev/user-paths.md` |
