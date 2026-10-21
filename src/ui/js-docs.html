@@ -350,6 +350,8 @@
         if (res && res.baseSha) editorBaseSha = res.baseSha;
         editSaveBtn.disabled = false;
         editHint.textContent = '保存しました';
+        // 実績「Markdown で保存した」は使われ方の場所で確かめる (js-ach)
+        usageCount('action', 'md-save');
         refreshStatus();
       })
       .withFailureHandler(function (err) {

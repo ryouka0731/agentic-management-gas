@@ -44,7 +44,7 @@ export const CORE_SOURCES = [
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Reward.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
-  'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
+  'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs',
   'src/core/CoworkLink.js', 'src/core/Cowork.gs',
 ];
@@ -54,7 +54,7 @@ export const API_SOURCES = [
   'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
-  'src/api/Calendar.gs',
+  'src/api/Calendar.gs', 'src/api/Achievements.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
 ];
 

@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-goals` / `js-luck` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -259,7 +259,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 自分の設定の「推し」(`oshi.on`) をオンにした人の画面にだけ出す。**ほかの飾りと違い既定でオン** (利用者が決めた例外。
 既定のキャラもタク)。推しの設定 (`oshi.*`) はどれも自分の設定 (scope `'me'`) で、チームの値は読まない
 (`test/oshi.test.js` の「推しは既定でオン、選ぶのは自分の設定」)。自分で作ったキャラクターの絵を上げると、
-済ませたときに左下の吹き出しでほめ、ホームであいさつし (`oshi.home`)、活動に合わせて育つ。手引きは `docs/manual/oshi.md`。
+済ませたときに左下の吹き出しでほめ、ホームであいさつし (`oshi.home`)、実績を取るたびに Lv が上がって育つ (Lv = 1 + 取った実績の数。
+段は `OSHI_STAGES()` が Lv で決める)。手引きは `docs/manual/oshi.md`。
 
 - **表情・口調・場面・せりふ・頼み文・育ちの段・上限は `src/core/Oshi.js` が唯一の定義。** 画面は `apiOshiGet` の返事を
   使い、写しを持たない (手引きも頼み文を写さない。`test/oshi.test.js` が見ている)。せりふを足すときは `OSHI_LINES()` の
@@ -313,6 +314,33 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`
+
+## 実績 (`js-ach`)
+
+自分の設定の「実績を集める」(`ach.on`) がオンの人に出す (**既定でオン**)。何を・いくつで取れるかは `src/core/Achievements.js` の
+`ACHIEVEMENTS()` が唯一の定義で、画面は `apiAchievements` / `apiAchievementsCheck` の返事を描くだけ。手引きは `docs/manual/achievements.md`。
+
+- **開いたときの数え直しは js-init が `achOpenCheck()` で1回だけ頼む** (開いた日もこのときだけ数える)。設定が届くまで待ち、
+  `settlePrefs` が呼び直す。js-init は js-ach より前に読まれるので、**js-ach の状態の `var` に初期値を書かない** (`var x = false;` と
+  書くと、js-init が付けた印がその行で消える。`var x;` は値を消さない)
+- 画面が持つのは「成功した api の名前 → 数え直すか」の表 `ACH_CALL_EVENTS()` だけ。`call()` の成功の枝から `achAfterCall` を呼ぶ
+  (`FUN_CHEERS` / `OSHI_CALL_EVENTS` と同じ形)。表の値はその操作で変わりうる数えるもので、数え直しは
+  `apiAchievementsCheck({metrics})` (開いた日は数えず、名指したものだけ)。返事を待つあいだに頼まれたものは、返事のあとにまとめて1回だけ頼み直す。
+  絞った返事 (`partial`) では頁を描き直さない
+- 使われ方で確かめる実績 (Markdown で保存 `md-save`・日報をコピー `report-copy`・探す `search-open`・推しを選ぶ `oshi-choose`) は、
+  その場で `usageCount('action', …)` を数え、`apiUsageRecord` を送ったあとに数え直す。場所の名前は `ACH_USAGE_TARGETS()` で、
+  サーバの `ACH_USAGE_PLACES()` と同じ (`test/achievements.test.js`)
+- 取ったときは隅の小さな知らせ (`#ach-toast`。`role="status"`・焦点を奪わない・帯 `#snackbar` とは別に出すので「取り消す」を消さない)。
+  器は読み込んだときに空で置く (字を入れる前から在る器でないと、最初の知らせを読み上げない)。上の帯の下 (56px + `--sp-2`) に、
+  自分まわり・知らせの欄 (160) より手前に出す。
+  大きな字 (`funBanner`) は楽しい演出の `fun.cheer` もオンのときだけ。推しは「実績を取った」(`badge`)、段が上がったら
+  「育ちの段が上がった」(`levelup`) を上がった段の表情 (`grow1`〜`3`) で言う。**済ませたときのほめ言葉が出ていれば、消えてから言う**
+  (`oshiSayNext`。待てるのは1つ)。`ach.cheer` を切ると全部出さない
+- 推しの育ちは返事で揃える (`achSyncOshi`。Lv が違うときだけ、出ている `.oshi-growth` を描き直す)。取り直さない
+- 頁 (自分 → 実績、`.ach-page`) は `latest('ach')` を通す。まだのものは ??? で、名前は出さない。ホームの「最近の実績」(`.ach-card`) は
+  `home.cards.ach` で止められる
+- 試すのは `test/component/achievements.test.js` (返事は本物のサーバから作る)・`test/achievements.test.js` (サーバ)・
+  `test/e2e/achievements.test.js` (通し)
 
 ## 目標 (`js-goals`)
 

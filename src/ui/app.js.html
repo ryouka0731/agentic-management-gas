@@ -2234,6 +2234,8 @@
         // 集中のしかた: そのやることへの手なら「始めた」を確かめに行く (js-focus)。
         // 本来の返事の扱い (帯など) のあとに置く。先に置くと、確かめた知らせを本来の帯が上書きする
         focusAfterCall(name, args);
+        // 実績: 済ませた操作のあとに数え直す (表は js-ach の ACH_CALL_EVENTS)。飾りが落ちても ok は止めない
+        try { achAfterCall(name, args); } catch (e) { if (window.console) console.warn('実績を数え直せませんでした', e); }
       })
       .withFailureHandler(function (err) {
         var kind = errorKindOf(err && err.message);

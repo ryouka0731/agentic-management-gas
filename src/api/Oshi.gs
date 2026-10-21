@@ -90,8 +90,8 @@ function apiOshiGet() {
     luckyOneIn: plainNumber(OSHI_LUCKY_ONE_IN()),
     growth: {
       index: plainNumber(g.index), key: plainText(g.key), label: plainText(g.label),
-      meter: plainNumber(g.meter), toNext: plainNumber(g.toNext), points: plainNumber(g.points),
-      source: plainText(g.source),
+      meter: plainNumber(g.meter), toNext: plainNumber(g.toNext), level: plainNumber(g.level),
+      unlocked: plainNumber(g.unlocked),
       stages: OSHI_STAGES().map(function (s) { return { key: plainText(s.key), label: plainText(s.label), min: plainNumber(s.min) }; }),
     },
     limits: {

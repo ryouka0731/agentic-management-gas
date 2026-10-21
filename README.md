@@ -23,6 +23,7 @@ Google Workspace の文書（Docs / Sheets / Slides）に、Git 相当の版管�
 | 確認依頼 | 複数の文書とコードの差分を1つにまとめて承認・反映。正式版は直接なおせない | [文書と確認依頼](docs/manual/documents-and-reviews.md) |
 | やること | 一覧・進捗ボード・工程表・集計・親子・工数・タグ・下書き・Google ToDo | [やること](docs/manual/tasks.md) |
 | ホーム | あなたの番・改善のヒント・草・最近の動き・チームの前進・ポイントとレベル (既定オフ) | [ホームとポイント](docs/manual/home-and-game.md) |
+| 実績 | 通算で開いた日・済ませた数・はじめて使った機能で取るバッジ。推しのレベルが上がる (本人だけ・順位なし・既定オン) | [実績](docs/manual/achievements.md) |
 | 要望・不具合 | 誰でも読めて返信できる相談板。持ち主のやることに自動で積まれる (持ち主が複数なら担当なし) | [要望・不具合](docs/manual/inquiries.md) |
 | 期間で進める | スプリント・バーンダウン・ベロシティ・困りごと (既定オフ) | [期間で進める](docs/manual/scrum.md) |
 | 人と工数 | 上下関係・表示名・頭数で割る工数 | [人と工数](docs/manual/people-and-effort.md) |
