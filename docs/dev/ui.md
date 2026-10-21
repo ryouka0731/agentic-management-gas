@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-goals` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-goals` / `js-luck` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -162,6 +162,31 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 試すのは `test/component/fun.test.js`
 - 集中のしかた (`js-focus`) の LET'S GO!! と SUPER COMPLETE!! も `FUN_CHEERS()` の行 (`apiFocusStart` / `apiFocusEnd` の done)。
   お祝いがオフの人には js-focus が落ち着いた帯を出す
+
+## 思いがけない当たり・ノリノリタイム・自分へのご褒美 (`js-luck`)
+
+自分の設定の `luck.on` (当たりとノリノリタイム) と `luck.reward` (ご褒美) をオンにした人の画面にだけ出す。**どちらも既定はオフ。**
+パチンコの仕組みを頼まれて入れたもので、線は `docs/superpowers/specs/2026-10-21-motivation-review.md` の「不確実な報酬」。
+
+- **確率は見た目の演出だけに使う。** 当たっても機能・情報・ポイントは増えない。当たりは画面の中だけで決め、サーバに何も
+  送らない (ポイントは台帳から数えるもので、画面の乱数からは付けない)
+- **外れは描かない。** リールは当たったときにだけ作り、回っている帯にも当たりの絵しか並べない (ニアミスを作らない)。
+  `test/component/luck.test.js` が、揃わない絵が1つも描かれないことと、外れで何も描かないことを見ている
+- 引くのは `call()` の成功の枝から `luckAfter` を呼んだときだけ (失敗の枝からは呼ばない)。集中を始めた (`apiFocusStart`) では
+  引かない (始めてすぐやめるのを繰り返せる)。集中しているやることの完了 (`focusClosesSession`) でも引かない (SUPER COMPLETE!! と重ねない)。済ませた手の表は `LUCK_ACTIONS()`、
+  引数で当たるかは `FUN_CHEERS()` の `when` で見る (判定を2つ持たない)。当たったら `funCheerAfter` に `lucky` を渡し、いつもの
+  お祝いは重ねない。推しがオンなら `luckTakeOshi()` で一度だけ `lucky` の場面にする
+- 上限は `LUCK_RULES()` だけ (1/8・1日3回・30分空ける・1時間に3つでノリノリタイム15分)。**上限を先に見て、乱数はそのあと**。
+  数は端末 (`localStorage` の `bantoLuck`) に覚え、読めなければその画面の控え (`luckMem`) だけで数える
+- **ノリノリタイムは黙って終わる** (「終わりました」も残り時間も出さない)。札は「ノリノリタイム」だけで、× で隠せる (覚える)。
+  札は右下 (左下は推しの吹き出し)。集中の置き場 (`#focus-dock`) が出ているあいだは `is-above-dock` でその上に積む (`luckChipPlace`。
+  出入りは MutationObserver で見る)。
+  枠の光 (`.luck-fever-frame`) は押せず読み上げにも載らない。お祝いの字は `is-fever` で大きくする
+- 動きを減らす設定では、当たりは字の札 (`.is-static`) だけ、ノリノリタイムは札だけ (枠を描かない)
+- ご褒美は自分まわりの `makeRewardMeButton` から右のペインに開く。足りないご褒美は押せないだけにする (「あと◯で」と近さを見せない)。
+  取り消しの帯は `undoUntil` で外す (時計は描き直すたびに1つに戻す)。サーバは `src/core/Reward.gs` / `src/api/Reward.gs`
+- 試すのは `test/component/luck.test.js` (押して確かめる)・`test/luck-ui.test.js` (上限の計算)・`test/reward.test.js` (サーバ)・
+  `test/e2e/luck.test.js` (通し)
 
 ## 集中のしかた (`js-focus`)
 
