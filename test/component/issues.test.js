@@ -1194,8 +1194,9 @@ describe('表示する名前', () => {
     const shared = { 'me@example.com': '山田 太郎' };
     let deliver;
     mount({ apiPeopleNames: { later: (ok) => { deliver = ok; } } });
-    deliver(shared);
+    // 名前は開いた直後には取らない。名前を出す画面 (使い方) を開いたときに取り、届いてから描く
     [...document.querySelectorAll('[data-tab="help"]')][0].click();
+    deliver(shared);
     [...document.querySelectorAll('#guide .btn')]
       .find((b) => b.textContent.includes('表示する名前')).click();
     document.querySelector('#side-body input').value = '山田 一郎';

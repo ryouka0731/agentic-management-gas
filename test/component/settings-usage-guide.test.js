@@ -616,6 +616,8 @@ describe('自分まわりの操作', () => {
       document.getElementById('me-btn').click();
       kitBtn().click();
       expect(document.getElementById('me-btn').querySelector('.me-dot')).toBeNull();
+      // 落とすと自分の欄は閉じる (続きの手順を右に出す)。欄の中身は開いたときに描くので、開き直して見る
+      document.getElementById('me-btn').click();
       expect(kitBtn().textContent).not.toContain('更新あり');
     });
 

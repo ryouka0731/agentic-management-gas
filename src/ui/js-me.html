@@ -8,16 +8,14 @@
    * 拡張サービスを足していない環境で押せるボタンを出しても、押した先で
    * 断られるだけになる。
    */
-  function loadTasksState() {
-    call('apiTasksState', [], function (res) {
-      tasksState = res || { available: false, listId: '', lists: [] };
-      var btn = document.getElementById('tasks-btn');
+  function applyTasksState(res) {
+    tasksState = res || { available: false, listId: '', lists: [] };
+    var btn = document.getElementById('tasks-btn');
 
-      btn.hidden = !tasksState.available;
-      btn.title = tasksState.listId
-        ? '自分の担当を Google ToDo と同期します'
-        : '入れ先の ToDo リストを選びます';
-    }, failQuiet('使えないだけ'));
+    btn.hidden = !tasksState.available;
+    btn.title = tasksState.listId
+      ? '自分の担当を Google ToDo と同期します'
+      : '入れ先の ToDo リストを選びます';
   }
 
   /**
@@ -65,7 +63,8 @@
           tasksState.listId = id;
           showSnack('入れ先を決めました。もう一度押すと同期します',
             { kind: 'ok' });
-          loadTasksState();
+          // 選んだあとの形を取り直す (覚えた返事は古い)
+          call('apiTasksState', [], applyTasksState, failQuiet('使えないだけ'));
         });
       },
       sourceEl
@@ -488,14 +487,10 @@
    * 自分まわりの中身を描く。
    */
   function drawMe() {
-    meBtn.textContent = '';
-    meBtn.appendChild(makeAvatar(currentUser));
-    if (kitOutdated) {
-      var dot = document.createElement('span');
-      dot.className = 'me-dot';
-      meBtn.appendChild(dot);
-    }
-    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
+    drawMeButton();
+    // 欄の中身は開いているときだけ描く (開くときに描く)。閉じた欄のために api (ポイントの参加) を呼ばない。
+    // 以前は起動のときに2回 (はじめと、自分が分かったとき) 描いていて、apiGameState をホームのカードと合わせて3回呼んでいた
+    if (mePanel.hidden) return;
 
     document.getElementById('me-who').textContent =
       personName(currentUser) || 'あなた';
@@ -513,6 +508,29 @@
     actions.className = 'me-actions';
     makeMeActions().forEach(function (el) { actions.appendChild(el); });
     meBody.appendChild(actions);
+  }
+
+  /** 上の段の自分のボタン (顔と、道具の更新の印)。欄が閉じていても見えている */
+  function drawMeButton() {
+    meBtn.textContent = '';
+    meBtn.appendChild(makeAvatar(currentUser));
+    if (kitOutdated) {
+      var dot = document.createElement('span');
+      dot.className = 'me-dot';
+      meBtn.appendChild(dot);
+    }
+    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
+  }
+
+  /**
+   * 自分の欄を開く。名前と道具の更新は、まだ取っていなければ取ってから描く (needOnce)。
+   */
+  function openMe() {
+    mePanel.hidden = false;
+    meBtn.setAttribute('aria-expanded', 'true');
+    needOnce(['apiPeopleNames', 'apiWorkStyleTeam', 'apiKitStatus'], function () {
+      if (!mePanel.hidden) drawMe();
+    });
   }
 
   // ===== 使われ方の記録 =====
@@ -1257,6 +1275,17 @@
 
   /** 返事を待っている頼みのどれかが、新しい知らせを前に出すものか */
   var noticeLoud = false;
+
+  /** 知らせを取りはじめたか (2回始めると1分ごとの取り直しが2本になる) */
+  var noticesStarted = false;
+
+  /** 知らせを取り、1分ごとに取り直す。1回だけ */
+  function startNotices() {
+    if (noticesStarted) return;
+    noticesStarted = true;
+    loadNotices(true);
+    window.setInterval(function () { loadNotices(false); }, 60000);
+  }
 
   /**
    * 知らせを取ってくる。
