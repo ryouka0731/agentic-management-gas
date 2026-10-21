@@ -459,14 +459,19 @@ function OSHI_STAGES() {
  * Lv から育ちの段を決める。なかよし (meter) はいまの段から次の段までの進み (0〜100)、toNext は次の段までの Lv。
  * 最後の段では meter 100・toNext 0。
  *
+ * floor は前に届いていた段 (0 から。実績の前は育ちの最高の段を OSHI_STAGE_MAX: に覚えていた)。それより下には出さない。
+ *
  * @param {number} level 1 から
+ * @param {number} [floor] これより下の段にしない
  * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number}}
  */
-function oshiStageOf(level) {
+function oshiStageOf(level, floor) {
   var list = OSHI_STAGES();
   var lv = Math.max(1, Math.floor(Number(level) || 1));
   var i = 0;
   while (i + 1 < list.length && lv >= list[i + 1].min) i++;
+  var f = Math.floor(Number(floor) || 0);
+  if (f > i) i = Math.min(f, list.length - 1);
   var meter = 100;
   var toNext = 0;
   if (i + 1 < list.length) {

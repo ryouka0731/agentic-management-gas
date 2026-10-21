@@ -109,8 +109,11 @@ describe('定義 (Achievements.js)', () => {
 
   it('画面の使われ方の場所はサーバの ACH_USAGE_PLACES と同じ', () => {
     const { ctx } = setup();
-    const f = ui(['ACH_USAGE_TARGETS']);
+    const f = ui(['ACH_USAGE_TARGETS', 'ACH_USAGE_METRICS']);
     expect(f.ACH_USAGE_TARGETS().slice().sort()).toEqual(Object.values(ctx.ACH_USAGE_PLACES()).sort());
+    // 場所 → 数えるもの も同じ (済ませたあとの数え直しは、この数えるものを名指す)
+    const places = ctx.ACH_USAGE_PLACES();
+    for (const [place, metric] of Object.entries(f.ACH_USAGE_METRICS())) expect(places[metric], place).toBe(place);
   });
 });
 
@@ -134,7 +137,7 @@ describe('通算で開いた日', () => {
     ctx.dbWithLock_ = function (ms, fn, busy) {
       if (!raced) {
         raced = true;
-        props(ctx).setProperty('ACH_DAYS:' + ME, JSON.stringify({ n: 1, last: '2026-10-21' }));
+        props(ctx).setProperty('ACH:' + ME, JSON.stringify({ days: { n: 1, last: '2026-10-21' }, got: {} }));
       }
       return orig(ms, fn, busy);
     };
@@ -230,8 +233,8 @@ describe('数え方 (台帳から)', () => {
   it('全部取った数えるものの表は読まない', () => {
     const { ctx } = setup();
     const all = {};
-    ctx.ACHIEVEMENTS().forEach((a) => { if (a.metric !== 'done') all[a.key] = '2026-10-21T00:00:00.000Z'; });
-    props(ctx).setProperty('ACH:' + ME, JSON.stringify(all));
+    ctx.ACHIEVEMENTS().forEach((a) => { if (a.metric !== 'done') all[a.key] = '2026-10-21'; });
+    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ days: { n: 400, last: '2026-10-21' }, got: all }));
     const read = [];
     const orig = ctx.dbReadAll;
     ctx.dbReadAll = (t) => { read.push(t); return orig(t); };
@@ -256,8 +259,8 @@ describe('一度取ったら消さない', () => {
     const again = ctx.achCheck_(ME, new Date('2026-10-22T03:00:00Z'), {});
     expect(again.newly).toEqual([]);
     expect(Object.keys(again.have).sort()).toEqual(['done-1', 'first-search']);
-    // 取った時刻は最初に取ったときのまま
-    expect(again.have['done-1']).toBe(DAY1.toISOString());
+    // 取った日は最初に取った日 (東京の暦日) のまま
+    expect(again.have['done-1']).toBe('2026-10-21');
     expect(ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['done-1', 'first-search']);
   });
 
@@ -272,13 +275,13 @@ describe('一度取ったら消さない', () => {
       if (!raced) {
         raced = true;
         // 鍵を取る直前に、ほかのタブが同じ実績を取り終えた
-        props(ctx).setProperty('ACH:' + ME, JSON.stringify({ 'done-1': '2026-10-21T02:00:00.000Z' }));
+        props(ctx).setProperty('ACH:' + ME, JSON.stringify({ days: { n: 0, last: '' }, got: { 'done-1': '2026-10-20' } }));
       }
       return orig(ms, fn, busy);
     };
     const res = ctx.achCheck_(ME, DAY1, {});
     expect(res.newly).toEqual([]);
-    expect(res.have['done-1']).toBe('2026-10-21T02:00:00.000Z');
+    expect(res.have['done-1']).toBe('2026-10-20');
   });
 
   it('鍵が取れなければ取らない (取ったと言わない。次に数え直したときに取れる)', () => {
@@ -291,9 +294,9 @@ describe('一度取ったら消さない', () => {
     expect(ctx.achCheck_(ME, DAY1, {}).newly).toEqual(['days-1']);
   });
 
-  it('知らない key と時刻でない値は読まない (人がエディタで書き換えうる)', () => {
+  it('知らない key と日でない値は読まない (人がエディタで書き換えうる)', () => {
     const { ctx } = setup();
-    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ 'days-1': '2026-10-21T00:00:00Z', nope: '2026-10-21T00:00:00Z', 'done-1': 3 }));
+    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ got: { 'days-1': '2026-10-21', nope: '2026-10-21', 'done-1': 3 } }));
     expect(Object.keys(ctx.achUnlockedRead_(ME))).toEqual(['days-1']);
     props(ctx).setProperty('ACH:' + ME, '{こわれた');
     expect(ctx.achUnlockedRead_(ME)).toEqual({});
@@ -304,7 +307,8 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
   it('アドレスを受けず、開いている本人のぶんだけを返す (ほかの人の実績は見えない)', () => {
     const { ctx, fake } = setup();
     expect(ctx.apiAchievements.length).toBe(0);
-    expect(ctx.apiAchievementsCheck.length).toBe(0);
+    // 受けるのは数え直す数えるものの名前だけ (アドレスを渡しても、誰のぶんかは変わらない)
+    expect(ctx.apiAchievementsCheck.length).toBe(1);
     fake._setUser('b@example.com');
     ctx.apiAchievementsCheck();
     expect(ctx.apiAchievements().unlocked.map((a) => a.key)).toEqual(['days-1']);
@@ -312,6 +316,10 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     const mine = ctx.apiAchievements();
     expect(mine.unlocked).toEqual([]);
     expect(JSON.stringify(mine)).not.toContain('b@example.com');
+    // アドレスを渡しても、開いている本人 (tester) のぶんを数える
+    ctx.apiAchievementsCheck('b@example.com');
+    expect(ctx.achDaysRead_(ME).n).toBe(1);
+    expect(ctx.achDaysRead_('b@example.com').n).toBe(1);
   });
 
   it('まだのものは名前を返さず、数のあるものはいちばん近い1つにだけ手がかり', () => {
@@ -319,7 +327,7 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     const res = ctx.apiAchievementsCheck();
     const done = res.items.find((a) => a.key === 'days-1');
     expect(done).toMatchObject({ done: true, title: 'はじめの一日', icon: '🌱' });
-    expect(done.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(done.at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const locked = res.items.filter((a) => !a.done);
     for (const a of locked) {
       expect(a.title, a.key).toBeUndefined();
@@ -367,5 +375,112 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     expect(items.map((p) => [p.key, p.scope, p.def])).toEqual([['ach.on', 'me', true], ['ach.cheer', 'me', true]]);
     expect(ctx.prefItem_('home.cards.ach')).toMatchObject({ scope: 'me', def: true });
     expect(ctx.apiPrefs().effective.ach).toEqual({ on: true, cheer: true });
+  });
+});
+
+/** 疑似の CacheService (期限は見ない) */
+function withCache(ctx) {
+  const store = new Map();
+  ctx.CacheService = { getScriptCache: () => ({
+    get: (k) => (store.has(k) ? store.get(k) : null),
+    put: (k, v) => { store.set(k, String(v)); },
+    remove: (k) => { store.delete(k); },
+  }) };
+  return store;
+}
+function readsOf(ctx) {
+  const read = [];
+  const orig = ctx.dbReadAll;
+  ctx.dbReadAll = (t) => { read.push(t); return orig(t); };
+  return read;
+}
+
+describe('見直し (レビューで見つかったもの)', () => {
+  it('前の育ちの段 (OSHI_STAGE_MAX) より下げない。その床では「段が上がった」と言わない', () => {
+    const { ctx, fake } = setup();
+    ctx.PropertiesService.getUserProperties().setProperty('OSHI_STAGE_MAX:' + ME, '2');
+    expect(ctx.apiOshiGet().growth).toMatchObject({ key: 'grow3', index: 2, level: 1 });
+    const res = ctx.apiAchievementsCheck();
+    expect(res.newly.map((a) => a.key)).toEqual(['days-1']);
+    expect(res).toMatchObject({ crossed: false, stage: { key: 'grow3' } });
+    // 自分のキャラを全部消しても、前の段の覚えは消さない
+    ctx.apiOshiCharCreate('ルナ', 'polite');
+    ctx.apiOshiForget();
+    expect(ctx.PropertiesService.getUserProperties().getProperty('OSHI_STAGE_MAX:' + ME)).toBe('2');
+    expect(ctx.apiOshiGet().growth.key).toBe('grow3');
+    expect(fake).toBeTruthy();
+  });
+
+  it('床が一人前のとき、Lv が名人に届けば「段が上がった」と言う', () => {
+    const { ctx } = setup();
+    ctx.PropertiesService.getUserProperties().setProperty('OSHI_STAGE_MAX:' + ME, '1');
+    const all = {};
+    ctx.ACHIEVEMENTS().filter((a) => a.key !== 'days-1').slice(0, 13).forEach((a) => { all[a.key] = '2026-10-20'; });
+    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ days: { n: 0, last: '' }, got: all }));
+    expect(ctx.apiOshiGet().growth).toMatchObject({ key: 'grow2', level: 14 });
+    const res = ctx.apiAchievementsCheck();
+    expect(res).toMatchObject({ level: 15, crossed: true, stage: { key: 'grow3' } });
+  });
+
+  it('取った日は東京の暦日で覚えて返す (UTC の日付にしない)', () => {
+    const { ctx } = setup();
+    const late = new Date('2026-10-21T15:30:00Z'); // 東京 22日 0:30
+    const res = ctx.achCheck_(ME, late, { countDay: true });
+    expect(res.have['days-1']).toBe('2026-10-22');
+  });
+
+  it('日と取った印は1つの値 ACH:<アドレス> に置く。前の形 (ACH_DAYS と時刻) は読んで移し、ACH_DAYS を消す', () => {
+    const { ctx } = setup();
+    props(ctx).setProperty('ACH_DAYS:' + ME, JSON.stringify({ n: 2, last: '2026-10-20' }));
+    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ 'days-1': '2026-10-19T16:00:00.000Z' }));
+    // 読むだけでも前の形を読める
+    expect(ctx.achLevel_(ME).level).toBe(2);
+    const res = ctx.achCheck_(ME, DAY1, { countDay: true });
+    expect(res.days.n).toBe(3);
+    expect(res.newly).toEqual(['days-3']);
+    const saved = JSON.parse(props(ctx).getProperty('ACH:' + ME));
+    expect(saved).toEqual({ days: { n: 3, last: '2026-10-21' }, got: { 'days-1': '2026-10-20', 'days-3': '2026-10-21' } });
+    expect(props(ctx).getProperty('ACH_DAYS:' + ME)).toBe(null);
+  });
+
+  it('手元からの命令で反映したものは、命令を置いた人の「反映した」にする (持ち主のものにしない)', () => {
+    const { ctx } = setup();
+    const OWNER = 'owner@example.com';
+    const t = DAY1.getTime();
+    ctx.dbAppend('commits', { sha: 'x', parentSha: '', branch: 'main', fileId: 'F', blobSha: 'b', author: OWNER,
+      message: '反映: 確認依頼 #1 a', timestamp: new Date(t) });
+    ctx.outcomesQueueNote_(t - 1000, t + 1000, OWNER, ME);
+    expect(ctx.achCheck_(ME, DAY1, {}).counts.merge).toBe(1);
+    expect(ctx.achCheck_(OWNER, DAY1, {}).counts.merge).toBe(0);
+  });
+
+  it('済ませたあとの数え直しは、その操作で変わりうるものだけ数える (開いた日は数えない)', () => {
+    const { ctx } = setup();
+    withCache(ctx);
+    ctx.apiAchievementsCheck();
+    const read = readsOf(ctx);
+    ctx.apiAchievementsCheck({ metrics: ['done'] });
+    expect(read.slice().sort()).toEqual(['change_log', 'issues']);
+    expect(ctx.achDaysRead_(ME).n).toBe(1);
+    // 知らない名前は数えない
+    read.length = 0;
+    ctx.apiAchievementsCheck({ metrics: ['nope'] });
+    expect(read).toEqual([]);
+  });
+
+  it('「はじめて」がまだのことは、その日のうちは覚えておき、頁を開くたびに読み直さない (開いたときは全部数える)', () => {
+    const { ctx } = setup();
+    withCache(ctx);
+    ctx.apiAchievementsCheck();
+    const read = readsOf(ctx);
+    ctx.apiAchievements();
+    expect(read).not.toContain('branches');
+    expect(read).not.toContain('goals');
+    // 改訂版を作ったあとの数え直し (その数えるものを名指す) は、覚えに関わらず読む
+    ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
+    read.length = 0;
+    const res = ctx.apiAchievementsCheck({ metrics: ['branch'] });
+    expect(read).toContain('branches');
+    expect(res.newly.map((a) => a.key)).toEqual(['first-branch']);
   });
 });

@@ -79,7 +79,7 @@ describe('実績', () => {
     const app = mountAch({}, { apiAchievementsCheck: d.check, apiAchievements: d.after, apiOshiGet: d.oshi });
     expect(names(app).filter((n) => n === 'apiAchievementsCheck').length).toBe(1);
     const t = toast();
-    expect(t.hidden).toBe(false);
+    expect(t.classList.contains('is-shown')).toBe(true);
     expect(t.getAttribute('role')).toBe('status');
     expect(t.textContent).toContain('実績「はじめの一日」を取りました');
     expect(t.textContent).toContain('Lv 2');
@@ -94,7 +94,8 @@ describe('実績', () => {
   it('「実績を取ったら知らせる」を止めた人には、知らせも推しのお祝いも出さない', () => {
     const d = firstDay();
     mountAch({ 'ach.cheer': false }, { apiAchievementsCheck: d.check, apiOshiGet: d.oshi });
-    expect(toast()).toBe(null);
+    expect(toast().classList.contains('is-shown')).toBe(false);
+    expect(toast().textContent).toBe('');
     expect(bubble() === null || bubble().dataset.event !== 'badge').toBe(true);
   });
 
@@ -111,7 +112,7 @@ describe('実績', () => {
     const d = firstDay();
     const app = mountAch({ 'ach.on': false }, { apiAchievementsCheck: d.check });
     expect(names(app)).not.toContain('apiAchievementsCheck');
-    expect(toast()).toBe(null);
+    expect(toast() === null || !toast().classList.contains('is-shown')).toBe(true);
     document.getElementById('me-btn').click();
     expect([...document.querySelectorAll('#me-body button')].some((b) => b.textContent === '実績')).toBe(false);
     expect(document.querySelector('.ach-card')).toBe(null);
@@ -126,7 +127,8 @@ describe('実績', () => {
     expect(got.classList.contains('is-done')).toBe(true);
     expect(got.querySelector('.ach-medal').textContent).toBe('🌱');
     expect(got.querySelector('.ach-name').textContent).toBe('はじめの一日');
-    expect(got.querySelector('.ach-sub').textContent).toMatch(/\(\d{4}-\d{2}-\d{2}\)$/);
+    expect(got.querySelector('.ach-sub').textContent.endsWith('(' + d.after.items.find((a) => a.key === 'days-1').at + ')')).toBe(true);
+    expect(d.after.items.find((a) => a.key === 'days-1').at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const locked = page.querySelector('.ach-badge[data-ach="days-3"]');
     expect(locked.querySelector('.ach-name').textContent).toBe('???');
     expect(locked.querySelector('.ach-sub').textContent).toBe('あと 2 日で…');
@@ -156,16 +158,38 @@ describe('実績', () => {
   it('やることを済ませたら数え直す。済ませたほめ言葉を上書きせず、消えてから「実績を取った」', () => {
     const d = firstDay();
     // 開いたときには何も無く、済ませたあとの数え直しで取れる
-    const app = mountAch({}, { apiAchievementsCheck: d.after, apiAchievements: d.check, apiOshiGet: d.oshi });
-    expect(toast()).toBe(null);
+    const app = mountAch({}, { apiAchievementsCheck: (opts) => (opts ? d.check : d.after), apiOshiGet: d.oshi });
+    // 知らせの器は最初から空で置いてある (1回目の知らせも読み上げられるように)
+    expect(toast().getAttribute('role')).toBe('status');
+    expect(toast().textContent).toBe('');
     document.querySelector('[data-tab="issues"]').click();
     document.querySelector('#issue-list [aria-label$="を完了にする"]').click();
-    expect(names(app)).toContain('apiAchievements');
+    // 済ませたあとの数え直しは、変わりうるものだけを名指して頼む (開いた日は数えない)
+    const re = app.calls.filter((c) => c.name === 'apiAchievementsCheck');
+    expect(re.length).toBe(2);
+    expect(re[1].args[0].metrics).toEqual(['done']);
     expect(bubble().dataset.event).toBe('done');
-    expect(toast().hidden).toBe(false);
+    expect(toast().classList.contains('is-shown')).toBe(true);
     bubble().querySelector('.oshi-close').click();
     expect(bubble().hidden).toBe(false);
     expect(bubble().dataset.event).toBe('badge');
+  });
+
+  it('2つ以上取ったら「実績を N 個取りました」', () => {
+    const { ctx } = server();
+    ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
+    const res = wire(ctx.apiAchievementsCheck());
+    expect(res.newly.length).toBe(2);
+    mountAch({}, { apiAchievementsCheck: res, apiOshiGet: wire(ctx.apiOshiGet()) });
+    expect(toast().textContent).toContain('実績を 2 個取りました');
+  });
+
+  it('知らせは上の帯の下に出し、自分まわり・知らせの欄より手前に重ねる (鈴と顔を覆わない)', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+    const rule = css.match(/\.ach-toast \{[^}]*\}/)[0];
+    expect(rule).toContain('top: calc(56px + var(--sp-2))');
+    expect(Number(rule.match(/z-index: (\d+)/)[1])).toBeGreaterThan(160);
   });
 
   it('段が上がったら「育ちの段が上がった」を、上がった段の表情で言う。推しの育ちも Lv に揃える', () => {

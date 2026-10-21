@@ -323,12 +323,15 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   `settlePrefs` が呼び直す。js-init は js-ach より前に読まれるので、**js-ach の状態の `var` に初期値を書かない** (`var x = false;` と
   書くと、js-init が付けた印がその行で消える。`var x;` は値を消さない)
 - 画面が持つのは「成功した api の名前 → 数え直すか」の表 `ACH_CALL_EVENTS()` だけ。`call()` の成功の枝から `achAfterCall` を呼ぶ
-  (`FUN_CHEERS` / `OSHI_CALL_EVENTS` と同じ形)。数え直しは `apiAchievements` (開いた日は数えない)。返事を待つあいだに頼まれたら、
-  返事のあとに1回だけ頼み直す
+  (`FUN_CHEERS` / `OSHI_CALL_EVENTS` と同じ形)。表の値はその操作で変わりうる数えるもので、数え直しは
+  `apiAchievementsCheck({metrics})` (開いた日は数えず、名指したものだけ)。返事を待つあいだに頼まれたものは、返事のあとにまとめて1回だけ頼み直す。
+  絞った返事 (`partial`) では頁を描き直さない
 - 使われ方で確かめる実績 (Markdown で保存 `md-save`・日報をコピー `report-copy`・探す `search-open`・推しを選ぶ `oshi-choose`) は、
   その場で `usageCount('action', …)` を数え、`apiUsageRecord` を送ったあとに数え直す。場所の名前は `ACH_USAGE_TARGETS()` で、
   サーバの `ACH_USAGE_PLACES()` と同じ (`test/achievements.test.js`)
 - 取ったときは隅の小さな知らせ (`#ach-toast`。`role="status"`・焦点を奪わない・帯 `#snackbar` とは別に出すので「取り消す」を消さない)。
+  器は読み込んだときに空で置く (字を入れる前から在る器でないと、最初の知らせを読み上げない)。上の帯の下 (56px + `--sp-2`) に、
+  自分まわり・知らせの欄 (160) より手前に出す。
   大きな字 (`funBanner`) は楽しい演出の `fun.cheer` もオンのときだけ。推しは「実績を取った」(`badge`)、段が上がったら
   「育ちの段が上がった」(`levelup`) を上がった段の表情 (`grow1`〜`3`) で言う。**済ませたときのほめ言葉が出ていれば、消えてから言う**
   (`oshiSayNext`。待てるのは1つ)。`ach.cheer` を切ると全部出さない
