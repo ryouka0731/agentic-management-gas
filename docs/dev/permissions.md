@@ -77,7 +77,9 @@
 クリア = 今の `ACHIEVEMENTS()` を全部取った `oshiClearedOf_`)。届いていない項目は名前も中身も返さず (Lv だけ)、クリアのお祝いの
 言葉と動画の id は**クリアするまで返さない** (`apiOshiGet` の `clear` は null)。**最初からいるキャラのプロフィールはリポジトリに
 置かない** (実在の人に寄せた中身になりうるため。スクリプトプロパティ `OSHI_PROFILE:<key>` にだけ置き、1つ 9KB を超えるときは
-`{"parts": N}` と続き `OSHI_PROFILE:<key>:0`〜 に分ける)。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
+頭に `{"parts": N, "v": 版}` を置いて続きを `OSHI_PROFILE:<key>:<版>:0`〜 に分ける。**新しい版の続きを置く → 頭を替える → 前の版の
+続きを消す、の順** (前を先に消すと、途中で止まったときにプロフィールが消える)。版の無い `{"parts": N}` と `:0`〜 も読む)。
+クリアは一度届いたら覚える (`OSHI_CLEARED:<小文字のアドレス>` = 届いた日。`oshiCleared_`)。あとから実績を足しても、クリアを取り上げない。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
 命令 `oshiProfileSet`。どれも `oshiBuiltinProfileSet_` → `repoAssertAdmin_`)。テストの中身は作り話 (「テストの好物」など) にする。
 自分のキャラのプロフィールは台帳 (`oshi.profile`) にあり、Drive で台帳を開ける人は直に読める (手引きにそう書いた)。
 検査は `oshiProfileValid_` だけ (設定の欄・命令・自分のキャラの欄・置き場から読むとき)。動画のリンクは `focusMusicParse_` で読み解き、

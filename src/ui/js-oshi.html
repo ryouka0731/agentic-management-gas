@@ -47,6 +47,8 @@
   var oshiKitPrompts = {};
   /** 絵を入れる前に緑の背景を抜くか (推しの頁の「緑の背景を抜く」)。覚えない */
   var oshiGreenOn = false;
+  /** 取りに行っている最中に Lv が変わった。届く返事は変わる前に頼んだものなので、届いたら取り直す (oshiRevealRefresh) */
+  var oshiRevealAgain = false;
 
   /**
    * 済ませた操作 → 場面。**唯一の表。** 名前で引き、値は場面の key か、引数を見て決める関数。
@@ -136,8 +138,11 @@
     call('apiOshiGet', [], function (d) {
       oshiLoading = false;
       oshiData = d || null;
+      var again = oshiRevealAgain;
+      oshiRevealAgain = false;
       var waiting = oshiWaiters.splice(0, oshiWaiters.length);
       if (oshiData) waiting.forEach(function (fn) { fn(oshiData); });
+      if (again) oshiRevealRefresh();
     }, function (err) {
       oshiLoading = false;
       oshiWaiters.length = 0;
@@ -2031,6 +2036,7 @@
     if (src) {
       var holder = document.createElement('div');
       holder.className = 'oshi-clear-video';
+      // 押したボタンは隠すので、焦点は読み込んだ再生機へ移す (body に落とさない)
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn oshi-clear-play';
@@ -2045,6 +2051,7 @@
         f.src = src;
         holder.appendChild(f);
         btn.hidden = true;
+        f.focus();
       });
       sec.appendChild(btn);
       sec.appendChild(holder);
@@ -2068,8 +2075,15 @@
     }).length;
   }
 
-  /** Lv が変わったとき、出ている推しの頁のプロフィールとクリアを取り直して描き直す (中身はサーバが返す) */
+  /**
+   * Lv が変わったとき、出ている推しの頁のプロフィールとクリアを取り直して描き直す (中身はサーバが返す)。
+   * 取りに行っている最中なら、その返事は Lv が変わる前に頼んだものなので、届いてからもう一度頼む。
+   */
   function oshiRevealRefresh() {
+    if (oshiLoading) {
+      oshiRevealAgain = true;
+      return;
+    }
     if (!document.querySelector('.oshi-reveal')) return;
     oshiReload(function (nd) {
       var old = document.querySelector('.oshi-reveal');

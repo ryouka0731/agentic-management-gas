@@ -241,6 +241,8 @@ function commandPersonOf_(file, by, strict) {
     var meta = Drive.Files.get(file.getId(), { fields: 'lastModifyingUser(emailAddress)', supportsAllDrives: true });
     var last = String((meta && meta.lastModifyingUser && meta.lastModifyingUser.emailAddress) || '');
     if (last && last.toLowerCase() !== who.toLowerCase()) return '';
+    // 見えない人のぶんは Drive が書いた人を返さない。管理者だけの命令は、持ち主だけで決めない
+    if (!last && strict) return '';
   } catch (e) {
     // 見比べられなかったときは決めない。食い違っているかもしれないものを通さない
     return '';
@@ -411,6 +413,16 @@ function runCommandFileLocked_(file, queue, done) {
    * 命令が queue に残り、次の起動でもう一度走る。
    */
   commandRetire_(file, queue, done);
+  // 管理者だけの命令 (プロフィールの中身など) は、処理済みに置いた命令の中身を消す。queue-done/ は共有している人が読める。
+  // 名前は残す (二度実行しない印 commandAlreadyRan_ は名前で見る)
+  if (COMMAND_ADMIN_OPS().indexOf(op) >= 0) {
+    try {
+      file.setContent(JSON.stringify({ id: id, op: op }));
+    } catch (e) {
+      // 書き換えられなくても結果は返す (返さないと手元が待ち続ける)
+      Logger.log('処理済みの命令の中身を消せませんでした: ' + e.message);
+    }
+  }
 
   queue.createFile(id + '.result.json', JSON.stringify(result), MimeType.PLAIN_TEXT);
 }

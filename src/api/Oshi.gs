@@ -72,7 +72,7 @@ function apiOshiGet() {
   var builtin = active ? null : oshiBuiltinOf(choice.key);
   var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
   mine.forEach(function (m) { delete m.profile; });
-  var cleared = oshiClearedOf_(achUnlockedRead_(me));
+  var cleared = oshiCleared_(me);
   return {
     char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
     kind: plainText(active ? 'mine' : 'builtin'),

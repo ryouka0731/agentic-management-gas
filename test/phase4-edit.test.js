@@ -497,7 +497,7 @@ describe('画面に渡せる形か', () => {
   /** 推しのプロフィール (作り話)。動画は YouTube の動画1本 */
   const OSHI_PROFILE = {
     items: [{ lv: 2, label: 'テストの好物', text: 'テスト用の焼きそば' }, { lv: 50, label: 'テストのひみつ', text: 'テスト' }],
-    clearLine: 'テストのお祝い', clearVideo: 'https://youtu.be/dQw4w9WgXcQ',
+    clearLine: 'テストのお祝い', clearVideo: 'https://youtu.be/Tst0Vid_e-1',
   };
 
   /** 最初からいるキャラ (タク) にプロフィールを入れ、本人 (持ち主) が実績を全部取った形にする */
