@@ -27,6 +27,16 @@
 **消した番号を次のキャラに回さない** (回すと、自分の設定 `oshi.char` が指していた消したキャラが新しいキャラにすり替わる)。
 `id` は今までどおり表ごとの通し番号 (`dbAppendNumbered`)。
 
+`goals` / `goal_items` / `goal_links` (目標。既定はオフ) は `id` をどれも `dbAppendNumbered` / `dbAppendNumberedMany` で振る
+表ごとの通し番号にしている (目標ごとに振ると `dbUpdate` / `dbDelete` が関係のない目標の項目を書き換える)。`who` は小文字のアドレス。
+`period` は `2026H2` / `2026Q3` (年は年度)。区切り (`goals.period`) を変えても、立てた目標の期は変わらない。
+`approvedAt` は承認し直しを待つあいだも残し、`status` が `submitted` で `approvedAt` があれば「承認のあとに直した」と読む
+(列を足さずに済ませた)。`autoScore` は評価を付けたときの見立ての字 ('0.7' は Sheets が数として持つので、読むときは字にする)。
+`goals.fyStart` は立てたときの年度の始まりの月 (末尾に足した。空の行はいまの設定で読む。`goalRangeOf_` だけが期の日付を出す)。
+`goal_items.actual` は数を入れる項目の今の値、`checked` はできた印 (TRUE)。保存し直しても測り方が同じなら残す。
+`goal_links` は項目とやることの結び付きで、「あるか見てから書く」ので鍵の中で足す (`goalLink_`)。目標を消すと項目と結び付きも消し、
+やることを `issuePurge` で消すと結び付きも消す。目標の保存 (`goalSave_`) は目標・項目・結び付きを1つの鍵の中で書く。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

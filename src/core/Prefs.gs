@@ -29,6 +29,7 @@ function NOTIFY_KINDS() {
     { key: 'inquiry', label: '報告とその返事' },
     { key: 'mention', label: '名指しされた' },
     { key: 'comment', label: 'やることのやりとり' },
+    { key: 'goal', label: '目標の承認・差し戻し・評価' },
   ];
 }
 
@@ -293,6 +294,22 @@ function PREF_GROUPS_() {
           def: OSHI_STYLES()[0].key },
       ];
     },
+    goals: function () {
+      // 目標 (OKR・MBO・KPI)。既定はオフ (使わない人が多い。スクラムと同じ考え方)。中身は Goal.gs / GoalScore.js
+      return [
+        { key: 'goals.enabled', scope: 'team', type: 'bool', section: '目標',
+          label: '目標 (OKR・MBO・KPI) を使う',
+          help: 'オンにすると、左に「目標」が出ます。目標を立てて上長に承認してもらい、済ませたやることから進み具合を自動で出します',
+          def: false },
+        { key: 'goals.period', scope: 'team', type: 'enum', section: '目標',
+          label: '目標を立てる区切り', help: '新しく立てる目標の期の区切りです。立てた目標の期は変わりません',
+          options: [{ value: 'half', label: '半期ごと' }, { value: 'quarter', label: '四半期ごと' }],
+          def: 'half' },
+        { key: 'goals.fyStart', scope: 'team', type: 'int', section: '目標',
+          label: '年度の始まる月', help: '期はこの月から数えます (4 なら 4月〜9月が上期)。変えても、立てた目標の期の日付は立てたときの月のまま変わりません',
+          min: 1, max: 12, def: TALLY_FISCAL_START() },
+      ];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -311,7 +328,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -581,6 +598,7 @@ function apiPrefs(opts) {
         style: plainText(byKey['oshi.style']) },
       calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
+      goals: { enabled: byKey['goals.enabled'] === true },
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),
     },

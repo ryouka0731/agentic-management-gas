@@ -709,6 +709,7 @@
     settings: 'settings',
     sprint: 'clock',
     impediments: 'alert-triangle',
+    goals: 'compass',
   };
 
   /**
@@ -1803,6 +1804,55 @@
       { x: 408, y: 246, text: '型の名前と絵だけ (顔に添える)' },
     ],
     caption: '遊びの診断です。人の評価や配置には使いません。',
+  };
+
+  var GOALS_DIAGRAM = {
+    title: '目標を立てて、期末にまとめるまで',
+    desc: '本人が目標と項目を立て、上長に承認を頼む。承認されたら、つないだやることを済ませたり今の値を入れたりすると、' +
+      '進み具合と自動の見立てが変わる。期の終わりに本人が振り返りを書き、上長が評価を付ける。' +
+      '見られるのは本人と上長の連なりだけ。見立ては目安で、評価を決めるのは上長。',
+    width: 760,
+    height: 278,
+    lanes: [
+      {
+        x: 10, y: 200, w: 358, h: 66, tone: 'ok', label: '番頭が数えるもの',
+      },
+      {
+        x: 392, y: 200, w: 358, h: 66, tone: 'warn', label: '上長が決めるもの',
+      },
+    ],
+    boxes: [
+      {
+        x: 10, y: 34, w: 160, h: 70,
+        label: '目標を立てる', sub: 'OKR・MBO・KPI',
+      },
+      {
+        x: 200, y: 34, w: 160, h: 70,
+        label: '承認を頼む', sub: '上長が承認・差し戻し', tone: 'strong',
+      },
+      {
+        x: 390, y: 34, w: 160, h: 70,
+        label: '進める', sub: 'やることを済ませる',
+      },
+      {
+        x: 580, y: 34, w: 170, h: 70,
+        label: '期末のまとめ', sub: '振り返り・評価',
+      },
+    ],
+    arrows: [
+      { d: 'M170 69h24' },
+      { d: 'M360 69h24' },
+      { d: 'M550 69h24' },
+      {
+        d: 'M280 104C280 166 100 166 92 108', soft: true,
+        lx: 190, ly: 184, label: '差し戻されたら直す',
+      },
+    ],
+    notes: [
+      { x: 26, y: 246, text: '進み具合・自動の見立て・期の中での進み方' },
+      { x: 408, y: 246, text: '承認・差し戻し・期末の評価' },
+    ],
+    caption: '見られるのは本人と上長の連なりだけです。見立ては目安です。',
   };
 
   // ===== テーマ =====
@@ -3414,7 +3464,8 @@
     usage: function () { loadUsage(); },
     settings: function () { loadSettingsPanel(); },
     sprint: function () { loadSprint(); },
-    impediments: function () { loadImpediments(); }
+    impediments: function () { loadImpediments(); },
+    goals: function () { loadGoals(); }
   };
 
   /**
@@ -3455,7 +3506,7 @@
       home: panelHome, docs: panelDocs, content: panelContent, history: panelHistory,
       drafts: panelDrafts, branches: panelBranches, pulls: panelPulls, issues: panelIssues,
       help: panelHelp, report: panelReport, usage: panelUsage, settings: panelSettings,
-      sprint: panelSprint, impediments: panelImpediments
+      sprint: panelSprint, impediments: panelImpediments, goals: panelGoals
     };
   }
 
@@ -3496,7 +3547,7 @@
         home: 'ホーム', docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
         issues: 'やること', board: '進捗ボード', help: '使い方',
         settings: '設定', sprint: termOf('sprint'), impediments: termOf('impediment'),
-        usage: '使われ方', report: '要望・不具合',
+        usage: '使われ方', report: '要望・不具合', goals: '目標',
       };
       titleEl.textContent = names[currentTab] || '文書';
       branchChip.hidden = true;
@@ -3518,7 +3569,7 @@
     if (tab === 'issues') return issueView === 'gantt' ? 'view' : 'pitfalls';
     return {
       home: 'home', docs: 'flow', content: 'view', pulls: 'flow',
-      usage: 'usage', settings: 'settings',
+      usage: 'usage', settings: 'settings', goals: 'goals',
     }[tab] || '';
   }
 

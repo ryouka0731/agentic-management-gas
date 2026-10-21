@@ -2009,6 +2009,9 @@
     }
 
     box.appendChild(makeIssueActions(issue));
+    // 目標 (オンのときだけ)。つながっている項目と「目標につなぐ」
+    var goalBox = makeIssueGoalBox(issue);
+    if (goalBox) box.appendChild(goalBox);
     box.appendChild(makeIssueTalk(issue));
     box.appendChild(makeHistorySection('issue:' + issue.number));
   }

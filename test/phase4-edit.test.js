@@ -493,6 +493,22 @@ describe('画面に渡せる形か', () => {
     return n;
   }
 
+  /** 目標をオンにし、本人 (持ち主) の目標を承認まで進める。上長は boss。日時の欄が全部埋まる */
+  function goalReady(ctx, env) {
+    ctx.apiPrefSet('goals.enabled', true);
+    ctx.memberSet('tester@example.com', 'boss@example.com', '');
+    // つなげるのは本人が担当のやることだけ
+    ctx.apiIssueUpdate(env.issue.number, { assignee: 'tester@example.com' });
+    const goal = ctx.apiGoalSave({ kind: 'okr', title: '目標', items: [
+      { title: 'つなぐ', measure: 'issues' }, { title: '数', measure: 'number', target: 10 }] });
+    ctx.apiGoalLink(goal.items[0].id, env.issue.number);
+    ctx.apiGoalSubmit(goal.id);
+    env.fake._setUser('boss@example.com');
+    ctx.apiGoalDecide(goal.id, 'approve', 'よい');
+    env.fake._setUser('tester@example.com');
+    return goal;
+  }
+
   /** 共有カレンダーを作り、予定に入れるをオンにして、やることを担当にする */
   function calendarReady(ctx, env) {
     ctx.apiCalendarCreateShared();
@@ -501,6 +517,64 @@ describe('画面に渡せる形か', () => {
   }
 
   const CASES = [
+    // 目標 (既定はオフ)。承認まで進めて、日時の欄が埋まった形を検査する
+    ['apiGoalState', (ctx, env) => { goalReady(ctx, env); return ctx.apiGoalState(); }],
+    ['apiGoalMine', (ctx, env) => {
+      goalReady(ctx, env);
+      const out = ctx.apiGoalMine('');
+      if (!out.goals.length || !out.goals[0].approvedAt) throw new Error('承認した目標が空のまま検査されている');
+      return out;
+    }],
+    ['apiGoalSave', (ctx, env) => {
+      const g = goalReady(ctx, env);
+      // 承認済みを直すと承認し直し (頼むときと同じ検査を通るよう、項目はそのまま)
+      const out = ctx.apiGoalSave({ id: g.id, kind: 'okr', title: '直す', items: g.items.map((i) => ({ id: i.id, title: i.title,
+        measure: i.measure, target: i.target })) });
+      if (!out.changedAfterApproval) throw new Error('承認し直しの形が検査されていない');
+      return out;
+    }],
+    ['apiGoalWithdraw', (ctx, env) => {
+      goalReady(ctx, env);
+      const g = ctx.apiGoalSubmit(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [{ title: 'a', measure: 'check' }] }).id);
+      return ctx.apiGoalWithdraw(g.id);
+    }],
+    ['apiGoalDelete', (ctx, env) => { goalReady(ctx, env); return ctx.apiGoalDelete(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [] }).id); }],
+    ['apiGoalSubmit', (ctx, env) => {
+      goalReady(ctx, env);
+      return ctx.apiGoalSubmit(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [{ title: 'a', measure: 'check' }] }).id);
+    }],
+    ['apiGoalDecide', (ctx, env) => {
+      goalReady(ctx, env);
+      const g = ctx.apiGoalSubmit(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [{ title: 'a', measure: 'check' }] }).id);
+      env.fake._setUser('boss@example.com');
+      return ctx.apiGoalDecide(g.id, 'return', '直して');
+    }],
+    ['apiGoalLink', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalLink(g.items[0].id, env.issue.number); }],
+    ['apiGoalUnlink', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalUnlink(g.items[0].id, env.issue.number); }],
+    ['apiGoalProgressInput', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalProgressInput(g.items[1].id, { actual: 3 }); }],
+    ['apiGoalReview', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalReview(g.id, '振り返り'); }],
+    ['apiGoalGrade', (ctx, env) => {
+      const g = goalReady(ctx, env);
+      ctx.apiGoalReview(g.id, '振り返り');
+      env.fake._setUser('boss@example.com');
+      const out = ctx.apiGoalGrade(g.id, 'A', 'よかった');
+      if (!out.gradedAt) throw new Error('評価した時刻が空のまま検査されている');
+      return out;
+    }],
+    ['apiGoalTeam', (ctx, env) => {
+      goalReady(ctx, env);
+      env.fake._setUser('boss@example.com');
+      const out = ctx.apiGoalTeam('');
+      if (!out.goals.length) throw new Error('チームの目標が空のまま検査されている');
+      return out;
+    }],
+    ['apiGoalReport', (ctx, env) => ctx.apiGoalReport(goalReady(ctx, env).id)],
+    ['apiGoalIssueLinks', (ctx, env) => {
+      goalReady(ctx, env);
+      const out = ctx.apiGoalIssueLinks(env.issue.number);
+      if (!out.linked.length) throw new Error('つながった項目が空のまま検査されている');
+      return out;
+    }],
     ['apiKitStatus', (ctx) => ctx.apiKitStatus()],
     ['apiCalendarPlan', (ctx, env) => {
       calendarReady(ctx, env);
