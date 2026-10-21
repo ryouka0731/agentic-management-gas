@@ -11,7 +11,7 @@ import { makeEnv, expectScreenSafe, expectRefused, asUser, OWNER, ADMIN, OTHER }
  */
 
 const pure = loadGas('src/core/Oshi.js');
-const VIDEO = 'dQw4w9WgXcQ';
+const VIDEO = 'Tst0Vid_e-1';
 const SAMPLE = {
   items: [
     { lv: 5, label: 'テストの好物', text: 'テスト用の焼きそば' },
@@ -120,12 +120,12 @@ describe('最初からいるキャラのプロフィール (スクリプトプ�
     const head = JSON.parse(props.getProperty('OSHI_PROFILE:taku'));
     expect(head.parts).toBeGreaterThan(1);
     for (let i = 0; i < head.parts; i++) {
-      const part = props.getProperty('OSHI_PROFILE:taku:' + i);
+      const part = props.getProperty('OSHI_PROFILE:taku:' + head.v + ':' + i);
       expect(Buffer.byteLength(part, 'utf8')).toBeLessThanOrEqual(8000);
     }
     expect(e.ctx.oshiBuiltinProfileRead_('taku').items.map((i) => i.text)).toEqual(big.items.map((i) => i.text));
     e.ctx.apiOshiBuiltinProfileSet('taku', SAMPLE);
-    expect(props.getProperty('OSHI_PROFILE:taku:0')).toBe(null);
+    expect(props.getProperty('OSHI_PROFILE:taku:' + head.v + ':0')).toBe(null);
     expect(e.ctx.oshiBuiltinProfileRead_('taku').items.length).toBe(3);
   });
 
@@ -262,5 +262,118 @@ describe('自分のキャラのプロフィール (台帳 oshi の profile)', ()
     const big = { items: Array.from({ length: lim.itemsMax }, () => ({ lv: 99, label: '"'.repeat(lim.labelMax), text: '"'.repeat(lim.textMax) })),
       clearLine: '"'.repeat(lim.clearLineMax), clearVideo: VIDEO };
     expect(JSON.stringify(big).length).toBeLessThan(50000);
+  });
+});
+
+describe('見直しで直したところ', () => {
+  it('制御文字は落とす (JSON にすると6字に膨らみ、台帳のセルの上限を超える)', () => {
+    const e = env();
+    const got = e.ctx.oshiProfileValid_({
+      items: [{ lv: 2, label: 'テ\u0001スト', text: '中\u0000身\u007F\u001F' }], clearLine: 'お\u000Bいわい\u000C',
+    });
+    expect(got.items[0]).toEqual({ lv: 2, label: 'テスト', text: '中身' });
+    expect(got.clearLine).toBe('おいわい');
+    // 改行とタブは残す
+    expect(e.ctx.oshiProfileValid_({ items: [{ lv: 2, label: 'a', text: '1行目\n2行目\tx' }] }).items[0].text).toBe('1行目\n2行目\tx');
+  });
+
+  it('JSON にして 45000 字を超えるものは、ふつうの言葉で断る (台帳に書いて英語で落ちない)', () => {
+    const e = env();
+    // 対の無いサロゲートは JSON で \\udXXX の6字になる
+    const lone = '\ud800'.repeat(200);
+    const big = { items: Array.from({ length: 40 }, () => ({ lv: 2, label: 'テスト', text: lone })) };
+    expect(JSON.stringify(big).length).toBeGreaterThan(45000);
+    expect(() => e.ctx.oshiProfileValid_(big)).toThrow(/長すぎます/);
+    const c = e.ctx.apiOshiCharCreate('ルナ', 'polite').charId;
+    expectRefused(() => e.ctx.apiOshiSetCharProfile(c, big), /長すぎます/);
+  });
+
+  it('管理者だけの命令は、Drive が最後に書いた人を返さないときも置いた人を決めない', () => {
+    const e = makeEnv({ file: false, drive: true });
+    const file = e.ctx.commandQueueFolder_().createFile('x.cmd.json', '{}', 'text/plain');
+    file._createdBy = '';
+    expect(e.ctx.commandPersonOf_(file, ADMIN, true)).toBe('');
+    // ほかの「自分の様子」の命令は今までどおり
+    expect(e.ctx.commandPersonOf_(file, ADMIN)).toBe(ADMIN);
+  });
+
+  /** 管理者が命令ファイルを置いて、キューの1件として走らせる */
+  function runQueued(e, who, args) {
+    const queue = e.ctx.commandQueueFolder_();
+    const done = e.ctx.commandDoneFolder_();
+    const f = asUser(e.fake, who, () => queue.createFile('kit-9-a.cmd.json',
+      JSON.stringify({ op: 'oshiProfileSet', args }), 'text/plain'));
+    e.ctx.runCommandFileLocked_(f, queue, done);
+    const result = JSON.parse(queue.getFilesByName('kit-9-a.result.json').next().getBlob().getDataAsString('UTF-8'));
+    const left = done.getFilesByName('kit-9-a.cmd.json').next().getBlob().getDataAsString('UTF-8');
+    return { result, left };
+  }
+
+  it('キューで走らせると、Drive の拡張サービスが無い番頭では置いた人を決めずに断る', () => {
+    const e = makeEnv({ file: false });
+    const { result } = runQueued(e, ADMIN, { key: 'taku', profile: SAMPLE });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('命令を置いた人が分かりません');
+    expect(e.ctx.oshiBuiltinProfileRead_('taku')).toBe(null);
+  });
+
+  it('走らせたあと、処理済みに残る命令ファイルからプロフィールの中身を消す (成功しても断っても)', () => {
+    const e = makeEnv({ file: false, drive: true });
+    const ok = runQueued(e, ADMIN, { key: 'taku', profile: SAMPLE });
+    expect(ok.result.ok).toBe(true);
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items.length).toBe(3);
+    expect(JSON.parse(ok.left)).toEqual({ id: 'kit-9-a', op: 'oshiProfileSet' });
+    const e2 = makeEnv({ file: false, drive: true });
+    const ng = runQueued(e2, OTHER, { key: 'taku', profile: SAMPLE });
+    expect(ng.result.ok).toBe(false);
+    expect(ng.left).not.toContain('テスト');
+  });
+
+  it('分けて置く途中で止まっても、前のプロフィールは読める (新しい続きを別の版に置いてから頭を替える)', () => {
+    const e = env();
+    const big = (t) => ({ items: Array.from({ length: 40 }, (_, i) => ({ lv: 2 + i, label: t + i, text: t.repeat(100) })) });
+    e.ctx.apiOshiBuiltinProfileSet('taku', big('まえ'));
+    const props = e.fake.PropertiesService.getScriptProperties();
+    const real = e.fake.PropertiesService.getScriptProperties;
+    // 頭を替えるところで実行が打ち切られた
+    e.fake.PropertiesService.getScriptProperties = () => Object.assign(real(), {
+      setProperty: (k, v) => {
+        if (k === 'OSHI_PROFILE:taku') throw new Error('Exceeded maximum execution time');
+        return real().setProperty(k, v);
+      },
+    });
+    expect(() => e.ctx.apiOshiBuiltinProfileSet('taku', big('あと'))).toThrow();
+    e.fake.PropertiesService.getScriptProperties = real;
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('まえ0');
+    // 次にうまく書けば、前の版の続きは残さない
+    e.ctx.apiOshiBuiltinProfileSet('taku', big('あと'));
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('あと0');
+    const keys = Object.keys(props.getProperties()).filter((k) => k.indexOf('OSHI_PROFILE:taku:') === 0);
+    const head = JSON.parse(props.getProperty('OSHI_PROFILE:taku'));
+    expect(keys.sort()).toEqual(Array.from({ length: head.parts }, (_, i) => 'OSHI_PROFILE:taku:' + head.v + ':' + i).sort());
+  });
+
+  it('版の無い分け方 ({"parts": N} と :0〜) も読める', () => {
+    const e = env();
+    const json = JSON.stringify({ items: SAMPLE.items, clearLine: '', clearVideo: '' });
+    const props = e.fake.PropertiesService.getScriptProperties();
+    props.setProperty('OSHI_PROFILE:itsuki', JSON.stringify({ parts: 2 }));
+    props.setProperty('OSHI_PROFILE:itsuki:0', json.slice(0, 50));
+    props.setProperty('OSHI_PROFILE:itsuki:1', json.slice(50));
+    expect(e.ctx.oshiBuiltinProfileRead_('itsuki').items.length).toBe(3);
+  });
+
+  it('一度クリアしたら、あとから実績が増えてもクリアのまま', () => {
+    const e = env();
+    e.ctx.apiOshiBuiltinProfileSet('taku', SAMPLE);
+    grant(e, OWNER);
+    expect(e.ctx.apiOshiGet().cleared).toBe(true);
+    const before = e.ctx.ACHIEVEMENTS;
+    e.ctx.ACHIEVEMENTS = () => before().concat([Object.assign({}, before()[0], { key: 'later-added' })]);
+    const d = e.ctx.apiOshiGet();
+    expect(d.cleared).toBe(true);
+    expect(d.clear).toEqual({ line: 'テストのお祝いの言葉', video: VIDEO });
+    // ほかの人はクリアしていない
+    expect(asUser(e.fake, OTHER, () => e.ctx.apiOshiGet().cleared)).toBe(false);
   });
 });
