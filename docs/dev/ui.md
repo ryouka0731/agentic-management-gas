@@ -117,6 +117,15 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - テストは `test/component/doc-link.test.js` (`mountApp(…, { link: { doc } })` が doGet の印を body に付ける) と
   `test/api/main.test.js` (doGet)。`test/ui-assemble.test.js` と `test/dom.js` は `<?= bodyClass ?>` / `<?= linkDoc ?>` を空で埋める
 
+## ホーム (`js-home` / `js-progress`)
+
+- **返事が届くまでは骨組み (スケルトン) を置く** (`homeSkeletonInto(host, title, lines)`。2026-10-22 の依頼)。区画が空のときだけ置き、
+  `fillBlock` が届いた中身で置き換える (`aria-busy` も外す)。開き直したときは前の中身を残す (空でないので置かない)。カードの列は
+  `loadHomeCards` が1枚ぶん (`.home-skel-card`) 置き、前進が取れなければ外す。読み上げには `.sr-only` の「読み込んでいます」だけ届け、
+  棒は `aria-hidden`。棒の明滅は `prefers-reduced-motion` で止める
+- **幅の広い画面で右に偏らないように**、ホームの中身は `max-width: 1360px` で真ん中に寄せ、1440px 以上では主と従を半々にして
+  右のカード (`.home-cards`) を2列に並べる (縦に積み上がらない)。1024〜1439px は 2fr / 1fr のまま
+
 ## 画面の落とし穴
 
 (元は「落とし穴」の項目)
