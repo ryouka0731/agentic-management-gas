@@ -146,21 +146,23 @@ function achSoloRead_(who) {
     seen[w] = true;
     other = true;
   }
+  // グループ・ドメイン・リンクで共有していると、何人いるか Drive からは分からない (known のまま上げない)
   var known = false;
   var driveId = repoDriveIdSafe_();
   if (driveId) {
     var m = driveMembers_(driveId);
-    if (m.admins.length) {
+    if (m.admins.length && !m.wide) {
       known = true;
       m.admins.forEach(add);
     }
   } else {
     var owner = repoOwnerEmail();
     if (owner) {
-      known = true;
-      add(owner);
       try {
-        DriveApp.getFolderById(repoConfig().rootId).getEditors().forEach(function (e) { add(e.getEmail()); });
+        var folder = DriveApp.getFolderById(repoConfig().rootId);
+        known = folder.getSharingAccess() === DriveApp.Access.PRIVATE;
+        add(owner);
+        folder.getEditors().forEach(function (e) { add(e.getEmail()); });
       } catch (e) {
         known = false;
       }
@@ -185,7 +187,7 @@ function achOthersInLedger_(who) {
     });
   }
   var where = [
-    ['members', ['email', 'manager']], ['pulls', ['author']], ['reviews', ['reviewer']], ['issue_comments', ['by']],
+    ['members', ['email', 'manager']], ['pulls', ['author', 'reviewers']], ['reviews', ['reviewer']], ['issue_comments', ['by']],
     ['issues', ['assignee']], ['usage', ['user']],
   ];
   for (var i = 0; i < where.length; i++) {
