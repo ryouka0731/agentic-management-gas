@@ -8,39 +8,44 @@
  */
 
 /**
- * 開いたときに1回だけ呼ぶ (js-init)。開いた日を数え (東京の暦日ごとに1回)、届いた実績を取る。
+ * 開いたときに1回だけ、引数なしで呼ぶ (js-init)。開いた日を数え (東京の暦日ごとに1回)、全部を数え直して届いた実績を取る。
+ * 済ませたあとは hint.metrics に、その操作で変わりうる数えるもの (ACH_METRICS の key) を名指して呼ぶ。
+ * そのときは開いた日を数えず、名指したものだけを数える。
  *
+ * @param {{metrics?: string[]}} [hint]
  * @returns {object} achPlain_ の形
  */
-function apiAchievementsCheck() {
-  return achApi_(true);
+function apiAchievementsCheck(hint) {
+  var metrics = hint && Array.isArray(hint.metrics) ? hint.metrics.slice(0, 40).map(String) : null;
+  return achApi_(metrics ? { metrics: metrics } : { countDay: true });
 }
 
 /**
- * 数え直して、届いた実績を取る (開いた日は数えない)。実績の頁と、済ませたあとに呼ぶ。
+ * 実績の頁。全部を数え直して届いた実績を取る (開いた日は数えない)。その日に「まだ」と分かった「はじめて」は読み直さない。
  *
  * @returns {object} achPlain_ の形
  */
 function apiAchievements() {
-  return achApi_(false);
+  return achApi_({ useNeg: true });
 }
 
 /**
- * @param {boolean} countDay
+ * @param {object} opts achCheck_ の opts
  * @returns {object}
  */
-function achApi_(countDay) {
+function achApi_(opts) {
   var me = currentEmail_();
   var on = !!me && prefGet_('ach.on', me) !== false;
   if (!on) return achPlain_(null, me);
-  return achPlain_(achCheck_(me, new Date(), { countDay: countDay }), me);
+  return achPlain_(achCheck_(me, new Date(), opts), me);
 }
 
 /**
  * 画面に渡す形。res が null (止めている・誰か分からない) なら on: false と、いまのレベルだけ。
  *
  * - level / stage: 推しのレベル (1 + 取った数) と育ちの段。crossed は今回取ったぶんで段が上がったか
- * - items: 全部の実績。取ったものは名前・説明・絵・取った日。まだのものは group と hint だけ (名前は返さない)
+ * - items: 全部の実績。取ったものは名前・説明・絵・取った日 (東京の暦日 'yyyy-MM-dd')。まだのものは group と hint だけ (名前は返さない)
+ * - partial: 済ませたあとの数え直し (数えるものを絞った)。hint と next は数えたものの分しか無い (画面は頁を描き直さない)
  * - unlocked: 取ったもの (取った時刻の新しい順)。newly: 今回取ったもの
  * - next: 近い順に3つまで。名前は返さず、まとまり・いま・要る数・あと何か・手がかりの字
  * - groups: まとまりごとの取った数と全部の数
@@ -56,7 +61,9 @@ function achPlain_(res, me) {
   var groups = ACH_GROUPS();
   var labelOf = {};
   groups.forEach(function (g) { labelOf[g.key] = g.label; });
-  var next = res ? achNext(counts, have, 99) : [];
+  var next = res ? achNext(counts, have, 99).filter(function (n) {
+    return Object.prototype.hasOwnProperty.call(counts, n.metric);
+  }) : [];
   var hintOf = {};
   next.forEach(function (n) { hintOf[n.key] = achHintOf(n); });
 
@@ -71,13 +78,19 @@ function achPlain_(res, me) {
       hint: plainText(hintOf[a.key] || '') };
   });
   var unlocked = all.filter(function (a) { return Object.prototype.hasOwnProperty.call(have, a.key); }).map(shown);
-  unlocked.sort(function (x, y) { return x.at < y.at ? 1 : x.at > y.at ? -1 : 0; });
+  // 取った日の新しい順 (同じ日なら一覧の並び)
+  unlocked = unlocked.map(function (a, i) { return { a: a, i: i }; }).sort(function (x, y) {
+    return x.a.at < y.a.at ? 1 : x.a.at > y.a.at ? -1 : x.i - y.i;
+  }).map(function (x) { return x.a; });
 
   var count = Object.keys(have).length;
-  var st = oshiStageOf(achLevelOf(count));
-  var before = oshiStageOf(achLevelOf(count - newly.length));
+  // 前に届いていた段 (OSHI_STAGE_MAX:) より下にしない。その床だけで「段が上がった」とは言わない
+  var floor = achStageFloor_(me);
+  var st = oshiStageOf(achLevelOf(count), floor);
+  var before = oshiStageOf(achLevelOf(count - newly.length), floor);
   return {
     on: !!res,
+    partial: !!(res && res.partial),
     level: plainNumber(st.level),
     stage: {
       index: plainNumber(st.index), key: plainText(st.key), label: plainText(st.label),

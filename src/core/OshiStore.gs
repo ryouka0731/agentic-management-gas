@@ -11,7 +11,7 @@
  * - `charId` は後から足した列。それより前の行は空で、その人の1人目 (1) として読む (oshiCharIdOf_)
  * - 最初からいるキャラ (OSHI_BUILTINS) は台帳に置かない。名前・口調は決まっていて、絵は焼いたファイルにある
  * - どのキャラを使うかは自分の設定 oshi.char、自分のキャラの絵が無い表情に出す最初からいるキャラは oshi.fallback
- * - 育ちの段は取った実績の数 (Lv) で決まる (oshiGrowth_)。実績は消えないので段も戻らない
+ * - 育ちの段は取った実績の数 (Lv) で決まる (oshiGrowth_)。実績は消えないので段も戻らない。前の最高の段 (OSHI_STAGE_MAX:) より下にしない
  *
  * **番頭の画面では本人にだけ見せる。** 末尾が _ の関数はアドレスを受けるので画面から呼べない。
  * api は開いている本人のアドレスだけを渡す。ただし台帳と objects/ は入れ物の中にあり、
@@ -498,7 +498,7 @@ function oshiCharDeleteRows_(who, id, drop) {
 }
 
 /**
- * 自分のキャラを全部消す (名前・口調・せりふ・画像)。育ちは実績で決まるので消さない (前の育ちの覚えだけ片付ける)。
+ * 自分のキャラを全部消す (名前・口調・せりふ・画像)。育ちは実績で決まるので消さない (前の段の覚え OSHI_STAGE_MAX: も残す)。
  * 出した番号の覚え (OSHI_CHAR_HIGH) は残す (消した番号を次のキャラに回さない)。
  *
  * @param {string} email
@@ -511,7 +511,6 @@ function oshiForget_(email) {
   var n = dbWithLock_(30000, function () {
     var count = 0;
     oshiMineIds_(who).forEach(function (id) { count += oshiCharDeleteRows_(who, id, drop); });
-    PropertiesService.getUserProperties().deleteProperty('OSHI_STAGE_MAX:' + who);
     return count;
   });
   oshiDropObjects_(drop);
@@ -546,7 +545,8 @@ function oshiImageData_(email, id, state) {
 
 /**
  * 育ちの段。**Lv = 1 + 取った実績の数** (achLevel_。src/core/AchievementsStore.gs) から決める。
- * 取った実績は消さないので、段は下がらない (前は届いた最高の段を OSHI_STAGE_MAX: に覚えていた。もう読まない)。
+ * 取った実績は消さないので、段は下がらない。実績の前に届いていた段 (UserProperties の OSHI_STAGE_MAX:) より下にもしない
+ * (achStageFloor_。前から使っている人の推しが、実績を足した日に見習いへ戻らないように)。
  *
  * @param {string} email
  * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number}}

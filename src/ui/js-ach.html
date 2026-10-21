@@ -18,41 +18,52 @@
   var achWaitPrefs;
   /** 開いたときの数え直しを頼んだ */
   var achOpened;
-  /** 数え直しの返事を待っている。待つあいだに頼まれたら、返事のあとにもう1回 */
+  /** 数え直しの返事を待っている。待つあいだに頼まれた数えるものは、返事のあとにまとめてもう1回 */
   var achBusy;
   var achAgain;
   var achToastTimer;
 
   /**
-   * 済ませた操作 → 数え直すか。**唯一の表。** 値は true か、引数を見て決める関数。
+   * 済ませた操作 → その操作で変わりうる数えるもの (サーバの ACH_METRICS の key)。**唯一の表。** 値は配列か、引数を見て
+   * 決める関数 (当たらなければ空)。数え直しはここに挙げたものだけを数える (全部を数え直すのは開いたときだけ)。
    * 関数にしてあるのは、call() が読み込みの途中で呼ばれても引けるようにするため。
    *
-   * @returns {Object<string, boolean|function(Array): boolean>}
+   * @returns {Object<string, string[]|function(Array): string[]>}
    */
   function ACH_CALL_EVENTS() {
     return {
-      apiIssueClose: true,
-      apiProjectMove: function (args) { return !!args && args[1] === 'Done'; },
-      apiPrMerge: true,
-      apiPrCreate: true,
-      apiPrReview: true,
-      apiBranchCreate: true,
-      apiIssueCreateBranch: true,
-      apiIssueComment: true,
-      apiInquiryCreate: true,
-      apiInquiryReply: true,
-      apiFocusStart: true,
-      apiWorkStyleSave: true,
-      apiGoalSave: true,
-      apiCalendarPlan: true,
-      apiPrefSet: function (args) { return !!args && args[0] === 'oshi.char'; },
+      apiIssueClose: ['done'],
+      apiProjectMove: function (args) { return args && args[1] === 'Done' ? ['done'] : []; },
+      apiPrMerge: ['merge', 'merged'],
+      apiPrCreate: ['pull'],
+      apiPrReview: ['approve', 'reviews'],
+      apiBranchCreate: ['branch'],
+      apiIssueCreateBranch: ['branch'],
+      apiIssueComment: ['comment'],
+      apiInquiryCreate: ['inquiry'],
+      apiInquiryReply: ['comment'],
+      apiFocusStart: ['focus'],
+      apiWorkStyleSave: ['style'],
+      apiGoalSave: ['goal'],
+      apiCalendarPlan: ['calendar'],
+      apiPrefSet: function (args) { return args && args[0] === 'oshi.char' ? ['oshi'] : []; },
       // 使われ方で確かめる実績 (Markdown で保存・日報をコピー・探す・推しを選ぶ) は、送ったあとに数え直す
       apiUsageRecord: function (args) {
         var rows = (args && args[0]) || [];
-        var places = ACH_USAGE_TARGETS();
-        return rows.some(function (r) { return r && places.indexOf(r.target) >= 0; });
+        var map = ACH_USAGE_METRICS();
+        var out = [];
+        rows.forEach(function (r) {
+          var m = r && map[r.target];
+          if (m && out.indexOf(m) < 0) out.push(m);
+        });
+        return out;
       },
     };
+  }
+
+  /** 使われ方の場所 → 数えるもの */
+  function ACH_USAGE_METRICS() {
+    return { 'md-save': 'markdown', 'report-copy': 'reportCopy', 'search-open': 'search', 'oshi-choose': 'oshi' };
   }
 
   /**
@@ -61,7 +72,7 @@
    * @returns {string[]}
    */
   function ACH_USAGE_TARGETS() {
-    return ['md-save', 'report-copy', 'search-open', 'oshi-choose'];
+    return Object.keys(ACH_USAGE_METRICS());
   }
 
   /** 実績がオンか。設定が取れなければ既定 (オン) */
@@ -103,27 +114,32 @@
     var table = ACH_CALL_EVENTS();
     if (!Object.prototype.hasOwnProperty.call(table, name)) return;
     var v = table[name];
-    if (typeof v === 'function' ? v(args || []) : v) achRecheck();
+    var metrics = typeof v === 'function' ? v(args || []) : v;
+    if (metrics && metrics.length) achRecheck(metrics);
   }
 
-  /** 数え直す (開いた日は数えない)。待っているあいだに頼まれたら、返事のあとにもう1回だけ */
-  function achRecheck() {
+  /**
+   * 名指した数えるものだけ数え直す (開いた日は数えない)。待っているあいだに頼まれたものは、返事のあとにまとめて1回だけ。
+   *
+   * @param {string[]} metrics
+   */
+  function achRecheck(metrics) {
     if (achBusy) {
-      achAgain = true;
+      if (!achAgain) achAgain = [];
+      metrics.forEach(function (m) { if (achAgain.indexOf(m) < 0) achAgain.push(m); });
       return;
     }
     achBusy = true;
     var quiet = failQuiet('実績を数えられなくても使える');
-    call('apiAchievements', [], function (res) {
+    call('apiAchievementsCheck', [{ metrics: metrics }], function (res) {
       achBusy = false;
       achGot(res);
-      if (achAgain) {
-        achAgain = false;
-        achRecheck();
-      }
+      var again = achAgain;
+      achAgain = null;
+      if (again && again.length) achRecheck(again);
     }, function (err) {
       achBusy = false;
-      achAgain = false;
+      achAgain = null;
       quiet(err);
     });
   }
@@ -163,10 +179,10 @@
     });
   }
 
-  /** 出ている実績の頁とホームのカードを描き直す */
+  /** 出ている実績の頁とホームのカードを描き直す。絞って数え直した返事 (partial) では頁を描き直さない (手がかりが欠ける) */
   function achRefreshViews(res) {
     var page = document.querySelector('.ach-page');
-    if (page) drawAchPage(page, res);
+    if (page && !res.partial) drawAchPage(page, res);
     var card = document.querySelector('.ach-card');
     if (card) fillAchHomeCard(card, res);
   }
@@ -183,7 +199,7 @@
     var first = got[0];
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
-      : '実績を ' + got.length + ' つ取りました (「' + first.title + '」ほか)';
+      : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
     achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : ''));
     if (typeof funOn === 'function' && funOn('cheer') && typeof funBanner === 'function') {
       try { funBanner('BADGE GET!', 'big', 'success', null, first.title); } catch (e) { /* 飾りが落ちても知らせは出ている */ }
@@ -196,35 +212,55 @@
   }
 
   /**
+   * 隅の小さな知らせの器。**読み込んだときに空で置く** (role="status" の器は、字を入れる前から在るものでないと、
+   * 最初の知らせを読み上げない)。出していないあいだは見えないだけで、器は残す。
+   *
+   * @returns {HTMLElement}
+   */
+  function achToastEl() {
+    var el = document.getElementById('ach-toast');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'ach-toast';
+    el.className = 'ach-toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.addEventListener('click', achToastHide);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function achToastHide() {
+    var el = document.getElementById('ach-toast');
+    if (!el) return;
+    el.classList.remove('is-shown');
+    el.textContent = '';
+  }
+
+  /**
    * 隅の小さな知らせ。帯 (#snackbar) とは別に出す (済ませたときの帯の「取り消す」を消さない)。焦点は奪わない。
    *
    * @param {string} icon
    * @param {string} text
    */
   function achToast(icon, text) {
-    var el = document.getElementById('ach-toast');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'ach-toast';
-      el.className = 'ach-toast';
-      el.setAttribute('role', 'status');
-      el.setAttribute('aria-live', 'polite');
-      var mark = document.createElement('span');
-      mark.className = 'ach-toast-icon';
-      mark.setAttribute('aria-hidden', 'true');
-      el.appendChild(mark);
-      var span = document.createElement('span');
-      span.className = 'ach-toast-text';
-      el.appendChild(span);
-      el.addEventListener('click', function () { el.hidden = true; });
-      document.body.appendChild(el);
-    }
-    el.querySelector('.ach-toast-icon').textContent = icon || '';
-    el.querySelector('.ach-toast-text').textContent = text;
-    el.hidden = false;
+    var el = achToastEl();
+    el.textContent = '';
+    var mark = document.createElement('span');
+    mark.className = 'ach-toast-icon';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = icon || '';
+    el.appendChild(mark);
+    var span = document.createElement('span');
+    span.className = 'ach-toast-text';
+    span.textContent = text;
+    el.appendChild(span);
+    el.classList.add('is-shown');
     if (achToastTimer) window.clearTimeout(achToastTimer);
-    achToastTimer = window.setTimeout(function () { el.hidden = true; }, 6000);
+    achToastTimer = window.setTimeout(achToastHide, 6000);
   }
+
+  achToastEl();
 
   // ----- 自分まわりの「実績」と、その頁 -----
 
@@ -374,7 +410,7 @@
     var sub = document.createElement('span');
     sub.className = 'ach-sub';
     sub.textContent = a.done
-      ? a.desc + (a.at ? ' (' + String(a.at).slice(0, 10) + ')' : '')
+      ? a.desc + (a.at ? ' (' + a.at + ')' : '')
       : (a.hint || a.groupLabel);
     li.appendChild(sub);
     return li;
