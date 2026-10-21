@@ -16,6 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { readConfig, writeConfig, stamp, DAY_MS } from './update.mjs';
 
 /** せりふ1つの字数の上限。**番頭の oshiLineMaxOf('spinner') と同じ** (test/kit-spinner.test.js が見ている) */
@@ -33,8 +34,16 @@ export const SPINNER_OP = 'oshiSpinner';
  */
 const DROP = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g;
 
-/** コードや JSON に見える字。考え中のせりふには要らないので、含むものは入れない */
-const CODE_LIKE = /[{}[\]<>`$\\]/;
+/**
+ * コードや JSON に見える字。考え中のせりふには要らないので、含むものは入れない。
+ * **番頭の OSHI_SPINNER_CODE_LIKE() と同じ** (番頭はせりふを保存するときに断る。test/oshi-spinner.test.js が見ている)
+ */
+export const CODE_LIKE = /[{}[\]<>`$\\]/;
+
+/** 字の数 (コードポイント)。絵文字を2つと数えない。番頭の oshiCharCount と同じ数え方 */
+function charCount(s) {
+  return Array.from(s).length;
+}
 
 /**
  * 番頭から受け取ったせりふを、settings.json に書ける形にそろえる。字だけ・制御文字と改行を落とし・前後の空白を取り・
@@ -50,10 +59,20 @@ export function cleanVerbs(list) {
     if (out.length >= SPINNER_COUNT_MAX) break;
     if (typeof v !== 'string') continue;
     const one = v.replace(DROP, '').trim();
-    if (!one || one.length > SPINNER_LINE_MAX || CODE_LIKE.test(one) || out.includes(one)) continue;
+    if (!one || charCount(one) > SPINNER_LINE_MAX || CODE_LIKE.test(one) || out.includes(one)) continue;
     out.push(one);
   }
   return out;
+}
+
+/**
+ * せりふの確かめの印 (16進8字)。最初の on で見せ、--yes=<印> で同じせりふのときだけ書く。
+ *
+ * @param {string[]} verbs
+ * @returns {string}
+ */
+export function verbsPrint(verbs) {
+  return crypto.createHash('sha256').update(JSON.stringify(verbs), 'utf8').digest('hex').slice(0, 8);
 }
 
 /** こちらで書く値 */
@@ -135,10 +154,35 @@ export function writeSpinner({ claude, value, backup = false, now = Date.now() }
     saved = file + '.banto-backup-' + stamp(now);
     fs.copyFileSync(file, saved); // 元の許可 (600 など) を保つ。トークンを含みうる
   }
-  const eol = !exists || /\n$/.test(text) ? '\n' : '';
   fs.mkdirSync(claude, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(settings, null, exists ? indentOf(text) : '  ') + eol);
+  replaceFile(file, JSON.stringify(settings, null, exists ? indentOf(text) : '  ') + '\n');
   return { file, backup: saved };
+}
+
+/**
+ * ファイルを入れ替える。**書き途中を見せない**: 指す先 (リンクなら、その先) と同じ場所の一時ファイルに書き、
+ * 許可をそろえてから名前を付け替える。リンクそのものは置き換えない (dotfiles の管理などで settings.json がリンクのことがある)。
+ *
+ * @param {string} file
+ * @param {string} body
+ */
+function replaceFile(file, body) {
+  let target = file;
+  let mode = 0o600;
+  if (fs.existsSync(file)) {
+    target = fs.realpathSync(file);
+    mode = fs.statSync(target).mode & 0o777;
+  }
+  const tmp = path.join(path.dirname(target), '.' + path.basename(target) + '.banto-tmp-' + process.pid + '-' +
+    crypto.randomBytes(4).toString('hex'));
+  try {
+    fs.writeFileSync(tmp, body, { mode });
+    fs.chmodSync(tmp, mode);
+    fs.renameSync(tmp, target);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
 }
 
 /** ~/.banto/config.json の spinner。無ければ {} */
@@ -255,14 +299,21 @@ export function spinnerStatus({ home, claude }) {
  * - いまの値がこちらで最後に書いたものと違えば (人が手で直した) 書かない。命令も置かない
  * - 頼んでから届くまでのあいだにオフにされたら書かない (届いたときに決め直す)
  * - 24時間返らない命令は捨てる
+ * - **自動で入れ替えるのは、最初からいるキャラ (builtin:) のときだけ。** そのせりふは番頭の中に書いてある。自分のキャラの
+ *   せりふは台帳にあり Drive で共有している人が書き換えうるので、変わっても書かず、`on` で確かめ直すよう知らせる (mine-changed)
+ * - 確かめた日時は settings.json を読む前に覚える (壊れていても、知らせるのは1日1回)
+ * - sweep があれば、この確認が置いて24時間たった命令と結果を片付ける (道具の更新の確認が動かない人でも残らないように)
  *
- * @param {{home:string, claude:string, place:Function, collect:Function, drop:Function, now?:number}} o
- *   place(op, args) → id / collect(id) → 結果か null / drop(id) は命令と結果を消す
- * @returns {{state:string}}
+ * @param {{home:string, claude:string, place:Function, collect:Function, drop:Function, sweep?:Function, now?:number}} o
+ *   place(op, args) → id / collect(id) → 結果か null / drop(id) は命令と結果を消す / sweep(残す id の並び, now)
+ * @returns {{state:string, verbs?:string[], name?:string}}
  */
-export function tickSpinner({ home, claude, place, collect, drop, now = Date.now() }) {
+export function tickSpinner({ home, claude, place, collect, drop, sweep, now = Date.now() }) {
   let st = spinnerState(home);
   if (st.on !== true) return { state: 'off' };
+  if (sweep) {
+    try { sweep(st.pending && st.pending.id ? [String(st.pending.id)] : [], now); } catch (e) { /* 次にまた試す */ }
+  }
   if (st.pending) {
     const at = Date.parse(st.pending.at || '');
     let res;
@@ -277,31 +328,38 @@ export function tickSpinner({ home, claude, place, collect, drop, now = Date.now
       return { state: 'waiting' };
     } else {
       saveState(home, { pending: null });
-      return applyResult({ home, claude, res, now });
+      return applySpinnerResult({ home, claude, res, now });
     }
   }
   const last = Date.parse(st.lastCheck || '');
   if (Number.isFinite(last) && now - last < DAY_MS) return { state: 'fresh' };
+  // 先に書く。置けなくても・settings.json が読めなくても、命令のたびに置き直さない・知らせない
+  saveState(home, { lastCheck: new Date(now).toISOString() });
   const cur = currentSpinner(claude);
   if (!cur.has || !sameSpinner(cur.value, st.written)) return { state: 'edited' };
-  // 先に書く。置けなくても、命令のたびに置き直さない
-  saveState(home, { lastCheck: new Date(now).toISOString() });
   const id = place(SPINNER_OP, {});
   saveState(home, { pending: { id, at: new Date(now).toISOString() } });
   return { state: 'placed' };
 }
 
-/** 届いた返事で書き直す。書くのは、まだオンで、いまの値がこちらで書いたものと同じときだけ */
-function applyResult({ home, claude, res, now }) {
+/**
+ * 届いた返事で書き直す。書くのは、まだオンで・最初からいるキャラで・いまの値がこちらで書いたものと同じで・せりふが変わったときだけ。
+ * 返事を待つあいだに別の呼び出しがオフにしうるので、ここでもう一度オンかを見る。
+ *
+ * @returns {{state:string, verbs?:string[], name?:string, reason?:string}}
+ */
+export function applySpinnerResult({ home, claude, res, now = Date.now() }) {
   const st = spinnerState(home);
   if (st.on !== true) return { state: 'off' };
   const got = verbsFromResult(res);
   if (!got.verbs.length) return { state: 'skipped', reason: got.reason };
-  const cur = currentSpinner(claude);
-  if (!cur.has || !sameSpinner(cur.value, st.written)) return { state: 'edited' };
+  if (!got.char) return { state: 'skipped', reason: 'どのキャラのせりふか分かりませんでした' };
   const next = spinnerValue(got.verbs);
   if (sameSpinner(next, st.written)) return { state: 'same' };
+  if (!got.char.startsWith('builtin:')) return { state: 'mine-changed', name: got.name };
+  const cur = currentSpinner(claude);
+  if (!cur.has || !sameSpinner(cur.value, st.written)) return { state: 'edited' };
   writeSpinner({ claude, value: next, now });
   saveState(home, { written: next, name: got.name, char: got.char, at: new Date(now).toISOString() });
-  return { state: 'updated' };
+  return { state: 'updated', verbs: got.verbs, name: got.name };
 }

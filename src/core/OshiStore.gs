@@ -238,7 +238,7 @@ function oshiSetProfile_(email, id, name, tone) {
  */
 function oshiSetLines_(email, id, event, lines) {
   if (!oshiEventOf(event)) throw new Error('知らない場面です: ' + event);
-  var clean = oshiCleanLines(lines, oshiLineMaxOf(event));
+  var clean = oshiCleanEventLines(event, lines);
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   return dbWithLock_(30000, function () {
@@ -981,8 +981,8 @@ function oshiCharImportValid_(text) {
     if (!Array.isArray(v) && typeof v !== 'string') throw new Error('「' + e.label + '」のせりふは字の並び (["…"]) にしてください');
     var clean;
     try {
-      clean = oshiCleanLines(Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? oshiCharKitText_(x) : ''; })
-        : oshiCharKitText_(v), oshiLineMaxOf(e.key));
+      clean = oshiCleanEventLines(e.key, Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? oshiCharKitText_(x) : ''; })
+        : oshiCharKitText_(v));
     } catch (err) {
       throw new Error('「' + e.label + '」のせりふを直してください。' + err.message);
     }

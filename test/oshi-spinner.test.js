@@ -155,3 +155,31 @@ describe('命令 oshiSpinner (置いた人の考え中のせりふ)', () => {
     expect(r.name).toBe('');
   });
 });
+
+describe('見直しの指摘 (番頭の側)', () => {
+  it('考え中のせりふにコードに見える字は使えない (黙って消さずに断る)。手元と同じ字の決まり', async () => {
+    const { ctx } = setup();
+    const c = ctx.oshiCharCreate_(ME, 'テストのソラ', 'cool');
+    expect(() => ctx.oshiSetLines_(ME, c.id, 'spinner', ['[考え中]'])).toThrow('考え中のせりふには');
+    // ほかの場面は今までどおり
+    expect(ctx.oshiSetLines_(ME, c.id, 'done', ['[済んだ]'])).toEqual(['[済んだ]']);
+    expect(() => ctx.oshiCharImportValid_(JSON.stringify({ name: 'テスト', tone: 'cool', lines: { spinner: ['<考え中>'] } })))
+      .toThrow('考え中のせりふには');
+    expect(pure.oshiSpinnerPick(['[考え中]', 'テスト'])).toEqual(['テスト']);
+    const kit = await import('../kit/track/spinner.mjs');
+    expect(kit.CODE_LIKE.source).toBe(pure.OSHI_SPINNER_CODE_LIKE().source);
+  });
+
+  it('字数は字 (コードポイント) で数える', () => {
+    expect(pure.oshiSpinnerPick(['😀'.repeat(24), '😀'.repeat(25)])).toEqual(['😀'.repeat(24)]);
+    expect(pure.oshiCleanLines(['😀'.repeat(24)], 24)).toEqual(['😀'.repeat(24)]);
+    expect(() => pure.oshiCleanLines(['😀'.repeat(25)], 24)).toThrow('24字まで');
+  });
+
+  it('頼み文の数の言い方がそろっている (考え中は5〜10個)', () => {
+    const p = pure.oshiCharKitPrompt('codex', 37);
+    expect(p).toContain('考え中 (spinner) だけは5〜10個');
+    expect(p.match(/5〜10個/g)).toHaveLength(2);
+    expect(p).not.toMatch(/5〜10個。.*、1つ24字まで.*5〜10/);
+  });
+});

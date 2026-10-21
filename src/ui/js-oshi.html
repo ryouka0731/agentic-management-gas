@@ -1969,7 +1969,7 @@
       item.appendChild(sum);
       if (ev.spinner) {
         item.appendChild(oshiNote('Claude Code が考えているあいだに出す短い言葉です (1つ' + ev.lineMax +
-          '字まで)。手元の道具の node agent.mjs oshi-spinner on で使えます。吹き出しでは言いません。'));
+          '字まで。{ } [ ] < > ` $ \\ は使えません)。手元の道具の node agent.mjs oshi-spinner on で使えます。吹き出しでは言いません。'));
       }
       item.appendChild(oshiNote('いまの口調では: ' + (ev.lines || []).join(' / ')));
       var area = document.createElement('textarea');

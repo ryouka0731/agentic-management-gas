@@ -398,7 +398,9 @@ export function doctor({ config, home, claude, now = Date.now(), version = KIT_V
   doctorConfig(r, config);
   const queueDir = doctorQueueDir(r, config);
   if (queueDir) doctorReplies(r, queueDir, now);
-  const banto = readConfig(home);
+  // config.json は oshi-spinner だけでも作られる (spinner の鍵だけ)。入れた印 (入れ先・入れた版) があるときだけ、入れたものとして見る
+  const read = readConfig(home);
+  const banto = read && (read.queueDir || read.kitVersion) ? read : null;
   doctorVersion(r, banto, home, version);
   if (banto) doctorHooks(r, home, claude);
 

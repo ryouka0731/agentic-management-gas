@@ -688,8 +688,24 @@ function maybeSpinner() {
     const st = spinner.spinnerState(home);
     if (st.on !== true || !st.queueDir || !fs.existsSync(st.queueDir)) return;
     const hands = queueHands({ queueDir: st.queueDir });
-    const r = spinner.tickSpinner({ home, claude: track.claudeHome(), place: hands.place, collect: hands.collect, drop: hands.drop });
-    if (r.state === 'updated') process.stderr.write('Claude Code の考え中の字を、推しのせりふで入れ替えました\n');
+    // 道具の更新の確認 (maybeUpdate) は ~/.banto/kit から動かすときしか片付けないので、ここでも片付ける。
+    // 道具の更新が待っている命令は残す
+    const sweep = (keep, now) => {
+      const c = update.readConfig(home);
+      const held = keep.concat(c && c.pendingUpdate && c.pendingUpdate.id ? [String(c.pendingUpdate.id)] : []);
+      for (const name of update.staleUpdateFiles(fs.readdirSync(st.queueDir), now, '')) {
+        if (held.some((id) => name.startsWith(id + '.'))) continue;
+        try { fs.unlinkSync(path.join(st.queueDir, name)); } catch (e) { /* 次にまた試す */ }
+      }
+    };
+    const r = spinner.tickSpinner({ home, claude: track.claudeHome(), place: hands.place, collect: hands.collect, drop: hands.drop, sweep });
+    if (r.state === 'updated') {
+      process.stderr.write('Claude Code の考え中の字を、' + (r.name || '推し') + 'のせりふで入れ替えました:\n' +
+        fenced(r.verbs.join('\n')) + '\n');
+    } else if (r.state === 'mine-changed') {
+      process.stderr.write((r.name || '自分のキャラ') + 'の考え中のせりふが変わりました。node agent.mjs oshi-spinner on で確かめて入れ替えてください' +
+        ' (自分のキャラのせりふは自動では入れ替えません)\n');
+    }
   } catch (e) {
     process.stderr.write('考え中の字を入れ替えられませんでした: ' + (e.message || e) + '\n');
   }
@@ -743,8 +759,9 @@ async function runOshiSpinner(argv) {
   }
 
   if (sub === 'off') {
-    const c = update.readConfig(home);
-    const r = spinner.turnOff({ home, claude, drop: c && c.queueDir ? queueHands(c).drop : undefined });
+    // 待っている命令は on が覚えた入れ先にある (いまの設定の入れ先とは限らない)
+    const q = spinner.spinnerState(home).queueDir;
+    const r = spinner.turnOff({ home, claude, drop: q ? queueHands({ queueDir: q }).drop : undefined });
     const said = {
       off: 'オンにしていません。何も変えていません',
       restored: spinnerFileSaid(r.file) + 'の spinnerVerbs を、オンにする前の値に戻しました',
@@ -764,6 +781,9 @@ async function runOshiSpinner(argv) {
       return;
     }
     const plan = spinner.planOn({ home, claude, verbs: got.verbs });
+    const print = spinner.verbsPrint(got.verbs);
+    const yes = a.find((x) => x === '--yes' || x.startsWith('--yes='));
+    const want = yes && yes.startsWith('--yes=') ? yes.slice('--yes='.length) : '';
     process.stderr.write([
       (got.name || '名前なし') + 'の考え中のせりふ (' + got.verbs.length + '個):',
       fenced(got.verbs.join('\n')),
@@ -773,8 +793,15 @@ async function runOshiSpinner(argv) {
       '  これから: ' + JSON.stringify(plan.next),
       'オンのあいだは1日1回せりふを取り直し、番頭で使うキャラを変えると1日のうちに変わります。',
       '戻す: node agent.mjs oshi-spinner off (手で直したあとは、どちらも触りません)',
+      '確かめの印: ' + print + ' (このせりふのまま書くなら node agent.mjs oshi-spinner on --yes=' + print + ')',
     ].join('\n') + '\n');
-    if (!(await askYes(a, '考え中の字を変えますか', '変えてよいか'))) return;
+    if (yes && want && want !== print) {
+      process.stderr.write('確かめたときからせりふが変わりました (印 ' + want + ' → ' + print + ')。上のせりふを確かめてから、' +
+        'もう一度 --yes=' + print + ' で実行してください。何も変えていません\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (!yes && !(await askYes(a, '考え中の字を変えますか', '変えてよいか'))) return;
     const done = spinner.turnOn({ home, claude, plan, queueDir: config.queueDir, name: got.name, char: got.char });
     process.stdout.write(spinnerFileSaid(done.file) + 'の spinnerVerbs を推しのせりふにしました' +
       (done.backup ? ' (控え: ' + done.backup + ')' : '') + '。Claude Code に出るのは、次に開いたときからかもしれません\n');
