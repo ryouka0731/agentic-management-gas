@@ -362,6 +362,47 @@ describe('最初からいるキャラ', () => {
     expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'celebrate'));
   });
 
+  // 絵は要るときに取る作りなので、そのままだと場面が来た瞬間にせりふの後から絵が遅れて出る。
+  // 読み込んでから少し待ち、いま使うキャラの絵を全部の表情ぶん裏で取っておく (oshiWarmImages)
+  it('読み込んでから少し待つと、いま使うキャラの絵を全部の表情ぶん裏で取っておく。場面が来たときは取りに行かず、すぐ出す', () => {
+    vi.useFakeTimers();
+    const data = oshiFixture({ noImages: true });
+    const app = mountOshi(NO_HOME, { apiOshiGet: data });
+    expect(names(app)).not.toContain('apiOshiDefaultImage');
+    vi.advanceTimersByTime(1499);
+    expect(names(app)).not.toContain('apiOshiDefaultImage'); // 最初の画面の呼び出しと重ねない
+    vi.advanceTimersByTime(1 + 150 * data.states.length);
+    const states = data.states.map((s) => s.key);
+    expect(defaultCalls(app).map((a) => a[2]).sort()).toEqual(states.slice().sort());
+    expect(defaultCalls(app).every((a) => a[0] === 'taku' && a[1] === 'chibi')).toBe(true);
+    const before = defaultCalls(app).length;
+    closeOneIssue();
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'celebrate'));
+    expect(defaultCalls(app).length).toBe(before);
+  });
+
+  it('自分のキャラなら、入れてある絵は自分の絵を、無い表情は代わりのキャラの絵を裏で取っておく', () => {
+    vi.useFakeTimers();
+    const data = oshiFixture();
+    const app = mountOshi(ON, { apiOshiGet: data });
+    vi.advanceTimersByTime(1500 + 150 * data.states.length);
+    expect(app.calls.filter((c) => c.name === 'apiOshiImage').map((c) => c.args)).toEqual([[1, 'celebrate']]);
+    expect(defaultCalls(app).map((a) => a[2])).not.toContain('celebrate');
+    expect(defaultCalls(app).length).toBe(data.states.length - 1);
+  });
+
+  it('オフの人と、絵を出さない設定の人は、裏でも取らない', () => {
+    vi.useFakeTimers();
+    const off = mountOshi({ 'oshi.on': false });
+    vi.advanceTimersByTime(10000);
+    expect(names(off)).not.toContain('apiOshiDefaultImage');
+    expect(names(off)).not.toContain('apiOshiImage');
+    const own = mountOshi(OWN_ONLY, { apiOshiGet: oshiFixture({ noImages: true, fallback: 'none' }) });
+    vi.advanceTimersByTime(10000);
+    expect(names(own)).not.toContain('apiOshiDefaultImage');
+    expect(names(own)).not.toContain('apiOshiImage');
+  });
+
   it('取りに行っている最中に同じ絵が要っても、2回取りに行かない', () => {
     let reply = null;
     const app = mountOshi(NO_HOME, {
