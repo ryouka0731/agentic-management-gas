@@ -36,6 +36,8 @@ function setup() {
  *  1 10-02 出す → 10-03 差し戻し → 10-05 承認 → 10-06 反映 [差し戻しがあったのできれいでない]
  *  2 10-01 改訂版に記録 (出す前。10-12 の前の動きは 10-02 の「出す」) → 10-02 出す → 10-12 記録 [動いた] → 10-13 承認・反映 [きれい]
  *  3 10-02 出す → 10-20 コメント [動いた]
+ *  4 10-02 出す (改訂D) → 取り下げ → 10-20 コメント。取り下げた依頼は数えない
+ *  5 10-15 同じ改訂D から出し直す → 10-25 記録 [動いた]。記録は取り下げた4には付けない
  */
 function placeMonth(ctx) {
   let id = 0;
@@ -94,6 +96,11 @@ function placeMonth(ctx) {
   pull(3, '改訂C', {});
   review(3, 'comment', '2026-10-20 10:00');
 
+  pull(4, '改訂D', { state: 'closed' });
+  review(4, 'comment', '2026-10-20 10:30');
+  pull(5, '改訂D', { createdAt: T('2026-10-15 09:00') });
+  commit('改訂D', '2026-10-25 11:00');
+
   ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: 'g@x', at: T('2026-10-20 11:00'), state: 'open' });
 
   // 混み合いは日ごとの数 (dbBusyNote_)、時間切れは使われ方の場所 error:timeout から数える
@@ -105,7 +112,7 @@ function placeMonth(ctx) {
 
 /** 10月の日ごとの数。書いていない日は0 */
 const EXPECTED = {
-  moved: { '2026-10-10': 1, '2026-10-12': 1, '2026-10-14': 1, '2026-10-20': 2, '2026-10-25': 1 },
+  moved: { '2026-10-10': 1, '2026-10-12': 1, '2026-10-14': 1, '2026-10-20': 2, '2026-10-25': 2 },
   closedClean: { '2026-10-09': 1, '2026-10-12': 1, '2026-10-20': 1 },
   mergedClean: { '2026-10-13': 1 },
   reopened: { '2026-10-08': 1, '2026-10-30': 1 },
@@ -113,8 +120,8 @@ const EXPECTED = {
     Object.fromEntries(Array.from({ length: 14 }, (_, i) => ['2026-10-' + String(6 + i).padStart(2, '0'), 1]))),
   activePeople: {
     '2026-10-01': 2, '2026-10-02': 2, '2026-10-03': 2, '2026-10-05': 1, '2026-10-07': 1, '2026-10-08': 1,
-    '2026-10-09': 1, '2026-10-10': 1, '2026-10-12': 2, '2026-10-13': 1, '2026-10-14': 1, '2026-10-20': 3,
-    '2026-10-25': 1, '2026-10-30': 1,
+    '2026-10-09': 1, '2026-10-10': 1, '2026-10-12': 2, '2026-10-13': 1, '2026-10-14': 1, '2026-10-15': 1,
+    '2026-10-20': 3, '2026-10-25': 2, '2026-10-30': 1,
   },
   busyErrors: { '2026-10-10': 4 },
   timeoutErrors: { '2026-10-10': 3 },
@@ -232,10 +239,38 @@ describe('1日1回の数え直し (outcomesDaily_)', () => {
     expect(ctx.PropertiesService.getScriptProperties().getProperty('OUTCOME_BUSY:2026-10-22')).toBe(before);
   });
 
-  it('1日1回の片付けのあとに数える', () => {
+  it('1日1回の片付けのあとに、片付けとは別の印で1回だけ数える', () => {
     const { ctx } = setup();
     placeMonth(ctx);
-    ctx.housekeepArchiveDaily_();
+    const props = ctx.PropertiesService.getScriptProperties();
+    const today = ctx.usageDay(new Date());
+    // 片付けが済んでいない日は数えない
+    expect(ctx.outcomesDailyOnce_()).toBe(false);
+    ctx.processCommandQueue();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBe(today);
+    expect(props.getProperty('OUTCOMES_ON')).toBe(today);
+    expect(ctx.dbReadAll('outcomes_daily')).toHaveLength(8);
+    expect(ctx.outcomesDailyOnce_()).toBe(false);
+  });
+
+  it('数えるところで落ちても、片付けの印は済みのまま (片付けをやり直さない)。次の回に数え直す', () => {
+    const { ctx } = setup();
+    placeMonth(ctx);
+    const props = ctx.PropertiesService.getScriptProperties();
+    const today = ctx.usageDay(new Date());
+    const real = ctx.outcomesDaily_;
+    ctx.outcomesDaily_ = () => { throw new Error('Exceeded maximum execution time'); };
+    ctx.processCommandQueue();
+    expect(props.getProperty('ARCHIVE_HOUSEKEPT_ON')).toBe(today);
+    expect(props.getProperty('OUTCOMES_ON')).toBe(null);
+    expect(props.getProperty('OUTCOMES_RUNNING')).toBe(null);
+    ctx.outcomesDaily_ = real;
+    let archives = 0;
+    const realHk = ctx.issueHousekeep;
+    ctx.issueHousekeep = function () { archives++; return realHk.apply(this, arguments); };
+    ctx.processCommandQueue();
+    expect(archives).toBe(0);
+    expect(props.getProperty('OUTCOMES_ON')).toBe(today);
     expect(ctx.dbReadAll('outcomes_daily')).toHaveLength(8);
   });
 });

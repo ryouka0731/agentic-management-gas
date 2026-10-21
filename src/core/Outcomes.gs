@@ -5,7 +5,7 @@
  * きれいに終わったか」を数える。あわせて、悪くなったら止める合図 (見張り) を数える。
  * **人の名前とアドレスは持たない。** 台帳の `outcomes_daily` に日ごとの数だけを置く。
  *
- * 1日1回の片付け (housekeepArchiveDaily_) のあとに、**鍵の外で**台帳を読んで数え、書くところだけ
+ * 1日1回の片付け (housekeepArchiveDaily_) のあとに、別の印で1日1回 (outcomesDailyOnce_)、**鍵の外で**台帳を読んで数え、書くところだけ
  * 短く鍵を取る (outcomesWrite_)。「7日以内に開き直されなかった」のように、あとの7日で決まる数が
  * あるので、毎回直近8日を数え直して日ごとに上書きする。8日たった日の数はもう動かない。
  *
@@ -16,8 +16,9 @@
  * - mergedClean:  D に反映した確認依頼のうち、反映より前に差し戻しが1件も無かったものの数
  * - reopened:     D に開き直したやることの数 (同じやることは1日1件) — 見張り
  * - overdue:      D の終わりに開いていて、期限 (いまの期限の欄) が D より前のやることの数 — 見張り
- * - activePeople: D に何か1つ記録した人の数 (人数だけ) — 3人未満の週は画面に出さない
- * - busyErrors:   D に「混み合っています」で断った数 (Db.gs の dbBusyNote_。鍵なしで足すのでおおよそ) — 見張り
+ * - activePeople: D に何か1つ記録した人の数 (人数だけ)。手元からの命令の行は置いた人として数える — 3人未満の週は画面に出さない
+ * - busyErrors:   D に鍵が取れずに投げた数 (Db.gs の dbBusyNote_)。**上限の数**: 呼んだ側が握って画面に届かないもの
+ *                 (履歴・知らせ・使われ方) も入る。鍵なしで足すので数え漏れもある — 見張り
  * - timeoutErrors: D に画面で時間切れになった操作の数 (使われ方の場所 error:timeout。使われ方を止めた人は数えない) — 見張り
  * - fxOff:        楽しい演出・集中のしかた・推し・ポイントのどれかを、自分の設定ではっきり切っている人の数
  *                 (数えた時点の数。前日の行にだけ入れ、数え直しでは前の値を残す) — 見張り
@@ -89,12 +90,57 @@ function outcomesWho_(v) {
   return String(v == null ? '' : v).trim().toLowerCase();
 }
 
+/** 手元からの命令が走った時間を覚える日数 */
+function OUTCOMES_QUEUE_KEEP_DAYS() {
+  return 14;
+}
+
+/**
+ * 手元からの命令が走った時間と、置いた人を覚える (スクリプトプロパティ `OUTCOME_QUEUE:<日>` の JSON)。
+ * runCommandFileLocked_ が命令1件ごとに呼ぶ (鍵の中)。覚えられなくても命令は止めない。
+ *
+ * @param {number} from 走り始め (ms)
+ * @param {number} to 走り終わり (ms)
+ * @param {string} runner トリガーを仕掛けた人 (台帳にはこの人の名で残る)
+ * @param {string} by 命令を置いた人 (分からなければ空)
+ */
+function outcomesQueueNote_(from, to, runner, by) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = 'OUTCOME_QUEUE:' + outcomesDayOf_(from);
+    var list = prefParse_(props.getProperty(key));
+    if (!Array.isArray(list)) list = [];
+    list.push({ s: from, e: to, runner: outcomesWho_(runner), by: outcomesWho_(by) });
+    props.setProperty(key, JSON.stringify(list));
+  } catch (e) {
+    // 覚えられなくても命令は止めない (その日の記録した人の数が持ち主の分だけ多くなりうる)
+  }
+}
+
+/** @returns {Array<{s: number, e: number, runner: string, by: string}>} 覚えている命令の時間 */
+function outcomesQueueWindows_() {
+  var all = PropertiesService.getScriptProperties().getProperties() || {};
+  var out = [];
+  Object.keys(all).forEach(function (k) {
+    if (k.indexOf('OUTCOME_QUEUE:') !== 0) return;
+    var list = prefParse_(all[k]);
+    if (!Array.isArray(list)) return;
+    list.forEach(function (q) {
+      if (q && typeof q.s === 'number' && typeof q.e === 'number' && q.runner) {
+        out.push({ s: q.s, e: q.e, runner: String(q.runner), by: String(q.by || '') });
+      }
+    });
+  });
+  return out;
+}
+
 /**
  * 数えるのに要る台帳を1回だけ読む。
  *
  * 動き (activity) として数えるもの:
  * - やること: 変更の履歴 (change_log の issue:N。作る・直す・完了・開き直し)、やりとり、作った時刻
- * - 確認依頼: 出した時刻、確認 (承認・差し戻し・コメント)、元の改訂版への記録、証跡、反映した時刻
+ * - 確認依頼: 出した時刻、確認 (承認・差し戻し・コメント)、元の改訂版への記録 (その時点で開いていた依頼にだけ)、
+ *   証跡、反映した時刻。**取り下げた依頼 (state closed) は数えない**
  *
  * @returns {object}
  */
@@ -108,10 +154,21 @@ function outcomesLedger_() {
   });
 
   var people = [];
+  var windows = outcomesQueueWindows_();
   function person(who, at) {
     var w = outcomesWho_(who);
     var t = outcomesTime_(at);
-    if (w && !isNaN(t)) people.push({ who: w, at: t });
+    if (!w || isNaN(t)) return;
+    // 手元からの命令で書いた行は、トリガーを仕掛けた人の名で残る。命令を置いた人として数える
+    // (分からなければ数えない)。数えないと、持ち主1人が命令を回すだけで「3人」に届いてしまう
+    for (var i = 0; i < windows.length; i++) {
+      var q = windows[i];
+      if (q.runner === w && t >= q.s && t <= q.e) {
+        w = q.by;
+        break;
+      }
+    }
+    if (w) people.push({ who: w, at: t });
   }
 
   dbReadAll('change_log').forEach(function (r) {
@@ -138,12 +195,15 @@ function outcomesLedger_() {
   dbReadAll('pulls').forEach(function (r) {
     var n = Number(r.number);
     if (!n) return;
+    person(r.author, r.createdAt);
+    // **取り下げた依頼は数えない。** 取り下げた時刻を持たないので、数えるといつまでも「開いている」ことになり、
+    // 同じ名前の改訂版から出し直した依頼と一緒に、1つの動きを2回数える
+    if (String(r.state) === 'closed') return;
     var p = { row: r, acts: [], createdAt: outcomesTime_(r.createdAt), mergedAt: outcomesTime_(r.mergedAt),
       changesAt: [] };
     if (!isNaN(p.createdAt)) p.acts.push(p.createdAt);
     if (!isNaN(p.mergedAt)) p.acts.push(p.mergedAt);
     pulls[n] = p;
-    person(r.author, r.createdAt);
     var b = String(r.sourceBranch || '');
     if (b) (byBranch[b] = byBranch[b] || []).push(p);
   });
@@ -161,8 +221,10 @@ function outcomesLedger_() {
     person(r.author, r.timestamp);
     var t = outcomesTime_(r.timestamp);
     if (isNaN(t)) return;
-    // 出す前・反映したあとの記録も入るが、数えるのは「その日の始まりに開いていた依頼」だけなので効かない
-    (byBranch[String(r.branch || '')] || []).forEach(function (p) { p.acts.push(t); });
+    // その時点で開いていた依頼にだけ付ける (出す前・反映したあとの記録は、その依頼の動きではない)
+    (byBranch[String(r.branch || '')] || []).forEach(function (p) {
+      if (p.createdAt <= t && (isNaN(p.mergedAt) || t <= p.mergedAt)) p.acts.push(t);
+    });
   });
 
   dbReadAll('pull_patches').forEach(function (r) {
@@ -349,7 +411,7 @@ function outcomesWrite_(rows) {
 }
 
 /**
- * 1日1回、直近8日 (きのうから) を数え直して書く。housekeepArchiveDaily_ から呼ぶ (鍵の外)。
+ * 直近8日 (きのうから) を数え直して書く。outcomesDailyOnce_ から呼ぶ (鍵の外)。
  *
  * - fxOff はきのうの行にだけ入れる (いまの数なので、もっと前の日には分からない)
  * - 「混み合っています」の日ごとの数は、残す日数より古いものを消す
@@ -375,8 +437,45 @@ function outcomesDaily_(now) {
   Object.keys(props.getProperties() || {}).forEach(function (key) {
     var m = /^OUTCOME_BUSY:(\d{4}-\d{2}-\d{2})$/.exec(key);
     if (m && m[1] < oldest) props.deleteProperty(key);
+    var q = /^OUTCOME_QUEUE:(\d{4}-\d{2}-\d{2})$/.exec(key);
+    if (q && q[1] < outcomesShiftDay_(today, -OUTCOMES_QUEUE_KEEP_DAYS())) props.deleteProperty(key);
   });
   return rows;
+}
+
+/**
+ * 1日1回だけ outcomesDaily_ を走らせる。processCommandQueue が片付け (housekeepArchiveDaily_) のあとに呼ぶ。
+ *
+ * - **片付けとは別の印** (`OUTCOMES_ON` = その日)。数えるところで時間切れになっても、片付けはやり直さない
+ * - **片付けが済んだ日だけ走る** (`ARCHIVE_HOUSEKEPT_ON` が今日)。捨てたものを片付けてから数える
+ * - 受け持つ印 (`OUTCOMES_RUNNING`) は短い鍵の中で付け、数えるのは鍵の外。受け持ったまま落ちても30分で受け持ち直す。
+ *   済みの印は終わってから付ける
+ *
+ * @param {Date} [now]
+ * @returns {boolean} 数えたか
+ */
+function outcomesDailyOnce_(now) {
+  var props = PropertiesService.getScriptProperties();
+  var today = outcomesDayOf_((now || new Date()).getTime());
+  if (props.getProperty('OUTCOMES_ON') === today) return false;
+  if (props.getProperty('ARCHIVE_HOUSEKEPT_ON') !== today) return false;
+
+  var claimed = dbWithLock_(5000, function () {
+    if (props.getProperty('OUTCOMES_ON') === today) return false;
+    var running = String(props.getProperty('OUTCOMES_RUNNING') || '').split('|');
+    if (running[0] === today && Date.now() - Number(running[1]) < 30 * 60 * 1000) return false;
+    props.setProperty('OUTCOMES_RUNNING', today + '|' + Date.now());
+    return true;
+  }, function () { return false; });
+  if (!claimed) return false;
+
+  try {
+    outcomesDaily_(now || new Date());
+    props.setProperty('OUTCOMES_ON', today);
+    return true;
+  } finally {
+    props.deleteProperty('OUTCOMES_RUNNING');
+  }
 }
 
 /**

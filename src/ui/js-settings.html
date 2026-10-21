@@ -1005,21 +1005,39 @@
     var about = document.createElement('p');
     about.textContent = 'チーム全体の数を、週ごと (月曜から日曜。終わった週だけ) に出します。人の名前とアドレスは持っていません。' +
       '記録した人が3人に届かない週は、1人の分が引き算で分かってしまうので数を出しません。' +
-      '数は毎日1回、前の8日ぶんを数え直します (「7日のうちに開き直されなかった」は7日たってから決まるため)。';
+      '数は毎日1回、前の8日ぶんを数え直します (「7日のうちに開き直されなかった」は7日たってから決まるため)。' +
+      '「混み合っています」は多めに出ます (裏で黙って済ませた分も入る、上限の数です)。' +
+      'やることと、それに結び付いた確認依頼が両方動けば、どちらも「動いた」に数えます。' +
+      '「止まっていた仕事が動き、7日のうちにきれいに終わった」の結び付きは、まだ数えていません。';
     box.appendChild(about);
+
+    var refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.id = 'outcomes-refresh';
+    refresh.className = 'btn';
+    refresh.textContent = '読み込み直す';
+    box.appendChild(refresh);
 
     var body = document.createElement('div');
     body.id = 'outcomes-body';
     body.className = 'outcomes-body';
     box.appendChild(body);
-    showSkeleton(body, 'list', 2);
-
-    var still = latest('outcomes');
-    call('apiOutcomes', [8], function (res) {
-      if (!still()) return;
-      renderOutcomes(body, res || { weeks: [], since: '', minPeople: 3 });
-    }, failInto(body));
+    refresh.addEventListener('click', function () { loadOutcomes(body); });
+    loadOutcomes(body);
     return box;
+  }
+
+  /**
+   * 成果の数を取って、同じ器に描く。続けて頼んだら、最後に頼んだぶんの返事だけを描く。
+   *
+   * @param {HTMLElement} body
+   */
+  function loadOutcomes(body) {
+    showSkeleton(body, 'list', 2);
+    var still = latest('outcomes');
+    call('apiOutcomes', [8], still.only(function (res) {
+      renderOutcomes(body, res || { weeks: [], since: '', minPeople: 3 });
+    }), still.only(failInto(body)));
   }
 
   /**

@@ -71,20 +71,28 @@ describe('画面とサーバで同じ答えになる', () => {
   it('errorKindOf / nextStepOf / errorTextOf (断りの型と次にすること)', () => {
     // 型の表は src/core/ErrorKind.js。画面の写しが1つでもずれると、同じ断りに別の「次にすること」が出る
     const core = loadGas('src/core/ErrorKind.js');
-    const names = ['ERROR_KIND_ENGLISH_', 'ERROR_KIND_PHRASES_', 'errorBareOf_', 'errorKindOf', 'nextStepOf', 'errorTextOf'];
+    const names = ['ERROR_KIND_ENGLISH_', 'ERROR_KIND_PHRASES_', 'ERROR_NAME_SLOTS_', 'errorHeadOf_', 'errorBareOf_',
+      'errorKindOf', 'nextStepOf', 'errorTextOf'];
     const view = ui(names);
     const words = ['混み合っています', '見つかりません', '開いたあとで', 'だけが行えます', '入れてください', '既にあります',
-      'Exceeded maximum execution time', 'Lock timeout', 'Authorization is required', 'not found', 'boom', ''];
-    const glue = ['', ': ', 'Error: ', 'Exception: ', '。', ' #3', '「x」'];
+      'Exceeded maximum execution time', 'Lock timeout', 'Authorization is required', 'not found', 'boom', '',
+      '混み合っています。少し待ってからもう一度お試しください', '途中まで済みましたが、混み合って続きができませんでした',
+      // 英語の名前の人 (名前が文の頭に来る形)
+      'Lock timeout さんの差し戻しが残っています', 'Not Found の反映結果を書き戻せません'];
+    const glue = ['', ': ', '：', 'Error: ', 'Exception: ', '。', ' #3', '「x」', '「Lock timeout」'];
     for (let t = 0; t < 2000; t++) {
       const text = pick(glue) + pick(words) + pick(glue) + pick(words);
       expect(view.errorKindOf(text)).toBe(core.errorKindOf(text));
       expect(view.errorTextOf(text)).toBe(core.errorTextOf(text));
     }
-    for (const k of ['busy', 'timeout', 'forbidden', 'gone', 'stale', 'invalid', 'unknown', '', 'constructor']) {
+    for (const k of ['busy', 'partial', 'quota', 'timeout', 'forbidden', 'gone', 'stale', 'invalid', 'unknown', '', 'constructor']) {
       expect(same(view.nextStepOf(k), core.nextStepOf(k))).toBe(true);
     }
     for (const v of [null, undefined, 3]) expect(view.errorKindOf(v)).toBe(core.errorKindOf(v));
+    for (const w of words) for (const g of glue) {
+      expect(view.errorKindOf(w + g)).toBe(core.errorKindOf(w + g));
+      expect(view.errorKindOf(g + w)).toBe(core.errorKindOf(g + w));
+    }
   });
 
   it('diffPairs', () => {

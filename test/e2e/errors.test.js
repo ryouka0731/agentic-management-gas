@@ -79,6 +79,27 @@ describe('サーバに断られたとき', () => {
     expect(e2e.failures.map((f) => f.name)).toEqual(['apiIssueCreate']);
   }, LONG);
 
+  it('作ったあとのカードを置くところで混み合ったら、途中まで済んだと言い、[もう一度] を出さない', async () => {
+    const e2e = mountFullstack();
+    await e2e.settle();
+    go('issues'); await e2e.settle();
+    const real = e2e.ctx.LockService;
+    // 番号を振る鍵だけ取れて、そのあと (カードを置く・担当を書く) は取れない
+    let k = 0;
+    e2e.ctx.LockService = { getScriptLock: () => ({ tryLock: () => k++ < 1, releaseLock: () => {} }) };
+    click($('#issue-create-btn')); await e2e.settle();
+    fillSideForm({ title: '育児休業規程', body: '' });
+    k = 0;
+    submitSideForm();
+    await e2e.settle();
+    e2e.ctx.LockService = real;
+
+    expect(e2e.snacks.join(' ')).toContain('途中まで済みましたが');
+    expect($('#snackbar .snackbar-next').textContent).toContain('確かめて');
+    expect(Array.from(document.querySelectorAll('#snackbar button')).some((b) => b.textContent === 'もう一度')).toBe(false);
+    expect(e2e.rows('issues').map((i) => i.title)).toEqual(['育児休業規程']);
+  }, LONG);
+
   it('時間切れには [もう一度] を出さない (途中まで済んでいて、二重に作るため)', async () => {
     const e2e = mountFullstack();
     await e2e.settle();

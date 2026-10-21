@@ -74,9 +74,12 @@ describe('遅れて届いた古い返事で、新しい一覧を描き直さな�
     const weeks = (moved) => ({ minPeople: 3, since: '2026-10-01', weeks: [{ start: '2026-10-12', end: '2026-10-18',
       days: 7, people: 4, hidden: false, moved, closedClean: 0, mergedClean: 0, reopened: 0, busyErrors: 0,
       timeoutErrors: 0, overdue: 0, fxOff: 0 }] });
-    const t = askTwice(app, 'apiOutcomes', () => document.querySelector('[data-tab="settings"]').click());
+    document.querySelector('[data-tab="settings"]').click();
+    // 同じ器 (#outcomes-body) に描き直す「読み込み直す」を2回押す
+    const t = askTwice(app, 'apiOutcomes', () => document.getElementById('outcomes-refresh').click());
     deliverOutOfOrder(t, weeks(7), weeks(1));
     expect(document.querySelector('[data-outcome="moved"] .outcome-now').textContent).toBe('先週 7');
+    expect(document.querySelectorAll('#outcomes-body .outcome-row')).toHaveLength(8);
   });
 
   it('進捗ボード', () => {
