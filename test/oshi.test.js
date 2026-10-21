@@ -43,10 +43,11 @@ describe('定義 (Oshi.js)', () => {
 
   it('せりふは口調ごとに全部の場面を持ち、どの場面にも2つ以上ある (回すため)', () => {
     const lines = pure.OSHI_LINES();
-    const events = pure.OSHI_EVENTS().map((e) => e.key);
+    // 考え中 (spinner) は無くてもよい (既定の言葉に倒れる。test/oshi-spinner.test.js)。口調を足す枝が書き忘れても落とさない
+    const events = pure.OSHI_EVENTS().filter((e) => !e.spinner).map((e) => e.key);
     expect(Object.keys(lines).sort()).toEqual(pure.OSHI_TONES().map((t) => t.key).sort());
     for (const tone of Object.keys(lines)) {
-      expect(Object.keys(lines[tone]).sort(), tone).toEqual([...events].sort());
+      expect(Object.keys(lines[tone]).filter((k) => k !== 'spinner').sort(), tone).toEqual([...events].sort());
       for (const e of events) expect(lines[tone][e].length, tone + '.' + e).toBeGreaterThanOrEqual(2);
     }
   });
@@ -456,7 +457,8 @@ describe('最初からいるキャラ', () => {
     expect(pure.OSHI_TONES().find((t) => t.key === 'buddy').label).toBe('明るい相棒');
     for (const e of pure.OSHI_EVENTS()) {
       expect(b[e.key].length, e.key).toBeGreaterThanOrEqual(3);
-      expect(b[e.key].length, e.key).toBeLessThanOrEqual(4);
+      // 考え中 (spinner) は吹き出しで回さず、Claude Code の考え中の字に並べるので多くてよい
+      if (!e.spinner) expect(b[e.key].length, e.key).toBeLessThanOrEqual(4);
       expect(b[e.key].some((l) => /です|ます|しょう/.test(l)), e.key).toBe(true);
       for (const l of b[e.key]) {
         expect(l, e.key).not.toMatch(/のだ|俺|でございます/);
