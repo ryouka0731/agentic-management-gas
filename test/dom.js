@@ -341,8 +341,8 @@ export function prefsFixture(over) {
  * 中身を確かめるテストは test/component/achievements.test.js が本物のサーバの返事で上書きする。
  */
 export const ACH_EMPTY = {
-  on: true, level: 1, stage: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4 }, crossed: false, days: 0,
-  groups: [], items: [], unlocked: [], newly: [], next: [],
+  on: true, level: 1, stage: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, floored: false }, crossed: false, days: 0,
+  total: 0, got: 0, groups: [], items: [], unlocked: [], newly: [], next: [],
 };
 
 /** よく使う既定の応答 */

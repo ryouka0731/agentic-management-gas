@@ -621,6 +621,8 @@ describe('画面に渡せる形か', () => {
       ctx.apiAchievementsCheck();
       const out = ctx.apiAchievements();
       if (!out.unlocked.length || !out.next.length) throw new Error('取った実績と次の実績が空のまま検査されている');
+      // この環境では取れない実績 (疑似GASの入れ物は持ち主1人) の理由も、字として検査する
+      if (!out.items.some((i) => i.off && i.reason)) throw new Error('取れない実績が空のまま検査されている');
       return out;
     }],
     // 推しのプロフィールとクリア。全部の実績を取った人に、項目・お祝いの言葉・動画が埋まった形を検査する

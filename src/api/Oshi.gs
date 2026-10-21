@@ -112,7 +112,7 @@ function apiOshiGet() {
       nameMax: plainNumber(text.nameMax), lineMax: plainNumber(text.lineMax),
       linesPerEvent: plainNumber(text.linesPerEvent),
     },
-    reveal: oshiRevealPlain_(profile, g.level, cleared),
+    reveal: oshiRevealPlain_(profile, g.level, cleared, achLevelOf(ACHIEVEMENTS().length - Object.keys(achUnavailable_(me)).length)),
     achOn: prefGet_('ach.on', me) !== false,
     cleared: cleared,
     // クリアの言葉と動画は、クリアしたときだけ入れる (動画の id もそれまで画面に渡さない)
@@ -154,9 +154,10 @@ function apiOshiMood() {
  * @param {?object} profile
  * @param {number} level
  * @param {boolean} cleared
- * @returns {{items: object[], open: number, total: number, limits: object}}
+ * @param {number} maxLevel 最高の Lv (1 + この環境で取れる実績と取った実績の数)
+ * @returns {{items: object[], open: number, total: number, maxLevel: number, limits: object}}
  */
-function oshiRevealPlain_(profile, level, cleared) {
+function oshiRevealPlain_(profile, level, cleared, maxLevel) {
   var lim = OSHI_PROFILE_LIMITS();
   var items = oshiProfileReveal(profile ? profile.items : [], level, cleared).map(function (it) {
     return { lv: plainNumber(it.lv), open: !!it.open, label: plainText(it.label), text: plainText(it.text) };
@@ -165,8 +166,8 @@ function oshiRevealPlain_(profile, level, cleared) {
     items: items,
     open: plainNumber(items.filter(function (it) { return it.open; }).length),
     total: plainNumber(items.length),
-    // 最高の Lv (実績を全部取った = クリア)。これより上の Lv の項目は Lv では届かず、クリアで分かる
-    maxLevel: plainNumber(achLevelOf(ACHIEVEMENTS().length)),
+    // 最高の Lv (この環境で取れる実績を全部取った = クリア)。これより上の Lv の項目は Lv では届かず、クリアで分かる
+    maxLevel: plainNumber(maxLevel),
     limits: {
       itemsMax: plainNumber(lim.itemsMax), labelMax: plainNumber(lim.labelMax), textMax: plainNumber(lim.textMax),
       lvMin: plainNumber(lim.lvMin), lvMax: plainNumber(lim.lvMax), clearLineMax: plainNumber(lim.clearLineMax),

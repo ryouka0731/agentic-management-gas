@@ -98,6 +98,17 @@ function ACHIEVEMENTS() {
 }
 
 /**
+ * まだ取っていなくても見せる、取り方の手がかり (名前は ??? のまま)。どこで何をすればよいか分かりにくいものだけ。
+ *
+ * @returns {Object<string, string>} key → 手がかり
+ */
+function ACH_TIPS() {
+  return {
+    'first-kit': '手元の道具を入れて、手元から番頭に1回頼むと取れます (右上の自分の顔の欄から入れられます)',
+  };
+}
+
+/**
  * @param {string} key
  * @returns {object|null}
  */

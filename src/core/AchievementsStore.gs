@@ -28,6 +28,116 @@ function achKey_(who) {
   return 'ACH:' + achWho_(who);
 }
 
+/**
+ * **この環境では (まだ) 取れない実績と、その理由。決めるのはここだけ。** クリア (oshiClearedOf_)・実績の頁の数・
+ * 「クリアで分かる」の Lv は、取れない実績を数えない。**取った実績は、取れなくなっても数える** (取り上げない) ので、
+ * 取った印のあるものはここに入れない。理由は、どの設定をオンにすれば取れるかを言う。
+ *
+ * - いっしょに (team の6つ)・はじめての 反映した・承認した: 番頭を使っているのが本人1人のとき (承認や返事をする相手がいない)
+ * - 目標を立てた: チームの設定 goals.enabled がオフ
+ * - 予定に入れた: 共有カレンダー (calendar.shared) が決まっていない・自分の calendar.plan がオフ
+ * - 使われ方で数えるもの (Markdown・日報・探す): チームの usage.enabled か自分の usage.self がオフ
+ * - 集中を始めた: 自分の focus.start がオフ。推しを選んだ: 自分の oshi.on がオフ
+ * - 手元の道具を使った: いつも取れる (だれでも入れられる。ACH_TIPS で取り方を見せる)
+ *
+ * @param {string} email
+ * @param {Object<string, string>} [have] 取った印 (省くと読む)
+ * @returns {Object<string, string>} key → 理由
+ */
+function achUnavailable_(email, have) {
+  var who = achWho_(email);
+  var got = have || achUnlockedRead_(who);
+  var off = {};
+  function mark(keys, reason) {
+    keys.forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(got, k) && !off[k]) off[k] = reason;
+    });
+  }
+  var all = ACHIEVEMENTS();
+  if (achSolo_(who)) {
+    mark(all.filter(function (a) { return a.group === 'team' || a.key === 'first-merge' || a.key === 'first-approve'; })
+      .map(function (a) { return a.key; }),
+    'ほかの人がいると取れます (いま番頭を使っているのは、あなた1人です。確認や承認をする相手が要ります)');
+  }
+  if (prefGet_('goals.enabled', who) !== true) {
+    mark(['first-goal'], 'チームの設定「目標 (OKR・MBO・KPI) を使う」をオンにすると取れます (管理者が変えられます)');
+  }
+  if (!prefGet_('calendar.shared', who)) {
+    mark(['first-calendar'], '管理者が設定で「予定を入れる共有カレンダー」を決めると取れます');
+  } else if (prefGet_('calendar.plan', who) !== true) {
+    mark(['first-calendar'], '自分の設定「やることを予定に入れる」をオンにすると取れます');
+  }
+  var usageOff = prefGet_('usage.enabled', who) === false
+    ? 'チームの設定「使われ方を記録する」をオンにすると取れます (管理者が変えられます)'
+    : prefGet_('usage.self', who) === false ? '自分の設定「自分の使われ方を記録する」をオンにすると取れます' : '';
+  if (usageOff) {
+    mark(Object.keys(ACH_USAGE_PLACES()).filter(function (m) { return m !== 'oshi'; })
+      .map(function (m) { return 'first-' + m; }), usageOff);
+  }
+  if (prefGet_('focus.start', who) !== true) mark(['first-focus'], '自分の設定「今から始める」(集中のしかた) をオンにすると取れます');
+  if (prefGet_('oshi.on', who) === false) mark(['first-oshi'], '自分の設定「推しに応援してもらう」をオンにすると取れます');
+  return off;
+}
+
+/**
+ * 番頭を使っているのが本人1人か。共有ドライブは台帳を書き換えられる人 (driveMembers_)、マイドライブは入れ物の持ち主と
+ * 編集する人、どちらも上下関係の名簿 (members) の人を足す。**分からないとき (読めない) は1人とは言わない** (取れるものを
+ * 取れないと言うより、まだ取れないほうがよい)。分かった答えは CacheService に10分覚える (開くたびに Drive に問い合わせない)。
+ *
+ * @param {string} who 小文字のアドレス
+ * @returns {boolean}
+ */
+function achSolo_(who) {
+  var key = 'ACH_PEOPLE:' + who;
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit === 'solo' || hit === 'team') return hit === 'solo';
+  } catch (e) {
+    cache = null;
+  }
+  var seen = {};
+  function add(v) {
+    var w = achWho_(v);
+    if (w) seen[w] = true;
+  }
+  add(who);
+  var known = false;
+  var driveId = repoDriveIdSafe_();
+  if (driveId) {
+    var m = driveMembers_(driveId);
+    if (m.admins.length) {
+      known = true;
+      m.admins.forEach(add);
+    }
+  } else {
+    var owner = repoOwnerEmail();
+    if (owner) {
+      known = true;
+      add(owner);
+      try {
+        DriveApp.getFolderById(repoConfig().rootId).getEditors().forEach(function (e) { add(e.getEmail()); });
+      } catch (e2) {
+        known = false;
+      }
+    }
+  }
+  try {
+    dbReadAll('members').forEach(function (r) { add(r.email); add(r.manager); });
+  } catch (e3) {
+    // 名簿が読めなくても、役割で分かったぶんで決める
+  }
+  var many = Object.keys(seen).length > 1;
+  if (!many && !known) return false;
+  try {
+    if (cache) cache.put(key, many ? 'team' : 'solo', 600);
+  } catch (e4) {
+    // 覚えられなければ、次も問い合わせるだけ
+  }
+  return !many;
+}
+
 /** 前の形の、通算で開いた日の鍵 (読んで移すだけ) */
 function achDaysKey_(who) {
   return 'ACH_DAYS:' + achWho_(who);
