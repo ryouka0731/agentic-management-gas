@@ -44,12 +44,18 @@ function evaluateTemplate(html, globals) {
   return vm.runInContext(code, ctx);
 }
 
-/** Main.gs の include() を、本物のファイルを返す HtmlService の上で動かす */
+/**
+ * Main.gs の include() を、本物のファイルを返す HtmlService の上で動かす。
+ *
+ * そのままの字を返す getRawContent だけを置く。createHtmlOutputFromFile(...).getContent() は部分ファイルを
+ * HTML として読み直し、2026-10-22 から JS の `<` を `&lt;` に書き換えるようになった (画面全体が動かなくなった)。
+ * include() がそちらに戻ると、ここで「無い」と落ちる
+ */
 function realInclude() {
   const ctx = vm.createContext({
     HtmlService: {
-      createHtmlOutputFromFile: (name) => ({
-        getContent: () => read('src/' + name + '.html'),
+      createTemplateFromFile: (name) => ({
+        getRawContent: () => read('src/' + name + '.html'),
       }),
     },
   });
