@@ -158,7 +158,7 @@ describe('いる印', () => {
     expect(JSON.stringify(ctx.dbReadAll('usage'))).toBe(usage);
     expect(JSON.stringify(ctx.dbReadAll('change_log'))).not.toContain(A);
     // 置き場はキャッシュだけ
-    expect([...clock.store.keys()]).toEqual(['COWORK:' + rooms[0].id]);
+    expect(clock.keys()).toEqual(['COWORK:' + rooms[0].id]);
   });
 
   it('1つの部屋の印はキャッシュの上限 (100KB) を超えない。合図の古い人から落とす', () => {
@@ -183,7 +183,7 @@ describe('いる印', () => {
     const { ctx, fake, clock, rooms } = server();
     fake.LockService = { getScriptLock: () => ({ tryLock: () => false, releaseLock: () => {} }) };
     expect(ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock))).toBe(false);
-    expect(clock.store.size).toBe(0);
+    expect(clock.keys()).toEqual([]);
   });
 
   it('キャッシュが使えなければ印は出ないが、一覧は返す', () => {

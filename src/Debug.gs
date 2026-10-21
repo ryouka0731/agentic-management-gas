@@ -356,6 +356,19 @@ function LAST_VERIFY_RUN_KEY() {
 }
 
 /**
+ * 台帳の読み取りのキャッシュを捨てる。台帳を直にいじったあと、期限 (300秒) を待たずに画面へ出したいときに使う。
+ *
+ * 画面の設定 (管理者) にも同じボタンがある (apiCacheClear)。こちらは GAS エディタから引数なしで実行する。
+ *
+ * @returns {string}
+ */
+function debugCacheClear() {
+  assertOwner_();
+  dbInvalidateAll_();
+  return '台帳の読み取りの覚えを捨てました。次に開いたときは台帳から読み直します';
+}
+
+/**
  * 直近の debugVerifyPhase2() が残した検証物を片付ける。
  *
  * 検証が失敗すると調査のために Doc・ブランチ・PR が残る。

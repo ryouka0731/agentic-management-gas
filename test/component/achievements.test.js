@@ -35,11 +35,16 @@ function firstDay() {
   return { check, after, oshi, ctx };
 }
 
-/** 段が上がる返事 (Lv4 → Lv6。はじめの一日・改訂版・実績の頁 → 片づけた・やることを作った) */
+/**
+ * 段が上がる返事 (Lv4 → Lv5。はじめの一日・改訂版・実績の頁 → 片づけた)。やることを作った は、その日に「まだ」と覚えたので
+ * 頁では読み直さない (画面は作ったあとに名指して数え直す)
+ */
 function crossing() {
-  const { ctx } = server();
+  const { ctx, fake } = server();
   ctx.apiAchievementsCheck();
   ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
+  // その日の2回目からは「まだ」と分かった「はじめて」をキャッシュ (ACH_NEG) から読む。覚えが切れたあと (全部数える) にする
+  fake._cacheClear();
   const before = wire(ctx.apiAchievements());
   const n = ctx.issueCreate('しごと', '', []).number;
   ctx.dbUpdate('issues', 'number', n, { assignee: ME });
@@ -200,15 +205,15 @@ describe('実績', () => {
   it('段が上がったら「なつき度の段が上がった」を、上がった段の表情で言う。推しの育ちも Lv に揃える', () => {
     const c = crossing();
     expect(c.before).toMatchObject({ level: 4, stage: { key: 'grow1' } });
-    expect(c.cross).toMatchObject({ crossed: true, level: 6, stage: { key: 'grow2' } });
+    expect(c.cross).toMatchObject({ crossed: true, level: 5, stage: { key: 'grow2' } });
     // 推しの返事は1つ前の Lv (取る前に取った返事)
     const stale = Object.assign({}, c.oshi, { growth: Object.assign({}, c.oshi.growth, { level: 4, key: 'grow1', label: 'よそよそしい' }) });
     mountAch({}, { apiAchievementsCheck: c.cross, apiOshiGet: stale });
     expect(bubble().dataset.event).toBe('levelup');
     expect(bubble().dataset.state).toBe('grow2');
-    expect(toast().textContent).toContain('なつき度が Lv 6 になりました (なれてきた)');
+    expect(toast().textContent).toContain('なつき度が Lv 5 になりました (なれてきた)');
     const stage = document.querySelector('#home-cards .oshi-card .oshi-stage');
-    expect(stage.textContent).toContain('Lv 6');
+    expect(stage.textContent).toContain('Lv 5');
     expect(stage.dataset.stage).toBe('grow2');
   });
 });
