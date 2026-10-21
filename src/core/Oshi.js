@@ -21,7 +21,7 @@
  * 表情。key は台帳 (oshi_images.state) に残るので変えない。
  * grow* は育ちの3段 (OSHI_STAGES と同じ key)。
  *
- * @returns {Array<{key: string, label: string, when: string, pose: string, grow?: boolean}>}
+ * @returns {Array<{key: string, label: string, when: string, pose: string, grow?: boolean, scene?: boolean}>}
  */
 function OSHI_STATES() {
   return [
@@ -46,7 +46,8 @@ function OSHI_STATES() {
     { key: 'grow3', label: '育ち3 名人', when: '育ちの3つ目の段', grow: true,
       pose: '同じ人物が少し大人びて、頼れる雰囲気。服に小さな飾り (バッジなど) を1つだけ足し、配色は変えない' },
     // 作業部屋 (js-room) で、机に向かっている姿。後から足したので末尾に置く (並びは台帳と焼いた絵の並び)
-    { key: 'work', label: '作業中', when: '作業部屋で作業しているとき',
+    // scene: 決まった場面でだけ出す表情。でたらめに選ぶ表情 (選んでもらったときのあいさつなど) には入れない
+    { key: 'work', label: '作業中', when: '作業部屋で作業しているとき', scene: true,
       pose: '机に向かって、落ち着いて作業している (ノートやパソコンに向かう)' },
   ];
 }

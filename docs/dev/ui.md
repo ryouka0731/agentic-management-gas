@@ -245,26 +245,39 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 `applyPrefs` の `roomPrefsChanged` が開いている部屋を閉じ、集中の窓の入口を外す (`roomSyncDockButton`)。手引きは `docs/manual/focus.md` の「作業部屋」。
 
 - **音は画面の中で作る** (ファイルも外の取得も使わない)。雨・キーボード・たき火・風・カフェ (`ROOM_SOUNDS()`) を、
-  でたらめに起きる音 (雨粒・打鍵・はぜる音・器の音) も含めて 20〜30秒ぶん `AudioBuffer` に描き (`ROOM_RATE` = 24000)、
-  `loop` で繰り返す (背景のタブでは時計が間引かれるので、時計で鳴らさない)。継ぎ目は、ノイズを少し長く描いて頭に重ね
+  でたらめに起きる音 (雨粒・打鍵・はぜる音・器の音) も含めて 20〜30秒ぶん `AudioBuffer` に描き (1秒の標本の数は
+  `ROOM_SOUNDS()` の `rate`。カフェは声らしいものを6つ重ねるので 12000、ほかは 24000)、`loop` で繰り返す (背景のタブでは時計が間引かれるので、時計で鳴らさない)。継ぎ目は、ノイズを少し長く描いて頭に重ね
   (`focusLoopSeam`)、揺れは一周で頭に戻る値 (`roomSmoothAt`)、短い音ははみ出しを頭へ回す (`roomPut`) ことで切れないようにする。
-  カフェは帯を絞ったノイズで、**言葉は作らない**
+  カフェは帯を絞ったノイズで、**言葉は作らない** (1本のノイズをずらして6つの声に使い回す)
+- **描くのは刻みに分ける。** 一度に描くと1〜2秒画面が固まった。描き方は手順の並び (`roomRenderSteps` → `roomSteps*`) で、
+  画面は1手順ずつ `setTimeout` で走らせる (`roomRunLater`)。描いているあいだ「音を流す」は「準備中…」(`aria-busy`)。
+  途中で止める・外すと残りの手順は捨て、描き終わっても鳴らさない。`roomRender*` は同じ手順を一度に走らせるもの (試す用)
 - 音の形は画面に依らない関数 (`roomRender*` / `roomBiquad` / `roomMixClean` …) で、`test/room-ui.test.js` が `ui()` で切り出して
   決まった乱数で確かめる (長さ・範囲・NaN が無い・同じ乱数なら同じ音・継ぎ目)
 - **押した聞き手の中でだけ作って鳴らす** (`roomSoundPlay`)。開いただけでは `AudioContext` を作らない。全体の大きさは
   `ROOM_GAIN_MAX` を超えない。始めは `ROOM_FADE_IN`、止めは `ROOM_FADE_OUT` で上げ下げし、止めたら音の仕組みを休ませる
 - **集中の音・自分の曲とは同時に流さない。** `roomSoundPlay` が `focusSoundHush` (作る音を止めて窓のボタンの字を戻す) と
   `focusMusicClose` を呼び、`focusSoundPlay` / `focusMusicLoad` が `roomSoundStop` を呼ぶ
+- **閉じたら手放す。** 部屋を閉じると下げ終わってから音の仕組みを `close()` し、描いた音 (`roomBuffers`) も捨てる。
+  開き直して流すと作り直す。止めて流し直すたびに作る全体の大きさの節は、下げ終わったら `disconnect` する
 - 混ぜ方は端末の `localStorage` (`roomMix`) にだけ覚える。読むときは `roomMixClean` で知らない音を捨て、欠けを既定で埋める
 - 部屋 (`#room`) は開くときに作り、閉じると外す (音・時計・顔の入れ替えも止める)。絵は `makeRoomScene` がその場で SVG に描き、
   色は `--room-*` のトークン (`docs/dev/design.md`)。窓の外は端末の時計 (`roomPhaseOf`) で `data-phase` を変え、CSS が色を当てる
+- **部屋は画面の上にかぶせる窓 (`role="dialog"`)。** 開いているあいだ、ほかの body の子を `inert` にし (帯と補足の吹き出しは除く)、
+  Tab は部屋の中で回す (`roomKeepTab`)。閉じたら戻し、焦点は開いた入口へ戻す (自分まわりからなら欄が閉じているので `#me-btn`、
+  集中の窓からならその入口。外れた・隠れたなら描き直された入口 → `#me-btn`)
+- **Esc は部屋だけが受ける。** `document` の捕まえる段 (capture) で受け、`stopImmediatePropagation` する (集中の画面や右のペインまで閉じない)
+- **重なり**: 部屋 (`.room`) は 393。帯 (`.snackbar` 395) と補足の吹き出し (`.hint-bubble` 396) はその上。全画面のあいだは
+  全画面の要素の中しか見えないので、帯と吹き出しを部屋の中へ置き直す (`roomAdoptOverlays`。`showSnack` / `hintBubble` も
+  `document.fullscreenElement` があればその中に作る)。全部オフで流そうとしたときの断りは帯ではなく音の欄の中に出す
 - **全画面は押した中で頼む** (`roomToggleFullscreen`)。`requestFullscreen` が無い・`document.fullscreenEnabled` が false の画面
   (jsdom、全画面を許していない枠) ではボタンを押せなくして理由を添える。Esc は全画面ならブラウザが戻し、そうでなければ部屋を閉じる。
   **確かめていないこと**: HtmlService の枠 (IFRAME モード) が全画面を許しているか。許していなければボタンが押せないだけ
 - 推しは `oshiFillFigure` で描く。作業中 (`work`) の絵があればそれ (自分のキャラに無ければ `oshi.fallback` の最初からいるキャラの絵)、
   無ければ `oshiPickState('idle')`。推しがオフなら人影 (`makeRoomSilhouette`) で、絵を取りに行かない
 - 動き: 作業中だけ息をする揺れ (`.is-breathing`)、35〜70秒ごとに4秒だけふつう・ほめるの顔、窓の雨 (`.room-drop`、`ROOM_DROPS_MAX` まで)。
-  **動きを減らす設定では付けない** (`.is-moving` を付けず、雨は止めた粒を少しだけ)。見ていないタブでは雨を止め (`visibilitychange`)、顔も替えない
+  **動きを減らす設定では付けない** (`.is-moving` を付けず、雨は止めた粒を少しだけ)。開いているあいだに設定が変わっても
+  `matchMedia` の change で合わせ直す (`roomOnMotion`。止めた粒は見える位置に置き直す)。見ていないタブでは雨を止め (`visibilitychange`)、顔も替えない
 - 集中しているあいだは隅に残りの輪 (`.room-focus`、`focusRemainingMs` で数える)。**部屋は集中を始めない**
 - 試すのは `test/component/room.test.js` (押して確かめる) と `test/room-ui.test.js` (音の形)
 
@@ -339,7 +352,9 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     取りに行っている最中の同じ絵は待ち合わせる)。オフの人・絵を出さない設定の人は1度も取らない。キャラ・形・表情は定義に
     あるものだけを通す
   - テストで読むときは `OSHI_DEFAULT_SOURCES` (`test/sources.js`) を足す。大きいので `APP_SOURCES` には入れていない
-  - 表情 `work` (作業中) は作業部屋 (`js-room`) のために末尾に足した。最初からいるキャラの絵も焼いてある
+  - 表情 `work` (作業中) は作業部屋 (`js-room`) のために末尾に足した。最初からいるキャラの絵も焼いてある。
+    決まった場面でだけ出す表情なので `scene: true` を持ち (`apiOshiGet` の states にも渡す)、でたらめに選ぶ表情
+    (`oshiChosenState`) には入れない
   - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`

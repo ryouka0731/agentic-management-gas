@@ -28,12 +28,18 @@ class FakeAudio {
   }
   suspend() { this.state = 'suspended'; }
   resume() { this.state = 'running'; }
+  close() { this.state = 'closed'; this.closed = true; }
   createGain() {
     const p = { value: 0, setValueAtTime() {}, linearRampToValueAtTime: (v) => { p.last = v; }, cancelScheduledValues() {},
       setTargetAtTime: (v) => { p.last = v; } };
-    return { gain: p, connect() {} };
+    const g = { gain: p, connect() {}, disconnect() { g.disconnected = true; } };
+    (this.gains = this.gains || []).push(g);
+    return g;
   }
 }
+
+/** 描く手順を最後まで進める (音は刻みに分けて描く) */
+const flush = () => vi.advanceTimersByTime(10000);
 
 function mountRoom(values, over) {
   const v = Object.assign({ 'oshi.on': true }, values || {});
@@ -107,10 +113,11 @@ describe('作業部屋', () => {
     // 雨は最初からオン。窓に雨粒 (上限まで)
     expect(el.querySelector('.room-stage').dataset.rain).toBe('on');
     expect(el.querySelectorAll('.room-drop').length).toBe(60);
-    el.querySelector('.room-close').click();
+    room().querySelector('.room-close').click();
     expect(room()).toBe(null);
-    q('#me-btn').click();
-    expect(q('.room-open-btn')).toBeTruthy();
+    // 自分まわりは閉じているので、その入口 (自分の顔) へ戻す
+    expect(q('#me-panel').hidden).toBe(true);
+    expect(document.activeElement).toBe(q('#me-btn'));
   });
 
   it('Esc で閉じる', () => {
@@ -225,6 +232,7 @@ describe('作業部屋', () => {
   describe('まわりの音', () => {
     it('押すと音を作って繰り返す (雨だけ、20秒以上)。全体の大きさは上限を超えない。止めると下げて止める', () => {
       window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
       mountRoom(ON);
       openFromMe();
       const play = room().querySelector('.room-play');
@@ -232,12 +240,14 @@ describe('作業部屋', () => {
       play.click();
       expect(FakeAudio.made.length).toBe(1);
       const ctx = FakeAudio.made[0];
+      flush();
       expect(ctx.sources.length).toBe(1);
       expect(ctx.sources[0].loop).toBe(true);
       expect(ctx.sources[0].buffer.len).toBe(24 * 24000);
       expect(play.textContent).toBe('音を止める');
       // 鳴らしながら足す
       room().querySelector('[data-sound="keys"] .room-sound-toggle').click();
+      flush();
       expect(ctx.sources.length).toBe(2);
       const master = room().querySelector('.room-master');
       master.value = '1';
@@ -261,7 +271,10 @@ describe('作業部屋', () => {
       expect(room().querySelector('.room-stage').dataset.rain).toBe('off');
       room().querySelector('.room-play').click();
       expect(FakeAudio.made.length).toBe(0);
-      expect(q('#snackbar').textContent).toContain('1つ以上オンに');
+      // 断りは部屋の中 (音の欄) に出す。帯は部屋の下に隠れうる
+      const note = room().querySelector('.room-mixer .room-mix-note');
+      expect(note.hidden).toBe(false);
+      expect(note.textContent).toContain('1つ以上オンに');
 
       mountRoom(ON);
       openFromMe();
@@ -269,13 +282,81 @@ describe('作業部屋', () => {
       expect(room().querySelector('[data-sound="cafe"] .room-sound-volume').value).toBe('0.15');
     });
 
-    it('閉じると音も止める', () => {
+    it('閉じると音も止め、音の仕組みを閉じて描いた音を手放す。開き直して流すと作り直す', () => {
       window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
       mountRoom(ON);
       openFromMe();
       room().querySelector('.room-play').click();
+      flush();
+      const first = FakeAudio.made[0];
       room().querySelector('.room-close').click();
-      expect(FakeAudio.made[0].sources[0].stopped).toBe(true);
+      expect(first.sources[0].stopped).toBe(true);
+      flush();
+      expect(first.closed).toBe(true);
+      expect(first.gains.every((g) => g.disconnected)).toBe(true);
+      openFromMe();
+      room().querySelector('.room-play').click();
+      flush();
+      expect(FakeAudio.made.length).toBe(2);
+      expect(FakeAudio.made[1].sources.length).toBe(1);
+      expect(FakeAudio.made[1].sources[0].buffer.len).toBe(24 * 24000);
+    });
+
+    it('止めて流し直すと、前の全体の大きさの節は外す', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      mountRoom(ON);
+      openFromMe();
+      const play = room().querySelector('.room-play');
+      play.click();
+      flush();
+      play.click();
+      flush();
+      play.click();
+      flush();
+      expect(FakeAudio.made.length).toBe(1);
+      // 最初の流しの全体の節は外れている
+      expect(FakeAudio.made[0].gains[0].disconnected).toBe(true);
+    });
+
+    it('音は刻みに分けて描く。描いているあいだは「準備中」で、押した中では描かない。その間に止めれば鳴らさない', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      mountRoom(ON);
+      openFromMe();
+      const play = room().querySelector('.room-play');
+      play.click();
+      const ctx = FakeAudio.made[0];
+      expect(ctx.sources.length).toBe(0);
+      expect(play.textContent).toBe('準備中…');
+      expect(play.getAttribute('aria-busy')).toBe('true');
+      vi.advanceTimersByTime(0);
+      // 1刻みでは描き終わらない (何刻みかに分かれている)
+      expect(ctx.sources.length).toBe(0);
+      flush();
+      expect(ctx.sources.length).toBe(1);
+      expect(play.textContent).toBe('音を止める');
+      expect(play.getAttribute('aria-busy')).toBe('false');
+
+      room().querySelector('[data-sound="cafe"] .room-sound-toggle').click();
+      vi.advanceTimersByTime(0);
+      play.click();
+      flush();
+      // 止めたので、描き終わったカフェは鳴らさない
+      expect(ctx.sources.length).toBe(1);
+    });
+
+    it('カフェは軽く描く (12 kHz)', () => {
+      window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
+      window.localStorage.setItem('roomMix', JSON.stringify({ sounds: { rain: { on: false }, cafe: { on: true, volume: 0.4 } } }));
+      mountRoom(ON);
+      openFromMe();
+      room().querySelector('.room-play').click();
+      flush();
+      const buf = FakeAudio.made[0].sources[0].buffer;
+      expect([buf.len, buf.rate]).toEqual([30 * 12000, 12000]);
     });
 
     it('音を作れない端末では断りだけ出す', () => {
@@ -321,6 +402,7 @@ describe('作業部屋', () => {
 
     it('集中の音とは同時に流さない (片方を始めると、もう片方を止める)', () => {
       window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
       mountFocusRoom();
       start();
       const kind = dock().querySelector('.focus-sound-kind');
@@ -332,6 +414,7 @@ describe('作業部屋', () => {
       dock().querySelector('.room-open-btn').click();
       const roomPlay = room().querySelector('.room-play');
       roomPlay.click();
+      flush();
       expect(focusSrc.stopped).toBe(true);
       expect(focusPlay.textContent).toBe('音を流す');
       const roomCtx = FakeAudio.made[FakeAudio.made.length - 1];
@@ -344,6 +427,7 @@ describe('作業部屋', () => {
 
     it('自分の曲とも同時に流さない', () => {
       window.AudioContext = FakeAudio;
+      vi.useFakeTimers();
       mountFocusRoom();
       start();
       const frames = () => [...document.querySelectorAll('iframe')].filter((f) => f.id !== 'viewer');
@@ -351,6 +435,7 @@ describe('作業部屋', () => {
       expect(frames().length).toBe(1);
       dock().querySelector('.room-open-btn').click();
       room().querySelector('.room-play').click();
+      flush();
       expect(frames()).toEqual([]);
       const roomSrc = FakeAudio.made[0].sources[0];
       dock().querySelector('.focus-music-toggle').click();
@@ -370,6 +455,130 @@ describe('作業部屋', () => {
       q('[data-pref="room.on"] button[role="switch"]').click();
       expect(room()).toBe(null);
       expect(dock().querySelector('.room-open-btn')).toBe(null);
+    });
+  });
+
+  describe('焦点と重なり', () => {
+    const startReply = (n, minutes) => ({ id: 7, issueNumber: n, title: 'x', plannedMinutes: minutes, extendedMinutes: 0,
+      startedAt: new Date().toISOString(), openedAt: '', provedAt: '', endedAt: '', result: '', firstStep: '', proofKind: '', points: 0 });
+    function startFocus(over) {
+      vi.useFakeTimers();
+      const app = mountRoom(Object.assign({ 'focus.start': true }, ON), Object.assign({ apiFocusStart: startReply }, over || {}));
+      q('.nav-item[data-tab="issues"]').click();
+      q('#issue-list [aria-label="#2 を今から始める"]').click();
+      q('#focus-dock .focus-go').click();
+      return app;
+    }
+
+    it('集中の窓から開いたら、閉じたとき窓の入口へ戻す。入口が描き直されていたら新しい入口へ', () => {
+      startFocus();
+      const btn = q('#focus-dock .room-open-btn');
+      btn.click();
+      room().querySelector('.room-close').click();
+      expect(document.activeElement).toBe(btn);
+      btn.click();
+      // 窓が描き直されて入口が別の物になった
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      room().querySelector('.room-close').click();
+      expect(document.activeElement).toBe(fresh);
+    });
+
+    it('開いているあいだ、部屋の外には焦点が行かない (inert)。Tab は部屋の中で回る。閉じると戻す', () => {
+      mountRoom(ON);
+      const layout = q('.layout');
+      openFromMe();
+      const others = [...document.body.children].filter((el) => el !== room() && el.tagName !== 'SCRIPT');
+      expect(others.length).toBeGreaterThan(0);
+      expect(others.every((el) => el.hasAttribute('inert'))).toBe(true);
+      expect(room().hasAttribute('inert')).toBe(false);
+      const focusables = [...room().querySelectorAll('button:not([disabled]), input')];
+      const last = focusables[focusables.length - 1];
+      last.focus();
+      last.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      expect(document.activeElement).toBe(focusables[0]);
+      focusables[0].dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+      expect(document.activeElement).toBe(last);
+      room().querySelector('.room-close').click();
+      expect(layout.hasAttribute('inert')).toBe(false);
+      expect([...document.body.children].some((el) => el.hasAttribute('inert'))).toBe(false);
+    });
+
+    it('Esc は部屋だけが受ける (集中の画面も、開いている右のペインもそのまま)', () => {
+      startFocus();
+      q('#focus-dock .focus-mode-toggle').click();
+      expect(document.body.classList.contains('focus-mode')).toBe(true);
+      q('#issue-list .row-open').click();
+      const side = document.getElementById('side-panel');
+      expect(side.hidden).toBe(false);
+      q('#focus-dock .room-open-btn').click();
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(room()).toBe(null);
+      expect(document.body.classList.contains('focus-mode')).toBe(true);
+      expect(side.hidden).toBe(false);
+      document.body.classList.remove('focus-mode');
+    });
+
+    it('帯と補足の吹き出しは部屋より上に出る。全画面のあいだは部屋の中に置く', async () => {
+      const fs = await import('node:fs');
+      const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+      const z = (sel) => {
+        const at = css.indexOf('\n' + sel + ' {');
+        return Number(/z-index: (\d+)/.exec(css.slice(at, css.indexOf('}', at)))[1]);
+      };
+      expect(z('.snackbar')).toBeGreaterThan(z('.room'));
+      expect(z('.hint-bubble')).toBeGreaterThan(z('.room'));
+
+      let fullEl = null;
+      Object.defineProperty(document, 'fullscreenElement', { get: () => fullEl, configurable: true });
+      window.HTMLElement.prototype.requestFullscreen = function () {
+        fullEl = this;
+        document.dispatchEvent(new window.Event('fullscreenchange'));
+        return Promise.resolve();
+      };
+      document.exitFullscreen = () => {
+        fullEl = null;
+        document.dispatchEvent(new window.Event('fullscreenchange'));
+        return Promise.resolve();
+      };
+      try {
+        startFocus({ apiFocusEnd: { id: 7, result: 'stopped' } });
+        q('#focus-dock .room-open-btn').click();
+        room().querySelector('.room-full').click();
+        expect(document.fullscreenElement).toBe(room());
+        // 全画面のあいだに出た帯は部屋の中
+        q('#focus-dock .focus-stop').click();
+        expect(room().contains(q('#snackbar'))).toBe(true);
+        // 補足の吹き出しも部屋の中
+        room().querySelector('.room-full').dispatchEvent(new window.Event('focusin', { bubbles: true }));
+        expect(room().contains(document.getElementById('hint-bubble'))).toBe(true);
+        // 戻すと外へ戻す
+        room().querySelector('.room-full').click();
+        expect(document.getElementById('hint-bubble').parentNode).toBe(document.body);
+        expect(q('#snackbar').parentNode).toBe(document.body);
+      } finally {
+        delete window.HTMLElement.prototype.requestFullscreen;
+        delete document.exitFullscreen;
+        delete document.fullscreenElement;
+      }
+    });
+
+    it('開いているあいだに動きを減らす設定にしたら、止めた雨粒を見える位置に置き、揺れを外す', () => {
+      let reduce = false;
+      const listeners = [];
+      window.matchMedia = (query) => ({ get matches() { return /reduce/.test(query) && reduce; },
+        addEventListener(type, fn) { listeners.push(fn); }, removeEventListener() {} });
+      mountRoom(ON);
+      openFromMe();
+      expect(room().querySelector('.room-stage').dataset.rain).toBe('on');
+      reduce = true;
+      listeners.forEach((fn) => fn({ matches: true }));
+      expect(room().classList.contains('is-moving')).toBe(false);
+      expect(room().querySelector('.room-oshi').classList.contains('is-breathing')).toBe(false);
+      expect(room().querySelector('.room-stage').dataset.rain).toBe('still');
+      const drops = [...room().querySelectorAll('.room-drop')];
+      expect(drops.length).toBeGreaterThan(0);
+      expect(drops.every((d) => /%$/.test(d.style.top))).toBe(true);
     });
   });
 });
