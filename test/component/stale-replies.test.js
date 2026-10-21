@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DEFAULTS } from '../dom.js';
+import { DEFAULTS, prefsFixture } from '../dom.js';
 import { mount } from './mount.js';
 
 /*
@@ -67,6 +67,27 @@ describe('遅れて届いた古い返事で、新しい一覧を描き直さな�
     const text = document.getElementById('issue-list').textContent;
     expect(text).toContain('新しい2');
     expect(text).not.toContain('古い失敗');
+  });
+
+  it('目標 (自分の目標)', () => {
+    const goal = (title) => ({ period: '2026H2', periodLabel: '2026年度 下期', linkable: [], goals: [{
+      id: 1, who: 'me@example.com', whoName: '私', mine: true, period: '2026H2', periodLabel: '2026年度 下期',
+      kind: 'okr', kindLabel: 'OKR', title, status: 'draft', statusLabel: '下書き', changedAfterApproval: false,
+      managerNote: '', selfReview: '', finalGrade: '', gradedBy: '', percent: 0, progress: 0,
+      auto: { kind: 'okr', score: 0, percent: 0, grade: '', text: '0.0', note: '' },
+      pace: { key: 'ok', label: '順調です', elapsed: 0 }, items: [],
+      canEdit: true, canDelete: true, canSubmit: true, canInput: true, canReview: false, canDecide: false, canGrade: false,
+    }] });
+    const state = { enabled: true, period: '2026H2', periodLabel: '2026年度 下期', unit: 'half', fyStart: 4,
+      periods: [{ key: '2026H2', label: '2026年度 下期' }], kinds: [], measures: [], grades: [], statuses: {} };
+    const app = mount({ apiGoalState: state, apiPrefs: prefsFixture({ values: { 'goals.enabled': true } }) });
+    document.querySelector('[data-tab="goals"]').click();
+    const t = askTwice(app, 'apiGoalMine', () => document.querySelector('[data-goal-view="mine"]').click());
+    deliverOutOfOrder(t, goal('新しい目標'), goal('古い目標'));
+
+    const text = document.getElementById('goals').textContent;
+    expect(text).toContain('新しい目標');
+    expect(text).not.toContain('古い目標');
   });
 
   it('成果の数 (設定の画面)', () => {

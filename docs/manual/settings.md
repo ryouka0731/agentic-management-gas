@@ -50,6 +50,7 @@
 | `notify.inquiry` | 通知メール: 報告とその返事 | bool | オン | |
 | `notify.mention` | 通知メール: 名指しされた | bool | オン | |
 | `notify.comment` | 通知メール: やることのやりとり | bool | オン | |
+| `notify.goal` | 通知メール: 目標の承認・差し戻し・評価 | bool | オン | [目標](goals.md) |
 | `usage.self` | 自分の使われ方を記録する | bool | オン | |
 
 - **最初に出す画面** は、文書のリンク (`?doc=…`) から開いたときには使わない (その文書を出す)
@@ -86,6 +87,9 @@
 | `usage.keepDays` | 使われ方を残す日数 | int | 180 | 90〜365 |
 | `stale.steps` | 「動きなし」の段階 (日) | steps | 7 / 14 / 30 | 1〜180 |
 | `report.defaultKind` | 日報の形の既定 | enum | `three` (3節) | 3節 / 今日だけ / 見出し無し |
+| `goals.enabled` | 目標 (OKR・MBO・KPI) を使う | bool | オフ | [目標](goals.md)。オフのあいだは左に「目標」が出ない |
+| `goals.period` | 目標を立てる区切り | enum | `half` (半期ごと) | 半期ごと / 四半期ごと。立てた目標の期は変わらない |
+| `goals.fyStart` | 年度の始まる月 | int | 4 | 1〜12。期はこの月から数える |
 
 ### 改善のヒント
 
