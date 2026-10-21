@@ -5054,6 +5054,76 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   .fun-layer * { animation: none !important; }
   .fun-canvas, .fun-flash { display: none; }
 }
+/* ----- 思いがけない当たり・ノリノリタイム (js-luck。既定はオフ) -----
+   当たりは fun-layer に描く (押せず、読み上げにも載らない)。色はトークンだけ。金色は --warn */
+.luck-win {
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  white-space: nowrap; font-weight: 900; line-height: 1;
+  animation: fun-pop 2800ms ease-out forwards;
+}
+.luck-win-title {
+  font-size: clamp(40px, 10vw, 96px); font-style: italic; padding: 0 0.15em;
+  background-image: linear-gradient(100deg, var(--warn), var(--danger) 40%, var(--warn) 70%, var(--merged));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 0 var(--bg)) drop-shadow(0 0 18px currentColor);
+}
+.luck-reels { display: flex; gap: var(--sp-2); }
+.luck-reel {
+  width: 64px; height: 72px; overflow: hidden; border-radius: var(--radius);
+  background: var(--surface-raised); box-shadow: inset 0 0 0 3px currentColor, var(--elev-2);
+}
+.luck-strip { display: flex; flex-direction: column; animation: luck-spin 900ms cubic-bezier(.2, .7, .2, 1) both; }
+.luck-cell { display: flex; align-items: center; justify-content: center; height: 72px; font-size: 40px; color: var(--ink); }
+.luck-win-line { font-size: 16px; font-weight: 700; color: var(--ink); text-shadow: 0 2px 0 var(--bg); }
+.luck-win.is-static { left: auto; right: var(--sp-4); top: auto; bottom: var(--sp-6); transform: none; animation: none; }
+.luck-win.is-static .luck-win-title { font-size: 15px; font-style: normal; filter: none; }
+.luck-win.is-static .luck-win-line { font-size: 12px; font-weight: 400; text-shadow: none; color: var(--ink-2); }
+@keyframes luck-spin { 0% { transform: translateY(-360px); } 100% { transform: translateY(0); } }
+.fun-banner.is-fever.fun-big { font-size: clamp(48px, 12vw, 120px); }
+.fun-banner.is-fever.fun-small { font-size: 40px; }
+.luck-fever-frame {
+  position: fixed; inset: 0; pointer-events: none; z-index: 390; color: var(--warn);
+  box-shadow: inset 0 0 0 3px currentColor, inset 0 0 36px currentColor; opacity: 0.55;
+  animation: luck-glow 2400ms ease-in-out infinite alternate;
+}
+@keyframes luck-glow { 0% { opacity: 0.3; } 100% { opacity: 0.7; } }
+/* 右下に置く (左下は推しの吹き出し)。集中の置き場が出ていればその上に積む (実機では js-luck が高さを合わせる) */
+.luck-fever-chip {
+  position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 391;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3); border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: var(--warn);
+  background: var(--warn-bg); box-shadow: var(--hairline), var(--elev-1);
+}
+.luck-fever-chip.is-above-dock { bottom: 240px; }
+.reward-changed { margin: var(--sp-2) 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--bg-2); }
+.luck-fever-hide { width: 24px; height: 24px; border-radius: 999px; background: transparent; cursor: pointer; }
+.luck-fever-hide:hover { background: var(--bg-3); }
+@media (prefers-reduced-motion: reduce) {
+  .luck-fever-frame { animation: none; }
+  .luck-strip { animation: none; }
+}
+/* ----- 自分へのご褒美 (js-luck) ----- */
+.reward-sum { display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-1); }
+.reward-available { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.reward-unit { color: var(--ink-2); }
+.reward-head { margin: var(--sp-4) 0 var(--sp-2); font-size: 14px; }
+.reward-undo {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--success-bg);
+}
+.reward-list, .reward-log { list-style: none; margin: 0; padding: 0; }
+.reward-item {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--line);
+}
+.reward-item-title { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.reward-item-cost { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.reward-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.reward-title-in { flex: 1 1 160px; min-width: 0; }
+.reward-cost-in { width: 72px; }
+.reward-log li { padding: var(--sp-1) 0; color: var(--ink-2); font-size: 13px; }
 /* ===== 集中のしかた (js-focus。自分の設定でオンにした人だけ) ===== */
 .focus-dock {
   position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 350;
