@@ -21,7 +21,7 @@
  */
 export const ISSUE_SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
-  'src/core/Plain.js', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/Prefs.gs',
+  'src/core/Plain.js', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/FocusMusic.js', 'src/core/Prefs.gs',
   'src/core/Tag.gs', 'src/core/Template.gs', 'src/core/Member.gs', 'src/core/Issue.gs',
   'src/core/IssueTree.js',
   'src/core/IssueComment.gs', 'src/core/Project.gs', 'src/core/Mention.js',
@@ -39,9 +39,9 @@ export const CORE_SOURCES = [
   'src/core/Member.gs', 'src/core/Usage.gs', 'src/core/Issue.gs', 'src/core/IssueComment.gs',
   'src/core/IssueBranch.gs', 'src/core/Project.gs', 'src/core/Mention.js',
   'src/core/Inquiry.gs', 'src/core/Brand.js', 'src/core/Notifier.gs', 'src/core/Tally.js',
-  'src/core/Plain.js', 'src/core/Settings.gs', 'src/core/Prefs.gs', 'src/core/Scrum.gs',
+  'src/core/Plain.js', 'src/core/Settings.gs', 'src/core/FocusMusic.js', 'src/core/Prefs.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/IssueTree.js',
-  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
+  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Reward.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
   'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
@@ -54,7 +54,7 @@ export const API_SOURCES = [
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs', 'src/api/Achievements.gs',
-  'src/api/Outcomes.gs', 'src/api/Goals.gs',
+  'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);

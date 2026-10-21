@@ -305,6 +305,9 @@
     // 集中のしかたの記録と技の図鑑 (本人にだけ。オフなら出さない)
     var focusRecord = makeFocusRecordButton();
     if (focusRecord) out.push(focusRecord);
+    // 自分へのご褒美 (本人にだけ。オフなら出さない)
+    var reward = makeRewardMeButton();
+    if (reward) out.push(reward);
     // ゲームがオンのときだけ、参加の切り替えを出す。設定でオフと分かっていれば
     // 尋ねない (設定より先に描かれるときは settings がまだ無い)。切り替えは隠して
     // 並びに直に置き、返事で出す (包む箱に入れると、並びのボタンと幅が揃わない)

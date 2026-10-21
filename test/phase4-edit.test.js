@@ -509,6 +509,16 @@ describe('画面に渡せる形か', () => {
     return goal;
   }
 
+  /** ご褒美をオンにし、2件済ませて、ご褒美を1つ並べる。その id */
+  function rewardReady(ctx) {
+    ctx.apiPrefSet('luck.reward', true);
+    // 数え始めてから作ったやることだけを数える
+    ctx.apiRewardGet();
+    closedToday(ctx);
+    closedToday(ctx);
+    return ctx.apiRewardItemSave({ title: 'コーヒー', cost: 1 }).items[0].id;
+  }
+
   /** 共有カレンダーを作り、予定に入れるをオンにして、やることを担当にする */
   function calendarReady(ctx, env) {
     ctx.apiCalendarCreateShared();
@@ -758,6 +768,21 @@ describe('画面に渡せる形か', () => {
       if (!out.active) throw new Error('続いているものが空のまま検査されている');
       if (!out.badges.some((b) => b.done && b.at)) throw new Error('得た技が空のまま検査されている');
       return out;
+    }],
+    // 自分へのご褒美。交換した時刻と取り消せる時刻を返す
+    ['apiRewardGet', (ctx) => { rewardReady(ctx); return ctx.apiRewardGet(); }],
+    ['apiRewardItemSave', (ctx) => { rewardReady(ctx); return ctx.apiRewardItemSave({ title: '散歩', cost: 1 }); }],
+    ['apiRewardItemDelete', (ctx) => { const id = rewardReady(ctx); return ctx.apiRewardItemDelete(id); }],
+    ['apiRewardSpend', (ctx) => {
+      const out = ctx.apiRewardSpend(rewardReady(ctx));
+      if (!out.undoUntil || !out.spends[0].at) throw new Error('交換した時刻が空のまま検査されている');
+      return out;
+    }],
+    ['apiRewardUndo', (ctx) => {
+      const id = rewardReady(ctx);
+      ctx.apiRewardSpend(id);
+      const s = ctx.apiRewardSpend(id);
+      return ctx.apiRewardUndo(s.undoId);
     }],
     ['apiFileStatus', (ctx, env) => ctx.apiFileStatus(env.fileId)],
     ['apiCommitGraph', (ctx, env) => ctx.apiCommitGraph(env.fileId)],
