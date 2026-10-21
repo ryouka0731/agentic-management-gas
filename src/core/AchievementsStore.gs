@@ -31,14 +31,15 @@ function achKey_(who) {
 /**
  * **この環境では (まだ) 取れない実績と、その理由。決めるのはここだけ。** クリア (oshiClearedOf_)・実績の頁の数・
  * 「クリアで分かる」の Lv は、取れない実績を数えない。**取った実績は、取れなくなっても数える** (取り上げない) ので、
- * 取った印のあるものはここに入れない。理由は、どの設定をオンにすれば取れるかを言う。
+ * 取った印のあるものはここに入れない。理由は、どうすれば取れるかを言う。
  *
- * - いっしょに (team の6つ)・はじめての 反映した・承認した: 番頭を使っているのが本人1人のとき (承認や返事をする相手がいない)
+ * **入れるのはチームか環境の理由だけ。** 自分の設定 (usage.self / oshi.on / focus.start / calendar.plan) で止めているものは
+ * 入れない (自分で切るだけでクリアに届き、クリアは消えないので取り返せない)。それは achPersonalTips_ が取り方を言うだけ。
+ *
+ * - いっしょに (team の6つ)・はじめての 反映した・承認した: 番頭を使っているのが本人1人のとき (achSolo_)
  * - 目標を立てた: チームの設定 goals.enabled がオフ
- * - 予定に入れた: 共有カレンダー (calendar.shared) が決まっていない・自分の calendar.plan がオフ
- * - 使われ方で数えるもの (Markdown・日報・探す): チームの usage.enabled か自分の usage.self がオフ
- * - 集中を始めた: 自分の focus.start がオフ。推しを選んだ: 自分の oshi.on がオフ
- * - 手元の道具を使った: いつも取れる (だれでも入れられる。ACH_TIPS で取り方を見せる)
+ * - 予定に入れた: 共有カレンダー (calendar.shared) を管理者が決めていない
+ * - 使われ方で数えるもの (Markdown・日報・探す): チームの usage.enabled がオフ
  *
  * @param {string} email
  * @param {Object<string, string>} [have] 取った印 (省くと読む)
@@ -64,25 +65,47 @@ function achUnavailable_(email, have) {
   }
   if (!prefGet_('calendar.shared', who)) {
     mark(['first-calendar'], '管理者が設定で「予定を入れる共有カレンダー」を決めると取れます');
-  } else if (prefGet_('calendar.plan', who) !== true) {
-    mark(['first-calendar'], '自分の設定「やることを予定に入れる」をオンにすると取れます');
   }
-  var usageOff = prefGet_('usage.enabled', who) === false
-    ? 'チームの設定「使われ方を記録する」をオンにすると取れます (管理者が変えられます)'
-    : prefGet_('usage.self', who) === false ? '自分の設定「自分の使われ方を記録する」をオンにすると取れます' : '';
-  if (usageOff) {
-    mark(Object.keys(ACH_USAGE_PLACES()).filter(function (m) { return m !== 'oshi'; })
-      .map(function (m) { return 'first-' + m; }), usageOff);
+  if (prefGet_('usage.enabled', who) === false) {
+    mark(achUsageKeys_(), 'チームの設定「使われ方を記録する」をオンにすると取れます (管理者が変えられます)');
   }
-  if (prefGet_('focus.start', who) !== true) mark(['first-focus'], '自分の設定「今から始める」(集中のしかた) をオンにすると取れます');
-  if (prefGet_('oshi.on', who) === false) mark(['first-oshi'], '自分の設定「推しに応援してもらう」をオンにすると取れます');
   return off;
 }
 
+/** 使われ方で数える「はじめて」の key (推しを選んだ は設定でも数えるので除く) */
+function achUsageKeys_() {
+  return Object.keys(ACH_USAGE_PLACES()).filter(function (m) { return m !== 'oshi'; })
+    .map(function (m) { return 'first-' + m; });
+}
+
 /**
- * 番頭を使っているのが本人1人か。共有ドライブは台帳を書き換えられる人 (driveMembers_)、マイドライブは入れ物の持ち主と
- * 編集する人、どちらも上下関係の名簿 (members) の人を足す。**分からないとき (読めない) は1人とは言わない** (取れるものを
- * 取れないと言うより、まだ取れないほうがよい)。分かった答えは CacheService に10分覚える (開くたびに Drive に問い合わせない)。
+ * 自分の設定で止めているために取れない実績の、取り方の手がかり。**クリアの数からは外さない** (achUnavailable_ を見る)。
+ *
+ * @param {string} email
+ * @returns {Object<string, string>} key → 手がかり
+ */
+function achPersonalTips_(email) {
+  var who = achWho_(email);
+  var out = {};
+  if (prefGet_('usage.enabled', who) !== false && prefGet_('usage.self', who) === false) {
+    achUsageKeys_().forEach(function (k) { out[k] = '自分の設定「自分の使われ方を記録する」をオンにすると取れます'; });
+  }
+  if (prefGet_('calendar.shared', who) && prefGet_('calendar.plan', who) !== true) {
+    out['first-calendar'] = '自分の設定「やることを予定に入れる」をオンにすると取れます';
+  }
+  if (prefGet_('focus.start', who) !== true) out['first-focus'] = '自分の設定「今から始める」(集中のしかた) をオンにすると取れます';
+  if (prefGet_('oshi.on', who) === false) out['first-oshi'] = '自分の設定「推しに応援してもらう」をオンにすると取れます';
+  return out;
+}
+
+/**
+ * 番頭を使っているのが本人1人か。**1人と言うのは、Drive が1人と言い、しかも台帳のどこにもほかの人がいないときだけ。**
+ * Drive は、共有ドライブなら台帳を書き換えられる人 (driveMembers_)、マイドライブなら入れ物の持ち主と編集する人 (getEditors) を見る。
+ * ドメイン全体やリンクでの共有は getEditors に出ないので、台帳 (上下関係の名簿・確認依頼・返事・やりとり・担当・使われ方) に
+ * 本人のほかのアドレスがあれば1人ではない。
+ *
+ * **分からないとき (読めない) は1人とは言わない** (取れるものを外すと、クリアに早く届いてしまい、クリアは消えない)。
+ * 答えは CacheService に覚える (1人 / ほかの人がいる は10分、読めなかったことは2分。読めないまま開くたびに Drive に問い合わせない)。
  *
  * @param {string} who 小文字のアドレス
  * @returns {boolean}
@@ -93,16 +116,36 @@ function achSolo_(who) {
   try {
     cache = CacheService.getScriptCache();
     var hit = cache.get(key);
-    if (hit === 'solo' || hit === 'team') return hit === 'solo';
+    if (hit === 'solo') return true;
+    if (hit === 'team' || hit === 'unknown') return false;
   } catch (e) {
     cache = null;
   }
+  var got = achSoloRead_(who);
+  try {
+    if (cache) cache.put(key, got, got === 'unknown' ? 120 : 600);
+  } catch (e2) {
+    // 覚えられなければ、次も問い合わせるだけ
+  }
+  return got === 'solo';
+}
+
+/**
+ * achSolo_ の本体。
+ *
+ * @param {string} who
+ * @returns {string} solo / team / unknown
+ */
+function achSoloRead_(who) {
   var seen = {};
+  seen[who] = true;
+  var other = false;
   function add(v) {
     var w = achWho_(v);
-    if (w) seen[w] = true;
+    if (!w || seen[w]) return;
+    seen[w] = true;
+    other = true;
   }
-  add(who);
   var known = false;
   var driveId = repoDriveIdSafe_();
   if (driveId) {
@@ -118,24 +161,46 @@ function achSolo_(who) {
       add(owner);
       try {
         DriveApp.getFolderById(repoConfig().rootId).getEditors().forEach(function (e) { add(e.getEmail()); });
-      } catch (e2) {
+      } catch (e) {
         known = false;
       }
     }
   }
-  try {
-    dbReadAll('members').forEach(function (r) { add(r.email); add(r.manager); });
-  } catch (e3) {
-    // 名簿が読めなくても、役割で分かったぶんで決める
+  if (other) return 'team';
+  if (achOthersInLedger_(who)) return 'team';
+  return known ? 'solo' : 'unknown';
+}
+
+/**
+ * 台帳に本人のほかの人がいるか (大文字小文字は見ない)。1人がいたところで読むのをやめる。
+ *
+ * @param {string} who 小文字のアドレス
+ * @returns {boolean}
+ */
+function achOthersInLedger_(who) {
+  function otherIn(v) {
+    return String(v || '').split(',').some(function (p) {
+      var w = achWho_(p);
+      return !!w && w !== who;
+    });
   }
-  var many = Object.keys(seen).length > 1;
-  if (!many && !known) return false;
-  try {
-    if (cache) cache.put(key, many ? 'team' : 'solo', 600);
-  } catch (e4) {
-    // 覚えられなければ、次も問い合わせるだけ
+  var where = [
+    ['members', ['email', 'manager']], ['pulls', ['author']], ['reviews', ['reviewer']], ['issue_comments', ['by']],
+    ['issues', ['assignee']], ['usage', ['user']],
+  ];
+  for (var i = 0; i < where.length; i++) {
+    var rows;
+    try {
+      rows = dbReadAll(where[i][0]);
+    } catch (e) {
+      continue;
+    }
+    var cols = where[i][1];
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < cols.length; c++) if (otherIn(rows[r][cols[c]])) return true;
+    }
   }
-  return !many;
+  return false;
 }
 
 /** 前の形の、通算で開いた日の鍵 (読んで移すだけ) */

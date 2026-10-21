@@ -72,7 +72,9 @@ function apiOshiGet() {
   var builtin = active ? null : oshiBuiltinOf(choice.key);
   var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
   mine.forEach(function (m) { delete m.profile; });
-  var cleared = oshiCleared_(me);
+  // 取れない実績は1回だけ数え、クリアと「クリアで分かる」の Lv の両方に使う
+  var off = achUnavailable_(me);
+  var cleared = oshiCleared_(me, off);
   var events = active ? active.events : oshiEventsPlain_(builtin.tone, {});
   return {
     char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
@@ -112,7 +114,7 @@ function apiOshiGet() {
       nameMax: plainNumber(text.nameMax), lineMax: plainNumber(text.lineMax),
       linesPerEvent: plainNumber(text.linesPerEvent),
     },
-    reveal: oshiRevealPlain_(profile, g.level, cleared, achLevelOf(ACHIEVEMENTS().length - Object.keys(achUnavailable_(me)).length)),
+    reveal: oshiRevealPlain_(profile, g.level, cleared, achLevelOf(ACHIEVEMENTS().length - Object.keys(off).length)),
     achOn: prefGet_('ach.on', me) !== false,
     cleared: cleared,
     // クリアの言葉と動画は、クリアしたときだけ入れる (動画の id もそれまで画面に渡さない)

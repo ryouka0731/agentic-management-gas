@@ -26,6 +26,16 @@ function addEditor(ctx, fake, email) {
   // 疑似GASに CacheService は無いので、覚えは使われない (毎回数え直す)
   fake.DriveApp.getFolderById(ctx.repoConfig().rootId)._addEditor(email);
 }
+/** 疑似の CacheService (期限は覚えて返すだけ) */
+function withCache(ctx) {
+  const store = new Map();
+  ctx.CacheService = { getScriptCache: () => ({
+    get: (k) => (store.has(k) ? store.get(k).v : null),
+    put: (k, v, ttl) => { store.set(k, { v: String(v), ttl }); },
+    remove: (k) => { store.delete(k); },
+  }) };
+  return store;
+}
 function gotAll(ctx, keys) {
   const got = {};
   keys.forEach((k) => { got[k] = '2026-10-20'; });
@@ -42,6 +52,64 @@ describe('この環境では取れない実績', () => {
     for (const k of TEAM) expect(o2[k], k).toBeUndefined();
   });
 
+  it('Drive では1人に見えても、台帳にほかの人 (確認・返事・使われ方・担当・やりとり) がいれば1人ではない', () => {
+    const rows = [
+      ['reviews', { prNumber: 1, reviewer: OTHER, state: 'approve', at: new Date() }],
+      ['pulls', { number: 1, title: 'x', state: 'open', author: 'Other@Example.com' }],
+      ['usage', { day: '2026-10-20', kind: 'action', target: 'search-open', count: 1, user: OTHER }],
+      ['issues', { number: 1, title: 'x', state: 'open', assignee: ME + ',' + OTHER }],
+      ['issue_comments', { id: 1, issueNumber: 1, body: 'x', by: OTHER, at: new Date() }],
+    ];
+    for (const [table, row] of rows) {
+      const { ctx } = setup();
+      expect(off(ctx)['reviews-1'], table).toBeTruthy();
+      ctx.dbAppend(table, row);
+      expect(off(ctx)['reviews-1'], table).toBeUndefined();
+    }
+    // 自分の行だけなら1人のまま (大文字小文字は見ない)
+    const { ctx } = setup();
+    ctx.dbAppend('pulls', { number: 1, title: 'x', state: 'open', author: 'Tester@Example.com' });
+    expect(off(ctx)['reviews-1']).toBeTruthy();
+  });
+
+  it('読めないときは1人と言わない (編集する人が読めない・持ち主が分からない・共有ドライブの役割が空)', () => {
+    let { ctx, fake } = setup();
+    fake.DriveApp.getFolderById(ctx.repoConfig().rootId).getEditors = () => { throw new Error('読めません'); };
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    ({ ctx, fake } = setup());
+    fake.DriveApp.getFolderById(ctx.repoConfig().rootId)._setOwner('');
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    ({ ctx } = setup());
+    ctx.repoDriveIdSafe_ = () => 'drive-1';
+    ctx.driveMembers_ = () => ({ owners: [], admins: [] });
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    // 共有ドライブの役割が自分だけなら1人
+    ctx.driveMembers_ = () => ({ owners: [ME], admins: [ME] });
+    expect(off(ctx)['reviews-1']).toBeTruthy();
+  });
+
+  it('1人か・ほかの人がいるかは10分覚え、読めなかったことは短く覚える', () => {
+    const { ctx, fake } = setup();
+    const store = withCache(ctx);
+    expect(off(ctx)['reviews-1']).toBeTruthy();
+    expect(store.get('ACH_PEOPLE:' + ME)).toEqual({ v: 'solo', ttl: 600 });
+    // 覚えているあいだは Drive に問い合わせない (人が加わっても、覚えが切れるまで1人のまま)
+    fake.DriveApp.getFolderById(ctx.repoConfig().rootId)._addEditor(OTHER);
+    expect(off(ctx)['reviews-1']).toBeTruthy();
+    store.clear();
+    expect(off(ctx)['reviews-1']).toBeUndefined();
+    expect(store.get('ACH_PEOPLE:' + ME)).toEqual({ v: 'team', ttl: 600 });
+    let asked = 0;
+    const one = setup();
+    const s2 = withCache(one.ctx);
+    one.fake.DriveApp.getFolderById(one.ctx.repoConfig().rootId).getEditors = () => { asked++; throw new Error('読めません'); };
+    expect(off(one.ctx)['reviews-1']).toBeUndefined();
+    expect(off(one.ctx)['reviews-1']).toBeUndefined();
+    expect(asked).toBe(1);
+    expect(s2.get('ACH_PEOPLE:' + ME).v).toBe('unknown');
+    expect(s2.get('ACH_PEOPLE:' + ME).ttl).toBeLessThanOrEqual(120);
+  });
+
   it('上下関係の名簿にほかの人がいれば、1人ではない', () => {
     const { ctx } = setup();
     ctx.memberSet(OTHER, ME);
@@ -55,33 +123,47 @@ describe('この環境では取れない実績', () => {
     expect(off(ctx)['first-goal']).toBeUndefined();
   });
 
-  it('予定は共有カレンダーが決まっていない・自分の「やることを予定に入れる」がオフなら取れない', () => {
+  it('予定は共有カレンダーが決まっていなければ取れない', () => {
     const { ctx } = setup();
     expect(off(ctx)['first-calendar']).toContain('共有カレンダー');
     ctx.apiPrefSet('calendar.shared', 'cal@group.calendar.google.com');
-    expect(off(ctx)['first-calendar']).toContain('「やることを予定に入れる」');
-    props(ctx).setProperty('MYPREF:' + ME, JSON.stringify({ 'calendar.plan': true }));
+    // 自分の「やることを予定に入れる」は自分の設定なので、取れないことにはしない
     expect(off(ctx)['first-calendar']).toBeUndefined();
   });
 
-  it('使われ方で数える実績 (Markdown・日報・探す) は、使われ方の記録が止まっていれば取れない。どの切り替えかを言う', () => {
+  it('使われ方で数える実績 (Markdown・日報・探す) は、チームの「使われ方を記録する」がオフなら取れない', () => {
     const { ctx } = setup();
     for (const k of ['first-markdown', 'first-reportCopy', 'first-search']) expect(off(ctx)[k], k).toBeUndefined();
-    ctx.apiPrefSet('usage.self', false);
-    for (const k of ['first-markdown', 'first-reportCopy', 'first-search']) expect(off(ctx)[k], k).toContain('「自分の使われ方を記録する」');
-    ctx.apiPrefSet('usage.self', null);
     ctx.apiPrefSet('usage.enabled', false);
-    expect(off(ctx)['first-search']).toContain('チームの設定「使われ方を記録する」');
+    for (const k of ['first-markdown', 'first-reportCopy', 'first-search']) expect(off(ctx)[k], k).toContain('チームの設定「使われ方を記録する」');
   });
 
-  it('集中と推しは、その設定がオフなら取れない。手元の道具はいつも取れる', () => {
+  it('自分の設定で止めているものは、取れないことにしない (自分で切ってクリアできてしまう)。取り方の手がかりだけ出す', () => {
     const { ctx } = setup();
-    expect(off(ctx)['first-focus']).toContain('「今から始める」');
-    expect(off(ctx)['first-oshi']).toBeUndefined();
+    ctx.apiPrefSet('goals.enabled', true);
+    ctx.apiPrefSet('calendar.shared', 'cal@group.calendar.google.com');
+    props(ctx).setProperty('MYPREF:' + ME, JSON.stringify({ 'usage.self': false, 'oshi.on': false, 'focus.start': false, 'calendar.plan': false }));
+    const o = off(ctx);
+    for (const k of ['first-markdown', 'first-reportCopy', 'first-search', 'first-oshi', 'first-focus', 'first-calendar']) {
+      expect(o[k], k).toBeUndefined();
+    }
+    const tips = ctx.achPersonalTips_(ME);
+    expect(tips['first-markdown']).toContain('自分の設定「自分の使われ方を記録する」をオンにすると取れます');
+    expect(tips['first-oshi']).toContain('「推しに応援してもらう」');
+    expect(tips['first-focus']).toContain('「今から始める」');
+    expect(tips['first-calendar']).toContain('「やることを予定に入れる」');
+    const res = ctx.apiAchievements();
+    expect(res.items.find((i) => i.key === 'first-focus')).toMatchObject({ off: false });
+    expect(res.items.find((i) => i.key === 'first-focus').hint).toContain('「今から始める」');
+    // 自分の設定を切っても、クリアは近づかない
+    const offKeys = Object.keys(o);
+    gotAll(ctx, ctx.ACHIEVEMENTS().map((a) => a.key).filter((k) => offKeys.indexOf(k) < 0 && k !== 'first-focus'));
+    expect(ctx.apiOshiGet().cleared).toBe(false);
+  });
+
+  it('手元の道具はいつも取れる', () => {
+    const { ctx } = setup();
     expect(off(ctx)['first-kit']).toBeUndefined();
-    props(ctx).setProperty('MYPREF:' + ME, JSON.stringify({ 'focus.start': true, 'oshi.on': false }));
-    expect(off(ctx)['first-focus']).toBeUndefined();
-    expect(off(ctx)['first-oshi']).toContain('「推しに応援してもらう」');
   });
 
   it('取った実績は、取れなくなっても取れないとは言わない (数に入れる)', () => {
@@ -144,6 +226,18 @@ describe('実績の頁の返事とクリア', () => {
     addEditor(ctx, fake, OTHER);
     expect(off(ctx)['reviews-1']).toBeUndefined();
     expect(ctx.apiOshiGet().cleared).toBe(true);
+    // 実績の頁もクリアのまま (いま届いたわけではない)
+    expect(ctx.apiAchievements()).toMatchObject({ cleared: true, clearedNow: false });
+  });
+
+  it('クリアに届いたその返事だけ clearedNow', () => {
+    const { ctx } = setup();
+    const offKeys = Object.keys(off(ctx));
+    const can = ctx.ACHIEVEMENTS().map((a) => a.key).filter((k) => offKeys.indexOf(k) < 0 && k !== 'days-1');
+    props(ctx).setProperty('ACH:' + ME, JSON.stringify({ days: { n: 0, last: '' }, got: Object.fromEntries(can.map((k) => [k, '2026-10-20'])) }));
+    expect(ctx.apiAchievements()).toMatchObject({ cleared: false, clearedNow: false });
+    expect(ctx.apiAchievementsCheck()).toMatchObject({ cleared: true, clearedNow: true });
+    expect(ctx.apiAchievements()).toMatchObject({ cleared: true, clearedNow: false });
   });
 
   it('まだクリアしていない人は、取れる実績が増えればそのぶん先に延びる', () => {

@@ -1056,21 +1056,34 @@ function oshiClearedOf_(have, off) {
 }
 
 /**
+ * もうクリアを覚えているか (数え直さない)。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function oshiClearedSaved_(email) {
+  var who = oshiWho_(email);
+  return !!who && !!PropertiesService.getScriptProperties().getProperty('OSHI_CLEARED:' + who);
+}
+
+/**
  * その人がクリアしたか。**一度クリアしたら覚えて、あとから実績が増えてもクリアのまま** (スクリプトプロパティ
  * `OSHI_CLEARED:<小文字のアドレス>` = クリアした日)。取った印と同じく消さない。書くのは1つの値を置くだけなので鍵は取らない
  * (2回書いても同じ)。
  *
  * @param {string} email
+ * @param {Object<string, string>} [off] 取れない実績 (achUnavailable_)。省くと数える
+ * @param {Object<string, string>} [have] 取った印。省くと読む
  * @returns {boolean}
  */
-function oshiCleared_(email) {
+function oshiCleared_(email, off, have) {
   var who = oshiWho_(email);
   if (!who) return false;
   var props = PropertiesService.getScriptProperties();
   var key = 'OSHI_CLEARED:' + who;
   if (props.getProperty(key)) return true;
-  var have = achUnlockedRead_(who);
-  if (!oshiClearedOf_(have, achUnavailable_(who, have))) return false;
+  var h = have || achUnlockedRead_(who);
+  if (!oshiClearedOf_(h, off || achUnavailable_(who, h))) return false;
   props.setProperty(key, usageDay(new Date()));
   return true;
 }

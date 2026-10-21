@@ -211,8 +211,8 @@
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
-    // クリア = この環境で取れる実績 (と取った実績) を全部取った (数えるのはサーバの total / got)
-    var all = Number(res.total) > 0 && Number(res.got) >= Number(res.total);
+    // クリアに届いたその返事だけ (サーバの clearedNow)。クリアしたあとで取れる実績が増えても、取るたびには言わない
+    var all = !!res.clearedNow;
     // 推しがオフなら Lv だけ (推しの段・プロフィール・クリアは推しの頁のもの)
     var oshi = oshiOn();
     achToast(first.icon, text + (oshi
@@ -384,7 +384,8 @@
     box.appendChild(makeAchLevel(res));
     box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
     var rest = Math.max(0, (Number(res.total) || 0) - (Number(res.got) || 0));
-    box.appendChild(achNote((rest ? 'クリアまで あと ' + rest + ' 個' : '取れる実績を全部取りました (クリア)') +
+    box.appendChild(achNote((res.cleared ? 'クリアしました' + (rest ? ' (あとから取れるようになった実績が ' + rest + ' 個あります)' : '')
+      : 'クリアまで あと ' + rest + ' 個') +
       ' ・ この環境で取れる実績は ' + (Number(res.total) || 0) + ' 個です。「この環境では取れません」の実績は数えません。' +
       'クリアは一度届けば消えません。あとから取れる実績が増えても、クリアはそのまま'));
 
