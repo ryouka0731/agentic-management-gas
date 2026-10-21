@@ -103,6 +103,18 @@ describe('作業部屋', () => {
     expect(el.querySelector('.room-oshi-say')).toBe(null);
   });
 
+  it('部屋の絵の入れ物は指の動きを受ける (pointer-events: none のままだと、なでても何も起きない。jsdom は CSS を見ないので字で確かめる)', async () => {
+    const fs = await import('node:fs');
+    const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
+    const rules = [...css.matchAll(/\.room-oshi\s*\{[^}]*\}/g)].map((m) => m[0]);
+    const none = rules.findIndex((r) => /pointer-events:\s*none/.test(r));
+    const auto = rules.findIndex((r) => /pointer-events:\s*auto/.test(r));
+    expect(none).toBeGreaterThanOrEqual(0);
+    expect(auto).toBeGreaterThan(none); // 後の規則が勝つ
+    // 絵そのものは受けない (入れ物が受ける)
+    expect(/\.room-oshi \.oshi-img\s*\{[^}]*pointer-events:\s*none/.test(css)).toBe(true);
+  });
+
   it('推しがオフの人影は、なでても何も起きない', () => {
     mountRoom(Object.assign({ 'oshi.on': false }, ON));
     openFromMe();
@@ -211,6 +223,60 @@ describe('作業部屋', () => {
     // 顔を上げる入れ替えもしない
     vi.advanceTimersByTime(120000);
     expect(el.querySelector('.room-oshi').dataset.state).toBe('work');
+  });
+
+  it('作業中は 12〜25 秒ごとに様子を変える (向きを変える / 傾く / ずれる / 伸び)。傾き・ずれ・伸びはしばらくで戻り、向きは次まで残る', () => {
+    vi.useFakeTimers();
+    // Math.random は「次までの間」と「どの動きか」「左右」に使う。0 → 最短 12 秒・向きを変える (開くときの仕掛けから効かせる)
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
+    mountRoom(ON);
+    openFromMe();
+    const fig = room().querySelector('.room-oshi');
+    try {
+      // 次までの間は、仕掛けた時点の Math.random で決まる (前の動きの直後に仕掛ける)
+      vi.advanceTimersByTime(11999);
+      expect(fig.classList.contains('is-flipped')).toBe(false);
+      vi.advanceTimersByTime(2);
+      expect(fig.classList.contains('is-flipped')).toBe(true);
+      // 次は 0 で仕掛けてあるので 12 秒後。0.3 → 傾く、左
+      rnd.mockReturnValue(0.3);
+      vi.advanceTimersByTime(12001);
+      expect(fig.classList.contains('is-lean-l')).toBe(true);
+      expect(fig.classList.contains('is-flipped')).toBe(true); // 向きはそのまま
+      vi.advanceTimersByTime(3501);
+      expect(fig.classList.contains('is-lean-l')).toBe(false);
+      // 次は 0.3 で仕掛けてあるので 15.9 秒後。0.6 → ずれる、右
+      rnd.mockReturnValue(0.6);
+      vi.advanceTimersByTime(12000 + 13000 * 0.3 + 1);
+      expect(fig.classList.contains('is-shift-r')).toBe(true);
+      vi.advanceTimersByTime(3501);
+      expect(fig.classList.contains('is-shift-r')).toBe(false);
+      // 次は 0.6 で仕掛けてあるので 19.8 秒後。0.9 → 伸び = おうえんの絵、しばらくで作業中に戻る
+      rnd.mockReturnValue(0.9);
+      vi.advanceTimersByTime(12000 + 13000 * 0.6 + 1);
+      expect(fig.dataset.state).toBe('cheer');
+      vi.advanceTimersByTime(3501);
+      expect(fig.dataset.state).toBe('work');
+    } finally {
+      rnd.mockRestore();
+    }
+  });
+
+  it('動きを減らす設定では様子を変えない', () => {
+    window.matchMedia = (query) => ({ matches: /reduce/.test(query), addEventListener() {}, removeEventListener() {} });
+    vi.useFakeTimers();
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
+    mountRoom(ON);
+    openFromMe();
+    const fig = room().querySelector('.room-oshi');
+    try {
+      vi.advanceTimersByTime(60000);
+      expect(fig.classList.contains('is-flipped')).toBe(false);
+      expect(fig.className).not.toMatch(/is-lean|is-shift/);
+      expect(fig.dataset.state).toBe('work');
+    } finally {
+      rnd.mockRestore();
+    }
   });
 
   it('ときどき顔を上げ (ふつう・ほめる)、しばらくして作業に戻る', () => {
