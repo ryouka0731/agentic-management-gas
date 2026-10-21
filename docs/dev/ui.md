@@ -336,7 +336,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 吹き出しは1つ (`#oshi-bubble`)。字は `textContent`、絵は自分の推しの data URL だけ。押せば閉じ、6秒で消える。
   動きを減らす設定では CSS がふわっと出る動きを止める。「久しぶり」は端末に最後に開いた日 (`oshiLastSeen`) だけを覚え、
   連続日数は数えない
-- **キャラは2種類。** 最初からいるキャラ (`OSHI_BUILTINS()` が唯一の表。タク = 明るい相棒 (先頭 = 既定)、イツキ = 耽美。名前・口調・絵は
+- **キャラは2種類。** 最初からいるキャラ (`OSHI_BUILTINS()` が唯一の表。タク = 明るい相棒 (先頭 = 既定)、イツキ = 耽美、つじっぴ = まっすぐ前向き、いっくん = じっくり寄り添う、りょうか = 結論から、さと美 = ゆるふわ。名前・口調・絵は
   決まっていて変えられない) と、本人が作る自分のキャラ (`OSHI_MINE_MAX()` = 5人まで。番号 `charId` で名指す)。どれを使うかは
   自分の設定 `oshi.char` (`'builtin:<key>'` / `'mine:<charId>'`、既定は `'builtin:taku'`)。`apiOshiGet` はいま使うキャラ
   (`kind` / `builtinKey` / `charId` / `name` / `tone` / `events` / `images`) と、頁で直すための自分のキャラ全部 (`mine`) を返す
@@ -353,7 +353,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     data URL にして、キャラ×形ごとに `src/core/OshiDefault<キャラ><形>.gs` (関数は `OSHI_DEFAULT_<キャラ>_<形>`) に焼く
     (`build-kit.mjs` → `KitFiles.gs` と同じ形。**焼いたものは手で直さない**。1つ 600KB まで)。`npm run deploy` が送る前に
     焼き直し、`test/oshi-default.test.js` が assets と一致しているかを見ている。キャラ・表情・形の並びは `Oshi.js` から読む。
-    **キャラを足したら** `OshiStore.gs` の `oshiDefaultPictures_` と `OSHI_DEFAULT_SOURCES` (`test/sources.js`) にも足す
+    **キャラを足したら** `OshiStore.gs` の `oshiDefaultPictures_` にも足す (`OSHI_DEFAULT_SOURCES` (`test/sources.js`) は
+    `build-oshi-default.mjs` の `oshiDefaultTargets` から作り、カバレッジの除外は `src/core/OshiDefault*.gs` の形なので直さない)
     (ファイル名は src の中で他と重ならないこと。同じ名前の .js と .gs は clasp で1つになる。`test/sources.test.js` が見ている)
   - **最初のページには入れない。** 1人の2つの形で 1MB 近くあるので、吹き出し・カード・頁・設定の選び方が要るときに
     `apiOshiDefaultImage(char, style, state)` で1枚ずつ取り、画面が `'キャラ:形:表情'` ごとに覚える (`oshiDefaultImgs`。
@@ -363,8 +364,17 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   - 表情 `work` (作業中) は作業部屋 (`js-room`) のために末尾に足した。最初からいるキャラの絵も焼いてある。
     決まった場面でだけ出す表情なので `scene: true` を持ち (`apiOshiGet` の states にも渡す)、でたらめに選ぶ表情
     (`oshiChosenState`) には入れない
-  - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
+  - 最初からいるキャラの名前は呼び名だけ。**実在の人の名前・所属・出身・勤め先・肩書きを、コード・コメント・テスト・手引き・記録の文・ファイル名に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
+  - **キャラを足す手順。** 利用者の絵が「いくつもの絵が並んだ1枚」のときは、`assets/oshi-sheets/<key>/<形>.webp` (透明な
+    WebP。`cwebp -lossless -exact` で可逆に縮める) に置き、`node scripts/cut-oshi-sheet.mjs <key> --detect <形>` で透けていない
+    画素の塊を一覧して `cells.json` の枠 (`cells`) を書く。隣の絵とくっついた塊は `{box, cut}` で切る線を分ける。
+    `--all <出す先>` で予備も含めて全部を書き出し、一覧の絵にして**目で見て**枠を直す (はみ出した隣の手足・欠けた飾りは数では
+    分からない)。等身と2頭身が1枚に混ざった絵は、塊ごとに上下で2つの .webp に分けて置く (りょうか)。1枚ずつの絵があるときは、並んだ絵の下に並べて1つの .webp にしてよい (さと美)。表情ごとの絵 (`states`) を決めたら引数なしで走らせ、`assets/oshi-default/<key>/` に書く。使わない絵は
+    `spare_*` として枠だけ残す。そのあと `OSHI_BUILTINS` と口調 (`OSHI_TONES` / `OSHI_LINES` の全場面) を足し、
+    `node scripts/build-oshi-default.mjs` で焼き、`oshiDefaultPictures_` に足す。`test/oshi-sheet.test.js` が、切り出し表から
+    切り直した絵と置いてある絵が同じかを見る (libwebp が無ければ飛ばす)。プロフィールの中身はリポジトリに書かない (管理者が設定の画面かコマンドキューで入れる)
+  - むっ (`pout`) は optional。最初からいるキャラも、合う絵があるときだけ焼く (無ければ しんぱい の絵に代わる)
 - **プロフィール (`.oshi-reveal`) とクリア (`.oshi-clear`) は返事を描くだけ。** どこまで分かるかは `apiOshiGet` の `reveal`
   (サーバが Lv で決める。届いていない項目は Lv だけ届くので ??? と「Lv ◯ で分かる」)、クリアは `cleared` / `clear`。
   お祝いの言葉が無いキャラは場面 `clear` (実績を全部取った) のせりふ。**動画は「動画を見る」を押した聞き手の中でだけ iframe を作る**

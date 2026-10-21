@@ -317,6 +317,9 @@ describe('名前・口調・せりふ', () => {
     expect(() => ctx.apiOshiSetLines(c, 'scold', ['x'])).toThrow('知らない場面です: scold');
     expect(() => ctx.apiOshiCharCreate('あ'.repeat(21), 'polite')).toThrow('名前は20字までにしてください');
     expect(() => ctx.apiOshiCharCreate('ルナ', 'yankee')).toThrow('知らない口調です: yankee');
+    // 名前の字の数は見た目の字で数える (絵文字も1字)
+    ctx.apiOshiSetProfile(c, '🐱'.repeat(20), 'polite');
+    expect(() => ctx.apiOshiSetProfile(c, '🐱'.repeat(21), 'polite')).toThrow('名前は20字までにしてください');
     for (const bad of ['0', -1, 1.5, 'x', '__proto__', null]) expect(() => ctx.apiOshiSetProfile(bad, 'a', 'polite'), String(bad)).toThrow('知らないキャラです');
   });
 
@@ -430,6 +433,11 @@ describe('手引き (docs/manual/oshi.md)', () => {
 });
 
 
+/** むっ (optional) の絵を焼いてあるキャラ:形。合う絵があるものだけ */
+// 絵が無くてもよい表情 (むっ・なつき度の4段目と5段目) のうち、焼いてあるキャラ:形。それ以外は null (画面が fallback の表情に代える)
+const OPTIONAL_BAKED = { pout: ['tsujippi:chibi', 'ikkun:chibi', 'ryoka:chibi', 'ryoka:normal'], grow4: [], grow5: [] };
+const OPTIONAL_BAKED_COUNT = Object.values(OPTIONAL_BAKED).reduce((n, a) => n + a.length, 0);
+
 function setupWithPictures() {
   const fake = createFakeGas();
   const ctx = loadGasWith(fake, ...APP_SOURCES, ...OSHI_DEFAULT_SOURCES);
@@ -438,11 +446,17 @@ function setupWithPictures() {
 }
 
 describe('最初からいるキャラ', () => {
-  it('表は1つ (OSHI_BUILTINS): タク (明るい相棒) とイツキ (耽美)。先頭 (タク) が既定', () => {
+  it('表は1つ (OSHI_BUILTINS): タク (明るい相棒)・イツキ (耽美)・つじっぴ (まっすぐ前向き)・いっくん (じっくり寄り添う)・りょうか (結論から)・さと美 (ゆるふわ)。先頭 (タク) が既定', () => {
     expect(pure.OSHI_BUILTINS()).toEqual([
       { key: 'taku', name: 'タク', tone: 'buddy' },
       { key: 'itsuki', name: 'イツキ', tone: 'gothic' },
+      { key: 'tsujippi', name: 'つじっぴ', tone: 'sunny' },
+      { key: 'ikkun', name: 'いっくん', tone: 'calm' },
+      { key: 'ryoka', name: 'りょうか', tone: 'sharp' },
+      { key: 'satomi', name: 'さと美', tone: 'fluffy' },
     ]);
+    // 口調はキャラごとに別 (同じ口調だと、選んだときのあいさつで見分けが付かない)
+    expect(new Set(pure.OSHI_BUILTINS().map((c) => c.tone)).size).toBe(pure.OSHI_BUILTINS().length);
     for (const c of pure.OSHI_BUILTINS()) expect(pure.oshiToneKnown(c.tone), c.key).toBe(true);
     expect(pure.oshiBuiltinOf('taku').name).toBe('タク');
     expect(pure.oshiBuiltinOf('nobody')).toBe(null);
@@ -464,7 +478,7 @@ describe('最初からいるキャラ', () => {
     const got = ctx.apiOshiGet();
     expect(got).toMatchObject({ char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', name: 'タク', tone: 'buddy',
       charId: 0, images: [], mine: [], mineMax: 5 });
-    expect(got.builtins.map((c) => c.key)).toEqual(['taku', 'itsuki']);
+    expect(got.builtins.map((c) => c.key)).toEqual(['taku', 'itsuki', 'tsujippi', 'ikkun', 'ryoka', 'satomi']);
     expect(got.events.find((e) => e.key === 'done').lines).toEqual(pure.OSHI_LINES().buddy.done);
     expect(got.events.every((e) => e.mine.length === 0)).toBe(true);
     expect(got.styles.map((s) => s.key)).toEqual(['chibi', 'normal']);
@@ -511,14 +525,94 @@ describe('最初からいるキャラ', () => {
     expect(all).toContain('余白');
   });
 
+  it('まっすぐ前向きの口調は全部の場面に3つ以上あり、です・ますで「！」が多い (「〜すべき」と言わない。耽美の語尾を混ぜない)', () => {
+    const l = pure.OSHI_LINES().sunny;
+    expect(pure.OSHI_TONES().find((t) => t.key === 'sunny').label).toBe('まっすぐ前向き');
+    for (const e of pure.OSHI_EVENTS()) {
+      expect(l[e.key].length, e.key).toBeGreaterThanOrEqual(3);
+      expect(l[e.key].some((x) => /です|ます|しょう|たい/.test(x)), e.key).toBe(true);
+      expect(l[e.key].some((x) => x.includes('！')), e.key).toBe(true);
+      for (const x of l[e.key]) {
+        expect(x, e.key).not.toMatch(/のだ|俺|でございます|すべき/);
+        expect(Array.from(x).length, x).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      }
+    }
+    const all = Object.values(l).flat();
+    // ✨ と「！」が多く、です・ます に くだけた言い方が混ざる
+    expect(all.filter((x) => x.includes('✨')).length).toBeGreaterThanOrEqual(10);
+    expect(all.filter((x) => x.includes('！')).length / all.length).toBeGreaterThan(0.7);
+    expect(all.some((x) => /です|ます/.test(x))).toBe(true);
+    expect(all.some((x) => !/です|ます|しょう/.test(x))).toBe(true);
+  });
+
+  it('じっくり寄り添う口調は全部の場面に3つ以上あり、です・ますで「！」と絵文字 (😭 🙇 🙏 ✨) が多い', () => {
+    const l = pure.OSHI_LINES().calm;
+    expect(pure.OSHI_TONES().find((t) => t.key === 'calm').label).toBe('じっくり寄り添う');
+    for (const e of pure.OSHI_EVENTS()) {
+      expect(l[e.key].length, e.key).toBeGreaterThanOrEqual(3);
+      expect(l[e.key].some((x) => /です|ます|しょう/.test(x)), e.key).toBe(true);
+      expect(l[e.key].some((x) => x.includes('！')), e.key).toBe(true);
+      for (const x of l[e.key]) {
+        expect(x, e.key).not.toMatch(/のだ|俺|でございます/);
+        expect(Array.from(x).length, x).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      }
+    }
+    const all = JSON.stringify(l);
+    for (const em of ['😭', '🙇', '🙏', '✨']) expect(all, em).toContain(em);
+    expect(Object.values(l).flat().every((x) => !/[だ]よね?$|のだ/.test(x))).toBe(true);
+  });
+
+  it('結論からの口調は全部の場面に3つ以上あり、です・ますを使わず短く話す (絵文字は ✨ だけ)', () => {
+    const l = pure.OSHI_LINES().sharp;
+    expect(pure.OSHI_TONES().find((t) => t.key === 'sharp').label).toBe('結論から (理屈と数字)');
+    for (const e of pure.OSHI_EVENTS()) {
+      expect(l[e.key].length, e.key).toBeGreaterThanOrEqual(3);
+      for (const x of l[e.key]) {
+        expect(x, e.key).not.toMatch(/です|ます|のだ|俺|！/);
+        // ✨ のほかの絵文字を使わない
+        expect(x.replace(/✨/g, ''), e.key).not.toMatch(/\p{Extended_Pictographic}/u);
+        expect(Array.from(x).length, x).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      }
+    }
+    const all = JSON.stringify(l);
+    for (const w of ['結論', '数字', 'ふむ', 'だね', 'しよう']) expect(all, w).toContain(w);
+  });
+
+  it('ゆるふわの口調は全部の場面に3つ以上あり、やわらかい です・ます で話す (「〜」が多く、♪ はときどき。耽美の語尾・強い言葉を混ぜない)', () => {
+    const l = pure.OSHI_LINES().fluffy;
+    expect(pure.OSHI_TONES().find((t) => t.key === 'fluffy').label).toBe('ゆるふわ');
+    for (const e of pure.OSHI_EVENTS()) {
+      expect(l[e.key].length, e.key).toBeGreaterThanOrEqual(3);
+      expect(l[e.key].some((x) => /です|ます|しょ/.test(x)), e.key).toBe(true);
+      for (const x of l[e.key]) {
+        expect(x, e.key).not.toMatch(/のだ|俺|でございます|すべき|！！/);
+        expect(Array.from(x).length, x).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      }
+    }
+    const all = Object.values(l).flat();
+    expect(all.filter((x) => x.includes('〜')).length / all.length).toBeGreaterThan(0.7);
+    // ♪ は飾りなので、半分より少なく
+    const notes = all.filter((x) => x.includes('♪')).length;
+    expect(notes).toBeGreaterThan(0);
+    expect(notes / all.length).toBeLessThan(0.5);
+  });
+
+  it('自分で足すせりふの長さは見た目の字で数える (絵文字も1字)', () => {
+    const max = pure.OSHI_TEXT_LIMITS().lineMax;
+    const full = '🙏'.repeat(max);
+    expect(full.length).toBe(max * 2);
+    expect(pure.oshiCleanLines([full])).toEqual([full]);
+    expect(() => pure.oshiCleanLines([full + '！'])).toThrow(max + '字まで');
+  });
+
   it('設定に「使うキャラ」「絵が無い表情」「2頭身・等身」がある', () => {
     const { ctx } = setup();
     const items = ctx.apiPrefs().items;
     expect(items.find((p) => p.key === 'oshi.char')).toMatchObject({ type: 'char', def: 'builtin:taku', scope: 'me' });
-    expect(items.find((p) => p.key === 'oshi.char').options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki']);
+    expect(items.find((p) => p.key === 'oshi.char').options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki', 'builtin:tsujippi', 'builtin:ikkun', 'builtin:ryoka', 'builtin:satomi']);
     const fb = items.find((p) => p.key === 'oshi.fallback');
     expect(fb).toMatchObject({ type: 'enum', def: 'builtin:taku', scope: 'me' });
-    expect(fb.options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki', 'none']);
+    expect(fb.options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki', 'builtin:tsujippi', 'builtin:ikkun', 'builtin:ryoka', 'builtin:satomi', 'none']);
     const style = items.find((p) => p.key === 'oshi.style');
     expect(style).toMatchObject({ type: 'enum', def: 'chibi', scope: 'me' });
     expect(style.options.map((o) => o.value)).toEqual(['chibi', 'normal']);
@@ -532,8 +626,8 @@ describe('最初からいるキャラ', () => {
       for (const st of pure.OSHI_STYLES()) {
         for (const s of pure.OSHI_STATES()) {
           const got = ctx.apiOshiDefaultImage(c.key, st.key, s.key);
-          // 絵が無くてもよい表情 (むっ) は、まだ絵が無い (画面が fallback の表情に代える)
-          if (s.optional) {
+          // 絵が無くてもよい表情は、合う絵があるキャラ・形だけ焼いてある (無ければ画面が fallback の表情に代える)
+          if (s.optional && (OPTIONAL_BAKED[s.key] || []).indexOf(c.key + ':' + st.key) < 0) {
             expect(got, c.key + st.key + s.key).toBe(null);
             continue;
           }
@@ -546,7 +640,7 @@ describe('最初からいるキャラ', () => {
     }
     // 取り違えていない (キャラ・形・表情ごとに別の絵)
     expect(seen.size).toBe(pure.OSHI_BUILTINS().length * pure.OSHI_STYLES().length *
-      pure.OSHI_STATES().filter((s) => !s.optional).length);
+      pure.OSHI_STATES().filter((s) => !s.optional).length + OPTIONAL_BAKED_COUNT);
   });
 
   it('知らないキャラ・形・表情はふつうの言葉で断る', () => {
