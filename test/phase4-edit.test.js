@@ -512,6 +512,8 @@ describe('画面に渡せる形か', () => {
   /** ご褒美をオンにし、2件済ませて、ご褒美を1つ並べる。その id */
   function rewardReady(ctx) {
     ctx.apiPrefSet('luck.reward', true);
+    // 数え始めてから作ったやることだけを数える
+    ctx.apiRewardGet();
     closedToday(ctx);
     closedToday(ctx);
     return ctx.apiRewardItemSave({ title: 'コーヒー', cost: 1 }).items[0].id;

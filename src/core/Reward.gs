@@ -40,12 +40,31 @@ function REWARD_UNDO_MS() {
 
 /**
  * 交換した記録を1つずつ残す数。超えたぶんは合計 (spentOld) にまとめる。
- * スクリプトプロパティは1つ 9KB までなので、記録を際限なく並べられない。
  *
  * @returns {number}
  */
 function REWARD_KEEP_SPENDS() {
-  return 100;
+  return 30;
+}
+
+/**
+ * 1人ぶんの中身の上限 (UTF-8 のバイト)。**スクリプトプロパティは1つ 9KB まで**で、超えると書けずに
+ * その人は何もできなくなる。余裕を見て 8000 にし、超えるときは古い記録から合計にまとめる (rewardFit_)。
+ *
+ * @returns {number}
+ */
+function REWARD_MAX_BYTES() {
+  return 8000;
+}
+
+/**
+ * 済ませたやること1件を1と数えるとき、担当なしで閉じた人の取りぶんになるものを1日に数える上限。
+ * 担当なしのやることは作って閉じるだけで数えられてしまうので、数稼ぎにならないよう絞る。
+ *
+ * @returns {number}
+ */
+function REWARD_UNASSIGNED_PER_DAY() {
+  return 5;
 }
 
 /** 鍵。アドレスの大文字小文字で別の人にしない */
@@ -53,13 +72,20 @@ function rewardKey_(email) {
   return 'REWARD:' + String(email || '').toLowerCase();
 }
 
+/** UTF-8 のバイト数 */
+function rewardBytes_(text) {
+  return encodeURIComponent(String(text)).replace(/%[0-9A-F]{2}/gi, 'x').length;
+}
+
 /**
  * 覚えている中身。無い・読めない・壊れた欄は空として読む (人がエディタで書き換えうる)。
  *
+ * - since: 数え始めた時刻 (ISO)。この時刻より後に作られたやることだけを数える
+ * - unit: 数え始めたときの数え方 ('game' = ポイント / 'done' = 済ませたやること)。変わったら数え直す
+ * - archived: 数え方が変わる前に交換したぶんのまとめ ({count, total, at})
+ *
  * @param {string} email
- * @returns {{since: string, nextId: number, spentOld: number,
- *   items: Array<{id: number, title: string, cost: number}>,
- *   spends: Array<{id: number, title: string, cost: number, at: string}>}}
+ * @returns {object}
  */
 function rewardRead_(email) {
   var raw = PropertiesService.getScriptProperties().getProperty(rewardKey_(email));
@@ -81,14 +107,37 @@ function rewardRead_(email) {
   });
   var top = 0;
   items.concat(spends).forEach(function (x) { top = Math.max(top, x.id); });
+  var a = rec.archived;
   return {
-    since: /^\d{4}-\d{2}-\d{2}$/.test(String(rec.since || '')) ? String(rec.since) : '',
+    since: !isNaN(Date.parse(rec.since)) ? new Date(Date.parse(rec.since)).toISOString() : '',
+    unit: rec.unit === 'game' || rec.unit === 'done' ? rec.unit : '',
+    // ポイントは日ごとにしか数えられないので、数え始めた日のうち、その時刻までに付いていたぶんを引く
+    base: isFinite(Number(rec.base)) && Number(rec.base) > 0 ? Number(rec.base) : 0,
     // 一度出した番号は二度出さない (取り消した交換の番号を次の交換に回さない)
     nextId: Math.max(num(rec.nextId), top + 1),
     spentOld: num(rec.spentOld),
+    archived: a && typeof a === 'object' && num(a.count) ? { count: num(a.count), total: num(a.total),
+      at: isNaN(Date.parse(a.at)) ? '' : String(a.at) } : null,
+    ruleChangedAt: isNaN(Date.parse(rec.ruleChangedAt)) ? '' : String(rec.ruleChangedAt),
     items: items,
     spends: spends,
   };
+}
+
+/**
+ * 書ける大きさに収める。古い交換の記録から合計 (spentOld) にまとめる。残りは変わらない。
+ *
+ * @param {object} rec
+ * @returns {string} 書く JSON
+ */
+function rewardFit_(rec) {
+  while (rec.spends.length > REWARD_KEEP_SPENDS()) rec.spentOld += rec.spends.shift().cost;
+  var json = JSON.stringify(rec);
+  while (rewardBytes_(json) > REWARD_MAX_BYTES() && rec.spends.length) {
+    rec.spentOld += rec.spends.shift().cost;
+    json = JSON.stringify(rec);
+  }
+  return json;
 }
 
 /**
@@ -105,50 +154,106 @@ function rewardMutate_(email, fn) {
   return dbWithLock_(30000, function () {
     var rec = rewardRead_(me);
     var out = fn(rec);
-    PropertiesService.getScriptProperties().setProperty(rewardKey_(me), JSON.stringify(rec));
+    PropertiesService.getScriptProperties().setProperty(rewardKey_(me), rewardFit_(rec));
     return out;
   });
 }
 
 /**
- * たまった数。**台帳から数え、保存しない** (取り消せば減る)。数え方は1つに決めてある:
- *
- * - ポイントとレベルがオンで、本人が週の上位に参加しているなら、**ポイント** (Game.gs と同じ数え方)
- * - そうでなければ、**本人が済ませたやること1件を1** と数える (担当が複数でも1件。ポイントの取りぶんではない)
- *
- * どちらも始めた日 (since) から今日まで。ポイントに参加していない人のポイントを数えて見せる道は作らない。
+ * いまの数え方。ポイントとレベルがオンで、本人が週の上位に参加しているなら 'game'、ほかは 'done'。
  *
  * @param {string} email
- * @param {string} since 'YYYY-MM-DD'
- * @param {{issues?: object[], closers?: Object<string, string>}} [pre] 既に読んだもの
- * @returns {{rule: string, earned: number}} rule は 'points' か 'closed'
+ * @returns {string}
  */
-function rewardEarned_(email, since, pre) {
+function rewardUnit_(email) {
+  return gameEnabled() && gamePlayers_().indexOf(String(email || '')) >= 0 ? 'game' : 'done';
+}
+
+/**
+ * たまった数。**台帳から数え、保存しない** (取り消せば減る)。数え方は1つに決めてある:
+ *
+ * - 'game': **ポイント** (Game.gs と同じ数え方)。数え始めた日から
+ * - 'done': **本人が済ませたやること1件を1** (担当が複数でも1件)。数えるのは**数え始めた時刻より後に作られて**、
+ *   いま完了のものだけ (前からあったものを閉じ直して稼げないように)。担当なしで閉じた人の取りぶんになるものは、
+ *   閉じた日ごとに REWARD_UNASSIGNED_PER_DAY() 件まで
+ *
+ * ポイントに参加していない人のポイントを数えて見せる道は作らない。
+ *
+ * @param {string} email
+ * @param {string} since ISO
+ * @param {string} unit 'game' / 'done'
+ * @param {number} [base] 'game' のとき、数え始めた日のうち始める前に付いていたポイント (引く)
+ * @param {{issues?: object[], closers?: Object<string, string>}} [pre] 既に読んだもの
+ * @returns {number}
+ */
+function rewardEarned_(email, since, unit, base, pre) {
   var me = String(email || '');
-  if (!me || !since) return { rule: 'closed', earned: 0 };
-  if (gameEnabled() && gamePlayers_().indexOf(me) >= 0) {
-    var pts = gamePointsBySpans_([[since, '']], pre)[0][me] || 0;
-    return { rule: 'points', earned: Math.floor(pts * 10 + 1e-9) / 10 };
+  var from = Date.parse(since);
+  if (!me || isNaN(from)) return 0;
+  if (unit === 'game') {
+    var pts = (gamePointsBySpans_([[motivationDay_(new Date(from)), '']], pre)[0][me] || 0) - (base || 0);
+    return Math.max(0, Math.floor(pts * 10 + 1e-9) / 10);
   }
   var got = pre || {};
   var issues = got.issues || dbReadAll('issues');
   var closers = got.closers || motivationClosers_();
   var lower = me.toLowerCase();
   var n = 0;
+  var loose = {};
   for (var i = 0; i < issues.length; i++) {
     var row = issues[i];
     if (String(row.state) !== 'closed') continue;
+    var made = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.parse(row.createdAt);
+    if (isNaN(made) || made < from) continue;
     var day = motivationDay_(row.closedAt);
-    if (!day || day < since) continue;
+    if (!day) continue;
     var who = motivationCredited_(row, closers).map(function (w) { return String(w).toLowerCase(); });
-    if (who.indexOf(lower) >= 0) n++;
+    if (who.indexOf(lower) < 0) continue;
+    if (!issueAssignees(row).length) {
+      loose[day] = (loose[day] || 0) + 1;
+      if (loose[day] > REWARD_UNASSIGNED_PER_DAY()) continue;
+    }
+    n++;
   }
-  return { rule: 'closed', earned: n };
+  return n;
 }
 
-/** 交換したぶんの合計 */
+/** 交換したぶんの合計 (今の数え方のぶんだけ) */
 function rewardSpent_(rec) {
   return rec.spends.reduce(function (a, sp) { return a + sp.cost; }, rec.spentOld);
+}
+
+/**
+ * 数え始める・数え方が変わっていたら数え直す。**読むたびに通す。**
+ *
+ * 数え方 (ポイント ↔ 済ませたやること) が変わると、たまった数の単位が変わり、交換したぶんと比べられなくなる
+ * (急に減ったように見える)。変わっていたら、いまから数え直し、それまでの交換はまとめ (archived) にして残す。
+ * 画面は ruleChanged を見て、落ち着いた言葉で知らせる。
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {object} rewardRead_()
+ */
+function rewardSync_(email, now) {
+  var unit = rewardUnit_(email);
+  var rec = rewardRead_(email);
+  if (rec.since && rec.unit === unit) return rec;
+  return rewardMutate_(email, function (r) {
+    if (r.since && r.unit === unit) return r;
+    if (r.since && r.unit) {
+      var count = r.spends.length + (r.archived ? r.archived.count : 0);
+      var total = rewardSpent_(r) + (r.archived ? r.archived.total : 0);
+      r.archived = count ? { count: count, total: total, at: now.toISOString() } : r.archived;
+      r.spends = [];
+      r.spentOld = 0;
+      r.ruleChangedAt = now.toISOString();
+    }
+    r.since = now.toISOString();
+    r.unit = unit;
+    var day = motivationDay_(now);
+    r.base = unit === 'game' ? (gamePointsBySpans_([[day, day]])[0][String(email)] || 0) : 0;
+    return r;
+  });
 }
 
 /**
@@ -156,42 +261,29 @@ function rewardSpent_(rec) {
  *
  * @param {string} email
  * @param {Date} now
- * @param {object} [rec] rewardRead_() (読んだものがあれば)
+ * @param {object} rec rewardSync_() を通したもの
  * @returns {object}
  */
 function rewardState_(email, now, rec) {
   var r = rec || rewardRead_(email);
-  var got = rewardEarned_(email, r.since);
+  var earned = rewardEarned_(email, r.since, r.unit, r.base);
   var spent = rewardSpent_(r);
   var last = r.spends.length ? r.spends[r.spends.length - 1] : null;
   var undo = last && now.getTime() - Date.parse(last.at) < REWARD_UNDO_MS() ? last : null;
   return {
-    rule: got.rule,
+    rule: r.unit || 'done',
     since: r.since,
-    earned: got.earned,
+    earned: earned,
     spent: spent,
-    available: Math.max(0, Math.floor((got.earned - spent) * 10 + 1e-9) / 10),
+    available: Math.max(0, Math.floor((earned - spent) * 10 + 1e-9) / 10),
     items: r.items,
     spends: r.spends.slice().reverse(),
+    archived: r.archived,
+    // 数え直したあと、まだ1つも交換していなければ知らせる
+    ruleChanged: !!r.ruleChangedAt && !r.spends.length,
     undoId: undo ? undo.id : 0,
     undoUntil: undo ? new Date(Date.parse(undo.at) + REWARD_UNDO_MS()).toISOString() : '',
   };
-}
-
-/**
- * 始めた日を決める (まだなら今日)。たまった数はこの日から数える。
- *
- * @param {string} email
- * @param {Date} now
- * @returns {object} rewardRead_()
- */
-function rewardStart_(email, now) {
-  var rec = rewardRead_(email);
-  if (rec.since) return rec;
-  return rewardMutate_(email, function (r) {
-    if (!r.since) r.since = motivationDay_(now);
-    return r;
-  });
 }
 
 /**
@@ -224,8 +316,8 @@ function rewardCheckItem_(title, cost) {
 function rewardItemSave_(email, item, now) {
   var v = rewardCheckItem_(item && item.title, item && item.cost);
   var id = Number(item && item.id) || 0;
+  rewardSync_(email, now);
   return rewardMutate_(email, function (r) {
-    if (!r.since) r.since = motivationDay_(now);
     if (id) {
       var hit = r.items.filter(function (it) { return it.id === id; })[0];
       if (!hit) throw new Error('そのご褒美は見つかりません');
@@ -259,7 +351,7 @@ function rewardItemDelete_(email, id) {
 
 /**
  * 交換する。**残りを超えては交換できない。** たまった数 (台帳を読む) は鍵の外で数え、
- * 交換したぶんとの比べと書き込みだけを鍵の中で行う。
+ * 交換したぶんとの比べと書き込みだけを鍵の中で行う (中で読み直した交換のぶんで比べる)。
  *
  * @param {string} email
  * @param {number} itemId
@@ -268,9 +360,11 @@ function rewardItemDelete_(email, id) {
  */
 function rewardSpend_(email, itemId, now) {
   var n = Number(itemId) || 0;
-  var since = rewardStart_(email, now).since;
-  var earned = rewardEarned_(email, since).earned;
+  var start = rewardSync_(email, now);
+  var earned = rewardEarned_(email, start.since, start.unit, start.base);
   return rewardMutate_(email, function (r) {
+    // 数え方が鍵の外で数えたときと変わっていたら、比べない (単位が違う)
+    if (r.since !== start.since || r.unit !== start.unit) throw new Error('数え方が変わりました。開き直してください');
     var item = r.items.filter(function (it) { return it.id === n; })[0];
     if (!item) throw new Error('そのご褒美は見つかりません');
     var left = earned - rewardSpent_(r);
@@ -280,8 +374,6 @@ function rewardSpend_(email, itemId, now) {
     var spend = { id: r.nextId, title: item.title, cost: item.cost, at: now.toISOString() };
     r.nextId++;
     r.spends.push(spend);
-    // 古い記録は合計にまとめる (残りは変わらない)
-    while (r.spends.length > REWARD_KEEP_SPENDS()) r.spentOld += r.spends.shift().cost;
     return { rec: r, spend: spend };
   });
 }

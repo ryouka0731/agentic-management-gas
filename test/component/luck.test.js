@@ -102,6 +102,30 @@ describe('思いがけない当たり', () => {
     expect(window.localStorage.getItem('bantoLuck')).toBe(null);
   });
 
+  it('集中しているやることを完了にしたときは引かない (SUPER COMPLETE!! と重ねない)', () => {
+    const now = () => new Date().toISOString();
+    const app = mountLuck({ 'luck.on': true, 'focus.start': true }, {
+      apiFocusStart: (n, minutes) => ({ id: 7, issueNumber: n, title: '通勤手当の見直し', plannedMinutes: minutes,
+        extendedMinutes: 0, startedAt: now(), openedAt: now(), provedAt: '', endedAt: '', result: '', firstStep: '',
+        proofKind: '', points: 0 }),
+      apiFocusMine: { active: null, week: { started: 0, proved: 0, finished: 0 }, toStart: [], measured: 0, badges: [] },
+      apiFocusEnd: (id, result) => ({ id, result, endedAt: now() }),
+      apiIssueClose: { number: 2, state: 'closed' },
+    });
+    q('[data-tab="issues"]').click();
+    q('#issue-list [aria-label="#2 を今から始める"]').click();
+    document.querySelector('#focus-dock .seg[data-minutes="25"]').click();
+    document.querySelector('#focus-dock .focus-go').click();
+    // 始めただけでは引かない (始めてすぐやめる、を繰り返して引けないように)
+    expect(wins()).toEqual([]);
+    document.querySelector('#focus-dock .focus-done').click();
+    expect(app.calls.some((c) => c.name === 'apiIssueClose')).toBe(true);
+    expect(wins()).toEqual([]);
+    // ほかのやることの完了なら引く
+    closeOne();
+    expect(wins().length).toBe(1);
+  });
+
   it('前の当たりから30分は空ける。1日3回まで。日が替われば数え直す', () => {
     mountLuck({ 'luck.on': true });
     closeOne();
@@ -197,11 +221,12 @@ describe('ノリノリタイム', () => {
     expect(document.body.classList.contains('luck-fever-on')).toBe(true);
     expect(q('#luck-fever .luck-fever-frame').getAttribute('aria-hidden')).toBe('true');
     expect(q('#luck-fever .luck-fever-label').textContent).toBe('ノリノリタイム');
-    expect(q('#luck-fever .luck-fever-left').textContent).toBe('あと 15 分');
-    // 秒は出さない。分の刻みで書き直す
-    vi.advanceTimersByTime(10 * MIN);
-    expect(q('#luck-fever .luck-fever-left').textContent).toBe('あと 5 分');
-    vi.advanceTimersByTime(5 * MIN);
+    // 残りの時間は出さない (急かさない)
+    expect(q('#luck-fever .luck-fever-chip').textContent).not.toMatch(/あと|分|秒/);
+    expect(q('#luck-fever .luck-fever-left')).toBe(null);
+    vi.advanceTimersByTime(14 * MIN);
+    expect(q('#luck-fever')).toBeTruthy();
+    vi.advanceTimersByTime(1 * MIN);
     expect(q('#luck-fever')).toBe(null);
     expect(document.body.classList.contains('luck-fever-on')).toBe(false);
     // 「終わりました」の知らせは出さない (字の札も帯も出ない)
@@ -248,11 +273,36 @@ describe('ノリノリタイム', () => {
     vi.advanceTimersByTime(3 * MIN);
     const app = mountLuck({ 'luck.on': true });
     expect(q('#luck-fever')).toBeTruthy();
-    expect(q('#luck-fever .luck-fever-left').textContent).toBe('あと 12 分');
+    vi.advanceTimersByTime(12 * MIN);
+    expect(q('#luck-fever')).toBe(null);
+    closeOne(); closeOne(); closeOne();
     app.respond('apiPrefSet', () => prefsFixture({ values: {} }));
     q('.nav-item[data-tab="settings"]').click();
     q('[data-pref="luck.on"] button[role="switch"]').click();
     expect(q('#luck-fever')).toBe(null);
+  });
+
+  it('札は右下に出す (左下は推しの吹き出し)。集中の置き場が出ていれば、その上に積む', () => {
+    mountLuck({ 'luck.on': true });
+    closeOne(); closeOne(); closeOne();
+    const chip = q('#luck-fever .luck-fever-chip');
+    expect(chip.classList.contains('is-above-dock')).toBe(false);
+    const css = [...document.querySelectorAll('style')].map((st) => st.textContent).join('\n');
+    const rule = /\.luck-fever-chip \{([^}]*)\}/.exec(css)[1];
+    expect(rule).toMatch(/right:/);
+    expect(rule).not.toMatch(/left:/);
+    expect(css).toMatch(/\.luck-fever-chip\.is-above-dock \{[^}]*bottom:/);
+    // 集中の置き場が出たら、その上へ
+    const dockEl = document.createElement('div');
+    dockEl.id = 'focus-dock';
+    document.body.appendChild(dockEl);
+    return Promise.resolve().then(() => {
+      expect(chip.classList.contains('is-above-dock')).toBe(true);
+      dockEl.remove();
+      return Promise.resolve();
+    }).then(() => {
+      expect(chip.classList.contains('is-above-dock')).toBe(false);
+    });
   });
 
   it('動きを減らす設定では、縁を光らせず札だけ', () => {
@@ -266,7 +316,7 @@ describe('ノリノリタイム', () => {
 
 describe('自分へのご褒美', () => {
   const STATE = {
-    rule: 'closed', since: '2026-10-20', earned: 7, spent: 2, available: 5, costMin: 1, costMax: 50, itemsMax: 20,
+    rule: 'done', since: '2026-10-20T00:00:00.000Z', earned: 7, spent: 2, available: 5, costMin: 1, costMax: 50, itemsMax: 20,
     titleMax: 40,
     items: [{ id: 1, title: '好きなコーヒー', cost: 5 }, { id: 2, title: '<b>映画</b>', cost: 30 }],
     spends: [{ id: 3, title: '散歩', cost: 2, at: '2026-10-21T00:58:00.000Z' }],
@@ -304,10 +354,13 @@ describe('自分へのご褒美', () => {
     expect(box.querySelector('b')).toBe(null);
   });
 
-  it('残りが足りないご褒美は押せない。足りるものは交換を頼む', () => {
+  it('残りが足りないご褒美は押せない (「あと◯で」とは急かさない)。足りるものは交換を頼む', () => {
     const app = openReward();
     const box = q('#side-panel .reward-view');
-    expect(box.querySelector('.reward-item[data-id="2"] .reward-spend').disabled).toBe(true);
+    const short = box.querySelector('.reward-item[data-id="2"] .reward-spend');
+    expect(short.disabled).toBe(true);
+    expect(document.body.textContent + (short.getAttribute('aria-describedby') || '')).not.toMatch(/あと ?\d+ ?ポイント/);
+    expect(document.getElementById('hint-notes') ? document.getElementById('hint-notes').textContent : '').not.toMatch(/あと ?\d+ ?ポイント/);
     const spend = box.querySelector('.reward-item[data-id="1"] .reward-spend');
     expect(spend.disabled).toBe(false);
     spend.click();
@@ -322,6 +375,28 @@ describe('自分へのご褒美', () => {
     expect(app.calls.filter((c) => c.name === 'apiRewardUndo').map((c) => c.args)).toEqual([[3]]);
     openReward({ apiRewardGet: Object.assign({}, STATE, { undoId: 0 }) });
     expect(q('#side-panel .reward-undo')).toBe(null);
+  });
+
+  it('取り消しの帯は、取り消せる時刻を過ぎたら消える (描き直しても時計は1つ)', () => {
+    openReward();
+    expect(q('#side-panel .reward-undo')).toBeTruthy();
+    // 描き直す (直すを押してやめる)
+    q('#side-panel .reward-item[data-id="1"] .reward-edit').click();
+    const timers = vi.getTimerCount();
+    q('#side-panel .reward-form .btn:not([type="submit"])').click();
+    expect(vi.getTimerCount()).toBe(timers);
+    vi.advanceTimersByTime(2 * MIN);
+    expect(q('#side-panel .reward-undo')).toBeTruthy();
+    vi.advanceTimersByTime(1 * MIN + 1000);
+    expect(q('#side-panel .reward-undo')).toBe(null);
+  });
+
+  it('数え方が変わったら、落ち着いた言葉で知らせ、前の交換はまとめて見せる', () => {
+    openReward({ apiRewardGet: Object.assign({}, STATE, { rule: 'game', spends: [], undoId: 0, spent: 0, available: 0,
+      ruleChanged: true, archived: { count: 4, total: 12, at: '2026-10-21T00:00:00.000Z' } }) });
+    const box = q('#side-panel .reward-view');
+    expect(box.querySelector('.reward-changed').textContent).toBe('数え方が変わったので、ここから数え直します');
+    expect(box.textContent).toContain('前の数え方で 4 回 (12 ポイント) 交換しました');
   });
 
   it('足す・直す・外す', () => {

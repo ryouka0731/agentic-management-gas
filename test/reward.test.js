@@ -18,6 +18,8 @@ function setup(opts) {
   ctx.repoInit('agentic-management');
   fake._setUser(ME);
   if (!opts || opts.on !== false) ctx.apiPrefSet('luck.reward', true);
+  // 開いた時刻から数え始める (それより前に作ったやることは数えない)
+  if (!opts || (opts.on !== false && opts.start !== false)) ctx.apiRewardGet();
   return { ctx, fake };
 }
 
@@ -26,6 +28,13 @@ function closeMine(ctx, who, title) {
   const n = ctx.apiIssueCreate(title || '済ませた', '', []).number;
   ctx.apiIssueUpdate(n, { assignee: who || ME });
   ctx.issueClose(n, null);
+  return n;
+}
+
+/** 担当なしで作って、本人が閉じたやること (閉じた人の取りぶんになる) */
+function closeLoose(ctx) {
+  const n = ctx.apiIssueCreate('担当なし', '', []).number;
+  ctx.apiIssueClose(n);
   return n;
 }
 
@@ -80,7 +89,7 @@ describe('使えるポイントの数え方', () => {
   it('ポイントに参加していなければ、始めた日から済ませたやること1件を1と数える (保存しない)', () => {
     const { ctx } = setup();
     let st = ctx.apiRewardGet();
-    expect(st.rule).toBe('closed');
+    expect(st.rule).toBe('done');
     expect(st.earned).toBe(0);
     closeMine(ctx);
     closeMine(ctx);
@@ -95,24 +104,61 @@ describe('使えるポイントの数え方', () => {
     expect(ctx.apiRewardGet().earned).toBe(2);
   });
 
-  it('始めた日より前に済ませたものは数えない', () => {
-    const { ctx, fake } = setup();
+  it('数え始める前に作ったやることは、あとで閉じても数えない (閉じ直して稼げない)', () => {
+    const { ctx } = setup({ start: false });
+    const old = ctx.apiIssueCreate('前からあったもの', '', []).number;
+    ctx.apiIssueUpdate(old, { assignee: ME });
+    ctx.apiRewardGet();
+    ctx.issueClose(old, null);
     closeMine(ctx);
-    // 始めた日を明日にすれば、今日のぶんは入らない
-    const tomorrow = ctx.motivationDay_(new Date(Date.now() + 86400000));
-    fake.PropertiesService.getScriptProperties().setProperty('REWARD:' + ME, JSON.stringify({ since: tomorrow }));
-    expect(ctx.apiRewardGet().earned).toBe(0);
+    expect(ctx.apiRewardGet().earned).toBe(1);
+  });
+
+  it('担当なしで閉じた人の取りぶんは、1日5件まで', () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 7; i++) closeLoose(ctx);
+    // 担当のあるものは絞らない
+    closeMine(ctx); closeMine(ctx);
+    expect(ctx.apiRewardGet().earned).toBe(7);
   });
 
   it('ポイントとレベルがオンで週の上位に参加していれば、ポイント (台帳から数える) で数える', () => {
-    const { ctx } = setup();
+    const { ctx } = setup({ start: false });
     ctx.apiSetGameEnabled(true);
     ctx.apiGameJoin(true);
+    ctx.apiRewardGet();
     closeMine(ctx);
     const st = ctx.apiRewardGet();
-    expect(st.rule).toBe('points');
-    expect(st.earned).toBe(ctx.gamePointsByPerson_(st.since, '')[ME]);
+    expect(st.rule).toBe('game');
+    expect(st.earned).toBe(ctx.gamePointsByPerson_(ctx.motivationDay_(new Date(st.since)), '')[ME]);
+    // 数え始める前に付いていたポイントは入らない
+    expect(ctx.rewardRead_(ME).base).toBe(0);
     expect(st.earned).toBeGreaterThan(0);
+  });
+
+  it('数え方が変わったら (参加する・やめる)、いまから数え直し、前の交換はまとめて残す', () => {
+    const { ctx } = setup();
+    closeMine(ctx); closeMine(ctx);
+    const a = ctx.apiRewardItemSave({ title: 'コーヒー', cost: 2 }).items[0];
+    ctx.apiRewardSpend(a.id);
+    expect(ctx.apiRewardGet().ruleChanged).toBe(false);
+    ctx.apiSetGameEnabled(true);
+    ctx.apiGameJoin(true);
+    let st = ctx.apiRewardGet();
+    expect(st.rule).toBe('game');
+    expect([st.earned, st.spent, st.available]).toEqual([0, 0, 0]);
+    expect(st.spends).toEqual([]);
+    expect(st.archived).toMatchObject({ count: 1, total: 2 });
+    expect(st.ruleChanged).toBe(true);
+    // ご褒美の一覧はそのまま
+    expect(st.items.map((i) => i.title)).toEqual(['コーヒー']);
+    // やめても数え直す (まとめは足していく)
+    closeMine(ctx);
+    ctx.apiGameJoin(false);
+    st = ctx.apiRewardGet();
+    expect(st.rule).toBe('done');
+    expect(st.earned).toBe(0);
+    expect(st.ruleChanged).toBe(true);
   });
 });
 
@@ -142,6 +188,43 @@ describe('交換する', () => {
     const st = ctx.apiRewardItemDelete(a.id);
     expect(st.spends.map((s) => s.title)).toEqual(['コーヒー']);
     expect(st.available).toBe(0);
+  });
+
+  it('長い名前で何十回交換しても、1人ぶんは 9KB に収まり、使い続けられる', () => {
+    const { ctx, fake } = setup();
+    for (let i = 0; i < 45; i++) closeMine(ctx);
+    const title = 'とても長いご褒美の名前'.repeat(4).slice(0, 40);
+    expect(title.length).toBe(40);
+    for (let i = 0; i < 20; i++) ctx.apiRewardItemSave({ title: title.slice(0, 38) + String(i).padStart(2, '0'), cost: 1 });
+    const items = ctx.apiRewardGet().items;
+    for (let i = 0; i < 40; i++) ctx.apiRewardSpend(items[i % 20].id);
+    const raw = fake.PropertiesService.getScriptProperties().getProperty('REWARD:' + ME);
+    expect(Buffer.byteLength(raw, 'utf8')).toBeLessThan(9 * 1024);
+    const st = ctx.apiRewardGet();
+    expect([st.spent, st.available]).toEqual([40, 5]);
+    expect(st.spends.length).toBeLessThanOrEqual(30);
+    expect(() => ctx.apiRewardSpend(items[0].id)).not.toThrow();
+  });
+
+  it('鍵の中で読み直した交換のぶんで比べる (ほぼ同時の2つ目は断る)', () => {
+    const { ctx } = setup();
+    closeMine(ctx);
+    const a = ctx.apiRewardItemSave({ title: 'x', cost: 1 }).items[0];
+    const real = ctx.dbWithLock_;
+    let raced = false;
+    // 鍵の外で数え終えたあと、鍵を取る直前に別の画面から1つ交換された形
+    ctx.dbWithLock_ = (ms, fn) => {
+      if (!raced) {
+        raced = true;
+        ctx.dbWithLock_ = real;
+        ctx.rewardMutate_(ME, (r) => { r.spends.push({ id: r.nextId++, title: 'x', cost: 1, at: new Date().toISOString() }); });
+        ctx.dbWithLock_ = (m2, f2) => real(m2, f2);
+      }
+      return real(ms, fn);
+    };
+    expect(() => ctx.apiRewardSpend(a.id)).toThrow('ポイントが足りない');
+    ctx.dbWithLock_ = real;
+    expect(ctx.apiRewardGet().spends.length).toBe(1);
   });
 
   it('古い記録は合計にまとめる (残りは変わらない)', () => {
@@ -221,18 +304,4 @@ describe('本人にだけ', () => {
     expect(fake.PropertiesService.getScriptProperties().getProperty('REWARD:' + ME)).toContain('コーヒー');
   });
 
-  it('読み → 確かめ → 書きを鍵の中で行う (鍵が取れなければ交換しない)', () => {
-    const { ctx } = setup();
-    closeMine(ctx);
-    const a = ctx.apiRewardItemSave({ title: 'x', cost: 1 }).items[0];
-    const real = ctx.dbWithLock_;
-    let inLock = 0;
-    ctx.dbWithLock_ = (ms, fn) => { inLock++; return real(ms, fn); };
-    ctx.apiRewardSpend(a.id);
-    expect(inLock).toBeGreaterThan(0);
-    ctx.dbWithLock_ = () => { throw new Error('混み合っています'); };
-    expect(() => ctx.apiRewardSpend(a.id)).toThrow('混み合っています');
-    ctx.dbWithLock_ = real;
-    expect(ctx.apiRewardGet().spends.length).toBe(1);
-  });
 });

@@ -21,7 +21,7 @@ function withRandom(v, fn) {
 }
 
 describe('引くのは済ませた手だけ', () => {
-  it('完了・反映・承認・記録・始めたで引き、作る・頼む・差し戻すでは引かない', () => {
+  it('完了・反映・承認・記録で引き、作る・頼む・差し戻すでは引かない', () => {
     expect(f.luckIsAction('apiIssueClose', [1])).toBe(true);
     expect(f.luckIsAction('apiPrMerge', [1])).toBe(true);
     expect(f.luckIsAction('apiPrReview', [1, 'approve'])).toBe(true);
@@ -29,7 +29,8 @@ describe('引くのは済ませた手だけ', () => {
     expect(f.luckIsAction('apiProjectMove', [1, 'Done'])).toBe(true);
     expect(f.luckIsAction('apiProjectMove', [1, 'InProgress'])).toBe(false);
     expect(f.luckIsAction('apiCommit', [])).toBe(true);
-    expect(f.luckIsAction('apiFocusStart', [1, 25])).toBe(true);
+    // 始めるだけでは引かない (始めてすぐやめるのを繰り返して引けないように)
+    expect(f.luckIsAction('apiFocusStart', [1, 25])).toBe(false);
     expect(f.luckIsAction('apiIssueCreate', ['x'])).toBe(false);
     expect(f.luckIsAction('apiPrCreate', [])).toBe(false);
     expect(f.luckIsAction('apiIssueList', [])).toBe(false);

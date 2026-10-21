@@ -25,14 +25,17 @@ describe('当たりとノリノリタイムと、自分へのご褒美', () => {
   it('オンにする → 済ませる → 当たり → ノリノリタイム → ご褒美と交換 → 取り消す', async () => {
     const e2e = mountFullstack();
     await e2e.settle();
-    ['慶弔規程の見直し', '就業規則の改定', '旅費規程の確認'].forEach((t) => e2e.ctx.issueCreate(t, '', []));
-
     // 1. 既定はオフ。済ませても何も出ない
     go('settings'); await e2e.settle();
     expect($('[data-pref="luck.on"] button[role="switch"]').getAttribute('aria-checked')).toBe('false');
     expect($('[data-pref="luck.reward"] button[role="switch"]').getAttribute('aria-checked')).toBe('false');
     click($('[data-pref="luck.on"] button[role="switch"]')); await e2e.settle();
     click($('[data-pref="luck.reward"] button[role="switch"]')); await e2e.settle();
+    // 初めて開いた時刻から数える (それより前からあったやることは数えない)
+    click($('#me-btn'));
+    click(byText('#me-body button', '自分へのご褒美')); await e2e.settle();
+    expect($('#side-panel .reward-available').textContent).toBe('0');
+    ['慶弔規程の見直し', '就業規則の改定', '旅費規程の確認'].forEach((t) => e2e.ctx.issueCreate(t, '', []));
 
     // 2. 1つ目を済ませる → 大当たり (3つとも同じ絵)。推しも「当たり」に驚く
     go('issues'); await e2e.settle();
