@@ -16,9 +16,27 @@ function doGet(e) {
   if (!/^[a-z]{1,20}$/.test(page)) page = 'wiki';
 
   var template = HtmlService.createTemplateFromFile('ui/wiki');
+  // 文書のリンク (?doc=…&full=1) で開かれたら、最初の描画から番頭の画面 (左の行き先・上の操作・ホーム) を隠して
+  // 文書だけを出す (body の class と data-link-doc を js-start / js-docs が読む)。iframe の中なので画面側は URL を同期では読めない
+  var link = doGetLink_(e);
+  template.bodyClass = link ? 'doc-link doc-full' : '';
+  template.linkDoc = link;
   return template.evaluate()
     .setTitle(APP_NAME())
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * ?doc=…&full=1 の文書の id。full=1 でなければ、id が Drive の id の字 (英数字・ハイフン・下線) でなければ空。
+ *
+ * @param {object} e
+ * @returns {string}
+ */
+function doGetLink_(e) {
+  var p = (e && e.parameter) || {};
+  var doc = String(p.doc || '');
+  if (String(p.full || '') !== '1') return '';
+  return /^[A-Za-z0-9_-]{10,200}$/.test(doc) ? doc : '';
 }
 
 /**

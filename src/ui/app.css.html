@@ -1470,6 +1470,23 @@ body.doc-full .mobile-nav,
 body.doc-full .nav-scrim,
 body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn),
 body.doc-full .crumbs > :not(h1) { display: none !important; }
+/* 文書のリンク (?doc=…&full=1) で開かれたとき。番頭の画面を出さず文書だけ。全画面を閉じても周りは出さず、
+   全画面のボタンも出さない (戻る先が無い)。サーバが最初の描画から body に付ける (Main.gs の doGet) */
+body.doc-link .sidebar,
+body.doc-link .resizer,
+body.doc-link .side-panel,
+body.doc-link .tabs,
+body.doc-link .doc-modes,
+body.doc-link .linked-issues,
+body.doc-link .doc-link-row,
+body.doc-link .mobile-nav,
+body.doc-link .nav-scrim,
+body.doc-link #panel-home,
+body.doc-link #doc-full-btn,
+body.doc-link .toolbar > :not(.crumbs),
+body.doc-link .crumbs > :not(h1) { display: none !important; }
+body.doc-link .toolbar { padding: var(--sp-1) var(--sp-4); }
+.link-loading { margin: 0; padding: var(--sp-4); }
 
 body.doc-full .toolbar { padding: var(--sp-1) var(--sp-4); }
 /* 間を空ける .spacer も隠れるので、閉じるボタンを右へ寄せる */
@@ -5397,6 +5414,22 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-mood-reasons { margin: 0; padding-left: var(--sp-4); color: var(--ink-2); }
 .oshi-mood-reasons li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .oshi-h { margin: 0; font-size: 15px; }
+/* 推しの頁の顔。頭 (上半分) を左右になでると笑顔になる (makeOshiHero) */
+.oshi-hero { align-items: center; text-align: center; }
+.oshi-hero-figure {
+  width: 220px; height: 220px; max-width: 100%; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); background: var(--accent-bg); cursor: grab; touch-action: pan-y;
+  transition: transform var(--motion) ease-out;
+}
+.oshi-hero-figure .oshi-avatar { width: 120px; height: 120px; font-size: 48px; }
+.oshi-hero.is-patted .oshi-hero-figure { transform: scale(1.04); }
+.oshi-hero-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
+.oshi-hero-line { margin: 0; color: var(--ink-2); }
+.oshi-hero.is-patted .oshi-hero-line { color: var(--accent); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) {
+  .oshi-hero-figure { transition: none; }
+  .oshi-hero.is-patted .oshi-hero-figure { transform: none; }
+}
 .oshi-care { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--warn-bg); }
 .oshi-care .row-meta { color: var(--ink); margin: 0; }
 .oshi-field { display: flex; flex-direction: column; gap: var(--sp-1); font-size: 13px; }

@@ -64,7 +64,10 @@ function realInclude() {
 }
 
 describe('画面の JS のつなぎ方', () => {
-  const page = evaluateTemplate(WIKI, { include: realInclude() });
+  // bodyClass / linkDoc は doGet が付ける (文書のリンクで開かれたとき)。ふつうに開いたときは空
+  const page = evaluateTemplate(WIKI, { include: realInclude(), bodyClass: '', linkDoc: '' });
+  /** jsdom に組む本文 (test/dom.js と同じく、doGet の穴は空で埋める) */
+  const pageWithoutApp = PAGE_WITHOUT_APP.replace('<?= bodyClass ?>', '').replace('<?= linkDoc ?>', '');
 
   it('テストが走らせる JS は、本番のテンプレートが <script> の中に出すものと同じ', () => {
     const at = page.indexOf(APP);
@@ -75,7 +78,7 @@ describe('画面の JS のつなぎ方', () => {
   });
 
   it('jsdom に組む本文は、本番のページから画面の JS を抜いたもの', () => {
-    expect(page.replace('<script>' + APP + '</script>', '')).toBe(PAGE_WITHOUT_APP);
+    expect(page.replace('<script>' + APP + '</script>', '')).toBe(pageWithoutApp);
   });
 
   it('src/ui の js-*.html はすべて、ちょうど1回つながれている', () => {

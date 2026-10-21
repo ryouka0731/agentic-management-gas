@@ -1153,6 +1153,99 @@
     });
   }
 
+  /** なでたあと、笑顔でいる時間 (ms) */
+  function OSHI_PAT_SMILE_MS() { return 4000; }
+  /** なでたと数える、頭の上での往復 (指の向きが変わった回数) */
+  function OSHI_PAT_TURNS() { return 2; }
+  /** 絵のこの高さ (上からの割合) までを「頭」とみなす */
+  function OSHI_PAT_HEAD() { return 0.5; }
+
+  /**
+   * 推しの頁の顔。いま使うキャラの絵を大きく出す。頭 (絵の上半分) を左右になでると笑顔 (ほめる) になり、
+   * 「なでられた」のせりふを絵の下に言う (吹き出しは使わない。頁を見ている人の目の前で言う)。
+   * 指 (ポインタ) を動かせない人は「なでる」を押す。しばらくするとふつうの顔に戻る。
+   * 絵を取らない人 (オフ) には出さない。絵が無いキャラは名前の頭文字の丸のまま、せりふだけ言う。
+   *
+   * @param {object} d apiOshiGet
+   * @returns {HTMLElement|null}
+   */
+  function makeOshiHero(d) {
+    if (!oshiOn()) return null;
+    var name = d.name || '推し';
+    var idleText = name + ' ・ 頭を左右になでると喜びます';
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-hero';
+    sec.dataset.state = 'idle';
+
+    var fig = document.createElement('div');
+    fig.className = 'oshi-hero-figure';
+    sec.appendChild(fig);
+
+    var row = document.createElement('div');
+    row.className = 'oshi-hero-row';
+    var caption = document.createElement('p');
+    caption.className = 'oshi-hero-line';
+    caption.setAttribute('aria-live', 'polite');
+    caption.textContent = idleText;
+    row.appendChild(caption);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn oshi-pat';
+    btn.textContent = 'なでる';
+    row.appendChild(btn);
+    sec.appendChild(row);
+
+    var shown = '';
+    var smileTimer = null;
+    function show(state) {
+      shown = state;
+      sec.dataset.state = state;
+      // 頁に付く前 (組み立て中) にも絵を取るので、つながっているかは見ない。まだ同じ表情を出しているかだけ
+      oshiFillFigure(fig, oshiPickState(state), name, function () { return shown === state; });
+    }
+    function pat(x, y) {
+      if (smileTimer) return; // 笑顔のあいだは、なでても変わらない (絵を取り直さない)
+      show('praise');
+      sec.classList.add('is-patted');
+      caption.textContent = oshiLine('pat') || (name + 'はうれしそうです');
+      // 楽しい演出の粒。減らす設定の端末では funBurst が出さない
+      if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
+      smileTimer = setTimeout(function () {
+        smileTimer = null;
+        sec.classList.remove('is-patted');
+        if (!sec.isConnected) return;
+        show('idle');
+        caption.textContent = idleText;
+      }, OSHI_PAT_SMILE_MS());
+    }
+    btn.addEventListener('click', function () {
+      var r = fig.getBoundingClientRect();
+      pat(r.left + r.width / 2, r.top + r.height * 0.3);
+    });
+    // 頭の上で指が左右に往復したら、なでたと数える。頭から外れたら数え直し
+    var lastX = null;
+    var dir = 0;
+    var turns = 0;
+    function reset() { lastX = null; dir = 0; turns = 0; }
+    fig.addEventListener('pointermove', function (e) {
+      var r = fig.getBoundingClientRect();
+      if (!r.height || e.clientY > r.top + r.height * OSHI_PAT_HEAD()) { reset(); return; }
+      if (lastX !== null) {
+        var dx = e.clientX - lastX;
+        if (Math.abs(dx) >= 4) {
+          var now = dx > 0 ? 1 : -1;
+          if (dir && now !== dir) turns++;
+          dir = now;
+          if (turns >= OSHI_PAT_TURNS()) { turns = 0; pat(e.clientX, e.clientY); }
+        }
+      }
+      lastX = e.clientX;
+    });
+    fig.addEventListener('pointerleave', reset);
+    show('idle');
+    return sec;
+  }
+
   /**
    * @param {string} text
    * @returns {HTMLElement}
@@ -1195,6 +1288,9 @@
         '入れ物を Drive で共有している人は直に開けます。見られて困る絵は入れないでください。',
     ].forEach(function (t) { care.appendChild(oshiNote(t)); });
     box.appendChild(care);
+
+    var hero = makeOshiHero(d);
+    if (hero) box.appendChild(hero);
 
     var c = oshiEditingChar(d);
     box.appendChild(makeOshiMineList(box, d, c));

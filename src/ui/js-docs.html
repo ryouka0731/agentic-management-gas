@@ -54,12 +54,14 @@
       loadLinkedIssues(fileId);
       setDocMode('view');
       refreshStatus();
+      docLinkLoaded();
       switchTab('content');
       // switchTab は全画面を抜けるので、そのあとで入る
       if (opts && opts.full) setDocFull(true);
       prefetchAppUrl();
     }, function (err) {
       restore();
+      leaveDocLink();
       failSnack('開けませんでした: ')(err);
     });
   }
@@ -192,6 +194,7 @@
       if (navCount !== since || !docStill()) return;
       var f = allFiles.filter(function (x) { return x.fileId === fileId; })[0];
       if (!f) {
+        leaveDocLink();
         showSnack('この文書は見られないか、登録されていません', { kind: 'ng' });
         return;
       }
@@ -200,11 +203,54 @@
     }
     function ng() {
       if (navCount !== since || !docStill()) return;
+      leaveDocLink();
       // 文書の一覧の欄はホームでは見えないので、帯で知らせる
       showSnack('文書の一覧を取れず、リンクの文書を開けませんでした', { kind: 'ng' });
     }
     // 起動のときに尋ねた一覧の返事を待つ (同じものを2回尋ねない)
     whenStartupFiles(go, ng);
+  }
+
+  // ----- 文書のリンクで開かれたとき (文書だけの画面) -----
+
+  /**
+   * サーバ (Main.gs の doGet) が body に付けた、リンクの文書の id。無ければ空。
+   * 文書のリンク (?doc=…&full=1) で開かれたときだけ付く。
+   *
+   * @returns {string}
+   */
+  function docLinkOfPage() {
+    // 字の絞り込みはサーバ (doGetLink_) がしている。ここは形だけ見る (テストの短い id も通す)
+    var id = String((document.body.dataset && document.body.dataset.linkDoc) || '');
+    return /^[A-Za-z0-9_-]{1,200}$/.test(id) ? id : '';
+  }
+
+  /** リンクで開かれたときの画面に入る。周りを隠し (doc-link)、ホームも出さず、文書が届くまで短い字を出す */
+  function enterDocLink() {
+    document.body.classList.add('doc-link', 'doc-full');
+    var panels = tabPanels();
+    for (var key in panels) panels[key].hidden = true;
+    var main = document.querySelector('.main');
+    if (main && !main.querySelector('.link-loading')) {
+      var p = document.createElement('p');
+      p.className = 'row-meta link-loading';
+      p.textContent = '文書を開いています…';
+      main.appendChild(p);
+    }
+  }
+
+  /** リンクの文書を開けなかったとき、ふつうの画面 (ホーム) に戻す */
+  function leaveDocLink() {
+    if (!document.body.classList.contains('doc-link')) return;
+    document.body.classList.remove('doc-link');
+    docLinkLoaded();
+    switchTab('home');
+  }
+
+  /** 文書が届いた (か、諦めた)。「開いています…」を消す */
+  function docLinkLoaded() {
+    var el = document.querySelector('.link-loading');
+    if (el) el.remove();
   }
 
   /** 起動のときに尋ねた文書の一覧の返事。null は待っているあいだ */
