@@ -25,6 +25,11 @@ function imageBlob(bytes, mime) {
   return make('img');
 }
 
+/** 台帳の読み取りの覚え (Db.gs の DB:<表>:<版> / DBV:<表>) を除いた鍵 */
+function liveKeys(store) {
+  return [...store.keys()].filter((k) => !/^DBV?:/.test(k));
+}
+
 function withCache(fake) {
   const store = new Map();
   fake.CacheService = {
@@ -143,9 +148,9 @@ describe('LiveCache', () => {
   it('liveCacheInvalidate は今のキャッシュを消し、次は読み直す', () => {
     const { ctx, id, store, renders } = registered();
     ctx.liveHtml(id);
-    expect(store.size).toBeGreaterThan(0);
+    expect(liveKeys(store).length).toBeGreaterThan(0);
     ctx.liveCacheInvalidate(id);
-    expect(store.size).toBe(0);
+    expect(liveKeys(store)).toEqual([]);
     expect(ctx.liveHtml(id)).toBe('<p>版2</p>\n');
     expect(renders()).toBe(2);
   });
@@ -154,7 +159,7 @@ describe('LiveCache', () => {
     const { ctx, id, store } = registered();
     store.set('unrelated', 'x');
     ctx.liveCacheInvalidate(id);
-    expect([...store.keys()]).toEqual(['unrelated']);
+    expect(liveKeys(store)).toEqual(['unrelated']);
   });
 
   it('区切りの1つが追い出されていたら、つなぎかけを返さず null にする', () => {

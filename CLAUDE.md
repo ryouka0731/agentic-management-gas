@@ -12,7 +12,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | 触る場所 | 先に読むファイル |
 |---|---|
 | 番号を振る・鍵を取るところ (`src/core/Db.gs` の `dbAppendNumbered` / `dbWithLock_` / `dbUpdate` / `dbDelete`、`src/core/Issue.gs` の `issuePurge`、`src/core/Project.gs`、`src/core/Notifier.gs` の `noticeAdd`) | `docs/dev/locks-and-numbering.md` |
-| 台帳の列 (`DB_SCHEMA()`)・`priority` / `ISSUE_PRIORITIES()`・`src/core/Usage.gs` (`usageRecord`) | `docs/dev/ledger-schema.md` |
+| 台帳の列 (`DB_SCHEMA()`)・`priority` / `ISSUE_PRIORITIES()`・`src/core/Usage.gs` (`usageRecord`)・台帳の読み取りのキャッシュ (`src/core/Db.gs` の `dbReadAll` / `dbInvalidate_`) と台帳に直に書く所 | `docs/dev/ledger-schema.md` |
 | `src/core/PullRequest.gs` / `src/core/Branch.gs` / `src/core/Commit.gs` / `src/core/Merge.js` / `src/api/Pr.gs` / `src/api/Commit.gs` (確認依頼・反映・反映先・main の保護) | `docs/dev/changeset-and-merge.md` |
 | `src/core/PullPatch.gs` / `src/core/Outbox.gs` / `src/api/Outbox.gs` | `docs/dev/outbox-and-patches.md` |
 | `src/core/CommandQueue.gs` (`processCommandQueue` / `setupCommandQueue`) | `docs/dev/command-queue.md` |
@@ -163,6 +163,8 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 鍵は `dbWithLock_` 以外で取らない (`LockService` を直に呼ぶのはそこだけ)。鍵は短く持ち、関係の無い Drive の一覧や
 時間のかかる処理を相乗りさせない。一度出した番号は二度出さず、消すときはぶら下がっているものも全部消す。
 知らせは本処理を巻き戻さない。理由と実際に踏んだ例は `docs/dev/locks-and-numbering.md` にある。
+**台帳の読み取りはキャッシュに置いている** (`dbReadAll`。300秒)。台帳に直に書く所 (`appendRow` / `setValues` / `deleteRow`) を
+足すなら、書いたあとに必ず `dbInvalidate_(表)` を通す。通さないと、ほかの人の画面に古い中身が出る (`docs/dev/ledger-schema.md`)。
 
 ## サーバを呼ぶのは `call()` だけ
 

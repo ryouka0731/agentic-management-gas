@@ -345,7 +345,7 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
   });
 
   it('レベルと段、今回取ったぶんで段が上がったか (crossed)', () => {
-    const { ctx } = setup();
+    const { ctx, fake } = setup();
     const r1 = ctx.apiAchievementsCheck();
     expect(r1).toMatchObject({ level: 2, crossed: false, stage: { key: 'grow1', toNext: 3 } });
     // あと3つで Lv5 (なれてきた)
@@ -356,6 +356,9 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     }
     ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
     ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: ME, at: DAY1, state: 'open' });
+    // その日の2回目からは、「まだ」と分かった「はじめて」をキャッシュ (ACH_NEG) から読んで数えない。
+    // ここは覚えが切れたあと (全部数える) を見る
+    fake._cacheClear();
     const r2 = ctx.apiAchievements();
     expect(r2.newly.map((a) => a.key).sort()).toEqual(['done-1', 'first-branch', 'first-inquiry']);
     expect(r2).toMatchObject({ level: 5, crossed: true, stage: { key: 'grow2', label: 'なれてきた' } });

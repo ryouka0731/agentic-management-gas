@@ -33,10 +33,12 @@ function firstDay() {
 
 /** 段が上がる返事 (Lv4 → Lv5) */
 function crossing() {
-  const { ctx } = server();
+  const { ctx, fake } = server();
   ctx.apiAchievementsCheck();
   ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
   ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: ME, at: new Date(), state: 'open' });
+  // その日の2回目からは「まだ」と分かった「はじめて」をキャッシュ (ACH_NEG) から読む。覚えが切れたあと (全部数える) にする
+  fake._cacheClear();
   const before = wire(ctx.apiAchievements());
   const n = ctx.issueCreate('しごと', '', []).number;
   ctx.dbUpdate('issues', 'number', n, { assignee: ME });
