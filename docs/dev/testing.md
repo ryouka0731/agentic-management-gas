@@ -55,6 +55,19 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
 - 名前の検査が厳しすぎて空白入りの名前を弾いていた。その行は100%
   覆えていたが、テストが古い仕様のほうを固定していた
 
+**疑似GAS (`test/fakegas.js`) は CacheService を持つ** (メモリの上の素朴な実装。`getScriptCache` / `getUserCache` /
+`getDocumentCache`、`get` / `put` / `remove` / `getAll` / `putAll` / `removeAll`)。実機と同じく1つの値は 100KB (バイト)、
+鍵は 250 字までで、超えると投げる。**期限は疑似の時計で見る。時計は止まっていて `fake._cacheAdvance(秒)` で進める**
+(実際の時刻を見ると、テストの途中で期限が切れて当たったり外れたりする)。`fake._cacheClear()` はスクリプトのキャッシュを
+空にする。`fake._sheetReads(表)` は台帳のシートを読んだ回数 (見出しの確かめも数える)。
+
+持つようになったのは台帳の読み取りのキャッシュ (`docs/dev/ledger-schema.md`) を通しで試すため。それまで「CacheService が
+無いので毎回数え直す」前提で書いていたテスト (実績の「1人か」の覚え・「はじめて」のまだの覚え・推しの機嫌など) は、
+**環境を変えたあとにその覚えだけを捨てる**か (`cache.remove(鍵)` / `fake._cacheClear()`)、キャッシュの無い環境を試すなら
+`ctx.CacheService = undefined` にする。**シートを直に書き換えて「人がいじった」を真似るテストは、そのあと
+`ctx.dbInvalidate_(表)` を呼ぶ** (呼ばないと、実機と同じく 300 秒古いまま読む)。テストが自分の CacheService に差し替えて
+鍵を数えるときは、台帳の覚え (`DB:` / `DBV:` で始まる鍵) を除いて数える (`test/cowork-cache.js` の `keys()`)。
+
 `test/e2e-journey.test.js` は**何も仕込まずに**人がたどる順序で通す。
 仕込みで隠れる状態を見つけるためのものなので、`setup()` を使わないこと。
 
