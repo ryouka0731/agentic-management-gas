@@ -493,6 +493,95 @@ export function createFakeGas() {
     };
   }
 
+  /*
+   * Google カレンダー (CalendarApp) を小さく模す。見るのは開いている人 (activeUser) で、実機と同じく:
+   * - getCalendarById は、見られない・まだ登録していない (購読していない) カレンダーには null を返す
+   *   (持ち主は作ったときに登録済み)。subscribeToCalendar は見られなければ投げる
+   * - 予定を作る・印を付ける・消すのは「予定の変更」以上 (owner / writer) だけ。ほかは投げる
+   * - getEvents(start, end) は少しでも重なる予定を、始まりの順に返す
+   * 共有は _calShare(id, email, 'writer' | 'reader') で決める。既定のカレンダーは人ごとに1つ (id はアドレス)
+   */
+  const calendars = new Map();
+  let calSeq = 0;
+  const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0 };
+
+  function calRaw(id, name, owner) {
+    const c = { _id: id, _name: name, _owner: owner, _access: new Map([[owner, 'owner']]),
+      _subscribed: new Set([owner]), _events: [], _deleted: false };
+    calendars.set(id, c);
+    return c;
+  }
+  function calRole(c) { return c._access.get(activeUser) || ''; }
+  function calCanWrite(c) { const r = calRole(c); return r === 'owner' || r === 'writer'; }
+  function calDeny() { throw new Error('Action not allowed'); }
+  function calEventView(c, ev) {
+    const view = {
+      _raw: ev,
+      getId: () => ev.id,
+      getTitle: () => ev.title,
+      getDescription: () => ev.description,
+      getStartTime: () => new Date(ev.start),
+      getEndTime: () => new Date(ev.end),
+      isAllDayEvent: () => !!ev.allDay,
+      getMyStatus: () => (ev.status && ev.status[activeUser]) || 'OWNER',
+      getTag: (k) => (Object.prototype.hasOwnProperty.call(ev.tags, k) ? ev.tags[k] : null),
+      setTag: (k, v) => { if (!calCanWrite(c)) calDeny(); ev.tags[k] = String(v); return view; },
+      deleteEvent: () => {
+        if (!calCanWrite(c)) calDeny();
+        calCalls.deleteEvent++;
+        c._events = c._events.filter((x) => x !== ev);
+      },
+    };
+    return view;
+  }
+  function calView(c) {
+    return {
+      getId: () => c._id,
+      getName: () => c._name,
+      isOwnedByMe: () => c._owner === activeUser,
+      getEvents: (start, end) => {
+        calCalls.getEvents++;
+        const s = new Date(start).getTime();
+        const e = new Date(end).getTime();
+        return c._events.filter((ev) => ev.start < e && ev.end > s)
+          .sort((a, b) => a.start - b.start).map((ev) => calEventView(c, ev));
+      },
+      createEvent: (title, start, end, opts) => {
+        if (!calCanWrite(c)) calDeny();
+        calCalls.createEvent++;
+        const ev = { id: 'ev-' + (++calSeq), title: String(title), start: new Date(start).getTime(),
+          end: new Date(end).getTime(), description: String((opts && opts.description) || ''), tags: {},
+          createdBy: activeUser };
+        c._events.push(ev);
+        return calEventView(c, ev);
+      },
+      deleteCalendar: () => {
+        if (c._owner !== activeUser) calDeny();
+        c._deleted = true;
+        calendars.delete(c._id);
+      },
+    };
+  }
+  function calDefault(email) {
+    return calendars.get(email) || calRaw(email, email, email);
+  }
+  const CalendarApp = {
+    GuestStatus: { OWNER: 'OWNER', YES: 'YES', NO: 'NO', MAYBE: 'MAYBE', INVITED: 'INVITED' },
+    createCalendar: (name) => calView(calRaw('cal' + (++calSeq) + '@group.calendar.google.com', String(name), activeUser)),
+    getCalendarById: (id) => {
+      const c = calendars.get(String(id));
+      if (!c || !calRole(c) || !c._subscribed.has(activeUser)) return null;
+      return calView(c);
+    },
+    subscribeToCalendar: (id) => {
+      const c = calendars.get(String(id));
+      if (!c || !calRole(c)) throw new Error('Calendar not found or not accessible: ' + id);
+      c._subscribed.add(activeUser);
+      return calView(c);
+    },
+    getDefaultCalendar: () => calView(calDefault(activeUser)),
+  };
+
   const kitFiles = new Map();
 
   const HtmlService = {
@@ -519,6 +608,28 @@ export function createFakeGas() {
       return f;
     },
     _setKitFile: (name, text) => { kitFiles.set(name, text); },
+    CalendarApp,
+    /** カレンダーを人に共有する ('writer' = 予定の変更 / 'reader' = 見るだけ / '' = 外す) */
+    _calShare: (id, email, role) => {
+      const c = calendars.get(String(id));
+      if (!c) throw new Error('カレンダーがありません: ' + id);
+      if (role) c._access.set(email, role);
+      else c._access.delete(email);
+    },
+    /** その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title} */
+    _calAddBusy: (email, ev) => {
+      const c = calDefault(email);
+      const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
+        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay,
+        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: email };
+      c._events.push(raw);
+      return raw;
+    },
+    /** カレンダーの予定の生の中身 (id を渡さなければ全部のカレンダー) */
+    _calEvents: (id) => (id ? ((calendars.get(String(id)) || {})._events || [])
+      : [...calendars.values()].flatMap((c) => c._events)),
+    _calExists: (id) => calendars.has(String(id)),
+    _calCalls: calCalls,
     _makeTasks: makeTasks,
     _makeDrive: makeDrive,
     DriveApp,

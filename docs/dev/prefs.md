@@ -22,3 +22,8 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `style.share` (仕事のスタンス診断の型の名前をチームに見せる) も自分の設定で、既定はオフ。読むのは `workStyleShared_` が
 `prefValueOf_` で人ごとに読む (全員の `STYLE:` を1回の写しで読むので、`prefReader_` と同じ形の口を渡す)。結果の画面の切り替えも
 `apiPrefSet` を呼ぶ (書くのはここだけ、のまま)。`apiWorkStyleForget` は `apiPrefSet('style.share', null)` で既定に戻す。
+
+「予定に入れる」(`calendar.*`、`PREF_CALENDAR_ITEMS_`) は `calendar.shared` だけがチームの設定 (型 `calendar` = カレンダーの ID。
+`''` は決まっていない)。汎用の欄には出さず `js-calendar` が組む。ほかは自分の設定で `calendar.plan` は既定オフ。
+**`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
+細部は `docs/dev/calendar.md`。

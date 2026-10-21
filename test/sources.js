@@ -45,6 +45,7 @@ export const CORE_SOURCES = [
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs',
   'src/core/Oshi.js', 'src/core/OshiStore.gs',
+  'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs',
 ];
 
 export const API_SOURCES = [
@@ -52,6 +53,7 @@ export const API_SOURCES = [
   'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
+  'src/api/Calendar.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
