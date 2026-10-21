@@ -392,17 +392,21 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     使っているときは、そのキャラの絵だけ。形は `oshi.style` = `chibi` / `normal`、既定は 2頭身
   - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)
   - 絵の本物は `assets/oshi-default/<キャラ>/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の
-    data URL にして、キャラ×形ごとに `src/core/OshiDefault<キャラ><形>.gs` (関数は `OSHI_DEFAULT_<キャラ>_<形>`) に焼く
-    (`build-kit.mjs` → `KitFiles.gs` と同じ形。**焼いたものは手で直さない**。1つ 600KB まで)。`npm run deploy` が送る前に
-    焼き直し、`test/oshi-default.test.js` が assets と一致しているかを見ている。キャラ・表情・形の並びは `Oshi.js` から読む。
-    **キャラを足したら** `OshiStore.gs` の `oshiDefaultPictures_` にも足す (`OSHI_DEFAULT_SOURCES` (`test/sources.js`) は
-    `build-oshi-default.mjs` の `oshiDefaultTargets` から作り、カバレッジの除外は `src/core/OshiDefault*.gs` の形なので直さない)
-    (ファイル名は src の中で他と重ならないこと。同じ名前の .js と .gs は clasp で1つになる。`test/sources.test.js` が見ている)
+    data URL にして、キャラ×形ごとに `src/ui/oshi-default/<キャラ>-<形>.html` に焼く。中身は 表情 → data URL の JSON の字だけ
+    (1行。タグもコメントも無い)。**焼いたものは手で直さない** (配る道具の `src/ui/kit-files.html` と違いフックでは止めていない)。1つ 600KB まで。
+    `npm run deploy` が送る前に焼き直し、`test/oshi-default.test.js` が assets と一致しているか・JSON として読めるか・
+    スクリプトに絵が無いかを見ている。キャラ・表情・形の並びは `Oshi.js` から読むので、キャラを足してもサーバとテストの並びは直さない
+  - **絵をスクリプト (.gs / .js) に焼かない。** GAS はどの呼び出しでも全部のスクリプトを読み込む。以前は
+    `src/core/OshiDefault<キャラ><形>.gs` に焼いていて、合わせて 3.3MB が画面のどの api* も遅くしていた (2026-10-22 の指摘
+    「全体的に読み込みが遅い」)。HTML のファイルは読むときだけ読まれるので、そちらに移した。サーバは `OshiStore.gs` の
+    `oshiDefaultPictures_` が `HtmlService.createTemplateFromFile('ui/oshi-default/<キャラ>-<形>').getRawContent()` を
+    `JSON.parse` し、同じ実行の中では1回だけ読む。`createHtmlOutputFromFile` は HTML として読み直して中身を変えることがあるので
+    使わない (`include()` と同じ理由)。ファイル名はキャラと形の定義の key からだけ作り、無い・壊れたファイルは絵が無い扱い (null)。
+    疑似GAS の `createTemplateFromFile` は、`_setKitFile` で置いたものが無ければ `src/<name>.html` を実ファイルから読む
   - **最初のページには入れない。** 1人の2つの形で 1MB 近くあるので、吹き出し・カード・頁・設定の選び方が要るときに
     `apiOshiDefaultImage(char, style, state)` で1枚ずつ取り、画面が `'キャラ:形:表情'` ごとに覚える (`oshiDefaultImgs`。
     取りに行っている最中の同じ絵は待ち合わせる)。オフの人・絵を出さない設定の人は1度も取らない。キャラ・形・表情は定義に
     あるものだけを通す
-  - テストで読むときは `OSHI_DEFAULT_SOURCES` (`test/sources.js`) を足す。大きいので `APP_SOURCES` には入れていない
   - 表情 `work` (作業中) は作業部屋 (`js-room`) のために末尾に足した。最初からいるキャラの絵も焼いてある。
     決まった場面でだけ出す表情なので `scene: true` を持ち (`apiOshiGet` の states にも渡す)、でたらめに選ぶ表情
     (`oshiChosenState`) には入れない
@@ -417,7 +421,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     `--all <出す先>` で予備も含めて全部を書き出し、一覧の絵にして**目で見て**枠を直す (はみ出した隣の手足・欠けた飾りは数では
     分からない)。等身と2頭身が1枚に混ざった絵は、塊ごとに上下で2つの .webp に分けて置く (りょうか)。1枚ずつの絵があるときは、並んだ絵の下に並べて1つの .webp にしてよい (さと美)。表情ごとの絵 (`states`) を決めたらフラグなしで `node scripts/cut-oshi-sheet.mjs <key>` を走らせ、`assets/oshi-default/<key>/` に書く。**ポーズが表情より少ない絵では、段の絵 (`grow1`〜`3`。待機の顔は段の絵に代わるので、ずっと出る) を一時の表情 (ほめる・おいわい・おうえん・びっくり など) と同じ絵にしない**。重ねるなら一時の表情どうしにする (さと美の2頭身は8ポーズで、ほめる と おいわい、びっくり と 作業中 が同じポーズ)。1つの枠を2つの表情に使うと、表情ごとに別の絵かを見るテストが落ちる (同じポーズの別の大きさの枠を使う)。並べて目で見るには `--all <出す先>`。使わない絵は
     `spare_*` として枠だけ残す。そのあと `OSHI_BUILTINS` と口調 (`OSHI_TONES` / `OSHI_LINES` の全場面) を足し、
-    `node scripts/build-oshi-default.mjs` で焼き、`oshiDefaultPictures_` に足す。`test/oshi-sheet.test.js` が、切り出し表から
+    `node scripts/build-oshi-default.mjs` で焼く (`src/ui/oshi-default/` に2つ増える。サーバは直さない)。`test/oshi-sheet.test.js` が、切り出し表から
     切り直した絵と置いてある絵が同じかを見る (libwebp か手元の元の絵が無ければ飛ばす)。プロフィールの中身はリポジトリに書かない (管理者が設定の画面かコマンドキューで入れる)
   - むっ (`pout`) は optional。最初からいるキャラも、合う絵があるときだけ焼く (無ければ しんぱい の絵に代わる)
 - **プロフィール (`.oshi-reveal`) とクリア (`.oshi-clear`) は返事を描くだけ。** どこまで分かるかは `apiOshiGet` の `reveal`

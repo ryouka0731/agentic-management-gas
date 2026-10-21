@@ -8,6 +8,10 @@
  * そこで、読み書きするのは kit/ の本物のファイルにしておき、GAS へは
  * base64 に直した文字列として持ち込む。base64 なら何が書いてあっても
  * 解釈されようがない。
+ *
+ * 書く先は src/ui/kit-files.html (zip の中の名前 → base64 の JSON の字だけ。**手で直さない**)。
+ * サーバは AgentKit.gs の KIT_FILES() が HtmlService の getRawContent で読む。スクリプト (.gs) にしないのは、
+ * GAS がどの呼び出しでも全部のスクリプトを読み込むから (以前の src/KitFiles.gs は 400KB あり、画面のどの api* も遅くした)。
  */
 
 import fs from 'node:fs';
@@ -16,7 +20,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'kit');
-const OUT = path.join(ROOT, 'src', 'KitFiles.gs');
+/** 書く先 (src からの相対で、拡張子の無い名前は ui/kit-files) */
+export const KIT_OUT = 'src/ui/kit-files.html';
+const OUT = path.join(ROOT, KIT_OUT);
 
 /** 配る中身。左が kit/ の名前、右が zip の中の名前 */
 export const FILES = [
@@ -60,7 +66,7 @@ function walk(dir) {
 }
 
 /**
- * zip の中の名前 → base64 にした中身。src/KitFiles.gs の KIT_FILES() と同じ並び。
+ * zip の中の名前 → base64 にした中身。AgentKit.gs の KIT_FILES() と同じ並び。
  *
  * **署名はこの並びの JSON に付く。** 並びを変えると署名が合わなくなる。
  *
@@ -78,31 +84,10 @@ export function kitFilesMap() {
 /**
  * 焼き直した中身を返す。
  *
- * @returns {string} src/KitFiles.gs に書くもの
+ * @returns {string} src/ui/kit-files.html に書くもの (JSON の字、1行)
  */
 export function buildKitSource() {
-  const lines = [
-    '/**',
-    ' * 手元から動かす道具の中身。**scripts/build-kit.mjs が作る。手で直さない。**',
-    ' *',
-    ' * 直すのは kit/ にある本物のファイルのほう。base64 にしてあるのは、',
-    ' * 中身をそのまま GAS の HTML ファイルとして置くと `<id>` がタグと',
-    ' * 解釈され、`-->` がコメントの終わりと読まれて壊れるためである。',
-    ' */',
-    '',
-    '/**',
-    ' * zip の中の名前 → base64 にした中身。',
-    ' *',
-    ' * @returns {Object<string,string>}',
-    ' */',
-    'function KIT_FILES() {',
-    '  return {',
-  ];
-
-  for (const [to, b64] of Object.entries(kitFilesMap())) lines.push("    '" + to + "': '" + b64 + "',");
-
-  lines.push('  };', '}', '');
-  return lines.join('\n');
+  return JSON.stringify(kitFilesMap());
 }
 
 /**
@@ -123,6 +108,6 @@ export function writeKitSource() {
 if (import.meta.url === 'file://' + process.argv[1]) {
   const changed = writeKitSource();
   process.stdout.write(
-    changed ? 'src/KitFiles.gs を作り直しました\n' : 'src/KitFiles.gs は最新です\n'
+    changed ? KIT_OUT + ' を作り直しました\n' : KIT_OUT + ' は最新です\n'
   );
 }

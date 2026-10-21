@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { loadGas, loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
-import { APP_SOURCES, OSHI_DEFAULT_SOURCES } from './sources.js';
+import { APP_SOURCES } from './sources.js';
 
 /*
  * 推し (自分だけのキャラクター)。定義は src/core/Oshi.js、置き場は OshiStore.gs、入口は src/api/Oshi.gs。
@@ -440,7 +440,8 @@ const OPTIONAL_BAKED_COUNT = Object.values(OPTIONAL_BAKED).reduce((n, a) => n + 
 
 function setupWithPictures() {
   const fake = createFakeGas();
-  const ctx = loadGasWith(fake, ...APP_SOURCES, ...OSHI_DEFAULT_SOURCES);
+  // 絵は src/ui/oshi-default/*.html。疑似GAS の HtmlService がそこから読む
+  const ctx = loadGasWith(fake, ...APP_SOURCES);
   ctx.repoInit('agentic-management');
   return { ctx, fake };
 }
@@ -650,6 +651,34 @@ describe('最初からいるキャラ', () => {
     expect(() => ctx.apiOshiDefaultImage('taku', 'real', 'idle')).toThrow('知らない絵の形です: real');
     expect(() => ctx.apiOshiDefaultImage('taku', 'chibi', 'nope')).toThrow('知らない表情です: nope');
     expect(() => ctx.apiOshiDefaultImage('taku', '__proto__', 'idle')).toThrow('知らない絵の形です');
+  });
+
+  it('絵のファイルは同じ実行の中で1回だけ読み、名前は定義の key からだけ作る', () => {
+    const { ctx, fake } = setupWithPictures();
+    const asked = [];
+    const raw = fake.HtmlService.createTemplateFromFile;
+    fake.HtmlService.createTemplateFromFile = (name) => { asked.push(name); return raw(name); };
+    ctx.apiOshiDefaultImage('taku', 'chibi', 'idle');
+    ctx.apiOshiDefaultImage('taku', 'chibi', 'praise');
+    ctx.apiOshiDefaultImage('itsuki', 'normal', 'idle');
+    expect(asked).toEqual(['ui/oshi-default/taku-chibi', 'ui/oshi-default/itsuki-normal']);
+    expect(() => ctx.apiOshiDefaultImage('../Main', 'chibi', 'idle')).toThrow('知らないキャラです');
+    expect(asked.length).toBe(2);
+  });
+
+  it('絵のファイルが無い・壊れているときは、絵が無い扱い (null) にして落ちない', () => {
+    const { ctx, fake } = setupWithPictures();
+    fake._setKitFile('ui/oshi-default/taku-chibi', '{壊れた');
+    fake._setKitFile('ui/oshi-default/taku-normal', '["配列"]');
+    const raw = fake.HtmlService.createTemplateFromFile;
+    fake.HtmlService.createTemplateFromFile = (name) => {
+      if (name === 'ui/oshi-default/itsuki-chibi') return { getRawContent: () => { throw new Error('ファイルがありません: ' + name); } };
+      return raw(name);
+    };
+    expect(ctx.apiOshiDefaultImage('taku', 'chibi', 'idle')).toBe(null);
+    expect(ctx.apiOshiDefaultImage('taku', 'normal', 'idle')).toBe(null);
+    expect(ctx.apiOshiDefaultImage('itsuki', 'chibi', 'idle')).toBe(null);
+    expect(ctx.apiOshiDefaultImage('itsuki', 'normal', 'idle').dataUrl).toMatch(/^data:image\/webp;base64,/);
   });
 
   it('自分のキャラに絵を入れても、最初からいるキャラの絵は変わらない。最初の返事に絵の中身は入れない', () => {

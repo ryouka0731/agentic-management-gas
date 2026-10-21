@@ -1,4 +1,16 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
+
+/** HtmlService の名前 ('ui/oshi-default/taku-chibi') → src の中の .html。src の外や無いファイルは null */
+function srcHtmlPath(name) {
+  if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/.test(String(name))) return null;
+  const file = path.join(SRC_DIR, name + '.html');
+  return fs.existsSync(file) ? file : null;
+}
 
 /**
  * GAS のサービスを最小限だけ再現した実行環境を作る。
@@ -612,11 +624,14 @@ export function createFakeGas() {
         return kitFiles.get(name);
       },
     }),
-    // include() が使う。そのままの字を返す (本物は HTML として読み直さない)
+    // include() と最初からいるキャラの絵 (oshiDefaultPictures_) が使う。そのままの字を返す (本物は HTML として読み直さない)。
+    // _setKitFile で置いたものが先。無ければ src/<name>.html を実ファイルから読む
     createTemplateFromFile: (name) => ({
       getRawContent: () => {
-        if (!kitFiles.has(name)) throw new Error('ファイルがありません: ' + name);
-        return kitFiles.get(name);
+        if (kitFiles.has(name)) return kitFiles.get(name);
+        const file = srcHtmlPath(name);
+        if (!file) throw new Error('ファイルがありません: ' + name);
+        return fs.readFileSync(file, 'utf8');
       },
     }),
   };

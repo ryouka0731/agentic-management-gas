@@ -389,6 +389,15 @@ describe('最初からいるキャラ', () => {
     expect(sec.querySelector('.oshi-hero-line').textContent).toContain('なでると喜びます');
   });
 
+  it('絵の上で指を動かしても、画像のドラッグ&ドロップにならない', () => {
+    mountOshi(NO_HOME, { apiOshiGet: oshiFixture({ noImages: true }) });
+    openPage();
+    const img = hero().querySelector('.oshi-hero-figure img');
+    const ev = new Event('dragstart', { bubbles: true, cancelable: true });
+    img.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
   it('絵の上半分で指を左右に往復させると、なでたと数える。下半分や笑顔のあいだは数えない', () => {
     vi.useFakeTimers();
     const data = oshiFixture({ noImages: true });

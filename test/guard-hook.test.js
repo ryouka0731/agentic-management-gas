@@ -151,31 +151,31 @@ describe('(b) clasp で新しいデプロイを作らない', () => {
 
 describe('(c) scripts が作るファイルを手で直さない', () => {
   it('Edit / Write / MultiEdit を止める (相対でも絶対でも)', () => {
-    expect(tool('Edit', { file_path: path.join(repo, 'src/KitFiles.gs'), old_string: 'a', new_string: 'b' }).code).toBe(2);
+    expect(tool('Edit', { file_path: path.join(repo, 'src/ui/kit-files.html'), old_string: 'a', new_string: 'b' }).code).toBe(2);
     expect(tool('Write', { file_path: 'src/KitSigning.gs', content: 'x' }).code).toBe(2);
-    expect(tool('MultiEdit', { file_path: path.join(tree, 'src/KitFiles.gs'), edits: [] }).code).toBe(2);
+    expect(tool('MultiEdit', { file_path: path.join(tree, 'src/ui/kit-files.html'), edits: [] }).code).toBe(2);
   });
 
   it('ほかのファイルと、読むことは通す', () => {
     expect(tool('Edit', { file_path: path.join(repo, 'src/core/AgentKit.gs'), old_string: 'a', new_string: 'b' }).code).toBe(0);
     expect(tool('Write', { file_path: path.join(repo, 'kit/agent.mjs'), content: 'x' }).code).toBe(0);
-    expect(tool('Read', { file_path: path.join(repo, 'src/KitFiles.gs') }).code).toBe(0);
+    expect(tool('Read', { file_path: path.join(repo, 'src/ui/kit-files.html') }).code).toBe(0);
   });
 
   it('焼き直しと deploy は通し、シェルで直に書くのは止める', () => {
     expect(bash('node scripts/build-kit.mjs').code).toBe(0);
     expect(bash('npm run deploy -- "x"').code).toBe(0);
-    expect(bash('git diff src/KitFiles.gs | head').code).toBe(0);
-    expect(bash('echo x > src/KitFiles.gs').code).toBe(2);
+    expect(bash('git diff src/ui/kit-files.html | head').code).toBe(0);
+    expect(bash('echo x > src/ui/kit-files.html').code).toBe(2);
     expect(bash("sed -i '' 's/a/b/' src/KitSigning.gs").code).toBe(2);
-    expect(bash('echo x >| src/KitFiles.gs').code).toBe(2);
+    expect(bash('echo x >| src/ui/kit-files.html').code).toBe(2);
   });
 
   it('ヒアドキュメントの本文は命令として読まない', () => {
-    expect(bash("git commit -F - <<'EOF'\n説明: echo x > src/KitFiles.gs は止まる\nEOF").code).toBe(0);
-    expect(bash("cat <<-EOF\n\t> src/KitFiles.gs\n\tEOF\necho ok").code).toBe(0);
+    expect(bash("git commit -F - <<'EOF'\n説明: echo x > src/ui/kit-files.html は止まる\nEOF").code).toBe(0);
+    expect(bash("cat <<-EOF\n\t> src/ui/kit-files.html\n\tEOF\necho ok").code).toBe(0);
     // 本文が終わったあとの命令は読む
-    expect(bash("cat <<EOF\nx\nEOF\necho x > src/KitFiles.gs").code).toBe(2);
+    expect(bash("cat <<EOF\nx\nEOF\necho x > src/ui/kit-files.html").code).toBe(2);
   });
 });
 
