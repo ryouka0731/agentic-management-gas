@@ -439,7 +439,9 @@ describe('集中のしかた', () => {
       apiPrefs: prefsFixture({ values, musicParts: parts }),
     }, over || {}));
     const frames = () => [...document.querySelectorAll('iframe')].filter((f) => f.id !== 'viewer');
-    const outside = () => /youtube-nocookie|w\.soundcloud\.com/.test(document.documentElement.outerHTML);
+    // 外の場所を指す属性 (src / href / srcset / data など) が1つでもあれば「読み込んだ」とみなす。字の説明は数えない
+    const outside = () => [...document.querySelectorAll('*')].some((el) => [...el.attributes].some((a) =>
+      !/^(data-hint|aria-label|title|placeholder)$/.test(a.name) && /youtube|ytimg|soundcloud|sndcdn/i.test(a.value)));
     class FakeAudio {
       constructor() { this.sampleRate = 8000; this.currentTime = 0; this.state = 'running'; this.destination = {}; FakeAudio.made.push(this); }
       createBuffer(ch, len) { const d = new Float32Array(len); return { getChannelData: () => d }; }
@@ -479,7 +481,7 @@ describe('集中のしかた', () => {
       const f = frames();
       expect(f.length).toBe(1);
       expect(f[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/videoseries?list=' + LIST + '&rel=0');
-      expect(f[0].getAttribute('allow')).toBe('autoplay; encrypted-media');
+      expect(f[0].getAttribute('allow')).toBe('autoplay; encrypted-media; fullscreen');
       expect(f[0].getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
       expect(f[0].getAttribute('sandbox').split(' ')).toEqual(expect.arrayContaining(
         ['allow-scripts', 'allow-same-origin', 'allow-popups', 'allow-presentation']));
@@ -558,6 +560,49 @@ describe('集中のしかた', () => {
       expect(callsOf(app, 'apiPrefSet')).toEqual([['focus.musicUrl', 'https://www.youtube.com/playlist?list=' + LIST]]);
       // 設定の画面を開いても、外のものは読み込まない
       expect(outside()).toBe(false);
+    });
+
+    it('集中しているあいだに設定でリンクを変えると、読み込んだ枠を外して欄を描き直す。やめると欄ごと外す', () => {
+      const app = mountMusic(OWN, { kind: 'youtube', video: VID });
+      startFromRow(app, 25);
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames().length).toBe(1);
+      // 設定の画面でリンクを変える (返事の applyPrefs → focusPrefsChanged)
+      app.respond('apiPrefSet', () => prefsFixture({ values: OWN, musicParts: { kind: 'youtube', list: LIST } }));
+      q('.nav-item[data-tab="settings"]').click();
+      const input = q('[data-pref="focus.musicUrl"] input.pref-music-url');
+      input.value = 'https://www.youtube.com/playlist?list=' + LIST;
+      input.dispatchEvent(new window.Event('change'));
+      expect(frames()).toEqual([]);
+      const toggle = dock().querySelector('.focus-music-toggle');
+      expect(toggle.textContent).toBe('読み込む');
+      toggle.click();
+      expect(frames()[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/videoseries?list=' + LIST + '&rel=0');
+      // 自分の曲をやめる
+      app.respond('apiPrefSet', () => prefsFixture({ values: ON, musicParts: { kind: 'youtube', list: LIST } }));
+      const sel = q('[data-pref="focus.music"] select');
+      sel.value = 'off';
+      sel.dispatchEvent(new window.Event('change'));
+      expect(frames()).toEqual([]);
+      expect(dock().querySelector('.focus-music')).toBe(null);
+      expect(dock().classList.contains('is-running')).toBe(true);
+    });
+
+    it('設定の画面: 保存に失敗したら欄を元に戻し、確かめの字も元に合わせる。空の既定には「空に戻します」', () => {
+      const app = mountMusic(OWN, null);
+      app.respond('apiPrefSet', () => new Error('混み合っています'));
+      q('.nav-item[data-tab="settings"]').click();
+      const field = q('[data-pref="focus.musicUrl"]');
+      const input = field.querySelector('input.pref-music-url');
+      const check = field.querySelector('.pref-music-check');
+      input.value = 'https://www.youtube.com/playlist?list=' + LIST;
+      input.dispatchEvent(new window.Event('input'));
+      expect(check.textContent).toContain('使えます');
+      input.dispatchEvent(new window.Event('change'));
+      expect(callsOf(app, 'apiPrefSet').length).toBe(1);
+      expect(input.value).toBe('');
+      expect(check.textContent).toBe('');
+      expect(field.querySelector('.pref-reset').getAttribute('data-hint')).toBe('空に戻します');
     });
   });
 });

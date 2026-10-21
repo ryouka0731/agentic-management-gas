@@ -477,14 +477,26 @@
   /**
    * 受け付ける場所。字は小文字で比べる。ほかは断る (youtube.com.evil.com のような似た名前も)。
    *
-   * @returns {{youtube: string[], youtuBe: string[], soundcloud: string[]}}
+   * @returns {{youtube: string[], youtuBe: string[], soundcloud: string[], soundcloudShort: string[]}}
    */
   function focusMusicHosts_() {
     return {
       youtube: ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'],
       youtuBe: ['youtu.be'],
       soundcloud: ['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com'],
+      // 共有のボタンが出す短いリンク。開くまで行き先が分からないので、読み解けない (断りを分ける)
+      soundcloudShort: ['on.soundcloud.com'],
     };
+  }
+
+  /**
+   * YouTube が自動で作る「ミックス」か (RD… で始まる)。埋め込みの再生リストとしては流せない。
+   *
+   * @param {string} list
+   * @returns {boolean}
+   */
+  function focusMusicIsMix_(list) {
+    return /^RD/.test(String(list));
   }
 
   /**
@@ -527,6 +539,8 @@
       var video = '';
       var seg = path.split('/');
       if (hosts.youtuBe.indexOf(host) >= 0) {
+        // 末尾の / は付いていても同じ動画 (youtu.be/ID/)
+        seg = path.replace(/\/+$/, '').split('/');
         if (seg.length !== 2) return ng('YouTube の動画か再生リストのリンクを貼ってください');
         video = seg[1];
       } else if (path === '/watch') {
@@ -539,13 +553,25 @@
         return ng('YouTube の動画か再生リストのリンクを貼ってください');
       }
       if (query.v === null || query.list === null) return ng('同じ欄が2つ入っています。共有のボタンで写し直してください');
-      var list = query.list === undefined ? '' : query.list;
-      if (list && !focusMusicRe_().list.test(list)) return ng('再生リストの id に使えない字が入っています');
+      // 'videoseries' は11字で id の形に合うが、再生リストを流す決まりの名前で、動画ではない
+      if (video === 'videoseries') video = '';
       if (video && !focusMusicRe_().video.test(video)) return ng('動画の id に使えない字が入っています');
-      // 再生リストを優先する (並びで流したい)。自動で作られる「ミックス」(RD…) は埋め込めないので動画にする
-      if (list && !(video && /^RD/.test(list))) return { ok: true, parts: { kind: 'youtube', list: list } };
+      var list = query.list === undefined ? '' : query.list;
+      // 再生リストを優先する (並びで流したい)。ただし埋め込めない再生リストは使わない:
+      // 形の合わないもの (高く評価した動画 LL・後で見る WL など) と、YouTube が自動で作る「ミックス」(RD…)
+      var listOk = !!list && focusMusicRe_().list.test(list) && !focusMusicIsMix_(list);
+      if (listOk) return { ok: true, parts: { kind: 'youtube', list: list } };
+      // 動画があれば、使えない再生リストは捨てて動画を流す
       if (video) return { ok: true, parts: { kind: 'youtube', video: video } };
+      if (list && focusMusicIsMix_(list) && focusMusicRe_().list.test(list)) {
+        return ng('YouTube が自動で作る「ミックス」は埋め込めません。自分で作った再生リストのリンクを貼ってください');
+      }
+      if (list) return ng('この再生リストは使えません。自分で作った (公開か限定公開の) 再生リストのリンクを貼ってください');
       return ng('YouTube の動画か再生リストのリンクを貼ってください');
+    }
+
+    if (hosts.soundcloudShort.indexOf(host) >= 0) {
+      return ng('短いリンクは使えません。ブラウザで開いて soundcloud.com のアドレスを写してください');
     }
 
     if (hosts.soundcloud.indexOf(host) >= 0) {
@@ -607,8 +633,12 @@
     if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
     var keys = Object.keys(p).sort().join(',');
     if (p.kind === 'youtube') {
-      if (keys === 'kind,video') return typeof p.video === 'string' && focusMusicRe_().video.test(p.video);
-      if (keys === 'kind,list') return typeof p.list === 'string' && focusMusicRe_().list.test(p.list);
+      if (keys === 'kind,video') {
+        return typeof p.video === 'string' && focusMusicRe_().video.test(p.video) && p.video !== 'videoseries';
+      }
+      if (keys === 'kind,list') {
+        return typeof p.list === 'string' && focusMusicRe_().list.test(p.list) && !focusMusicIsMix_(p.list);
+      }
       return false;
     }
     if (p.kind === 'soundcloud') {
@@ -684,7 +714,7 @@
     var f = document.createElement('iframe');
     f.className = 'focus-music-frame' + (parts.kind === 'youtube' ? ' is-youtube' : ' is-soundcloud');
     f.title = '自分の曲 (' + (parts.kind === 'youtube' ? 'YouTube' : 'SoundCloud') + ')';
-    f.setAttribute('allow', 'autoplay; encrypted-media');
+    f.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
     f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
     // 埋め込みの再生機は自分の場所のスクリプトと保存が要る。開いた先 (YouTube の頁) は枠の外で開かせる
     f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation');

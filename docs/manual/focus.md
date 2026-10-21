@@ -100,11 +100,14 @@ Esc で戻る。集中を終えると必ず戻る。
 2. 「自分の曲のリンク」にリンクを貼る。打つたびに、使えるリンクかがその下に出る
    - **YouTube**: 再生リストを開いて「共有」→「コピー」。`https://www.youtube.com/playlist?list=…` の形。
      動画1本 (`watch?v=…`・`youtu.be/…`・`shorts/…`) と YouTube Music (`music.youtube.com`) のリンクも使える。
-     動画を開いたまま再生リストのリンクを写した (`watch?v=…&list=…`) ときは、再生リストのほうを流す
+     動画を開いたまま再生リストのリンクを写した (`watch?v=…&list=…`) ときは、再生リストのほうを流す。
+     ただし YouTube が自動で作る「ミックス」(`list=RD…`)・高く評価した動画 (`LL`)・後で見る (`WL`) は埋め込めないので、
+     動画があれば動画だけを流し、無ければ断る
    - **SoundCloud**: 曲かプレイリストの「Share」→「Copy」。`https://soundcloud.com/<名前>/<曲>` か
      `https://soundcloud.com/<名前>/sets/<プレイリスト>` の形
    - 使えるのは `https://` の youtube.com (www. / m. / music.)・youtu.be・soundcloud.com だけ。ほかは断る。
-     限定公開の SoundCloud のリンク (`/s-…` が付くもの) は使えない
+     限定公開の SoundCloud のリンク (`/s-…` が付くもの) は使えない。共有のボタンが出す短いリンク (`on.soundcloud.com/…`) も
+     使えないので、ブラウザで開いて `soundcloud.com` のアドレスを写す
 3. 集中を始めると、残り時間の輪の下に「自分の曲」の欄が出る。**「読み込む」を押すまでは何も読み込まない**
 
 番頭が覚えるのは、リンクの中の **id だけ** (YouTube の動画か再生リストの id、SoundCloud の名前と曲のパス)。
