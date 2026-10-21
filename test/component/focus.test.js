@@ -481,15 +481,21 @@ describe('集中のしかた', () => {
       const f = frames();
       expect(f.length).toBe(1);
       expect(f[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/videoseries?list=' + LIST + '&rel=0');
-      expect(f[0].getAttribute('allow')).toBe('autoplay; encrypted-media; fullscreen');
+      expect(f[0].getAttribute('allow')).toContain('encrypted-media');
+      expect(f[0].getAttribute('allow')).toContain('fullscreen');
       expect(f[0].getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
-      expect(f[0].getAttribute('sandbox').split(' ')).toEqual(expect.arrayContaining(
-        ['allow-scripts', 'allow-same-origin', 'allow-popups', 'allow-presentation']));
-      expect(f[0].getAttribute('sandbox')).not.toContain('allow-top-navigation');
+      // sandbox は付けない (実機で「再生できません」になった。番頭の枠自体が sandbox の中)
+      expect(f[0].hasAttribute('sandbox')).toBe(false);
       expect(f[0].title).toContain('YouTube');
+      // 再生できないときの逃げ道。読み解いた id から組み、新しいタブで開く
+      const open = box.querySelector('.focus-music-open');
+      expect(open.getAttribute('href')).toBe('https://www.youtube.com/playlist?list=' + LIST);
+      expect(open.target).toBe('_blank');
+      expect(open.rel).toContain('noopener');
       expect(btn.textContent).toBe('止めて閉じる');
       btn.click();
       expect(frames()).toEqual([]);
+      expect(box.querySelector('.focus-music-open')).toBe(null);
       expect(btn.textContent).toBe('読み込む');
     });
 

@@ -173,9 +173,10 @@ function rewardUnit_(email) {
  * たまった数。**台帳から数え、保存しない** (取り消せば減る)。数え方は1つに決めてある:
  *
  * - 'game': **ポイント** (Game.gs と同じ数え方)。数え始めた日から
- * - 'done': **本人が済ませたやること1件を1** (担当が複数でも1件)。数えるのは**数え始めた時刻より後に作られて**、
- *   いま完了のものだけ (前からあったものを閉じ直して稼げないように)。担当なしで閉じた人の取りぶんになるものは、
- *   閉じた日ごとに REWARD_UNASSIGNED_PER_DAY() 件まで
+ * - 'done': **本人が済ませたやること1件を1** (担当が複数でも1件)。数えるのは**数え始めた時刻より後に閉じて**、
+ *   いま完了のものだけ。前から台帳にあったやることも、数え始めてから済ませれば数える (以前は「数え始めてから作ったもの」
+ *   だけで、ご褒美をオンにする前からあるやることを済ませても 0 のままだった。2026-10-22 の指摘)。
+ *   担当なしで閉じた人の取りぶんになるものは、閉じた日ごとに REWARD_UNASSIGNED_PER_DAY() 件まで
  *
  * ポイントに参加していない人のポイントを数えて見せる道は作らない。
  *
@@ -203,8 +204,8 @@ function rewardEarned_(email, since, unit, base, pre) {
   for (var i = 0; i < issues.length; i++) {
     var row = issues[i];
     if (String(row.state) !== 'closed') continue;
-    var made = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.parse(row.createdAt);
-    if (isNaN(made) || made < from) continue;
+    var closed = row.closedAt instanceof Date ? row.closedAt.getTime() : Date.parse(row.closedAt);
+    if (isNaN(closed) || closed < from) continue;
     var day = motivationDay_(row.closedAt);
     if (!day) continue;
     var who = motivationCredited_(row, closers).map(function (w) { return String(w).toLowerCase(); });

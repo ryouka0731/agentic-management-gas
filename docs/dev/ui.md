@@ -298,12 +298,12 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     設定の画面でリンクを確かめるときも読み込まない
   - src は `prefs.effective.focus.musicParts` (サーバが読み解いた部品) から `focusMusicEmbedUrl_` で組んだものだけ。
     貼られた URL の字は画面にもサーバにも残さない。YouTube は `www.youtube-nocookie.com`
-  - 枠の属性は `allow="autoplay; encrypted-media; fullscreen"`・`referrerpolicy="strict-origin-when-cross-origin"`・
-    `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"`。
-    再生機は自分の場所のスクリプトと保存 (allow-scripts + allow-same-origin) が要る。YouTube は送り元 (Referer) が無いと
-    再生を断る (error 153) ので `no-referrer` にしない。題名や「YouTube で見る」で開く頁は枠の外で開かせる
-    (`allow-popups-to-escape-sandbox`。付けないと開いた頁も枠の制限を受けて動かない)。`allow-top-navigation` は付けない
-    (番頭の頁を差し替えさせない)
+  - 枠の属性は公式の埋め込みと同じ `allow` (accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture;
+    web-share; fullscreen) と `referrerpolicy="strict-origin-when-cross-origin"`。YouTube は送り元 (Referer) が無いと再生を断る
+    (error 153) ので `no-referrer` にしない。**`sandbox` は付けない**: 付けていたら実機で「再生できません」になった (2026-10-22)。
+    番頭の枠 (HtmlService) 自体が sandbox の中にあり、src は読み解いた id からだけ組むので、枠を重ねて絞る必要は無い。
+    再生できないときの逃げ道として「YouTube で開く」(`focusMusicWatchUrl_` で id から組んだ頁を新しいタブで) を枠の下に置く
+    (`makeWatchLink`。推しのクリアの動画も同じ)
   - 画面の中で作る音とは同時に流さない (`focusSoundPlay` が `focusMusicClose` を呼び、`focusMusicLoad` が `focusSoundStop` を呼ぶ)。
     集中を終える (`focusClear`)・設定でやめる (`focusPrefsChanged`) と枠ごと外す
   - **確かめていないこと**: 番頭は HtmlService の枠 (IFRAME モード、`*.googleusercontent.com`) の中で動き、その枠にも
