@@ -145,11 +145,39 @@
       var waiting = oshiWaiters.splice(0, oshiWaiters.length);
       if (oshiData) waiting.forEach(function (fn) { fn(oshiData); });
       if (again) oshiRevealRefresh();
+      oshiWarmImages();
     }, function (err) {
       oshiLoading = false;
       oshiWaiters.length = 0;
       quiet(err);
     });
+  }
+
+  /** 推しを読み込んでから、絵を裏で取り始めるまでの間 (ms)。最初の画面の呼び出しと重ねない */
+  function OSHI_WARM_DELAY() { return 1500; }
+  /** 裏で取る絵と絵の間 (ms)。一度に全部投げず、少しずつ */
+  function OSHI_WARM_GAP() { return 150; }
+
+  /**
+   * いま使うキャラの絵を、全部の表情ぶん裏で取っておく。
+   *
+   * 絵は要るときに1枚ずつ取る作りなので、そのままだと場面が来た瞬間 (済ませた・実績を取った) に、せりふの後から
+   * 絵が遅れて出る。読み込んでから少し待ち、少しずつ取って画面に覚えさせる (oshiImgs / oshiDefaultImgs)。
+   * 取れない表情 (むっ・なつき度の上の段) は代わりの表情を覚えるだけ。オフの人・絵を出さない設定の人は
+   * oshiImage が取りに行かないので、ここでも取らない。届く前にキャラや形を変えていたら、古い読み込みのぶんは捨てる。
+   */
+  function oshiWarmImages() {
+    var data = oshiData;
+    if (!data || !oshiOn()) return;
+    var states = (data.states || []).map(function (s) { return s.key; });
+    setTimeout(function () {
+      states.forEach(function (state, n) {
+        setTimeout(function () {
+          if (oshiData !== data || !oshiOn()) return;
+          oshiImage(state, function () {});
+        }, n * OSHI_WARM_GAP());
+      });
+    }, OSHI_WARM_DELAY());
   }
 
   /** 取り直す (名前・口調・画像を変えたあと) */
