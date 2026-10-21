@@ -179,6 +179,7 @@
     g.label = res.stage.label;
     g.meter = res.stage.meter;
     g.toNext = res.stage.toNext;
+    g.floored = !!res.stage.floored;
     g.level = res.level;
     g.unlocked = (res.unlocked || []).length;
     Array.prototype.forEach.call(document.querySelectorAll('.oshi-growth'), function (old) {
@@ -211,15 +212,21 @@
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
     var all = (res.items || []).length > 0 && res.items.every(function (it) { return it.done; });
-    achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
-      (opened ? ' ・ 推しのプロフィールが ' + opened + ' つ分かりました' : '') +
-      (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : ''));
+    // 推しがオフなら Lv だけ (推しの段・プロフィール・クリアは推しの頁のもの)
+    var oshi = oshiOn();
+    achToast(first.icon, text + (oshi
+      ? ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
+        (opened ? ' ・ 推しのプロフィールが ' + opened + ' 項目分かりました' : '') +
+        (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : '')
+      : ' ・ Lv ' + res.level + (all ? ' ・ 全部取りました' : '')));
     if (typeof funOn === 'function' && funOn('cheer') && typeof funBanner === 'function') {
       try { funBanner('BADGE GET!', 'big', 'success', null, first.title); } catch (e) { /* 飾りが落ちても知らせは出ている */ }
     }
     // 済ませたときのほめ言葉が出ていれば、それが消えてから言う (上書きしない)
-    if (oshiOn()) {
-      if (res.crossed) oshiSayNext('levelup', res.stage.key);
+    // 最後の実績を取ったとき (= クリアの瞬間) は「実績を全部取った」を1回だけ言う (取ったものが無ければここに来ない)
+    if (oshi) {
+      if (all) oshiSayNext('clear', '');
+      else if (res.crossed) oshiSayNext('levelup', res.stage.key);
       else oshiSayNext('badge', '');
     }
   }
@@ -330,7 +337,7 @@
   }
 
   /**
-   * 推しの Lv と次の段までの棒。
+   * 推しの Lv と次の段までの棒。推しがオフなら「Lv ◯」だけ (段と棒は推しのもの)。
    *
    * @param {object} res
    * @returns {HTMLElement}
@@ -340,8 +347,14 @@
     box.className = 'ach-level';
     var head = document.createElement('div');
     head.className = 'ach-level-head';
+    if (!oshiOn()) {
+      head.textContent = 'Lv ' + res.level;
+      box.appendChild(head);
+      return box;
+    }
     head.textContent = '推しの Lv ' + res.level + ' ・ ' + res.stage.label +
-      (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です');
+      (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です') +
+      (res.stage.floored ? ' (以前に育てたぶんを保っています)' : '');
     box.appendChild(head);
     var bar = document.createElement('div');
     bar.className = 'game-level-bar ach-meter';
@@ -366,7 +379,7 @@
   function drawAchPage(box, res) {
     box.textContent = '';
     box.appendChild(achNote('実績はあなたにだけ見えます。順位も、続けた日数もありません。一度取った実績は消えません。' +
-      '推しのレベルは 1 + 取った実績の数です'));
+      (oshiOn() ? '推しのレベル' : 'レベル (Lv)') + 'は 1 + 取った実績の数です'));
     box.appendChild(makeAchLevel(res));
     box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
 

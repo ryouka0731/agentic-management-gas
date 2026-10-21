@@ -94,7 +94,7 @@ function achPlain_(res, me) {
     level: plainNumber(st.level),
     stage: {
       index: plainNumber(st.index), key: plainText(st.key), label: plainText(st.label),
-      meter: plainNumber(st.meter), toNext: plainNumber(st.toNext),
+      meter: plainNumber(st.meter), toNext: plainNumber(st.toNext), floored: !!st.floored,
     },
     crossed: newly.length > 0 && st.index > before.index,
     days: plainNumber(res ? res.days.n : 0),

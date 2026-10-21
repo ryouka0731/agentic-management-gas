@@ -92,6 +92,23 @@ describe('定義 (Oshi.js)', () => {
     expect(pure.oshiStageOf(14).key).toBe('grow2');
     expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: '名人', meter: 100, toNext: 0 });
     expect(pure.oshiStageOf(99).key).toBe('grow3');
+    expect(pure.oshiStageOf(5).floored).toBe(false);
+  });
+
+  it('キャラ作成キットの頼み文: お祝いの言葉はクリア (実績を全部) のとき。最後の項目はその1つ手前の Lv', () => {
+    const top = 37;
+    const p = pure.oshiCharKitPrompt(pure.OSHI_CHARKIT_TOOLS()[0].key, top);
+    expect(p).toContain('実績を全部取ったとき (クリア。Lv 37)');
+    expect(p).toContain('最後の項目 (Lv 36)');
+    expect(p).not.toContain('全部分かったとき');
+  });
+
+  it('前の段 (床) で上の段に出すときは floored。棒と「あと N Lv」は、出している段の次の段へ Lv1 から進む', () => {
+    // Lv3 で一人前に出す: 次は名人 (Lv15)。あと 12 Lv、棒は Lv1→15 のうち Lv3 まで
+    expect(pure.oshiStageOf(3, 1)).toMatchObject({ key: 'grow2', floored: true, toNext: 12, meter: Math.floor(2 / 14 * 100) });
+    expect(pure.oshiStageOf(3, 2)).toMatchObject({ key: 'grow3', floored: true, toNext: 0, meter: 100 });
+    // 床より Lv の段が上なら、床は効いていない
+    expect(pure.oshiStageOf(6, 1)).toMatchObject({ key: 'grow2', floored: false, meter: 10, toNext: 9 });
   });
 
   it('あいさつの場面は時刻で決まる', () => {
