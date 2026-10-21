@@ -332,6 +332,12 @@ function PREF_GROUPS_() {
           label: '最初からいるキャラの絵', help: '2頭身か、等身か。自分のキャラに入れた絵は変わりません',
           options: OSHI_STYLES().map(function (s) { return { value: s.key, label: s.label }; }),
           def: OSHI_STYLES()[0].key },
+        // 推しの機嫌 (OSHI_MOOD_RULES)。既定はオフ。変わるのは表情とせりふだけで、何も取り上げない (OshiMood.gs)
+        { key: 'oshi.mood', scope: 'me', type: 'bool', section: '推し',
+          label: '推しの機嫌を見る',
+          help: 'やることが滞ると、推しがしょんぼりしたり、むっとしたりします。変わるのは表情とせりふだけで、Lv・実績・ポイントは' +
+            '減りません。知らせは出さず、あなたにだけ見えます。済ませればすぐに機嫌が直ります',
+          def: false },
       ];
     },
     ach: function () {
@@ -679,7 +685,7 @@ function apiPrefs(opts) {
         musicParts: focusMusicPlainParts_(prefValueOf_(prefItem_('focus.musicUrl'), me, read).value) },
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
-        style: plainText(byKey['oshi.style']) },
+        style: plainText(byKey['oshi.style']), mood: byKey['oshi.mood'] === true },
       room: { on: byKey['room.on'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
       calendar: { plan: byKey['calendar.plan'] === true },
