@@ -51,7 +51,7 @@ function server(files, version) {
 
 /** 欠けると入れないもの。agent.mjs が無いと戻す命令ごと無くなる (agent.mjs が読み込むものも同じ)。署名を確かめる公開鍵も配る */
 const kit = (agent, more) => ({ 'agent.mjs': b64(agent), 'track/hook.mjs': b64('hook v1'),
-  'track/update.mjs': b64('update v1'), 'track/track.mjs': b64('track v1'), 'track/local.mjs': b64('local v1'), 'track/kit-key.pem': b64(TEST_KEYS.pub), ...(more || {}) });
+  'track/update.mjs': b64('update v1'), 'track/track.mjs': b64('track v1'), 'track/local.mjs': b64('local v1'), 'track/spinner.mjs': b64('spinner v1'), 'track/kit-key.pem': b64(TEST_KEYS.pub), ...(more || {}) });
 const quiet = () => {};
 const V1 = kit('v1', { 'track/SKILL.md': b64('skill v1') });
 const V2 = kit('v2', { 'track/SKILL.md': b64('skill v2'), 'new.md': b64('n') });
@@ -133,10 +133,10 @@ describe('入れる', () => {
     expect(fs.readFileSync(path.join(d.home, 'kit', 'agent.mjs'), 'utf8')).toBe('v1');
   });
 
-  it('agent.mjs が読み込むもの (track/local.mjs・track/track.mjs) が欠けた中身は、確かめる時点で断る', () => {
+  it('agent.mjs が読み込むもの (track/local.mjs・track/track.mjs・track/spinner.mjs) が欠けた中身は、確かめる時点で断る', () => {
     // 欠けたまま入れると agent.mjs が読み込めずに落ち、update rollback もできなくなる
     expect(() => checkFiles(kit('x'))).not.toThrow();
-    for (const name of ['track/local.mjs', 'track/track.mjs']) {
+    for (const name of ['track/local.mjs', 'track/track.mjs', 'track/spinner.mjs']) {
       const files = kit('x');
       delete files[name];
       expect(() => checkFiles(files), name).toThrow('欠けています (' + name + ')');
