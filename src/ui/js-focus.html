@@ -13,6 +13,8 @@
   // - 記録は本人にだけ見せる。連続日数は出さない
   // - 音は押したときにだけ鳴らす (読み込みで AudioContext を作らない)。ファイルも外の取得も使わず、画面の中で作る。
   //   1小節 (ノイズは数秒) を AudioBuffer に描いて繰り返す (背景のタブでは時計が間引かれるので、拍を時計で打たない)
+  // - 自分の曲 (YouTube / SoundCloud の公式の埋め込み) だけが外から取ってくる例外。「読み込む」を押すまで何も置かず、
+  //   URL は部品から組み直したものだけを使う (CLAUDE.md の「制約」)
   // - 知らせを捨てない。集中の画面は隠すだけ (Esc で戻る)
 
   /** 「もう少し」で延ばす分。サーバの FOCUS_EXTEND_MINUTES と同じ */
@@ -385,6 +387,8 @@
     var Ctor = focusAudioClass();
     if (!Ctor || !choice || choice.kind === 'none') return false;
     focusSoundStop(0);
+    // 自分の曲とは同時に流さない
+    focusMusicClose();
     try {
       var ctx = focusAudio && focusAudio.ctx ? focusAudio.ctx : new Ctor();
       if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
@@ -449,6 +453,305 @@
     try {
       focusAudio.gain.gain.setTargetAtTime(focusVolumeGain(v), focusAudio.ctx.currentTime, 0.2);
     } catch (e) { /* 変えられなくても鳴り続ける */ }
+  }
+
+  // ----- 自分の曲 (YouTube / SoundCloud の埋め込み。読み込むを押すまで何も読み込まない) -----
+  //
+  // 下の focusMusic* はサーバの src/core/FocusMusic.js の写し (test/ui-parity.test.js が同じ答えかを見ている)。
+  // 片方だけ直すと、保存できるのに流れない URL が出る
+
+  /**
+   * 部品に使える字と長さ。動画の id は11字、再生リストの id は10〜64字、SoundCloud のパスは区切りごとに小文字・数・_ -。
+   * (画面にも写すので、関数の中に置く)
+   *
+   * @returns {{video: RegExp, list: RegExp, segment: RegExp}}
+   */
+  function focusMusicRe_() {
+    return {
+      video: /^[A-Za-z0-9_-]{11}$/,
+      list: /^[A-Za-z0-9_-]{10,64}$/,
+      segment: /^[a-z0-9_-]{1,100}$/,
+    };
+  }
+
+  /**
+   * 受け付ける場所。字は小文字で比べる。ほかは断る (youtube.com.evil.com のような似た名前も)。
+   *
+   * @returns {{youtube: string[], youtuBe: string[], soundcloud: string[]}}
+   */
+  function focusMusicHosts_() {
+    return {
+      youtube: ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'],
+      youtuBe: ['youtu.be'],
+      soundcloud: ['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com'],
+    };
+  }
+
+  /**
+   * SoundCloud で、人の名前の位置に来ても人ではないもの・曲の名前の位置に来ても曲ではないもの。
+   *
+   * @returns {{first: string[], second: string[]}}
+   */
+  function focusMusicSoundcloudReserved_() {
+    return {
+      first: ['discover', 'search', 'stream', 'upload', 'you', 'settings', 'messages', 'notifications',
+        'charts', 'tags', 'pages', 'mobile', 'popular', 'terms-of-use', 'imprint', 'feed', 'signin', 'logout'],
+      second: ['sets', 'likes', 'tracks', 'albums', 'popular-tracks', 'reposts', 'followers', 'following',
+        'comments', 'spotlight', 'toptracks'],
+    };
+  }
+
+  /**
+   * 貼られた URL を読み解く。**部品だけを返す** (URL そのものは返さない)。
+   *
+   * @param {*} url
+   * @returns {{ok: boolean, parts?: {kind: string, video?: string, list?: string, path?: string}, error?: string}}
+   */
+  function focusMusicParse_(url) {
+    var ng = function (text) { return { ok: false, error: text }; };
+    if (typeof url !== 'string') return ng('URL を貼ってください');
+    var s = url.replace(/^\s+|\s+$/g, '');
+    if (!s) return ng('URL を貼ってください');
+    if (s.length > 500) return ng('URL が長すぎます。共有のボタンで写したリンクを貼ってください');
+    if (!/^https:\/\//i.test(s)) return ng('https:// で始まる YouTube か SoundCloud のリンクを貼ってください');
+    // 場所の後ろは / ? # か終わりだけ。@ (ほかの場所を名乗る形) や :443 (番号) は通さない
+    var m = /^https:\/\/([A-Za-z0-9.-]+)(\/[^?#\s]*)?(\?[^#\s]*)?(#\S*)?$/i.exec(s);
+    if (!m) return ng('読めない URL です。共有のボタンで写したリンクをそのまま貼ってください');
+    var host = m[1].toLowerCase();
+    var path = m[2] || '/';
+    var query = focusMusicQuery_(m[3] || '');
+    if (!query) return ng('読めない URL です。共有のボタンで写したリンクをそのまま貼ってください');
+    var hosts = focusMusicHosts_();
+
+    if (hosts.youtube.indexOf(host) >= 0 || hosts.youtuBe.indexOf(host) >= 0) {
+      var video = '';
+      var seg = path.split('/');
+      if (hosts.youtuBe.indexOf(host) >= 0) {
+        if (seg.length !== 2) return ng('YouTube の動画か再生リストのリンクを貼ってください');
+        video = seg[1];
+      } else if (path === '/watch') {
+        video = query.v === undefined ? '' : query.v;
+      } else if (path === '/playlist') {
+        if (query.list === undefined) return ng('再生リストの id (list=) が入っていません');
+      } else if (seg.length === 3 && (seg[1] === 'shorts' || seg[1] === 'live' || seg[1] === 'embed')) {
+        video = seg[2];
+      } else {
+        return ng('YouTube の動画か再生リストのリンクを貼ってください');
+      }
+      if (query.v === null || query.list === null) return ng('同じ欄が2つ入っています。共有のボタンで写し直してください');
+      var list = query.list === undefined ? '' : query.list;
+      if (list && !focusMusicRe_().list.test(list)) return ng('再生リストの id に使えない字が入っています');
+      if (video && !focusMusicRe_().video.test(video)) return ng('動画の id に使えない字が入っています');
+      // 再生リストを優先する (並びで流したい)。自動で作られる「ミックス」(RD…) は埋め込めないので動画にする
+      if (list && !(video && /^RD/.test(list))) return { ok: true, parts: { kind: 'youtube', list: list } };
+      if (video) return { ok: true, parts: { kind: 'youtube', video: video } };
+      return ng('YouTube の動画か再生リストのリンクを貼ってください');
+    }
+
+    if (hosts.soundcloud.indexOf(host) >= 0) {
+      var p = path.replace(/\/+$/, '').split('/').slice(1);
+      var reserved = focusMusicSoundcloudReserved_();
+      var okSegs = p.every(function (x) { return focusMusicRe_().segment.test(x); });
+      if (!okSegs) return ng('SoundCloud の曲かプレイリスト (sets) のリンクを貼ってください (使えない字が入っています)');
+      if (p.length >= 1 && reserved.first.indexOf(p[0]) >= 0) {
+        return ng('SoundCloud の曲かプレイリスト (sets) のリンクを貼ってください');
+      }
+      if (p.length === 2 && reserved.second.indexOf(p[1]) < 0) {
+        return { ok: true, parts: { kind: 'soundcloud', path: p[0] + '/' + p[1] } };
+      }
+      if (p.length === 3 && p[1] === 'sets') {
+        return { ok: true, parts: { kind: 'soundcloud', path: p[0] + '/sets/' + p[2] } };
+      }
+      return ng('SoundCloud の曲かプレイリスト (sets) のリンクを貼ってください');
+    }
+
+    return ng('YouTube か SoundCloud のリンクだけ使えます');
+  }
+
+  /**
+   * ? の後ろを読む。同じ名前が2つあれば null (どちらを使うか決まらない)。読めなければ全体を null。
+   *
+   * @param {string} q '?a=1&b=2' か ''
+   * @returns {Object<string, string|null>|null}
+   */
+  function focusMusicQuery_(q) {
+    var out = {};
+    var body = q.replace(/^\?/, '');
+    if (!body) return out;
+    var pairs = body.split('&');
+    for (var i = 0; i < pairs.length; i++) {
+      if (!pairs[i]) continue;
+      var at = pairs[i].indexOf('=');
+      var k = at < 0 ? pairs[i] : pairs[i].substring(0, at);
+      var v = at < 0 ? '' : pairs[i].substring(at + 1);
+      try {
+        k = decodeURIComponent(k.replace(/\+/g, ' '));
+        v = decodeURIComponent(v.replace(/\+/g, ' '));
+      } catch (e) {
+        return null;
+      }
+      // 使うのは v と list だけ。持ち物の名前 (__proto__ など) には書かない
+      if (k !== 'v' && k !== 'list') continue;
+      out[k] = Object.prototype.hasOwnProperty.call(out, k) ? null : v;
+    }
+    return out;
+  }
+
+  /**
+   * 残した部品が正しい形か (台帳に人が手で書き換えうるので、読むたびに確かめる)。
+   *
+   * @param {*} p
+   * @returns {boolean}
+   */
+  function focusMusicPartsValid_(p) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
+    var keys = Object.keys(p).sort().join(',');
+    if (p.kind === 'youtube') {
+      if (keys === 'kind,video') return typeof p.video === 'string' && focusMusicRe_().video.test(p.video);
+      if (keys === 'kind,list') return typeof p.list === 'string' && focusMusicRe_().list.test(p.list);
+      return false;
+    }
+    if (p.kind === 'soundcloud') {
+      if (keys !== 'kind,path' || typeof p.path !== 'string') return false;
+      var seg = p.path.split('/');
+      if (!seg.every(function (x) { return focusMusicRe_().segment.test(x); })) return false;
+      return seg.length === 2 || (seg.length === 3 && seg[1] === 'sets');
+    }
+    return false;
+  }
+
+  /**
+   * 埋め込みの再生機の URL を部品から組む。部品が正しくなければ ''。
+   *
+   * @param {*} p
+   * @returns {string}
+   */
+  function focusMusicEmbedUrl_(p) {
+    if (!focusMusicPartsValid_(p)) return '';
+    if (p.kind === 'youtube' && p.video) {
+      return 'https://www.youtube-nocookie.com/embed/' + p.video + '?rel=0&modestbranding=1';
+    }
+    if (p.kind === 'youtube') {
+      return 'https://www.youtube-nocookie.com/embed/videoseries?list=' + p.list + '&rel=0';
+    }
+    return 'https://w.soundcloud.com/player/?url=' + encodeURIComponent('https://soundcloud.com/' + p.path) +
+      '&auto_play=false&visual=false&hide_related=true';
+  }
+
+  /**
+   * 設定の画面に出すリンク (部品から組み直したもの)。部品が正しくなければ ''。
+   *
+   * @param {*} p
+   * @returns {string}
+   */
+  function focusMusicLinkOf_(p) {
+    if (!focusMusicPartsValid_(p)) return '';
+    if (p.kind === 'youtube' && p.video) return 'https://www.youtube.com/watch?v=' + p.video;
+    if (p.kind === 'youtube') return 'https://www.youtube.com/playlist?list=' + p.list;
+    return 'https://soundcloud.com/' + p.path;
+  }
+
+  /** いま読み込んでいる埋め込み (iframe)。無ければ null */
+  var focusMusicFrame = null;
+
+  /** 「自分の曲」を出すか (今から始めるがオン・自分の曲を流す・正しいリンクがある) */
+  function focusMusicOn() {
+    return focusOn() && focusPrefs().music === 'own' && focusMusicEmbedUrl_(focusPrefs().musicParts) !== '';
+  }
+
+  /** 読み込んでいるか */
+  function focusMusicLoaded() {
+    return !!(focusMusicFrame && document.body.contains(focusMusicFrame));
+  }
+
+  /**
+   * 読み込む。**押した聞き手の中からだけ呼ぶ。** src は部品から組み直した URL だけ。
+   * 画面の中で作る音とは同時に流さない (こちらを始めたら、作る音を止める)。
+   *
+   * @param {HTMLElement} holder
+   * @returns {boolean}
+   */
+  function focusMusicLoad(holder) {
+    var parts = focusPrefs().musicParts;
+    var src = focusMusicEmbedUrl_(parts);
+    if (!src || !holder) return false;
+    focusMusicClose();
+    if (focusSoundPlaying()) {
+      focusSoundStop(1);
+      var t = document.querySelector('#focus-dock .focus-sound-toggle');
+      if (t) t.textContent = '音を流す';
+    }
+    var f = document.createElement('iframe');
+    f.className = 'focus-music-frame' + (parts.kind === 'youtube' ? ' is-youtube' : ' is-soundcloud');
+    f.title = '自分の曲 (' + (parts.kind === 'youtube' ? 'YouTube' : 'SoundCloud') + ')';
+    f.setAttribute('allow', 'autoplay; encrypted-media');
+    f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    // 埋め込みの再生機は自分の場所のスクリプトと保存が要る。開いた先 (YouTube の頁) は枠の外で開かせる
+    f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation');
+    f.src = src;
+    holder.appendChild(f);
+    focusMusicFrame = f;
+    return true;
+  }
+
+  /** 止めて閉じる (枠ごと外すので、音も止まる) */
+  function focusMusicClose() {
+    if (focusMusicFrame) focusMusicFrame.remove();
+    focusMusicFrame = null;
+    var btn = document.querySelector('#focus-dock .focus-music-toggle');
+    if (btn) btn.textContent = '読み込む';
+  }
+
+  /**
+   * 「自分の曲」の欄。読み込むを押すまで、外のものは何も置かない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeFocusMusicControls() {
+    var wrap = document.createElement('div');
+    wrap.className = 'focus-sound focus-music';
+    var h = document.createElement('p');
+    h.className = 'focus-music-head';
+    h.textContent = '自分の曲';
+    wrap.appendChild(h);
+    var holder = document.createElement('div');
+    holder.className = 'focus-music-holder';
+    wrap.appendChild(holder);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn focus-music-toggle';
+    btn.textContent = '読み込む';
+    attachHint(btn, '押すと ' + (focusPrefs().musicParts.kind === 'youtube' ? 'YouTube' : 'SoundCloud') +
+      ' につながり、再生機を読み込みます');
+    btn.addEventListener('click', function () {
+      if (focusMusicLoaded()) {
+        focusMusicClose();
+        return;
+      }
+      if (focusMusicLoad(holder)) btn.textContent = '止めて閉じる';
+    });
+    wrap.appendChild(btn);
+    var ear = document.createElement('p');
+    ear.className = 'row-meta focus-ear';
+    ear.textContent = 'イヤホンで聞いてください。歌の無い曲のほうが読み書きの邪魔になりにくいです';
+    wrap.appendChild(ear);
+    var net = document.createElement('p');
+    net.className = 'row-meta focus-ear';
+    net.textContent = '職場のネットワークによっては開けないことがあります。そのときは中の音 (ノイズ・ビート) を使ってください';
+    wrap.appendChild(net);
+    return wrap;
+  }
+
+  /** 集中しているあいだの窓の「自分の曲」の欄を、いまの設定に合わせて出し入れする */
+  function focusSyncMusicControls() {
+    var controls = document.querySelector('#focus-dock.is-running .focus-controls');
+    if (!controls) return;
+    var have = controls.querySelector('.focus-music');
+    if (focusMusicOn() && !have) {
+      controls.insertBefore(makeFocusMusicControls(), controls.querySelector('.inline-form-actions'));
+    } else if (!focusMusicOn() && have) {
+      have.remove();
+    }
   }
 
   // ----- 入口 -----
@@ -918,6 +1221,7 @@
     });
     controls.appendChild(mode);
     if (focusSoundOn()) controls.appendChild(makeFocusSoundControls(true).el);
+    if (focusMusicOn()) controls.appendChild(makeFocusMusicControls());
     var actions = document.createElement('div');
     actions.className = 'inline-form-actions';
     actions.appendChild(makeFocusDoneButton());
@@ -1074,6 +1378,7 @@
     if (focusTimer) clearInterval(focusTimer);
     focusTimer = null;
     focusSoundStop(2);
+    focusMusicClose();
     if (focusBaseTitle !== null) document.title = focusBaseTitle;
     focusBaseTitle = null;
     focusSetMode(false);
@@ -1183,8 +1488,12 @@
       call('apiFocusMine', [], function (res) {
         if (res && res.active && !focusSession && focusOn()) focusRun(res.active, res.active.title);
       }, failQuiet('続いている集中を描き直せなくても、始め直せる'));
-    } else if (focusSession && !focusSoundOn()) {
-      focusSoundStop(1);
+    } else if (focusSession) {
+      if (!focusSoundOn()) focusSoundStop(1);
+      // 自分の曲をやめた・リンクを変えたら、読み込んでいるものを外して欄を描き直す
+      if (focusMusicLoaded() && focusMusicFrame.src !== focusMusicEmbedUrl_(focusPrefs().musicParts)) focusMusicClose();
+      if (!focusMusicOn()) focusMusicClose();
+      focusSyncMusicControls();
     }
     // 入口を出し入れする。開いている一覧だけ描き直す
     if (changed && typeof panelIssues !== 'undefined' && panelIssues && !panelIssues.hidden) reloadIssueView();

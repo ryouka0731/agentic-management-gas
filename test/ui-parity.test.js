@@ -39,6 +39,31 @@ describe('画面とサーバで同じ答えになる', () => {
     }
   });
 
+  it('focusMusicParse_ / focusMusicPartsValid_ / focusMusicEmbedUrl_ / focusMusicLinkOf_', () => {
+    // 自分の曲 (src/core/FocusMusic.js)。ずれると、保存できるのに流れない (または逆の) URL が出る
+    const core = loadGas('src/core/FocusMusic.js');
+    const VID = 'dQw4w9WgXcQ';
+    const LIST = 'PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG';
+    const names = ['focusMusicRe_', 'focusMusicHosts_', 'focusMusicSoundcloudReserved_', 'focusMusicParse_',
+      'focusMusicQuery_', 'focusMusicPartsValid_', 'focusMusicEmbedUrl_', 'focusMusicLinkOf_'];
+    const view = ui(names);
+        const urls = [
+      'https://www.youtube.com/watch?v=' + VID, 'https://youtu.be/' + VID, 'https://www.youtube.com/playlist?list=' + LIST,
+      'https://music.youtube.com/watch?v=' + VID + '&list=' + LIST, 'https://soundcloud.com/a/b',
+      'https://soundcloud.com/a/sets/c', 'http://youtube.com/watch?v=' + VID, 'https://youtube.com.evil.com/x',
+      'javascript:alert(1)', '', null, 'https://www.youtube.com/watch?v=' + VID + '&v=' + VID,
+      'https://www.youtube.com/shorts/' + VID, 'https://soundcloud.com/discover/sets/x',
+    ];
+    urls.forEach((u) => {
+      const a = core.focusMusicParse_(u);
+      const b = view.focusMusicParse_(u);
+      expect(same(a, b), String(u)).toBe(true);
+      const p = a.parts || { kind: 'x' };
+      expect(view.focusMusicPartsValid_(p)).toBe(core.focusMusicPartsValid_(p));
+      expect(view.focusMusicEmbedUrl_(p)).toBe(core.focusMusicEmbedUrl_(p));
+      expect(view.focusMusicLinkOf_(p)).toBe(core.focusMusicLinkOf_(p));
+    });
+  });
   it('oshiGreetingOf (推しのあいさつの区切り)', () => {
     const core = loadGas('src/core/Oshi.js');
     const view = ui(['oshiGreetingOf']);
