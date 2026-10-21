@@ -229,7 +229,7 @@ const API_NAMES = [
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
   'apiOshiSetCharProfile', 'apiOshiBuiltinProfiles', 'apiOshiBuiltinProfileSet', 'apiOshiCharKitPrompt', 'apiOshiCharImport', 'apiOshiMood',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared',
-  'apiOutcomes',
+  'apiOutcomes', 'apiCacheClear',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
   'apiGoalIssueLinks', 'apiGoalWithdraw',
@@ -501,6 +501,7 @@ export const DEFAULTS = {
   apiGetMarkdown: { markdown: '# 就業規則\n', branch: 'main', editable: false },
   // 成果の数 (管理者だけ)。まだ数えていない形。数のある形は test/component/outcomes.test.js が渡す
   apiOutcomes: { weeks: [], since: '', minPeople: 3 },
+  apiCacheClear: { cleared: true },
   apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),
   // 書いた値を返す (null で既定に戻す)

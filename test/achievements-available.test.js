@@ -20,10 +20,17 @@ function setup() {
   return { ctx, fake };
 }
 const props = (ctx) => ctx.PropertiesService.getScriptProperties();
-const off = (ctx) => ctx.achUnavailable_(ME);
+/**
+ * 取れない実績を数える。疑似GASのキャッシュ (fakegas の CacheService) のときは、「1人か」の覚え (10分) を毎回捨てて
+ * 数え直す (このファイルは、環境を変えてすぐ数え直す形で書いてある)。覚えそのものは withCache のテストが見る
+ */
+const off = (ctx) => {
+  const cache = ctx.CacheService.getScriptCache();
+  if (cache._store) cache.remove('ACH_PEOPLE:' + ME);
+  return ctx.achUnavailable_(ME);
+};
 /** 入れ物のフォルダに編集する人を足す (いっしょに使う人がいる環境) */
 function addEditor(ctx, fake, email) {
-  // 疑似GASに CacheService は無いので、覚えは使われない (毎回数え直す)
   fake.DriveApp.getFolderById(ctx.repoConfig().rootId)._addEditor(email);
 }
 /** 疑似の CacheService (期限は覚えて返すだけ) */
@@ -129,7 +136,9 @@ describe('この環境では取れない実績', () => {
       const perms = [{ emailAddress: ME, role: 'organizer', type: 'user' }];
       fake.Drive = fake._makeDrive({ members: { 'drive-1': perms } });
       expect(off(ctx)['reviews-1'], type).toBeTruthy();
+      // 役割の覚えは実行の中 (DRIVE_MEMBERS_MEMO_) と CacheService (10分) の2つ。両方捨てて読み直させる
       ctx.DRIVE_MEMBERS_MEMO_ = {};
+      fake._cacheClear();
       perms.push(type === 'group' ? { emailAddress: 'team@example.com', role: 'writer', type } : { role: 'reader', type, domain: 'example.com' });
       expect(off(ctx)['reviews-1'], type).toBeUndefined();
     }
