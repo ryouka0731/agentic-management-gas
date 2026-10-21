@@ -781,16 +781,43 @@ function oshiBuiltinProfileRead_(key) {
   var base = oshiBuiltinProfileKey_(key);
   var raw = props.getProperty(base);
   var head = oshiProfileHead_(raw, base);
-  if (head) {
-    var text = '';
-    for (var i = 0; i < head.parts; i++) {
-      var part = props.getProperty(head.prefix + i);
-      if (part === null || part === undefined) return null;
-      text += part;
+  if (head) raw = oshiProfilePartsRead_(props, head);
+  return raw === null ? null : oshiProfileParse_(raw);
+}
+
+/**
+ * 分けて置いた続きをつないで読む。**続きを1つずつ問い合わせない** (apiOshiGet のたびに最大20回になる): 版のある形は
+ * CacheService に版ごとに覚え (版は置き直すたびに変わるので、古い覚えは使われない)、無ければ getProperties() の1回で読む。
+ *
+ * @param {object} props スクリプトプロパティ
+ * @param {{parts: number, v: number, prefix: string}} head oshiProfileHead_ の返り
+ * @returns {?string} 欠けていれば null
+ */
+function oshiProfilePartsRead_(props, head) {
+  var cache = null;
+  var ck = 'OSHI_PROFILE_C:' + head.prefix + head.parts;
+  if (head.v) {
+    try {
+      cache = CacheService.getScriptCache();
+      var hit = cache.get(ck);
+      if (hit !== null && hit !== undefined) return hit;
+    } catch (e) {
+      cache = null;
     }
-    raw = text;
   }
-  return oshiProfileParse_(raw);
+  var all = props.getProperties();
+  var text = '';
+  for (var i = 0; i < head.parts; i++) {
+    var part = all[head.prefix + i];
+    if (part === null || part === undefined) return null;
+    text += part;
+  }
+  try {
+    if (cache) cache.put(ck, text, 21600);
+  } catch (e2) {
+    // 覚えられなければ、次も1回で読むだけ (CacheService は1つ 100KB まで)
+  }
+  return text;
 }
 
 /**
@@ -830,17 +857,22 @@ function oshiBuiltinProfileWrite_(key, p) {
     var parts = [];
     if (json && rewardBytes_(json) > OSHI_PROFILE_PART_BYTES()) parts = oshiProfileSplit_(json, OSHI_PROFILE_PART_BYTES());
     var before = oshiProfileHead_(props.getProperty(base), base);
+    var v = 0;
     if (empty) {
       props.deleteProperty(base);
     } else if (!parts.length) {
       props.setProperty(base, json);
     } else {
-      var v = (before ? before.v : 0) + 1;
+      // 版は置き直すたびに必ず変わる数にする (読むときの覚えを版で引くので、前の版の数に戻らないように時刻を使う)
+      v = Math.max((before ? before.v : 0) + 1, Date.now());
       parts.forEach(function (part, j) { props.setProperty(base + ':' + v + ':' + j, part); });
       props.setProperty(base, JSON.stringify({ parts: parts.length, v: v }));
     }
-    // 頭を替えたあとで、前の版の続きを消す
-    if (before) for (var i = 0; i < before.parts; i++) props.deleteProperty(before.prefix + i);
+    // 頭を替えたあとで、いまの版でない続きを全部消す (前の版も、途中で止まった版も。版は時刻なので、止まった版と同じ数にならない)
+    var keep = parts.length ? base + ':' + v + ':' : '';
+    Object.keys(props.getProperties()).forEach(function (k) {
+      if (k.indexOf(base + ':') === 0 && !(keep && k.indexOf(keep) === 0)) props.deleteProperty(k);
+    });
   });
 }
 

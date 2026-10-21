@@ -276,6 +276,18 @@ describe('やることの絞り込み', () => {
     expect(document.getElementById('mine-btn').getAttribute('aria-checked')).toBe('true');
   });
 
+  it('自分の担当は字の大小を見ない (改善のヒントの「期限切れを見る」と同じものを出す)', () => {
+    openIssues({
+      apiIssueList: [
+        { ...DEFAULTS.apiIssueList[0], assignee: 'ME@Example.com', assignees: ['ME@Example.com'] },
+        { ...DEFAULTS.apiIssueList[1], assignee: 'Other@example.com', assignees: ['Other@example.com'] },
+      ],
+    });
+    document.getElementById('mine-btn').click();
+    expect(titles()).toHaveLength(1);
+    expect(titles()[0]).toContain('#2');
+  });
+
   it('もう一度押すと全部に戻る', () => {
     openIssues();
 

@@ -260,6 +260,20 @@ describe('数える (OshiMood.gs)', () => {
     expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', event: 'mood_recover', recovered: true });
   });
 
+  it('担当の字の大小は見ない (期限切れも、開いている数・動きなしと同じく同じ人として数える)', () => {
+    const { ctx } = setup({ noCache: true });
+    issue(ctx, { dueDate: tokyoMidnight('2026-10-01'), assignee: 'TESTER@Example.com' }, NOW);
+    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 1, overdue: 1 });
+  });
+
+  it('やることを消したら (issuePurge)、担当の人の覚えを消して数え直す', () => {
+    const { ctx } = setup();
+    const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
+    expect(ctx.apiOshiMood().level).toBe('sulky');
+    ctx.issuePurge(n);
+    expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', recovered: true });
+  });
+
   it('ほかの人がわたしの担当を外したときも、わたしの覚えを消して数え直す', () => {
     const { ctx, fake } = setup();
     const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
