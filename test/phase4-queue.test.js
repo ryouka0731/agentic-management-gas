@@ -241,6 +241,9 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
     const { ctx } = setup();
     ctx.PropertiesService.getScriptProperties().setProperty('ARCHIVE_HOUSEKEPT_ON',
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    // 成果の数も1日1回の別の印で走る (Outcomes.gs)。済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('OUTCOMES_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     const seen = watchLocks(ctx);
     ctx.processCommandQueue();
     expect(seen.top).toBe(0);
@@ -250,6 +253,9 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
     const { ctx } = setup();
     // 片付けの鍵を数えないよう、今日の分は済んだことにしておく
     ctx.PropertiesService.getScriptProperties().setProperty('ARCHIVE_HOUSEKEPT_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    // 成果の数も1日1回の別の印で走る (Outcomes.gs)。済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('OUTCOMES_ON',
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     enqueue(ctx, 'a', { op: 'listFiles', args: {} });
     enqueue(ctx, 'b', { op: 'listFiles', args: {} });

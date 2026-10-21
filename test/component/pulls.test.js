@@ -818,12 +818,12 @@ describe('確認依頼の、うまくいかないとき・変わった形', () =
 
   it('一覧が取れなければ、一覧の欄に理由を出す', () => {
     open({ apiPrList: new Error('混み合っています') });
-    expect(document.getElementById('pr-list').textContent).toBe('エラー: 混み合っています');
+    expect(document.querySelector('#pr-list .fail-text').textContent).toBe('エラー: 混み合っています');
   });
 
   it('中身が取れなければ、中身の欄に理由を出す', () => {
     open({ apiPrPreview: new Error('読めませんでした') });
-    expect(document.getElementById('pr-detail').textContent).toBe('エラー: 読めませんでした');
+    expect(document.querySelector('#pr-detail .fail-text').textContent).toBe('エラー: 読めませんでした');
   });
 
   it('ホームから番号で開くとき、見つからなければそう言って先頭を開く', () => {

@@ -1170,7 +1170,7 @@ describe('文書のまわりの、うまくいかないとき・空のとき', (
     app.respond('apiBranchList', new Error('混み合っています'));
     $('.nav-item[data-tab="home"]').click();
     $('.nav-item[data-tab="branches"]').click();
-    expect($('#branch-list').textContent).toBe('エラー: 混み合っています');
+    expect($('#branch-list .fail-text').textContent).toBe('エラー: 混み合っています');
   });
 
   it('改訂版を捨てたら、帯で知らせて一覧を取り直す', () => {

@@ -2004,7 +2004,7 @@
    * alert はモーダルで操作を止め、取り消しの手段も与えない。
    *
    * @param {string} text
-   * @param {{kind?: string, undo?: function, ms?: number}} [opts]
+   * @param {{kind?: string, undo?: function, ms?: number, next?: string, action?: {label: string, run: function}}} [opts]
    * @returns {HTMLElement} 出した帯。遅れて届く返事が、まだ同じ帯か確かめるのに使う
    */
   function showSnack(text, opts) {
@@ -2023,10 +2023,22 @@
     var span = document.createElement('span');
     span.className = 'snackbar-text';
     span.textContent = text;
-    bar.appendChild(span);
+    if (options.next) {
+      // 断りには「次にすること」を2行目に添える (failShown)。文と同じ塊にして、ボタンは右に残す
+      var body = document.createElement('span');
+      body.className = 'snackbar-body';
+      body.appendChild(span);
+      var next = document.createElement('span');
+      next.className = 'snackbar-next';
+      next.textContent = options.next;
+      body.appendChild(next);
+      bar.appendChild(body);
+    } else {
+      bar.appendChild(span);
+    }
 
     // 終えたことを、印1つで返す。派手にすると動機がかえって下がる (Kao ら 2024)
-    if (options.mark) bar.insertBefore(makeSnackMark(options.mark), span);
+    if (options.mark) bar.insertBefore(makeSnackMark(options.mark), bar.firstChild);
 
     if (options.action) {
       var actBtn = document.createElement('button');
@@ -2133,7 +2145,29 @@
     // 入力欄から送ったものなら、失敗したときに書いたまま開き直す
     var draft = formDraftForCall;
     formDraftForCall = null;
+    callOnce(name, args, onOk, onFail, draft, false);
+  }
 
+  /**
+   * いま走っている失敗の扱いの型と、押し直す手立て。
+   *
+   * 失敗の見せ方 (failSnack / failInto / failEnable) は err しか受け取らないので、call() が
+   * 失敗のハンドラを呼ぶあいだだけここに置く。押し直しは busy のとき1回だけ (2回目の失敗では出さない)。
+   * failQuiet は読まない (黙ってよいものに「次にすること」は要らない)。
+   */
+  var callFailure = null;
+
+  /**
+   * call() の中身。again は [もう一度] で押し直した呼び出しか (押し直しは1回まで)。
+   *
+   * @param {string} name
+   * @param {Array} args
+   * @param {function} [onOk]
+   * @param {function} [onFail]
+   * @param {object} [draft] 入力欄の控え
+   * @param {boolean} again
+   */
+  function callOnce(name, args, onOk, onFail, draft, again) {
     var failed = onFail || failSnack();
     var ok = onOk || function () {};
     var run = google.script.run
@@ -2149,13 +2183,57 @@
         focusAfterCall(name, args);
       })
       .withFailureHandler(function (err) {
-        failed(err);
-        if (draft) reopenDraft(draft);
+        var kind = errorKindOf(err && err.message);
+        // 時間切れはサーバでは数えられない (打ち切られる)。画面の使われ方として数え、毎日の成果の数に入れる
+        if (kind === 'timeout') {
+          try { usageCount('action', 'error:timeout'); } catch (e) { /* 読み込みの途中なら数えない */ }
+        }
+        var reopened = null;
+        // 失敗の扱いの中でさらに call() が失敗しても、外の扱いの型を失わない
+        var outer = callFailure;
+        var retry = kind === 'busy' && !again ? makeRetry(function () {
+          // 押し直すときは、開き直した入力欄を閉じる (残すと同じものをもう一度送れてしまう)。
+          // また失敗すれば、控えから書いたまま開き直す
+          if (reopened && reopened.isConnected) closeSide();
+          callOnce(name, args, onOk, onFail, draft, true);
+        }) : null;
+        callFailure = { kind: kind, retry: retry };
+        try {
+          failed(err);
+        } finally {
+          callFailure = outer;
+        }
+        // 開き直した入力欄から送り直したら、[もう一度] は外す (両方押すと同じものが2つできる)
+        if (draft) reopened = reopenDraft(draft, retry ? retry.disarm : null);
         // 人が押した操作が断られたときだけ、推しがやさしく「しんぱい」する (叱らない)
         try { oshiAfterFail(name); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
       });
 
     run[name].apply(run, args || []);
+  }
+
+  /**
+   * 押し直す手立て。**1回きり**: [もう一度] を押す・開き直した入力欄から送る・押せるように戻したボタンを
+   * 押す、のどれか1つを使ったら、ほかは使えなくする (両方使うと同じものが2つできる)。
+   *
+   * @param {function} run 押し直すこと
+   * @returns {{again: function, disarm: function, spent: boolean, bar: (HTMLElement|null), buttons: HTMLElement[]}}
+   */
+  function makeRetry(run) {
+    var r = { spent: false, bar: null, buttons: [] };
+    // ほかの道を使ったので、押し直す手立てを外す (帯も器のボタンも消す)
+    r.disarm = function () {
+      if (r.spent) return;
+      r.spent = true;
+      if (r.bar && r.bar.isConnected) r.bar.remove();
+      r.buttons.forEach(function (b) { if (b.isConnected) b.remove(); });
+    };
+    r.again = function () {
+      if (r.spent) return;
+      r.spent = true;
+      run();
+    };
+    return r;
   }
 
   /**
@@ -2202,14 +2280,19 @@
    *
    * @param {object} draft openInlineForm が控えたもの
    */
-  function reopenDraft(draft) {
+  function reopenDraft(draft, onUse) {
     var fields = draft.fields.map(function (f) {
       var copy = {};
       Object.keys(f).forEach(function (k) { copy[k] = f[k]; });
       copy.value = draft.values[f.name];
       return copy;
     });
-    openInlineForm(draft.title, fields, draft.submitLabel, draft.onSubmit, draft.sourceEl);
+    // 開き直した欄から送ったら、押し直す手立て ([もう一度]) は外す
+    var submit = !onUse ? draft.onSubmit : function (values) {
+      onUse();
+      return draft.onSubmit(values);
+    };
+    return openInlineForm(draft.title, fields, draft.submitLabel, submit, draft.sourceEl);
   }
 
   /**
@@ -2223,8 +2306,52 @@
    */
   function failSnack(prefix) {
     return function (err) {
-      showSnack(String(prefix || '') + err.message, { kind: 'ng' });
+      var f = failShown(err);
+      var bar = showSnack(String(prefix || '') + f.text, failSnackOpts(f, null));
+      if (f.retry) f.retry.bar = bar;
     };
+  }
+
+  /**
+   * 失敗をどう見せるか。断りの字 (英語は言い換える)、次にすること、押し直す手立て (busy だけ)。
+   *
+   * 英語を言い換えたときは元の字を console に残す (調べるときに要る)。
+   *
+   * @param {Error} err
+   * @returns {{kind: string, text: string, next: string, retry: (object|null)}} retry は makeRetry (押し直せるときだけ)
+   */
+  function failShown(err) {
+    var raw = String((err && err.message) || '');
+    var kind = callFailure ? callFailure.kind : errorKindOf(raw);
+    var text = errorTextOf(raw);
+    if (text !== raw && window.console && window.console.warn) window.console.warn('元の断り: ' + raw);
+    var step = nextStepOf(kind);
+    return {
+      kind: kind,
+      text: text,
+      next: '次にすること: ' + step.text,
+      retry: step.retry && callFailure && callFailure.retry && !callFailure.retry.spent ? callFailure.retry : null,
+    };
+  }
+
+  /**
+   * 失敗の帯の形。押し直せるときだけ [もう一度] を付ける。
+   *
+   * @param {object} f failShown の返り
+   * @param {function} [before] 押し直す前にすること (押せなくしたボタンを戻すなど)
+   * @returns {object} showSnack の opts
+   */
+  function failSnackOpts(f, before) {
+    var opts = { kind: 'ng', next: f.next };
+    if (f.retry) {
+      var retry = f.retry;
+      opts.action = { label: 'もう一度', run: function () {
+        if (retry.spent) return;
+        if (before) before();
+        retry.again();
+      } };
+    }
+    return opts;
   }
 
   /**
@@ -2238,7 +2365,30 @@
    */
   function failInto(el) {
     return function (err) {
-      el.textContent = 'エラー: ' + err.message;
+      var f = failShown(err);
+      el.textContent = '';
+      var text = document.createElement('span');
+      text.className = 'fail-text';
+      text.textContent = 'エラー: ' + f.text;
+      el.appendChild(text);
+      // 器に出すぶんは消えないので、次にすることも同じ場所に残す
+      var next = document.createElement('span');
+      next.className = 'fail-next';
+      next.textContent = f.next;
+      el.appendChild(next);
+      if (f.retry) {
+        var retry = f.retry;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn fail-again';
+        btn.textContent = 'もう一度';
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          retry.again();
+        });
+        retry.buttons.push(btn);
+        el.appendChild(btn);
+      }
     };
   }
 
@@ -2255,7 +2405,19 @@
   function failEnable(btn, prefix) {
     return function (err) {
       btn.disabled = false;
-      showSnack(String(prefix || '') + err.message, { kind: 'ng' });
+      var f = failShown(err);
+      // 押し直すあいだは、元の操作と同じく押せなくする (また失敗すればここで戻る)
+      var bar = showSnack(String(prefix || '') + f.text, failSnackOpts(f, function () { btn.disabled = true; }));
+      if (f.retry) {
+        var retry = f.retry;
+        retry.bar = bar;
+        // 戻したボタンを押したら、[もう一度] は外す (両方押すと同じものが2つできる)
+        var once = function () {
+          btn.removeEventListener('click', once, true);
+          retry.disarm();
+        };
+        btn.addEventListener('click', once, true);
+      }
     };
   }
 
@@ -2277,6 +2439,164 @@
         window.console.warn(String(why) + ': ' + (err && err.message));
       }
     };
+  }
+
+  // ===== 断りの型と、次にすること =====
+  //
+  // src/core/ErrorKind.js の写し。**片方だけ直さない** (test/ui-parity.test.js が同じ答えか見ている)。
+  // 断りの字から型を引き、帯や器に「次にすること」を1行添える。[もう一度] は busy のときだけ。
+
+  /**
+   * 英語の実行時エラー (Apps Script や通信が出すもの)。上から順に見る。
+   *
+   * 「見つからない」は権限より先に見る。Drive は見つからないときに「権限が無いかもしれない」と添える
+   *
+   * @returns {Array<{kind: string, re: RegExp}>}
+   */
+  function ERROR_KIND_ENGLISH_() {
+    return [
+      { kind: 'quota', re: /Lock timeout|Lock wait|Service invoked too many times|too many (simultaneous )?(invocations|requests)|Address unavailable|temporarily unavailable|rate limit|try again later/i },
+      { kind: 'timeout', re: /Exceeded maximum execution time|maximum execution time|execution timed? ?out|Script runtime exceeded|deadline exceeded|NetworkError|Connection failure|network error|Service (Spreadsheets|Documents|Drive|Slides) failed|Service error|server error|took too long/i },
+      { kind: 'gone', re: /not found|No item with the given ID|does not exist|has been deleted|is missing|could not be found/i },
+      { kind: 'forbidden', re: /Authorization is required|You do not have permission|do not have access|Access denied|PERMISSION_DENIED|not authorized|Insufficient permission/i },
+    ];
+  }
+
+  /**
+   * 日本語の断り文の言い回し。上から順に見る (先に当たったものが勝つ)。
+   *
+   * 見るのは errorHeadOf_ が名前や番号を外した字だけ。
+   * busy はここに無い (DB_BUSY_TEXT と同じ字のときだけ。errorKindOf が先に見る)。
+   *
+   * @returns {Array<{kind: string, re: RegExp}>}
+   */
+  function ERROR_KIND_PHRASES_() {
+    return [
+      { kind: 'partial', re: /途中まで済みました/ },
+      { kind: 'quota', re: /混み合って/ },
+      { kind: 'stale', re: /開いたあと|直されています|進みました|先に入りました|中身が変わっています|読み込み直して|再読み込み|開き直してください/ },
+      { kind: 'gone', re: /見つかりません|消されて|捨てたもの|登録されていません|管理対象にない|作業コピーがありません/ },
+      { kind: 'forbidden', re: /だけが(行え|取り下げ|閉じ)|だけです|だけ(書き換え|消せ|直せ)|見られません|扱えません|持ち主|管理者|権限|役割が要ります|承認できません/ },
+      { kind: 'invalid', re: /ください|まで(です|に)|不正|正しくありません|知らない|分かりません|読めません|できません|使えません|作れません|足せません|直せません|消せません|変えられません|捨てられません|頼めません|対応していません|ありません|あります|います|オフです|空です|大きすぎ|超えました|輪になります|合いません|なっています|形になっていません|書き戻せません|整数です|使えます|決まっています|終わっています|ていません|られません|ない\S*です|必要です|未定義|」か「|既に|すでに/ },
+    ];
+  }
+
+  /**
+   * 前に付く「Error: 」「Exception: 」を外す。実行時エラーは画面に届くときこれが付くことがある。
+   *
+   * @param {*} message
+   * @returns {string}
+   */
+  function errorBareOf_(message) {
+    return String(message == null ? '' : message).replace(/^\s*(?:(?:Script|Type|Reference|Range)?Error|Exception)\s*:\s*/, '');
+  }
+
+  /**
+   * 人の書いた名前や番号が入る場所 (ErrorKind の言い回しを当てない所)。上から順に空にする。
+   *
+   * - 最初の「: 」より後 (前置き + : + 名前の形)
+   * - 「…」の中 (題名・版の名前)、# のあとの番号
+   * - 文の頭に名前が来る形 (「<名前> さんの差し戻しが…」「<道のり> の反映結果を…」「の <道のり> に記録…」)
+   *
+   * @returns {Array<{re: RegExp, to: string}>}
+   */
+  function ERROR_NAME_SLOTS_() {
+    return [
+      { re: /(: |：)[\s\S]*$/, to: '' },
+      { re: /「[^」]*」/g, to: '「」' },
+      { re: /#\S*/g, to: '#' },
+      { re: /^[\s\S]* さん(の|が|に|は)/, to: 'さん$1' },
+      { re: /^[\s\S]* の反映結果/, to: 'の反映結果' },
+      { re: /の [\s\S]* に記録/, to: 'の に記録' },
+    ];
+  }
+
+  /**
+   * 日本語の断り文から、名前や番号を外した決まった部分。
+   *
+   * @param {string} bare
+   * @returns {string}
+   */
+  function errorHeadOf_(bare) {
+    var head = String(bare);
+    var slots = ERROR_NAME_SLOTS_();
+    for (var i = 0; i < slots.length; i++) head = head.replace(slots[i].re, slots[i].to);
+    return head;
+  }
+
+  /**
+   * 断りの字から型を引く。
+   *
+   * @param {*} message 断りの字 (err.message)
+   * @returns {string} busy | partial | quota | timeout | forbidden | gone | stale | invalid | unknown
+   */
+  function errorKindOf(message) {
+    var bare = errorBareOf_(message);
+    if (!bare) return 'unknown';
+
+    // 押し直してよいのは、鍵が取れずに何も書かないうちに断ったときだけ (Db.gs の DB_BUSY_TEXT と同じ字)
+    if (bare.replace(/\s+$/, '') === '混み合っています。少し待ってからもう一度お試しください') return 'busy';
+
+    // 日本語の文は、名前や番号を外した決まった部分だけを見る。英語の言い回しもそこだけに当てる
+    // (英語の名前の人が「Lock timeout さんの…」と出ても、名前で型を変えない)
+    var japanese = /[぀-ヿ㐀-鿿]/.test(bare);
+    var text = japanese ? errorHeadOf_(bare) : bare;
+
+    var en = ERROR_KIND_ENGLISH_();
+    for (var i = 0; i < en.length; i++) {
+      if (en[i].re.test(text)) return en[i].kind;
+    }
+    if (!japanese) return 'unknown';
+
+    var ja = ERROR_KIND_PHRASES_();
+    for (var j = 0; j < ja.length; j++) {
+      if (ja[j].re.test(text)) return ja[j].kind;
+    }
+    return 'unknown';
+  }
+
+  /**
+   * 型ごとの「次にすること」。retry は [もう一度] を出してよいか (busy だけ)。
+   *
+   * **busy のほかには出さない。** partial / quota / timeout は途中まで済んでいることがあり、押し直すと
+   * 同じものが2つできる。思いがけない失敗 (unknown) も、同じ理由で出さない。
+   *
+   * @param {string} kind
+   * @returns {{text: string, retry: boolean}}
+   */
+  function nextStepOf(kind) {
+    var steps = {
+      busy: { text: '少し待ってから、もう一度押してください。混み合っていただけで、何も変わっていません', retry: true },
+      partial: { text: '途中まで済んでいます。押し直す前に、一覧を開き直して何ができているかを確かめてください', retry: false },
+      quota: { text: 'しばらく時間をおいてから、一覧を開き直して済んでいないかを確かめてください。すぐに押し直すと、また断られます', retry: false },
+      timeout: { text: '途中まで済んでいるかもしれません。押し直す前に、一覧を開き直して確かめてください', retry: false },
+      forbidden: { text: 'この操作ができる人 (管理者か、作った本人) に頼んでください', retry: false },
+      gone: { text: '消されたか、捨てられたものです。文書なら Drive のゴミ箱から、やることなら置き場から戻せます', retry: false },
+      stale: { text: 'ほかで先に直されています。開き直して、いまの中身を見てからもう一度してください', retry: false },
+      invalid: { text: '断りに書いてあるとおりに入れ直すか、状態を整えてから、もう一度してください', retry: false },
+      unknown: { text: '一覧を開き直して、済んでいないかを確かめてください。続くときは「要望・不具合」から知らせてください', retry: false },
+    };
+    return Object.prototype.hasOwnProperty.call(steps, kind) ? steps[kind] : steps.unknown;
+  }
+
+  /**
+   * 画面に出す断りの字。日本語の文はそのまま、英語の実行時エラーは日本語に言い換える
+   * (元の字は画面が console に残す)。
+   *
+   * @param {*} message
+   * @returns {string}
+   */
+  function errorTextOf(message) {
+    var raw = String(message == null ? '' : message);
+    if (/[぀-ヿ㐀-鿿]/.test(raw)) return raw;
+    var said = {
+      quota: '混み合っているか、使える回数の上限に当たって、途中で止まりました',
+      timeout: '時間がかかりすぎて、途中で止まりました',
+      forbidden: 'この操作をする権限がありません',
+      gone: '対象が見つかりませんでした (消されたか、ゴミ箱に入っています)',
+    };
+    var kind = errorKindOf(raw);
+    return Object.prototype.hasOwnProperty.call(said, kind) ? said[kind] : '思いがけない理由でできませんでした';
   }
 
   /**
