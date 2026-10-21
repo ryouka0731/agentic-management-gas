@@ -669,6 +669,7 @@
       monitor: ['M20 3H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z', 'M8 21h8', 'M12 17v4'],
       calendar: ['M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z', 'M16 2v4', 'M8 2v4', 'M3 10h18'],
       user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
+      heart: ['M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z'],
       bell: ['M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
       expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
       search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.35-4.35'],
@@ -2093,6 +2094,8 @@
         if (searchIndexChangedBy(name)) searchIndexStale();
         // 楽しい演出のお祝いも、成功した api の名前だけで決める (表は js-fun の FUN_CHEERS)
         funCheerAfter(name, args);
+        // 推しのほめ言葉も同じ形 (表は js-oshi の OSHI_CALL_EVENTS)。飾りが落ちても ok は止めない
+        try { oshiAfter(name, args); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
         ok(res);
         // 集中のしかた: そのやることへの手なら「始めた」を確かめに行く (js-focus)。
         // 本来の返事の扱い (帯など) のあとに置く。先に置くと、確かめた知らせを本来の帯が上書きする
@@ -2101,6 +2104,8 @@
       .withFailureHandler(function (err) {
         failed(err);
         if (draft) reopenDraft(draft);
+        // 人が押した操作が断られたときだけ、推しがやさしく「しんぱい」する (叱らない)
+        try { oshiAfterFail(name); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
       });
 
     run[name].apply(run, args || []);

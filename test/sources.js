@@ -14,6 +14,7 @@
  *                  キューは api* と homeTurnPlain_ / reportPartsPlain_ を、ホーム・検索・ポイントは
  *                  画面の入口と同じ並びを前提にしているので、CORE だけでは足りない
  * - KIT_SOURCES:   配る道具。中身が大きいので、要るテストだけが足す
+ * - OSHI_DEFAULT_SOURCES: 推しの最初からいるキャラの絵 (焼いた data URL。キャラと形ごとに1つで、合わせて 1.4MB ほど)。要るテストだけが足す
  * - FULL_SOURCES:  APP + 残りの全部 (ToDo 連携・配る道具など)。実物は src を全部同じグローバルに
  *                  読むので、画面とサーバを通しで動かす test/e2e/ はこれで読む (画面の起動で
  *                  apiTasksState / apiKitStatus も呼ばれる)
@@ -43,19 +44,25 @@ export const CORE_SOURCES = [
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs',
+  'src/core/Oshi.js', 'src/core/OshiStore.gs',
 ];
 
 export const API_SOURCES = [
   'src/Main.gs', 'src/Debug.gs',
   'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
-  'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs',
+  'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
 
 export const KIT_SOURCES = ['src/KitFiles.gs', 'src/core/AgentKit.gs'];
 
+export const OSHI_DEFAULT_SOURCES = [
+  'src/core/OshiDefaultItsukiNormal.gs', 'src/core/OshiDefaultItsukiChibi.gs',
+  'src/core/OshiDefaultTakuNormal.gs', 'src/core/OshiDefaultTakuChibi.gs',
+];
+
 export const FULL_SOURCES = APP_SOURCES.concat([
   'src/core/GoogleTasks.gs', 'src/core/FileUrl.js', 'src/core/MarkdownView.js', 'src/core/Terms.js',
-], KIT_SOURCES);
+], KIT_SOURCES, OSHI_DEFAULT_SOURCES);

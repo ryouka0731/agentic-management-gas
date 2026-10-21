@@ -39,6 +39,12 @@ describe('画面とサーバで同じ答えになる', () => {
     }
   });
 
+  it('oshiGreetingOf (推しのあいさつの区切り)', () => {
+    const core = loadGas('src/core/Oshi.js');
+    const view = ui(['oshiGreetingOf']);
+    for (let h = -1; h <= 24; h++) expect(view.oshiGreetingOf(h), String(h)).toBe(core.oshiGreetingOf(h));
+  });
+
   it('tokyoDay (東京の暦日)', () => {
     // 画面は ISO の字で受け取り、サーバは台帳の Date で数える。同じ瞬間が
     // 同じ暦日にならないと、今日の線や残り日数がバーンダウンとずれる

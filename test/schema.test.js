@@ -43,6 +43,9 @@ const EXPECTED = {
   change_log: ['id', 'at', 'actor', 'target', 'action', 'field', 'before', 'after'],
   focus_sessions: ['id', 'issueNumber', 'who', 'plannedMinutes', 'startedAt', 'firstStep', 'provedAt',
     'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
+  // 推し (既定はオフ)。画像の中身は objects/ に置き、ここには誰のどの表情かだけ
+  oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId'],
+  oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
 };
 
 describe('メタDBの列順', () => {
