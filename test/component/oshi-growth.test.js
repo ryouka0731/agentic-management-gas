@@ -87,6 +87,29 @@ describe('推しの育ち', () => {
     expect(asked()).not.toContain('idle');
   });
 
+  it('達人・師範の絵が無いキャラは、持っているいちばん上の段の絵で出す (最初からいるキャラは名人)', () => {
+    const ctx = server(34); // Lv35 = 師範
+    expect(wire(ctx.apiOshiGet()).growth.key).toBe('grow5');
+    // 最初からいるキャラには 達人・師範 の絵が無い (サーバは null を返す)
+    mountWith(ctx, {}, {
+      apiOshiDefaultImage: (char, style, state) => (/grow[45]/.test(state) ? null
+        : { char, style, state, dataUrl: defaultUrl(char, style, state) }),
+    });
+    expect(homeImg().getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'grow3'));
+  });
+
+  it('自分のキャラは、師範の段でも、自分が入れたいちばん上の段の絵 (名人) を出す', () => {
+    const ctx = server(34);
+    const c = ctx.apiOshiCharCreate('ルナ', 'genki').charId;
+    ctx.apiOshiSetImage(c, 'idle', PNG_URL);
+    ctx.apiOshiSetImage(c, 'grow3', PNG_URL);
+    ctx.apiPrefSet('oshi.char', 'mine:' + c);
+    const app = mountWith(ctx, { 'oshi.char': 'mine:' + c });
+    const asked = app.calls.filter((x) => x.name === 'apiOshiImage').map((x) => x.args[1]);
+    expect(asked).toContain('grow3');
+    expect(asked).not.toContain('idle');
+  });
+
   it('場面の表情 (夜の ねむい) は、段の絵に置き換えない', () => {
     vi.setSystemTime(new Date('2026-10-21T14:00:00Z')); // 東京の23時
     const ctx = server(4);

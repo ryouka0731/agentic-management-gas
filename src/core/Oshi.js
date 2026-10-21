@@ -20,7 +20,8 @@
 
 /**
  * 表情。key は台帳 (oshi_images.state) に残るので変えない。
- * grow* は育ちの3段 (OSHI_STAGES と同じ key)。
+ * grow* は育ちの5段 (OSHI_STAGES と同じ key)。grow4 / grow5 は後から足したので末尾にあり、絵が無くてもよい
+ * (無ければ、そのキャラが持っているいちばん上の段の絵を出す。最初からいるキャラは grow3 まで)。
  *
  * @returns {Array<{key: string, label: string, when: string, pose: string, grow?: boolean, scene?: boolean}>}
  */
@@ -54,6 +55,11 @@ function OSHI_STATES() {
     // optional: 絵が無くてもよい表情 (最初からいるキャラの絵も焼かなくてよい)。fallback: 絵が無いときに代わりに出す表情
     { key: 'pout', label: 'むっ', when: 'やることが滞っているとき (機嫌がオンのときだけ)', scene: true, optional: true, fallback: 'worry',
       pose: 'ほっぺを少しふくらませて、口をとがらせている。「むっ」としているが、怖くなく、かわいらしい顔。にらんだり責めたりしていない' },
+    // 育ちの4段目と5段目。後から足したので末尾に置く。最初からいるキャラには絵が無いので optional で、名人 (grow3) の絵に代える
+    { key: 'grow4', label: '育ち4 達人', when: '育ちの4つ目の段', grow: true, optional: true, fallback: 'grow3',
+      pose: '名人の姿のまま、さらに頼もしくなった。落ち着いて余裕のある笑顔。名人の飾りはそのままに、肩掛けなどの小物を1つだけ足し、配色は変えない' },
+    { key: 'grow5', label: '育ち5 師範', when: '育ちの5つ目の段', grow: true, optional: true, fallback: 'grow3',
+      pose: 'いちばん成長した姿。穏やかで堂々とした、見守るような笑顔。これまでの飾りはそのままに、小さな紋章を1つだけ足し、配色は変えない' },
   ];
 }
 
@@ -787,6 +793,8 @@ function OSHI_STAGES() {
     { key: 'grow1', label: '見習い', min: 1 },
     { key: 'grow2', label: '一人前', min: 5 },
     { key: 'grow3', label: '名人', min: 15 },
+    { key: 'grow4', label: '達人', min: 25 },
+    { key: 'grow5', label: '師範', min: 35 },
   ];
 }
 

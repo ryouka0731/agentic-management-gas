@@ -229,17 +229,17 @@ describe('キャラ作成キット', () => {
       const page = openPage();
       const sheet = page.querySelector('.oshi-sheet');
       expect(sheet.querySelector('summary').textContent).toBe('1枚の表から切り分ける');
-      expect(sheet.querySelector('.oshi-sheet-rows').value).toBe('3');
+      expect(sheet.querySelector('.oshi-sheet-rows').value).toBe('4');
       expect(sheet.querySelector('.oshi-sheet-cols').value).toBe('4');
       expect(sheet.querySelector('.oshi-sheet-go').disabled).toBe(true);
       pickFile(sheet.querySelector('input.oshi-sheet-file'), new window.File([PNG], 'sheet.png', { type: 'image/png' }));
       await wait(() => sheet.querySelectorAll('.oshi-sheet-cell').length);
       const cells = [...sheet.querySelectorAll('.oshi-sheet-cell')];
-      expect(cells.length).toBe(12);
-      // 最初は表情の並びの順。表情が12 (むっ を含む) なので 4 × 3 のマスがちょうど埋まる (余れば「使わない」)
+      expect(cells.length).toBe(16);
+      // 最初は表情の並びの順。表情が14 (むっ と育ちの5段を含む) なので 4 × 4 のマスの残り2つは「使わない」
       const states = ctx.apiOshiGet().states.map((s) => s.key);
-      expect(states.length).toBe(12);
-      expect(cells.map((c) => c.querySelector('select').value)).toEqual(states);
+      expect(states.length).toBe(14);
+      expect(cells.map((c) => c.querySelector('select').value)).toEqual(states.concat(['', '']));
       expect(cells[5].querySelector('label').textContent).toContain('2行目・2列目');
       expect(cells[0].querySelector('img').alt).toBe('1行目・1列目の見本');
 
@@ -402,7 +402,7 @@ describe('キャラ作成キット (見直しの指摘)', () => {
       first.dispatchEvent(new window.Event('change', { bubbles: true }));
       expect(canvas.put.length).toBe(0);
       page.querySelector('.oshi-green').click();
-      expect(canvas.put.length).toBe(12);
+      expect(canvas.put.length).toBe(16);
       expect(sheet.querySelector('select.oshi-sheet-state').value).toBe('work');
     } finally {
       canvas.restore();

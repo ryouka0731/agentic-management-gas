@@ -360,7 +360,7 @@ export const DEFAULTS = {
     mine: [], mineMax: 5, styles: [], tones: [], states: [], basePrompt: '', luckyOneIn: 0,
     kitTools: [{ key: 'chatgpt', label: 'ChatGPT' }, { key: 'gemini', label: 'Gemini' }, { key: 'claude', label: 'Claude' },
       { key: 'codex', label: 'Codex' }],
-    sheet: { rows: 3, cols: 4 },
+    sheet: { rows: 4, cols: 4 },
     growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
     limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
     reveal: { items: [], open: 0, total: 0,
