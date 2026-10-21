@@ -5330,8 +5330,9 @@ body.focus-mode .mobile-nav { display: none !important; }
    絵 (.oshi-img) は none のままなので、動きは入れ物が受ける。jsdom はこの CSS を見ないので、テストは字で確かめる */
 .room-oshi { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; pointer-events: auto; }
 .room-oshi .oshi-img { -webkit-user-drag: none; pointer-events: none; }
+/* 絵の右上に出す。位置は絵の実際の箱から roomPat が決める (ここは測れないときの既定)。絵には重ねない */
 .room-oshi-say {
-  position: absolute; left: 31%; bottom: 62%; max-width: 40%; margin: 0; padding: var(--sp-2) var(--sp-3);
+  position: absolute; left: 57%; bottom: 60%; max-width: 32%; margin: 0; padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius); background: var(--accent-bg); color: var(--ink); font-size: 13px; line-height: 1.5;
   box-shadow: var(--shadow);
 }
