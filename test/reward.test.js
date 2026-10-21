@@ -104,14 +104,25 @@ describe('使えるポイントの数え方', () => {
     expect(ctx.apiRewardGet().earned).toBe(2);
   });
 
-  it('数え始める前に作ったやることは、あとで閉じても数えない (閉じ直して稼げない)', () => {
+  it('数え始める前からあったやることでも、数え始めてから済ませれば数える (前は作った時刻で切っていて、オンにしても 0 のままだった)', () => {
     const { ctx } = setup({ start: false });
     const old = ctx.apiIssueCreate('前からあったもの', '', []).number;
     ctx.apiIssueUpdate(old, { assignee: ME });
-    // 作った時刻と数え始めが同じミリ秒になると「前から」と言えない (重い全体の走りで時々落ちていた)。1分前に作ったことにする
     ctx.dbUpdate('issues', 'number', old, { createdAt: new Date(Date.now() - 60000) });
     ctx.apiRewardGet();
     ctx.issueClose(old, null);
+    closeMine(ctx);
+    expect(ctx.apiRewardGet().earned).toBe(2);
+  });
+
+  it('数え始める前に済ませてあったものは数えない (閉じた時刻で切る)', () => {
+    const { ctx } = setup({ start: false });
+    const old = ctx.apiIssueCreate('前に済ませたもの', '', []).number;
+    ctx.apiIssueUpdate(old, { assignee: ME });
+    ctx.issueClose(old, null);
+    // 閉じた時刻と数え始めが同じミリ秒にならないように、1分前に閉じたことにする
+    ctx.dbUpdate('issues', 'number', old, { closedAt: new Date(Date.now() - 60000) });
+    ctx.apiRewardGet();
     closeMine(ctx);
     expect(ctx.apiRewardGet().earned).toBe(1);
   });
