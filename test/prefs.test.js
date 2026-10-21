@@ -45,7 +45,7 @@ describe('一覧', () => {
     expect(new Set(keys).size).toBe(keys.length);
     all.forEach((p) => {
       expect(['team', 'me']).toContain(p.scope);
-      expect(['int', 'bool', 'enum', 'steps', 'char', 'calendar']).toContain(p.type);
+      expect(['int', 'bool', 'enum', 'steps', 'char', 'calendar', 'music']).toContain(p.type);
       expect(p.label).toBeTruthy();
       // 既定値はそれ自身の検査を通る (通らないと未設定のときに今の動きが崩れる)
       expect(ctx.prefValid_(p, p.def)).toBe(true);

@@ -430,4 +430,179 @@ describe('集中のしかた', () => {
     vi.advanceTimersByTime(3000);
     expect(ctx.suspended).toBe(1);
   });
+
+  describe('自分の曲 (YouTube / SoundCloud の埋め込み)', () => {
+    const VID = 'dQw4w9WgXcQ';
+    const LIST = 'PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG';
+    const OWN = Object.assign({ 'focus.music': 'own' }, ON);
+    const mountMusic = (values, parts, over) => mountFocus(values, Object.assign({
+      apiPrefs: prefsFixture({ values, musicParts: parts }),
+    }, over || {}));
+    const frames = () => [...document.querySelectorAll('iframe')].filter((f) => f.id !== 'viewer');
+    // 外の場所を指す属性 (src / href / srcset / data など) が1つでもあれば「読み込んだ」とみなす。字の説明は数えない
+    const outside = () => [...document.querySelectorAll('*')].some((el) => [...el.attributes].some((a) =>
+      !/^(data-hint|aria-label|title|placeholder)$/.test(a.name) && /youtube|ytimg|soundcloud|sndcdn/i.test(a.value)));
+    class FakeAudio {
+      constructor() { this.sampleRate = 8000; this.currentTime = 0; this.state = 'running'; this.destination = {}; FakeAudio.made.push(this); }
+      createBuffer(ch, len) { const d = new Float32Array(len); return { getChannelData: () => d }; }
+      createBufferSource() { const src = { connect() {}, start() { src.started = true; }, stop() { src.stopped = true; } }; this.src = src; return src; }
+      suspend() { this.state = 'suspended'; }
+      resume() { this.state = 'running'; }
+      createGain() {
+        const p = { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, cancelScheduledValues() {}, setTargetAtTime() {} };
+        return { gain: p, connect() {} };
+      }
+    }
+
+    it('使わない設定なら、集中していても欄を出さない。リンクが無くても出さない', () => {
+      const app = mountMusic(ON, { kind: 'youtube', list: LIST });
+      startFromRow(app, 25);
+      expect(dock().classList.contains('is-running')).toBe(true);
+      expect(dock().querySelector('.focus-music')).toBe(null);
+      const app2 = mountMusic(OWN, null);
+      startFromRow(app2, 25);
+      expect(dock().querySelector('.focus-music')).toBe(null);
+      expect(frames()).toEqual([]);
+    });
+
+    it('押すまで何も読み込まない。押すと部品から組んだ URL だけを枠に入れ、止めて閉じると外す', () => {
+      const app = mountMusic(OWN, { kind: 'youtube', list: LIST });
+      startFromRow(app, 25);
+      const box = dock().querySelector('.focus-music');
+      expect(box.textContent).toContain('自分の曲');
+      expect(box.textContent).toContain('イヤホンで聞いてください。歌の無い曲のほうが読み書きの邪魔になりにくいです');
+      expect(box.textContent).toContain('職場のネットワークによっては開けないことがあります。そのときは中の音 (ノイズ・ビート) を使ってください');
+      // 読み込む前: 枠も外の場所の字も無い
+      expect(frames()).toEqual([]);
+      expect(outside()).toBe(false);
+      const btn = box.querySelector('.focus-music-toggle');
+      expect(btn.textContent).toBe('読み込む');
+      btn.click();
+      const f = frames();
+      expect(f.length).toBe(1);
+      expect(f[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/videoseries?list=' + LIST + '&rel=0');
+      expect(f[0].getAttribute('allow')).toBe('autoplay; encrypted-media; fullscreen');
+      expect(f[0].getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
+      expect(f[0].getAttribute('sandbox').split(' ')).toEqual(expect.arrayContaining(
+        ['allow-scripts', 'allow-same-origin', 'allow-popups', 'allow-presentation']));
+      expect(f[0].getAttribute('sandbox')).not.toContain('allow-top-navigation');
+      expect(f[0].title).toContain('YouTube');
+      expect(btn.textContent).toBe('止めて閉じる');
+      btn.click();
+      expect(frames()).toEqual([]);
+      expect(btn.textContent).toBe('読み込む');
+    });
+
+    it('SoundCloud も決めた形の URL を入れる', () => {
+      const app = mountMusic(OWN, { kind: 'soundcloud', path: 'lofi/sets/rain' });
+      startFromRow(app, 25);
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames()[0].getAttribute('src')).toBe('https://w.soundcloud.com/player/?url=' +
+        encodeURIComponent('https://soundcloud.com/lofi/sets/rain') + '&auto_play=false&visual=false&hide_related=true');
+    });
+
+    it('崩れた部品が届いても枠を作らない', () => {
+      const app = mountMusic(OWN, { kind: 'youtube', video: VID + '"><img>' });
+      startFromRow(app, 25);
+      expect(dock().querySelector('.focus-music')).toBe(null);
+      expect(frames()).toEqual([]);
+    });
+
+    it('集中を終えると外す', () => {
+      const app = mountMusic(OWN, { kind: 'youtube', video: VID });
+      startFromRow(app, 25);
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames()[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/' + VID + '?rel=0&modestbranding=1');
+      dock().querySelector('.focus-stop').click();
+      expect(frames()).toEqual([]);
+      expect(dock()).toBe(null);
+    });
+
+    it('画面の中で作る音とは同時に流さない (片方を始めると、もう片方を止める)', () => {
+      FakeAudio.made = [];
+      window.AudioContext = FakeAudio;
+      const app = mountMusic(Object.assign({ 'focus.sound': true }, OWN), { kind: 'youtube', video: VID });
+      startFromRow(app, 25);
+      const kind = dock().querySelector('.focus-sound-kind');
+      kind.value = 'pink';
+      const play = dock().querySelector('.focus-sound-toggle');
+      play.click();
+      expect(play.textContent).toBe('音を止める');
+      const first = FakeAudio.made[0].src;
+      expect(first.started).toBe(true);
+      dock().querySelector('.focus-music-toggle').click();
+      expect(first.stopped).toBe(true);
+      expect(play.textContent).toBe('音を流す');
+      expect(frames().length).toBe(1);
+      play.click();
+      expect(frames()).toEqual([]);
+      expect(dock().querySelector('.focus-music-toggle').textContent).toBe('読み込む');
+    });
+
+    it('設定の画面: リンクの欄は打つたびに確かめ、使えるときだけ送る', () => {
+      const app = mountMusic(OWN, null);
+      app.respond('apiPrefSet', () => prefsFixture({ values: OWN, musicParts: { kind: 'youtube', list: LIST } }));
+      q('.nav-item[data-tab="settings"]').click();
+      const field = q('[data-pref="focus.musicUrl"]');
+      expect(document.getElementById('settings-mine').contains(field)).toBe(true);
+      const input = field.querySelector('input.pref-music-url');
+      const check = field.querySelector('.pref-music-check');
+      input.value = 'https://www.youtube.com.evil.com/watch?v=' + VID;
+      input.dispatchEvent(new window.Event('input'));
+      expect(check.textContent).toBe('YouTube か SoundCloud のリンクだけ使えます');
+      expect(check.classList.contains('is-ng')).toBe(true);
+      input.dispatchEvent(new window.Event('change'));
+      expect(callsOf(app, 'apiPrefSet')).toEqual([]);
+      input.value = 'https://www.youtube.com/playlist?list=' + LIST;
+      input.dispatchEvent(new window.Event('input'));
+      expect(check.textContent).toBe('このリンクを使えます: YouTube の再生リスト');
+      input.dispatchEvent(new window.Event('change'));
+      expect(callsOf(app, 'apiPrefSet')).toEqual([['focus.musicUrl', 'https://www.youtube.com/playlist?list=' + LIST]]);
+      // 設定の画面を開いても、外のものは読み込まない
+      expect(outside()).toBe(false);
+    });
+
+    it('集中しているあいだに設定でリンクを変えると、読み込んだ枠を外して欄を描き直す。やめると欄ごと外す', () => {
+      const app = mountMusic(OWN, { kind: 'youtube', video: VID });
+      startFromRow(app, 25);
+      dock().querySelector('.focus-music-toggle').click();
+      expect(frames().length).toBe(1);
+      // 設定の画面でリンクを変える (返事の applyPrefs → focusPrefsChanged)
+      app.respond('apiPrefSet', () => prefsFixture({ values: OWN, musicParts: { kind: 'youtube', list: LIST } }));
+      q('.nav-item[data-tab="settings"]').click();
+      const input = q('[data-pref="focus.musicUrl"] input.pref-music-url');
+      input.value = 'https://www.youtube.com/playlist?list=' + LIST;
+      input.dispatchEvent(new window.Event('change'));
+      expect(frames()).toEqual([]);
+      const toggle = dock().querySelector('.focus-music-toggle');
+      expect(toggle.textContent).toBe('読み込む');
+      toggle.click();
+      expect(frames()[0].getAttribute('src')).toBe('https://www.youtube-nocookie.com/embed/videoseries?list=' + LIST + '&rel=0');
+      // 自分の曲をやめる
+      app.respond('apiPrefSet', () => prefsFixture({ values: ON, musicParts: { kind: 'youtube', list: LIST } }));
+      const sel = q('[data-pref="focus.music"] select');
+      sel.value = 'off';
+      sel.dispatchEvent(new window.Event('change'));
+      expect(frames()).toEqual([]);
+      expect(dock().querySelector('.focus-music')).toBe(null);
+      expect(dock().classList.contains('is-running')).toBe(true);
+    });
+
+    it('設定の画面: 保存に失敗したら欄を元に戻し、確かめの字も元に合わせる。空の既定には「空に戻します」', () => {
+      const app = mountMusic(OWN, null);
+      app.respond('apiPrefSet', () => new Error('混み合っています'));
+      q('.nav-item[data-tab="settings"]').click();
+      const field = q('[data-pref="focus.musicUrl"]');
+      const input = field.querySelector('input.pref-music-url');
+      const check = field.querySelector('.pref-music-check');
+      input.value = 'https://www.youtube.com/playlist?list=' + LIST;
+      input.dispatchEvent(new window.Event('input'));
+      expect(check.textContent).toContain('使えます');
+      input.dispatchEvent(new window.Event('change'));
+      expect(callsOf(app, 'apiPrefSet').length).toBe(1);
+      expect(input.value).toBe('');
+      expect(check.textContent).toBe('');
+      expect(field.querySelector('.pref-reset').getAttribute('data-hint')).toBe('空に戻します');
+    });
+  });
 });
