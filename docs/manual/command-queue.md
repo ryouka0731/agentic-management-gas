@@ -121,6 +121,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | `reportDraft` | `kind` (任意: `three` / `today` / `plain` / `custom`) | 今日の日報の下書きの中身と形 |
 | `searchIndex` | なし | 横断検索の一覧 (題名・番号・状態だけ。絞るのは手元) |
 | `oshiPrompt` | `tool` (`chatgpt` / `gemini` / `claude` / `codex`) | 推しのキャラ作成キットの頼み文 (`{tool, label, prompt}`)。読むだけ。中身は番頭の定義の字で、人の字を含まない |
+| `oshiSpinner` | なし | 置いた人がいま使う推しの考え中のせりふ (`{on, char, name, lines, reason}`。`lines` は24字まで・20個まで)。読むだけ。見るのは置いた人の自分の設定で、推しがオフなら `on: false`・空の `lines` と理由。手元の `oshi-spinner` が Claude Code の `spinnerVerbs` に書く |
 
 ### 管理者だけ
 
@@ -149,7 +150,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 
 命令ファイルを置いた人を `by` として読む (マイドライブではファイルの持ち主、共有ドライブでは最後に書いた人)。
 
-- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft` / `workStyle`、`COMMAND_PERSONAL_OPS()`) は、置いた人から見た様子を返す。**
+- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft` / `workStyle` / `oshiSpinner`、`COMMAND_PERSONAL_OPS()`) は、置いた人から見た様子を返す。**
   置いた人が分からなければ「命令を置いた人が分かりません」で断る。マイドライブで命令ファイルの持ち主が移されて
   最後に書いた人と食い違うときも断る
 - **管理者だけの命令 (`oshiProfileSet`、`COMMAND_ADMIN_OPS()`) は、置いた人が管理者のときだけ走る。** 置いた人は上と同じく

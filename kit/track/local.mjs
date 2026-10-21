@@ -16,7 +16,7 @@ import { readConfig, cleanVersion, compareVersions, paths } from './update.mjs';
  * この道具の版。**番頭の AGENT_KIT_VERSION() と同じでなければならない**
  * (test/kit-commands.test.js が見ている)。doctor が入れた道具の版と比べる。
  */
-export const KIT_VERSION = '1.13.0';
+export const KIT_VERSION = '1.14.0';
 
 /** 画面の OFFICIAL と同じ言葉 */
 const OFFICIAL = '正式版';
@@ -398,7 +398,9 @@ export function doctor({ config, home, claude, now = Date.now(), version = KIT_V
   doctorConfig(r, config);
   const queueDir = doctorQueueDir(r, config);
   if (queueDir) doctorReplies(r, queueDir, now);
-  const banto = readConfig(home);
+  // config.json は oshi-spinner だけでも作られる (spinner の鍵だけ)。入れた印 (入れ先・入れた版) があるときだけ、入れたものとして見る
+  const read = readConfig(home);
+  const banto = read && (read.queueDir || read.kitVersion) ? read : null;
   doctorVersion(r, banto, home, version);
   if (banto) doctorHooks(r, home, claude);
 

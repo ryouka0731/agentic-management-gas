@@ -82,7 +82,6 @@ function oshiMoodDays_(from, to) {
  */
 function oshiMoodSignals_(email, now, issues) {
   var who = oshiWho_(email);
-  var me = String(email || '');
   var all = issues || dbReadAll('issues');
   var made = null;
   function mine(row) {
@@ -119,7 +118,8 @@ function oshiMoodSignals_(email, now, issues) {
     if (done[String(row.number)] || !mine(row)) return;
     open++;
     var due = oshiMoodDay_(row.dueDate);
-    if (due && due < today && issueAssignees(row).indexOf(me) >= 0) overdue++;
+    // 担当の字の大小は見ない (改善のヒントの期限切れ・「見る」の一覧と同じ)
+    if (due && due < today && issueAssignees(row).some(function (a) { return oshiWho_(a) === who; })) overdue++;
     if (stalenessOf(row, now, steps).level >= 1) stale++;
     var made = oshiMoodDay_(row.createdAt) || today;
     if (made > today) made = today;

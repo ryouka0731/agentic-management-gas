@@ -260,6 +260,20 @@ describe('数える (OshiMood.gs)', () => {
     expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', event: 'mood_recover', recovered: true });
   });
 
+  it('担当の字の大小は見ない (期限切れも、開いている数・動きなしと同じく同じ人として数える)', () => {
+    const { ctx } = setup({ noCache: true });
+    issue(ctx, { dueDate: tokyoMidnight('2026-10-01'), assignee: 'TESTER@Example.com' }, NOW);
+    expect(ctx.oshiMoodSignals_(ME, NOW)).toMatchObject({ open: 1, overdue: 1 });
+  });
+
+  it('やることを消したら (issuePurge)、担当の人の覚えを消して数え直す', () => {
+    const { ctx } = setup();
+    const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
+    expect(ctx.apiOshiMood().level).toBe('sulky');
+    ctx.issuePurge(n);
+    expect(ctx.apiOshiMood()).toMatchObject({ level: 'normal', recovered: true });
+  });
+
   it('ほかの人がわたしの担当を外したときも、わたしの覚えを消して数え直す', () => {
     const { ctx, fake } = setup();
     const n = issue(ctx, { dueDate: ctx.plainDay(new Date(Date.now() - 3 * DAY)) });
@@ -332,8 +346,8 @@ describe('キャラ作成キットと機嫌', () => {
     for (const k of ['mood_sulky', 'mood_pouty', 'mood_recover']) {
       expect(p.split('\n').find((l) => l.startsWith('  - ' + k + ':')), k).toContain('機嫌がオンのときだけ');
     }
-    // むっ 以外は「無くてもよい」と書かない
-    expect(p.split('\n').filter((l) => l.includes('無くてもよい')).length).toBe(1);
+    // 絵が無くてもよい表情 (むっ と、育ちのべったり・家族) のほかは「無くてもよい」と書かない
+    expect(p.split('\n').filter((l) => l.includes('無くてもよい')).map((l) => l.split(' ')[1])).toEqual(['pout', 'grow4', 'grow5']);
   });
 
   it('取り込みは機嫌のせりふも受け取り、無くても断らない', () => {

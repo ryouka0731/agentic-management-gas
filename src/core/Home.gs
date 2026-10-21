@@ -530,7 +530,10 @@ function homeAdvice_(email, now, tables) {
 
   // 自分が担当の、片づいていないやること (捨てたものを除く)
   var mineOpen = t.issues.filter(function (row) {
-    return String(row.state) !== 'closed' && !row.archivedAt && issueAssignees(row).indexOf(me) >= 0;
+    // 担当の字の大小は見ない (Drive と Session で字の大小が違うことがある。推しの機嫌・「見る」の一覧と同じ)
+    return String(row.state) !== 'closed' && !row.archivedAt && issueAssignees(row).some(function (a) {
+      return String(a).toLowerCase() === String(me).toLowerCase();
+    });
   });
 
   // 確認を待たせている

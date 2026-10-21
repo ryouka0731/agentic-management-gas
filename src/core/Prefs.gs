@@ -346,7 +346,7 @@ function PREF_GROUPS_() {
         { key: 'ach.on', scope: 'me', type: 'bool', section: '実績',
           label: '実績を集める',
           help: '番頭を開いた日 (通算)・済ませた数・はじめて使った機能で実績 (バッジ) が取れます。あなたにだけ見え、' +
-            '続けた日数や順位は数えません。推しのレベルは取った実績の数で上がります',
+            '続けた日数や順位は数えません。推しのなつき度は取った実績の数で上がります',
           def: true },
         { key: 'ach.cheer', scope: 'me', type: 'bool', section: '実績',
           label: '実績を取ったら知らせる',

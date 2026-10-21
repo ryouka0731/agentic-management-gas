@@ -505,7 +505,7 @@ function issueRestore(number) {
  * @param {number} number
  */
 function issuePurge(number) {
-  issueGet(number);
+  var row = issueGet(number);
 
   /*
    * **ぶら下がっているものも全部消す。**
@@ -518,7 +518,7 @@ function issuePurge(number) {
    * 知らせの行き先 (`issue:N`) も、消したものを指したまま残すと、押した人が
    * 別のやることに連れて行かれる。
    */
-  return dbWithLock_(30000, function () {
+  var out = dbWithLock_(30000, function () {
     /*
      * **やることの行は最後に消す。**
      *
@@ -541,6 +541,9 @@ function issuePurge(number) {
     dbDelete('goal_links', 'issueNumber', number);
     dbDelete('issues', 'number', number);
   });
+  // 消したやることを推しの機嫌に数え続けない (担当の人と押した本人の覚えを消す。鍵の外で)
+  issueMoodForget_(row);
+  return out;
 }
 
 /**
