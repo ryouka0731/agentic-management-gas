@@ -369,7 +369,14 @@ function runCommandFileLocked_(file, queue, done) {
     op = String(cmd && cmd.op ? cmd.op : '');
     var by = commandOwner_(file);
     if (COMMAND_PERSONAL_OPS().indexOf(op) >= 0) by = commandPersonOf_(file, by);
-    result = { ok: true, op: op, result: runCommand_(cmd, by) };
+    var ranFrom = Date.now();
+    try {
+      result = { ok: true, op: op, result: runCommand_(cmd, by) };
+    } finally {
+      // 台帳には持ち主 (トリガーを仕掛けた人) の名で残る。成果の数で「記録した人」を数えるときに、
+      // 命令を置いた人として数え直すため、走った時間と置いた人を覚える (Outcomes.gs)
+      if (typeof outcomesQueueNote_ === 'function') outcomesQueueNote_(ranFrom, Date.now(), currentEmail_(), by);
+    }
   } catch (e) {
     result = { ok: false, op: op, error: e.message };
   }
@@ -549,6 +556,13 @@ function processCommandQueue() {
     if (typeof housekeepArchiveDaily_ === 'function') housekeepArchiveDaily_();
   } catch (e) {
     Logger.log('片付けに失敗しました: ' + e.message);
+  }
+  // 成果の数も1日1回。**片付けとは別の印で受け持つ** (Outcomes.gs の outcomesDailyOnce_)。同じ印にすると、
+  // 数えるところで時間切れになったとき片付けごとやり直しになる。片付けが済んだ日だけ走る
+  try {
+    if (typeof outcomesDailyOnce_ === 'function') outcomesDailyOnce_(new Date());
+  } catch (e3) {
+    Logger.log('成果の数を数えられませんでした: ' + e3.message);
   }
 
   if (ran < targets.length) return ran + '件処理しました (残りは他の処理が実行中のため次の回に)';

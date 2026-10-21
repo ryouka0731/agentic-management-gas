@@ -56,6 +56,35 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   本番と同じ順につなぐ。テストに並びを写さない。`test/ui-assemble.test.js` が、`Main.gs` の
   `include()` でテンプレートを評価したものと同じ字になるかを見ている
 
+## 断りに「次にすること」を添える
+
+`call()` の失敗の見せ方 (既定の帯・`failSnack` / `failInto` / `failEnable`) は、断りの字の下に1行
+「次にすること: …」を出す。**`failQuiet` は出さない** (黙ってよいものに次の一手は要らない)。型と言葉は
+`src/core/ErrorKind.js` が唯一の定義で、画面の `errorKindOf` / `nextStepOf` / `errorTextOf` はその写し
+(`test/ui-parity.test.js`)。設計は `docs/superpowers/specs/2026-10-21-motivation-review-2.md` の D.1。
+
+- 型は busy / partial / quota / timeout / forbidden / gone / stale / invalid / unknown。**断りの字は変えずに、決まった言い回しから引く。**
+  日本語の文は、名前や番号が入る場所 (`ERROR_NAME_SLOTS_`: 最初の「: 」「：」より後・「…」の中・# のあと・文の頭の
+  「<名前> さんの」など) を外した字だけを見る。**英語の言い回しもそこにだけ当てる** (英語の名前で型を変えない)
+- **busy は `dbWithLock_` の断り (`DB_BUSY_TEXT()`) と同じ字のときだけ。** 同じ実行の中で鍵の中の処理を1つ済ませたあとに
+  鍵が取れなければ、`dbWithLock_` は別の字 (`DB_PARTIAL_TEXT()`、型は partial) で断る。やることを作る (番号 → カード → 担当) の
+  ように鍵を続けて取る操作では、2つ目で断られたときには1つ目がもう書かれているため。「この実行の中で」は `dbWroteThisRun_`
+  (実機は呼び出しごとにグローバルを読み直す。テストは `test/harness.js` が外からの1回ごとに `dbRunBegin_()` で戻す)。
+  英語の混み合い・上限 (`Lock timeout` / `Service invoked too many times` など) は操作の途中で起きるので quota (押し直さない)
+- **今ある断り文 (new Error の字) は全部どれかの型に当たる** (`test/errorkind.test.js` が `test/naming.test.js` と同じ拾い方で走査する)。
+  当たらない断りを足すとそこで落ちる。そのときは断り文ではなく `ERROR_KIND_PHRASES_` の言い回しを足す
+- **[もう一度] は busy のときだけ、1回だけ。** 何も書かないうちに断っているので押し直してよい。押すと同じ api を同じ引数で
+  呼び直し (`callOnce`)、また失敗しても2回目は出さない。**ほかの型には出さない** (途中まで済んでいることがあり、
+  押し直すと同じものが2つできる)。`failEnable` のボタンは押し直すあいだも押せなくする
+- **押し直す道は1つだけ使える** (`makeRetry`)。[もう一度]・開き直した入力欄から送る・押せるように戻したボタンを押す、の
+  どれかを使ったら、ほかは外す (帯と器のボタンを消し、[もう一度] を押していたら入力欄を閉じる)
+- 失敗の見せ方は `err` しか受け取らないので、型と押し直す手立ては `call()` が失敗のハンドラを呼ぶあいだだけ `callFailure` に置く
+- **英語の実行時エラーはそのまま出さず日本語に言い換える** (`errorTextOf`)。元の字は `console.warn` に残す
+- 時間切れはサーバでは数えられないので、画面が使われ方の場所 `error:timeout` として数える (毎日の成果の数の `timeoutErrors`)
+- 帯は文と次の行を `.snackbar-body` にまとめ (ボタンは右のまま)、器は `.fail-text` / `.fail-next` / `.fail-again` に分けて置く
+- 試すのは `test/component/error-recovery.test.js` (型ごとの出方・押し直し・1つだけ使える)、`test/api/partial-busy.test.js`
+  (途中まで書いてからの断り) と `test/e2e/errors.test.js` (混み合い → もう一度 → 1件だけできる・途中まで済んだら出さない)
+
 ## 画面の落とし穴
 
 (元は「落とし穴」の項目)
@@ -79,7 +108,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   減らすための意図的な重複。**片方だけ直すと表示と実体がずれる**:
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
   `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
-  `oshiGreetingOf`
+  `oshiGreetingOf` /
+  `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`)
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
   図が消える。図の座標は手で置いているため、`test/component/settings-usage-guide.test.js` の
