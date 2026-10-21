@@ -72,6 +72,9 @@
 
 キャラ作成キットの取り込み (`apiOshiCharImport`) もアドレスを受けず、開いている本人のキャラを作るか直すだけ (番号は自分の中から探す)。
 頼み文 (`apiOshiCharKitPrompt` / 命令 `oshiPrompt`) は定義の字だけで、誰に返しても同じ (命令は置いた人を見ない)。
+考え中のせりふ (命令 `oshiSpinner` → `oshiSpinnerLines_`) は**置いた人 (`by`) の自分の設定** (`oshi.on` / `oshi.char`) だけを見て、
+その人のキャラのせりふを返す (`COMMAND_PERSONAL_OPS()`。ほかの人の自分のキャラは `oshi.char` の検査で選べないので返らない)。
+自分のキャラのせりふは本人の字なので、返事は入れ先に置かれ、共有している人なら読める (`homeMine` と同じ扱い)。
 
 **推しのプロフィール (Lv で少しずつ分かる) とクリア。** どこまで見せるかはサーバが決める (`oshiProfileReveal`。Lv = `achLevel_`、
 クリア = 今の `ACHIEVEMENTS()` を全部取った `oshiClearedOf_`)。届いていない項目は名前も中身も返さず (Lv だけ)、クリアのお祝いの

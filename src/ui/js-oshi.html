@@ -1959,6 +1959,7 @@
     sec.appendChild(oshiHeading(oshiMineName(c) + ' のせりふ'));
     sec.appendChild(oshiNote('場面ごとに、言ってほしいせりふを足せます (1行に1つ、' + d.limits.linesPerEvent +
       '個まで・1つ' + d.limits.lineMax + '字まで)。足したせりふと、口調のせりふを順に言います。'));
+    // 考え中 (spinner) は吹き出しでは言わない。手元の道具の oshi-spinner が Claude Code の考え中の字にする
     (c.events || []).forEach(function (ev) {
       var item = document.createElement('details');
       item.className = 'oshi-lines';
@@ -1966,6 +1967,10 @@
       var sum = document.createElement('summary');
       sum.textContent = ev.label + (ev.mine && ev.mine.length ? ' (自分のせりふ ' + ev.mine.length + ')' : '');
       item.appendChild(sum);
+      if (ev.spinner) {
+        item.appendChild(oshiNote('Claude Code が考えているあいだに出す短い言葉です (1つ' + ev.lineMax +
+          '字まで)。手元の道具の node agent.mjs oshi-spinner on で使えます。吹き出しでは言いません。'));
+      }
       item.appendChild(oshiNote('いまの口調では: ' + (ev.lines || []).join(' / ')));
       var area = document.createElement('textarea');
       area.className = 'oshi-lines-input';
