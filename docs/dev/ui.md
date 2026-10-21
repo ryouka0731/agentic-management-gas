@@ -109,6 +109,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
   `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
   `oshiGreetingOf` /
+  `focusMusicParse_` / `focusMusicPartsValid_` / `focusMusicEmbedUrl_` / `focusMusicLinkOf_` (`src/core/FocusMusic.js`。写しは `js-focus`) /
   `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`)
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
@@ -164,7 +165,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 
 ## 集中のしかた (`js-focus`)
 
-自分の設定の「集中のしかた」(`focus.start` / `focus.remind` / `focus.sound`) をオンにした人の画面にだけ出す。**既定はオフ。**
+自分の設定の「集中のしかた」(`focus.start` / `focus.remind` / `focus.sound` / `focus.music` / `focus.musicUrl`) をオンにした人の画面にだけ出す。**既定はオフ。**
 項目は `PREFS_SCHEMA()` (`PREF_FOCUS_ITEMS_`) が持ち、画面は `prefs.effective.focus` を `focusOn()` / `focusSoundOn()` /
 `focusRemindEvery()` で読むだけ。オフのあいだは入口 (`makeFocusStartButton` / `makeFocusRecordButton`) が null を返し、
 `apiFocusMine` も呼ばない。サーバは `src/core/Focus.gs` と `src/api/Focus.gs`、台帳は `focus_sessions`。
@@ -188,6 +189,25 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **集中の画面は CSS で隠すだけ** (`body.focus-mode`)。右のペインも掴み手も知らせの数も、状態は変えずに見えなくする。
   Esc で戻り、集中を終えたら必ず戻す (`focusClear`)
 - 置き場 (`#focus-dock`) は初めて要るときに作る。字は `textContent` だけ。色はトークンだけ
+- **自分の曲 (`focus.music` / `focus.musicUrl`) は、この画面が外から取ってくるただ1つの例外** (`CLAUDE.md` の「制約」)。
+  YouTube / SoundCloud の公式の埋め込みの再生機を `<iframe>` で置く。守ること:
+  - **「読み込む」を押すまで何も置かない** (`makeFocusMusicControls` は枠を作らない。`focusMusicLoad` は押した聞き手からだけ呼ぶ)。
+    設定の画面でリンクを確かめるときも読み込まない
+  - src は `prefs.effective.focus.musicParts` (サーバが読み解いた部品) から `focusMusicEmbedUrl_` で組んだものだけ。
+    貼られた URL の字は画面にもサーバにも残さない。YouTube は `www.youtube-nocookie.com`
+  - 枠の属性は `allow="autoplay; encrypted-media"`・`referrerpolicy="strict-origin-when-cross-origin"`・
+    `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"`。
+    再生機は自分の場所のスクリプトと保存 (allow-scripts + allow-same-origin) が要る。YouTube は送り元 (Referer) が無いと
+    再生を断る (error 153) ので `no-referrer` にしない。題名や「YouTube で見る」で開く頁は枠の外で開かせる
+    (`allow-popups-to-escape-sandbox`。付けないと開いた頁も枠の制限を受けて動かない)。`allow-top-navigation` は付けない
+    (番頭の頁を差し替えさせない)
+  - 画面の中で作る音とは同時に流さない (`focusSoundPlay` が `focusMusicClose` を呼び、`focusMusicLoad` が `focusSoundStop` を呼ぶ)。
+    集中を終える (`focusClear`)・設定でやめる (`focusPrefsChanged`) と枠ごと外す
+  - **確かめていないこと**: 番頭は HtmlService の枠 (IFRAME モード、`*.googleusercontent.com`) の中で動き、その枠にも
+    sandbox が付いている。入れ子の枠は外の枠の制限を超えられないので、外の枠に `allow-presentation` などが無ければ全画面は
+    効かない。HtmlService が枠の中の頁に CSP (`frame-src`) を付けて外の枠を止めるかどうか、YouTube / SoundCloud の
+    `X-Frame-Options` / `frame-ancestors` が googleusercontent.com の中で許すかは、実機で確かめていない
+    (どちらの再生機も埋め込み用なので、ふつうは許す)。職場のネットワークで止められることもある
 - 「ADHD」など人を分ける言葉は画面に出さない。「集中のしかた」として全員向けに書き、効き目を約束しない
 - 試すのは `test/component/focus.test.js` (押して確かめる)・`test/focus-ui.test.js` (計算と音の形)・
   `test/focus.test.js` (サーバ)・`test/e2e/focus.test.js` (通し)

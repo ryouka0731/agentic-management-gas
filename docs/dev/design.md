@@ -154,7 +154,11 @@ OS が描くので、`option` の字と地だけテーマに合わせる。
 
 説明の図に Mermaid や draw.io を持ち込まない。読み込みが1つ増えるうえ、
 この画面は外から何も取ってこない作りにしてある。地の色に合わせるのも、
-その場で描いたほうが確実。
+その場で描いたほうが確実。(ただ1つの例外は集中のしかたの「自分の曲」で、押したときにだけ YouTube /
+SoundCloud の再生機を置く。`docs/dev/ui.md` の「集中のしかた」)
+
+自分の曲の再生機の枠 (`.focus-music-frame`) は置き場の幅に合わせ (`width: 100%`、横にはみ出させない)、YouTube は 16:9、
+SoundCloud は字だけの形 (`visual=false`) の 166px にする。読み込むまで枠は無い (`.focus-music-holder:empty` は隠す)。
 
 `makeDiagram(spec)` が、箱と矢印の座標を書いた spec から SVG を組み立てる。
 矢印の先は図ごとに名前を分ける（同じ頁に2つ並ぶため）。`role="img"` と
