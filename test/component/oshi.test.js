@@ -283,6 +283,19 @@ describe('推し', () => {
     expect(item.querySelector('summary').textContent).toContain('自分のせりふ 2');
   });
 
+  it('考え中のせりふも自分のせりふの欄で直せ、24字までと Claude Code で使うことが添えてある', () => {
+    const app = mountOshi(ON);
+    const page = openPage();
+    const item = page.querySelector('.oshi-lines[data-event="spinner"]');
+    expect(item.textContent).toContain('1つ24字まで');
+    expect(item.textContent).toContain('oshi-spinner on');
+    expect(page.querySelector('.oshi-lines[data-event="done"]').textContent).not.toContain('oshi-spinner');
+    item.querySelector('textarea').value = 'テストを考え中';
+    app.respond('apiOshiSetLines', (id, e, l) => ({ charId: id, event: e, lines: l }));
+    item.querySelector('button').click();
+    expect(app.calls.find((c) => c.name === 'apiOshiSetLines').args).toEqual([1, 'spinner', ['テストを考え中']]);
+  });
+
   it('動きを減らす設定でも吹き出しは出る (動きは CSS が止める)', () => {
     window.matchMedia = (q) => ({ matches: /reduce/.test(q), media: q, addListener() {}, removeListener() {},
       addEventListener() {}, removeEventListener() {} });
