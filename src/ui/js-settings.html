@@ -583,6 +583,8 @@
       if (p.key === 'terms.style' && !scrumOn()) return;
       // 「集中中」を添えるかは、作業雑談部屋を使っていなければ意味が無い
       if (p.key === 'cowork.showFocus' && !coworkOn()) return;
+      // 推しの機嫌は、推しを使っていなければ意味が無い
+      if (p.key === 'oshi.mood' && !oshiOn()) return;
       var key = String(p.section || '');
       if (!by[key]) { by[key] = []; order.push(key); }
       by[key].push(p);

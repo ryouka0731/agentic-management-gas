@@ -8,6 +8,7 @@
  *
  * キャラ・表情・形の並びは src/core/Oshi.js (OSHI_BUILTINS / OSHI_STATES / OSHI_STYLES) が唯一の定義なので、
  * そこから読む。絵が1枚でも欠けていれば作らずに止める (欠けた表情だけ黙って絵が出なくなる)。
+ * ただし optional の表情 (推しの機嫌の「むっ」など) は、絵が無ければ焼かない (画面が fallback の表情に代える)。
  *
  *   node scripts/build-oshi-default.mjs   # npm run deploy も送る前に走らせる
  */
@@ -33,6 +34,7 @@ export function oshiDefinitions() {
   return {
     chars: ctx.OSHI_BUILTINS().map((c) => ({ key: c.key, name: c.name })),
     states: ctx.OSHI_STATES().map((s) => s.key),
+    optional: ctx.OSHI_STATES().filter((s) => s.optional).map((s) => s.key),
     styles: ctx.OSHI_STYLES().map((s) => s.key),
   };
 }
@@ -72,9 +74,11 @@ export function oshiDefaultTargets() {
  */
 export function oshiDefaultMap(char, style) {
   const out = {};
-  for (const state of oshiDefinitions().states) {
+  const d = oshiDefinitions();
+  for (const state of d.states) {
     const rel = path.join('assets', 'oshi-default', char, style + '-' + state + '.webp');
     const file = path.join(ROOT, rel);
+    if (!fs.existsSync(file) && d.optional.includes(state)) continue;
     if (!fs.existsSync(file)) throw new Error('既定のキャラの絵がありません: ' + rel);
     const bytes = fs.readFileSync(file);
     // 名乗る形式と中身が合うか (RIFF....WEBP)。拡張子だけ変えた別の物を焼かない

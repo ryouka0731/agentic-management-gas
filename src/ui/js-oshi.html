@@ -31,6 +31,8 @@
   var oshiDefaultImgs = {};
   /** 取りに行っている最中の 'キャラ:形:表情' → 待っている cb。同じ絵を2回取りに行かない */
   var oshiDefaultWaiting = {};
+  /** 絵の無い 'キャラ:形:表情' → 代わりの表情 (無ければ true)。絵の無い表情を2回取りに行かない */
+  var oshiDefaultMissing = {};
   /** 最後に見た「どのキャラを使うか」の設定。変わったら取り直す (名前・口調・絵が変わる) */
   var oshiDefaultSeen = null;
   /** 推しの頁で直している自分のキャラの番号 (0 なら、使っているキャラか最初の1人) */
@@ -160,7 +162,9 @@
    * 設定が届いた・変わった (applyPrefs から呼ぶ)。オフにしたら吹き出しとカードを外す。
    */
   function oshiPrefsChanged() {
-    var seen = oshiOn() ? String(prefs.effective.oshi.char) + '|' + String(prefs.effective.oshi.fallback) : '';
+    // 機嫌 (oshi.mood) を切り替えたときも取り直す (apiOshiGet の mood はオンのときだけ入る)
+    var seen = oshiOn() ? String(prefs.effective.oshi.char) + '|' + String(prefs.effective.oshi.fallback) + '|' +
+      String(prefs.effective.oshi.mood === true) : '';
     if (oshiDefaultSeen !== null && seen !== oshiDefaultSeen) oshiData = null;
     oshiDefaultSeen = seen;
     if (!oshiOn()) {
@@ -234,7 +238,12 @@
    */
   function oshiPickState(state) {
     var grow = oshiData && oshiData.growth ? oshiData.growth.key : '';
-    var order = [state, grow, 'idle'];
+    // 絵が無くてもよい表情 (むっ) は、まずその代わりの表情 (しんぱい) に代える。自分のキャラに むっ の絵が無く、
+    // 代わりの表情の絵があれば、最初からいるキャラの むっ (の代わり) より自分の絵を先に出す
+    var fb = oshiStateFallback(state);
+    var mine = oshiActiveMine();
+    if (fb && mine && !oshiImageRow(state, mine) && oshiImageRow(fb, mine)) return fb;
+    var order = [state, fb, grow, 'idle'];
     for (var i = 0; i < order.length; i++) if (order[i] && oshiHasPicture(order[i])) return order[i];
     return null;
   }
@@ -249,6 +258,18 @@
   function oshiHasPicture(state, c) {
     if (oshiImageRow(state, c)) return true;
     return !!oshiPictureBuiltin(c) && oshiDefaultKnown(state);
+  }
+
+  /**
+   * 絵が無いときに代わりに出す表情 (apiOshiGet の states の fallback。むっ → しんぱい)。無ければ空。
+   *
+   * @param {string} state
+   * @returns {string}
+   */
+  function oshiStateFallback(state) {
+    var list = (oshiData && oshiData.states) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === state) return list[i].fallback || '';
+    return '';
   }
 
   /** 最初からいるキャラに、その表情の絵があるか (表情は apiOshiGet の states にあるものだけ) */
@@ -309,9 +330,15 @@
   function oshiDefaultImage(char, style, state, cb) {
     if (!oshiDefaultImgs) oshiDefaultImgs = {};
     if (!oshiDefaultWaiting) oshiDefaultWaiting = {};
+    if (!oshiDefaultMissing) oshiDefaultMissing = {};
     var key = char + ':' + style + ':' + state;
     if (oshiDefaultImgs[key]) {
-      cb(oshiDefaultImgs[key]);
+      cb(oshiDefaultImgs[key], state);
+      return;
+    }
+    // 絵の無い表情 (むっ) と分かっていれば、代わりの表情の絵を出す (取りに行き直さない)
+    if (oshiDefaultMissing[key]) {
+      if (oshiDefaultMissing[key] !== true) oshiDefaultImage(char, style, oshiDefaultMissing[key], cb);
       return;
     }
     if (oshiDefaultWaiting[key]) {
@@ -323,11 +350,17 @@
     call('apiOshiDefaultImage', [char, style, state], function (res) {
       var waiting = oshiDefaultWaiting[key] || [];
       delete oshiDefaultWaiting[key];
-      if (!res || !res.dataUrl) return;
+      if (!res || !res.dataUrl) {
+        // 最初からいるキャラに絵の無い表情 (むっ)。代わりの表情があれば、その絵を渡す
+        var fb = oshiStateFallback(state);
+        oshiDefaultMissing[key] = fb || true;
+        if (fb) waiting.forEach(function (fn) { oshiDefaultImage(char, style, fb, fn); });
+        return;
+      }
       oshiDefaultImgs[key] = res.dataUrl;
       // 届くまでに設定を変えていたら、古い形の絵は差し込まない (別のキャラかは、差し込む側の still が見る)
       if (!oshiOn() || oshiStyle() !== style) return;
-      waiting.forEach(function (fn) { fn(res.dataUrl); });
+      waiting.forEach(function (fn) { fn(res.dataUrl, state); });
     }, function (err) {
       delete oshiDefaultWaiting[key];
       quiet(err);
@@ -366,6 +399,7 @@
   function oshiAfter(name, args) {
     var key = oshiCallEvent(name, args);
     if (key) oshiSay(key);
+    oshiMoodAfter(name);
   }
 
   /**
@@ -564,12 +598,13 @@
     face.textContent = (name || '推').slice(0, 1);
     fig.appendChild(face);
     if (!state) return;
-    oshiImage(state, function (src) {
+    oshiImage(state, function (src, shown) {
       if (still && !still()) return;
       fig.textContent = '';
       var img = document.createElement('img');
       img.className = 'oshi-img';
-      img.alt = (name || '推し') + 'の「' + oshiStateLabel(state) + '」';
+      // 代わりの表情の絵 (むっ → しんぱい) を出したときは、出した絵の名前
+      img.alt = (name || '推し') + 'の「' + oshiStateLabel(shown || state) + '」';
       img.src = src;
       fig.appendChild(img);
     }, c);
@@ -673,11 +708,16 @@
     var ev = oshiEventOf(key);
     var line = document.createElement('p');
     line.className = 'oshi-line';
-    line.textContent = oshiLine(key);
+    // 機嫌がしょんぼり・むっ・直ったばかりなら、あいさつの代わりに機嫌の顔とせりふ
+    var mood = oshiMoodShown(d);
+    line.textContent = mood ? mood.line : oshiLine(key);
     row.appendChild(line);
     card.appendChild(row);
-    card.dataset.event = key;
-    oshiFillFigure(fig, oshiPickState(ev ? ev.state : 'idle'), name);
+    card.dataset.event = mood ? mood.event : key;
+    if (mood) card.dataset.mood = mood.level;
+    else delete card.dataset.mood;
+    oshiFillFigure(fig, oshiPickState(mood ? mood.state : (ev ? ev.state : 'idle')), name);
+    if (mood && mood.reasons && mood.reasons.length) card.appendChild(makeOshiMoodWhy(mood));
 
     card.appendChild(makeOshiGrowth(d.growth));
 
@@ -689,6 +729,150 @@
       hint.addEventListener('click', function () { openOshi(hint); });
       card.appendChild(hint);
     }
+  }
+
+  // ----- 機嫌 (自分の設定 oshi.mood。既定はオフ) -----
+  //
+  // 決めるのはサーバ (OSHI_MOOD_RULES / oshiMood_)。ここは apiOshiGet / apiOshiMood の mood を描くだけ。
+  // 変わるのは表情とせりふだけで、何も取り上げない。わけは数だけ (題名は出さない)。
+
+  /** 機嫌を見るか (推しも機嫌もオン) */
+  function oshiMoodOn() {
+    return oshiOn() && prefs.effective.oshi.mood === true;
+  }
+
+  /**
+   * あいさつの代わりに出す機嫌。しょんぼり・むっ・直ったばかりのときだけ。ほかは null (いつものあいさつ)。
+   *
+   * @param {object} d apiOshiGet
+   * @returns {object|null} mood
+   */
+  function oshiMoodShown(d) {
+    var m = d && d.mood;
+    if (!m || !oshiMoodOn() || !m.line) return null;
+    return m.recovered || m.level === 'sulky' || m.level === 'pouty' ? m : null;
+  }
+
+  /**
+   * 機嫌が変わりうる操作 (済ませた・取り消した・直した・捨てた・戻した) のあとに取り直す。直っていたらお祝いのせりふ。
+   * 機嫌を見ていない人は取らない。
+   *
+   * @param {string} name 成功した api の名前
+   */
+  function oshiMoodAfter(name) {
+    if (OSHI_MOOD_CALLS().indexOf(name) < 0) return;
+    if (!oshiMoodOn() || !oshiData) return;
+    var asked = oshiData;
+    var before = asked.mood;
+    var still = latest('oshiMood');
+    call('apiOshiMood', [], still.only(function (m) {
+      // 取りに行っている間に推しを取り直していたら、新しい返事のほうが新しい (古い機嫌で上書きしない)
+      if (oshiData !== asked) return;
+      oshiData.mood = m || null;
+      if (m && m.recovered && !(before && before.recovered)) oshiSayNext('mood_recover', m.state);
+      var card = document.querySelector('.oshi-card');
+      if (card) fillOshiHomeCard(card, oshiData);
+      var sec = document.querySelector('.oshi-page .oshi-mood');
+      if (sec) {
+        if (m) sec.replaceWith(makeOshiMood(oshiData));
+        else sec.remove();
+      }
+    }), failQuiet('機嫌が出なくても、推しは出る'));
+  }
+
+  /**
+   * 機嫌が変わりうる操作 (やることを済ませた・取り消した・直した・捨てた・戻した・ボードで動かした・反映した)。
+   * サーバで覚えを消すのは Issue.gs の issueMoodForget_ (反映はやることを閉じる)。
+   *
+   * @returns {string[]}
+   */
+  function OSHI_MOOD_CALLS() {
+    return ['apiIssueClose', 'apiIssueReopen', 'apiIssueUpdate', 'apiIssueArchive', 'apiIssueRestore', 'apiProjectMove', 'apiPrMerge'];
+  }
+
+  /**
+   * 推しの頁の「機嫌」の節。顔・段の名前・せりふ・「どうして？」。
+   *
+   * @param {object} d apiOshiGet (mood が在るとき)
+   * @returns {HTMLElement}
+   */
+  function makeOshiMood(d) {
+    var m = d.mood;
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-mood';
+    sec.dataset.mood = m.level;
+    sec.appendChild(oshiHeading('機嫌'));
+    var row = document.createElement('div');
+    row.className = 'oshi-card-row';
+    var fig = document.createElement('div');
+    fig.className = 'oshi-figure';
+    row.appendChild(fig);
+    var text = document.createElement('div');
+    text.className = 'oshi-line';
+    var label = document.createElement('strong');
+    label.className = 'oshi-mood-label';
+    label.textContent = m.recovered ? m.label + ' (機嫌が直りました)' : m.label;
+    text.appendChild(label);
+    if (m.line) {
+      var line = document.createElement('p');
+      line.className = 'oshi-mood-line';
+      line.textContent = m.line;
+      text.appendChild(line);
+    }
+    row.appendChild(text);
+    sec.appendChild(row);
+    oshiFillFigure(fig, oshiPickState(m.state), d.name || '推し');
+    if (m.reasons && m.reasons.length) sec.appendChild(makeOshiMoodWhy(m));
+    sec.appendChild(oshiNote('やることが滞ると、表情とせりふが変わります。Lv・実績・ポイントは減りません。' +
+      'あなたにだけ見え、知らせも出しません。止めるときは設定の「推しの機嫌を見る」を外してください。'));
+    return sec;
+  }
+
+  /**
+   * 「どうして？」。押すと、わけを数だけで出す。期限を過ぎたやることには、自分の担当の期限切れの一覧を開く「見る」。
+   *
+   * @param {object} m mood
+   * @returns {HTMLElement}
+   */
+  function makeOshiMoodWhy(m) {
+    var box = document.createElement('div');
+    box.className = 'oshi-mood-why';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.textContent = 'どうして？';
+    btn.setAttribute('aria-expanded', 'false');
+    var list = document.createElement('ul');
+    list.className = 'oshi-mood-reasons';
+    list.hidden = true;
+    (m.reasons || []).forEach(function (r) {
+      var li = document.createElement('li');
+      li.dataset.kind = r.kind;
+      var t = document.createElement('span');
+      t.textContent = r.text;
+      li.appendChild(t);
+      if (r.kind === 'overdue') {
+        var go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'btn';
+        go.textContent = '見る';
+        go.setAttribute('aria-label', '期限を過ぎたやることを見る');
+        go.addEventListener('click', function () {
+          // 推しの頁 (右のパネル) から開いたときは閉じてから一覧へ
+          if (box.closest('.oshi-page')) closeSide();
+          adviceGo({ kind: 'issues-overdue', arg: '' });
+        });
+        li.appendChild(go);
+      }
+      list.appendChild(li);
+    });
+    btn.addEventListener('click', function () {
+      list.hidden = !list.hidden;
+      btn.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    });
+    box.appendChild(btn);
+    box.appendChild(list);
+    return box;
   }
 
   /** 時刻からあいさつの場面 (サーバの oshiGreetingOf と同じ区切り。test/ui-parity が見ている) */
@@ -956,6 +1140,8 @@
       box.appendChild(makeOshiLines(d, c));
       box.appendChild(makeOshiCharProfileEditor(box, d, c));
     }
+
+    if (d.mood) box.appendChild(makeOshiMood(d));
 
     var grow = document.createElement('section');
     grow.className = 'oshi-section';
@@ -1960,6 +2146,8 @@
     sec.appendChild(oshiNote('場面ごとに、言ってほしいせりふを足せます (1行に1つ、' + d.limits.linesPerEvent +
       '個まで・1つ' + d.limits.lineMax + '字まで)。足したせりふと、口調のせりふを順に言います。'));
     (c.events || []).forEach(function (ev) {
+      // 機嫌の場面は、機嫌を見ている人にだけ出す (見ていない人には言わないせりふ)
+      if (ev.mood && !oshiMoodOn()) return;
       var item = document.createElement('details');
       item.className = 'oshi-lines';
       item.dataset.event = ev.key;

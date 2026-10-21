@@ -236,9 +236,10 @@ describe('キャラ作成キット', () => {
       await wait(() => sheet.querySelectorAll('.oshi-sheet-cell').length);
       const cells = [...sheet.querySelectorAll('.oshi-sheet-cell')];
       expect(cells.length).toBe(12);
-      // 最初は表情の並びの順。余ったマスは「使わない」
+      // 最初は表情の並びの順。表情が12 (むっ を含む) なので 4 × 3 のマスがちょうど埋まる (余れば「使わない」)
       const states = ctx.apiOshiGet().states.map((s) => s.key);
-      expect(cells.map((c) => c.querySelector('select').value)).toEqual(states.concat(['']));
+      expect(states.length).toBe(12);
+      expect(cells.map((c) => c.querySelector('select').value)).toEqual(states);
       expect(cells[5].querySelector('label').textContent).toContain('2行目・2列目');
       expect(cells[0].querySelector('img').alt).toBe('1行目・1列目の見本');
 

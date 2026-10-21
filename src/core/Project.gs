@@ -138,8 +138,9 @@ function projectPlace(issueNumber, column) {
  */
 function projectMove(issueNumber, column, order) {
   projectAssertColumn_(column);
-  return dbWithLock_(30000, function () {
-    if (!dbFindOne('project_items', 'issueNumber', issueNumber)) {
+  var moved = dbWithLock_(30000, function () {
+    var placed = !!dbFindOne('project_items', 'issueNumber', issueNumber);
+    if (!placed) {
       projectPlace(issueNumber, column);
     }
 
@@ -174,6 +175,12 @@ function projectMove(issueNumber, column, order) {
         dbUpdate('project_items', 'issueNumber', rows[i].issueNumber, { order: i });
       }
     }
-    return dbFindOne('project_items', 'issueNumber', issueNumber);
+    return { item: dbFindOne('project_items', 'issueNumber', issueNumber), fromColumn: placed ? fromColumn : '' };
   });
+  // 「完了」の列に入れた・出したら、推しの機嫌を数え直させる (完了の列のものは開いているものに数えない。OshiMood.gs)。
+  // 鍵の外で、やることの行を1回だけ読む
+  if ((String(column) === 'Done') !== (moved.fromColumn === 'Done') && typeof issueMoodForget_ === 'function') {
+    issueMoodForget_(dbFindOne('issues', 'number', issueNumber) || {});
+  }
+  return moved.item;
 }

@@ -17,7 +17,7 @@ function oshiEventsPlain_(tone, mine) {
   var defaults = OSHI_LINES()[tone] || OSHI_LINES().polite;
   return OSHI_EVENTS().map(function (e) {
     return { key: plainText(e.key), label: plainText(e.label), state: plainText(e.state), praise: !!e.praise,
-      randomState: !!e.randomState,
+      randomState: !!e.randomState, mood: !!e.mood,
       lines: (defaults[e.key] || []).map(plainText),
       mine: ((mine || {})[e.key] || []).map(plainText) };
   });
@@ -73,6 +73,7 @@ function apiOshiGet() {
   var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
   mine.forEach(function (m) { delete m.profile; });
   var cleared = oshiCleared_(me);
+  var events = active ? active.events : oshiEventsPlain_(builtin.tone, {});
   return {
     char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
     kind: plainText(active ? 'mine' : 'builtin'),
@@ -81,7 +82,7 @@ function apiOshiGet() {
     fallback: plainText(active ? choice.fallback : ''),
     name: plainText(active ? active.name : builtin.name),
     tone: plainText(active ? active.tone : builtin.tone),
-    events: active ? active.events : oshiEventsPlain_(builtin.tone, {}),
+    events: events,
     images: active ? active.images : [],
     builtins: OSHI_BUILTINS().map(function (c) {
       return { key: plainText(c.key), name: plainText(c.name), tone: plainText(c.tone) };
@@ -92,7 +93,7 @@ function apiOshiGet() {
     tones: OSHI_TONES().map(function (t) { return { key: plainText(t.key), label: plainText(t.label) }; }),
     states: OSHI_STATES().map(function (s) {
       return { key: plainText(s.key), label: plainText(s.label), when: plainText(s.when), grow: !!s.grow, scene: !!s.scene,
-        prompt: plainText(oshiPrompt(s.key)) };
+        prompt: plainText(oshiPrompt(s.key)), optional: !!s.optional, fallback: plainText(s.fallback || '') };
     }),
     basePrompt: plainText(OSHI_PROMPT_BASE()),
     // キャラ作成キットの道具 (頼み文の中身は apiOshiCharKitPrompt で1つずつ取る) と、1枚の表を切り分けるときの既定の行と列
@@ -119,7 +120,32 @@ function apiOshiGet() {
       line: plainText(profile ? profile.clearLine : ''),
       video: plainText(profile ? profile.clearVideo : ''),
     } : null,
+    // 推しの機嫌 (自分の設定 oshi.mood)。オフなら null で、やることの台帳を読まない
+    mood: oshiMoodPlain_(oshiMood_(me), events),
   };
+}
+
+/**
+ * 推しの機嫌だけ (済ませたあとに、直ったかを見る)。オフなら null。本人のぶんだけ。
+ *
+ * @returns {?{level: string, label: string, event: string, state: string, recovered: boolean, line: string,
+ *   reasons: Array<{kind: string, count: number, text: string}>}}
+ */
+function apiOshiMood() {
+  var me = currentEmail_();
+  var m = oshiMood_(me);
+  if (!m) return null;
+  var choice = oshiChoice_(me);
+  var events = null;
+  // 自分のキャラが在るかは oshiChoice_ (設定の検査) が見てある。ここでは名前と口調の表だけを読み、絵の表は読まない
+  if (choice.kind === 'mine') {
+    var p = oshiProfile_(me, choice.id, dbReadAll('oshi'));
+    events = oshiEventsPlain_(p.tone, p.lines);
+  } else {
+    var b = oshiBuiltinOf(choice.key) || OSHI_BUILTINS()[0];
+    events = oshiEventsPlain_(b.tone, {});
+  }
+  return oshiMoodPlain_(m, events);
 }
 
 /**
