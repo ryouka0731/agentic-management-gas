@@ -341,6 +341,21 @@ function PREF_GROUPS_() {
           min: 1, max: 12, def: TALLY_FISCAL_START() },
       ];
     },
+    cowork: function () {
+      // 作業雑談部屋。既定はオフ (目標と同じ考え方)。部屋の一覧はリンクの部品の並びなので、ここには置かず
+      // スクリプトプロパティ COWORK_ROOMS に置く (src/core/Cowork.gs。書くのは apiCoworkSetRooms だけ)
+      return [
+        { key: 'cowork.enabled', scope: 'team', type: 'bool', section: '作業雑談部屋',
+          label: '作業雑談部屋を使う',
+          help: 'オンにすると、左に「作業雑談部屋」が出ます。管理者が決めた Google Meet か Slack の部屋に「入る」と、' +
+            'いまいる人の名前がチームに見えます。話すのは Meet / Slack の中で、番頭は誰が入ったかを記録しません',
+          def: false },
+        { key: 'cowork.showFocus', scope: 'me', type: 'bool', section: '作業雑談部屋',
+          label: '部屋にいるとき「集中中」を添える',
+          help: 'オンにすると、集中のしかたで集中しているあいだ、部屋のあなたの名前の横に「集中中」が出ます (話しかけてよいかの目安)',
+          def: false },
+      ];
+    },
     notify: function () {
       return NOTIFY_KINDS().map(function (k) {
         return { key: 'notify.' + k.key, scope: 'me', type: 'bool', section: '通知メール',
@@ -359,7 +374,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -645,6 +660,7 @@ function apiPrefs(opts) {
       calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },
+      cowork: { enabled: byKey['cowork.enabled'] === true, showFocus: byKey['cowork.showFocus'] === true },
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })
         .map(function (k) { return plainText(k.key); }),
     },

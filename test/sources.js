@@ -46,6 +46,7 @@ export const CORE_SOURCES = [
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
   'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs',
+  'src/core/CoworkLink.js', 'src/core/Cowork.gs',
 ];
 
 export const API_SOURCES = [
@@ -54,7 +55,7 @@ export const API_SOURCES = [
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs',
-  'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs',
+  'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
