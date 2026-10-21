@@ -83,6 +83,25 @@
 | `--gantt-name-w` | 工程表の名前の列の幅。目盛りの下敷きの左端と揃える |
 | `--week-offset` | 工程表の週の区切りの位置。画面側が入れる |
 
+### 作業部屋の絵 (`js-room`)
+
+部屋は明暗のテーマに依らず、ランプの灯った夕暮れの色で描く (ダークの2か所では上書きしない)。絵の中だけで使い、
+画面の部品には使わない。本の背は意味を持つ色 (`--accent` など) を借りる。
+
+| トークン | 何に使うか |
+|---|---|
+| `--room-wall` / `--room-wall-2` / `--room-floor` / `--room-rug` | 壁・腰壁・床・敷物 |
+| `--room-wood` / `--room-wood-2` | 机・窓枠・棚 (明るい木 / 暗い木) |
+| `--room-curtain` / `--room-plant` / `--room-pot` | カーテンとマグ・葉・鉢 |
+| `--room-lamp` / `--room-lamp-shade` / `--room-metal` | ランプの灯り (太陽と街の灯りにも)・笠・金具 |
+| `--room-glow` / `--room-glow-0` | ランプの明かりの輪 (中心 / 外側の透明) |
+| `--room-steam` / `--room-silhouette` | 湯気・推しがオフのときの人影 |
+| `--room-city` / `--room-star` / `--room-rain` | 窓の外の街・月と星・窓の雨粒 |
+| `--room-sky-morning` / `--room-sky-morning-2` | 朝の空 (下 / 上) |
+| `--room-sky-day` / `--room-sky-day-2` | 昼の空 (上 / 下) |
+| `--room-sky-evening` / `--room-sky-evening-2` | 夕方の空 (上 / 下) |
+| `--room-sky-night` / `--room-sky-night-2` | 夜の空 (上 / 下) |
+
 工程表の中だけで使うもの (`--gantt-days` / `--gantt-col` / `--weeks` / `--cell`) は、その要素の上で決めて画面側が
 書き換える。`:root` には置かない。
 

@@ -33,8 +33,10 @@ const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' +
 describe('定義 (Oshi.js)', () => {
   it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
     const keys = pure.OSHI_STATES().map((s) => s.key);
-    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3']);
+    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work']);
     expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3']);
+    // 作業中は作業部屋でだけ出す (でたらめに選ぶ表情に入れない)
+    expect(pure.OSHI_STATES().filter((s) => s.scene).map((s) => s.key)).toEqual(['work']);
   });
 
   it('せりふは口調ごとに全部の場面を持ち、どの場面にも2つ以上ある (回すため)', () => {
@@ -186,6 +188,10 @@ describe('画像を置く', () => {
     expect(ctx.dbReadAll('oshi')).toEqual([]);
     // 消したあとは、最初からいるキャラに戻る
     expect(ctx.apiOshiGet()).toMatchObject({ name: 'タク', kind: 'builtin', mine: [] });
+    // 画面がでたらめに選ばない表情を知れるように、場面でだけ出す印を渡す
+    const states = ctx.apiOshiGet().states;
+    expect(states.filter((x) => x.scene).map((x) => x.key)).toEqual(['work']);
+    expect(states.filter((x) => x.scene === false).length).toBe(states.length - 1);
   });
 });
 

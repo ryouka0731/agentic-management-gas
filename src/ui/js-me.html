@@ -305,6 +305,9 @@
     // 集中のしかたの記録と技の図鑑 (本人にだけ。オフなら出さない)
     var focusRecord = makeFocusRecordButton();
     if (focusRecord) out.push(focusRecord);
+    // 作業部屋 (自分の設定でオンにした人だけ)
+    var room = makeRoomOpenButton(false);
+    if (room) out.push(room);
     // 自分へのご褒美 (本人にだけ。オフなら出さない)
     var reward = makeRewardMeButton();
     if (reward) out.push(reward);

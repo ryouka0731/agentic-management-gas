@@ -527,3 +527,14 @@ describe('楽しい演出 (既定はオフ)', () => {
     expect(ctx.apiPrefs().effective.fun.cheer).toBe(true);
   });
 });
+
+describe('作業部屋 (room.on)', () => {
+  it('自分の設定で、既定はオフ。オンにした人の effective にだけ出る', () => {
+    const { ctx } = setup();
+    const it0 = item(ctx, 'room.on');
+    expect(it0).toMatchObject({ scope: 'me', type: 'bool', section: '作業部屋', def: false });
+    expect(ctx.apiPrefs().effective.room).toEqual({ on: false });
+    ctx.apiPrefSet('room.on', true);
+    expect(ctx.apiPrefs().effective.room).toEqual({ on: true });
+  });
+});

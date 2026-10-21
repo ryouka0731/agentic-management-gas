@@ -288,6 +288,13 @@ function PREF_GROUPS_() {
     focus: function () {
       return PREF_FOCUS_ITEMS_();
     },
+    room: function () {
+      // 作業部屋。既定はオフ。音は画面の中で作り (ファイルも外の取得も使わない)、部屋の絵と推しは js-room が描く
+      return [{ key: 'room.on', scope: 'me', type: 'bool', section: '作業部屋', label: '作業部屋を使う',
+        help: '雨・キーボード・たき火・風・カフェのざわめきを画面の中で作って流し、推しが机で作業している部屋を出せます。' +
+          '自分まわりの欄と、集中しているあいだの窓から開きます。押したときにだけ鳴り、イヤホンで聞く前提です',
+        def: false }];
+    },
     calendar: function () {
       return PREF_CALENDAR_ITEMS_();
     },
@@ -390,7 +397,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -673,6 +680,7 @@ function apiPrefs(opts) {
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']) },
+      room: { on: byKey['room.on'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
       calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,

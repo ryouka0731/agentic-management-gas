@@ -387,8 +387,9 @@
     var Ctor = focusAudioClass();
     if (!Ctor || !choice || choice.kind === 'none') return false;
     focusSoundStop(0);
-    // 自分の曲とは同時に流さない
+    // 自分の曲・作業部屋の音とは同時に流さない
     focusMusicClose();
+    roomSoundStop(1);
     try {
       var ctx = focusAudio && focusAudio.ctx ? focusAudio.ctx : new Ctor();
       if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
@@ -445,6 +446,18 @@
         if (a.ctx && a.ctx.suspend && a.ctx.state !== 'suspended') a.ctx.suspend();
       } catch (e) { /* 休ませられなくても困らない */ }
     }, (Math.max(0.05, fade || 0) + 0.1) * 1000);
+  }
+
+  /**
+   * ほかの音 (自分の曲・作業部屋の音) を始めるときに、作る音を止めて、集中の窓のボタンの字も戻す。
+   *
+   * @param {number} fade
+   */
+  function focusSoundHush(fade) {
+    if (!focusSoundPlaying()) return;
+    focusSoundStop(fade);
+    var t = document.querySelector('#focus-dock .focus-sound-toggle');
+    if (t) t.textContent = '音を流す';
   }
 
   /** @param {number} v 0〜1 */
@@ -706,11 +719,8 @@
     var src = focusMusicEmbedUrl_(parts);
     if (!src || !holder) return false;
     focusMusicClose();
-    if (focusSoundPlaying()) {
-      focusSoundStop(1);
-      var t = document.querySelector('#focus-dock .focus-sound-toggle');
-      if (t) t.textContent = '音を流す';
-    }
+    focusSoundHush(1);
+    roomSoundStop(1);
     var f = document.createElement('iframe');
     f.className = 'focus-music-frame' + (parts.kind === 'youtube' ? ' is-youtube' : ' is-soundcloud');
     f.title = '自分の曲 (' + (parts.kind === 'youtube' ? 'YouTube' : 'SoundCloud') + ')';
@@ -1250,6 +1260,9 @@
       focusSetMode(!document.body.classList.contains('focus-mode'));
     });
     controls.appendChild(mode);
+    // 作業部屋 (自分の設定でオンにした人だけ)。集中はそのまま続き、部屋の隅に残りが出る
+    var room = makeRoomOpenButton(true);
+    if (room) controls.appendChild(room);
     if (focusSoundOn()) controls.appendChild(makeFocusSoundControls(true).el);
     if (focusMusicOn()) controls.appendChild(makeFocusMusicControls());
     var actions = document.createElement('div');
