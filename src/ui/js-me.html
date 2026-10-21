@@ -523,14 +523,22 @@
   }
 
   /**
-   * 自分の欄を開く。名前と道具の更新は、まだ取っていなければ取ってから描く (needOnce)。
+   * 自分の欄を開く。待たずにすぐ描く (押しても空の欄が出ない)。名前と道具の更新をまだ取っていなければ
+   * 取り (needOnce)、遅れて届いたら名前を当て直し、道具が古ければ描き直す。描き直すのはそのときだけ
+   * (描くたびにポイントの参加 apiGameState を取るので、毎回は描き直さない)。
    */
   function openMe() {
     mePanel.hidden = false;
     meBtn.setAttribute('aria-expanded', 'true');
+    var waited = false;
     needOnce(['apiPeopleNames', 'apiWorkStyleTeam', 'apiKitStatus'], function () {
-      if (!mePanel.hidden) drawMe();
+      if (!waited || mePanel.hidden) return;
+      document.getElementById('me-who').textContent = personName(currentUser) || 'あなた';
+      if (kitOutdated) drawMe();
     });
+    // 取ってあれば (返事がその場で届いたなら) ここで描くのが最新。届いていなければ、いまの分で描いて待つ
+    waited = true;
+    drawMe();
   }
 
   // ===== 使われ方の記録 =====
