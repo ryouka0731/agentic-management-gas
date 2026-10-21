@@ -116,6 +116,52 @@ function PREF_FOCUS_ITEMS_() {
   ];
 }
 
+/**
+ * やることを予定に入れる (共有のカレンダーに、いつどのやることをどれくらいするかを置く)。
+ * calendar.shared だけがチームの設定 (管理者が作るか貼る共有カレンダーの id)。ほかは自分の設定で、
+ * 「やることを予定に入れる」は既定でオフ。並べ方は CalendarPlan.js、読み書きは CalendarSync.gs。
+ *
+ * @returns {object[]}
+ */
+function PREF_CALENDAR_ITEMS_() {
+  var section = '予定に入れる';
+  return [
+    { key: 'calendar.plan', scope: 'me', type: 'bool', section: section, label: 'やることを予定に入れる',
+      help: 'あなたが担当のやることを、期限の早いものから共有のカレンダー「番頭の予定」に並べます。' +
+        '1日1回 (ホームを開いたとき) 組み直し、あなたのカレンダーの会議とは重ねません。' +
+        '番頭が触るのは番頭が入れた予定だけです。オフにすると、これから先の番頭の予定を消します',
+      def: false },
+    { key: 'calendar.hours', scope: 'me', type: 'enum', section: section, label: '予定を入れる時間',
+      help: 'この時間の中にだけ入れます',
+      options: CALENDAR_HOURS_OPTIONS_().map(function (h) {
+        return { value: h, label: h.replace(/^0/, '').replace('-', '〜').replace(/〜0/, '〜') };
+      }),
+      def: '09:00-18:00' },
+    { key: 'calendar.weekend', scope: 'me', type: 'bool', section: section, label: '土日にも入れる',
+      help: 'オフなら月曜〜金曜だけに入れます (祝日は見分けません)', def: false },
+    { key: 'calendar.block', scope: 'me', type: 'enum', section: section, label: '1つの予定の長さ',
+      help: '長いやることは、この長さに分けて、あいだを10分空けて入れます',
+      options: ['25', '45', '60', '90'].map(function (m) { return { value: m, label: m + '分' }; }),
+      def: '45' },
+    { key: 'calendar.days', scope: 'me', type: 'int', section: section, label: '先の何日ぶんまで入れるか',
+      help: '今日を含めた、予定を入れる日の数です', min: 1, max: 10, def: 5 },
+    { key: 'calendar.title', scope: 'me', type: 'enum', section: section, label: '予定の名前',
+      help: 'カレンダーを共有している人には予定の名前が見えます。見せたくなければ「集中」にしてください',
+      options: [
+        { value: 'task', label: 'やることの名前 (#12 規程の改定)' },
+        { value: 'generic', label: '集中 (番頭) とだけ出す' },
+      ],
+      def: 'task' },
+    { key: 'calendar.shared', scope: 'team', type: 'calendar', section: section, label: '予定を入れる共有カレンダー',
+      help: '管理者が「共有カレンダーを作る」で作るか、あるカレンダーの ID を貼ります', def: '' },
+  ];
+}
+
+/** 予定を入れる時間の選び方 ('HH:mm-HH:mm') */
+function CALENDAR_HOURS_OPTIONS_() {
+  return ['08:00-17:00', '08:30-17:30', '09:00-17:00', '09:00-18:00', '09:30-18:30', '10:00-18:00', '10:00-19:00'];
+}
+
 /** 改善のヒントで変えられる数の範囲と名前 */
 function PREF_ADVICE_TUNABLE_() {
   return {
@@ -209,6 +255,9 @@ function PREF_GROUPS_() {
     focus: function () {
       return PREF_FOCUS_ITEMS_();
     },
+    calendar: function () {
+      return PREF_CALENDAR_ITEMS_();
+    },
     style: function () {
       // 仕事のスタンス診断の結果を、ほかの人の画面に出すか。既定はオフ (結果は本人にだけ見える)。
       // 見せるのは型の名前と絵だけで、点数は見せない (workStyleShared_)
@@ -279,7 +328,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -323,6 +372,9 @@ function prefValid_(item, v, email) {
   }
   // 使うキャラ: 最初からいるキャラか、その人が作った自分のキャラ。自分のキャラのときだけ台帳を読む
   if (item.type === 'char') return typeof v === 'string' && oshiCharKnownFor_(email, v);
+  // 共有カレンダーの id はアドレスの形 (…@group.calendar.google.com)。'' は決まっていない (既定)。
+  // 開けるかは貼るとき (apiCalendarSetShared) に見る
+  if (item.type === 'calendar') return v === '' || typeof v === 'string' && /^[^\s@<>"']{1,200}@[^\s@<>"']{1,200}$/.test(v);
   if (item.type === 'steps') {
     if (!Array.isArray(v) || v.length !== 3) return false;
     for (var i = 0; i < v.length; i++) {
@@ -471,8 +523,20 @@ function apiPrefSet(key, value) {
     if (Object.keys(mine).length) props.setProperty(prefMineKey_(me), JSON.stringify(mine));
     else props.deleteProperty(prefMineKey_(me));
   });
+  // 予定に入れるのをやめたら、これから先の番頭の予定を消す。消せなくても設定は戻さない (通知と同じ扱い)。
+  // 消せずに残った数は画面に返す (カレンダーで消してもらう)
+  var calendarLeft = 0;
+  if (item.key === 'calendar.plan' && value !== true && typeof calendarClearMine_ === 'function') {
+    try {
+      calendarLeft = calendarClearMine_(me);
+    } catch (e) {
+      console.warn('予定を消せませんでした: ' + (e && e.message));
+    }
+  }
   // 書くのは設定の画面だけなので、管理者かも添えて返す
-  return apiPrefs({ team: true });
+  var out = apiPrefs({ team: true });
+  if (calendarLeft > 0) out.calendarLeft = plainNumber(calendarLeft);
+  return out;
 }
 
 /**
@@ -532,6 +596,7 @@ function apiPrefs(opts) {
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']) },
+      calendar: { plan: byKey['calendar.plan'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },
       notifyOff: NOTIFY_KINDS().filter(function (k) { return byKey['notify.' + k.key] === false; })

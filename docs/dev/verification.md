@@ -15,6 +15,7 @@
 | `debugMarkdownRoundTrip()` | 実文書で HTML → Markdown → HTML がバイト一致するか |
 | `debugWriteRoundTrip()` | 実文書で書き戻しが情報を落としていないか |
 | `debugVerifyScrum()` | スプリント → ポイント → 完了 → ベロシティ・バーンダウン・障害物・履歴。成否にかかわらず片付け、オン・オフも戻す |
+| `debugVerifyCalendar()` | 一時のカレンダーで、持ち主のやることを組む → 重ならない・既定のカレンダーの予定と重ならない・時間の中・印・組み直しで増えない・やめたら消える。一時のカレンダーとやることを片付け、設定を戻す |
 | `debugCleanupLastVerify()` | 失敗して残った検証物の片付け |
 
 検証ハーネスは `ALLOW_SELF_APPROVE` を自分で立てて元に戻すため、事前準備は要らない。

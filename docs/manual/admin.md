@@ -111,7 +111,7 @@
 ### 確かめる
 
 [実機で確かめる](verification.md) にまとめた: `debugVerifyPhase2` / `debugVerifyPhase3b` / `debugVerifyCommandQueue` /
-`debugVerifySharedDrive` / `debugVerifyScrum` / `debugMarkdownRoundTrip` / `debugWriteRoundTrip`。
+`debugVerifySharedDrive` / `debugVerifyScrum` / `debugVerifyCalendar` / `debugMarkdownRoundTrip` / `debugWriteRoundTrip`。
 
 ### 調べる・直す
 

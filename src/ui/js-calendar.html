@@ -1,0 +1,388 @@
+  // ===== やることを予定に入れる (共有カレンダー) =====
+  //
+  // 自分の設定の「やることを予定に入れる」(calendar.plan) をオンにした人の画面にだけ出す。既定はオフ。
+  // **オフのあいだは何も呼ばない。** 並べ方と読み書きはサーバ (CalendarPlan.js / CalendarSync.gs)。
+  // js-init より前に読む (起動のときの設定の返事が、この下の var の初期化より後に届くように)。
+
+  /** 自動で組み直した日 (東京の暦日)。同じ日に二度は頼まない (サーバも1日1回に絞っている) */
+  var calendarAutoDay = '';
+
+  /** 最後に届いた様子 (apiCalendarStatus)。設定の画面の2つの欄で使う */
+  var calendarStatusLast = null;
+
+  /** 最後に組んだときの、期限までに入りきらないもの (設定の欄に添える) */
+  var calendarLateLast = [];
+
+  /** 最後に組んだとき、1回に入れられる数で止めたか */
+  var calendarCappedLast = false;
+
+  /** やめたときに消せなかった番頭の予定の数 (設定の欄に残す) */
+  var calendarLeftLast = 0;
+
+  /** 「予定を組み直す」を押せるようになる時刻 (ミリ秒)。サーバは60秒に1回まで受ける */
+  var calendarReplanUntil = 0;
+
+  /** 「やることを予定に入れる」がオンか (設定が届くまではオフ) */
+  function calendarOn() {
+    var c = prefs && prefs.effective && prefs.effective.calendar;
+    return !!(c && c.plan === true);
+  }
+
+  /** ホームのカードの器 */
+  function homeCalendarBox() {
+    return document.getElementById('home-calendar');
+  }
+
+  /**
+   * ISO の時刻を東京の 'H:mm' にする。読めなければ ''。
+   *
+   * @param {string} iso
+   * @returns {string}
+   */
+  function calendarClock(iso) {
+    var ms = Date.parse(String(iso || ''));
+    if (isNaN(ms)) return '';
+    var t = new Date(ms + 9 * 3600000);
+    var m = t.getUTCMinutes();
+    return t.getUTCHours() + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  /** 東京の今日 ('YYYY-MM-DD') */
+  function calendarToday() {
+    return new Date(Date.now() + 9 * 3600000).toISOString().substring(0, 10);
+  }
+
+  /** ISO の時刻が東京の今日か */
+  function calendarIsToday(iso) {
+    var ms = Date.parse(String(iso || ''));
+    return !isNaN(ms) && new Date(ms + 9 * 3600000).toISOString().substring(0, 10) === calendarToday();
+  }
+
+  /**
+   * カレンダーを開くリンク。
+   *
+   * @param {string} url
+   * @param {string} text
+   * @returns {?HTMLElement}
+   */
+  function calendarLink(url, text) {
+    if (!url) return null;
+    var a = document.createElement('a');
+    a.className = 'btn calendar-link';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = text;
+    return a;
+  }
+
+  /**
+   * ホームの「今日の予定」。オンのときだけ取りに行き、その日にまだ組んでいなければ1回だけ黙って組む。
+   */
+  function loadHomeCalendar() {
+    var box = homeCalendarBox();
+    if (!box) return;
+    if (!calendarOn()) {
+      box.textContent = '';
+      return;
+    }
+    var still = latest('calendar');
+    call('apiCalendarToday', [], function (res) {
+      if (!still() || panelHome.hidden || !calendarOn()) return;
+      res = res || {};
+      renderHomeCalendar(res.blocks || [], res);
+      if (!res.ok || res.plannedToday || calendarAutoDay === calendarToday()) return;
+      calendarAutoDay = calendarToday();
+      // サーバも、組み直し中の印の中でその日にもう組めたかを見直す (別の画面が先に組んでいれば何もしない)
+      call('apiCalendarPlan', [{ auto: true }], function (plan) {
+        if (!still() || panelHome.hidden || !calendarOn()) return;
+        plan = plan || {};
+        if (!plan.ok) return;
+        if (!plan.skipped) {
+          calendarLateLast = plan.late || [];
+          calendarCappedLast = !!plan.capped;
+        }
+        // 続いている予定・人が直した予定も出すので、組んだ結果ではなく今日の予定を取り直して描く
+        call('apiCalendarToday', [], function (again) {
+          if (!still() || panelHome.hidden || !calendarOn()) return;
+          again = again || {};
+          renderHomeCalendar(again.blocks || [], { reason: again.reason, calendarUrl: again.calendarUrl,
+            late: plan.late || [] });
+        }, failQuiet('組み直したあとの今日の予定が出なくても、ホームのほかの区画は使える'));
+      }, failQuiet('自動で組めなかった日は組めた日に数えないので、次にホームを開いたときにもう一度試す'));
+    }, failQuiet('今日の予定のカードが出なくても、ホームのほかの区画は使える'));
+  }
+
+  /**
+   * 今日の予定のカードを描く。
+   *
+   * @param {object[]} blocks [{issueNumber, title, start, end}]
+   * @param {object} res 返事 (reason / calendarUrl / late)
+   */
+  function renderHomeCalendar(blocks, res) {
+    var box = homeCalendarBox();
+    if (!box) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'home-calendar';
+    wrap.appendChild(homeHead('今日の予定 (番頭が組んだもの)', [calendarLink(res && res.calendarUrl, 'カレンダーで開く')]));
+    if (res && res.reason) {
+      var why = document.createElement('p');
+      why.className = 'home-empty';
+      why.textContent = res.reason;
+      wrap.appendChild(why);
+    } else if (!blocks.length) {
+      var none = document.createElement('p');
+      none.className = 'home-empty';
+      none.textContent = '今日の番頭の予定はありません';
+      wrap.appendChild(none);
+    }
+    blocks.forEach(function (b) {
+      var row = homeRow('#' + b.issueNumber + ' ' + (b.title || ''), 'home-calendar-row');
+      row.dataset.issue = String(b.issueNumber);
+      var when = document.createElement('span');
+      when.className = 'home-row-when';
+      when.textContent = calendarClock(b.start) + '〜' + calendarClock(b.end);
+      row.appendChild(when);
+      row.addEventListener('click', function () { openIssueByNumber(b.issueNumber, row); });
+      wrap.appendChild(row);
+    });
+    appendCalendarLate(wrap, (res && res.late) || []);
+    box.textContent = '';
+    box.appendChild(wrap);
+  }
+
+  /**
+   * 期限までに入りきらないものを、やさしく添える (責めない)。
+   *
+   * @param {HTMLElement} host
+   * @param {object[]} late [{number, title}]
+   */
+  function appendCalendarLate(host, late) {
+    if (!late || !late.length) return;
+    var p = document.createElement('p');
+    p.className = 'row-meta calendar-late';
+    p.textContent = '期限までに入りきりません: ' + late.map(function (l) { return '#' + l.number + ' ' + l.title; })
+      .join('、') + '。期限か工数を見直すか、相談してみてください';
+    host.appendChild(p);
+  }
+
+  /** 設定が変わった。オフにしたらカードを消し、オンにしたらホームを開いているときだけ取りに行く */
+  function calendarPrefsChanged() {
+    // やめたときに消せなかった数は apiPrefSet の返事に付いてくる
+    if (prefs && prefs.calendarLeft) calendarLeftLast = Number(prefs.calendarLeft) || 0;
+    else if (calendarOn()) calendarLeftLast = 0;
+    var box = homeCalendarBox();
+    if (!calendarOn()) {
+      if (box) box.textContent = '';
+    } else if (box && !box.firstChild && !panelHome.hidden) {
+      loadHomeCalendar();
+    }
+    if (document.getElementById('calendar-mine')) refreshCalendarStatus();
+  }
+
+  // ===== 設定の画面 =====
+
+  /**
+   * 自分の設定の「予定に入れる」の節の下に置く欄。様子・組み直す・最後に組んだ時刻・カレンダーで開く。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeCalendarMinePanel() {
+    var box = document.createElement('div');
+    box.className = 'settings-field calendar-mine';
+    box.id = 'calendar-mine';
+    fillCalendarMine(box);
+    return box;
+  }
+
+  /** @param {HTMLElement} box */
+  function fillCalendarMine(box) {
+    box.textContent = '';
+    if (calendarLeftLast > 0) {
+      var stuck = document.createElement('p');
+      stuck.className = 'settings-warning calendar-left';
+      stuck.textContent = '消せなかった予定が ' + calendarLeftLast + ' 件あります (カレンダーで消してください)';
+      box.appendChild(stuck);
+    }
+    if (!calendarOn()) {
+      box.hidden = calendarLeftLast <= 0;
+      return;
+    }
+    box.hidden = false;
+    var s = calendarStatusLast;
+    var line = document.createElement('p');
+    line.className = 'calendar-state';
+    line.appendChild(document.createTextNode('共有カレンダー: '));
+    line.appendChild(makePill(!s ? '確かめています' : s.canOpen ? (s.sharedName || '番頭の予定') : '未設定',
+      s && s.canOpen ? 'state state-open' : 'state'));
+    box.appendChild(line);
+    if (s && s.reason) {
+      var why = document.createElement('p');
+      why.className = 'settings-warning';
+      why.textContent = s.reason;
+      box.appendChild(why);
+    }
+    var row = document.createElement('div');
+    row.className = 'calendar-actions';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-primary calendar-replan';
+    btn.textContent = '予定を組み直す';
+    calendarHoldReplan(btn);
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      call('apiCalendarPlan', [], function (res) {
+        btn.disabled = false;
+        res = res || {};
+        if (!res.ok) {
+          // 続けて押したときは、残りの秒のあいだ押せないままにする
+          if (res.waitSeconds) {
+            calendarReplanUntil = Date.now() + Number(res.waitSeconds) * 1000;
+            calendarHoldReplan(btn);
+          }
+          showSnack(res.reason || '組み直せませんでした', { kind: 'ng' });
+          return;
+        }
+        calendarReplanUntil = Date.now() + 60000;
+        calendarLateLast = res.late || [];
+        calendarCappedLast = !!res.capped;
+        showSnack('予定を組み直しました (' + (res.blocks || []).length + '件)', { kind: 'ok' });
+        refreshCalendarStatus();
+        // ホームのカードは次にホームを開いたときに描き直す
+        var home = homeCalendarBox();
+        if (home) home.textContent = '';
+      }, failEnable(btn, '組み直せませんでした: '));
+    });
+    row.appendChild(btn);
+    var open = calendarLink(s && s.calendarUrl, 'カレンダーで開く');
+    if (open) row.appendChild(open);
+    box.appendChild(row);
+    var when = document.createElement('p');
+    when.className = 'row-meta calendar-last';
+    var at = s && s.lastPlanned ? new Date(s.lastPlanned) : null;
+    when.textContent = '最後に組んだのは ' + (!at || isNaN(at.getTime()) ? 'まだありません' : at.toLocaleString('ja-JP')) +
+      '。1日1回、その日に初めてホームを開いたときにも組み直します。番頭が触るのは、番頭が入れた予定だけです。';
+    box.appendChild(when);
+    appendCalendarLate(box, calendarLateLast);
+    if (calendarCappedLast) {
+      var cap = document.createElement('p');
+      cap.className = 'row-meta calendar-capped';
+      cap.textContent = '1回に入れられる数 (20件) で止めました。続きは、次に組み直したときに入ります';
+      box.appendChild(cap);
+    }
+  }
+
+  /**
+   * 組み直してから60秒 (サーバが受けない間) は「予定を組み直す」を押せないままにし、過ぎたら戻す。
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  function calendarHoldReplan(btn) {
+    var wait = calendarReplanUntil - Date.now();
+    if (wait <= 0) return;
+    btn.disabled = true;
+    setTimeout(function () { if (btn.isConnected) btn.disabled = false; }, wait);
+  }
+
+  /**
+   * チームの設定の「予定を入れる共有カレンダー」。作る・ID を貼る・外す・共有の相手を足す。
+   *
+   * @param {object} item apiPrefs の calendar.shared
+   * @param {boolean} editable 管理者か
+   * @returns {HTMLElement}
+   */
+  function makeCalendarTeamField(item, editable) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field pref-field calendar-team';
+    wrap.id = 'calendar-team';
+    wrap.dataset.pref = item.key;
+    wrap.dataset.editable = editable ? '1' : '';
+    wrap._item = item;
+    fillCalendarTeam(wrap);
+    return wrap;
+  }
+
+  /** @param {HTMLElement} wrap */
+  function fillCalendarTeam(wrap) {
+    var item = wrap._item;
+    var editable = wrap.dataset.editable === '1';
+    var s = calendarStatusLast;
+    wrap.textContent = '';
+    var line = document.createElement('p');
+    line.textContent = item.label + ': ' + (item.value ? (s && s.sharedName ? s.sharedName : '決まっています')
+      : 'まだ決まっていません');
+    wrap.appendChild(line);
+    if (!editable) {
+      appendPrefHelp(wrap, item);
+      return;
+    }
+    var row = document.createElement('div');
+    row.className = 'calendar-actions';
+    function act(label, name, args, primary) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = primary ? 'btn btn-primary' : 'btn';
+      b.textContent = label;
+      b.addEventListener('click', function () {
+        var a = typeof args === 'function' ? args() : args;
+        if (!a) return;
+        b.disabled = true;
+        call(name, a, function (res) {
+          b.disabled = false;
+          calendarStatusLast = res || calendarStatusLast;
+          // 設定の一覧の値 (calendar.shared) も取り直して欄をそろえる
+          loadSettingsPanel();
+          showSnack(label + ': 済みました', { kind: 'ok' });
+        }, failEnable(b, label + 'ことができませんでした: '));
+      });
+      row.appendChild(b);
+      return b;
+    }
+    if (!item.value) act('共有カレンダーを作る', 'apiCalendarCreateShared', [], true);
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'calendar-id';
+    input.placeholder = '…@group.calendar.google.com';
+    input.setAttribute('aria-label', '共有カレンダーの ID');
+    input.value = item.value || '';
+    row.appendChild(input);
+    act('この ID にする', 'apiCalendarSetShared', function () {
+      var v = input.value.replace(/^\s+|\s+$/g, '');
+      if (!v) {
+        showSnack('カレンダーの ID を入れてください', { kind: 'ng' });
+        return null;
+      }
+      return [v];
+    });
+    if (item.value) act('外す', 'apiCalendarSetShared', ['']);
+    wrap.appendChild(row);
+    if (item.value) {
+      var how = document.createElement('p');
+      how.className = 'row-meta calendar-share-how';
+      how.textContent = '使う人を、Google カレンダーのこのカレンダーの設定で「特定のユーザーまたはグループと共有する」に、' +
+        '「予定の変更」の権限で足してください (「予定の表示」だと番頭は予定を入れられません)。' +
+        '頁が開かないときは、Google カレンダーの左の一覧で「番頭の予定」の「︙」→「設定と共有」を開きます。';
+      wrap.appendChild(how);
+      var link = calendarLink(s && s.settingsUrl, '共有の相手を足す');
+      if (link) wrap.appendChild(link);
+    }
+    appendPrefHelp(wrap, item);
+  }
+
+  /** 設定の画面の2つの欄のために、様子を1回だけ取る。オフで管理者でもなければ取らない */
+  function refreshCalendarStatus() {
+    var mine = document.getElementById('calendar-mine');
+    var team = document.getElementById('calendar-team');
+    if (mine) fillCalendarMine(mine);
+    if (!calendarOn() && !(prefs && prefs.canEditTeam)) return;
+    if (!mine && !team) return;
+    var still = latest('calendarStatus');
+    call('apiCalendarStatus', [], function (res) {
+      if (!still()) return;
+      calendarStatusLast = res || null;
+      var m = document.getElementById('calendar-mine');
+      var t = document.getElementById('calendar-team');
+      if (m) fillCalendarMine(m);
+      if (t) fillCalendarTeam(t);
+    }, failQuiet('様子が出なくても、設定の欄そのものは使える'));
+  }

@@ -1162,3 +1162,106 @@ function debugVerifyScrum() {
   Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
   return summary;
 }
+
+/**
+ * 実機検証: やることを予定に入れる。GAS エディタから引数なしで実行する。
+ *
+ * 一時のカレンダーを作って共有カレンダーに見立て、持ち主のやることを2つ組む。予定どうし・持ち主の既定の
+ * カレンダーの予定と重ならないか、勤務の時間の中か、印が付いているか、組み直しで増えないか、やめたら
+ * これから先の予定が消えるかを見る。成否にかかわらず、やること・一時のカレンダーを片付け、設定を元に戻す。
+ *
+ * @returns {string} 結果の要約
+ */
+function debugVerifyCalendar() {
+  assertOwner_();
+  var log = [];
+  var failed = 0;
+  function check(label, ok, detail) {
+    log.push((ok ? 'PASS ' : 'FAIL ') + label + (detail !== undefined ? ' — ' + detail : ''));
+    if (!ok) failed++;
+    return ok;
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  var me = currentEmailLower_();
+  var keys = [prefTeamKey_('calendar.shared'), prefMineKey_(me), calendarPlannedKey_(me)];
+  var saved = keys.map(function (k) { return props.getProperty(k); });
+  var mark = '自動検証 予定 ' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'MMddHHmmss');
+  var temp = null;
+
+  try {
+    temp = CalendarApp.createCalendar('番頭の予定 (検証)', { summary: mark });
+    props.setProperty(keys[0], JSON.stringify(String(temp.getId())));
+    apiPrefSet('calendar.plan', true);
+    var due = Utilities.formatDate(new Date(Date.now() + 2 * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd');
+    [0.5, 0.25].forEach(function (d, i) {
+      var n = apiIssueCreate('予定の検証 ' + (i + 1), mark, []).number;
+      apiIssueUpdate(n, { assignee: me, plannedHours: d, dueDate: due });
+    });
+
+    log.push('INFO 共有の相手を足す頁 (開いて形を確かめる): ' + calendarSettingsUrl_(String(temp.getId())));
+    var first = apiCalendarPlan();
+    check('組める', first.ok === true, first.reason);
+    check('予定が入る', first.blocks.length > 0, first.blocks.length + '件');
+    var spans = first.blocks.map(function (b) { return { s: Date.parse(b.start), e: Date.parse(b.end) }; });
+    var overlap = spans.some(function (a, i) {
+      return spans.some(function (b, j) { return i !== j && a.s < b.e && b.s < a.e; });
+    });
+    check('予定どうしが重ならない', !overlap);
+    var busy = calendarBusyOf_(Date.now(), Date.now() + 21 * 86400000);
+    check('既定のカレンダーの予定と重ならない', !spans.some(function (a) {
+      return busy.some(function (b) { return a.s < b.end && b.start < a.e; });
+    }), busy.length + '件の予定');
+    var hours = calendarSettingsOf_(me).hours;
+    check('勤務の時間の中', spans.every(function (a) {
+      var s = Utilities.formatDate(new Date(a.s), 'Asia/Tokyo', 'HH:mm');
+      var e = Utilities.formatDate(new Date(a.e), 'Asia/Tokyo', 'HH:mm');
+      return s >= hours.start && e <= hours.end;
+    }), hours.start + '〜' + hours.end);
+    var tagged = calendarMineIn_(temp, me, Date.now(), Date.now() + 21 * 86400000);
+    check('入れた予定に印が付く', tagged.length === first.blocks.length, tagged.length + '件');
+
+    // 手で押すのは60秒に1回までなので、検証では待ちを外して組み直す
+    var again = calendarPlanFor_(me, null, { cooldown: false });
+    var after = calendarMineIn_(temp, me, Date.now(), Date.now() + 21 * 86400000);
+    check('組み直しても増えない', again.ok && after.length === again.blocks.length, after.length + '件');
+
+    apiPrefSet('calendar.plan', false);
+    var left = calendarMineIn_(temp, me, Date.now() + 60000, Date.now() + 21 * 86400000);
+    check('やめると、これから先の予定が消える', left.length === 0, left.length + '件');
+  } catch (e) {
+    failed++;
+    log.push('EXCEPTION ' + e.message);
+    log.push(String(e.stack || ''));
+  }
+
+  function tidy(label, fn) {
+    try {
+      fn();
+    } catch (e) {
+      failed++;
+      log.push('FAIL 片付け (' + label + '): ' + e.message);
+    }
+  }
+  tidy('やること', function () {
+    dbReadAll('issues').forEach(function (row) {
+      if (String(row.body) !== mark) return;
+      var n = row.number;
+      tidy('やること #' + n, function () {
+        issuePurge(n);
+        dbDelete('change_log', 'target', 'issue:' + n);
+      });
+    });
+  });
+  tidy('一時のカレンダー', function () { if (temp) temp.deleteCalendar(); });
+  tidy('設定を戻す', function () {
+    keys.forEach(function (k, i) {
+      if (saved[i] === null || saved[i] === undefined) props.deleteProperty(k);
+      else props.setProperty(k, saved[i]);
+    });
+  });
+
+  var summary = (failed === 0) ? 'すべて PASS (' + log.length + '行)' : failed + ' 件 FAIL';
+  Logger.log(log.join('\n') + '\n--- ' + summary + ' ---');
+  return summary;
+}
