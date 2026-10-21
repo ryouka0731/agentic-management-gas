@@ -515,15 +515,7 @@ body {
   flex: 0 0 auto;
 }
 
-.branch-switch select {
-  min-width: 150px;
-  padding: 4px 6px;
-  font-size: 12px;
-  color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-}
+.branch-switch select { min-width: 150px; }
 
 .file-item.nested { padding-left: 28px; }
 
@@ -892,6 +884,48 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
+
+/*
+ * プルダウン (select) の形は1か所で決める。
+ *
+ * 以前は版の切り替え・まとめ方・集計・設定の欄がそれぞれ別の余白と枠を持ち、何も当てていないもの
+ * (作業期間の選択・使われ方の期間・集中の音など) は OS の既定の見た目のままだった。既定の矢印と枠は
+ * OS とテーマで形も色も変わり、暗い地では浮いて見えた。
+ *
+ * 既定の見た目を外し、面と影 (hairline) で枠を表し、矢印は文字の色で2本の線を描く (外の画像は使わない)。
+ * 大きさは 32px を下限にして、ボタン (.btn) と同じ行に並んでも段違いにならないようにする。
+ * 幅や字の大きさを変えたいときだけ、各クラスで min-width / font-size を書く。形は書き直さない
+ */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 0 calc(var(--sp-3) + 14px) 0 var(--sp-3);
+  font: inherit;
+  font-size: 13px;
+  line-height: 30px;
+  color: var(--ink);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+    linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--hairline);
+  text-overflow: ellipsis;
+  transition: background-color var(--motion) ease, box-shadow var(--motion) ease;
+}
+select:hover:not(:disabled) { background-color: var(--bg-2); }
+select:focus { outline: none; }
+select:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+select:disabled { cursor: not-allowed; opacity: 0.45; }
+/* 開いた一覧は OS が描く。字と地をテーマに合わせる (暗い地で白い一覧が開かないように) */
+select option { color: var(--ink); background-color: var(--surface-raised); }
 
 /* 状態の変化は 160ms で滑らかに。色と背景だけを動かす */
 .btn, .tab, .pr-tab, .file-item, .row-item, .board-card, .file-link {
@@ -2411,15 +2445,7 @@ button.gantt-name:hover { color: var(--accent); }
 }
 
 .group-switch select,
-.tally-switch select {
-  min-width: 120px;
-  padding: 4px 6px;
-  font-size: 12px;
-  color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
+.tally-switch select { min-width: 120px; }
 
 /*
  * 差分は種別と本文に分けて見せる。
@@ -4325,8 +4351,8 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
 .pref-field > .row-meta:last-child { flex-basis: 100%; }
 .pref-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .pref-steps { display: inline-flex; gap: var(--sp-2); }
-.pref-field input[type="number"],
-.pref-field select {
+.pref-field select { min-width: 72px; }
+.pref-field input[type="number"] {
   min-width: 72px;
   padding: 4px 6px;
   color: var(--ink);
@@ -4337,8 +4363,7 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
   font: inherit;
 }
 .pref-field input[type="number"] { width: 80px; }
-.pref-field input:focus,
-.pref-field select:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.pref-field input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
 /* はじめての人への案内。説明 → 1巡りのいまの位置 → 次の一手 */
 .scrum-intro {
   margin: var(--sp-4) var(--sp-4) 0;
