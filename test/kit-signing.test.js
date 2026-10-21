@@ -81,7 +81,7 @@ describe('署名する文', () => {
 
   it('番頭の kitSignedText_ と同じ字になる', () => {
     const fake = createFakeGas();
-    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs', 'src/KitFiles.gs', 'src/core/AgentKit.gs');
+    const ctx = loadGasWith(fake, 'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/AgentKit.gs');
     const files = ctx.KIT_FILES();
     expect(kitSignedText('9.9.9', files)).toBe(ctx.kitSignedText_('9.9.9', files));
   });
@@ -261,7 +261,7 @@ describe('入れるとき (track install)', () => {
 });
 
 describe('番頭が署名する (kitFiles)', () => {
-  const SOURCES = ['src/core/Hash.js', 'src/core/HashGas.gs', 'src/KitFiles.gs', 'src/core/AgentKit.gs'];
+  const SOURCES = ['src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/AgentKit.gs'];
   const sha = (files) => crypto.createHash('sha256').update(JSON.stringify(files), 'utf8').digest('hex');
 
   /** deploy が書くのと同じ記録を持たせる */
@@ -388,7 +388,7 @@ describe('署名の鍵の扱い (scripts/kit-key.mjs)', () => {
   });
 
   it('kitFilesMap は KIT_FILES() と同じ並び・同じ中身', () => {
-    const ctx = loadGasWith(createFakeGas(), 'src/KitFiles.gs');
+    const ctx = loadGasWith(createFakeGas(), 'src/core/AgentKit.gs');
     expect(JSON.stringify(kitFilesMap())).toBe(JSON.stringify(ctx.KIT_FILES()));
   });
 

@@ -60,7 +60,7 @@ export const API_SOURCES = [
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
 
-export const KIT_SOURCES = ['src/KitFiles.gs', 'src/core/AgentKit.gs'];
+export const KIT_SOURCES = ['src/core/AgentKit.gs'];
 
 export const FULL_SOURCES = APP_SOURCES.concat([
   'src/core/GoogleTasks.gs', 'src/core/FileUrl.js', 'src/core/MarkdownView.js', 'src/core/Terms.js',

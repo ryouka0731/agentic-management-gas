@@ -7,7 +7,7 @@
  *      (居る場所は入力の cwd で決める。並行する版のフォルダがあるため)
  *  (b) `clasp create-deployment` / `clasp deploy` を `-i` / `--deploymentId` 無しで
  *      (新しいデプロイが作られて URL が変わる)
- *  (c) `src/KitFiles.gs` / `src/KitSigning.gs` を手で書く (scripts が作るもの)
+ *  (c) `src/ui/kit-files.html` / `src/KitSigning.gs` を手で書く (scripts が作るもの)
  *  (d) 署名の秘密鍵を読む・書く (`~/.config/softbanto/kit-signing-key.pem` と
  *      `$BANTO_SIGNING_KEY`)
  *
@@ -19,7 +19,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import os from 'node:os';
 
-const GENERATED = ['src/KitFiles.gs', 'src/KitSigning.gs'];
+const GENERATED = ['src/ui/kit-files.html', 'src/KitSigning.gs'];
 
 function homeDir() {
   return process.env.HOME || os.homedir();
@@ -47,7 +47,7 @@ export function tokenize(cmd) {
   let cur = null;
   let i = 0;
   // ヒアドキュメント (<<EOF) の本文は命令ではなく字なので、行ごと読み飛ばす
-  // (読むと、本文に「> src/KitFiles.gs」と書いた説明だけで止めてしまう)
+  // (読むと、本文に「> src/ui/kit-files.html」と書いた説明だけで止めてしまう)
   const docs = [];
   let wantDelim = null;
   const push = () => {
@@ -256,7 +256,7 @@ function isGenerated(abs) {
 
 function generatedReason(file) {
   return path.basename(file) + ' は scripts が作るファイルです。手で直さないでください。\n'
-    + 'KitFiles.gs は kit/ を直して `node scripts/build-kit.mjs` で焼き直す (npm run deploy も走らせる)。\n'
+    + 'kit-files.html は kit/ を直して `node scripts/build-kit.mjs` で焼き直す (npm run deploy も走らせる)。\n'
     + 'KitSigning.gs は `npm run deploy` が送る直前に書きます。';
 }
 

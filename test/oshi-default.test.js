@@ -7,7 +7,7 @@ import { buildOshiDefaultSource, oshiDefaultMap, oshiDefaultTargets, oshiDefault
 /*
  * 最初からいるキャラの絵 (焼いたもの)。本物は assets/oshi-default/<キャラ>/、焼くのは scripts/build-oshi-default.mjs。
  * 書き出す先は src/ui/oshi-default/<キャラ>-<形>.html (表情 → data URL の JSON の字だけ)。
- * build-kit.mjs → KitFiles.gs と同じく、焼き直し忘れをここで止める。
+ * build-kit.mjs → src/ui/kit-files.html と同じく、焼き直し忘れをここで止める。
  */
 
 const pure = loadGas('src/core/Oshi.js');

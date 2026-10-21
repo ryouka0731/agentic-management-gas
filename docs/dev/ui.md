@@ -371,7 +371,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)
   - 絵の本物は `assets/oshi-default/<キャラ>/<形>-<表情>.webp` (透明な WebP)。`scripts/build-oshi-default.mjs` が base64 の
     data URL にして、キャラ×形ごとに `src/ui/oshi-default/<キャラ>-<形>.html` に焼く。中身は 表情 → data URL の JSON の字だけ
-    (1行。タグもコメントも無い)。**焼いたものは手で直さない** (`KitFiles.gs` と違いフックでは止めていない)。1つ 600KB まで。
+    (1行。タグもコメントも無い)。**焼いたものは手で直さない** (配る道具の `src/ui/kit-files.html` と違いフックでは止めていない)。1つ 600KB まで。
     `npm run deploy` が送る前に焼き直し、`test/oshi-default.test.js` が assets と一致しているか・JSON として読めるか・
     スクリプトに絵が無いかを見ている。キャラ・表情・形の並びは `Oshi.js` から読むので、キャラを足してもサーバとテストの並びは直さない
   - **絵をスクリプト (.gs / .js) に焼かない。** GAS はどの呼び出しでも全部のスクリプトを読み込む。以前は
