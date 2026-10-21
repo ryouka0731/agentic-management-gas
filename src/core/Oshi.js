@@ -88,7 +88,7 @@ function OSHI_TONES() {
  * 最初からいるキャラクター (公式のキャラ)。**唯一の表。** 並びは設定の選び方の並びで、先頭が既定
  * (自分の設定 oshi.char の既定は 'builtin:' + 先頭の key)。名前と口調は決まっていて、利用者は変えられない
  * (変えたいときは自分のキャラを作る)。絵は利用者が用意したもので、scripts/build-oshi-default.mjs が
- * assets/oshi-default/<key>/ から src/core/OshiDefault<Key><形>.gs に焼く。
+ * assets/oshi-default/<key>/ から src/ui/oshi-default/<key>-<形>.html (JSON の字) に焼く。
  *
  * - タク: 明るくて少しおちゃめな相棒。面倒なことは道具に任せて、余白を作ろうと誘ってくれる (先頭 = 既定)
  * - イツキ: 耽美で少し芝居がかった、祈るように見守るキャラ

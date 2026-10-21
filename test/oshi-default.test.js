@@ -3,25 +3,41 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
 import { buildOshiDefaultSource, oshiDefaultMap, oshiDefaultTargets, oshiDefaultOut, OSHI_DEFAULT_MAX_BYTES } from '../scripts/build-oshi-default.mjs';
-import { OSHI_DEFAULT_SOURCES } from './sources.js';
 
 /*
  * 最初からいるキャラの絵 (焼いたもの)。本物は assets/oshi-default/<キャラ>/、焼くのは scripts/build-oshi-default.mjs。
- * build-kit.mjs → KitFiles.gs と同じく、焼き直し忘れをここで止める。
+ * 書き出す先は src/ui/oshi-default/<キャラ>-<形>.html (表情 → data URL の JSON の字だけ)。
+ * build-kit.mjs → src/ui/kit-files.html と同じく、焼き直し忘れをここで止める。
  */
 
 const pure = loadGas('src/core/Oshi.js');
 
 describe('最初からいるキャラの絵 (焼いたもの)', () => {
-  it('どのキャラのどの形にも書き出す先があり、テストの並び (OSHI_DEFAULT_SOURCES) と同じ', () => {
+  it('どのキャラのどの形にも書き出す先があり、スクリプト (.gs / .js) ではなく src/ui/oshi-default/ の HTML', () => {
     const want = [];
     for (const c of pure.OSHI_BUILTINS()) for (const st of pure.OSHI_STYLES()) want.push(c.key + '/' + st.key);
     expect(oshiDefaultTargets().map((t) => t.char + '/' + t.style)).toEqual(want);
-    expect(oshiDefaultTargets().map((t) => t.file).sort()).toEqual([...OSHI_DEFAULT_SOURCES].sort());
-    expect(oshiDefaultOut('taku', 'normal')).toEqual({ file: 'src/core/OshiDefaultTakuNormal.gs', fn: 'OSHI_DEFAULT_TAKU_NORMAL' });
-    // 関数の名前は重ならない (同じグローバルなので、後に読んだほうが黙って勝つ)
-    const fns = oshiDefaultTargets().map((t) => t.fn);
-    expect(new Set(fns).size).toBe(fns.length);
+    expect(oshiDefaultOut('taku', 'normal')).toEqual({ file: 'src/ui/oshi-default/taku-normal.html', name: 'ui/oshi-default/taku-normal' });
+    for (const t of oshiDefaultTargets()) {
+      expect(t.file).toBe('src/' + t.name + '.html');
+      expect(t.file).toMatch(/^src\/ui\/oshi-default\/[a-z]+-[a-z]+\.html$/);
+    }
+    // 焼いたものを置く場所に、作らないファイルが残っていない (キャラを外したときの消し忘れ)
+    expect(fs.readdirSync('src/ui/oshi-default').map((n) => 'src/ui/oshi-default/' + n).sort())
+      .toEqual(oshiDefaultTargets().map((t) => t.file).sort());
+  });
+
+  it('絵をスクリプトに焼いていない (GAS はどの呼び出しでも全部のスクリプトを読む)', () => {
+    const scripts = [];
+    (function walk(dir) {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = dir + '/' + ent.name;
+        if (ent.isDirectory()) walk(p);
+        else if (/\.(gs|js)$/.test(ent.name)) scripts.push(p);
+      }
+    })('src');
+    const baked = scripts.filter((f) => fs.readFileSync(f, 'utf8').includes('data:image/webp;base64,'));
+    expect(baked).toEqual([]);
   });
 
   for (const t of oshiDefaultTargets()) {
@@ -30,12 +46,10 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
       expect(now === buildOshiDefaultSource(t.char, t.style), t.file + ' が古い').toBe(true);
     });
 
-    it(t.char + '/' + t.style + ': 全部の表情があり、1ファイル 600KB まで、手で直さないと書いてある', () => {
+    it(t.char + '/' + t.style + ': JSON として読め、全部の表情があり、1ファイル 600KB まで', () => {
       const text = fs.readFileSync(path.resolve(t.file), 'utf8');
       expect(Buffer.byteLength(text)).toBeLessThanOrEqual(OSHI_DEFAULT_MAX_BYTES);
-      expect(text).toContain('手で直さない');
-      const ctx = loadGas(t.file);
-      const map = ctx[t.fn]();
+      const map = JSON.parse(text);
       // 絵が無くてもよい表情 (optional) は、assets にあるときだけ焼く
       const has = (s) => fs.existsSync(path.resolve('assets/oshi-default/' + t.char + '/' + t.style + '-' + s.key + '.webp'));
       expect(Object.keys(map)).toEqual(pure.OSHI_STATES().filter((s) => !s.optional || has(s)).map((s) => s.key));
@@ -69,10 +83,11 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
   });
 
   it('最初のページ (画面の部分ファイルと doGet) には絵を入れない', () => {
-    const ui = fs.readdirSync('src/ui').map((n) => fs.readFileSync(path.join('src/ui', n), 'utf8')).join('\n');
+    const ui = fs.readdirSync('src/ui', { withFileTypes: true }).filter((e) => e.isFile())
+      .map((e) => fs.readFileSync(path.join('src/ui', e.name), 'utf8')).join('\n');
     const main = fs.readFileSync('src/Main.gs', 'utf8');
     for (const text of [ui, main]) {
-      expect(text).not.toMatch(/OSHI_DEFAULT_[A-Z]+_(NORMAL|CHIBI)/);
+      expect(text).not.toContain('oshi-default/');
       expect(text).not.toContain('data:image/webp;base64,');
     }
   });

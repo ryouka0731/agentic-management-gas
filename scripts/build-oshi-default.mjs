@@ -3,8 +3,13 @@
  *
  * 本物は assets/oshi-default/<キャラ>/<形>-<表情>.webp (利用者が用意した絵。透明な WebP、長い辺 384px まで)。
  * GAS は src の外を読めないので、base64 の data URL にして、キャラと形ごとに1つのファイル
- * (src/core/OshiDefault<キャラ><形>.gs。例: OshiDefaultItsukiNormal.gs) に書く。分けるのは、
- * 1つが大きくなりすぎないため (1ファイル 600KB まで)。
+ * (src/ui/oshi-default/<キャラ>-<形>.html。例: itsuki-normal.html) に書く。中身は 表情 → data URL の
+ * JSON の字だけ (タグもコメントも無い)。サーバは OshiStore.gs の oshiDefaultPictures_ が
+ * HtmlService.createTemplateFromFile(...).getRawContent() で読んで JSON.parse する。
+ * 分けるのは、1つが大きくなりすぎないため (1ファイル 600KB まで)。**作ったものは手で直さない。**
+ *
+ * スクリプト (.gs / .js) にしないのは、GAS がどの呼び出しでも全部のスクリプトを読み込むから。以前は .gs に焼いていて、
+ * 合わせて 3.3MB が画面のどの api* も遅くしていた。HTML のファイルは読むときだけ読まれる。
  *
  * キャラ・表情・形の並びは src/core/Oshi.js (OSHI_BUILTINS / OSHI_STATES / OSHI_STYLES) が唯一の定義なので、
  * そこから読む。絵が1枚でも欠けていれば作らずに止める (欠けた表情だけ黙って絵が出なくなる)。
@@ -24,9 +29,6 @@ const ASSETS = path.join(ROOT, 'assets', 'oshi-default');
 /** 1ファイルの上限 (バイト) */
 export const OSHI_DEFAULT_MAX_BYTES = 600 * 1024;
 
-/** 形の人に見せる名前 (コメントに書くだけ) */
-const STYLE_LABELS = { normal: '等身', chibi: '2頭身' };
-
 /** Oshi.js を読み、キャラ・表情・形の key を返す */
 export function oshiDefinitions() {
   const ctx = vm.createContext({});
@@ -39,25 +41,22 @@ export function oshiDefinitions() {
   };
 }
 
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-
 /**
- * 書き出す先と関数の名前。キャラ×形ごとに1つ。
- * ファイル名は src の中で他と重ならない (同じ名前の .js と .gs は clasp で1つになる)。
+ * 書き出す先と、HtmlService で読むときの名前 (src からの相対で、拡張子なし)。キャラ×形ごとに1つ。
  *
  * @param {string} char
  * @param {string} style
- * @returns {{file: string, fn: string}}
+ * @returns {{file: string, name: string}}
  */
 export function oshiDefaultOut(char, style) {
   if (!/^[a-z]+$/.test(char) || !/^[a-z]+$/.test(style)) throw new Error('名前に使えない key です: ' + char + '/' + style);
   return {
-    file: 'src/core/OshiDefault' + cap(char) + cap(style) + '.gs',
-    fn: 'OSHI_DEFAULT_' + char.toUpperCase() + '_' + style.toUpperCase(),
+    file: 'src/ui/oshi-default/' + char + '-' + style + '.html',
+    name: 'ui/oshi-default/' + char + '-' + style,
   };
 }
 
-/** 書き出すもの全部 ({char, style, file, fn}) */
+/** 書き出すもの全部 ({char, style, file, name}) */
 export function oshiDefaultTargets() {
   const d = oshiDefinitions();
   const out = [];
@@ -91,7 +90,7 @@ export function oshiDefaultMap(char, style) {
 }
 
 /**
- * 焼き直した中身を返す。
+ * 焼き直した中身 (表情 → data URL の JSON の字、1行) を返す。
  *
  * @param {string} char
  * @param {string} style
@@ -99,29 +98,10 @@ export function oshiDefaultMap(char, style) {
  */
 export function buildOshiDefaultSource(char, style) {
   const d = oshiDefinitions();
-  const c = d.chars.find((x) => x.key === char);
-  if (!c) throw new Error('知らないキャラです: ' + char);
+  if (!d.chars.some((x) => x.key === char)) throw new Error('知らないキャラです: ' + char);
   if (!d.styles.includes(style)) throw new Error('知らない絵の形です: ' + style);
   const out = oshiDefaultOut(char, style);
-  const lines = [
-    '/**',
-    ' * 最初からいるキャラクター「' + c.name + '」の絵、' + (STYLE_LABELS[style] || style) + '。',
-    ' * **scripts/build-oshi-default.mjs が assets/oshi-default/' + char + '/ から作る。手で直さない。**',
-    ' *',
-    ' * 画面へは apiOshiDefaultImage で1枚ずつ渡す (最初のページには入れない)。',
-    ' */',
-    '',
-    '/**',
-    ' * 表情 → data URL (image/webp)。',
-    ' *',
-    ' * @returns {Object<string,string>}',
-    ' */',
-    'function ' + out.fn + '() {',
-    '  return {',
-  ];
-  for (const [state, url] of Object.entries(oshiDefaultMap(char, style))) lines.push("    '" + state + "': '" + url + "',");
-  lines.push('  };', '}', '');
-  const text = lines.join('\n');
+  const text = JSON.stringify(oshiDefaultMap(char, style));
   if (Buffer.byteLength(text) > OSHI_DEFAULT_MAX_BYTES) {
     throw new Error(out.file + ' が ' + Math.round(OSHI_DEFAULT_MAX_BYTES / 1024) + 'KB を超えます。絵を縮めてください');
   }
@@ -140,6 +120,7 @@ export function writeOshiDefaultSources() {
     const target = path.join(ROOT, t.file);
     const now = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
     if (now === next) continue;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, next);
     changed.push(t.file);
   }

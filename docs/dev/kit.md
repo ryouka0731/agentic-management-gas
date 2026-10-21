@@ -14,8 +14,9 @@
 
 
 `kit/` にある**本物のファイル**が中身の本体で、`scripts/build-kit.mjs` が
-それを base64 にして `src/KitFiles.gs` に焼き直し、`AgentKit.gs` が zip にして
-配る。**別のリポジトリに切り出さない。** 配る側が2つのものを version 合わせで
+それを base64 にして `src/ui/kit-files.html` (zip の中の名前 → base64 の JSON の字だけ) に焼き直し、
+`AgentKit.gs` の `KIT_FILES()` が `HtmlService.createTemplateFromFile('ui/kit-files').getRawContent()` で読んで
+zip にして配る。**別のリポジトリに切り出さない。** 配る側が2つのものを version 合わせで
 管理することになり、必ずずれる。
 
 **中身をそのまま GAS の HTML ファイルとして置いてはいけない。** `<id>` や
@@ -23,7 +24,12 @@
 実際に `agent.mjs` と `AGENTS.md` が壊れて配られていた。base64 なら何が
 書いてあっても解釈されようがない。
 
-- 直すのは `kit/` のほう。`src/KitFiles.gs` は**手で直さない**
+- **スクリプト (.gs) に焼かない。** GAS はどの呼び出しでも全部のスクリプトを読み込むので、以前の `src/KitFiles.gs`
+  (400KB) が画面のどの api* も遅くしていた (推しの絵の `.gs` 3.3MB と合わせて、2026-10-22 の「全体的に読み込みが遅い」)。
+  HTML のファイルは読むときだけ読まれる。`createHtmlOutputFromFile` は HTML として読み直して中身を変えることがあるので使わない
+  (`include()` と同じ理由)。同じ実行の中では1回だけ読み、写しを返す。base64 のまま持つのは、署名と指紋 (`kitPrint_`) が
+  この並びの JSON に付くため (中身の並びも字も以前の `KIT_FILES()` と同じ)
+- 直すのは `kit/` のほう。`src/ui/kit-files.html` は**手で直さない** (フック `scripts/guard-hook.mjs` の `GENERATED` が止める)
 - 焼き直しは `npm run deploy` が自動で走らせる
 - `test/agentkit.test.js` が、焼き直したものと `kit/` の中身が一致している
   ことを見ている。忘れるとテストで止まる

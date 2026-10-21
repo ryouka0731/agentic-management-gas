@@ -20,14 +20,14 @@ import { parseAst } from 'rolldown/parseAst';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 
-/** 測るファイル。焼き直した中身 (KitFiles.gs / KitSigning.gs / OshiDefault*.gs) は数えない */
+/** 測るファイル。焼き直した中身 (KitSigning.gs) は数えない (配る道具の中身と推しの絵は src/ui/ の .html なので元から入らない) */
 function sourceFiles() {
   const out = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
       const p = path.join(dir, name);
       if (fs.statSync(p).isDirectory()) { walk(p); continue; }
-      if (/^(KitFiles|KitSigning|OshiDefault[A-Z][a-z]+(Normal|Chibi))\.gs$/.test(name)) continue;
+      if (/^KitSigning\.gs$/.test(name)) continue;
       if (/\.(gs|js|mjs)$/.test(name)) out.push(p);
     }
   };

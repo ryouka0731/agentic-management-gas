@@ -77,7 +77,7 @@ export function commitMessages(src) {
   return out;
 }
 
-/** 人に届く字を持つファイル。配る道具の中身 (KitFiles) と署名の記録は字を持つだけ */
+/** 人に届く字を持つファイル。署名の記録は字を持つだけ (配る道具の中身は src/ui/kit-files.html なので元から入らない) */
 export function serverSources() {
   const out = [];
   (function walk(dir) {
@@ -87,6 +87,6 @@ export function serverSources() {
       else if (/\.gs$/.test(ent.name) || (/^src\/core\/[^/]+\.js$/.test(p))) out.push(p);
     }
   })('src');
-  return out.filter((p) => !/\/(KitFiles|KitSigning)\.gs$/.test(p)).sort();
+  return out.filter((p) => !/\/KitSigning\.gs$/.test(p)).sort();
 }
 
