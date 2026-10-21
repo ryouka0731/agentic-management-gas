@@ -1,0 +1,578 @@
+  // ===== 思いがけない当たり・ノリノリタイム・自分へのご褒美 (既定はオフ) =====
+  //
+  // 利用者から「パチンコの仕組み (派手な演出・確変・換金) でやる気を出したい」と頼まれた。くじの害
+  // (docs/superpowers/specs/2026-10-21-motivation-review.md「不確実な報酬」) を持ち込まないよう、線を引いてある:
+  //
+  // - **確率は見た目の演出だけに使う。** 当たっても機能・情報・ポイントは何も増えない。外れは見せない
+  //   (当たったときにしかリールを描かない。リールの中身も当たりの絵だけ)。ニアミス・失うもの・連続記録は作らない
+  // - 当たりは1日 LUCK_RULES().dayMax 回まで・前の当たりから gapMs は空ける。失敗した操作では引かない
+  // - ノリノリタイム (確変の代わり) は、済ませた手が続いたら少しのあいだ枠が光るだけ。終わりは黙って終わる
+  //   (「終わりました」も、急かす秒読みも出さない)
+  // - 換金の代わりは「自分へのご褒美」(本人が決めたものと、台帳から数えたポイントを交換する。サーバは Reward.gs)
+  // - どれも自分の設定 (luck.on / luck.reward) でオンにした人だけ。動きを減らす設定では字の札だけ。音は無い
+  //
+  // 数は端末に覚える (localStorage。読めなければその場の控えだけ)。サーバには何も送らない (ポイントにしないため)。
+
+  /**
+   * 数の決まり。**唯一の表。** 関数にしてあるのは、call() が読み込みの途中で呼ばれても引けるようにするため。
+   *
+   * @returns {{oneIn: number, dayMax: number, gapMs: number, feverNeed: number, feverWindowMs: number, feverMs: number}}
+   */
+  function LUCK_RULES() {
+    return {
+      oneIn: 8,
+      dayMax: 3,
+      gapMs: 30 * 60 * 1000,
+      feverNeed: 3,
+      feverWindowMs: 60 * 60 * 1000,
+      feverMs: 15 * 60 * 1000,
+    };
+  }
+
+  /**
+   * 当たりを引く「済ませた手」。完了・反映・承認・記録・始めた。引数で当たるかは FUN_CHEERS() の when で見る
+   * (同じ操作の判定を2つ持たない)。
+   *
+   * @returns {string[]}
+   */
+  function LUCK_ACTIONS() {
+    return ['apiIssueClose', 'apiProjectMove', 'apiPrMerge', 'apiPrReview', 'apiCommit', 'apiCommitMany',
+      'apiSaveMarkdown', 'apiFocusStart'];
+  }
+
+  /** リールの絵。3つとも同じ絵で止まる (揃わない並びは描かない) */
+  function LUCK_SYMBOLS() {
+    return ['7', '★', '🍀', '🌸', '💎'];
+  }
+
+  /** 当たりに添える一言。おまけは何も無いので、ねぎらいだけにする */
+  function LUCK_LINES() {
+    return ['今日はついてる日。おつかれさま', 'いい流れです。そのままで大丈夫', 'ちょっとうれしい瞬間をどうぞ',
+      'ひと息ついてもいいころです'];
+  }
+
+  /** @returns {boolean} 思いがけない当たり (とノリノリタイム) がオンか */
+  function luckOn() {
+    var l = prefs && prefs.effective && prefs.effective.luck;
+    return !!(l && l.on === true);
+  }
+
+  /** @returns {boolean} 自分へのご褒美がオンか */
+  function rewardOn() {
+    var l = prefs && prefs.effective && prefs.effective.luck;
+    return !!(l && l.reward === true);
+  }
+
+  var LUCK_STORE_KEY = 'bantoLuck';
+  /** localStorage が使えないときの控え (その画面を開いているあいだだけ効く) */
+  var luckMem = null;
+  /** 推しに「思いがけない当たり」を言ってもらう印 (当たった時刻) */
+  var luckOshiAt = 0;
+  var luckFeverTimer = null;
+  var luckChipTimer = null;
+
+  /** 端末の日 'YYYY-MM-DD' (1日の数え直しに使う) */
+  function luckDay(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
+  /** @returns {{day: string, wins: number, lastWin: number, acts: number[], feverUntil: number, chipHidden: boolean}} */
+  function luckLoad() {
+    var raw = null;
+    try {
+      raw = JSON.parse(window.localStorage.getItem(LUCK_STORE_KEY) || 'null');
+    } catch (e) {
+      raw = null;
+    }
+    var s = raw && typeof raw === 'object' ? raw : (luckMem || {});
+    return {
+      day: String(s.day || ''),
+      wins: Number(s.wins) || 0,
+      lastWin: Number(s.lastWin) || 0,
+      acts: Array.isArray(s.acts) ? s.acts.map(Number).filter(function (n) { return n > 0; }) : [],
+      feverUntil: Number(s.feverUntil) || 0,
+      chipHidden: s.chipHidden === true,
+    };
+  }
+
+  function luckSave(s) {
+    luckMem = s;
+    try {
+      window.localStorage.setItem(LUCK_STORE_KEY, JSON.stringify(s));
+    } catch (e) { /* 覚えられなくても、この画面のあいだは luckMem が効く */ }
+  }
+
+  /**
+   * 済ませた手か (表に当たり、FUN_CHEERS の when も当たる)。
+   *
+   * @param {string} name
+   * @param {Array} args
+   * @returns {boolean}
+   */
+  function luckIsAction(name, args) {
+    if (LUCK_ACTIONS().indexOf(name) < 0) return false;
+    var c = FUN_CHEERS()[name];
+    return !(c && c.when && !c.when(args || []));
+  }
+
+  /**
+   * 引けるなら引く。1日の上限・前の当たりからの間を先に見て、そのあとで初めて乱数を使う。
+   *
+   * @param {object} s luckLoad()
+   * @param {number} now
+   * @returns {boolean} 当たったか
+   */
+  function luckRoll(s, now) {
+    var r = LUCK_RULES();
+    var today = luckDay(now);
+    if (s.day !== today) {
+      s.day = today;
+      s.wins = 0;
+    }
+    if (s.wins >= r.dayMax) return false;
+    if (s.lastWin && now - s.lastWin < r.gapMs) return false;
+    if (!(Math.random() * r.oneIn < 1)) return false;
+    s.wins++;
+    s.lastWin = now;
+    return true;
+  }
+
+  /**
+   * 済ませた手を数え、続いていればノリノリタイムに入る。ノリノリタイムのあいだは数えない
+   * (終わってから、また続けたら入る)。
+   *
+   * @param {object} s
+   * @param {number} now
+   * @returns {boolean} いま入ったか
+   */
+  function luckNoteAction(s, now) {
+    var r = LUCK_RULES();
+    if (s.feverUntil > now) return false;
+    s.acts = s.acts.filter(function (t) { return now - t < r.feverWindowMs; });
+    s.acts.push(now);
+    if (s.acts.length < r.feverNeed) return false;
+    s.acts = [];
+    s.feverUntil = now + r.feverMs;
+    return true;
+  }
+
+  /**
+   * call() が成功したあとに呼ぶ (失敗の枝からは呼ばない)。済ませた手なら数え、引けるなら引く。
+   * 当たったら「大当たり！」を出し、いつものお祝い (FUN_CHEERS) の代わりにする。
+   *
+   * @param {string} name
+   * @param {Array} args
+   * @returns {boolean} 当たりを出したか
+   */
+  function luckAfter(name, args) {
+    if (!luckOn()) return false;
+    try {
+      if (!luckIsAction(name, args)) return false;
+      var now = Date.now();
+      var s = luckLoad();
+      var feverIn = luckNoteAction(s, now);
+      var won = luckRoll(s, now);
+      luckSave(s);
+      if (feverIn) luckFeverShow(s);
+      if (won) {
+        luckOshiAt = now;
+        luckShowWin();
+      }
+      return won;
+    } catch (e) {
+      if (window.console) console.warn('当たりを出せませんでした', e);
+      return false;
+    }
+  }
+
+  /**
+   * 推しが「思いがけない当たり」を言う番か。当たってすぐの1回だけ (js-oshi の oshiSay が見る)。
+   *
+   * @returns {boolean}
+   */
+  function luckTakeOshi() {
+    if (!luckOshiAt || Date.now() - luckOshiAt > 5000) return false;
+    luckOshiAt = 0;
+    return true;
+  }
+
+  // ----- 大当たり -----
+
+  /**
+   * 「大当たり！」を出す。リールは3つとも同じ絵で止まる。**揃わない並びは一度も描かない**
+   * (回っている間の帯も、当たりの絵だけを並べる)。動きを減らす設定では、字の札だけ。
+   */
+  function luckShowWin() {
+    var layer = funLayer();
+    var reduced = funReduced();
+    var symbols = LUCK_SYMBOLS();
+    var lines = LUCK_LINES();
+    var sym = symbols[Math.floor(Math.random() * symbols.length) % symbols.length];
+    var line = lines[Math.floor(Math.random() * lines.length) % lines.length];
+    Array.prototype.forEach.call(layer.querySelectorAll('.luck-win'), function (old) { old.remove(); });
+
+    var box = document.createElement('div');
+    box.className = 'luck-win fun-tone-warn' + (reduced ? ' fun-badge is-static' : '');
+    box.dataset.symbol = sym;
+    var title = document.createElement('span');
+    title.className = 'luck-win-title';
+    title.textContent = '大当たり！';
+    box.appendChild(title);
+    if (!reduced) {
+      var reels = document.createElement('div');
+      reels.className = 'luck-reels';
+      for (var i = 0; i < 3; i++) {
+        var reel = document.createElement('span');
+        reel.className = 'luck-reel';
+        var strip = document.createElement('span');
+        strip.className = 'luck-strip';
+        strip.style.animationDelay = (i * 180) + 'ms';
+        for (var j = 0; j < 6; j++) {
+          var cell = document.createElement('span');
+          cell.className = 'luck-cell';
+          cell.textContent = sym;
+          strip.appendChild(cell);
+        }
+        reel.appendChild(strip);
+        reels.appendChild(reel);
+      }
+      box.appendChild(reels);
+    }
+    var sub = document.createElement('span');
+    sub.className = 'luck-win-line';
+    sub.textContent = line;
+    box.appendChild(sub);
+    layer.appendChild(box);
+    setTimeout(function () { box.remove(); }, reduced ? 1500 : 2800);
+    if (!reduced) {
+      funFlash('warn');
+      var w = window.innerWidth || 800;
+      var h = window.innerHeight || 600;
+      funBurst(w / 2, h / 2, 90, ['✨', '⭐', '🌟']);
+    }
+  }
+
+  // ----- ノリノリタイム -----
+
+  /** @returns {boolean} いまノリノリタイムか */
+  function luckFever() {
+    return luckOn() && luckLoad().feverUntil > Date.now();
+  }
+
+  /** 静かに終える (知らせは出さない) */
+  function luckFeverEnd() {
+    if (luckFeverTimer) clearTimeout(luckFeverTimer);
+    if (luckChipTimer) clearTimeout(luckChipTimer);
+    luckFeverTimer = null;
+    luckChipTimer = null;
+    document.body.classList.remove('luck-fever-on');
+    var el = document.getElementById('luck-fever');
+    if (el) el.remove();
+  }
+
+  /**
+   * ノリノリタイムを描く (入ったとき・開き直したとき)。枠の光は飾りの重ね、札は隠せる。
+   * 動きを減らす設定では、枠を描かず札だけ。
+   *
+   * @param {object} s luckLoad()
+   */
+  function luckFeverShow(s) {
+    var left = s.feverUntil - Date.now();
+    if (left <= 0) {
+      luckFeverEnd();
+      return;
+    }
+    var host = document.getElementById('luck-fever');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'luck-fever';
+      host.className = 'luck-fever';
+      if (!funReduced()) {
+        var frame = document.createElement('div');
+        frame.className = 'luck-fever-frame';
+        frame.setAttribute('aria-hidden', 'true');
+        host.appendChild(frame);
+      }
+      var chip = document.createElement('div');
+      chip.className = 'luck-fever-chip';
+      var label = document.createElement('span');
+      label.className = 'luck-fever-label';
+      label.textContent = 'ノリノリタイム';
+      chip.appendChild(label);
+      var rest = document.createElement('span');
+      rest.className = 'luck-fever-left';
+      chip.appendChild(rest);
+      var hide = document.createElement('button');
+      hide.type = 'button';
+      hide.className = 'luck-fever-hide';
+      hide.setAttribute('aria-label', 'ノリノリタイムの札を隠す');
+      hide.textContent = '×';
+      hide.addEventListener('click', function () {
+        var cur = luckLoad();
+        cur.chipHidden = true;
+        luckSave(cur);
+        chip.hidden = true;
+      });
+      chip.appendChild(hide);
+      host.appendChild(chip);
+      document.body.appendChild(host);
+    }
+    document.body.classList.add('luck-fever-on');
+    var chipEl = host.querySelector('.luck-fever-chip');
+    chipEl.hidden = !!s.chipHidden;
+    luckChipTick(s.feverUntil);
+    if (luckFeverTimer) clearTimeout(luckFeverTimer);
+    luckFeverTimer = setTimeout(luckFeverEnd, left);
+  }
+
+  /** 札の「あと◯分」を分の刻みで書き直す (秒は出さない。急かさない) */
+  function luckChipTick(until) {
+    if (luckChipTimer) clearTimeout(luckChipTimer);
+    var el = document.querySelector('#luck-fever .luck-fever-left');
+    if (!el) return;
+    var left = until - Date.now();
+    if (left <= 0) return;
+    el.textContent = 'あと ' + Math.max(1, Math.ceil(left / 60000)) + ' 分';
+    luckChipTimer = setTimeout(function () { luckChipTick(until); }, Math.min(60000, left));
+  }
+
+  /** 設定が届いた・変わった (applyPrefs から呼ぶ)。オフなら消し、オンで続いていれば描き直す */
+  function luckPrefsChanged() {
+    if (!luckOn()) {
+      luckFeverEnd();
+      return;
+    }
+    var s = luckLoad();
+    if (s.feverUntil > Date.now()) luckFeverShow(s);
+  }
+
+  // ----- 自分へのご褒美 -----
+
+  /**
+   * 自分まわりの「自分へのご褒美」。オフなら null。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeRewardMeButton() {
+    if (!rewardOn()) return null;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn reward-me-btn';
+    btn.appendChild(makeIcon('heart'));
+    btn.appendChild(document.createTextNode('自分へのご褒美'));
+    btn.addEventListener('click', function () {
+      closeMe();
+      openReward(btn);
+    });
+    return btn;
+  }
+
+  /**
+   * 右のペインにご褒美を出す。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openReward(sourceEl) {
+    var box = openSideView('自分へのご褒美', sourceEl, null);
+    box.classList.add('reward-view');
+    var wait = document.createElement('p');
+    wait.className = 'row-meta';
+    wait.textContent = '読み込んでいます…';
+    box.appendChild(wait);
+    var mine = latest('reward');
+    call('apiRewardGet', [], function (res) {
+      if (!mine() || !box.isConnected) return;
+      drawReward(box, res || {});
+    }, failInto(box));
+  }
+
+  /**
+   * @param {HTMLElement} box
+   * @param {object} res apiReward*
+   * @param {object} [editing] 直しているご褒美
+   */
+  function drawReward(box, res, editing) {
+    box.textContent = '';
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = 'あなたが決めた小さなご褒美と、たまったポイントを交換します。お金や会社からの賞品ではなく、' +
+      '給与や評価とも関係ありません。ここはあなたにだけ見えます';
+    box.appendChild(lead);
+
+    var sum = document.createElement('div');
+    sum.className = 'reward-sum';
+    var big = document.createElement('span');
+    big.className = 'reward-available';
+    big.textContent = String(Number(res.available) || 0);
+    var unit = document.createElement('span');
+    unit.className = 'reward-unit';
+    unit.textContent = 'ポイント使えます';
+    sum.appendChild(big);
+    sum.appendChild(unit);
+    box.appendChild(sum);
+
+    var rule = document.createElement('p');
+    rule.className = 'row-meta reward-rule';
+    var since = String(res.since || '');
+    var from = since ? Number(since.substring(5, 7)) + '月' + Number(since.substring(8, 10)) + '日から' : '今日から';
+    rule.textContent = (res.rule === 'points'
+      ? from + 'のポイント (週の上位に参加しているので、ポイントで数えます)'
+      : from + '、済ませたやること1件を1ポイントとして数えます') +
+      '。たまったのは ' + (Number(res.earned) || 0) + '、交換したのは ' + (Number(res.spent) || 0) + '。取り消されたやることのぶんは減ります';
+    box.appendChild(rule);
+
+    // 最後の交換の取り消し (5分のあいだ。サーバが決める)
+    if (res.undoId) {
+      var last = (res.spends || []).filter(function (s) { return s.id === res.undoId; })[0];
+      var bar = document.createElement('div');
+      bar.className = 'reward-undo';
+      var t = document.createElement('span');
+      t.textContent = '「' + (last ? last.title : '') + '」と交換しました';
+      var undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'btn';
+      undo.textContent = '取り消す';
+      undo.addEventListener('click', function () {
+        undo.disabled = true;
+        call('apiRewardUndo', [res.undoId], function (next) {
+          showSnack('交換を取り消しました', { kind: 'ok' });
+          if (box.isConnected) drawReward(box, next || {});
+        }, failEnable(undo, '取り消せませんでした: '));
+      });
+      bar.appendChild(t);
+      bar.appendChild(undo);
+      box.appendChild(bar);
+    }
+
+    var head = document.createElement('h3');
+    head.className = 'reward-head';
+    head.textContent = 'ご褒美';
+    box.appendChild(head);
+
+    var items = res.items || [];
+    var list = document.createElement('ul');
+    list.className = 'reward-list';
+    if (!items.length) {
+      var empty = document.createElement('p');
+      empty.className = 'row-meta';
+      empty.textContent = 'まだありません。下で、自分にあげたい小さなご褒美と、そのポイントを決めてください (例: 好きなコーヒー 5)';
+      box.appendChild(empty);
+    }
+    items.forEach(function (it) {
+      var li = document.createElement('li');
+      li.className = 'reward-item';
+      li.dataset.id = String(it.id);
+      var name = document.createElement('span');
+      name.className = 'reward-item-title';
+      name.textContent = it.title;
+      var cost = document.createElement('span');
+      cost.className = 'reward-item-cost';
+      cost.textContent = it.cost + ' ポイント';
+      var spend = document.createElement('button');
+      spend.type = 'button';
+      spend.className = 'btn btn-primary reward-spend';
+      spend.textContent = '交換する';
+      spend.setAttribute('aria-label', '「' + it.title + '」と交換する');
+      var enough = (Number(res.available) || 0) >= it.cost;
+      spend.disabled = !enough;
+      if (!enough) attachHint(spend, 'あと ' + Math.round((it.cost - (Number(res.available) || 0)) * 10) / 10 + ' ポイントで交換できます');
+      spend.addEventListener('click', function () {
+        spend.disabled = true;
+        call('apiRewardSpend', [it.id], function (next) {
+          showSnack('「' + it.title + '」と交換しました。楽しんでください', { kind: 'ok' });
+          if (box.isConnected) drawReward(box, next || {});
+        }, failEnable(spend, '交換できませんでした: '));
+      });
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn reward-edit';
+      edit.textContent = '直す';
+      edit.setAttribute('aria-label', '「' + it.title + '」を直す');
+      edit.addEventListener('click', function () { drawReward(box, res, it); });
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn reward-delete';
+      del.textContent = '外す';
+      del.setAttribute('aria-label', '「' + it.title + '」を外す');
+      del.addEventListener('click', function () {
+        del.disabled = true;
+        call('apiRewardItemDelete', [it.id], function (next) {
+          if (box.isConnected) drawReward(box, next || {});
+        }, failEnable(del, '外せませんでした: '));
+      });
+      li.appendChild(name);
+      li.appendChild(cost);
+      li.appendChild(spend);
+      li.appendChild(edit);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+    if (items.length) box.appendChild(list);
+
+    // 足す・直す
+    var form = document.createElement('form');
+    form.className = 'reward-form';
+    var titleIn = document.createElement('input');
+    titleIn.type = 'text';
+    titleIn.className = 'reward-title-in';
+    titleIn.maxLength = Number(res.titleMax) || 40;
+    titleIn.placeholder = 'ご褒美 (例: 15分の散歩)';
+    titleIn.setAttribute('aria-label', 'ご褒美の名前');
+    var costIn = document.createElement('input');
+    costIn.type = 'number';
+    costIn.className = 'reward-cost-in';
+    costIn.min = String(Number(res.costMin) || 1);
+    costIn.max = String(Number(res.costMax) || 50);
+    costIn.step = '1';
+    costIn.value = '5';
+    costIn.setAttribute('aria-label', 'ポイント (' + costIn.min + '〜' + costIn.max + ')');
+    var save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'btn';
+    save.textContent = editing ? '直す' : '足す';
+    if (editing) {
+      titleIn.value = editing.title;
+      costIn.value = String(editing.cost);
+    }
+    form.appendChild(titleIn);
+    form.appendChild(costIn);
+    form.appendChild(save);
+    if (editing) {
+      var cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn';
+      cancel.textContent = 'やめる';
+      cancel.addEventListener('click', function () { drawReward(box, res); });
+      form.appendChild(cancel);
+    }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var item = { title: titleIn.value, cost: Number(costIn.value) };
+      if (editing) item.id = editing.id;
+      save.disabled = true;
+      call('apiRewardItemSave', [item], function (next) {
+        if (box.isConnected) drawReward(box, next || {});
+      }, failEnable(save, editing ? '直せませんでした: ' : '足せませんでした: '));
+    });
+    box.appendChild(form);
+
+    var spends = res.spends || [];
+    if (spends.length) {
+      var h2 = document.createElement('h3');
+      h2.className = 'reward-head';
+      h2.textContent = '交換した記録';
+      box.appendChild(h2);
+      var log = document.createElement('ul');
+      log.className = 'reward-log';
+      spends.forEach(function (sp) {
+        var li = document.createElement('li');
+        var at = String(sp.at || '');
+        var d = at ? new Date(at) : null;
+        li.textContent = (d && !isNaN(d.getTime()) ? (d.getMonth() + 1) + '/' + d.getDate() + '  ' : '') +
+          sp.title + ' (' + sp.cost + ' ポイント)';
+        log.appendChild(li);
+      });
+      box.appendChild(log);
+    }
+  }

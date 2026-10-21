@@ -512,9 +512,10 @@
    *
    * @param {string} name
    * @param {Array} args
+   * @param {boolean} [lucky] 思いがけない当たり (js-luck) を出したか。出したなら重ねない
    */
-  function funCheerAfter(name, args) {
-    if (!funOn('cheer')) return;
+  function funCheerAfter(name, args, lucky) {
+    if (!funOn('cheer') || lucky) return;
     // 集中しているやることの完了は、集中の終わり (apiFocusEnd) の SUPER COMPLETE!! だけにする (js-focus)
     if (focusClosesSession(name, args)) return;
     // 飾りが落ちても、本来の返事の扱い (call の ok) は止めない
@@ -536,12 +537,16 @@
     if (c.when && !c.when(args || [])) return;
     var w = window.innerWidth || 800;
     var h = window.innerHeight || 600;
+    // ノリノリタイム (js-luck) のあいだは、お祝いを大きく・粒を多くする
+    var fever = luckFever();
+    var b;
     if (c.size === 'big') {
-      funBanner(c.text, 'big', c.tone, null);
+      b = funBanner(c.text, 'big', c.tone, null);
       funFlash(c.tone);
-      funBurst(w / 2, h / 2, 60, c.glyphs);
+      funBurst(w / 2, h / 2, fever ? 110 : 60, c.glyphs);
     } else {
-      funBanner(c.text, 'small', c.tone, null);
-      funBurst(w - 120, h - 80, 14, c.glyphs);
+      b = funBanner(c.text, 'small', c.tone, null);
+      funBurst(w - 120, h - 80, fever ? 30 : 14, c.glyphs);
     }
+    if (fever && b) b.classList.add('is-fever');
   }
