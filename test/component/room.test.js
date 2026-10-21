@@ -103,6 +103,24 @@ describe('作業部屋', () => {
     expect(el.querySelector('.room-oshi-say')).toBe(null);
   });
 
+  it('なでたときの吹き出しは、絵の実際の箱から頭の右上に置く (絵に重ねない)', () => {
+    mountRoom(ON);
+    openFromMe();
+    const el = room();
+    const fig = el.querySelector('.room-oshi');
+    const stage = el.querySelector('.room-stage');
+    // 舞台 1600×900 の中で、絵は左 496〜896、上 270〜630 (縦に長い絵)
+    stage.getBoundingClientRect = () => ({ top: 0, left: 0, width: 1600, height: 900, right: 1600, bottom: 900 });
+    fig.getBoundingClientRect = () => ({ top: 270, left: 496, width: 400, height: 360, right: 896, bottom: 630 });
+    const move = (x, y) => fig.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+    move(520, 300); move(600, 300); move(520, 300); move(600, 300);
+    const say = el.querySelector('.room-oshi-say');
+    expect(say).toBeTruthy();
+    // 右上: 左は絵の右端 (896/1600 = 56%) + 1、下は絵の上端 (900-270 = 630 → 70%) - 6
+    expect(say.style.left).toBe('57%');
+    expect(say.style.bottom).toBe('64%');
+  });
+
   it('部屋の絵の入れ物は指の動きを受ける (pointer-events: none のままだと、なでても何も起きない。jsdom は CSS を見ないので字で確かめる)', async () => {
     const fs = await import('node:fs');
     const css = fs.readFileSync('src/ui/app.css.html', 'utf8');
