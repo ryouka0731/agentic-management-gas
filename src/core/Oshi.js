@@ -519,7 +519,8 @@ function OSHI_CHARKIT_ORIGINAL_RULES() {
 
 /**
  * プロフィールの項目に使う Lv。いちばん早い Lv (OSHI_PROFILE_LIMITS の lvMin) から、最高の Lv の1つ手前まで 2 ずつ
- * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最高の Lv で全部分かる (クリア)。
+ * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最後の項目は最高の Lv の1つ手前 (実績を全部取る1つ前) で
+ * 分かり、最高の Lv (実績を全部取った = クリア) では項目は増えず、お祝いの言葉 (clearLine) と動画が出る。
  *
  * @param {number} maxLevel 最高の Lv (1 + 実績の数)
  * @returns {number[]}
@@ -607,7 +608,9 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '- profile.items: Lv が上がると少しずつ分かるプロフィール。lv は ' + levels.join(', ') + ' の ' + levels.length +
       ' 項目 (1つの lv に1項目)。label (見出し) は' + prof.labelMax + '字まで、text (中身) は' + prof.textMax +
       '字まで。好きなもの・苦手なもの・口ぐせ・小さな秘密など、Lv が上がるほど深い話にする',
-    '- profile.clearLine: 全部分かったとき (Lv ' + top + '、実績を全部取ったとき) のお祝いの言葉。' + prof.clearLineMax + '字まで',
+    '- profile.clearLine: 実績を全部取ったとき (クリア。Lv ' + top + ') のお祝いの言葉。プロフィールの最後の項目 (Lv ' +
+      (levels.length ? levels[levels.length - 1] : top) + ') はその1つ手前で分かっているので、項目には無い言葉にする。' +
+      prof.clearLineMax + '字まで',
     '- どの字にも、実在の人の名前・所属・肩書きを書かない'
   );
   return out.join('\n');
@@ -792,10 +795,12 @@ function OSHI_STAGES() {
  * 最後の段では meter 100・toNext 0。
  *
  * floor は前に届いていた段 (0 から。実績の前は育ちの最高の段を OSHI_STAGE_MAX: に覚えていた)。それより下には出さない。
+ * 床で Lv より上の段に出すときは floored。進みは出している段の次の段へ Lv1 から数える (その段の min にはまだ届いていないので、
+ * 段の min から数えると「あと N Lv」なのに棒が 0% のまま動かない)。
  *
  * @param {number} level 1 から
  * @param {number} [floor] これより下の段にしない
- * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number}}
+ * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, floored: boolean}}
  */
 function oshiStageOf(level, floor) {
   var list = OSHI_STAGES();
@@ -803,16 +808,17 @@ function oshiStageOf(level, floor) {
   var i = 0;
   while (i + 1 < list.length && lv >= list[i + 1].min) i++;
   var f = Math.floor(Number(floor) || 0);
-  if (f > i) i = Math.min(f, list.length - 1);
+  var floored = f > i;
+  if (floored) i = Math.min(f, list.length - 1);
   var meter = 100;
   var toNext = 0;
   if (i + 1 < list.length) {
-    var from = list[i].min;
+    var from = floored ? 1 : list[i].min;
     var span = list[i + 1].min - from;
     meter = Math.max(0, Math.min(100, Math.floor((lv - from) / span * 100)));
     toNext = Math.max(0, list[i + 1].min - lv);
   }
-  return { index: i, key: list[i].key, label: list[i].label, meter: meter, toNext: toNext, level: lv };
+  return { index: i, key: list[i].key, label: list[i].label, meter: meter, toNext: toNext, level: lv, floored: floored };
 }
 
 /**

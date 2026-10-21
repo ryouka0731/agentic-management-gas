@@ -233,11 +233,19 @@
    * 出す表情。その場面の表情の絵が無ければ、育ちの段の絵、ふつうの絵の順に代える。
    * どれも無ければ null (名前の頭文字を出す)。
    *
+   * **ふつうの顔 (idle) を出すところは、いまの段の絵 (grow*) があればそれを先に出す** (ホームのあいさつ・作業部屋・吹き出しの
+   * ふつうの顔)。段の絵が出る決まりはここだけ。ほめる・おいわい・しんぱい・ねむい・むっ などの場面の表情は置き換えない。
+   * 自分のキャラは、自分でその段の絵を入れたときだけ (最初からいるキャラの段の絵で、自分のふつうの絵を隠さない)。
+   *
    * @param {string} state
    * @returns {string|null}
    */
   function oshiPickState(state) {
     var grow = oshiData && oshiData.growth ? oshiData.growth.key : '';
+    if (state === 'idle' && grow) {
+      var own = oshiActiveMine();
+      if (own ? !!oshiImageRow(grow, own) : oshiHasPicture(grow)) return grow;
+    }
     // 絵が無くてもよい表情 (むっ) は、まずその代わりの表情 (しんぱい) に代える。自分のキャラに むっ の絵が無く、
     // 代わりの表情の絵があれば、最初からいるキャラの むっ (の代わり) より自分の絵を先に出す
     var fb = oshiStateFallback(state);
@@ -895,7 +903,8 @@
   }
 
   /**
-   * Lv・育ちの段となかよしの棒。Lv は 1 + 取った実績の数 (js-ach が返事で揃える)。
+   * Lv・育ちの段と次の段までの棒。Lv は 1 + 取った実績の数 (js-ach が返事で揃える)。
+   * 前の段を保っている (floored) ときは、Lv より上の段に出していると添える (棒と「あと N Lv」は出している段の次の段まで)。
    *
    * @param {object} g apiOshiGet の growth
    * @returns {HTMLElement}
@@ -914,7 +923,7 @@
     var bar = document.createElement('div');
     bar.className = 'game-level-bar oshi-meter';
     bar.setAttribute('role', 'progressbar');
-    bar.setAttribute('aria-label', 'なかよし');
+    bar.setAttribute('aria-label', '次の段まで');
     bar.setAttribute('aria-valuemin', '0');
     bar.setAttribute('aria-valuemax', '100');
     bar.setAttribute('aria-valuenow', String(Number(grow.meter) || 0));
@@ -925,8 +934,8 @@
 
     var note = document.createElement('div');
     note.className = 'row-meta';
-    note.textContent = 'なかよし ' + (Number(grow.meter) || 0) + '% ・ 実績を1つ取るたびに Lv が1つ上がります。' +
-      '取った実績は消えないので、下がりません';
+    note.textContent = '次の段まで ' + (Number(grow.meter) || 0) + '% ・ 実績を1つ取るたびに Lv が1つ上がります。' +
+      '取った実績は消えないので、Lv と段は下がりません' + (grow.floored ? ' ・ 以前に育てたぶんを保っています' : '');
     box.appendChild(note);
     return box;
   }
@@ -1148,8 +1157,10 @@
     grow.appendChild(oshiHeading('育ち'));
     grow.appendChild(makeOshiGrowth(d.growth));
     grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label + ' (Lv' + s.min + '〜)'; })
-      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜3) を入れると、' +
-      'ホームと吹き出しでその段の姿になります。'));
+      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜3) があると、' +
+      'ふつうの顔の代わりに、その段の姿で出ます (ホームのあいさつ・作業部屋・吹き出し)。ほめる・おいわい・しんぱい・ねむい ' +
+      'などの場面の顔は、その場面の表情のままです。最初からいるキャラには段ごとの絵があります。' +
+      (d.growth.floored ? '以前に育てたぶんを保っているので、いまの Lv より上の段に出ています。' : '')));
     box.appendChild(grow);
     if (d.cleared && d.clear) box.appendChild(makeOshiClear(d));
     box.appendChild(makeOshiReveal(d));
@@ -1158,7 +1169,7 @@
     var bye = document.createElement('section');
     bye.className = 'oshi-section';
     bye.appendChild(oshiHeading('やめる'));
-    bye.appendChild(oshiNote('自分のキャラを全部 (絵・名前・せりふ) まとめて消します。止めるだけなら、設定の「推しに応援してもらう」を外してください。'));
+    bye.appendChild(oshiNote('自分のキャラを全部 (絵・名前・せりふ・プロフィールとクリアの言葉・動画) まとめて消します。止めるだけなら、設定の「推しに応援してもらう」を外してください。'));
     var forget = document.createElement('button');
     forget.type = 'button';
     forget.className = 'btn btn-danger oshi-forget';
@@ -1167,7 +1178,8 @@
     forget.title = '自分のキャラをまとめて消す';
     forget.setAttribute('aria-label', forget.title);
     forget.addEventListener('click', function () {
-      openConfirmStrip(bye, '自分のキャラの絵・名前・せりふを全部消します。元には戻せません', '消す', function () {
+      openConfirmStrip(bye, '自分のキャラの絵・名前・せりふ・プロフィール (クリアの言葉と動画も) を全部消します。' +
+        'Lv と実績は残ります。元には戻せません', '消す', function () {
         call('apiOshiForget', [], function () {
           oshiImgs = {};
           oshiEditing = 0;
@@ -2220,7 +2232,8 @@
         li.appendChild(head);
         var body = document.createElement('p');
         body.className = it.open ? 'oshi-reveal-text' : 'row-meta';
-        body.textContent = it.open ? it.text : 'Lv ' + it.lv + ' で分かる';
+        // 最高の Lv (クリア) を超える項目は Lv では届かない。クリアで分かる
+        body.textContent = it.open ? it.text : (r.maxLevel && it.lv > r.maxLevel ? 'クリアで分かる' : 'Lv ' + it.lv + ' で分かる');
         li.appendChild(body);
         list.appendChild(li);
       });

@@ -103,7 +103,7 @@ function apiOshiGet() {
     growth: {
       index: plainNumber(g.index), key: plainText(g.key), label: plainText(g.label),
       meter: plainNumber(g.meter), toNext: plainNumber(g.toNext), level: plainNumber(g.level),
-      unlocked: plainNumber(g.unlocked),
+      unlocked: plainNumber(g.unlocked), floored: !!g.floored,
       stages: OSHI_STAGES().map(function (s) { return { key: plainText(s.key), label: plainText(s.label), min: plainNumber(s.min) }; }),
     },
     limits: {
@@ -165,6 +165,8 @@ function oshiRevealPlain_(profile, level, cleared) {
     items: items,
     open: plainNumber(items.filter(function (it) { return it.open; }).length),
     total: plainNumber(items.length),
+    // 最高の Lv (実績を全部取った = クリア)。これより上の Lv の項目は Lv では届かず、クリアで分かる
+    maxLevel: plainNumber(achLevelOf(ACHIEVEMENTS().length)),
     limits: {
       itemsMax: plainNumber(lim.itemsMax), labelMax: plainNumber(lim.labelMax), textMax: plainNumber(lim.textMax),
       lvMin: plainNumber(lim.lvMin), lvMax: plainNumber(lim.lvMax), clearLineMax: plainNumber(lim.clearLineMax),
@@ -364,7 +366,7 @@ function apiOshiSetLines(charId, event, lines) {
 }
 
 /**
- * 自分のキャラをまとめて消す (育ちの覚えも)。使うキャラの選び方も既定に戻す。
+ * 自分のキャラをまとめて消す (絵・名前・口調・せりふ・プロフィール)。育ちは実績で決まるので消さない。使うキャラの選び方も既定に戻す。
  *
  * @returns {{removed: number}}
  */

@@ -344,10 +344,11 @@ function achCheck_(email, now, opts) {
  * 推しのレベル (1 + 取った実績の数) と育ちの段 (前に届いていた段より下にしない)。取った印を読むだけで、台帳は読まない。
  *
  * @param {string} email
- * @returns {{level: number, unlocked: number, index: number, key: string, label: string, meter: number, toNext: number}}
+ * @returns {{level: number, unlocked: number, index: number, key: string, label: string, meter: number, toNext: number, floored: boolean}}
  */
 function achLevel_(email) {
   var n = Object.keys(achUnlockedRead_(email)).length;
   var st = oshiStageOf(achLevelOf(n), achStageFloor_(email));
-  return { level: st.level, unlocked: n, index: st.index, key: st.key, label: st.label, meter: st.meter, toNext: st.toNext };
+  return { level: st.level, unlocked: n, index: st.index, key: st.key, label: st.label, meter: st.meter, toNext: st.toNext,
+    floored: st.floored };
 }

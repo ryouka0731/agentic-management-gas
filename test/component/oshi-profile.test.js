@@ -166,7 +166,7 @@ describe('推しのプロフィールとクリア', () => {
       return wire(ctx.apiOshiGet());
     }, { apiAchievementsCheck: check, apiAchievements: wire(ctx.apiAchievements()) });
     const toast = document.getElementById('ach-toast');
-    expect(toast.textContent).toContain('推しのプロフィールが 1 つ分かりました');
+    expect(toast.textContent).toContain('推しのプロフィールが 1 項目分かりました');
   });
 });
 
@@ -196,7 +196,7 @@ describe('見直しで直したところ (推しの頁)', () => {
     const page = openPage();
     expect(rows(page)[0].dataset.open).toBe('false');
     t.deliver();
-    expect(document.getElementById('ach-toast').textContent).toContain('推しのプロフィールが 1 つ分かりました');
+    expect(document.getElementById('ach-toast').textContent).toContain('推しのプロフィールが 1 項目分かりました');
     expect(rows(document.querySelector('.oshi-page'))[0].dataset.open).toBe('true');
   });
 

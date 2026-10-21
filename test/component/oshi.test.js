@@ -542,7 +542,9 @@ describe('選んだキャラがあいさつする', () => {
     openSettings();
     app.respond('apiOshiGet', oshiFixture({ char: 'builtin:itsuki' }));
     card('builtin:itsuki').click();
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('itsuki', 'normal', STATES[0]));
+    // 選ばれたのは ふつう (STATES[0])。ふつうの顔はいまの段の絵で出す (oshiPickState)
+    expect(STATES[0]).toBe('idle');
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('itsuki', 'normal', 'grow1'));
   });
 
   it('自分のキャラを選ぶと、そのキャラの口調のせりふと、入れてある絵の中から出す', () => {

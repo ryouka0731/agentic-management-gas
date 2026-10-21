@@ -556,12 +556,12 @@ function oshiImageData_(email, id, state) {
  * (achStageFloor_。前から使っている人の推しが、実績を足した日に見習いへ戻らないように)。
  *
  * @param {string} email
- * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number}}
+ * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number, floored: boolean}}
  */
 function oshiGrowth_(email) {
   var lv = achLevel_(oshiWho_(email));
   return { index: lv.index, key: lv.key, label: lv.label, meter: lv.meter, toNext: lv.toNext, level: lv.level,
-    unlocked: lv.unlocked };
+    unlocked: lv.unlocked, floored: lv.floored };
 }
 
 /**
