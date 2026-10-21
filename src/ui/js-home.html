@@ -234,7 +234,7 @@
    * (区画ごとに見出しを作ると、字の大きさや余白が少しずつずれる)。
    *
    * @param {string} text
-   * @param {Array<?HTMLElement>} [right] 右に置くもの
+   * @param {(HTMLElement|null)[]} [right] 右に置くもの
    * @returns {HTMLElement}
    */
   function homeHead(text, right) {
@@ -835,7 +835,7 @@
    * 月の名を置く列。その月の1日を含む週に置き、近すぎる名は落とす (重なって読めない)。
    * 左端の週は、すぐ右に名が来ないときだけ名を持つ。
    *
-   * @param {Array<Array<{day: string}>>} weeks
+   * @param {{day: string}[][]} weeks
    * @returns {string[]} 週ごとの名 (無ければ '')
    */
   function activityMonths(weeks) {
