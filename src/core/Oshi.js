@@ -219,7 +219,7 @@ function OSHI_LINES() {
       levelup: ['おかげさまで、ひと回り成長できました', '新しい段になりました。いつもありがとうございます', 'ここまで一緒に来られて光栄です'],
       clear: ['実績を全部集められましたね。本当におめでとうございます', 'ここまでの積み重ね、すべて見ていました。お見事です', 'ご一緒できて光栄でした。これからもそばにいますね'],
       mood_sulky: ['期限を少し過ぎたものがありますね。ひとつだけ一緒に片づけてみませんか', 'しばらく動いていないものがあるようです。まずは小さいものからどうでしょう',
-        '少しさみしいです…。5分だけ、ひとつ進めてみませんか'],
+        '5分だけ、ひとつ一緒に進めてみませんか。小さいもので十分です'],
       mood_pouty: ['むぅ…やることがたまってきました。期限の近いものをひとつだけ選んでみませんか', 'ちょっとだけ、むっとしています。いちばん小さいものから始めてみましょう',
         'ほっぺがふくらんでしまいました。ひとつ片づけたら、すぐ戻りますよ'],
       mood_recover: ['片づきましたね。すっかりごきげんです', 'ありがとうございます。気持ちが晴れました', 'ほっとしました。この調子でまいりましょう'],
@@ -263,7 +263,7 @@ function OSHI_LINES() {
       levelup: ['……段が上がった。お前のおかげだ', '少し強くなれた気がする', '新しい段だ。これからも付き合う'],
       clear: ['……全部集めたか。見事だ', '最後まで付き合えてよかった', '大したものだ。誇っていい'],
       mood_sulky: ['期限を過ぎたものがある。一つだけ片づけないか', '少し、気がかりだ。小さいものから行こう', '五分だけでいい。一つ進めよう'],
-      mood_pouty: ['……むっ。溜まってきたな。いちばん小さいものを一つ選ぼう', '少し不機嫌だ。一つ片づけてくれれば戻る', '……放っておかれた気分だ。一つだけ付き合ってくれ'],
+      mood_pouty: ['……むっ。溜まってきたな。いちばん小さいものを一つ選ぼう', '少し不機嫌だ。一つ片づけてくれれば戻る', '……少しむっとした。五分だけ、一つ一緒に進めよう'],
       mood_recover: ['……戻った。悪くない', '片づいたな。機嫌は直った', '上出来だ。気分がいい'],
     },
     kansai: {
@@ -572,7 +572,10 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '',
     '表情 (key と、表情としぐさ。「参考画像」と書いてあるところは、あなたが考えたキャラクターのいつもの姿のこと):',
   ]);
-  states.forEach(function (s) { out.push('- ' + s.key + ' (' + s.label + '): ' + s.pose); });
+  // 絵が無くてもよい表情 (むっ) は、無くてもよいと書く (描けなければ代わりの表情を出す)
+  states.forEach(function (s) {
+    out.push('- ' + s.key + ' (' + s.label + '): ' + s.pose + (s.optional ? '。この表情は無くてもよい' : ''));
+  });
   if (t.images === 'sheet') {
     out.push('表に並べるときは ' + grid.cols + ' 列 × ' + grid.rows + ' 行で、上の順に左上から並べる (余ったマスは空ける)。');
   }
@@ -597,7 +600,9 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (' + text.linesPerEvent + '個まで)、1つ' +
       text.lineMax + '字まで。キャラクターの口調で書き、相手を責めない・急かさない (うまくいかなかったときも、やさしく寄り添う)'
   );
-  OSHI_EVENTS().forEach(function (e) { out.push('  - ' + e.key + ': ' + e.label); });
+  OSHI_EVENTS().forEach(function (e) {
+    out.push('  - ' + e.key + ': ' + e.label + (e.mood ? ' (推しの機嫌がオンのときだけ出る。やさしく、小さな一歩を誘う)' : ''));
+  });
   out.push(
     '- profile.items: Lv が上がると少しずつ分かるプロフィール。lv は ' + levels.join(', ') + ' の ' + levels.length +
       ' 項目 (1つの lv に1項目)。label (見出し) は' + prof.labelMax + '字まで、text (中身) は' + prof.textMax +
@@ -872,8 +877,9 @@ function OSHI_MOODS() {
  * 機嫌の決め方。**唯一の定義。** どのわけも、数が sulky 以上でしょんぼり、pouty 以上でむっ。いちばん悪いものに合わせる。
  *
  * - overdue: 期限 (東京の暦日) が今日より前の、開いているやることの件数
- * - stale: 動きの無い (チームの設定 stale.steps の最初の段の日数より長く、そのまま) 開いているやることの件数
- * - idle: 最後に済ませてからの日数。開いているやることがあるときだけ見る。一度も済ませていなければ見ない
+ * - stale: 動きの無い (チームの設定 stale.steps の最初の段の日数以上、そのまま) 開いているやることの件数
+ * - idle: 済ませないままの日数。最後に済ませてからの日数と、いちばん古い開いているやることを作ってからの日数の小さいほう
+ *   (やることを足しても悪くならない)。開いているやることがあるときだけ見る
  * - happyDays: 最後に済ませてからこの日数までで、どのわけも無ければ「ごきげん」(0 = 今日、1 = 昨日まで)
  * - cacheSeconds: 1人ぶんを覚えておく長さ。済ませた・閉じた・直したときは、待たずに数え直す
  *
@@ -905,7 +911,7 @@ function oshiMoodLevelOf(key) {
 /**
  * 数えたものから機嫌を決める。わけ (reasons) は、しょんぼり以上に届いたものだけを、数だけで返す。
  *
- * @param {{open: number, overdue: number, stale: number, lastDoneDays: (number|null)}} s
+ * @param {{open: number, overdue: number, stale: number, lastDoneDays: (number|null), idleDays: number}} s
  * @returns {{level: string, reasons: Array<{kind: string, count: number}>}}
  */
 function oshiMoodOf(s) {
@@ -918,7 +924,7 @@ function oshiMoodOf(s) {
   var got = [
     { kind: 'overdue', count: Math.max(0, Number(s.overdue) || 0) },
     { kind: 'stale', count: Math.max(0, Number(s.stale) || 0) },
-    { kind: 'idle', count: last === null ? 0 : last },
+    { kind: 'idle', count: Math.max(0, Number(s.idleDays) || 0) },
   ];
   var level = calm;
   var reasons = [];
@@ -943,6 +949,6 @@ function oshiMoodReasonText(kind, count) {
   var n = Math.max(0, Math.floor(Number(count) || 0));
   if (kind === 'overdue') return '期限を過ぎたやること ' + n + '件';
   if (kind === 'stale') return 'しばらく動いていないやること ' + n + '件';
-  if (kind === 'idle') return '最後に済ませてから ' + n + '日';
+  if (kind === 'idle') return 'やることを済ませないまま ' + n + '日';
   return '';
 }
