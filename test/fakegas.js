@@ -375,6 +375,8 @@ export function createFakeGas() {
     computeRsaSha256Signature: (text, pem) => Array.from(
       crypto.sign('RSA-SHA256', Buffer.from(String(text), 'utf8'), pem))
       .map((b) => (b > 127 ? b - 256 : b)),
+    base64EncodeWebSafe: (data) => Buffer.from(String(data), 'utf8').toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_'),
     base64Encode: (data) => (Array.isArray(data)
       ? Buffer.from(data.map((b) => b & 0xff))
       : Buffer.from(String(data), 'utf8')).toString('base64'),
@@ -504,6 +506,10 @@ export function createFakeGas() {
   const calendars = new Map();
   let calSeq = 0;
   const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0 };
+  // 予定を作るときに投げさせる (n 件目で)。{at, message} か null
+  let calCreateFail = null;
+  // 予定を消すときに投げさせる (predicate(ev) が true のもの)
+  let calDeleteFail = null;
 
   function calRaw(id, name, owner) {
     const c = { _id: id, _name: name, _owner: owner, _access: new Map([[owner, 'owner']]),
@@ -524,10 +530,17 @@ export function createFakeGas() {
       getEndTime: () => new Date(ev.end),
       isAllDayEvent: () => !!ev.allDay,
       getMyStatus: () => (ev.status && ev.status[activeUser]) || 'OWNER',
+      getDateCreated: () => new Date(ev.created),
+      // 実機と同じく、印を付けても変わる (作った直後なので作った時刻とほぼ同じ)
+      getLastUpdated: () => new Date(ev.updated),
+      getGuestList: () => (ev.guests || []).map((g) => ({ getEmail: () => g })),
+      getGuestByEmail: (e) => ((ev.guests || []).indexOf(e) >= 0 ? { getEmail: () => e } : null),
+      getTransparency: () => ev.transparency || 'OPAQUE',
       getTag: (k) => (Object.prototype.hasOwnProperty.call(ev.tags, k) ? ev.tags[k] : null),
-      setTag: (k, v) => { if (!calCanWrite(c)) calDeny(); ev.tags[k] = String(v); return view; },
+      setTag: (k, v) => { if (!calCanWrite(c)) calDeny(); ev.tags[k] = String(v); ev.updated = Date.now(); return view; },
       deleteEvent: () => {
         if (!calCanWrite(c)) calDeny();
+        if (calDeleteFail && calDeleteFail(ev)) throw new Error('Service invoked too many times');
         calCalls.deleteEvent++;
         c._events = c._events.filter((x) => x !== ev);
       },
@@ -549,9 +562,10 @@ export function createFakeGas() {
       createEvent: (title, start, end, opts) => {
         if (!calCanWrite(c)) calDeny();
         calCalls.createEvent++;
+        if (calCreateFail && calCalls.createEvent >= calCreateFail.at) throw new Error(calCreateFail.message);
         const ev = { id: 'ev-' + (++calSeq), title: String(title), start: new Date(start).getTime(),
           end: new Date(end).getTime(), description: String((opts && opts.description) || ''), tags: {},
-          createdBy: activeUser };
+          createdBy: activeUser, created: Date.now(), updated: Date.now() };
         c._events.push(ev);
         return calEventView(c, ev);
       },
@@ -567,6 +581,7 @@ export function createFakeGas() {
   }
   const CalendarApp = {
     GuestStatus: { OWNER: 'OWNER', YES: 'YES', NO: 'NO', MAYBE: 'MAYBE', INVITED: 'INVITED' },
+    EventTransparency: { OPAQUE: 'OPAQUE', TRANSPARENT: 'TRANSPARENT' },
     createCalendar: (name) => calView(calRaw('cal' + (++calSeq) + '@group.calendar.google.com', String(name), activeUser)),
     getCalendarById: (id) => {
       const c = calendars.get(String(id));
@@ -621,7 +636,8 @@ export function createFakeGas() {
       const c = calDefault(email);
       const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
         end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay,
-        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: email };
+        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: email, created: Date.now(), updated: Date.now(),
+        transparency: ev.free ? 'TRANSPARENT' : 'OPAQUE' };
       c._events.push(raw);
       return raw;
     },
@@ -629,6 +645,23 @@ export function createFakeGas() {
     _calEvents: (id) => (id ? ((calendars.get(String(id)) || {})._events || [])
       : [...calendars.values()].flatMap((c) => c._events)),
     _calExists: (id) => calendars.has(String(id)),
+    /** 共有カレンダーに、人の入れた予定を足す ({start, end, title, guests, tags, free, description}) */
+    _calAddTo: (id, ev) => {
+      const c = calendars.get(String(id));
+      const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
+        end: new Date(ev.end).getTime(), description: ev.description || '', tags: Object.assign({}, ev.tags || {}),
+        guests: ev.guests || [], createdBy: '', created: Date.now(), updated: Date.now(),
+        transparency: ev.free ? 'TRANSPARENT' : 'OPAQUE' };
+      c._events.push(raw);
+      return raw;
+    },
+    /** 人が予定を直したことにする (動かした・ゲストを足した) */
+    _calEdit: (raw, { moved, guests } = {}) => {
+      if (moved) raw.updated = raw.created + 5 * 60000;
+      if (guests) raw.guests = guests;
+    },
+    _calFailCreate: (at, message) => { calCreateFail = at ? { at, message } : null; },
+    _calFailDelete: (predicate) => { calDeleteFail = predicate || null; },
     _calCalls: calCalls,
     _makeTasks: makeTasks,
     _makeDrive: makeDrive,

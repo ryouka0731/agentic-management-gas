@@ -506,16 +506,20 @@ function apiPrefSet(key, value) {
     if (Object.keys(mine).length) props.setProperty(prefMineKey_(me), JSON.stringify(mine));
     else props.deleteProperty(prefMineKey_(me));
   });
-  // 予定に入れるのをやめたら、これから先の番頭の予定を消す。消せなくても設定は戻さない (通知と同じ扱い)
+  // 予定に入れるのをやめたら、これから先の番頭の予定を消す。消せなくても設定は戻さない (通知と同じ扱い)。
+  // 消せずに残った数は画面に返す (カレンダーで消してもらう)
+  var calendarLeft = 0;
   if (item.key === 'calendar.plan' && value !== true && typeof calendarClearMine_ === 'function') {
     try {
-      calendarClearMine_(me);
+      calendarLeft = calendarClearMine_(me);
     } catch (e) {
       console.warn('予定を消せませんでした: ' + (e && e.message));
     }
   }
   // 書くのは設定の画面だけなので、管理者かも添えて返す
-  return apiPrefs({ team: true });
+  var out = apiPrefs({ team: true });
+  if (calendarLeft > 0) out.calendarLeft = plainNumber(calendarLeft);
+  return out;
 }
 
 /**

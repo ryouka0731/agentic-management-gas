@@ -5,9 +5,11 @@
  * - **期限の早いものから** (期限の無いものは最後)。同じ期限なら優先度の高いもの、それでも同じなら番号の小さいもの
  * - 1つずつ、空いているいちばん早い枠に、決めた長さ (block) で置く。長い仕事は block ごとに分け、あいだに
  *   gap 分だけ空ける (続けて詰め込まない)
- * - 置けるのは勤務の時間の中だけ・今より後だけ・ほかの予定 (busy) と重ならないところだけ
+ * - 置けるのは勤務の時間の中だけ・今より後だけ・ほかの予定 (busy) と重ならないところだけ。会議の前後にも gap 分空ける
+ *   (会議が終わったその分から始めない)
  * - 先 (days) の勤務日まで。それより先には置かない
- * - 期限までに全部置けなかったものは late に入れる (やさしく知らせるため。責めない)
+ * - 期限までに全部置けなかったものは late に入れる (やさしく知らせるため。責めない)。**空きが尽きたときだけ。**
+ *   1回の上限 (maxBlocks) で止めたときは late にせず capped を立てる (空きはあるので、遅れとは限らない)
  *
  * 時刻はすべてミリ秒 (UTC)。暦日と勤務の時間は東京の時刻で数える (appsscript.json の timeZone と同じ。
  * 日本に夏時間は無いので、ずらす分は一定)。同じ入力からは必ず同じ並びが出る。
@@ -20,7 +22,7 @@ function CAL_TZ_OFFSET_MIN() {
 
 /** 1回に置く予定の上限。Calendar に書く回数がそのまま実行時間になる */
 function CAL_MAX_BLOCKS() {
-  return 40;
+  return 20;
 }
 
 /** 予定と予定のあいだに空ける分 */
@@ -139,7 +141,10 @@ function calendarFreeSlots(o) {
     day += 86400000;
   }
   var horizonEnd = windows.length ? windows[windows.length - 1].end : from;
-  var busy = calendarMerge(o.busy);
+  var pad = o.gapMin * 60000;
+  var busy = calendarMerge((o.busy || []).map(function (b) {
+    return b ? { start: Number(b.start) - pad, end: Number(b.end) + pad } : b;
+  }));
   var free = [];
   windows.forEach(function (w) {
     var cur = w.start;
@@ -187,7 +192,7 @@ function calendarTaskOrder(a, b) {
  * @param {number} [input.gapMin] 予定のあいだ (既定 CAL_GAP_MIN)
  * @param {number} [input.maxBlocks] 上限 (既定 CAL_MAX_BLOCKS)
  * @returns {{blocks: Array<{issueNumber: number, start: number, end: number}>,
- *   late: number[], unplaced: Array<{issueNumber: number, minutes: number}>, end: number}}
+ *   late: number[], unplaced: Array<{issueNumber: number, minutes: number}>, capped: boolean, end: number}}
  */
 function calendarPlanBlocks(input) {
   var o = {
@@ -208,19 +213,22 @@ function calendarPlanBlocks(input) {
 
   var blocks = [];
   var late = [];
+  var capped = false;
   var unplaced = [];
   var gap = o.gapMin * 60000;
 
   tasks.forEach(function (t) {
     var left = Math.ceil(Number(t.minutes) / 5) * 5;
     var lastEnd = null;
-    while (left > 0 && blocks.length < o.maxBlocks) {
+    var full = false;
+    while (left > 0) {
+      if (blocks.length >= o.maxBlocks) { capped = true; break; }
       var len = Math.min(o.blockMin, left) * 60000;
       var hit = -1;
       for (var i = 0; i < free.length; i++) {
         if (free[i].end - free[i].start >= len) { hit = i; break; }
       }
-      if (hit < 0) break;
+      if (hit < 0) { full = true; break; }
       var at = free[hit].start;
       blocks.push({ issueNumber: Number(t.number), start: at, end: at + len });
       lastEnd = at + len;
@@ -234,11 +242,11 @@ function calendarPlanBlocks(input) {
     if (dueStart !== null) {
       var deadline = dueStart + 86400000;
       // 期限が先 (並べる範囲の外) で置ききれなかっただけなら、まだ遅れではない
-      var short = left > 0 && deadline <= slots.end;
+      var short = left > 0 && full && deadline <= slots.end;
       if (short || deadline <= o.now || (lastEnd !== null && lastEnd > deadline)) late.push(Number(t.number));
     }
   });
 
   blocks.sort(function (a, b) { return a.start - b.start || a.issueNumber - b.issueNumber; });
-  return { blocks: blocks, late: late, unplaced: unplaced, end: slots.end };
+  return { blocks: blocks, late: late, unplaced: unplaced, capped: capped, end: slots.end };
 }

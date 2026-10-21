@@ -92,9 +92,10 @@ describe('ほかの予定と重ねない', () => {
     env.fake._calAddBusy(MEMBER, { start: tokyo('2026-10-19', '00:00'), end: tokyo('2026-10-20', '00:00'), allDay: true });
     env.fake._calAddBusy(MEMBER, { start: tokyo('2026-10-19', '11:00'), end: tokyo('2026-10-19', '12:00'), declined: true });
     const out = planAs(env, MEMBER);
-    expect(out.blocks[0].start).toBe(tokyo('2026-10-19', '11:00').toISOString());
+    // 会議 (9:00-11:00) のあと10分空けてから。断った予定 (11:00-12:00) は避けない
+    expect(out.blocks[0].start).toBe(tokyo('2026-10-19', '11:10').toISOString());
     for (const b of out.blocks) {
-      expect(Date.parse(b.start) >= tokyo('2026-10-19', '11:00').getTime()).toBe(true);
+      expect(Date.parse(b.start) >= tokyo('2026-10-19', '11:10').getTime()).toBe(true);
     }
   });
 });
@@ -105,7 +106,7 @@ describe('組み直す', () => {
     task(env.ctx, MEMBER, 'a', { plannedHours: 0.25 });
     planAs(env, MEMBER);
     const first = mineOf(env, MEMBER).map((e) => e.id);
-    planAs(env, MEMBER);
+    planAs(env, MEMBER, new Date(MON8.getTime() + 120000));
     const second = mineOf(env, MEMBER).map((e) => e.id);
     expect(second).toHaveLength(first.length);
     expect(second.some((id) => first.includes(id))).toBe(false);
@@ -139,7 +140,7 @@ describe('組み直す', () => {
     const spoof = cal.createEvent('似せた', tokyo('2026-10-21', '10:00'), tokyo('2026-10-21', '11:00'));
     spoof.setTag('banto', 'block');
     planAs(env, MEMBER);
-    planAs(env, MEMBER);
+    planAs(env, MEMBER, new Date(MON8.getTime() + 120000));
     const ids = env.fake._calEvents(env.calId).map((e) => e.id);
     for (const id of theirs) expect(ids).toContain(id);
     expect(ids).toContain(hand.getId());
@@ -170,7 +171,7 @@ describe('入れられないとき', () => {
     planAs(env, MEMBER);
     const before = mineOf(env, MEMBER).map((e) => e.id);
     env.fake._calShare(env.calId, MEMBER, 'reader');
-    const out = planAs(env, MEMBER);
+    const out = planAs(env, MEMBER, new Date(MON8.getTime() + 120000));
     expect(out.ok).toBe(false);
     expect(out.reason).toMatch(/見るだけ.*予定の変更/);
     expect(mineOf(env, MEMBER).map((e) => e.id)).toEqual(before);
@@ -226,3 +227,174 @@ describe('今日の予定', () => {
   });
 });
 
+
+describe('2つの画面で同時に組まない', () => {
+  it('組み直しているあいだのもう1つは断り、予定を二重にしない', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', { plannedHours: 0.25 });
+    const original = env.ctx.calendarPlanBlocks;
+    let second = null;
+    // 1つ目が並べているあいだに、別の画面がもう1つ頼む
+    env.ctx.calendarPlanBlocks = (input) => {
+      if (!second) second = env.ctx.calendarPlanFor_(MEMBER, MON8);
+      return original(input);
+    };
+    const first = planAs(env, MEMBER);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    expect(second.reason).toBe('別の画面で組み直しています。少し待ってから開き直してください');
+    expect(mineOf(env, MEMBER)).toHaveLength(first.blocks.length);
+    // 終わったら印を外す (次は組める)
+    env.ctx.calendarPlanBlocks = original;
+    expect(planAs(env, MEMBER, new Date(MON8.getTime() + 120000)).ok).toBe(true);
+  });
+
+  it('組み直しの途中で落ちても印は外す', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', {});
+    const original = env.ctx.calendarPlanBlocks;
+    env.ctx.calendarPlanBlocks = () => { throw new Error('予期しない'); };
+    expect(() => planAs(env, MEMBER)).toThrow(/予期しない/);
+    env.ctx.calendarPlanBlocks = original;
+    expect(planAs(env, MEMBER, new Date(MON8.getTime() + 120000)).ok).toBe(true);
+  });
+
+  it('自動の組み直しは、印の中でその日にもう組んだかを見直す', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', {});
+    expect(planAs(env, MEMBER).ok).toBe(true);
+    const before = mineOf(env, MEMBER).map((e) => e.id);
+    const auto = asUser(env.fake, MEMBER, () =>
+      env.ctx.calendarPlanFor_(MEMBER, new Date(MON8.getTime() + 3600000), { auto: true }));
+    expect(auto).toMatchObject({ ok: true, skipped: true });
+    expect(mineOf(env, MEMBER).map((e) => e.id)).toEqual(before);
+  });
+
+  it('組めなかった日は「組んだ日」に数えない (次に開いたときにもう一度試す)', () => {
+    const env = ready({ writers: [] });
+    task(env.ctx, MEMBER, 'a', {});
+    env.fake._calShare(env.calId, MEMBER, 'reader');
+    expect(planAs(env, MEMBER).ok).toBe(false);
+    env.fake._calShare(env.calId, MEMBER, 'writer');
+    const auto = asUser(env.fake, MEMBER, () => env.ctx.calendarPlanFor_(MEMBER, MON8, { auto: true }));
+    expect(auto.ok).toBe(true);
+    expect(auto.skipped).toBeFalsy();
+  });
+});
+
+describe('続けて押しても組み直さない', () => {
+  it('60秒のうちに手で頼んだら、残りの秒を添えて断る', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', {});
+    planAs(env, MEMBER);
+    const again = planAs(env, MEMBER, new Date(MON8.getTime() + 15000));
+    expect(again.ok).toBe(false);
+    expect(again.waitSeconds).toBe(45);
+    expect(again.reason).toMatch(/45秒/);
+    expect(planAs(env, MEMBER, new Date(MON8.getTime() + 61000)).ok).toBe(true);
+  });
+});
+
+describe('書けなかったときの理由', () => {
+  it('途中で書けなくなったのは「見るだけ」ではなく、混み合っていると返し、入れたぶんを消す', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', { plannedHours: 0.25 });
+    env.fake._calFailCreate(env.fake._calCalls.createEvent + 2, 'Service invoked too many times');
+    const out = planAs(env, MEMBER);
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('カレンダーが混み合っています。あとでもう一度組み直してください');
+    expect(mineOf(env, MEMBER)).toEqual([]);
+  });
+
+  it('1件目から権限で断られたときだけ「見るだけ」と返す', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', {});
+    env.fake._calFailCreate(env.fake._calCalls.createEvent + 1, 'Something else broke');
+    expect(planAs(env, MEMBER).reason).toMatch(/混み合っています/);
+  });
+});
+
+describe('人が直した番頭の予定', () => {
+  it('動かした・ゲストを足した予定は組み直しでも消さず、埋まっている時間として避ける', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', { plannedHours: 0.25 });
+    planAs(env, MEMBER);
+    const [moved, guested] = mineOf(env, MEMBER).slice(1);
+    env.fake._calEdit(moved, { moved: true });
+    env.fake._calEdit(guested, { guests: ['boss@example.com'] });
+    planAs(env, MEMBER, new Date(MON8.getTime() + 120000));
+    const after = mineOf(env, MEMBER);
+    expect(after.map((e) => e.id)).toEqual(expect.arrayContaining([moved.id, guested.id]));
+    for (const e of after) {
+      if (e === moved || e === guested) continue;
+      for (const k of [moved, guested]) expect(e.start < k.end && k.start < e.end).toBe(false);
+    }
+  });
+});
+
+describe('やめるときに消せなかったもの', () => {
+  it('1件ずつ消し、消せなかった数を返す。覚え書きは必ず消す', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, 'a', { plannedHours: 0.25 });
+    asUser(env.fake, MEMBER, () => env.ctx.calendarPlanFor_(MEMBER));
+    const stuck = mineOf(env, MEMBER)[0];
+    env.fake._calFailDelete((ev) => ev === stuck);
+    const left = asUser(env.fake, MEMBER, () => env.ctx.calendarClearMine_(MEMBER));
+    expect(left).toBe(1);
+    expect(mineOf(env, MEMBER)).toEqual([stuck]);
+    expect(env.ctx.PropertiesService.getScriptProperties().getProperty('CAL_PLANNED:' + MEMBER)).toBe(null);
+    // 設定の画面には、消せなかった数を返す
+    env.fake._calFailDelete(() => true);
+    asUser(env.fake, MEMBER, () => env.ctx.calendarPlanFor_(MEMBER, new Date(Date.now() + 120000)));
+    const res = asUser(env.fake, MEMBER, () => env.ctx.apiPrefSet('calendar.plan', false));
+    expect(res.calendarLeft).toBeGreaterThan(0);
+  });
+});
+
+describe('共有カレンダーの会議も避ける', () => {
+  it('印の無い予定・ゲストになっている予定は避け、ほかの人の番頭の予定と空き時間の予定は避けない', () => {
+    const env = ready({ writers: [MEMBER, OTHER], on: [MEMBER, OTHER] });
+    task(env.ctx, MEMBER, 'a', {});
+    env.fake._calAddTo(env.calId, { title: 'チームの定例', start: tokyo('2026-10-19', '09:00'), end: tokyo('2026-10-19', '10:00') });
+    env.fake._calAddTo(env.calId, { title: '空き', free: true, start: tokyo('2026-10-19', '10:00'), end: tokyo('2026-10-19', '11:00') });
+    env.fake._calAddBusy(MEMBER, { free: true, start: tokyo('2026-10-19', '10:00'), end: tokyo('2026-10-19', '11:00') });
+    const out = planAs(env, MEMBER);
+    // 定例 (9:00-10:00) のあと、10分空けてから
+    expect(out.blocks[0].start).toBe(tokyo('2026-10-19', '10:10').toISOString());
+
+    const env2 = ready({ writers: [MEMBER, OTHER], on: [MEMBER, OTHER] });
+    task(env2.ctx, MEMBER, 'b', {});
+    // ほかの人の番頭の予定 (MEMBER はゲストではない) は避けない。ゲストなら避ける
+    env2.fake._calAddTo(env2.calId, { start: tokyo('2026-10-19', '09:00'), end: tokyo('2026-10-19', '10:00'),
+      tags: { banto: 'block', bantoWho: OTHER } });
+    expect(planAs(env2, MEMBER).blocks[0].start).toBe(tokyo('2026-10-19', '09:00').toISOString());
+  });
+
+  it('ゲストになっているほかの人の番頭の予定は避ける', () => {
+    const env = ready({ writers: [MEMBER, OTHER], on: [MEMBER, OTHER] });
+    task(env.ctx, MEMBER, 'b', {});
+    env.fake._calAddTo(env.calId, { start: tokyo('2026-10-19', '09:00'), end: tokyo('2026-10-19', '10:00'),
+      tags: { banto: 'block', bantoWho: OTHER }, guests: [MEMBER] });
+    expect(planAs(env, MEMBER).blocks[0].start).toBe(tokyo('2026-10-19', '10:10').toISOString());
+  });
+});
+
+describe('印を付ける前に止まった予定', () => {
+  it('説明の最後の行にも印を書き、印 (tag) が無くても本人の予定として入れ直す', () => {
+    const env = ready();
+    const n = task(env.ctx, MEMBER, 'a', {});
+    planAs(env, MEMBER);
+    const ev = mineOf(env, MEMBER)[0];
+    expect(ev.description.split('\n').pop()).toBe('番頭: ' + MEMBER + ' #' + n);
+    // 時間切れで印 (tag) が付かなかった予定
+    const orphan = env.fake._calAddTo(env.calId, { start: tokyo('2026-10-20', '09:00'), end: tokyo('2026-10-20', '09:45'),
+      description: 'x\n番頭: ' + MEMBER + ' #' + n });
+    // 似せた別の人のもの・行の途中にあるものは本人のものではない
+    const other = env.fake._calAddTo(env.calId, { start: tokyo('2026-10-21', '09:00'), end: tokyo('2026-10-21', '09:45'),
+      description: '番頭: ' + OTHER + ' #' + n });
+    planAs(env, MEMBER, new Date(MON8.getTime() + 120000));
+    const ids = env.fake._calEvents(env.calId).map((e) => e.id);
+    expect(ids).not.toContain(orphan.id);
+    expect(ids).toContain(other.id);
+  });
+});

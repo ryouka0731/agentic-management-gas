@@ -76,8 +76,8 @@ describe('並べ方', () => {
       busy: [{ start: tokyo('2026-10-19', '09:30'), end: tokyo('2026-10-19', '12:00') }],
       tasks: [{ number: 1, minutes: 90 }],
     });
-    // 9:00-9:30 は 45分に足りないので使わない
-    expect(out.blocks.map((b) => hm(b.start))).toEqual(['12:00', '12:55']);
+    // 9:00-9:20 (会議の10分前まで) は 45分に足りないので使わない。会議のあとも10分空ける
+    expect(out.blocks.map((b) => hm(b.start))).toEqual(['12:10', '13:05']);
   });
 
   it('土日は入れない (選んだときだけ入れる)', () => {
@@ -180,4 +180,30 @@ describe('でたらめな入力でも崩れない', () => {
       });
     });
   }
+});
+
+describe('レビューで直したもの', () => {
+  it('会議の前後にも10分空ける', () => {
+    const out = plan({
+      now: tokyo('2026-10-19', '08:00'),
+      busy: [{ start: tokyo('2026-10-19', '09:55'), end: tokyo('2026-10-19', '12:00') }],
+      tasks: [{ number: 1, minutes: 45 }, { number: 2, minutes: 45 }],
+    });
+    // 9:00-9:45 は会議の10分前で終わる。次は会議の10分あと
+    expect(out.blocks.map((b) => hm(b.start))).toEqual(['09:00', '12:10']);
+  });
+
+  it('上限で止まったものは late にせず capped を立てる', () => {
+    const out = plan({ now: tokyo('2026-10-19', '08:00'), maxBlocks: 2,
+      tasks: [{ number: 1, minutes: 45, due: '2026-10-19' }, { number: 2, minutes: 45, due: '2026-10-19' },
+        { number: 3, minutes: 45, due: '2026-10-19' }] });
+    expect(out.capped).toBe(true);
+    expect(out.late).toEqual([]);
+    const free = plan({ now: tokyo('2026-10-19', '08:00'), tasks: [{ number: 1, minutes: 45 }] });
+    expect(free.capped).toBe(false);
+  });
+
+  it('1回に置くのは20件まで', () => {
+    expect(gas.CAL_MAX_BLOCKS()).toBe(20);
+  });
 });

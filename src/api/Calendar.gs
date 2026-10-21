@@ -7,14 +7,18 @@
  */
 
 /**
- * いま組み直す (Web App API)。
+ * いま組み直す (Web App API)。手で押したときは60秒に1回まで (waitSeconds を添えて断る)。
+ * ホームのカードは {auto: true} で呼ぶ。そのときはサーバが組み直し中の印の中で、その日にもう組めたかを見直し、
+ * 組めていれば何もしない (skipped)。別の画面が組んでいる最中なら断る。
  *
+ * @param {{auto?: boolean}} [opts]
  * @returns {{ok: boolean, reason: string, blocks: object[], late: object[], unplaced: object[],
  *   calendarUrl: string, lastPlanned: string}}
  */
-function apiCalendarPlan() {
+function apiCalendarPlan(opts) {
   var who = currentEmailLower_();
-  var out = calendarPlanFor_(who);
+  // 画面から渡せるのは auto だけ (60秒の待ちを外す口は渡さない)
+  var out = calendarPlanFor_(who, null, { auto: !!(opts && opts.auto === true) });
   out.calendarUrl = plainText(calendarOpenUrl_(calendarSharedId_()));
   out.lastPlanned = plainText(calendarPlannedOf_(who).at);
   return out;
@@ -33,8 +37,8 @@ function apiCalendarToday() {
     calendarUrl: plainText(calendarOpenUrl_(calendarSharedId_())) };
   // オフのあいだはカレンダーを開かない
   if (!on) return out;
-  var last = calendarPlannedOf_(who);
-  out.plannedToday = last.day === calendarDayOf(calendarNow_().getTime());
+  // 組めた日だけ数える (組めなかった日は、次に開いたときにもう一度試す)
+  out.plannedToday = calendarPlannedOn_(calendarPlannedOf_(who), calendarNow_().getTime());
   var today = calendarTodayFor_(who);
   out.ok = today.ok;
   out.reason = plainText(today.reason);
@@ -68,12 +72,10 @@ function apiCalendarStatus() {
     settingsUrl: admin ? plainText(calendarSettingsUrl_(id)) : '',
     isAdmin: admin,
   };
-  if (!id) {
-    out.reason = calendarOpenShared_().reason;
-    return out;
-  }
-  var opened = calendarOpenShared_();
+  // 様子を見るだけなので登録 (購読) はしに行かない。登録は組み直すときにする
+  var opened = calendarOpenShared_(false);
   out.reason = plainText(opened.reason);
+  if (!id) return out;
   if (opened.cal) {
     out.canOpen = true;
     out.sharedName = plainText(opened.cal.getName());
@@ -93,7 +95,7 @@ function apiCalendarStatus() {
 function apiCalendarCreateShared() {
   repoAssertAdmin_('共有カレンダーを作ること');
   var id = calendarSharedId_();
-  if (id && calendarOpenShared_().cal) {
+  if (id && calendarOpenShared_(false).cal) {
     throw new Error('共有カレンダーはもうあります。作り直すときは、先に「外す」を押してください');
   }
   var cal = CalendarApp.createCalendar(CALENDAR_SHARED_NAME(), {

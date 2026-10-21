@@ -1199,6 +1199,7 @@ function debugVerifyCalendar() {
       apiIssueUpdate(n, { assignee: me, plannedHours: d, dueDate: due });
     });
 
+    log.push('INFO 共有の相手を足す頁 (開いて形を確かめる): ' + calendarSettingsUrl_(String(temp.getId())));
     var first = apiCalendarPlan();
     check('組める', first.ok === true, first.reason);
     check('予定が入る', first.blocks.length > 0, first.blocks.length + '件');
@@ -1220,7 +1221,8 @@ function debugVerifyCalendar() {
     var tagged = calendarMineIn_(temp, me, Date.now(), Date.now() + 21 * 86400000);
     check('入れた予定に印が付く', tagged.length === first.blocks.length, tagged.length + '件');
 
-    var again = apiCalendarPlan();
+    // 手で押すのは60秒に1回までなので、検証では待ちを外して組み直す
+    var again = calendarPlanFor_(me, null, { cooldown: false });
     var after = calendarMineIn_(temp, me, Date.now(), Date.now() + 21 * 86400000);
     check('組み直しても増えない', again.ok && after.length === again.blocks.length, after.length + '件');
 
