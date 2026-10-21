@@ -5210,4 +5210,33 @@ body.focus-mode .mobile-nav { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .oshi-bubble, .oshi-bubble.is-in, .oshi-bubble.is-out { transition: none; transform: none; }
 }
+/* ===== 実績 (js-ach)。本人にだけ。形は技の図鑑 (.focus-badge) に揃える ===== */
+.ach-toast {
+  position: fixed; top: var(--sp-6); right: var(--sp-4); z-index: 100; display: flex; align-items: center; gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 32px)); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius);
+  background: var(--surface-raised); color: var(--ink); box-shadow: var(--hairline), var(--elev-2); font-size: 13px;
+  border-left: 3px solid var(--warn); animation: ach-in var(--motion) ease-out;
+}
+.ach-toast-icon { font-size: 20px; line-height: 1; }
+@keyframes ach-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.ach-level { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-2) 0; }
+.ach-level-head { font-weight: 700; }
+.ach-head { margin: var(--sp-4) 0 var(--sp-2); font-size: 14px; }
+.ach-next { margin: 0; padding-left: var(--sp-4); color: var(--ink-2); font-size: 13px; }
+.ach-badges { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--sp-2); }
+.ach-badge { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-2); border-radius: var(--radius); background: var(--bg-2); color: var(--ink-2); }
+.ach-medal { width: 44px; height: 44px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 20px; background: var(--bg-3); color: var(--ink-2); box-shadow: var(--hairline); }
+.ach-badge.is-done { color: var(--ink); background: var(--surface-raised); box-shadow: var(--hairline), var(--elev-1); }
+.ach-badge.is-done .ach-medal { background: var(--warn-bg); color: var(--warn); box-shadow: 0 0 0 2px var(--warn); }
+.ach-name { font-weight: 700; overflow-wrap: anywhere; }
+.ach-sub { font-size: 11px; overflow-wrap: anywhere; }
+.ach-card .btn { align-self: flex-start; margin-top: var(--sp-2); }
+@media (max-width: 767px) {
+  .ach-toast { left: var(--sp-4); right: var(--sp-4); max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ach-toast { animation: none; }
+}
 </style>
