@@ -22,13 +22,13 @@ const FIRST_WAVE = [
   'apiHomeSummary', 'apiHomeActivity', 'apiPrefs', 'apiOshiGet',
 ];
 
-/** 急がないもの: 最初の波の返事がそろってから */
-const LATER = ['apiAchievementsCheck', 'apiKitStatus'];
+/** 急がないもの: 最初の波の返事がそろってから。名前・型・札・優先度は、画面を初めて開くときに待たないよう先に取る */
+const PREFETCH = ['apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities'];
+const LATER = ['apiAchievementsCheck', 'apiKitStatus'].concat(PREFETCH);
 
 /** 開いた直後には取らないもの (要るときに取る) */
 const ON_DEMAND = [
-  'apiIssueList', 'apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities', 'apiKnownPeople',
-  'apiTemplateList', 'apiArchiveKeepDays', 'apiTallyScope', 'apiTasksState',
+  'apiIssueList', 'apiKnownPeople', 'apiTemplateList', 'apiArchiveKeepDays', 'apiTallyScope', 'apiTasksState',
 ];
 
 /** 返事を止めておき、あとで返す */
@@ -74,6 +74,40 @@ describe('開いた直後に呼ぶもの', () => {
     ]);
   });
 
+  it('急がない波で、名前・型・札・優先度を先に取る (やることを開いたときは一覧の1本だけになる)', () => {
+    const summary = hold(DEFAULTS.apiHomeSummary);
+    const app = mount({ apiHomeSummary: summary.response });
+    PREFETCH.forEach((n) => expect(names(app), n).not.toContain(n));
+    summary.deliver();
+    PREFETCH.forEach((n) => expect(count(app, n), n).toBe(1));
+    const before = app.calls.length;
+    $('.nav-item[data-tab="issues"]').click();
+    const opened = app.calls.slice(before).map((c) => c.name);
+    PREFETCH.forEach((n) => expect(opened, n).not.toContain(n));
+    // 待つものはそろっているので、一覧はその場で取る (名簿・ひな形などは待たずに並べて取る)
+    expect(opened).toContain('apiIssueList');
+    expect($('#issue-list').textContent).toContain('通勤手当の見直し');
+  });
+
+  it('文書のリンクで開いたときは、名前・型・札・優先度を先取りしない', () => {
+    const app = mountApp(Object.assign({}, DEFAULTS), { link: { doc: 'DOC1' } });
+    PREFETCH.concat(['apiKitStatus']).forEach((n) => expect(names(app), n).not.toContain(n));
+  });
+
+  it('先取りの返事を待っているあいだにやることを開いても、二度取らずに待ち合わせる', () => {
+    const tags = hold(DEFAULTS.apiTagList);
+    const app = mount({ apiTagList: tags.response });
+    expect(count(app, 'apiTagList')).toBe(1);
+    $('.nav-item[data-tab="issues"]').click();
+    expect(count(app, 'apiTagList')).toBe(1);
+    // 札が届くまでは一覧を取らない
+    expect(names(app)).not.toContain('apiIssueList');
+    tags.deliver();
+    expect(count(app, 'apiTagList')).toBe(1);
+    expect(count(app, 'apiIssueList')).toBe(1);
+    expect($('#issue-list').textContent).toContain('通勤手当の見直し');
+  });
+
   it('文書のリンクの文書が開けずふつうの画面に戻したら、左の行き先と上の段に要るものを取る', () => {
     const app = mountApp(Object.assign({}, DEFAULTS), { link: { doc: 'NOPE123456' } });
     ['apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiNotifications', 'apiOverview', 'apiHomeSummary']
@@ -84,13 +118,13 @@ describe('開いた直後に呼ぶもの', () => {
 describe('要るときに1回だけ取る', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
-  it('やることを開くと、一覧と、並べるのに要るものを取る', () => {
+  it('やることを開くと、一覧と、入力のときに引くものを取る (名前・札は急がない波で取ってある)', () => {
     const app = mount();
     const before = app.calls.length;
     $('.nav-item[data-tab="issues"]').click();
     const opened = app.calls.slice(before).map((c) => c.name);
-    ['apiIssueList', 'apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities',
-      'apiKnownPeople', 'apiTemplateList', 'apiTasksState'].forEach((n) => expect(opened, n).toContain(n));
+    ['apiIssueList', 'apiKnownPeople', 'apiTemplateList', 'apiTasksState', 'apiArchiveKeepDays']
+      .forEach((n) => expect(opened, n).toContain(n));
     expect($('#issue-list').textContent).toContain('通勤手当の見直し');
   });
 
@@ -121,12 +155,15 @@ describe('要るときに1回だけ取る', () => {
 
   it('取れなかったものは覚えず、次に要るときに取り直す', () => {
     const app = mount({ apiTagList: new Error('混み合っています') });
+    // 急がない波の先取りで1回失敗している
+    expect(count(app, 'apiTagList')).toBe(1);
     $('.nav-item[data-tab="issues"]').click();
+    expect(count(app, 'apiTagList')).toBe(2);
     // 取れなくても一覧は描く (控えの色で)
     expect($('#issue-list').textContent).toContain('通勤手当の見直し');
     $('.nav-item[data-tab="home"]').click();
     $('.nav-item[data-tab="issues"]').click();
-    expect(count(app, 'apiTagList')).toBe(2);
+    expect(count(app, 'apiTagList')).toBe(3);
   });
 
   it('自分の欄は、開いたときに名前と道具の更新を待ってから描く', () => {
