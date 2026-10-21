@@ -861,7 +861,7 @@
     sec.appendChild(row);
     oshiFillFigure(fig, oshiPickState(m.state), d.name || '推し');
     if (m.reasons && m.reasons.length) sec.appendChild(makeOshiMoodWhy(m));
-    sec.appendChild(oshiNote('やることが滞ると、表情とせりふが変わります。Lv・実績・ポイントは減りません。' +
+    sec.appendChild(oshiNote('その日の機嫌です。やることが滞ると、表情とせりふが変わります。なつき度は下がりません (実績・ポイントも減りません)。' +
       'あなたにだけ見え、知らせも出しません。止めるときは設定の「推しの機嫌を見る」を外してください。'));
     return sec;
   }
@@ -946,7 +946,7 @@
     var head = document.createElement('div');
     head.className = 'oshi-stage';
     head.dataset.stage = grow.key || '';
-    head.textContent = 'Lv ' + (Number(grow.level) || 1) + ' ・ 育ち: ' + (grow.label || '') +
+    head.textContent = 'なつき度 Lv ' + (Number(grow.level) || 1) + ' ・ ' + (grow.label || '') +
       (grow.toNext > 0 ? ' ・ 次の段まであと ' + grow.toNext + ' Lv' : ' ・ いちばん上の段です');
     box.appendChild(head);
 
@@ -965,7 +965,7 @@
     var note = document.createElement('div');
     note.className = 'row-meta';
     note.textContent = '次の段まで ' + (Number(grow.meter) || 0) + '% ・ 実績を1つ取るたびに Lv が1つ上がります。' +
-      '取った実績は消えないので、Lv と段は下がりません' + (grow.floored ? ' ・ 以前に育てたぶんを保っています' : '');
+      '取った実績は消えないので、なつき度 (Lv と段) は下がりません' + (grow.floored ? ' ・ 以前のなつき度を保っています' : '');
     box.appendChild(note);
     return box;
   }
@@ -1184,14 +1184,14 @@
 
     var grow = document.createElement('section');
     grow.className = 'oshi-section';
-    grow.appendChild(oshiHeading('育ち'));
+    grow.appendChild(oshiHeading('なつき度'));
     grow.appendChild(makeOshiGrowth(d.growth));
-    grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label + ' (Lv' + s.min + '〜)'; })
-      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜5) があると、' +
+    grow.appendChild(oshiNote('なつき度の段は ' + (d.growth.stages || []).map(function (s) { return s.label + ' (Lv' + s.min + '〜)'; })
+      .join(' → ') + '。なつき度の Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (なつき度1〜5) があると、' +
       'ふつうの顔の代わりに、その段の姿で出ます (ホームのあいさつ・作業部屋・吹き出し)。ほめる・おいわい・しんぱい・ねむい ' +
-      'などの場面の顔は、その場面の表情のままです。最初からいるキャラには育ち1〜3の絵があり、達人・師範では名人の姿で出ます。' +
+      'などの場面の顔は、その場面の表情のままです。最初からいるキャラにはなつき度1〜3の絵があり、べったり・家族では なついた の姿で出ます。' +
       'その段の絵が無いキャラは、持っているいちばん上の段の絵で出ます。' +
-      (d.growth.floored ? '以前に育てたぶんを保っているので、いまの Lv より上の段に出ています。' : '')));
+      (d.growth.floored ? '以前のなつき度を保っているので、いまの Lv より上の段に出ています。' : '')));
     box.appendChild(grow);
     if (d.cleared && d.clear) box.appendChild(makeOshiClear(d));
     box.appendChild(makeOshiReveal(d));
@@ -2249,7 +2249,7 @@
         ? (d.name || '') + ' のプロフィールは、まだありません。最初からいるキャラのプロフィールは管理者が決めます。'
         : 'このキャラのプロフィールは、まだありません。上の「プロフィール (JSON)」で書けます。'));
     } else {
-      sec.appendChild(oshiNote('いまの Lv ' + lv + '。Lv が上がると、少しずつ分かります (分かったもの ' + r.open + ' / ' +
+      sec.appendChild(oshiNote('いまのなつき度 Lv ' + lv + '。なつき度が上がると、推しが自分のことを少しずつ教えてくれます (分かったもの ' + r.open + ' / ' +
         r.total + ')。' + (d.cleared ? '実績を全部取ったので、全部分かります。' : '')));
       var list = document.createElement('ul');
       list.className = 'oshi-reveal-list';
@@ -2271,7 +2271,7 @@
       sec.appendChild(list);
     }
     if (d.achOn === false) {
-      sec.appendChild(oshiNote('Lv は実績を取ると上がります。いまは設定の「実績を集める」が切ってあるので、Lv は上がりません。'));
+      sec.appendChild(oshiNote('なつき度は実績を取ると上がります。いまは設定の「実績を集める」が切ってあるので、なつき度は上がりません。'));
     }
     return sec;
   }

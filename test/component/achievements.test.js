@@ -139,7 +139,7 @@ describe('実績', () => {
     expect(page.textContent).not.toContain('手元の道具を使った');
     const heads = [...page.querySelectorAll('.ach-head')].map((h) => h.textContent);
     expect(heads).toContain('通算の日 1 / 8');
-    expect(page.querySelector('.ach-level-head').textContent).toContain('推しの Lv 2');
+    expect(page.querySelector('.ach-level-head').textContent).toContain('なつき度 Lv 2');
     expect(page.textContent).toContain('あなたにだけ見えます');
     expect(page.textContent).not.toMatch(/連続|\d+ *位/);
   });
@@ -150,7 +150,7 @@ describe('実績', () => {
     const card = document.querySelector('#home-cards .ach-card');
     expect(card).toBeTruthy();
     expect(card.textContent).toContain('はじめの一日');
-    expect(card.textContent).toContain('推しの Lv 2');
+    expect(card.textContent).toContain('なつき度 Lv 2');
     mountAch({ 'home.cards.ach': false }, { apiAchievementsCheck: d.check, apiOshiGet: d.oshi });
     expect(document.querySelector('.ach-card')).toBe(null);
   });
@@ -192,15 +192,15 @@ describe('実績', () => {
     expect(Number(rule.match(/z-index: (\d+)/)[1])).toBeGreaterThan(160);
   });
 
-  it('段が上がったら「育ちの段が上がった」を、上がった段の表情で言う。推しの育ちも Lv に揃える', () => {
+  it('段が上がったら「なつき度の段が上がった」を、上がった段の表情で言う。推しの育ちも Lv に揃える', () => {
     const c = crossing();
     expect(c.cross).toMatchObject({ crossed: true, level: 5, stage: { key: 'grow2' } });
     // 推しの返事は1つ前の Lv (取る前に取った返事)
-    const stale = Object.assign({}, c.oshi, { growth: Object.assign({}, c.oshi.growth, { level: 4, key: 'grow1', label: '見習い' }) });
+    const stale = Object.assign({}, c.oshi, { growth: Object.assign({}, c.oshi.growth, { level: 4, key: 'grow1', label: 'よそよそしい' }) });
     mountAch({}, { apiAchievementsCheck: c.cross, apiOshiGet: stale });
     expect(bubble().dataset.event).toBe('levelup');
     expect(bubble().dataset.state).toBe('grow2');
-    expect(toast().textContent).toContain('一人前になりました');
+    expect(toast().textContent).toContain('なつき度が Lv 5 になりました (なれてきた)');
     const stage = document.querySelector('#home-cards .oshi-card .oshi-stage');
     expect(stage.textContent).toContain('Lv 5');
     expect(stage.dataset.stage).toBe('grow2');

@@ -216,7 +216,7 @@
     // 推しがオフなら Lv だけ (推しの段・プロフィール・クリアは推しの頁のもの)
     var oshi = oshiOn();
     achToast(first.icon, text + (oshi
-      ? ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
+      ? ' ・ なつき度が Lv ' + res.level + ' になりました (' + res.stage.label + ')' +
         (opened ? ' ・ 推しのプロフィールが ' + opened + ' 項目分かりました' : '') +
         (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : '')
       : ' ・ Lv ' + res.level + (all ? ' ・ 全部取りました' : '')));
@@ -297,7 +297,7 @@
     btn.className = 'btn ach-open';
     btn.appendChild(makeIcon('clipboard-check'));
     btn.appendChild(document.createTextNode('実績'));
-    attachHint(btn, '取った実績 (バッジ) と推しのレベルを見ます。あなたにだけ見えます');
+    attachHint(btn, '取った実績 (バッジ) と推しのなつき度を見ます。あなたにだけ見えます');
     btn.addEventListener('click', function () {
       closeMe();
       openAchievements(btn);
@@ -353,9 +353,9 @@
       box.appendChild(head);
       return box;
     }
-    head.textContent = '推しの Lv ' + res.level + ' ・ ' + res.stage.label +
+    head.textContent = 'なつき度 Lv ' + res.level + ' ・ ' + res.stage.label +
       (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です') +
-      (res.stage.floored ? ' (以前に育てたぶんを保っています)' : '');
+      (res.stage.floored ? ' (以前のなつき度を保っています)' : '');
     box.appendChild(head);
     var bar = document.createElement('div');
     bar.className = 'game-level-bar ach-meter';
@@ -380,7 +380,7 @@
   function drawAchPage(box, res) {
     box.textContent = '';
     box.appendChild(achNote('実績はあなたにだけ見えます。順位も、続けた日数もありません。一度取った実績は消えません。' +
-      (oshiOn() ? '推しのレベル' : 'レベル (Lv)') + 'は 1 + 取った実績の数です'));
+      (oshiOn() ? '推しのなつき度 (Lv)' : 'レベル (Lv)') + 'は 1 + 取った実績の数です'));
     box.appendChild(makeAchLevel(res));
     box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
     var rest = Math.max(0, (Number(res.total) || 0) - (Number(res.got) || 0));

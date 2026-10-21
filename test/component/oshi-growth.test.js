@@ -67,7 +67,7 @@ describe('推しの育ち', () => {
   });
 
   it('ホームのあいさつ (ふつうの顔) は、いまの段の絵で出す', () => {
-    const ctx = server(4); // Lv5 = 一人前
+    const ctx = server(4); // Lv5 = なれてきた
     mountWith(ctx);
     expect(homeImg().getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'grow2'));
   });
@@ -87,10 +87,10 @@ describe('推しの育ち', () => {
     expect(asked()).not.toContain('idle');
   });
 
-  it('達人・師範の絵が無いキャラは、持っているいちばん上の段の絵で出す (最初からいるキャラは名人)', () => {
-    const ctx = server(34); // Lv35 = 師範
+  it('べったり・家族の絵が無いキャラは、持っているいちばん上の段の絵で出す (最初からいるキャラはなついた)', () => {
+    const ctx = server(34); // Lv35 = 家族
     expect(wire(ctx.apiOshiGet()).growth.key).toBe('grow5');
-    // 最初からいるキャラには 達人・師範 の絵が無い (サーバは null を返す)
+    // 最初からいるキャラには べったり・家族 の絵が無い (サーバは null を返す)
     mountWith(ctx, {}, {
       apiOshiDefaultImage: (char, style, state) => (/grow[45]/.test(state) ? null
         : { char, style, state, dataUrl: defaultUrl(char, style, state) }),
@@ -98,7 +98,7 @@ describe('推しの育ち', () => {
     expect(homeImg().getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'grow3'));
   });
 
-  it('自分のキャラは、師範の段でも、自分が入れたいちばん上の段の絵 (名人) を出す', () => {
+  it('自分のキャラは、家族の段でも、自分が入れたいちばん上の段の絵 (なついた) を出す', () => {
     const ctx = server(34);
     const c = ctx.apiOshiCharCreate('ルナ', 'genki').charId;
     ctx.apiOshiSetImage(c, 'idle', PNG_URL);
@@ -127,15 +127,32 @@ describe('推しの育ち', () => {
   });
 
   it('前の段を保っているときは、そう書き、棒と「あと N Lv」を出している段の次の段に揃える', () => {
-    const ctx = server(2, 1); // Lv3 だが前に一人前まで育てた
+    const ctx = server(2, 1); // Lv3 だが前になれてきたまで育てた
     mountWith(ctx);
     const card = document.querySelector('#home-cards .oshi-card');
     const head = card.querySelector('.oshi-stage').textContent;
-    expect(head).toContain('一人前');
+    expect(head).toContain('なれてきた');
     expect(head).toContain('次の段まであと 12 Lv');
-    expect(card.querySelector('.oshi-growth').textContent).toContain('以前に育てたぶんを保っています');
+    expect(card.querySelector('.oshi-growth').textContent).toContain('以前のなつき度を保っています');
     const bar = card.querySelector('[role="progressbar"]');
     expect(bar.getAttribute('aria-valuenow')).toBe(String(Math.floor(2 / 14 * 100)));
+  });
+
+  it('人に見せる名前は なつき度 (ホームのカード・推しの頁の見出し・プロフィール・機嫌の説明)', () => {
+    const ctx = server(4); // Lv5 = なれてきた
+    ctx.apiOshiBuiltinProfileSet('taku', { items: [{ lv: 2, label: 'テストの口ぐせ', text: 'テスト' }] });
+    mountWith(ctx);
+    const head = document.querySelector('#home-cards .oshi-stage').textContent;
+    expect(head).toContain('なつき度 Lv 5');
+    expect(head).toContain('なれてきた');
+    expect(head).not.toContain('育ち');
+    openPage('推し');
+    const page = document.querySelector('.oshi-page');
+    const heads = [...page.querySelectorAll('h3, h2, .oshi-heading')].map((h) => h.textContent);
+    expect(heads).toContain('なつき度');
+    expect(heads).not.toContain('育ち');
+    expect(page.querySelector('.oshi-reveal').textContent).toContain('なつき度が上がると、推しが自分のことを少しずつ教えてくれます');
+    expect(page.textContent).not.toMatch(/見習い|一人前|名人|達人|師範/);
   });
 
   it('棒は「次の段まで」。「下がりません」は Lv と段のこと', () => {
@@ -145,8 +162,8 @@ describe('推しの育ち', () => {
     expect(g.querySelector('[role="progressbar"]').getAttribute('aria-label')).toBe('次の段まで');
     expect(g.textContent).not.toContain('なかよし');
     expect(g.textContent).toContain('次の段まで 0%');
-    expect(g.textContent).toContain('Lv と段は下がりません');
-    expect(g.textContent).not.toContain('以前に育てた');
+    expect(g.textContent).toContain('なつき度 (Lv と段) は下がりません');
+    expect(g.textContent).not.toContain('以前の');
   });
 });
 
@@ -165,6 +182,15 @@ describe('実績を取ったときの知らせ', () => {
     mountOshi({}, { apiOshiGet: oshi, apiAchievementsCheck: check, apiAchievements: check });
     expect(toast().textContent).toContain('全部取りました');
     expect(bubble().dataset.event).toBe('clear');
+  });
+
+  it('実績を取ったら「なつき度が Lv ◯ になりました (段の名前)」', () => {
+    const ctx = server(0);
+    const check = wire(ctx.apiAchievementsCheck());
+    mountOshi({}, { apiAchievementsCheck: check, apiAchievements: check });
+    expect(toast().textContent).toContain('なつき度が Lv 2 になりました (よそよそしい)');
+    openPage('実績');
+    expect(document.querySelector('.ach-level-head').textContent).toContain('なつき度 Lv 2 ・ よそよそしい');
   });
 
   it('推しがオフなら「Lv ◯」だけ (推しの言葉も段も出さない)', () => {
