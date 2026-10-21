@@ -791,10 +791,15 @@ async function runOshiSpinner(argv) {
       '  ' + plan.file,
       '  いま: ' + spinnerShown(plan.has, plan.before),
       '  これから: ' + JSON.stringify(plan.next),
-      'オンのあいだは1日1回せりふを取り直し、番頭で使うキャラを変えると1日のうちに変わります。',
+      'オンのあいだは1日1回せりふを取り直します。最初からいるキャラに替えたときは1日のうちに追いつき、自分のキャラのときは on で確かめ直してもらいます。',
       '戻す: node agent.mjs oshi-spinner off (手で直したあとは、どちらも触りません)',
       '確かめの印: ' + print + ' (このせりふのまま書くなら node agent.mjs oshi-spinner on --yes=' + print + ')',
     ].join('\n') + '\n');
+    if (yes && yes.startsWith('--yes=') && !want) {
+      process.stderr.write('--yes= の印が空です。上の確かめの印を付けて実行してください。何も変えていません\n');
+      process.exitCode = 1;
+      return;
+    }
     if (yes && want && want !== print) {
       process.stderr.write('確かめたときからせりふが変わりました (印 ' + want + ' → ' + print + ')。上のせりふを確かめてから、' +
         'もう一度 --yes=' + print + ' で実行してください。何も変えていません\n');

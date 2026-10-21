@@ -352,6 +352,15 @@ describe('見直しの指摘 (doctor・off の入れ先・書き方・自分の�
     expect(fs.readdirSync(d.root).filter((n) => n.includes('banto-tmp'))).toEqual([]);
   });
 
+  it('settings.json が先の無いリンクなら断り、ふつうのファイルに置き換えない', () => {
+    const d = dirs();
+    fs.symlinkSync(path.join(d.root, 'gone-settings.json'), settingsPath(d));
+    expect(() => sp.writeSpinner({ claude: d.claude, value: sp.spinnerValue(VERBS) })).toThrow(/先の無いリンク/);
+    expect(fs.lstatSync(settingsPath(d)).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(d.root, 'gone-settings.json'))).toBe(false);
+    expect(fs.readdirSync(d.root).filter((n) => n.includes('banto-tmp'))).toEqual([]);
+  });
+
   it('書き途中の settings.json は見えない (隣の一時ファイルに書いてから入れ替える)', () => {
     const d = dirs();
     fs.writeFileSync(settingsPath(d), JSON.stringify({ model: 'opus' }));
