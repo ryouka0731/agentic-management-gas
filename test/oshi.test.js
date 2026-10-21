@@ -185,7 +185,7 @@ describe('画像を置く', () => {
     expect(ctx.dbReadAll('oshi_images')).toEqual([]);
     expect(ctx.dbReadAll('oshi')).toEqual([]);
     // 消したあとは、最初からいるキャラに戻る
-    expect(ctx.apiOshiGet()).toMatchObject({ name: 'イツキ', kind: 'builtin', mine: [] });
+    expect(ctx.apiOshiGet()).toMatchObject({ name: 'タク', kind: 'builtin', mine: [] });
   });
 });
 
@@ -207,7 +207,7 @@ describe('本人にだけ', () => {
     expect(() => ctx.apiOshiCharDelete(a)).toThrow('そのキャラは見つかりません');
     expect(() => ctx.apiPrefSet('oshi.char', 'mine:' + a)).toThrow('そのキャラは選べません');
     const b = ctx.apiOshiGet();
-    expect(b).toMatchObject({ name: 'イツキ', kind: 'builtin', mine: [], images: [] });
+    expect(b).toMatchObject({ name: 'タク', kind: 'builtin', mine: [], images: [] });
     expect(b.events.find((e) => e.key === 'done').mine).toEqual([]);
     // b が自分のキャラを作っても、a のぶんは変わらない (番号は人ごと)
     const bc = make(ctx, 'ソラ');
@@ -240,7 +240,7 @@ describe('本人にだけ', () => {
 describe('名前・口調・せりふ', () => {
   it('名前と口調を決めると、その口調の既定のせりふと自分のせりふが返る', () => {
     const { ctx } = setup();
-    expect(ctx.apiOshiGet().tone).toBe('gothic');
+    expect(ctx.apiOshiGet().tone).toBe('buddy');
     const c = make(ctx);
     ctx.apiPrefSet('oshi.char', 'mine:' + c);
     ctx.apiOshiSetProfile(c, ' ルナ ', 'kansai');
@@ -382,16 +382,17 @@ function setupWithPictures() {
 }
 
 describe('最初からいるキャラ', () => {
-  it('表は1つ (OSHI_BUILTINS): イツキ (耽美) とタク (明るい相棒)。先頭が既定', () => {
+  it('表は1つ (OSHI_BUILTINS): タク (明るい相棒) とイツキ (耽美)。先頭 (タク) が既定', () => {
     expect(pure.OSHI_BUILTINS()).toEqual([
-      { key: 'itsuki', name: 'イツキ', tone: 'gothic' },
       { key: 'taku', name: 'タク', tone: 'buddy' },
+      { key: 'itsuki', name: 'イツキ', tone: 'gothic' },
     ]);
     for (const c of pure.OSHI_BUILTINS()) expect(pure.oshiToneKnown(c.tone), c.key).toBe(true);
     expect(pure.oshiBuiltinOf('taku').name).toBe('タク');
     expect(pure.oshiBuiltinOf('nobody')).toBe(null);
     const { ctx } = setup();
-    expect(ctx.PREFS_SCHEMA().find((p) => p.key === 'oshi.char').def).toBe('builtin:itsuki');
+    expect(ctx.PREFS_SCHEMA().find((p) => p.key === 'oshi.char').def).toBe('builtin:taku');
+    expect(ctx.PREFS_SCHEMA().find((p) => p.key === 'oshi.fallback').def).toBe('builtin:taku');
   });
 
   it('使うキャラの名指しは builtin:<key> か mine:<番号> だけを読む', () => {
@@ -402,24 +403,24 @@ describe('最初からいるキャラ', () => {
     }
   });
 
-  it('何も決めていない人はイツキ。名前と口調は決まっていて、口調のせりふだけを言う', () => {
+  it('何も決めていない人はタク。名前と口調は決まっていて、口調のせりふだけを言う', () => {
     const { ctx } = setup();
     const got = ctx.apiOshiGet();
-    expect(got).toMatchObject({ char: 'builtin:itsuki', kind: 'builtin', builtinKey: 'itsuki', name: 'イツキ', tone: 'gothic',
+    expect(got).toMatchObject({ char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', name: 'タク', tone: 'buddy',
       charId: 0, images: [], mine: [], mineMax: 5 });
-    expect(got.builtins.map((c) => c.key)).toEqual(['itsuki', 'taku']);
-    expect(got.events.find((e) => e.key === 'done').lines).toEqual(pure.OSHI_LINES().gothic.done);
+    expect(got.builtins.map((c) => c.key)).toEqual(['taku', 'itsuki']);
+    expect(got.events.find((e) => e.key === 'done').lines).toEqual(pure.OSHI_LINES().buddy.done);
     expect(got.events.every((e) => e.mine.length === 0)).toBe(true);
     expect(got.styles.map((s) => s.key)).toEqual(['chibi', 'normal']);
   });
 
-  it('設定でタクを選ぶと、タクの名前と明るい相棒のせりふになる', () => {
+  it('設定でイツキを選ぶと、イツキの名前と耽美のせりふになる', () => {
     const { ctx } = setup();
-    ctx.apiPrefSet('oshi.char', 'builtin:taku');
+    ctx.apiPrefSet('oshi.char', 'builtin:itsuki');
     const got = ctx.apiOshiGet();
-    expect(got).toMatchObject({ char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', name: 'タク', tone: 'buddy' });
-    expect(got.events.find((e) => e.key === 'night').lines).toEqual(pure.OSHI_LINES().buddy.night);
-    expect(ctx.apiPrefs().effective.oshi).toMatchObject({ char: 'builtin:taku', fallback: 'builtin:itsuki', style: 'chibi' });
+    expect(got).toMatchObject({ char: 'builtin:itsuki', kind: 'builtin', builtinKey: 'itsuki', name: 'イツキ', tone: 'gothic' });
+    expect(got.events.find((e) => e.key === 'night').lines).toEqual(pure.OSHI_LINES().gothic.night);
+    expect(ctx.apiPrefs().effective.oshi).toMatchObject({ on: true, char: 'builtin:itsuki', fallback: 'builtin:taku', style: 'chibi' });
   });
 
   it('耽美の口調は全部の場面に3つ以上あり、「なのだ」で話す (一人称は俺。敬語を使わない)', () => {
@@ -456,11 +457,11 @@ describe('最初からいるキャラ', () => {
   it('設定に「使うキャラ」「絵が無い表情」「2頭身・等身」がある', () => {
     const { ctx } = setup();
     const items = ctx.apiPrefs().items;
-    expect(items.find((p) => p.key === 'oshi.char')).toMatchObject({ type: 'char', def: 'builtin:itsuki', scope: 'me' });
-    expect(items.find((p) => p.key === 'oshi.char').options.map((o) => o.value)).toEqual(['builtin:itsuki', 'builtin:taku']);
+    expect(items.find((p) => p.key === 'oshi.char')).toMatchObject({ type: 'char', def: 'builtin:taku', scope: 'me' });
+    expect(items.find((p) => p.key === 'oshi.char').options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki']);
     const fb = items.find((p) => p.key === 'oshi.fallback');
-    expect(fb).toMatchObject({ type: 'enum', def: 'builtin:itsuki', scope: 'me' });
-    expect(fb.options.map((o) => o.value)).toEqual(['builtin:itsuki', 'builtin:taku', 'none']);
+    expect(fb).toMatchObject({ type: 'enum', def: 'builtin:taku', scope: 'me' });
+    expect(fb.options.map((o) => o.value)).toEqual(['builtin:taku', 'builtin:itsuki', 'none']);
     const style = items.find((p) => p.key === 'oshi.style');
     expect(style).toMatchObject({ type: 'enum', def: 'chibi', scope: 'me' });
     expect(style.options.map((o) => o.value)).toEqual(['chibi', 'normal']);
@@ -582,15 +583,15 @@ describe('使うキャラを選ぶ (oshi.char) と、絵が無い表情 (oshi.fa
     ctx.apiPrefSet('oshi.char', 'mine:' + c);
     expect(ctx.apiPrefs().effective.oshi.char).toBe('mine:' + c);
     expect(ctx.apiOshiGet()).toMatchObject({ char: 'mine:' + c, kind: 'mine', charId: c, builtinKey: '', name: 'ルナ',
-      tone: 'kansai', fallback: 'itsuki' });
+      tone: 'kansai', fallback: 'taku' });
   });
 
   it('自分のキャラの絵が無い表情に出すのは oshi.fallback の最初からいるキャラ。「出さない」なら空', () => {
     const { ctx } = setup();
     const c = make(ctx, 'ルナ');
     ctx.apiPrefSet('oshi.char', 'mine:' + c);
-    ctx.apiPrefSet('oshi.fallback', 'builtin:taku');
-    expect(ctx.apiOshiGet().fallback).toBe('taku');
+    ctx.apiPrefSet('oshi.fallback', 'builtin:itsuki');
+    expect(ctx.apiOshiGet().fallback).toBe('itsuki');
     ctx.apiPrefSet('oshi.fallback', 'none');
     expect(ctx.apiOshiGet().fallback).toBe('');
     expect(() => ctx.apiPrefSet('oshi.fallback', 'builtin:nobody')).toThrow('入れられない値です');
@@ -605,8 +606,8 @@ describe('使うキャラを選ぶ (oshi.char) と、絵が無い表情 (oshi.fa
     const raw = fake.PropertiesService.getScriptProperties().getProperty('MYPREF:tester@example.com');
     expect(raw === null || !('oshi.char' in JSON.parse(raw))).toBe(true);
     const p = ctx.apiPrefs().items.find((x) => x.key === 'oshi.char');
-    expect(p).toMatchObject({ value: 'builtin:itsuki', custom: false });
-    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'イツキ' });
+    expect(p).toMatchObject({ value: 'builtin:taku', custom: false });
+    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'タク' });
   });
 
   it('設定に残った無いキャラ (台帳を手で消した) は、画面を止めずに既定のキャラで出す', () => {
@@ -616,17 +617,17 @@ describe('使うキャラを選ぶ (oshi.char) と、絵が無い表情 (oshi.fa
     // 台帳の行を手で消した
     ctx.dbDelete('oshi', 'id', 1);
     expect(() => ctx.apiPrefs()).not.toThrow();
-    expect(ctx.apiPrefs().effective.oshi.char).toBe('builtin:itsuki');
-    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'イツキ' });
+    expect(ctx.apiPrefs().effective.oshi.char).toBe('builtin:taku');
+    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'タク' });
     // スクリプトプロパティを手で書き換えた (読めない値)
     fake.PropertiesService.getScriptProperties().setProperty('MYPREF:tester@example.com', JSON.stringify({ 'oshi.char': 'mine:abc' }));
-    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'イツキ' });
+    expect(ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'タク' });
   });
 
-  it('既定 (イツキ) を選び直したら、決めた値を残さない', () => {
+  it('既定 (タク) を選び直したら、決めた値を残さない', () => {
     const { ctx } = setup();
-    ctx.apiPrefSet('oshi.char', 'builtin:taku');
     ctx.apiPrefSet('oshi.char', 'builtin:itsuki');
+    ctx.apiPrefSet('oshi.char', 'builtin:taku');
     expect(ctx.apiPrefs().items.find((x) => x.key === 'oshi.char').custom).toBe(false);
   });
 });
@@ -750,5 +751,41 @@ describe('壊れた画像と番号', () => {
     ctx.dbAppendNumbered('oshi', 'id', { who: 'tester@example.com', name: 'むかし', tone: 'genki', lines: '{}', updatedAt: new Date() });
     ctx.apiOshiCharDelete(1);
     expect(make(ctx, 'あたらしい')).toBe(2);
+  });
+});
+
+describe('推しは既定でオン、選ぶのは自分の設定', () => {
+  it('何も決めていない人は推しがオンで、使うキャラも絵が無い表情もタク', () => {
+    const { ctx } = setup();
+    expect(ctx.apiPrefs().effective.oshi).toMatchObject({ on: true, char: 'builtin:taku', fallback: 'builtin:taku' });
+  });
+
+  it('推しの設定はどれも自分の設定で、チームの設定には出ず、管理者が書いても本人のぶんにしか効かない', () => {
+    const { ctx, fake } = setup();
+    const keys = ['oshi.on', 'oshi.home', 'oshi.char', 'oshi.fallback', 'oshi.style'];
+    for (const k of keys) expect(ctx.PREFS_SCHEMA().find((p) => p.key === k).scope, k).toBe('me');
+    // 持ち主 (= 管理者) が選んでも、書くのは自分の覚え (MYPREF:) だけ
+    ctx.apiPrefSet('oshi.char', 'builtin:itsuki');
+    const props = fake.PropertiesService.getScriptProperties();
+    for (const k of keys) expect(props.getProperty('PREF:' + k), k).toBe(null);
+    // チームの値を手で書いても読まない
+    props.setProperty('PREF:oshi.char', JSON.stringify('builtin:itsuki'));
+    fake._setUser('b@example.com');
+    expect(ctx.apiPrefs().effective.oshi.char).toBe('builtin:taku');
+    expect(ctx.apiOshiGet().name).toBe('タク');
+  });
+
+  it('選んでもらったときのせりふ (chosen) は、どの口調にもあり、表情は出すときにでたらめに選ぶ', () => {
+    const ev = pure.OSHI_EVENTS().find((e) => e.key === 'chosen');
+    expect(ev).toMatchObject({ label: '選んでもらった', randomState: true });
+    expect(ev.praise).toBeFalsy();
+    for (const t of pure.OSHI_TONES()) {
+      const l = pure.OSHI_LINES()[t.key].chosen;
+      expect(l.length, t.key).toBeGreaterThanOrEqual(3);
+      expect(l.length, t.key).toBeLessThanOrEqual(4);
+    }
+    const { ctx } = setup();
+    expect(ctx.apiOshiGet().events.find((e) => e.key === 'chosen')).toMatchObject({ randomState: true,
+      lines: pure.OSHI_LINES().buddy.chosen });
   });
 });

@@ -273,7 +273,7 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(document.getElementById('doc-list').closest('#panel-home')).toBeNull();
 
     // まとめの見出しは置かず (同じ形の見出しが重なる)、カードがそれぞれ見出しを持つ
-    const heads = Array.from(cards.children).map((c) => c.querySelector(':scope > .home-head > h2').textContent);
+    const heads = Array.from(cards.children).filter((c) => !c.classList.contains('oshi-card')).map((c) => c.querySelector(':scope > .home-head > h2').textContent);
     expect(heads).toEqual(['今日片づけたもの', 'チームの前進']);
   });
 
@@ -703,7 +703,7 @@ describe('ポイント・レベル・週の上位', () => {
 
   it('棒は、いまのレベルの中での進み具合で描く', () => {
     mount({ apiGameState: Object.assign({}, ON, { total: 16, level: 2, levelFrom: 15, nextAt: 30 }) });
-    const bar = document.querySelector('#home-cards .game-level-bar');
+    const bar = document.querySelector('#home-cards .game-card .game-level-bar');
     expect(bar.getAttribute('aria-valuemin')).toBe('15');
     expect(bar.getAttribute('aria-valuemax')).toBe('30');
     expect(bar.getAttribute('aria-valuenow')).toBe('16');
