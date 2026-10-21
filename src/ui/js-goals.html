@@ -141,11 +141,8 @@
   function renderGoalTeam(res) {
     goalsEl.textContent = '';
     if (goalView === 'pending') {
-      // 評価を付けるものは、期が終わったか、本人が振り返りを書いたものだけ (期の途中から並べると、急かすことになる)。
-      // ほかの承認済みの目標は「チーム」の一人ずつのカードから評価できる
-      var toGrade = (res.goals || []).filter(function (g) {
-        return g.canGrade && (g.pace.key === 'ended' || !!g.selfReview);
-      });
+      // 評価を付けられるのは、期が終わったか本人が振り返りを書いたものだけ (サーバの canGrade。goalGradeReady_)
+      var toGrade = (res.goals || []).filter(function (g) { return g.canGrade; });
       var pending = res.pending || [];
       if (!pending.length && !toGrade.length) {
         goalsEl.appendChild(makeBlankState('承認を待っている目標はありません',
@@ -460,8 +457,11 @@
         off.setAttribute('aria-label', '#' + l.number + ' を「' + it.title + '」から外す');
         off.addEventListener('click', function () {
           off.disabled = true;
-          call('apiGoalUnlink', [it.id, l.number], function () {
-            showSnack('#' + l.number + ' を外しました。やることそのものは残っています', { kind: 'ok' });
+          call('apiGoalUnlink', [it.id, l.number], function (res) {
+            // 承認済みから済んだやることを外すと、承認し直しになる (サーバが決める)
+            showSnack(res && res.status === 'submitted' && g.status === 'approved'
+              ? '#' + l.number + ' を外しました。済んだやることを外したので、もう一度上長の承認を待ちます'
+              : '#' + l.number + ' を外しました。やることそのものは残っています', { kind: 'ok' });
             loadGoalsView();
           }, failEnable(off, '外せませんでした: '));
         });
@@ -535,6 +535,15 @@
           showSnack('承認を頼みました。承認されたら知らせが届きます', { kind: 'ok' });
           loadGoalsView();
         }, failEnable(b, '頼めませんでした: '));
+      });
+    }
+    if (g.canWithdraw) {
+      button('承認の頼みを取り下げる', 'btn goal-withdraw', function (b) {
+        b.disabled = true;
+        call('apiGoalWithdraw', [g.id], function () {
+          showSnack('取り下げました。下書きに戻ったので、直して頼み直せます', { kind: 'ok' });
+          loadGoalsView();
+        }, failEnable(b, '取り下げられませんでした: '));
       });
     }
     if (g.canDelete) {

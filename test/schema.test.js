@@ -50,7 +50,7 @@ const EXPECTED = {
     'busyErrors', 'timeoutErrors', 'fxOff'],
   // 目標 (既定はオフ)。本人と上長の連なりにだけ見せる
   goals: ['id', 'who', 'period', 'kind', 'title', 'status', 'submittedAt', 'approver', 'approvedAt',
-    'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt'],
+    'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt', 'fyStart'],
   goal_items: ['id', 'goalId', 'title', 'weight', 'measure', 'target', 'unit', 'actual', 'checked', 'filter', 'order'],
   goal_links: ['id', 'itemId', 'issueNumber'],
 };

@@ -497,6 +497,8 @@ describe('画面に渡せる形か', () => {
   function goalReady(ctx, env) {
     ctx.apiPrefSet('goals.enabled', true);
     ctx.memberSet('tester@example.com', 'boss@example.com', '');
+    // つなげるのは本人が担当のやることだけ
+    ctx.apiIssueUpdate(env.issue.number, { assignee: 'tester@example.com' });
     const goal = ctx.apiGoalSave({ kind: 'okr', title: '目標', items: [
       { title: 'つなぐ', measure: 'issues' }, { title: '数', measure: 'number', target: 10 }] });
     ctx.apiGoalLink(goal.items[0].id, env.issue.number);
@@ -516,7 +518,19 @@ describe('画面に渡せる形か', () => {
       if (!out.goals.length || !out.goals[0].approvedAt) throw new Error('承認した目標が空のまま検査されている');
       return out;
     }],
-    ['apiGoalSave', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalSave({ id: g.id, kind: 'okr', title: '直す', items: [] }); }],
+    ['apiGoalSave', (ctx, env) => {
+      const g = goalReady(ctx, env);
+      // 承認済みを直すと承認し直し (頼むときと同じ検査を通るよう、項目はそのまま)
+      const out = ctx.apiGoalSave({ id: g.id, kind: 'okr', title: '直す', items: g.items.map((i) => ({ id: i.id, title: i.title,
+        measure: i.measure, target: i.target })) });
+      if (!out.changedAfterApproval) throw new Error('承認し直しの形が検査されていない');
+      return out;
+    }],
+    ['apiGoalWithdraw', (ctx, env) => {
+      goalReady(ctx, env);
+      const g = ctx.apiGoalSubmit(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [{ title: 'a', measure: 'check' }] }).id);
+      return ctx.apiGoalWithdraw(g.id);
+    }],
     ['apiGoalDelete', (ctx, env) => { goalReady(ctx, env); return ctx.apiGoalDelete(ctx.apiGoalSave({ kind: 'kpi', title: 'x', items: [] }).id); }],
     ['apiGoalSubmit', (ctx, env) => {
       goalReady(ctx, env);
@@ -534,6 +548,7 @@ describe('画面に渡せる形か', () => {
     ['apiGoalReview', (ctx, env) => { const g = goalReady(ctx, env); return ctx.apiGoalReview(g.id, '振り返り'); }],
     ['apiGoalGrade', (ctx, env) => {
       const g = goalReady(ctx, env);
+      ctx.apiGoalReview(g.id, '振り返り');
       env.fake._setUser('boss@example.com');
       const out = ctx.apiGoalGrade(g.id, 'A', 'よかった');
       if (!out.gradedAt) throw new Error('評価した時刻が空のまま検査されている');

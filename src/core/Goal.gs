@@ -42,6 +42,23 @@ function goalCurrentPeriod_(now) {
   return goalPeriodOf(now || new Date(), prefGet_('goals.period'), goalFyStartNow_()).key;
 }
 
+/**
+ * その目標の年度の始まりの月。立てたときの設定を目標ごとに持つ (goals.fyStart)。
+ * 列を足す前の行 (空) は、いまの設定で読む。
+ *
+ * @param {object} goal goals 行
+ * @returns {number}
+ */
+function goalFyStartOf_(goal) {
+  var n = Math.floor(Number(goal && goal.fyStart));
+  return goal && goal.fyStart !== '' && n >= 1 && n <= 12 ? n : goalFyStartNow_();
+}
+
+/** その目標の期の始まりと終わり。設定の月を変えても、立てた目標の日付は動かない */
+function goalRangeOf_(goal) {
+  return goalPeriodRange(String(goal.period), goalFyStartOf_(goal));
+}
+
 /** 期の形を確かめて返す。空ならいまの期 */
 function goalPeriodClean_(period) {
   var key = String(period || '').replace(/^\s+|\s+$/g, '');
@@ -78,7 +95,8 @@ function goalPeople_() {
  */
 function goalApprovers_(who, people) {
   var boss = people.managerOf[who] || '';
-  if (boss) return [boss];
+  // 台帳を手で直して自分を上長にしていても、自分では承認しない (持ち主へ倒す)
+  if (boss && boss !== who) return [boss];
   return repoOwners_().map(goalLower_).filter(function (o) { return o && o !== who; });
 }
 
@@ -198,6 +216,50 @@ function goalItemClean_(raw, order) {
 }
 
 /**
+ * 承認を頼める形かを確かめる。**頼むとき (goalSubmit_) と、承認済みを直して頼み直すとき (goalSave_) の両方で通す。**
+ * 片方だけだと、直すだけで項目の無い目標や重みが100にならない MBO が承認待ちになる。
+ *
+ * @param {string} who 小文字
+ * @param {string} kind
+ * @param {object[]} items 項目 (weight を持つ)
+ * @param {object} people goalPeople_()
+ */
+function goalAssertSubmittable_(who, kind, items, people) {
+  if (!items.length) throw new Error('項目を1つ以上足してから頼んでください');
+  if (String(kind) === 'mbo') {
+    var sum = items.reduce(function (a, r) { return a + (Number(r.weight) || 0); }, 0);
+    if (Math.abs(sum - 100) > 0.001) {
+      throw new Error('MBO の重みは合わせて100にしてください (いまは ' + (Math.round(sum * 100) / 100) + ')');
+    }
+  }
+  if (!goalApprovers_(who, people).length) {
+    throw new Error('承認する人がいません。設定の「人」で上長を登録してください');
+  }
+}
+
+/**
+ * 保存しようとしている中身が、台帳の中身と同じか (承認済みを何も変えずに保存したとき、承認し直しにしない)。
+ *
+ * @param {object} before goals 行
+ * @param {string} kind
+ * @param {string} title
+ * @param {object[]} items goalItemClean_ の返り
+ * @returns {boolean}
+ */
+function goalSameAsStored_(before, kind, title, items) {
+  if (String(before.kind) !== kind || String(before.title) !== title) return false;
+  var stored = goalItemsOf_(before.id);
+  if (stored.length !== items.length) return false;
+  function key(v) { return v === '' || v === null || v === undefined ? '' : String(v); }
+  return items.every(function (it, i) {
+    var s = stored[i];
+    return key(it.id) === key(s.id) && it.title === String(s.title) && key(it.weight) === key(s.weight) &&
+      it.measure === String(s.measure) && key(it.target) === key(s.target) && it.unit === String(s.unit || '') &&
+      it.filter === String(s.filter || '');
+  });
+}
+
+/**
  * 目標と項目を保存する。新しく立てるときは id を空にする。
  *
  * - 下書き・差し戻しは何度でも直せる (状態はそのまま)
@@ -238,7 +300,12 @@ function goalSave_(me, input) {
       if (status === 'submitted') {
         throw new Error('承認を待っているあいだは直せません。承認されるか差し戻されてから直してください');
       }
+      // 承認済みを何も変えずに保存したなら、何も書かない (承認し直しにも、知らせにもしない)
+      if (status === 'approved' && goalSameAsStored_(before, kind, title, items)) {
+        return { id: id, resubmitted: false };
+      }
       var next = status === 'approved' ? goalNext('approved', 'edit') : status;
+      if (next === 'submitted') goalAssertSubmittable_(me, kind, items, goalPeople_());
       var patch = { kind: kind, title: title, status: next, updatedAt: now };
       // 期を変えられるのは承認の前だけ (承認したものの期が黙って動かないように)
       if (status !== 'approved' && askedPeriod) patch.period = goalPeriodClean_(askedPeriod);
@@ -250,6 +317,8 @@ function goalSave_(me, input) {
         who: me, period: goalPeriodClean_(askedPeriod), kind: kind, title: title, status: 'draft',
         submittedAt: '', approver: '', approvedAt: '', managerNote: '', selfReview: '', autoScore: '',
         finalGrade: '', gradedBy: '', gradedAt: '', createdAt: now, updatedAt: now,
+        // 立てたときの年度の始まり。あとで設定を変えても、この目標の期の日付は動かない
+        fyStart: goalFyStartNow_(),
       });
       id = Number(row.id);
     }
@@ -322,6 +391,8 @@ function goalDelete_(me, id) {
     if (st !== 'draft' && st !== 'returned') {
       throw new Error('消せるのは下書きか差し戻された目標だけです。承認を頼んだあとの目標は残ります');
     }
+    // 一度承認されたものは、承認した記録として残す (差し戻されたあとでも)
+    if (goal.approvedAt) throw new Error('一度承認された目標は消せません。直して頼み直してください');
     dbReadAll('goal_items').forEach(function (r) {
       if (Number(r.goalId) !== Number(id)) return;
       dbDelete('goal_links', 'itemId', r.id);
@@ -354,21 +425,37 @@ function goalSubmit_(me, id) {
     goalAssertOwn_(goal, me);
     var next = goalNext(String(goal.status), 'submit');
     if (!next) throw new Error('承認を頼めるのは、下書きか差し戻された目標だけです');
-    var items = goalItemsOf_(id);
-    if (!items.length) throw new Error('項目を1つ以上足してから頼んでください');
-    if (String(goal.kind) === 'mbo') {
-      var sum = items.reduce(function (a, r) { return a + (Number(r.weight) || 0); }, 0);
-      if (Math.abs(sum - 100) > 0.001) {
-        throw new Error('MBO の重みは合わせて100にしてください (いまは ' + (Math.round(sum * 100) / 100) + ')');
-      }
-    }
-    if (!goalApprovers_(me, people).length) {
-      throw new Error('承認する人がいません。設定の「人」で上長を登録してください');
-    }
+    goalAssertSubmittable_(me, String(goal.kind), goalItemsOf_(id), people);
     dbUpdate('goals', 'id', id, { status: next, submittedAt: new Date(), updatedAt: new Date() });
   });
   var row = goalGet_(id);
   goalNotifySubmitted_(row, false);
+  return row;
+}
+
+/**
+ * 承認を頼んだのを取り下げる (本人だけ)。下書きに戻し、承認する人に知らせる。
+ * これが無いと、頼んだあと上長が動かないかぎり直す道が無い。
+ *
+ * @param {string} me
+ * @param {number} id
+ * @returns {object} goals 行
+ */
+function goalWithdraw_(me, id) {
+  dbWithLock_(30000, function () {
+    var goal = goalGet_(id);
+    if (goalLower_(goal.who) !== me) throw new Error('取り下げられるのは、その目標を立てた本人だけです');
+    var next = goalNext(String(goal.status), 'withdraw');
+    if (!next) throw new Error('取り下げられるのは、承認を待っている目標だけです');
+    dbUpdate('goals', 'id', id, { status: next, updatedAt: new Date() });
+  });
+  var row = goalGet_(id);
+  try {
+    var who = goalLower_(row.who);
+    notifyGoalWithdrawn_(row, goalApprovers_(who, goalPeople_()), memberNames([who])[who] || who);
+  } catch (e) {
+    Logger.log('目標の知らせを送れませんでした: ' + e.message);
+  }
   return row;
 }
 
@@ -461,6 +548,15 @@ function goalLink_(me, itemId, issueNumber) {
     }
     var issue = issueGet(n);
     if (issue.archivedAt) throw new Error('捨てたものに入っているやることはつなげません: #' + n);
+    // 本人のやることだけ (ほかの人の済んだものをつないで進み具合を上げられないように)
+    if (!goalIssueIsOwners_(issue, me, goalIssueCreators_())) {
+      throw new Error('つなげるのは、自分が担当のやること (担当がいなければ自分が作ったもの) だけです: #' + n);
+    }
+    var range = goalRangeOf_(goal);
+    var at = goalTime_(issue.closedAt);
+    if (String(issue.state) === 'closed' && range && at !== null && at < range.start.getTime()) {
+      throw new Error('この期より前に完了したやることは、つなぐことができません: #' + n);
+    }
     var found = dbReadAll('goal_links').filter(function (r) {
       return Number(r.itemId) === Number(itemId) && Number(r.issueNumber) === n;
     })[0];
@@ -479,7 +575,7 @@ function goalLink_(me, itemId, issueNumber) {
  */
 function goalUnlink_(me, itemId, issueNumber) {
   var n = Number(issueNumber);
-  return dbWithLock_(30000, function () {
+  var out = dbWithLock_(30000, function () {
     var item = goalItemGet_(itemId);
     var goal = goalGet_(item.goalId);
     goalAssertOwn_(goal, me);
@@ -488,8 +584,17 @@ function goalUnlink_(me, itemId, issueNumber) {
       return Number(r.itemId) === Number(itemId) && Number(r.issueNumber) === n;
     });
     hits.forEach(function (r) { dbDelete('goal_links', 'id', r.id); });
-    return hits.length;
+    // 承認済みの目標から、済んだやることを外すと進み具合が下がる。承認した中身が変わるので承認し直しにする
+    // (まだのものを外すのは自由。下がらない)
+    var issue = dbFindOne('issues', 'number', n);
+    var resubmit = hits.length && String(goal.status) === 'approved' && issue && String(issue.state) === 'closed';
+    if (resubmit) {
+      dbUpdate('goals', 'id', goal.id, { status: goalNext('approved', 'edit'), submittedAt: new Date(), updatedAt: new Date() });
+    }
+    return { removed: hits.length, resubmitted: !!resubmit, goalId: Number(goal.id) };
   });
+  if (out.resubmitted) goalNotifySubmitted_(goalGet_(out.goalId), true);
+  return out.removed;
 }
 
 /**
@@ -539,6 +644,9 @@ function goalGrade_(me, id, grade, note) {
     var now = goalGet_(id);
     var next = goalNext(String(now.status), 'grade');
     if (!next) throw new Error('評価を付けられるのは、承認された目標だけです');
+    if (!goalGradeReady_(now, goalRangeOf_(now), new Date())) {
+      throw new Error('評価を付けられるのは、期が終わったか本人が振り返りを書いた目標だけです');
+    }
     dbUpdate('goals', 'id', id, {
       status: next, finalGrade: g, managerNote: text, gradedBy: me, gradedAt: new Date(),
       autoScore: auto.text, updatedAt: new Date(),
@@ -565,6 +673,35 @@ function goalFactsBase_(goals) {
     (linksByItem[k] = linksByItem[k] || []).push(r);
   });
   return { items: goals.length ? dbReadAll('goal_items') : [], linksByItem: linksByItem, issues: issues, byNumber: byNumber };
+}
+
+/**
+ * やることを作った人 (変更の履歴の create の actor、小文字)。表は1回だけ読む。
+ *
+ * @returns {Object<string, string>} やることの番号 → 作った人
+ */
+function goalIssueCreators_() {
+  var out = {};
+  dbReadAll('change_log').forEach(function (r) {
+    if (String(r.action) !== 'create') return;
+    var m = /^issue:(\d+)$/.exec(String(r.target));
+    if (m && !out[m[1]]) out[m[1]] = goalLower_(r.actor);
+  });
+  return out;
+}
+
+/**
+ * 本人のやることか。担当に本人が入っている。担当がいなければ、本人が作ったもの。
+ *
+ * @param {object} issue issues 行
+ * @param {string} who 小文字
+ * @param {Object<string, string>} creators goalIssueCreators_()
+ * @returns {boolean}
+ */
+function goalIssueIsOwners_(issue, who, creators) {
+  var assignees = issueAssignees(issue);
+  if (assignees.length) return assignees.some(function (a) { return goalLower_(a) === who; });
+  return creators[String(issue.number)] === who;
 }
 
 /**
@@ -600,7 +737,6 @@ function goalPlainList_(goals, me, people, now) {
   var ppl = people || goalPeople_();
   var when = now || new Date();
   var base = goalFactsBase_(goals);
-  var fy = goalFyStartNow_();
   var names = memberNames(goals.map(function (g) { return goalLower_(g.who); }));
   var statuses = GOAL_STATUSES();
   var measures = {};
@@ -610,7 +746,7 @@ function goalPlainList_(goals, me, people, now) {
 
   return goals.map(function (g) {
     var who = goalLower_(g.who);
-    var range = goalPeriodRange(String(g.period), fy);
+    var range = goalRangeOf_(g);
     var items = goalItemsOf_(g.id, base.items);
     var facts = {};
     items.forEach(function (it) {
@@ -618,6 +754,7 @@ function goalPlainList_(goals, me, people, now) {
       facts[String(it.id)] = {
         linked: links.map(function (l) { return base.byNumber[String(l.issueNumber)]; }).filter(Boolean),
         counted: String(it.measure) === 'label' ? goalLabelCount_(base.issues, who, it.filter, range) : 0,
+        start: range ? range.start : null,
         end: range ? range.end : null,
       };
     });
@@ -628,6 +765,7 @@ function goalPlainList_(goals, me, people, now) {
     var own = who === me;
     var decide = goalCanDecide_(me, who, ppl);
     var open = status !== 'closed';
+    var paceNow = goalPace(prog.progress, range, when);
 
     return {
       id: plainNumber(g.id),
@@ -648,7 +786,9 @@ function goalPlainList_(goals, me, people, now) {
       approvedAt: plainDate(g.approvedAt),
       managerNote: plainText(g.managerNote),
       selfReview: plainText(g.selfReview),
-      autoScoreAtGrade: plainText(g.autoScore),
+      // 台帳は '0.7' を数で持ち、'1.0' と書いても 1 で返ることがある。OKR は小数1桁に戻す
+      autoScoreAtGrade: kind === 'okr' && g.autoScore !== '' && isFinite(Number(g.autoScore))
+        ? Number(g.autoScore).toFixed(1) : plainText(g.autoScore),
       finalGrade: plainText(g.finalGrade),
       gradedBy: plainText(g.gradedBy),
       gradedAt: plainDate(g.gradedAt),
@@ -662,7 +802,7 @@ function goalPlainList_(goals, me, people, now) {
         note: plainText(auto.note),
       },
       pace: (function () {
-        var p = goalPace(prog.progress, range, when);
+        var p = paceNow;
         return { key: plainText(p.key), label: plainText(p.label), elapsed: Math.round(p.elapsed * 100) / 100 };
       })(),
       items: items.map(function (it, i) {
@@ -696,14 +836,29 @@ function goalPlainList_(goals, me, people, now) {
         };
       }),
       canEdit: own && (status === 'draft' || status === 'returned' || status === 'approved'),
-      canDelete: own && (status === 'draft' || status === 'returned'),
+      canDelete: own && (status === 'draft' || status === 'returned') && !plainDate(g.approvedAt),
       canSubmit: own && !!goalNext(status, 'submit'),
       canInput: own && open,
       canReview: own && status === 'approved',
       canDecide: decide && status === 'submitted',
-      canGrade: decide && status === 'approved',
+      canWithdraw: own && status === 'submitted',
+      // 評価は期が終わったか、本人が振り返りを書いたあと (goalGrade_ と同じ決まり)
+      canGrade: decide && status === 'approved' && goalGradeReady_(g, range, when),
     };
   });
+}
+
+/**
+ * 評価を付けてよい時か。期が終わったか、本人が振り返りを書いた (期の途中から急かさない)。
+ *
+ * @param {object} goal goals 行
+ * @param {{start: Date, end: Date}|null} range
+ * @param {Date} now
+ * @returns {boolean}
+ */
+function goalGradeReady_(goal, range, now) {
+  if (String(goal.selfReview || '').replace(/^\s+|\s+$/g, '')) return true;
+  return !!range && now.getTime() >= range.end.getTime();
 }
 
 /**
@@ -815,8 +970,9 @@ function goalReport_(me, id) {
  */
 function goalIssueLinks_(me, number) {
   var n = Number(number);
-  issueGet(n);
+  var issue = issueGet(n);
   var people = goalPeople_();
+  var ownIssue = goalIssueIsOwners_(issue, me, goalIssueCreators_());
   var goals = {};
   dbReadAll('goals').forEach(function (g) { goals[String(g.id)] = g; });
   var items = dbReadAll('goal_items');
@@ -838,7 +994,7 @@ function goalIssueLinks_(me, number) {
     });
   });
 
-  var choices = items.filter(function (it) {
+  var choices = !ownIssue ? [] : items.filter(function (it) {
     var g = goals[String(it.goalId)];
     return g && goalLower_(g.who) === me && String(g.status) !== 'closed' &&
       String(it.measure) === 'issues' && !linkedIds[String(it.id)];
@@ -858,10 +1014,14 @@ function goalIssueLinks_(me, number) {
  * @param {string} me
  * @returns {object[]}
  */
-function goalLinkable_(me) {
+function goalLinkable_(me, range) {
+  var creators = goalIssueCreators_();
   return dbReadAll('issues').filter(function (r) {
     if (r.archivedAt) return false;
-    return issueAssignees(r).some(function (a) { return goalLower_(a) === me; });
+    var at = goalTime_(r.closedAt);
+    // 期より前に完了したものはつなげない (goalLink_ が断る)
+    if (range && String(r.state) === 'closed' && at !== null && at < range.start.getTime()) return false;
+    return goalIssueIsOwners_(r, me, creators);
   }).sort(function (a, b) { return Number(b.number) - Number(a.number); }).slice(0, 200).map(function (r) {
     return { number: plainNumber(r.number), title: plainText(r.title), state: plainText(r.state) };
   });
@@ -875,7 +1035,7 @@ function goalNotifySubmitted_(goal, changed) {
     var who = goalLower_(goal.who);
     var to = goalApprovers_(who, goalPeople_());
     var name = memberNames([who])[who] || who;
-    notifyGoalSubmitted(goal, to, name, changed);
+    notifyGoalSubmitted_(goal, to, name, changed);
   } catch (e) {
     Logger.log('目標の知らせを送れませんでした: ' + e.message);
   }
@@ -884,7 +1044,7 @@ function goalNotifySubmitted_(goal, changed) {
 /** 承認した・差し戻したことを本人に知らせる */
 function goalNotifyDecided_(goal, decision) {
   try {
-    notifyGoalDecided(goal, decision);
+    notifyGoalDecided_(goal, decision);
   } catch (e) {
     Logger.log('目標の知らせを送れませんでした: ' + e.message);
   }
@@ -893,7 +1053,7 @@ function goalNotifyDecided_(goal, decision) {
 /** 評価が付いたことを本人に知らせる */
 function goalNotifyGraded_(goal) {
   try {
-    notifyGoalGraded(goal);
+    notifyGoalGraded_(goal);
   } catch (e) {
     Logger.log('目標の知らせを送れませんでした: ' + e.message);
   }

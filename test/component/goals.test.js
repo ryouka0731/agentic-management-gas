@@ -21,7 +21,7 @@ const BOSS = 'boss@example.com';
 
 const GOAL_APIS = ['apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide',
   'apiGoalLink', 'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam',
-  'apiGoalReport', 'apiGoalIssueLinks', 'apiIssueList'];
+  'apiGoalReport', 'apiGoalIssueLinks', 'apiGoalWithdraw', 'apiIssueList'];
 
 /** 目標をオンにしたサーバ。MEMBER の上長は BOSS */
 function server() {
@@ -340,5 +340,41 @@ describe('やることの詳細の「目標」', () => {
     expect(srv.ctx.dbReadAll('goal_links').map((l) => Number(l.issueNumber))).toEqual([n]);
     expect($('#side-panel .goal-linked').textContent).toContain('規程を整える / 見直しを済ませる');
     expect($('#side-panel .issue-goal-select')).toBe(null);
+  });
+});
+
+describe('取り下げ・外したときの承認し直し', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('承認を待つあいだは取り下げられ、下書きに戻る', () => {
+    const srv = server();
+    open(srv, MEMBER);
+    go();
+    createOkr();
+    $('.goal-submit').click();
+    $('.goal-withdraw').click();
+    expect($('.goal-status').textContent).toBe('下書き');
+    expect(srv.ctx.dbReadAll('goals')[0].status).toBe('draft');
+  });
+
+  it('承認済みから済んだやることを外すと、もう一度承認を待つと知らせる', () => {
+    const srv = server();
+    srv.fake._setUser(OWNER);
+    const n = srv.ctx.apiIssueCreate('A', '', []).number;
+    srv.ctx.apiIssueUpdate(n, { assignee: MEMBER });
+    open(srv, MEMBER);
+    go();
+    createOkr();
+    $('.goal-link-btn').click();
+    $('.goal-submit').click();
+    srv.fake._setUser(BOSS);
+    srv.ctx.apiGoalDecide(srv.ctx.dbReadAll('goals')[0].id, 'approve', '');
+    srv.fake._setUser(OWNER);
+    srv.ctx.apiIssueClose(n);
+    open(srv, MEMBER);
+    go();
+    $('.goal-link .btn').click();
+    expect($('#snackbar').textContent).toContain('もう一度上長の承認を待ちます');
+    expect($('.goal-status').textContent).toBe('承認を待っています');
   });
 });

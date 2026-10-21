@@ -33,7 +33,7 @@ function GOAL_KINDS() {
 function GOAL_MEASURES() {
   return [
     { key: 'issues', label: 'つないだやることの完了',
-      help: 'つないだやることのうち、期の終わりまでに完了したものの割合。予定の工数 (人日) があればその重さで数え、無ければ1件を1と数えます' },
+      help: 'つないだ自分のやることのうち、期の中に完了したものの割合。予定の工数 (人日) があればその重さで数え、無ければ1件を1と数えます' },
     { key: 'label', label: 'タグの付いたやることの数',
       help: 'あなたが担当で、期の中に完了したやることのうち、決めたタグが付いたものの数を、目標の数と比べます' },
     { key: 'number', label: '数を入れる',
@@ -63,6 +63,7 @@ function GOAL_STATUSES() {
  *
  * - submit: 本人が承認を頼む (下書き・差し戻しから)
  * - approve / return: 上長が承認する・差し戻す
+ * - withdraw: 本人が承認の頼みを取り下げる (下書きに戻る)
  * - edit: 承認済みの目標を本人が直す。もう一度承認を待つ
  * - grade: 上長が期末の評価を付ける。評価済みになり、もう動かない
  *
@@ -72,7 +73,7 @@ function GOAL_TRANSITIONS() {
   return {
     draft: { submit: 'submitted' },
     returned: { submit: 'submitted' },
-    submitted: { approve: 'approved', 'return': 'returned' },
+    submitted: { approve: 'approved', 'return': 'returned', withdraw: 'draft' },
     approved: { edit: 'submitted', grade: 'closed' },
     closed: {},
   };
@@ -252,7 +253,7 @@ function goalWeights(items) {
  * facts:
  * - linked: つないだやること (issues 行)。measure 'issues' のとき
  * - counted: 期の中に完了した、タグの付いた本人のやることの数。measure 'label' のとき
- * - end: 期の終わり (この時刻より前に完了したものだけを済んだと数える)
+ * - start / end: 期の始まりと終わり (この間に完了したものだけを済んだと数える。前の期に済んだものは数えない)
  *
  * OKR の主な結果は 1.0 で止める。MBO・KPI は GOAL_CAP() (150%) まで超えてよい。
  * つないだやることの完了は、全部済んでも 1.0 を超えない。
@@ -270,19 +271,21 @@ function goalItemProgress(item, facts, kind) {
   if (!(target > 0) || !isFinite(target)) target = 0;
 
   if (measure === 'issues') {
+    var start = goalTime_(f.start);
     var end = goalTime_(f.end);
     var rows = (f.linked || []).filter(function (r) { return r && !r.archivedAt; });
     var all = 0;
     var got = 0;
     var doneCount = 0;
     rows.forEach(function (r) {
+      // 予定の工数 (人日)。列の名前は plannedHours だが、この道具では人日で入れる
       var w = Number(r.plannedHours);
       if (!(w > 0) || !isFinite(w)) w = 1;
       all += w;
       var closed = String(r.state) === 'closed';
       var at = goalTime_(r.closedAt);
       // 期の終わりより後に済ませたものは、この期には数えない (完了の日が無い古い行は済んだと読む)
-      if (closed && (at === null || end === null || at < end)) {
+      if (closed && (at === null || ((end === null || at < end) && (start === null || at >= start)))) {
         got += w;
         doneCount++;
       }

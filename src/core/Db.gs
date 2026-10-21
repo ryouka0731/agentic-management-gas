@@ -60,7 +60,9 @@ function DB_SCHEMA() {
     // 目標 (Goal.gs。OKR・MBO・KPI。既定はオフ)。who は小文字のアドレス、period は '2026H2' / '2026Q3'。
     // 見せるのは本人と、上長の連なり (docs/dev/permissions.md)。列の意味は docs/dev/ledger-schema.md
     goals: ['id', 'who', 'period', 'kind', 'title', 'status', 'submittedAt', 'approver', 'approvedAt',
-      'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt'],
+      'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt',
+      // 立てたときの年度の始まりの月 (あとから足した。空の行はいまの設定で読む)
+      'fyStart'],
     goal_items: ['id', 'goalId', 'title', 'weight', 'measure', 'target', 'unit', 'actual', 'checked', 'filter', 'order'],
     // 項目とやることの結び付き。「あるか見てから書く」ので鍵の中で足す (goalLink_)
     goal_links: ['id', 'itemId', 'issueNumber'],
