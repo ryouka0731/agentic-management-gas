@@ -2224,8 +2224,10 @@
     var run = google.script.run
       .withSuccessHandler(function (res) {
         if (searchIndexChangedBy(name)) searchIndexStale();
+        // 思いがけない当たり (js-luck)。当たったら、いつものお祝いの代わりに「大当たり！」を出す
+        var lucky = luckAfter(name, args);
         // 楽しい演出のお祝いも、成功した api の名前だけで決める (表は js-fun の FUN_CHEERS)
-        funCheerAfter(name, args);
+        funCheerAfter(name, args, lucky);
         // 推しのほめ言葉も同じ形 (表は js-oshi の OSHI_CALL_EVENTS)。飾りが落ちても ok は止めない
         try { oshiAfter(name, args); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
         ok(res);

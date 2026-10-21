@@ -23,6 +23,9 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `prefValueOf_` で人ごとに読む (全員の `STYLE:` を1回の写しで読むので、`prefReader_` と同じ形の口を渡す)。結果の画面の切り替えも
 `apiPrefSet` を呼ぶ (書くのはここだけ、のまま)。`apiWorkStyleForget` は `apiPrefSet('style.share', null)` で既定に戻す。
 
+「思いがけない当たり」(`luck.on` / `luck.reward`) はどちらも自分の設定で既定オフ。`apiPrefs` の `effective.luck` で画面に渡し、
+当たりとノリノリタイムは画面 (js-luck) が、ご褒美は `Reward.gs` が `prefGet_('luck.reward', …)` で見る。
+
 「予定に入れる」(`calendar.*`、`PREF_CALENDAR_ITEMS_`) は `calendar.shared` だけがチームの設定 (型 `calendar` = カレンダーの ID。
 `''` は決まっていない)。汎用の欄には出さず `js-calendar` が組む。ほかは自分の設定で `calendar.plan` は既定オフ。
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。

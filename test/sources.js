@@ -41,7 +41,7 @@ export const CORE_SOURCES = [
   'src/core/Inquiry.gs', 'src/core/Brand.js', 'src/core/Notifier.gs', 'src/core/Tally.js',
   'src/core/Plain.js', 'src/core/Settings.gs', 'src/core/FocusMusic.js', 'src/core/Prefs.gs', 'src/core/Scrum.gs',
   'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/IssueTree.js',
-  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
+  'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Reward.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
   'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
   'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
@@ -55,7 +55,7 @@ export const API_SOURCES = [
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs',
-  'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Cowork.gs',
+  'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
