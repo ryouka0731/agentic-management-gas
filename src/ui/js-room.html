@@ -919,6 +919,8 @@
 
   var roomTimer = null;
   var roomGlanceTimer = null;
+  /** 頭をなでられて笑顔でいるあいだの時計 (null なら作業中の顔) */
+  var roomPatTimer = null;
   var roomReturnTo = null;
   /** 戻す先が外れていたときに探す先 (CSS の選び方) */
   var roomReturnSel = '';
@@ -1208,9 +1210,40 @@
     var fig = document.createElement('div');
     fig.className = 'room-oshi';
     stage.appendChild(fig);
+    // 推しの頁と同じく、頭を左右になでると笑顔になってひとこと言う (oshiAttachPat。オフの人影はなでても何も起きない)
+    oshiAttachPat(fig, roomPat);
 
     stage.appendChild(makeRoomFocusCorner());
     return stage;
+  }
+
+  /**
+   * 推しの頭をなでた。作業中の顔を笑顔 (ほめる) にし、「なでられた」のせりふを頭の上に出す。
+   * しばらくで作業中の顔に戻る。笑顔のあいだは何度なでても変わらない。
+   *
+   * @param {number} x
+   * @param {number} y
+   */
+  function roomPat(x, y) {
+    var el = roomEl();
+    var fig = roomFigure();
+    if (!el || !fig || !oshiOn() || roomPatTimer) return;
+    if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
+    roomGlanceTimer = null;
+    roomFillCharacter('praise');
+    var say = document.createElement('p');
+    say.className = 'room-oshi-say';
+    say.setAttribute('aria-live', 'polite');
+    say.textContent = oshiLine('pat') || '';
+    el.querySelector('.room-stage').appendChild(say);
+    if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
+    roomPatTimer = setTimeout(function () {
+      roomPatTimer = null;
+      say.remove();
+      if (!roomEl()) return;
+      roomFillCharacter('work');
+      roomScheduleGlance();
+    }, OSHI_PAT_SMILE_MS());
   }
 
   /** 部屋の絵。机・ランプ・本棚・窓 (時刻で空が変わる) */
