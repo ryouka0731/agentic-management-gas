@@ -2446,11 +2446,12 @@
         var f = document.createElement('iframe');
         f.className = 'oshi-clear-frame';
         f.title = 'クリアの動画 (YouTube)';
-        f.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
+        // 集中のしかたの「自分の曲」と同じ属性 (sandbox は付けない。docs/dev/ui.md)
+        f.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen');
         f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-        f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation');
         f.src = src;
         holder.appendChild(f);
+        holder.appendChild(makeWatchLink(focusMusicWatchUrl_({ kind: 'youtube', video: d.clear.video }), 'oshi-clear-open'));
         btn.hidden = true;
         f.focus();
       });
