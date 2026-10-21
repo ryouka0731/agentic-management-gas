@@ -81,10 +81,10 @@ describe('settings.json に書く (spinnerVerbs だけ)', () => {
     sp.writeSpinner({ claude: d.claude, value: sp.spinnerValue(VERBS) });
     const text = fs.readFileSync(settingsPath(d), 'utf8');
     expect(text).toBe(JSON.stringify({ ...before, spinnerVerbs: { mode: 'replace', verbs: VERBS } }, null, 4) + '\n');
-    // タブの字下げ・最後の改行なしもそのまま
+    // タブの字下げもそのまま。最後の改行が無いファイルでも、書いたあとは改行で終える
     fs.writeFileSync(settingsPath(d), JSON.stringify(before, null, '\t'));
     sp.writeSpinner({ claude: d.claude, value: sp.spinnerValue(VERBS) });
-    expect(fs.readFileSync(settingsPath(d), 'utf8')).toBe(JSON.stringify({ ...before, spinnerVerbs: sp.spinnerValue(VERBS) }, null, '\t'));
+    expect(fs.readFileSync(settingsPath(d), 'utf8')).toBe(JSON.stringify({ ...before, spinnerVerbs: sp.spinnerValue(VERBS) }, null, '\t') + '\n');
     // 外すときも、ほかの鍵はそのまま
     sp.writeSpinner({ claude: d.claude, value: undefined });
     expect(JSON.parse(fs.readFileSync(settingsPath(d), 'utf8'))).toEqual(before);
@@ -188,7 +188,8 @@ describe('1日1回の入れ替え (tickSpinner)', () => {
     expect(h.placed).toEqual([{ id: 'kitup-0-test', op: 'oshiSpinner', args: {} }]);
     expect(sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY + 1000 }).state).toBe('waiting');
     h.results['kitup-0-test'] = ok(['テストを祈っているのだ', '<b>捨てる</b>'], { name: 'イツキ', char: 'builtin:itsuki' });
-    expect(sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY + 2000 }).state).toBe('updated');
+    expect(sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY + 2000 }))
+      .toMatchObject({ state: 'updated', verbs: ['テストを祈っているのだ'] });
     expect(readSettings(d)).toEqual({ model: 'opus', spinnerVerbs: { mode: 'replace', verbs: ['テストを祈っているのだ'] } });
     expect(sp.spinnerState(d.home)).toMatchObject({ name: 'イツキ', char: 'builtin:itsuki', pending: null, had: false });
     // 入れ替えたあとも、off で前の形 (鍵なし) に戻る
@@ -321,5 +322,166 @@ describe('node agent.mjs oshi-spinner', () => {
     expect(on.cmds.map((c) => c.op)).toEqual(['listFiles', 'oshiSpinner']);
     expect(on.cmds[1].name).toMatch(/^kitup-/);
     expect(sp.spinnerState(d.home).pending.id).toBe(on.cmds[1].name.replace('.cmd.json', ''));
+  }, 30000);
+});
+
+describe('見直しの指摘 (doctor・off の入れ先・書き方・自分のキャラ・確かめの印)', () => {
+  it('oshi-spinner だけを使った人 (track install していない) に、doctor はフックが無いと言わない', async () => {
+    const local = await import('../kit/track/local.mjs');
+    const d = dirs();
+    turnedOn(d);
+    const r = local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW });
+    expect(r.text).not.toContain('フックがありません');
+    expect(r.text).not.toContain('track install でフック');
+    expect(r.text).toContain('番頭に作業を載せる仕掛けは入っていません');
+    // 入れた人には今までどおり見る
+    writeConfig(d.home, { queueDir: d.queue });
+    expect(local.doctor({ config: { queueDir: d.queue, from: 'x' }, home: d.home, claude: d.claude, now: NOW }).text)
+      .toContain('フックがありません');
+  });
+
+  it('settings.json が別の場所を指すリンクなら、指す先を書き換える (リンクはリンクのまま)', () => {
+    const d = dirs();
+    const real = path.join(d.root, 'dotfiles-settings.json');
+    fs.writeFileSync(real, JSON.stringify({ model: 'opus' }, null, 2) + '\n', { mode: 0o600 });
+    fs.symlinkSync(real, settingsPath(d));
+    sp.writeSpinner({ claude: d.claude, value: sp.spinnerValue(VERBS), backup: true, now: NOW });
+    expect(fs.lstatSync(settingsPath(d)).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(fs.readFileSync(real, 'utf8'))).toEqual({ model: 'opus', spinnerVerbs: sp.spinnerValue(VERBS) });
+    expect(fs.statSync(real).mode & 0o777).toBe(0o600);
+    expect(fs.readdirSync(d.root).filter((n) => n.includes('banto-tmp'))).toEqual([]);
+  });
+
+  it('書き途中の settings.json は見えない (隣の一時ファイルに書いてから入れ替える)', () => {
+    const d = dirs();
+    fs.writeFileSync(settingsPath(d), JSON.stringify({ model: 'opus' }));
+    const writes = [];
+    const renames = [];
+    const w = fs.writeFileSync;
+    const r = fs.renameSync;
+    fs.writeFileSync = (file, ...rest) => { writes.push(String(file)); return w.call(fs, file, ...rest); };
+    fs.renameSync = (a, b) => { renames.push([String(a), String(b)]); return r.call(fs, a, b); };
+    try {
+      sp.writeSpinner({ claude: d.claude, value: sp.spinnerValue(VERBS) });
+    } finally {
+      fs.writeFileSync = w;
+      fs.renameSync = r;
+    }
+    const target = fs.realpathSync(settingsPath(d));
+    expect(writes).not.toContain(target);
+    expect(writes).not.toContain(settingsPath(d));
+    expect(renames).toHaveLength(1);
+    expect(renames[0][1]).toBe(target);
+    expect(path.dirname(renames[0][0])).toBe(path.dirname(target));
+  });
+
+  it('1日1回の入れ替えは最初からいるキャラだけ。自分のキャラはせりふが変わったと知らせるだけで書かない。キャラの印が無ければ書かない', () => {
+    const d = dirs();
+    turnedOn(d);
+    const h = hands();
+    sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY });
+    h.results['kitup-0-test'] = ok(['テストの自分の字'], { char: 'mine:2', name: 'テストのソラ' });
+    const mine = sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY + 1 });
+    expect(mine.state).toBe('mine-changed');
+    expect(readSettings(d)).toEqual({ spinnerVerbs: { mode: 'replace', verbs: VERBS } });
+    sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + 2 * DAY + 2 });
+    h.results['kitup-1-test'] = ok(['テストの新しい字'], { char: undefined });
+    expect(sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + 2 * DAY + 3 }).state).toBe('skipped');
+    expect(readSettings(d)).toEqual({ spinnerVerbs: { mode: 'replace', verbs: VERBS } });
+  });
+
+  it('届いた返事を当てるときも、オフなら書かない (applySpinnerResult)', () => {
+    const d = dirs();
+    turnedOn(d);
+    writeConfig(d.home, { spinner: { ...sp.spinnerState(d.home), on: false } });
+    expect(sp.applySpinnerResult({ home: d.home, claude: d.claude, res: ok(['テストの新しい字']), now: NOW }).state).toBe('off');
+    expect(readSettings(d)).toEqual({ spinnerVerbs: { mode: 'replace', verbs: VERBS } });
+  });
+
+  it('届いたせりふが書いた値と同じなら書かない (鍵の並びが違うファイルもそのまま)', () => {
+    const d = dirs();
+    turnedOn(d);
+    const text = JSON.stringify({ spinnerVerbs: { verbs: VERBS, mode: 'replace' } }, null, 2) + '\n';
+    fs.writeFileSync(settingsPath(d), text);
+    expect(sp.applySpinnerResult({ home: d.home, claude: d.claude, res: ok(VERBS), now: NOW }).state).toBe('same');
+    expect(fs.readFileSync(settingsPath(d), 'utf8')).toBe(text);
+  });
+
+  it('壊れた settings.json でも、知らせるのは1日1回 (確かめた日時を先に覚える)', () => {
+    const d = dirs();
+    turnedOn(d);
+    fs.writeFileSync(settingsPath(d), '{ "model": ');
+    const h = hands();
+    expect(() => sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY })).toThrow('何も変えていません');
+    expect(sp.tickSpinner({ home: d.home, claude: d.claude, ...h, now: NOW + DAY + 1000 }).state).toBe('fresh');
+    expect(h.placed).toEqual([]);
+  });
+
+  it('入れ替えの確かめのときに、この確認が置いた古い命令と結果を片付ける (待っている命令は残す)', () => {
+    const d = dirs();
+    turnedOn(d);
+    const h = hands();
+    const swept = [];
+    sp.tickSpinner({ home: d.home, claude: d.claude, ...h, sweep: (keep, now) => swept.push({ keep, now }), now: NOW + DAY });
+    expect(swept).toEqual([{ keep: [], now: NOW + DAY }]);
+    sp.tickSpinner({ home: d.home, claude: d.claude, ...h, sweep: (keep) => swept.push({ keep }), now: NOW + DAY + 1 });
+    expect(swept[1]).toEqual({ keep: ['kitup-0-test'] });
+  });
+
+  it('字数は字 (コードポイント) で数える', () => {
+    expect(sp.cleanVerbs(['😀'.repeat(24), '😀'.repeat(25)])).toEqual(['😀'.repeat(24)]);
+  });
+
+  it('確かめの印はせりふから決まる', () => {
+    expect(sp.verbsPrint(VERBS)).toMatch(/^[0-9a-f]{8}$/);
+    expect(sp.verbsPrint(VERBS)).toBe(sp.verbsPrint([...VERBS]));
+    expect(sp.verbsPrint(VERBS)).not.toBe(sp.verbsPrint(['テストを考え中']));
+  });
+});
+
+describe('node agent.mjs oshi-spinner (見直しの指摘)', () => {
+  it('最初に確かめの印を出し、--yes=<印> なら同じせりふのときだけ書く。違えば書かずに止める', async () => {
+    const d = dirs();
+    const first = await run(d, ['oshi-spinner', 'on'], () => ok(VERBS));
+    expect(first.code).toBe(2);
+    const print = sp.verbsPrint(VERBS);
+    expect(first.err).toContain('--yes=' + print);
+    const changed = await run(d, ['oshi-spinner', 'on', '--yes=' + print], () => ok(['テストの別の字']));
+    expect(changed.code).toBe(1);
+    expect(changed.err).toContain('せりふが変わりました');
+    expect(changed.err).toContain('テストの別の字');
+    expect(fs.existsSync(settingsPath(d))).toBe(false);
+    const same = await run(d, ['oshi-spinner', 'on', '--yes=' + print], () => ok(VERBS));
+    expect(same.code).toBe(0);
+    expect(readSettings(d)).toEqual({ spinnerVerbs: sp.spinnerValue(VERBS) });
+    // --yes だけでも書けるが、書く前にせりふを出す
+    const plain = await run(d, ['oshi-spinner', 'on', '--yes'], () => ok(['テストの3回目']));
+    expect(plain.code).toBe(0);
+    expect(plain.err).toContain('テストの3回目');
+  }, 30000);
+
+  it('off は、on が覚えた入れ先の待っている命令を捨てる (いまの --queue ではない)', async () => {
+    const d = dirs();
+    turnedOn(d);
+    fs.writeFileSync(path.join(d.queue, 'kitup-1-pending.cmd.json'), '{"op":"oshiSpinner","args":{}}');
+    writeConfig(d.home, { spinner: { ...sp.spinnerState(d.home), pending: { id: 'kitup-1-pending', at: new Date().toISOString() } } });
+    const other = path.join(d.root, 'other-queue');
+    fs.mkdirSync(other);
+    const off = await run({ ...d, queue: other }, ['oshi-spinner', 'off'], () => ok(VERBS));
+    expect(off.code).toBe(0);
+    expect(fs.existsSync(path.join(d.queue, 'kitup-1-pending.cmd.json'))).toBe(false);
+  }, 30000);
+
+  it('~/.banto/kit から動かしていなくても、入れ替えの確かめが置いた古いファイルを片付ける', async () => {
+    const d = dirs();
+    turnedOn(d);
+    const old = Date.now() - 2 * DAY;
+    for (const n of ['kitup-' + old + '-aaaaaa.cmd.json', 'kitup-' + old + '-aaaaaa.result.json']) fs.writeFileSync(path.join(d.queue, n), '{}');
+    const fresh = 'kitup-' + Date.now() + '-bbbbbb.result.json';
+    fs.writeFileSync(path.join(d.queue, fresh), '{}');
+    await run(d, ['files'], () => ({ ok: true, result: [] }));
+    const left = fs.readdirSync(d.queue);
+    expect(left.filter((n) => n.includes('aaaaaa'))).toEqual([]);
+    expect(left).toContain(fresh);
   }, 30000);
 });

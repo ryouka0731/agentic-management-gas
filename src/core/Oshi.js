@@ -179,7 +179,8 @@ function OSHI_EVENTS() {
     // Claude Code の考え中の字 (~/.claude/settings.json の spinnerVerbs)。画面の吹き出しには出さない (spinner)。
     // 手元の道具の oshi-spinner が命令 oshiSpinner で受け取って書く。短く出すので lineMax で字数を絞る
     { key: 'spinner', label: '考え中 (Claude Code の待ち時間)', state: 'work', spinner: true, lineMax: 24,
-      kitHint: 'Claude Code が考えているあいだに出る短い言葉。いま考えている・作業している様子を、そのキャラの口調で。5〜10個' },
+      kitHint: 'Claude Code が考えているあいだに出る短い言葉。いま考えている・作業している様子を、そのキャラの口調で。5〜10個。' +
+        '{ } [ ] < > ` $ \\ は使わない' },
   ];
 }
 
@@ -413,6 +414,46 @@ function OSHI_SPINNER_MAX() {
 }
 
 /**
+ * 考え中のせりふに使えない字 (コードや JSON に見える字)。保存のときに断り (oshiCleanEventLines)、返すときに捨てる (oshiSpinnerPick)。
+ * **手元の道具の CODE_LIKE (kit/track/spinner.mjs) と同じ** (test/oshi-spinner.test.js が見ている)。
+ *
+ * @returns {RegExp}
+ */
+function OSHI_SPINNER_CODE_LIKE() {
+  return /[{}[\]<>`$\\]/;
+}
+
+/**
+ * 字の数 (コードポイント)。絵文字を2つと数えない。手元の道具も同じ数え方。
+ *
+ * @param {string} s
+ * @returns {number}
+ */
+function oshiCharCount(s) {
+  return Array.from(String(s)).length;
+}
+
+/**
+ * 場面ごとの自分のせりふを整える (oshiCleanLines を場面の上限で)。考え中 (spinner) は、使えない字があれば断る
+ * (返すときに黙って捨てると、書いたせりふが消えて見える)。
+ *
+ * @param {string} event
+ * @param {*} lines
+ * @returns {string[]}
+ */
+function oshiCleanEventLines(event, lines) {
+  var clean = oshiCleanLines(lines, oshiLineMaxOf(event));
+  if (String(event) === 'spinner') {
+    clean.forEach(function (l) {
+      if (OSHI_SPINNER_CODE_LIKE().test(l)) {
+        throw new Error('考え中のせりふには { } [ ] < > ` $ \\ を使えません: ' + l);
+      }
+    });
+  }
+  return clean;
+}
+
+/**
  * 考え中のせりふを、手元に渡せる形にそろえる。字でないもの・空を捨て、制御文字と改行・字の向きを変える印・
  * 幅の無い空白を落とし、前後の空白を取り、字数の上限を超えるものと重なりを捨て、OSHI_SPINNER_MAX 個までにする。
  * 台帳は人が手で書き換えうるので、返す前に必ず通す。
@@ -428,7 +469,7 @@ function oshiSpinnerPick(list) {
     if (typeof v !== 'string' || out.length >= OSHI_SPINNER_MAX()) return;
     var one = v.replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B\u200E\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/g, '')
       .replace(/^\s+|\s+$/g, '');
-    if (!one || one.length > max || seen[one]) return;
+    if (!one || oshiCharCount(one) > max || OSHI_SPINNER_CODE_LIKE().test(one) || seen[one]) return;
     seen[one] = true;
     out.push(one);
   });
@@ -633,7 +674,7 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '```',
     '- name: キャラクターの名前。' + text.nameMax + '字まで。実在の人の名前にしない',
     '- tone: 口調。次の key のどれか1つ: ' + OSHI_TONES().map(function (x) { return x.key + ' (' + x.label + ')'; }).join(' / '),
-    '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (' + text.linesPerEvent + '個まで)、1つ' +
+    '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (考え中 (spinner) だけは5〜10個。どれも' + text.linesPerEvent + '個まで)、1つ' +
       text.lineMax + '字まで。キャラクターの口調で書き、相手を責めない・急かさない (うまくいかなかったときも、やさしく寄り添う)'
   );
   OSHI_EVENTS().forEach(function (e) {
@@ -892,7 +933,7 @@ function oshiCleanLines(lines, max) {
   for (var i = 0; i < list.length; i++) {
     var one = String(list[i] == null ? '' : list[i]).replace(/^\s+|\s+$/g, '');
     if (!one || seen[one]) continue;
-    if (one.length > lineMax) throw new Error('せりふは1つ' + lineMax + '字までにしてください');
+    if (oshiCharCount(one) > lineMax) throw new Error('せりふは1つ' + lineMax + '字までにしてください');
     seen[one] = true;
     out.push(one);
   }
