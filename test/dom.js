@@ -251,6 +251,8 @@ export function prefsFixture(over) {
     { key: 'fun.combo', scope: 'me', type: 'bool', section: '楽しい演出', label: '打つと盛り上がる', help: '', def: false },
     { key: 'fun.words', scope: 'me', type: 'bool', section: '楽しい演出', label: '言葉に反応する', help: '', def: false },
     { key: 'fun.cheer', scope: 'me', type: 'bool', section: '楽しい演出', label: '済ませたらお祝い', help: '', def: false },
+    { key: 'luck.on', scope: 'me', type: 'bool', section: '思いがけない当たり', label: '思いがけない当たり', help: '', def: false },
+    { key: 'luck.reward', scope: 'me', type: 'bool', section: '思いがけない当たり', label: 'ご褒美と交換する', help: '', def: false },
     { key: 'focus.start', scope: 'me', type: 'bool', section: '集中のしかた', label: '今から始める', help: '', def: false },
     { key: 'focus.remind', scope: 'me', type: 'enum', section: '集中のしかた', label: '時間の知らせ', help: '',
       options: [{ value: 'end', label: '終わったときだけ' }, { value: '30', label: '30分ごと' }, { value: '60', label: '60分ごと' }],
@@ -310,6 +312,7 @@ export function prefsFixture(over) {
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
+      luck: { on: v('luck.on') === true, reward: v('luck.reward') === true },
       // 自分の曲の部品はサーバが読み解いたもの。疑似では over.musicParts でそのまま渡す
       focus: { start: v('focus.start') === true, sound: v('focus.sound') === true, remind: v('focus.remind'),
         music: v('focus.music'), musicParts: (over && over.musicParts) || null },
