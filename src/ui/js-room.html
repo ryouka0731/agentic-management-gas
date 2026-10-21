@@ -22,6 +22,11 @@
   var ROOM_DROPS_MAX = 60;
   /** 推しが手を止めて別の顔をする長さ (ミリ秒) */
   var ROOM_GLANCE_MS = 4000;
+  /** 作業中に、ときどき様子を変える (向き・傾き・ずれ・伸び) までの間 (ms)。最短と幅 */
+  var ROOM_FIDGET_MIN_MS = 12000;
+  var ROOM_FIDGET_SPAN_MS = 13000;
+  /** 傾き・ずれ・伸びを戻すまで (ms) */
+  var ROOM_FIDGET_HOLD_MS = 3500;
 
   /**
    * 流せる音。並びは画面の並び。seconds は描いて繰り返す長さ。
@@ -1088,6 +1093,8 @@
   var roomGlanceTimer = null;
   /** 頭をなでられて笑顔でいるあいだの時計 (null なら作業中の顔) */
   var roomPatTimer = null;
+  /** ときどき様子を変える時計 (roomFidget) */
+  var roomFidgetTimer = null;
   var roomReturnTo = null;
   /** 戻す先が外れていたときに探す先 (CSS の選び方) */
   var roomReturnSel = '';
@@ -1159,6 +1166,7 @@
     roomSyncRain();
     roomFillCharacter('work');
     roomScheduleGlance();
+    roomScheduleFidget();
     roomTick();
     roomTimer = setInterval(roomTick, 1000);
     var close = el.querySelector('.room-close');
@@ -1174,6 +1182,8 @@
     roomTimer = null;
     if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
     roomGlanceTimer = null;
+    if (roomFidgetTimer) clearTimeout(roomFidgetTimer);
+    roomFidgetTimer = null;
     if (!el) return;
     if (roomFullscreenElement() === el && document.exitFullscreen) {
       try {
@@ -1275,6 +1285,13 @@
       if (fig && fig.dataset.state !== 'work') roomFillCharacter('work');
     } else if (!reduced && !roomGlanceTimer) {
       roomScheduleGlance();
+    }
+    if (reduced) {
+      if (roomFidgetTimer) clearTimeout(roomFidgetTimer);
+      roomFidgetTimer = null;
+      if (fig) roomFidgetReset(fig);
+    } else if (!roomFidgetTimer) {
+      roomScheduleFidget();
     }
     roomSyncRain();
   }
@@ -1601,6 +1618,61 @@
       }
     }
     roomScheduleGlance();
+  }
+
+  /** 次に様子を変えるまで (12〜25秒)。動きを減らす設定・オフでは何もしない */
+  function roomScheduleFidget() {
+    if (roomFidgetTimer) clearTimeout(roomFidgetTimer);
+    roomFidgetTimer = null;
+    if (roomReduced() || !oshiOn()) return;
+    roomFidgetTimer = setTimeout(roomFidget, ROOM_FIDGET_MIN_MS + Math.random() * ROOM_FIDGET_SPAN_MS);
+  }
+
+  /** 傾き・ずれを外す (向きはそのまま) */
+  function roomFidgetReset(fig) {
+    fig.classList.remove('is-lean-l', 'is-lean-r', 'is-shift-l', 'is-shift-r');
+  }
+
+  /**
+   * 様子を1つ変える: 向きを変える (左右を入れ替え、次に変えるまでそのまま) / 体を傾ける / 少しずれる / 伸びをする
+   * (おうえんの絵があれば)。傾き・ずれ・伸びはしばらくで戻す。作業中の顔のときだけ (顔を上げている・なでられている最中は見送る)。
+   * 見ていないタブでは変えない。これで「動いている感じ」を出す (ときどき顔を上げる roomGlance と合わせて)
+   */
+  function roomFidget() {
+    roomFidgetTimer = null;
+    var el = roomEl();
+    var fig = roomFigure();
+    if (!el || !fig) return;
+    if (document.hidden || roomPatTimer || fig.dataset.state !== 'work') {
+      roomScheduleFidget();
+      return;
+    }
+    var moves = ['flip', 'lean', 'shift', 'stretch'];
+    var move = moves[Math.floor(Math.random() * moves.length)];
+    if (move === 'stretch' && !oshiHasPicture('cheer')) move = 'lean';
+    if (move === 'flip') {
+      fig.classList.toggle('is-flipped');
+      roomScheduleFidget();
+      return;
+    }
+    if (move === 'stretch') {
+      roomFillCharacter('cheer');
+      roomFidgetTimer = setTimeout(function () {
+        roomFidgetTimer = null;
+        var now = roomFigure();
+        if (now && now.dataset.state === 'cheer') roomFillCharacter('work');
+        roomScheduleFidget();
+      }, ROOM_FIDGET_HOLD_MS);
+      return;
+    }
+    var left = Math.random() < 0.5;
+    var cls = move === 'lean' ? (left ? 'is-lean-l' : 'is-lean-r') : (left ? 'is-shift-l' : 'is-shift-r');
+    fig.classList.add(cls);
+    roomFidgetTimer = setTimeout(function () {
+      roomFidgetTimer = null;
+      fig.classList.remove(cls);
+      roomScheduleFidget();
+    }, ROOM_FIDGET_HOLD_MS);
   }
 
   /** 窓の雨。雨を流す設定のときだけ。動きを減らす設定では止めた線、見ていないタブでは止める */
