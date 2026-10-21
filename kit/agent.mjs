@@ -370,6 +370,22 @@ const VIEWS = {
     },
     show: (r, a) => local.formatSearch(local.searchFilter(shaped(r, Array.isArray(r)), a.join(' '))),
   },
+  /*
+   * キャラ作成キットの頼み文 (推しの頁の「AI に作ってもらう」と同じ字)。番頭の定義 (Oshi.js) の字で、人が書いた字を
+   * 含まないので囲わずにそのまま出す (利用者が AI の道具に貼る。Codex に渡すとそのまま手順になる)
+   */
+  'oshi-prompt': {
+    op: 'oshiPrompt',
+    args: (a) => {
+      if (!OSHI_PROMPT_TOOLS.includes(a[0])) {
+        throw usageError('道具は ' + OSHI_PROMPT_TOOLS.join(' / ') + ' のどれかです (例: node agent.mjs oshi-prompt codex)' +
+          (a[0] ? ': ' + a[0] : ''));
+      }
+      return { tool: a[0] };
+    },
+    show: (r) => shaped(r, r && typeof r.prompt === 'string' && r.prompt).prompt,
+    plain: true,
+  },
   // 'today' などの形を渡すとその形で。渡さなければ画面で選んでいる形
   'report': {
     op: 'reportDraft',
@@ -393,7 +409,8 @@ const VIEWS = {
  *
  * - 制御文字は落とす (改行とタブは残す)。端末の表示を書き換える字や、字の向きを逆にして
  *   見た目と中身を食い違わせる字を Claude と人に見せない
- * - 読める字で出すもの (mine / advice / style / search / report) と頼みごと (work) は囲いに入れる。
+ * - 読める字で出すもの (mine / advice / style / search / report) と頼みごと (work) は囲いに入れる
+ *   (oshi-prompt だけは番頭の定義の字しか返さないので囲わない)。
  *   囲いの印には毎回変わる字を添え、中に囲いに見える行があれば行頭に \ を付けて無害にする。
  *   どちらか片方だけだと、中から囲いを閉じたふりができる
  * - ほかの JSON の返事は囲わない。字は JSON の引用符の中にあり、それが既に区切りになっている
@@ -441,6 +458,9 @@ function shaped(r, ok) {
   if (!ok) throw new Error('返事の形が違います');
   return r;
 }
+
+/** キャラ作成キットの道具。番頭の OSHI_CHARKIT_TOOLS() の key (番頭も知らない道具は断る) */
+const OSHI_PROMPT_TOOLS = ['chatgpt', 'gemini', 'claude', 'codex'];
 
 /** 日報の形。番頭の REPORT_TEMPLATES() の key と custom (番頭も知らない形は断る) */
 const REPORT_KINDS = ['three', 'today', 'plain', 'custom'];
@@ -812,6 +832,9 @@ function usage() {
   lines.push('  search <語…>           文書・やること・確認依頼などを題名で探す');
   lines.push('  report [today]         今日の日報の下書き (形を渡さなければ画面で選んでいる形)');
   lines.push('  doctor                 番頭に頼まずに、設定・入れ先・返事・道具の版・フックを点検する');
+  lines.push('');
+  lines.push('推しのキャラを AI に作ってもらう:');
+  lines.push('  oshi-prompt <' + OSHI_PROMPT_TOOLS.join('|') + '>   頼み文を出す (スキル banto-oshi-chara)');
 
   lines.push('');
   lines.push('例:');
@@ -886,11 +909,13 @@ function entryArgs(entry, rest) {
   }
 }
 
-/** 返事を出す。見せ方のある命令 (VIEWS) と work は囲んで出す */
+/** 返事を出す。見せ方のある命令 (VIEWS) と work は囲んで出す (番頭の定義の字だけを返す plain の命令は囲わない) */
 function printResult(name, view, res, rest) {
   // read の中身は write で書き戻すので、手を加えない
   const shown = name === 'read' ? res : stripControl(res);
-  if (view && shown.ok) {
+  if (view && view.plain && shown.ok) {
+    process.stdout.write(showView(view, shown.result, rest) + '\n');
+  } else if (view && shown.ok) {
     process.stdout.write(fenced(showView(view, shown.result, rest)) + '\n' +
       (view.hint ? view.hint + '\n' : ''));
   } else if (name === 'work' && shown.ok) {
