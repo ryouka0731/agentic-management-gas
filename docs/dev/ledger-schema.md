@@ -26,6 +26,10 @@
 `charId` は `oshiCharCreate_` が鍵の中で決め、出した最大をスクリプトプロパティ `OSHI_CHAR_HIGH:<アドレス>` に覚えて
 **消した番号を次のキャラに回さない** (回すと、自分の設定 `oshi.char` が指していた消したキャラが新しいキャラにすり替わる)。
 `id` は今までどおり表ごとの通し番号 (`dbAppendNumbered`)。
+`oshi` の末尾の `profile` は自分のキャラのプロフィール (検査を通した JSON。`oshiProfileValid_`)。**足す前の行は空のままで、
+プロフィール無しとして読む** (`oshiProfileParse_`。読めない・検査に通らない値も無いことにし、次に書き直すときに空にする)。
+いちばん大きいもの (40項目) でも 1万字ほどで、セルの上限 (5万字) に収まる (`test/oshi-profile.test.js`)。
+最初からいるキャラのプロフィールは台帳に置かない (`docs/dev/permissions.md`)。
 
 `goals` / `goal_items` / `goal_links` (目標。既定はオフ) は `id` をどれも `dbAppendNumbered` / `dbAppendNumberedMany` で振る
 表ごとの通し番号にしている (目標ごとに振ると `dbUpdate` / `dbDelete` が関係のない目標の項目を書き換える)。`who` は小文字のアドレス。

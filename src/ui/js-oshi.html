@@ -938,6 +938,7 @@
     if (c) {
       box.appendChild(makeOshiStates(d, c));
       box.appendChild(makeOshiLines(d, c));
+      box.appendChild(makeOshiCharProfileEditor(box, d, c));
     }
 
     var grow = document.createElement('section');
@@ -948,6 +949,8 @@
       .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜3) を入れると、' +
       'ホームと吹き出しでその段の姿になります。'));
     box.appendChild(grow);
+    if (d.cleared && d.clear) box.appendChild(makeOshiClear(d));
+    box.appendChild(makeOshiReveal(d));
 
     if (!(d.mine || []).length) return;
     var bye = document.createElement('section');
@@ -1393,6 +1396,241 @@
       sec.appendChild(item);
     });
     return sec;
+  }
+
+  // ----- プロフィール (Lv で少しずつ分かる) と、クリア -----
+
+  /**
+   * いま使うキャラのプロフィール。どこまで見せるかはサーバが Lv で決めて返す (reveal)。届いていない項目は
+   * サーバが名前も中身も返さないので、???と「Lv ◯ で分かる」を出す。
+   *
+   * @param {object} d apiOshiGet
+   * @returns {HTMLElement}
+   */
+  function makeOshiReveal(d) {
+    var r = d.reveal || { items: [], open: 0, total: 0 };
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-reveal';
+    sec.appendChild(oshiHeading('プロフィール'));
+    var lv = d.growth ? Number(d.growth.level) || 1 : 1;
+    if (!(r.items || []).length) {
+      sec.appendChild(oshiNote(d.kind === 'builtin'
+        ? (d.name || '') + ' のプロフィールは、まだありません。最初からいるキャラのプロフィールは管理者が決めます。'
+        : 'このキャラのプロフィールは、まだありません。上の「プロフィール (JSON)」で書けます。'));
+    } else {
+      sec.appendChild(oshiNote('いまの Lv ' + lv + '。Lv が上がると、少しずつ分かります (分かったもの ' + r.open + ' / ' +
+        r.total + ')。' + (d.cleared ? '実績を全部取ったので、全部分かります。' : '')));
+      var list = document.createElement('ul');
+      list.className = 'oshi-reveal-list';
+      r.items.forEach(function (it) {
+        var li = document.createElement('li');
+        li.className = 'oshi-reveal-item';
+        li.dataset.lv = String(it.lv);
+        li.dataset.open = it.open ? 'true' : 'false';
+        var head = document.createElement('strong');
+        head.textContent = it.open ? it.label : '???';
+        li.appendChild(head);
+        var body = document.createElement('p');
+        body.className = it.open ? 'oshi-reveal-text' : 'row-meta';
+        body.textContent = it.open ? it.text : 'Lv ' + it.lv + ' で分かる';
+        li.appendChild(body);
+        list.appendChild(li);
+      });
+      sec.appendChild(list);
+    }
+    if (d.achOn === false) {
+      sec.appendChild(oshiNote('Lv は実績を取ると上がります。いまは設定の「実績を集める」が切ってあるので、Lv は上がりません。'));
+    }
+    return sec;
+  }
+
+  /**
+   * クリア (実績を全部取った)。キャラのお祝いの言葉 (無ければ口調の「実績を全部取った」のせりふ) と、動画があれば
+   * 「動画を見る」。**押すまで何も読み込まない** (集中のしかたの「自分の曲」と同じ決まり)。動画の id はクリアしたときだけ
+   * サーバが返す。
+   *
+   * @param {object} d apiOshiGet
+   * @returns {HTMLElement}
+   */
+  function makeOshiClear(d) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-clear';
+    sec.appendChild(oshiHeading('クリア'));
+    sec.appendChild(oshiNote('実績を全部取りました。おめでとうございます。'));
+    var line = document.createElement('p');
+    line.className = 'oshi-clear-line';
+    line.textContent = (d.name ? d.name + ': ' : '') + (d.clear.line || oshiLine('clear'));
+    sec.appendChild(line);
+    var src = d.clear.video ? focusMusicEmbedUrl_({ kind: 'youtube', video: d.clear.video }) : '';
+    if (src) {
+      var holder = document.createElement('div');
+      holder.className = 'oshi-clear-video';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn oshi-clear-play';
+      btn.textContent = '動画を見る';
+      btn.addEventListener('click', function () {
+        var f = document.createElement('iframe');
+        f.className = 'oshi-clear-frame';
+        f.title = 'クリアの動画 (YouTube)';
+        f.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
+        f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation');
+        f.src = src;
+        holder.appendChild(f);
+        btn.hidden = true;
+      });
+      sec.appendChild(btn);
+      sec.appendChild(holder);
+      sec.appendChild(oshiNote('押すと YouTube (youtube-nocookie.com) の再生機を読み込みます。押すまでは何も読み込みません。'));
+    }
+    return sec;
+  }
+
+  /**
+   * Lv が from から to に上がったとき、新しく分かるプロフィールの項目の数 (実績の知らせに添える)。
+   * 数えるのは届いた返事にある Lv だけ (中身はサーバが次に返す)。
+   *
+   * @param {number} from
+   * @param {number} to
+   * @returns {number}
+   */
+  function oshiProfileOpening(from, to) {
+    if (!oshiOn() || !oshiData || !oshiData.reveal || !(from > 0)) return 0;
+    return (oshiData.reveal.items || []).filter(function (it) {
+      return !it.open && it.lv > from && it.lv <= to;
+    }).length;
+  }
+
+  /** Lv が変わったとき、出ている推しの頁のプロフィールとクリアを取り直して描き直す (中身はサーバが返す) */
+  function oshiRevealRefresh() {
+    if (!document.querySelector('.oshi-reveal')) return;
+    oshiReload(function (nd) {
+      var old = document.querySelector('.oshi-reveal');
+      if (!old || !old.parentNode) return;
+      var clear = document.querySelector('.oshi-clear');
+      if (clear) clear.remove();
+      if (nd.cleared && nd.clear) old.parentNode.insertBefore(makeOshiClear(nd), old);
+      old.parentNode.replaceChild(makeOshiReveal(nd), old);
+    });
+  }
+
+  /**
+   * 自分のキャラのプロフィールを JSON で書く欄。形の説明はサーバの上限 (reveal.limits) から出す。
+   *
+   * @param {HTMLElement} box
+   * @param {object} d
+   * @param {object} c 自分のキャラ
+   * @returns {HTMLElement}
+   */
+  function makeOshiCharProfileEditor(box, d, c) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-profile-editor';
+    sec.dataset.charId = String(c.charId);
+    sec.appendChild(oshiHeading(oshiMineName(c) + ' のプロフィール (JSON)'));
+    sec.appendChild(oshiNote(oshiProfileHelp((d.reveal && d.reveal.limits) || null)));
+    var area = document.createElement('textarea');
+    area.className = 'oshi-lines-input oshi-profile-json';
+    area.rows = 8;
+    area.value = c.profileJson || '';
+    area.placeholder = '{"items": [{"lv": 2, "label": "好きなもの", "text": "…"}], "clearLine": "…"}';
+    area.setAttribute('aria-label', oshiMineName(c) + ' のプロフィール (JSON)');
+    sec.appendChild(area);
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn oshi-profile-json-save';
+    save.textContent = 'プロフィールを保存';
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      call('apiOshiSetCharProfile', [c.charId, area.value], function (res) {
+        save.disabled = false;
+        showSnack(res.items ? 'プロフィールを保存しました (' + res.items + ' 項目)' : 'プロフィールを外しました', { kind: 'ok' });
+        oshiReload(function (nd) { if (box.isConnected) drawOshiPage(box, nd); });
+      }, failEnable(save, '保存できませんでした: '));
+    });
+    sec.appendChild(save);
+    return sec;
+  }
+
+  /**
+   * プロフィールの JSON の書き方 (設定の管理者の欄と自分のキャラの欄で同じ字)。
+   *
+   * @param {?object} lim reveal.limits
+   * @returns {string}
+   */
+  function oshiProfileHelp(lim) {
+    var l = lim || { itemsMax: 40, labelMax: 20, textMax: 200, lvMin: 2, lvMax: 99, clearLineMax: 200 };
+    return 'items に {"lv": 分かる Lv, "label": 見出し, "text": 中身} を ' + l.itemsMax + ' 個まで並べます (lv は ' + l.lvMin +
+      '〜' + l.lvMax + '、見出しは ' + l.labelMax + ' 字・中身は ' + l.textMax + ' 字まで)。clearLine は実績を全部取ったときの' +
+      'お祝いの言葉 (' + l.clearLineMax + ' 字まで)、clearVideo はそのとき見られる YouTube の動画のリンク (任意)。空にして保存すると外します。';
+  }
+
+  /**
+   * 設定の画面の管理者の欄「最初からいるキャラのプロフィール」。**中身はリポジトリに置かない** (サーバのスクリプト
+   * プロパティにだけある)。読むのも書くのも管理者だけ (apiOshiBuiltinProfiles / apiOshiBuiltinProfileSet)。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeOshiBuiltinProfileSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section oshi-builtin-profiles';
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('最初からいるキャラのプロフィール '));
+    head.appendChild(makePill('管理者だけ', 'chip'));
+    box.appendChild(head);
+    box.appendChild(oshiNote('推しの頁で、Lv が上がるにつれて少しずつ分かるプロフィールです。中身はこの番頭の中 (スクリプトの設定) にだけ置きます。' +
+      oshiProfileHelp(null)));
+    var body = document.createElement('div');
+    body.className = 'oshi-builtin-profiles-body';
+    box.appendChild(body);
+    showSkeleton(body, 'list', 2);
+    call('apiOshiBuiltinProfiles', [], function (res) {
+      body.textContent = '';
+      ((res && res.chars) || []).forEach(function (c) { body.appendChild(makeOshiBuiltinProfileField(c)); });
+    }, failInto(body));
+    return box;
+  }
+
+  /**
+   * 最初からいるキャラ1人ぶんの JSON の欄と「保存」。
+   *
+   * @param {{key: string, name: string, json: string, items: number}} c
+   * @returns {HTMLElement}
+   */
+  function makeOshiBuiltinProfileField(c) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field oshi-builtin-profile';
+    wrap.dataset.char = c.key;
+    var label = document.createElement('label');
+    label.className = 'oshi-field';
+    var title = document.createElement('span');
+    title.textContent = c.name + (c.items ? ' (' + c.items + ' 項目)' : ' (まだありません)');
+    label.appendChild(title);
+    var area = document.createElement('textarea');
+    area.className = 'oshi-lines-input oshi-builtin-profile-json';
+    area.rows = 8;
+    area.value = c.json || '';
+    label.appendChild(area);
+    wrap.appendChild(label);
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn oshi-builtin-profile-save';
+    save.textContent = '保存';
+    save.setAttribute('aria-label', c.name + ' のプロフィールを保存');
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      call('apiOshiBuiltinProfileSet', [c.key, area.value], function (res) {
+        save.disabled = false;
+        title.textContent = res.name + (res.items ? ' (' + res.items + ' 項目)' : ' (まだありません)');
+        area.value = res.json || '';
+        // 使っている人の推しの頁も、次に開いたときに取り直す
+        oshiData = null;
+        showSnack(res.items ? res.name + ' のプロフィールを保存しました' : res.name + ' のプロフィールを外しました', { kind: 'ok' });
+      }, failEnable(save, '保存できませんでした: '));
+    });
+    wrap.appendChild(save);
+    return wrap;
   }
 
   // ----- 設定の「使うキャラ」 -----

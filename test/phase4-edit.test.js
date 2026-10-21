@@ -494,6 +494,21 @@ describe('画面に渡せる形か', () => {
     return n;
   }
 
+  /** 推しのプロフィール (作り話)。動画は YouTube の動画1本 */
+  const OSHI_PROFILE = {
+    items: [{ lv: 2, label: 'テストの好物', text: 'テスト用の焼きそば' }, { lv: 50, label: 'テストのひみつ', text: 'テスト' }],
+    clearLine: 'テストのお祝い', clearVideo: 'https://youtu.be/dQw4w9WgXcQ',
+  };
+
+  /** 最初からいるキャラ (タク) にプロフィールを入れ、本人 (持ち主) が実績を全部取った形にする */
+  function oshiProfileReady(ctx) {
+    ctx.apiOshiBuiltinProfileSet('taku', JSON.stringify(OSHI_PROFILE));
+    const got = {};
+    ctx.ACHIEVEMENTS().forEach((a) => { got[a.key] = '2026-10-21'; });
+    ctx.PropertiesService.getScriptProperties().setProperty('ACH:tester@example.com',
+      JSON.stringify({ days: { n: 1, last: '2026-10-21' }, got }));
+  }
+
   /** 目標をオンにし、本人 (持ち主) の目標を承認まで進める。上長は boss。日時の欄が全部埋まる */
   function goalReady(ctx, env) {
     ctx.apiPrefSet('goals.enabled', true);
@@ -601,6 +616,26 @@ describe('画面に渡せる形か', () => {
       if (!out.unlocked.length || !out.next.length) throw new Error('取った実績と次の実績が空のまま検査されている');
       return out;
     }],
+    // 推しのプロフィールとクリア。全部の実績を取った人に、項目・お祝いの言葉・動画が埋まった形を検査する
+    ['apiOshiGet', (ctx) => {
+      oshiProfileReady(ctx);
+      const out = ctx.apiOshiGet();
+      if (!out.cleared || !out.clear.video || !out.reveal.items.length) throw new Error('クリアとプロフィールが空のまま検査されている');
+      return out;
+    }],
+    ['apiOshiSetCharProfile', (ctx) => {
+      const c = ctx.apiOshiCharCreate('ルナ', 'polite').charId;
+      const out = ctx.apiOshiSetCharProfile(c, JSON.stringify(OSHI_PROFILE));
+      if (!out.items || !out.profileJson) throw new Error('プロフィールが空のまま検査されている');
+      return out;
+    }],
+    ['apiOshiBuiltinProfiles', (ctx) => {
+      oshiProfileReady(ctx);
+      const out = ctx.apiOshiBuiltinProfiles();
+      if (!out.chars[0].json) throw new Error('プロフィールが空のまま検査されている');
+      return out;
+    }],
+    ['apiOshiBuiltinProfileSet', (ctx) => ctx.apiOshiBuiltinProfileSet('taku', JSON.stringify(OSHI_PROFILE))],
     ['apiCalendarPlan', (ctx, env) => {
       calendarReady(ctx, env);
       const out = ctx.apiCalendarPlan();

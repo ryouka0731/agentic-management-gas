@@ -51,7 +51,7 @@ function DB_SCHEMA() {
       'endedAt', 'result', 'openedAt', 'extendedMinutes', 'proofKind', 'columnAtStart'],
     // 推し (自分だけのキャラクター。既定はオフ)。名前・口調・自分のせりふは1人1行、
     // 表情の画像は中身を objects/ に置き、どの人のどの表情かだけをここに書く
-    oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId'],
+    oshi: ['id', 'who', 'name', 'tone', 'lines', 'updatedAt', 'charId', 'profile'],
     oshi_images: ['id', 'who', 'state', 'sha', 'mime', 'updatedAt', 'charId'],
     // 成果の数 (Outcomes.gs)。日ごとのチーム全体の数だけで、人の名前もアドレスも持たない。
     // 1日1回の片付けが、直近8日を数え直して日ごとに上書きする。列の意味は docs/dev/ledger-schema.md

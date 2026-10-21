@@ -482,6 +482,8 @@
     if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
     // 成果の数は管理者だけが見る (apiOutcomes も管理者でなければ断る)
     if (settings.canEdit) team.appendChild(makeOutcomesSettings());
+    // 最初からいるキャラのプロフィールも管理者だけ (中身はスクリプトの設定にだけ置く。js-oshi)
+    if (settings.canEdit) team.appendChild(makeOshiBuiltinProfileSettings());
     settingsEl.appendChild(team);
     prefFocusPending();
     refreshCalendarStatus();

@@ -215,7 +215,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **集中の画面は CSS で隠すだけ** (`body.focus-mode`)。右のペインも掴み手も知らせの数も、状態は変えずに見えなくする。
   Esc で戻り、集中を終えたら必ず戻す (`focusClear`)
 - 置き場 (`#focus-dock`) は初めて要るときに作る。字は `textContent` だけ。色はトークンだけ
-- **自分の曲 (`focus.music` / `focus.musicUrl`) は、この画面が外から取ってくるただ1つの例外** (`CLAUDE.md` の「制約」)。
+- **自分の曲 (`focus.music` / `focus.musicUrl`) は、この画面が外から取ってくる2つの例外の1つ** (もう1つは推しのクリアの動画。
+  同じ決まりで作る。`CLAUDE.md` の「制約」)。
   YouTube / SoundCloud の公式の埋め込みの再生機を `<iframe>` で置く。守ること:
   - **「読み込む」を押すまで何も置かない** (`makeFocusMusicControls` は枠を作らない。`focusMusicLoad` は押した聞き手からだけ呼ぶ)。
     設定の画面でリンクを確かめるときも読み込まない
@@ -359,7 +360,15 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     (`oshiChosenState`) には入れない
   - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
-- 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`
+- **プロフィール (`.oshi-reveal`) とクリア (`.oshi-clear`) は返事を描くだけ。** どこまで分かるかは `apiOshiGet` の `reveal`
+  (サーバが Lv で決める。届いていない項目は Lv だけ届くので ??? と「Lv ◯ で分かる」)、クリアは `cleared` / `clear`。
+  お祝いの言葉が無いキャラは場面 `clear` (実績を全部取った) のせりふ。**動画は「動画を見る」を押した聞き手の中でだけ iframe を作る**
+  (URL は `focusMusicEmbedUrl_` (js-focus の写し) で id から組み直す。youtube-nocookie。押すまで何も読み込まない)。
+  実績で Lv が変わったら `achSyncOshi` が `oshiRevealRefresh` で取り直し、知らせには `oshiProfileOpening` の数を添える
+- 自分のキャラのプロフィールは JSON の欄 (`makeOshiCharProfileEditor` → `apiOshiSetCharProfile`)。最初からいるキャラのぶんは設定の
+  画面の管理者の節 (`makeOshiBuiltinProfileSettings`。`settings.canEdit` のときだけ組み、`apiOshiBuiltinProfiles` を取る)
+- 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`。
+  プロフィールとクリアは `test/component/oshi-profile.test.js` と `test/oshi-profile.test.js`
 
 ## 実績 (`js-ach`)
 
