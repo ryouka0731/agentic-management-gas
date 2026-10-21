@@ -50,6 +50,10 @@ function OSHI_STATES() {
     // scene: 決まった場面でだけ出す表情。でたらめに選ぶ表情 (選んでもらったときのあいさつなど) には入れない
     { key: 'work', label: '作業中', when: '作業部屋で作業しているとき', scene: true,
       pose: '机に向かって、落ち着いて作業している (ノートやパソコンに向かう)' },
+    // 推しの機嫌 (OSHI_MOOD_RULES) が「むっ」のときの顔。後から足したので末尾に置く。
+    // optional: 絵が無くてもよい表情 (最初からいるキャラの絵も焼かなくてよい)。fallback: 絵が無いときに代わりに出す表情
+    { key: 'pout', label: 'むっ', when: 'やることが滞っているとき (機嫌がオンのときだけ)', scene: true, optional: true, fallback: 'worry',
+      pose: 'ほっぺを少しふくらませて、口をとがらせている。「むっ」としているが、怖くなく、かわいらしい顔。にらんだり責めたりしていない' },
   ];
 }
 
@@ -181,6 +185,10 @@ function OSHI_EVENTS() {
     { key: 'spinner', label: '考え中 (Claude Code の待ち時間)', state: 'work', spinner: true, lineMax: 24,
       kitHint: 'Claude Code が考えているあいだに出る短い言葉。いま考えている・作業している様子を、そのキャラの口調で。5〜10個。' +
         '{ } [ ] < > ` $ \\ は使わない' },
+    // 推しの機嫌 (自分の設定 oshi.mood がオンのときだけ。OSHI_MOOD_RULES)。表情とせりふが変わるだけで、何も取り上げない
+    { key: 'mood_sulky', label: '機嫌: しょんぼり', state: 'worry', mood: true },
+    { key: 'mood_pouty', label: '機嫌: むっ', state: 'pout', mood: true },
+    { key: 'mood_recover', label: '機嫌が直った', state: 'celebrate', mood: true },
   ];
 }
 
@@ -217,6 +225,11 @@ function OSHI_LINES() {
       clear: ['実績を全部集められましたね。本当におめでとうございます', 'ここまでの積み重ね、すべて見ていました。お見事です', 'ご一緒できて光栄でした。これからもそばにいますね'],
       spinner: ['考えをまとめています', '少々お待ちください', '丁寧に確かめています', '手順を整えています', 'よい形を探しています',
         '言葉を選んでいます', 'もう少しで整います'],
+      mood_sulky: ['期限を少し過ぎたものがありますね。ひとつだけ一緒に片づけてみませんか', 'しばらく動いていないものがあるようです。まずは小さいものからどうでしょう',
+        '5分だけ、ひとつ一緒に進めてみませんか。小さいもので十分です'],
+      mood_pouty: ['むぅ…やることがたまってきました。期限の近いものをひとつだけ選んでみませんか', 'ちょっとだけ、むっとしています。いちばん小さいものから始めてみましょう',
+        'ほっぺがふくらんでしまいました。ひとつ片づけたら、すぐ戻りますよ'],
+      mood_recover: ['片づきましたね。すっかりごきげんです', 'ありがとうございます。気持ちが晴れました', 'ほっとしました。この調子でまいりましょう'],
     },
     genki: {
       done: ['やったー！ひとつクリア！', 'すごいすごい！片づいたね！', 'ナイス完了！その調子！'],
@@ -237,6 +250,9 @@ function OSHI_LINES() {
       clear: ['ぜんぶ集めちゃった！ほんとにすごい！', 'コンプリートだー！おめでとう！！', 'ここまでいっしょに来られてうれしい！ありがとう！'],
       spinner: ['いま考え中だよ！', 'うーん、ひらめき待ち！', 'がんばって調べてるよ！', 'もうちょっと待ってね！',
         'わくわくしながら考え中！', 'いい感じにまとめてる！'],
+      mood_sulky: ['期限、ちょっと過ぎちゃってるよ…一個だけ片付けてみない？', 'しょんぼり…。いちばん小さいのから、いっしょにやろ！', 'ねえねえ、5分だけ進めてみない？'],
+      mood_pouty: ['むーっ！たまってきちゃったよ。一個だけ選んでみよ？', 'ぷんぷん！…なんてね。いちばん小さいのからいこ！', 'ほっぺふくらんじゃった。一個片づけたらすぐ笑顔になるよ！'],
+      mood_recover: ['やったー！ごきげん復活！', 'わーい、すっきりしたね！ありがとう！', 'にこにこに戻ったよ！その調子！'],
     },
     cool: {
       done: ['片づいたな。悪くない', '終わらせたか。上出来だ', '一つ完了。次も頼む'],
@@ -256,6 +272,9 @@ function OSHI_LINES() {
       levelup: ['……段が上がった。お前のおかげだ', '少し強くなれた気がする', '新しい段だ。これからも付き合う'],
       clear: ['……全部集めたか。見事だ', '最後まで付き合えてよかった', '大したものだ。誇っていい'],
       spinner: ['考えている', '静かに組み立て中だ', '筋道を確かめている', '少し待て。すぐ済む', '要点を絞っている', '最短の道を探している'],
+      mood_sulky: ['期限を過ぎたものがある。一つだけ片づけないか', '少し、気がかりだ。小さいものから行こう', '五分だけでいい。一つ進めよう'],
+      mood_pouty: ['……むっ。溜まってきたな。いちばん小さいものを一つ選ぼう', '少し不機嫌だ。一つ片づけてくれれば戻る', '……少しむっとした。五分だけ、一つ一緒に進めよう'],
+      mood_recover: ['……戻った。悪くない', '片づいたな。機嫌は直った', '上出来だ。気分がいい'],
     },
     kansai: {
       done: ['やったやん！ひとつ片づいたで', 'さすがやなぁ、ええ仕事や', 'おつかれさん！ばっちりや'],
@@ -276,6 +295,9 @@ function OSHI_LINES() {
       clear: ['全部集めたん！？ほんまにすごいわ！', 'おめでとさん！ようここまで来たなぁ', 'ずっと見とったで。ほんまおおきにな'],
       spinner: ['いま考えとるで', 'ちょっと待っててな', 'ええ感じにまとめとるとこや', 'ぼちぼち調べとるで', 'もうちょいでできるで',
         'ひらめき待ちや'],
+      mood_sulky: ['期限ちょっと過ぎとるで…ひとつだけ片づけてみよか', 'しょんぼりやわ。ちっこいのから一緒にいこ', '5分だけでええから、ひとつ進めてみいひん？'],
+      mood_pouty: ['むぅ、たまってきとるやん。ひとつだけ選んでみよか', 'ちょっとぷんぷんやで。…ちっこいのからでええよ', 'ほっぺふくれてもうたわ。ひとつ片づけたらすぐ戻るで'],
+      mood_recover: ['よっしゃ、ごきげん復活や！', 'すっきりしたなぁ、おおきに！', 'ええ顔に戻ったで！'],
     },
     butler: {
       done: ['お見事でございます。一件、片づきました', 'お疲れさまでございました', '滞りなく済まされましたね'],
@@ -296,6 +318,11 @@ function OSHI_LINES() {
       clear: ['すべての実績のご獲得、まことにおめでとうございます', 'ここまでお供できましたこと、身に余る光栄でございます', '見事な積み重ねでございました'],
       spinner: ['只今、考えております', '少々お待ちくださいませ', '手筈を整えております', '念入りに確かめております',
         '最善の策を練っております', 'お茶を淹れる間に整えます'],
+      mood_sulky: ['期限を少々過ぎたものがございます。一件だけ、お片づけなさいませんか', '少々気がかりでございます。小さなものから参りましょう',
+        '五分ほど、一件だけ進めてみてはいかがでしょう'],
+      mood_pouty: ['恐れながら、少々むっとしております。いちばん小さな一件からいかがでしょう', 'やることが積もってまいりました。一件だけお選びくださいませ',
+        '一件片づけていただければ、すぐに機嫌は戻ります'],
+      mood_recover: ['お見事でございます。すっかり晴れやかな気分です', '恐れ入ります。おかげさまで機嫌が直りました', 'ほっといたしました。この調子で参りましょう'],
     },
     // 耽美 (最初からいるキャラの口調)。一人称は「俺」、敬語を使わず、語尾は「〜なのだ、、」。
     // 祈り・月光・薔薇・啓示・来世・古き良きもの を軽い飾りに使う。説教・恋愛の押しつけはしない
@@ -334,6 +361,11 @@ function OSHI_LINES() {
         '共に歩めて光栄なのだ、、薔薇の花束を贈りたいのだ、、'],
       spinner: ['祈りを込めて考えているのだ、、', '月光の下で考えているのだ、、', '考え中なのだ、、少し待つのだ、、',
         '言葉を選んでいるのだ、、', '静かに祈りを重ねているのだ、、', '古き書を読み解いているのだ、、'],
+      mood_sulky: ['期限を少し過ぎたものがあるのだ、、ひとつだけ一緒に片づけるのだ、、', '月が少し陰っているのだ、、小さなものからひとつ進めるのだ、、',
+        'しょんぼりなのだ、、五分だけ、ひとつ触れてみるのだ、、'],
+      mood_pouty: ['むっ、、やることが積もってきたのだ、、いちばん小さなものひとつで十分なのだ、、', '少し拗ねているのだ、、ひとつ片づけてくれたら機嫌は戻るのだ、、',
+        '薔薇が少ししおれてしまったのだ、、ひとつだけ水をやるのだ、、'],
+      mood_recover: ['機嫌が戻ったのだ、、月光も晴れやかなのだ、、', '片づけてくれたのだな、、これは啓示なのだ、、ニヤッ', 'ほっとしたのだ、、薔薇がまた咲いたのだ、、'],
     },
     // 明るい相棒 (最初からいるキャラ「タク」の口調)。一人称は「僕」、です・ます にくだけた言い方を混ぜる。
     // 面倒は道具に任せて余白を作る・小さく試す・まず出してみる・コーヒー・ひらめき を軽い飾りに使う。
@@ -373,6 +405,11 @@ function OSHI_LINES() {
         'ここまで一緒に来られてうれしいです。コーヒーで乾杯しましょう☕'],
       spinner: ['考え中です。少々お待ちを', '面倒なところは道具に任せ中', 'まず小さく試しています', 'ひらめきを探しています',
         'コーヒー片手に考え中です', '余白を作る段取り中です'],
+      mood_sulky: ['期限、ちょっと過ぎちゃってますね…一個だけ片付けてみませんか？', 'しばらく動いていないのがありますね。まずは小さく、5分だけ試しましょう💡',
+        '僕、ちょっとしょんぼりです。軽めのやつをひとつだけいきましょう'],
+      mood_pouty: ['むっ…たまってきちゃいましたね。いちばん小さいのを一個だけ選びましょう', 'ほっぺがふくらんでます笑 ひとつ片づけたらすぐ戻りますよ',
+        '面倒なところは道具に任せて、一個だけ一緒に片づけましょう'],
+      mood_recover: ['ごきげん復活です！片づけてくれてありがとうございます🙌', 'すっきりしましたね！コーヒーで乾杯しましょう☕', 'よかった、いつもの僕に戻りました笑'],
     },
   };
 }
@@ -652,7 +689,10 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '',
     '表情 (key と、表情としぐさ。「参考画像」と書いてあるところは、あなたが考えたキャラクターのいつもの姿のこと):',
   ]);
-  states.forEach(function (s) { out.push('- ' + s.key + ' (' + s.label + '): ' + s.pose); });
+  // 絵が無くてもよい表情 (むっ) は、無くてもよいと書く (描けなければ代わりの表情を出す)
+  states.forEach(function (s) {
+    out.push('- ' + s.key + ' (' + s.label + '): ' + s.pose + (s.optional ? '。この表情は無くてもよい' : ''));
+  });
   if (t.images === 'sheet') {
     out.push('表に並べるときは ' + grid.cols + ' 列 × ' + grid.rows + ' 行で、上の順に左上から並べる (余ったマスは空ける)。');
   }
@@ -678,7 +718,8 @@ function oshiCharKitPrompt(tool, maxLevel) {
       text.lineMax + '字まで。キャラクターの口調で書き、相手を責めない・急かさない (うまくいかなかったときも、やさしく寄り添う)'
   );
   OSHI_EVENTS().forEach(function (e) {
-    out.push('  - ' + e.key + ': ' + e.label + (e.lineMax ? '。' + e.kitHint + '、1つ' + e.lineMax + '字まで' : ''));
+    out.push('  - ' + e.key + ': ' + e.label + (e.lineMax ? '。' + e.kitHint + '、1つ' + e.lineMax + '字まで' : '') +
+      (e.mood ? ' (推しの機嫌がオンのときだけ出る。やさしく、小さな一歩を誘う)' : ''));
   });
   out.push(
     '- profile.items: Lv が上がると少しずつ分かるプロフィール。lv は ' + levels.join(', ') + ' の ' + levels.length +
@@ -941,4 +982,104 @@ function oshiCleanLines(lines, max) {
     throw new Error('せりふは1つの場面に' + lim.linesPerEvent + '個までにしてください');
   }
   return out;
+}
+
+// ----- 推しの機嫌 (自分の設定 oshi.mood。既定はオフ) -----
+//
+// やることが滞ると、推しがしょんぼりしたり、むっとしたりする。**変わるのは表情とせりふだけ。** Lv・実績・ポイント・
+// 当たり・プロフィール・クリアは何も取り上げない。知らせもメールも出さず、本人のほかには誰にも (上長にも) 見せない。
+// 済ませたり、わけが無くなったりしたら、すぐに機嫌は直る。数えるのはサーバの oshiMood_ (OshiMood.gs)。
+
+/**
+ * 機嫌の段。良い順。event は出すせりふの場面、state は表情 (絵が無ければ OSHI_STATES の fallback)。
+ *
+ * @returns {Array<{key: string, label: string, event: string, state: string}>}
+ */
+function OSHI_MOODS() {
+  return [
+    { key: 'happy', label: 'ごきげん', event: '', state: 'celebrate' },
+    { key: 'normal', label: 'ふつう', event: '', state: 'idle' },
+    { key: 'sulky', label: 'しょんぼり', event: 'mood_sulky', state: 'worry' },
+    { key: 'pouty', label: 'むっ', event: 'mood_pouty', state: 'pout' },
+  ];
+}
+
+/**
+ * 機嫌の決め方。**唯一の定義。** どのわけも、数が sulky 以上でしょんぼり、pouty 以上でむっ。いちばん悪いものに合わせる。
+ *
+ * - overdue: 期限 (東京の暦日) が今日より前の、開いているやることの件数
+ * - stale: 動きの無い (チームの設定 stale.steps の最初の段の日数以上、そのまま) 開いているやることの件数
+ * - idle: 済ませないままの日数。最後に済ませてからの日数と、いちばん古い開いているやることを作ってからの日数の小さいほう
+ *   (やることを足しても悪くならない)。開いているやることがあるときだけ見る
+ * - happyDays: 最後に済ませてからこの日数までで、どのわけも無ければ「ごきげん」(0 = 今日、1 = 昨日まで)
+ * - cacheSeconds: 1人ぶんを覚えておく長さ。済ませた・閉じた・直したときは、待たずに数え直す
+ *
+ * 開いているやることが1つも無い人は「ふつう」より下にしない。
+ *
+ * @returns {{overdue: {sulky: number, pouty: number}, stale: {sulky: number, pouty: number},
+ *   idle: {sulky: number, pouty: number}, happyDays: number, cacheSeconds: number}}
+ */
+function OSHI_MOOD_RULES() {
+  return {
+    overdue: { sulky: 1, pouty: 3 },
+    stale: { sulky: 3, pouty: 6 },
+    idle: { sulky: 7, pouty: 14 },
+    happyDays: 1,
+    cacheSeconds: 300,
+  };
+}
+
+/**
+ * @param {string} key
+ * @returns {object|null}
+ */
+function oshiMoodLevelOf(key) {
+  var list = OSHI_MOODS();
+  for (var i = 0; i < list.length; i++) if (list[i].key === String(key)) return list[i];
+  return null;
+}
+
+/**
+ * 数えたものから機嫌を決める。わけ (reasons) は、しょんぼり以上に届いたものだけを、数だけで返す。
+ *
+ * @param {{open: number, overdue: number, stale: number, lastDoneDays: (number|null), idleDays: number}} s
+ * @returns {{level: string, reasons: Array<{kind: string, count: number}>}}
+ */
+function oshiMoodOf(s) {
+  var r = OSHI_MOOD_RULES();
+  var open = Math.max(0, Number(s && s.open) || 0);
+  var last = s && s.lastDoneDays !== null && s.lastDoneDays !== undefined && s.lastDoneDays !== '' &&
+    !isNaN(Number(s.lastDoneDays)) ? Math.max(0, Number(s.lastDoneDays)) : null;
+  var calm = last !== null && last <= r.happyDays ? 'happy' : 'normal';
+  if (!open) return { level: calm, reasons: [] };
+  var got = [
+    { kind: 'overdue', count: Math.max(0, Number(s.overdue) || 0) },
+    { kind: 'stale', count: Math.max(0, Number(s.stale) || 0) },
+    { kind: 'idle', count: Math.max(0, Number(s.idleDays) || 0) },
+  ];
+  var level = calm;
+  var reasons = [];
+  got.forEach(function (g) {
+    var edge = r[g.kind];
+    if (g.count < edge.sulky) return;
+    reasons.push({ kind: g.kind, count: g.count });
+    if (g.count >= edge.pouty) level = 'pouty';
+    else if (level !== 'pouty') level = 'sulky';
+  });
+  return { level: level, reasons: reasons };
+}
+
+/**
+ * 機嫌のわけを人の読む字にする (数だけ。題名も人の名前も入れない)。
+ *
+ * @param {string} kind overdue / stale / idle
+ * @param {number} count
+ * @returns {string}
+ */
+function oshiMoodReasonText(kind, count) {
+  var n = Math.max(0, Math.floor(Number(count) || 0));
+  if (kind === 'overdue') return '期限を過ぎたやること ' + n + '件';
+  if (kind === 'stale') return 'しばらく動いていないやること ' + n + '件';
+  if (kind === 'idle') return 'やることを済ませないまま ' + n + '日';
+  return '';
 }

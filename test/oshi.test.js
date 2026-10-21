@@ -33,10 +33,12 @@ const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' +
 describe('定義 (Oshi.js)', () => {
   it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
     const keys = pure.OSHI_STATES().map((s) => s.key);
-    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work']);
+    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work', 'pout']);
     expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3']);
-    // 作業中は作業部屋でだけ出す (でたらめに選ぶ表情に入れない)
-    expect(pure.OSHI_STATES().filter((s) => s.scene).map((s) => s.key)).toEqual(['work']);
+    // 作業中は作業部屋でだけ、むっは機嫌でだけ出す (でたらめに選ぶ表情に入れない)
+    expect(pure.OSHI_STATES().filter((s) => s.scene).map((s) => s.key)).toEqual(['work', 'pout']);
+    // むっは絵が無くてもよく、無ければしんぱいの絵
+    expect(pure.oshiStateOf('pout')).toMatchObject({ optional: true, fallback: 'worry' });
   });
 
   it('せりふは口調ごとに全部の場面を持ち、どの場面にも2つ以上ある (回すため)', () => {
@@ -191,8 +193,10 @@ describe('画像を置く', () => {
     expect(ctx.apiOshiGet()).toMatchObject({ name: 'タク', kind: 'builtin', mine: [] });
     // 画面がでたらめに選ばない表情を知れるように、場面でだけ出す印を渡す
     const states = ctx.apiOshiGet().states;
-    expect(states.filter((x) => x.scene).map((x) => x.key)).toEqual(['work']);
-    expect(states.filter((x) => x.scene === false).length).toBe(states.length - 1);
+    expect(states.filter((x) => x.scene).map((x) => x.key)).toEqual(['work', 'pout']);
+    expect(states.filter((x) => x.scene === false).length).toBe(states.length - 2);
+    expect(states.find((x) => x.key === 'pout')).toMatchObject({ optional: true, fallback: 'worry' });
+    expect(states.find((x) => x.key === 'idle')).toMatchObject({ optional: false, fallback: '' });
   });
 });
 
@@ -488,6 +492,11 @@ describe('最初からいるキャラ', () => {
       for (const st of pure.OSHI_STYLES()) {
         for (const s of pure.OSHI_STATES()) {
           const got = ctx.apiOshiDefaultImage(c.key, st.key, s.key);
+          // 絵が無くてもよい表情 (むっ) は、まだ絵が無い (画面が fallback の表情に代える)
+          if (s.optional) {
+            expect(got, c.key + st.key + s.key).toBe(null);
+            continue;
+          }
           expect(got).toMatchObject({ char: c.key, style: st.key, state: s.key });
           const bytes = Buffer.from(got.dataUrl.replace(/^data:image\/webp;base64,/, ''), 'base64');
           expect(bytes.toString('latin1', 0, 4) + bytes.toString('latin1', 8, 12), c.key + st.key + s.key).toBe('RIFFWEBP');
@@ -496,7 +505,8 @@ describe('最初からいるキャラ', () => {
       }
     }
     // 取り違えていない (キャラ・形・表情ごとに別の絵)
-    expect(seen.size).toBe(pure.OSHI_BUILTINS().length * pure.OSHI_STYLES().length * pure.OSHI_STATES().length);
+    expect(seen.size).toBe(pure.OSHI_BUILTINS().length * pure.OSHI_STYLES().length *
+      pure.OSHI_STATES().filter((s) => !s.optional).length);
   });
 
   it('知らないキャラ・形・表情はふつうの言葉で断る', () => {

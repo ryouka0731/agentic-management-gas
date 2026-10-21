@@ -36,9 +36,12 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
       expect(text).toContain('手で直さない');
       const ctx = loadGas(t.file);
       const map = ctx[t.fn]();
-      expect(Object.keys(map)).toEqual(pure.OSHI_STATES().map((s) => s.key));
+      // 絵が無くてもよい表情 (optional) は、assets にあるときだけ焼く
+      const has = (s) => fs.existsSync(path.resolve('assets/oshi-default/' + t.char + '/' + t.style + '-' + s.key + '.webp'));
+      expect(Object.keys(map)).toEqual(pure.OSHI_STATES().filter((s) => !s.optional || has(s)).map((s) => s.key));
       expect(map).toEqual(oshiDefaultMap(t.char, t.style));
       for (const s of pure.OSHI_STATES()) {
+        if (s.optional && !has(s)) continue;
         const file = path.resolve('assets/oshi-default/' + t.char + '/' + t.style + '-' + s.key + '.webp');
         expect(map[s.key]).toBe('data:image/webp;base64,' + fs.readFileSync(file).toString('base64'));
       }
@@ -48,6 +51,16 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
   it('キャラごとに別の絵 (取り違えて同じ絵を焼いていない)', () => {
     expect(oshiDefaultMap('itsuki', 'chibi').idle).not.toBe(oshiDefaultMap('taku', 'chibi').idle);
     expect(oshiDefaultMap('itsuki', 'normal').idle).not.toBe(oshiDefaultMap('taku', 'normal').idle);
+  });
+
+  it('絵が無くてもよい表情 (optional) には、絵が無いときに代わりに出す表情 (fallback) があり、それは必ず焼く表情', () => {
+    const opt = pure.OSHI_STATES().filter((s) => s.optional);
+    expect(opt.map((s) => s.key)).toEqual(['pout']);
+    for (const s of opt) {
+      const fb = pure.OSHI_STATES().find((x) => x.key === s.fallback);
+      expect(fb, s.key).toBeTruthy();
+      expect(fb.optional, s.key).toBeFalsy();
+    }
   });
 
   it('知らないキャラ・形は焼かない', () => {

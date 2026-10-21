@@ -119,6 +119,19 @@ function issueHistory_(number, action, changes) {
 }
 
 /**
+ * 推しの機嫌 (OshiMood.gs) を数え直させる。済ませた・閉じた・直したときに、担当の人と押した本人のぶんを消す
+ * (覚えたままだと、片づけても機嫌が直らない)。OshiMood.gs を読まない構成でも動くように確かめる。
+ *
+ * @param {...object} rows 前と後の issues 行 (担当を変えたときは両方)
+ */
+function issueMoodForget_() {
+  if (typeof oshiMoodForget_ !== 'function') return;
+  var who = [currentEmail_()];
+  for (var i = 0; i < arguments.length; i++) who = who.concat(issueAssignees(arguments[i]));
+  oshiMoodForget_(who);
+}
+
+/**
  * スクラムの欄 (スプリント・ポイント・受入基準) を確かめて整える。
  *
  * エージェンティックスクラムがオフのあいだは直させない。オフの人に、意味の
@@ -313,7 +326,9 @@ function issueUpdate(number, patch) {
       issueHistory_(number, 'update', historyDiff_(current, allowed));
     }
   });
-  return issueGet(number);
+  var after = issueGet(number);
+  issueMoodForget_(before, after);
+  return after;
 }
 
 /**
@@ -400,6 +415,7 @@ function issueClose(number, prNumber) {
     linkedPr: prNumber === null || prNumber === undefined ? '' : prNumber,
   });
   issueHistory_(number, 'close', []);
+  issueMoodForget_(row);
   return issueGet(number);
 }
 
@@ -426,6 +442,7 @@ function issueReopen(number) {
     updatedAt: new Date(),
   });
   issueHistory_(number, 'reopen', []);
+  issueMoodForget_(row);
 
   if (dbFindOne('project_items', 'issueNumber', number)) {
     projectMove(number, 'In Progress', 0);
@@ -455,6 +472,7 @@ function issueArchive(number) {
   }
 
   dbUpdate('issues', 'number', number, { archivedAt: new Date(), updatedAt: new Date() });
+  issueMoodForget_(row);
   return issueGet(number);
 }
 
@@ -477,6 +495,7 @@ function issueRestore(number) {
   }
 
   dbUpdate('issues', 'number', number, patch);
+  issueMoodForget_(row);
   return issueGet(number);
 }
 

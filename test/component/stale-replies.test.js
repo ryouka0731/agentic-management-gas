@@ -301,4 +301,22 @@ describe('遅れて届いた古い返事で、新しい一覧を描き直さな�
     expect(text).toContain('賃金規程の見直し');
     expect(text).not.toContain('第2条の改訂');
   });
+
+  it('推しの機嫌 (済ませたあとに取り直す)', () => {
+    const mood = (level, line) => ({ level, label: level, event: 'mood_' + level, state: 'worry', recovered: false, line,
+      reasons: [{ kind: 'overdue', count: 1, text: '期限を過ぎたやること 1件' }] });
+    const values = { 'oshi.on': true, 'oshi.mood': true };
+    const app = mount({
+      apiPrefs: prefsFixture({ values }),
+      apiOshiGet: Object.assign({}, DEFAULTS.apiOshiGet, { mood: mood('sulky', 'はじめ') }),
+    });
+    const t = askTwice(app, 'apiOshiMood', () => {
+      document.querySelector('[data-tab="issues"]').click();
+      document.querySelector('#issue-list [aria-label$="を完了にする"]').click();
+    });
+    deliverOutOfOrder(t, mood('pouty', '新しい'), mood('sulky', '古い'));
+    const card = document.querySelector('.oshi-card');
+    expect(card.dataset.mood).toBe('pouty');
+    expect(card.querySelector('.oshi-line').textContent).toBe('新しい');
+  });
 });
