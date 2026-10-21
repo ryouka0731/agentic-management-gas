@@ -654,6 +654,8 @@
 
     var control;
     var inputs = [];
+    /** 欄を値でそろえたあとに走らせるもの (自分の曲のリンクの確かめ) */
+    var afterSync = null;
     var reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'btn pref-reset';
@@ -665,7 +667,8 @@
       else if (item.type === 'steps') inputs.forEach(function (el, i) { el.value = String(current.value[i]); });
       else control.value = String(current.value);
       reset.hidden = !current.custom;
-      attachHint(reset, '既定 (' + prefValueText(item, item.def) + ') に戻します');
+      // 既定が空の欄 (自分の曲のリンク) は「既定 () に戻します」と読めてしまうので言い換える
+      attachHint(reset, item.def === '' ? '空に戻します' : '既定 (' + prefValueText(item, item.def) + ') に戻します');
     }
 
     function save(value, busy) {
@@ -682,6 +685,8 @@
           { kind: 'ok' });
       }, function (err) {
         sync(current);
+        // 欄を元の値に戻したので、その下の確かめの字も元の値に合わせる (自分の曲のリンク)
+        if (afterSync) afterSync();
         if (busy) failEnable(busy, '保存できませんでした: ')(err);
         else failSnack('保存できませんでした: ')(err);
       });
@@ -714,6 +719,54 @@
         control.addEventListener('change', function () { save(control.value); });
         label.appendChild(control);
         wrap.appendChild(label);
+      } else if (item.type === 'music') {
+        // 自分の曲のリンク。打つたびに画面の中で読み解いて知らせ (focusMusicParse_ は js-focus の写し)、
+        // 確定したら URL の字を送る。サーバが読み解き直し、部品だけを覚える
+        control = document.createElement('input');
+        control.type = 'url';
+        control.inputMode = 'url';
+        control.autocomplete = 'off';
+        control.spellcheck = false;
+        control.maxLength = 500;
+        control.className = 'pref-music-url';
+        control.placeholder = 'https://www.youtube.com/playlist?list=…';
+        label.appendChild(control);
+        wrap.appendChild(label);
+        var check = document.createElement('p');
+        check.className = 'row-meta pref-music-check';
+        check.setAttribute('role', 'status');
+        check.setAttribute('aria-live', 'polite');
+        wrap.appendChild(check);
+        var showCheck = function () {
+          var text = control.value.replace(/^\s+|\s+$/g, '');
+          check.classList.remove('is-ng');
+          if (!text) {
+            check.textContent = '';
+            return null;
+          }
+          var got = focusMusicParse_(text);
+          if (!got.ok) {
+            check.classList.add('is-ng');
+            check.textContent = got.error;
+            return got;
+          }
+          var p = got.parts;
+          check.textContent = 'このリンクを使えます: ' + (p.kind === 'soundcloud'
+            ? (p.path.indexOf('/sets/') >= 0 ? 'SoundCloud のプレイリスト' : 'SoundCloud の曲')
+            : (p.list ? 'YouTube の再生リスト' : 'YouTube の動画'));
+          return got;
+        };
+        afterSync = showCheck;
+        control.addEventListener('input', showCheck);
+        control.addEventListener('change', function () {
+          var got = showCheck();
+          if (got === null) {
+            if (current.custom) save(null);
+            return;
+          }
+          if (!got.ok) return;
+          save(control.value);
+        });
       } else if (item.type === 'int') {
         control = makePrefNumber(item);
         control.addEventListener('change', function () {
