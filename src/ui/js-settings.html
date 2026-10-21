@@ -225,6 +225,7 @@
     if (!prefUsageOn()) usageBuffer = {};
     funPrefsChanged();
     focusPrefsChanged();
+    oshiPrefsChanged();
     // 描いてあるカードのうち止めたものを外す。出すほうはホームを開き直したとき (loadHome) に描く。
     // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
     if (!homeCardOn('game')) removeAll(homeCardsEl, '.game-card');
@@ -582,7 +583,10 @@
         h.textContent = name;
         sec.appendChild(h);
       }
-      by[name].forEach(function (p) { sec.appendChild(makePrefField(p, editable)); });
+      by[name].forEach(function (p) {
+        // 使うキャラ (推し) は人ごとに選べるものが違い、絵で選ぶので、選び方は js-oshi が組む
+        sec.appendChild(p.type === 'char' ? makeOshiCharPicker(p) : makePrefField(p, editable));
+      });
       host.appendChild(sec);
     });
   }

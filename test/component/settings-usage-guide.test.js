@@ -520,7 +520,7 @@ describe('自分まわりの操作', () => {
     expect(document.getElementById('me-panel').hidden).toBe(false);
     expect(actions()).toEqual([
       '手元から動かす道具を落とす', '表示する名前を決める', '仕事のスタンス診断',
-      'はじめの案内をもう一度出す', '前進の知らせを出す',
+      'はじめの案内をもう一度出す', '推し', '前進の知らせを出す',
     ]);
   });
 
