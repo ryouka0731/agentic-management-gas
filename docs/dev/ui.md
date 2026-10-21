@@ -378,7 +378,14 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     `test/oshi-charkit-ui.test.js`)。描けない画面 (jsdom) では、絵を読み込む前に断る (`oshiCanvas(1, 1)` が null)。GIF は抜かない
   - 「1枚の表から切り分ける」(`makeOshiSheet`) はマスを `oshiSheetCells` で決め (端数は丸め、隙間も重なりも作らない)、既定の行と列は
     サーバの `oshiSheetGrid` (`apiOshiGet` の `sheet`)。選んだマスを `oshiCutPng` で切り、いつもの `apiOshiSetImage` で1枚ずつ順に送る
-    (上限もいつもどおり。失敗したらそこで止め、入れた枚数を出す)
+    (上限もいつもどおり。失敗したらそこで止め、入れた枚数を出す)。入れているあいだは表・行・列・マスの表情を押せなくする (`lock`)。
+    表は 10MB まで (読む前)・縦横 4096px まで (読んだあと)。マスは画像の幅と高さより多く分けない。「緑の背景を抜く」を切り替えると
+    見本を描き直す (選んだ表情は残す)
+  - 取り出し (`oshiExtractJson`) は ```json の囲み → ほかの囲み → 全体の順で、最初の { から1回だけなめる。**最初の物が読めなければ断る**
+    (内側や後ろの物に逃げない)。貼った字は 60000 字まで (`OSHI_CHARKIT_TEXT_MAX`)。名前・せりふ・プロフィールの字から制御文字と
+    字の向きを変える印を落とし (`oshiCharKitText_`)、せりふの JSON の長さ (`OSHI_LINES_JSON_MAX`) は鍵を取る前に見る (直すときは残す場面と合わせて)
+  - 「コピー」は開いたときに選んである道具の字を先に取る。写せなかったときは、閉じた「頼み文を見る」を開いてから字を選ぶ
+    (`oshiCopyByHand`。表情ごとの頼み文も同じ)
   - 試すのは `test/component/oshi-charkit.test.js` (返事は本物のサーバ。描く器と絵は疑似)・`test/oshi-charkit.test.js` (サーバ)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`。
   プロフィールとクリアは `test/component/oshi-profile.test.js` と `test/oshi-profile.test.js`

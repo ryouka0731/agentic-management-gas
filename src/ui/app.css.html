@@ -5436,6 +5436,8 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-sheet-cell { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--radius); background: var(--bg-2); }
 .oshi-sheet-cell .oshi-field { align-self: stretch; }
 .oshi-sheet-status:empty { display: none; }
+.oshi-pick.is-disabled { cursor: not-allowed; opacity: 0.45; }
+.oshi-pick.is-disabled .oshi-file { cursor: not-allowed; }
 .oshi-mine-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .oshi-mine-tab[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .oshi-create { align-self: flex-start; }

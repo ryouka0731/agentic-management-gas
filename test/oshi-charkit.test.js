@@ -130,6 +130,18 @@ describe('AI の答えから JSON を取り出す (oshiExtractJson)', () => {
     expect(JSON.parse(pure.oshiExtractJson(text))).toEqual({ name: 'テスト', tone: 'cool' });
   });
 
+  it('```json の囲みを、ほかの囲みより先に取る', () => {
+    const text = '```\n{"other": 1}\n```\nこちらが答えです\n```json\n{"name": "テスト"}\n```';
+    expect(JSON.parse(pure.oshiExtractJson(text))).toEqual({ name: 'テスト' });
+  });
+
+  it('閉じていない { がたくさんあっても、すぐに断る (何度も数え直さない)', () => {
+    const text = '{'.repeat(30000) + '"a"';
+    const t0 = Date.now();
+    expect(() => pure.oshiExtractJson(text)).toThrow('JSON を読めませんでした');
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
   it('囲みの前の説明に別の {…} があっても、囲みの中を先に取る', () => {
     const text = '形は {"name": "例"} のようにします。\n```json\n{"name": "テスト"}\n```';
     expect(JSON.parse(pure.oshiExtractJson(text))).toEqual({ name: 'テスト' });
@@ -140,8 +152,11 @@ describe('AI の答えから JSON を取り出す (oshiExtractJson)', () => {
     expect(JSON.parse(pure.oshiExtractJson(text))).toEqual({ name: 'テスト{かっこ}', lines: { done: ['"引用" }'] } });
   });
 
-  it('読めない括弧は飛ばして次を見る。何も無ければ null', () => {
-    expect(JSON.parse(pure.oshiExtractJson('{こわれた} それから {"name": "テスト"}'))).toEqual({ name: 'テスト' });
+  it('最初の物が読めなければ、中や後ろの物に逃げずに読めないと断る。何も無ければ null', () => {
+    expect(() => pure.oshiExtractJson('{こわれた} それから {"name": "テスト"}')).toThrow('JSON を読めませんでした');
+    // 外側が壊れているとき、内側の {"in": 1} を答えにしない
+    expect(() => pure.oshiExtractJson('{"name": "テスト", "bad": {"in": 1}, oops}')).toThrow('JSON を読めませんでした');
+    expect(() => pure.oshiExtractJson('{"name": "閉じていない"')).toThrow('JSON を読めませんでした');
     expect(pure.oshiExtractJson('JSON はありません')).toBe(null);
     expect(pure.oshiExtractJson('')).toBe(null);
     expect(pure.oshiExtractJson(null)).toBe(null);
@@ -177,6 +192,38 @@ describe('答えの検査 (oshiCharImportValid_)', () => {
       .toThrow('lv は 2 から');
     expect(() => ctx.oshiCharImportValid_(JSON.stringify({ ...ANSWER, profile: { items: [{ lv: 2, label: 'a', text: 'あ'.repeat(201) }] } })))
       .toThrow('text は200字まで');
+  });
+
+  it('長すぎる答え (60000字を超える) は取り出す前に断る', () => {
+    const { ctx } = setup();
+    expect(() => ctx.oshiCharImportValid_(JSON.stringify(ANSWER) + ' '.repeat(60001))).toThrow('貼った字が長すぎます');
+  });
+
+  it('名前・せりふ・プロフィールの字から制御文字と字の向きを変える印を落とす', () => {
+    const { ctx } = setup();
+    const got = ctx.oshiCharImportValid_(JSON.stringify({ ...ANSWER,
+      name: '\u202eテスト\u0007名',
+      lines: { done: ['\u0001'.repeat(59) + 'あ', '\u200bテスト\u2066です\u009f'] },
+      profile: { items: [{ lv: 2, label: '\u202dテスト', text: 'テ\u0000スト' }], clearLine: '\ufeffテスト' } }));
+    expect(got.name).toBe('テスト名');
+    expect(got.lines.done).toEqual(['あ', 'テストです']);
+    expect(got.profile.items).toEqual([{ lv: 2, label: 'テスト', text: 'テスト' }]);
+    expect(got.profile.clearLine).toBe('テスト');
+  });
+
+  it('せりふの JSON が長すぎれば、鍵を取る前に断り、キャラを作らない', () => {
+    const { ctx } = setup();
+    ctx.OSHI_LINES_JSON_MAX = () => 20;
+    expect(() => ctx.apiOshiCharImport(0, JSON.stringify(ANSWER))).toThrow('せりふが長すぎます');
+    expect(ctx.apiOshiGet().mine).toEqual([]);
+    // 直すときは、残す場面のせりふと合わせた長さで見る
+    ctx.OSHI_LINES_JSON_MAX = () => 45000;
+    const id = ctx.apiOshiCharCreate('テスト', 'polite').charId;
+    ctx.apiOshiSetLines(id, 'morning', ['テストのおはよう']);
+    const merged = JSON.stringify({ morning: ['テストのおはよう'], ...ANSWER.lines }).length;
+    ctx.OSHI_LINES_JSON_MAX = () => merged - 1;
+    expect(() => ctx.apiOshiCharImport(id, JSON.stringify(ANSWER))).toThrow('せりふが長すぎます');
+    expect(ctx.apiOshiGet().mine[0].name).toBe('テスト');
   });
 
   it('JSON が無い・物でない答えは、ふつうの言葉で断る', () => {
@@ -278,5 +325,11 @@ describe('手引き (docs/manual/oshi.md)', () => {
       expect(text, where).toContain(where);
     }
     for (const t of pure.OSHI_CHARKIT_TOOLS()) expect(text, t.label).toContain(t.label);
+  });
+});
+
+describe('せりふを整える (oshiCleanLines)', () => {
+  it('Object の名前と同じせりふ (toString・__proto__ など) も落とさない', () => {
+    expect(pure.oshiCleanLines(['toString', '__proto__', 'constructor', 'toString'])).toEqual(['toString', '__proto__', 'constructor']);
   });
 });

@@ -83,14 +83,15 @@ function fakeCanvas() {
   vi.spyOn(window.HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx2d);
   vi.spyOn(window.HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(PNG_URL);
   const RealImage = window.Image;
+  const dims = { w: 400, h: 300 };
   window.Image = class {
     set src(v) {
       this._src = v;
-      setTimeout(() => { this.naturalWidth = 400; this.naturalHeight = 300; if (this.onload) this.onload(); }, 0);
+      setTimeout(() => { this.naturalWidth = dims.w; this.naturalHeight = dims.h; if (this.onload) this.onload(); }, 0);
     }
     get src() { return this._src; }
   };
-  return { ctx2d, put, restore: () => { window.Image = RealImage; } };
+  return { ctx2d, put, size: (w, h) => { dims.w = w; dims.h = h; }, restore: () => { window.Image = RealImage; } };
 }
 
 function pickFile(input, file) {
@@ -117,8 +118,8 @@ describe('キャラ作成キット', () => {
     const pick = sec.querySelector('select.oshi-kit-tool');
     expect([...pick.options].map((o) => o.value)).toEqual(['chatgpt', 'gemini', 'claude', 'codex']);
     expect(pick.closest('label').textContent).toContain('道具');
-    // 開いただけでは頼み文を取りに行かない
-    expect(names(app)).not.toContain('apiOshiCharKitPrompt');
+    // 開いたときに、選んである道具 (先頭) の頼み文だけを先に取っておく (最初の「コピー」でも返事を待たずに写せる)
+    expect(app.calls.filter((c) => c.name === 'apiOshiCharKitPrompt').map((c) => c.args)).toEqual([['chatgpt']]);
 
     let copied = null;
     document.execCommand = vi.fn(() => { copied = document.querySelector('textarea[readonly]').value; return true; });
@@ -264,6 +265,144 @@ describe('キャラ作成キット', () => {
       // 入れた表情の行は「差し替える」になる
       expect(page.querySelector('.oshi-state[data-state="work"] .oshi-pick').textContent).toContain('差し替える');
       expect(ctx.apiOshiGet().mine[0].images.map((i) => i.state).sort()).toEqual(['cheer', 'idle', 'work']);
+    } finally {
+      canvas.restore();
+    }
+  });
+});
+
+describe('キャラ作成キット (見直しの指摘)', () => {
+  let ctx;
+  beforeEach(() => { window.localStorage.clear(); ctx = server(); });
+  afterEach(() => { vi.restoreAllMocks(); delete document.execCommand; });
+
+  it('最初の「コピー」は、先に取っておいた字を押した中で写す (取り直さない)', () => {
+    const app = mountKit(ctx);
+    const sec = openPage().querySelector('.oshi-kit');
+    let copied = null;
+    document.execCommand = vi.fn(() => { copied = document.querySelector('textarea[readonly]').value; return true; });
+    sec.querySelector('button.oshi-kit-copy').click();
+    expect(copied).toBe(ctx.apiOshiCharKitPrompt('chatgpt').prompt);
+    expect(app.calls.filter((c) => c.name === 'apiOshiCharKitPrompt').length).toBe(1);
+  });
+
+  it('写せなかったときは、閉じた「頼み文を見る」を開いてから字を選ぶ (新しい頼み文も、表情ごとの頼み文も)', () => {
+    mountKit(ctx);
+    const page = openPage();
+    document.execCommand = vi.fn(() => false);
+    const kit = page.querySelector('.oshi-kit');
+    kit.querySelector('button.oshi-kit-copy').click();
+    expect(kit.querySelector('details.oshi-kit-prompt').open).toBe(true);
+    expect(String(window.getSelection())).toBe(ctx.apiOshiCharKitPrompt('chatgpt').prompt);
+    expect(snack()).toContain('手で写してください');
+
+    const row = page.querySelector('.oshi-state[data-state="praise"]');
+    row.querySelector('button.oshi-copy').click();
+    expect(row.querySelector('details.oshi-prompt').open).toBe(true);
+    expect(String(window.getSelection())).toBe(ctx.apiOshiGet().states.find((s) => s.key === 'praise').prompt);
+  });
+
+  it('自分のキャラが5人いれば、入れ先は先頭のキャラ (押せない「新しいキャラ」にしない)', () => {
+    for (let i = 0; i < 4; i++) ctx.apiOshiCharCreate('テスト' + i, 'polite');
+    mountKit(ctx);
+    const target = openPage().querySelector('select.oshi-import-target');
+    expect(target.selectedOptions[0].disabled).toBe(false);
+    expect(target.value).toBe('1');
+  });
+
+  /** 表を読み込んでマスを出す */
+  async function loadSheet(page, file) {
+    const sheet = page.querySelector('.oshi-sheet');
+    pickFile(sheet.querySelector('input.oshi-sheet-file'), file || new window.File([PNG], 'sheet.png', { type: 'image/png' }));
+    await wait(() => sheet.querySelectorAll('.oshi-sheet-cell').length);
+    return sheet;
+  }
+
+  it('入れているあいだは、表の画像・行・列・マスの表情を変えられない。終わったら戻す', async () => {
+    const canvas = fakeCanvas();
+    try {
+      let release = null;
+      const app = mount({
+        apiPrefs: prefsFixture({ values: ON }),
+        apiOshiGet: live(ctx, 'apiOshiGet'),
+        apiOshiImage: (charId, state) => ({ charId, state, sha: 'f'.repeat(64), dataUrl: PNG_URL }),
+        apiOshiDefaultImage: (char, style, state) => ({ char, style, state, dataUrl: PNG_URL }),
+        apiOshiCharKitPrompt: live(ctx, 'apiOshiCharKitPrompt'),
+        apiOshiSetImage: (id, state) => ({ later: (ok) => { release = () => ok({ charId: id, state, sha: 'a'.repeat(64), mime: 'image/png' }); } }),
+      });
+      const sheet = await loadSheet(openPage());
+      const rows = sheet.querySelector('.oshi-sheet-rows');
+      rows.value = '1';
+      rows.dispatchEvent(new window.Event('change', { bubbles: true }));
+      sheet.querySelector('.oshi-sheet-go').click();
+      const controls = () => [sheet.querySelector('input.oshi-sheet-file'), rows, sheet.querySelector('.oshi-sheet-cols'),
+        ...sheet.querySelectorAll('select.oshi-sheet-state')];
+      expect(controls().every((el) => el.disabled)).toBe(true);
+      for (let i = 0; i < 4; i++) {
+        await wait(() => release);
+        const r = release;
+        release = null;
+        r();
+      }
+      await wait(() => sheet.querySelector('.oshi-sheet-status').textContent.includes('枚入れました'));
+      expect(app.calls.filter((c) => c.name === 'apiOshiSetImage').length).toBe(4);
+      expect(controls().every((el) => !el.disabled)).toBe(true);
+    } finally {
+      canvas.restore();
+    }
+  });
+
+  it('1マスが 1MB を超えたら、そこで止めて送らない', async () => {
+    const canvas = fakeCanvas();
+    try {
+      const app = mountKit(ctx);
+      const sheet = await loadSheet(openPage());
+      window.HTMLCanvasElement.prototype.toDataURL.mockReturnValue('data:image/png;base64,' + 'A'.repeat(1.5 * 1024 * 1024));
+      sheet.querySelector('.oshi-sheet-go').click();
+      await wait(() => sheet.querySelector('.oshi-sheet-status').textContent.includes('MB'));
+      expect(sheet.querySelector('.oshi-sheet-status').textContent).toContain('1MB を超えました');
+      expect(names(app)).not.toContain('apiOshiSetImage');
+      expect(sheet.querySelector('.oshi-sheet-go').disabled).toBe(false);
+    } finally {
+      canvas.restore();
+    }
+  });
+
+  it('10MB を超える表は読まずに断り、4096px を超える表は切らずに断る', async () => {
+    const canvas = fakeCanvas();
+    try {
+      mountKit(ctx);
+      const page = openPage();
+      const sheet = page.querySelector('.oshi-sheet');
+      const read = vi.spyOn(window.FileReader.prototype, 'readAsDataURL');
+      pickFile(sheet.querySelector('input.oshi-sheet-file'),
+        new window.File([Buffer.alloc(10 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' }));
+      expect(snack()).toContain('10MB');
+      expect(read).not.toHaveBeenCalled();
+
+      canvas.size(5000, 300);
+      pickFile(sheet.querySelector('input.oshi-sheet-file'), new window.File([PNG], 'wide.png', { type: 'image/png' }));
+      await wait(() => snack().includes('4096'));
+      expect(snack()).toContain('4096px');
+      expect(sheet.querySelectorAll('.oshi-sheet-cell').length).toBe(0);
+    } finally {
+      canvas.restore();
+    }
+  });
+
+  it('「緑の背景を抜く」を切り替えると、マスの見本を描き直す (選んだ表情はそのまま)', async () => {
+    const canvas = fakeCanvas();
+    try {
+      mountKit(ctx);
+      const page = openPage();
+      const sheet = await loadSheet(page);
+      const first = sheet.querySelector('select.oshi-sheet-state');
+      first.value = 'work';
+      first.dispatchEvent(new window.Event('change', { bubbles: true }));
+      expect(canvas.put.length).toBe(0);
+      page.querySelector('.oshi-green').click();
+      expect(canvas.put.length).toBe(12);
+      expect(sheet.querySelector('select.oshi-sheet-state').value).toBe('work');
     } finally {
       canvas.restore();
     }

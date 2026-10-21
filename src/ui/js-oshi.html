@@ -785,6 +785,9 @@
 
   function oshiCopyByHand(shown) {
     if (shown) {
+      // 閉じた「頼み文を見る」の中の字は選んでも見えないので、開いてから選ぶ
+      var holder = shown.closest ? shown.closest('details') : null;
+      if (holder) holder.open = true;
       var range = document.createRange();
       range.selectNodeContents(shown);
       var sel = window.getSelection();
@@ -1276,6 +1279,8 @@
       });
     });
     show(pick.value);
+    // 選んである道具の字を先に取っておく (最初の「コピー」でも押した中で写せるように)
+    if (pick.value && !oshiKitPrompts[pick.value]) fetch(pick.value);
     return sec;
   }
 
@@ -1321,7 +1326,9 @@
       o.textContent = oshiMineName(m) + ' を直す';
       target.appendChild(o);
     });
-    target.value = full && c ? String(c.charId) : '0';
+    // 作れないときは、直しているキャラ (いなければ先頭) にする。押せない「新しいキャラ」を選んだままにしない
+    var editing = c || list[0];
+    target.value = full && editing ? String(editing.charId) : '0';
     label.appendChild(target);
     row.appendChild(label);
     var go = document.createElement('button');
@@ -1381,8 +1388,9 @@
    */
   function oshiSheetCells(width, height, rows, cols) {
     var out = [];
-    var R = Math.max(1, Math.floor(rows) || 1);
-    var C = Math.max(1, Math.floor(cols) || 1);
+    // 画像の幅・高さより多くは分けない (0px のマスを作らない)
+    var R = Math.max(1, Math.min(Math.floor(rows) || 1, Math.floor(height) || 1));
+    var C = Math.max(1, Math.min(Math.floor(cols) || 1, Math.floor(width) || 1));
     for (var r = 0; r < R; r++) {
       var y = Math.round(r * height / R);
       var y2 = Math.round((r + 1) * height / R);
@@ -1536,14 +1544,17 @@
     green.className = 'btn toggle-btn oshi-green';
     green.appendChild(document.createTextNode('緑の背景を抜く'));
     setToggle(green, oshiGreenOn);
+    var sheet = makeOshiSheet(d, c, redrawRow);
     green.addEventListener('click', function () {
       oshiGreenOn = !oshiGreenOn;
       setToggle(green, oshiGreenOn);
+      // マスの見本も、抜いた形・抜かない形に描き直す
+      if (sheet.oshiRedraw) sheet.oshiRedraw();
     });
     wrap.appendChild(green);
     wrap.appendChild(oshiNote('オンにすると、入れる前に緑 (#00FF00 に近い色) を透明にします。Gemini などで緑一色の背景にした絵に使います。' +
       'キャラに緑を使っていると、そこも抜けます。'));
-    wrap.appendChild(makeOshiSheet(d, c, redrawRow));
+    wrap.appendChild(sheet);
     return wrap;
   }
 
@@ -1565,6 +1576,9 @@
     sec.appendChild(oshiNote('表情を1枚に並べた表の画像を、マスごとに切り分けて入れます。マスは左上から右へ、行ごとに数えます。'));
     var states = d.states || [];
     var grid = d.sheet || { rows: 3, cols: 4 };
+    /** 表の画像の上限。読む前に大きさ、読んだあとに縦横を見る (大きすぎる絵は端末が固まる) */
+    var SHEET_MAX_BYTES = 10 * 1024 * 1024;
+    var SHEET_MAX_PX = 4096;
     var img = null;
     var map = [];
 
@@ -1619,10 +1633,16 @@
       return oshiSheetCells(img.naturalWidth || img.width, img.naturalHeight || img.height,
         oshiSheetClamp(rowsIn.value, grid.rows), oshiSheetClamp(colsIn.value, grid.cols));
     }
-    function draw() {
+    /** 入れているあいだは、表・行・列・マスの表情を変えさせない (変えると、入れている途中のマスがずれる) */
+    function lock(on) {
+      [pick, rowsIn, colsIn].concat([].slice.call(cellsBox.querySelectorAll('select'))).forEach(function (el) { el.disabled = on; });
+      pickLabel.classList.toggle('is-disabled', on);
+      go.disabled = on;
+    }
+    function draw(keep) {
       cellsBox.textContent = '';
       var list = cells();
-      map = oshiSheetDefaults(list.length, states);
+      if (!(keep && map.length === list.length)) map = oshiSheetDefaults(list.length, states);
       list.forEach(function (cell) {
         var li = document.createElement('li');
         li.className = 'oshi-sheet-cell';
@@ -1667,8 +1687,9 @@
       go.disabled = !list.length;
       status.textContent = list.length ? list.length + ' マス。表情を選んだマスを入れます (同じ表情を2つ選ぶと、後のマスが入ります)' : '';
     }
-    rowsIn.addEventListener('change', draw);
-    colsIn.addEventListener('change', draw);
+    rowsIn.addEventListener('change', function () { draw(false); });
+    colsIn.addEventListener('change', function () { draw(false); });
+    sec.oshiRedraw = function () { if (img) draw(true); };
     pick.addEventListener('change', function () {
       var file = pick.files && pick.files[0];
       pick.value = '';
@@ -1681,6 +1702,10 @@
         showSnack('この画面では表を切り分けられません。表情ごとの「絵を選ぶ」から入れてください', { kind: 'ng' });
         return;
       }
+      if (file.size > SHEET_MAX_BYTES) {
+        showSnack('表の画像は' + Math.round(SHEET_MAX_BYTES / 1024 / 1024) + 'MBまでにしてください', { kind: 'ng' });
+        return;
+      }
       var reader = new FileReader();
       reader.onerror = function () { showSnack('画像を読めませんでした', { kind: 'ng' }); };
       reader.onload = function () {
@@ -1689,8 +1714,12 @@
             showSnack('この画面では表の画像を読めませんでした', { kind: 'ng' });
             return;
           }
+          if (Math.max(got.naturalWidth || got.width, got.naturalHeight || got.height) > SHEET_MAX_PX) {
+            showSnack('表の画像は縦横とも' + SHEET_MAX_PX + 'px までにしてください', { kind: 'ng' });
+            return;
+          }
           img = got;
-          draw();
+          draw(false);
         });
       };
       reader.readAsDataURL(file);
@@ -1703,11 +1732,11 @@
         status.textContent = '表情を選んだマスがありません';
         return;
       }
-      go.disabled = true;
+      lock(true);
       var put = 0;
       function next(i) {
         if (i >= jobs.length) {
-          go.disabled = false;
+          lock(false);
           status.textContent = put + ' 枚入れました';
           showSnack('表から ' + put + ' 枚の絵を入れました', { kind: 'ok' });
           return;
@@ -1716,12 +1745,12 @@
         var url = oshiCutPng(img, job.cell, d.limits.maxPx, oshiGreenOn);
         var label = oshiStateLabel(job.state);
         if (!url) {
-          go.disabled = false;
+          lock(false);
           status.textContent = 'この画面では切り分けられませんでした';
           return;
         }
         if (oshiDataBytes(url) > d.limits.maxBytes) {
-          go.disabled = false;
+          lock(false);
           status.textContent = '「' + label + '」のマスが ' + Math.round(d.limits.maxBytes / 1024 / 1024) + 'MB を超えました。ここで止めました (' + put + ' 枚入れました)';
           return;
         }
@@ -1735,7 +1764,7 @@
           put++;
           next(i + 1);
         }, function (err) {
-          go.disabled = false;
+          lock(false);
           status.textContent = '「' + label + '」で止まりました (' + put + ' 枚入れました)';
           failSnack('絵を入れられませんでした: ')(err);
         });
