@@ -225,6 +225,9 @@ const API_NAMES = [
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared',
   'apiOutcomes',
+  'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
+  'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
+  'apiGoalIssueLinks', 'apiGoalWithdraw',
 ];
 
 /**
@@ -281,6 +284,7 @@ export function prefsFixture(over) {
       help: '', def: '' },
     { key: 'report.defaultKind', scope: 'team', type: 'enum', section: '日報', label: '日報の形の既定', help: '',
       options: [{ value: 'three', label: '3節' }, { value: 'today', label: '今日だけ' }], def: 'three' },
+    { key: 'goals.enabled', scope: 'team', type: 'bool', section: '目標', label: '目標 (OKR・MBO・KPI) を使う', help: '', def: false },
   ].map((p) => Object.assign({ min: '', max: '', options: [] }, p, { value: p.def, custom: false }));
   const values = (over && over.values) || {};
   items.forEach((p) => {
@@ -306,6 +310,7 @@ export function prefsFixture(over) {
       calendar: { plan: v('calendar.plan') === true },
       usageOn: v('usage.enabled') !== false && v('usage.self') !== false,
       notifyOff: v('notify.review') === false ? ['review'] : [],
+      goals: { enabled: v('goals.enabled') === true },
     },
   };
 }

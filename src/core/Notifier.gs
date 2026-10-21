@@ -376,3 +376,66 @@ function notifyIssueCommentMention(issue, row, people) {
     );
   }
 }
+
+/**
+ * 目標の承認を頼まれたことを、承認する人に知らせる。
+ *
+ * 承認のあとに本人が直したときも、もう一度頼まれたものとして知らせる (直した中身を
+ * 承認し直してもらうため)。
+ *
+ * @param {object} goal goals 行
+ * @param {string[]} to 承認する人
+ * @param {string} name 本人の名前
+ * @param {boolean} changed 承認のあとに直したか
+ */
+function notifyGoalSubmitted_(goal, to, name, changed) {
+  var what = changed ? 'の直したところの承認を頼まれました' : 'の承認を頼まれました';
+  for (var i = 0; i < (to || []).length; i++) {
+    noticeAdd(to[i], 'goal', name + ' さんの目標 #' + goal.id + what, goal.title, 'goal:' + goal.id);
+    notify(
+      to[i],
+      notifySubject_('目標', goal.id, what),
+      name + ' さんの目標: ' + goal.title + '\n\n「目標」の「承認を待つもの」から中身を見て、承認するか差し戻してください。',
+      'goal'
+    );
+  }
+}
+
+/**
+ * 目標が承認された・差し戻されたことを本人に知らせる。
+ *
+ * @param {object} goal goals 行
+ * @param {string} decision 'approve' | 'return'
+ */
+function notifyGoalDecided_(goal, decision) {
+  var happened = decision === 'approve' ? 'が承認されました' : 'が差し戻されました';
+  var note = goal.managerNote ? '\n\n上長のひとこと:\n' + goal.managerNote : '';
+  noticeAdd(goal.who, 'goal', '目標 #' + goal.id + happened, goal.title + note, 'goal:' + goal.id);
+  notify(goal.who, notifySubject_('目標', goal.id, happened), goal.title + note, 'goal');
+}
+
+/**
+ * 期末の評価が付いたことを本人に知らせる。
+ *
+ * @param {object} goal goals 行
+ */
+function notifyGoalGraded_(goal) {
+  var body = goal.title + '\n\n評価: ' + goal.finalGrade + '\n上長のひとこと:\n' + goal.managerNote;
+  noticeAdd(goal.who, 'goal', '目標 #' + goal.id + ' に評価が付きました', body, 'goal:' + goal.id);
+  notify(goal.who, notifySubject_('目標', goal.id, 'に評価が付きました'), body, 'goal');
+}
+
+/**
+ * 目標の承認を頼んだのを本人が取り下げたことを、承認する人に知らせる (見ようとしていたものが黙って消えないように)。
+ *
+ * @param {object} goal goals 行
+ * @param {string[]} to 承認する人
+ * @param {string} name 本人の名前
+ */
+function notifyGoalWithdrawn_(goal, to, name) {
+  for (var i = 0; i < (to || []).length; i++) {
+    noticeAdd(to[i], 'goal', name + ' さんが目標 #' + goal.id + ' の承認の頼みを取り下げました', goal.title, 'goal:' + goal.id);
+    notify(to[i], notifySubject_('目標', goal.id, 'の承認の頼みが取り下げられました'),
+      name + ' さんの目標: ' + goal.title + '\n\n承認は要らなくなりました。本人が直して頼み直すと、また届きます。', 'goal');
+  }
+}

@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-oshi` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-goals` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -266,3 +266,16 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   - 最初からいるキャラは架空のもの。**実在の人の名前・所属を、コード・コメント・テスト・手引き・記録の文に書かない**
     (性格は自分の言葉で書く)。絵は利用者が用意したもの (2026-10-21)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`
+
+## 目標 (`js-goals`)
+
+チームの設定 `goals.enabled` (既定オフ) がオンのときだけ、左に「目標」(`#nav-goals`) を出す。オンかは `prefs.effective.goals.enabled`
+を `goalsOn()` で読み、`applyPrefs` から `goalsPrefsChanged()` で出し入れする (設定で切り替えると、その場で出る)。
+
+- **数え方は画面に写さない。** 進み具合・自動の見立て・期の中での進み方・「あと◯件」はサーバ (`src/core/GoalScore.js`) が返した字を描くだけ。
+  押せるものも、サーバが決めた `canEdit` / `canSubmit` / `canInput` / `canDecide` / `canGrade` などだけで出す
+- 見方は4つ (自分の目標 / 承認を待つもの / チーム / 期末のまとめ)。取り直す一覧は `latest('goals')` を通す (`test/component/stale-replies.test.js`)
+- 届いていない数は赤くしない (帯は `--accent`、超えた分は字だけ)。チームの表は名前 → 状態の順 (サーバが並べる。進み具合で並べ替えない)
+- 「承認を待つもの」の「期末の評価を付けるもの」には、期が終わったか本人が振り返りを書いたものだけを出す (期の途中から急かさない)
+- やることの詳細の「目標」(`makeIssueGoalBox`) は `apiGoalIssueLinks` で、見られる結び付きと、自分の評価前の項目 (つなぐ先) を取る
+- 試すのは `test/component/goals.test.js` (返事は本物のサーバから作る)・`test/e2e/goals.test.js` (通し)

@@ -59,6 +59,15 @@
         </button>
       </div>
 
+      <!-- 目標 (OKR・MBO・KPI)。既定はオフで、チームの設定でオンにしたときだけ出す (js-goals の goalsPrefsChanged) -->
+      <div class="nav-section" id="nav-goals" hidden>
+        <h2>目標</h2>
+        <button class="nav-item" data-tab="goals">
+          <span class="nav-label">目標</span>
+          <span class="nav-desc">OKR・MBO・KPI の進み具合</span>
+        </button>
+      </div>
+
       <div class="nav-section">
         <h2>困ったとき</h2>
         <button class="nav-item" data-tab="help">
@@ -395,6 +404,24 @@
         <div class="list-area" id="impediments"></div>
       </div>
 
+      <div class="panel panel-col" id="panel-goals" hidden>
+        <div class="view-bar goal-bar">
+          <div class="segmented" id="goal-views" role="group" aria-label="目標の見方">
+            <button class="seg" type="button" data-goal-view="mine" aria-pressed="true">自分の目標</button>
+            <button class="seg" type="button" data-goal-view="pending" aria-pressed="false">承認を待つもの</button>
+            <button class="seg" type="button" data-goal-view="team" aria-pressed="false">チーム</button>
+            <button class="seg" type="button" data-goal-view="report" aria-pressed="false">期末のまとめ</button>
+          </div>
+          <label class="tally-switch">
+            <span class="row-meta">期</span>
+            <select id="goal-period" aria-label="見る期"></select>
+          </label>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" id="goal-create-btn" type="button">目標を立てる</button>
+        </div>
+        <div class="list-area" id="goals"></div>
+      </div>
+
       <div class="panel" id="panel-help" hidden>
         <div class="guide" id="guide"></div>
         <aside class="guide-aside" id="guide-toc"
@@ -514,6 +541,7 @@
   <?!= include('ui/js-fun') ?>
   <?!= include('ui/js-focus') ?>
   <?!= include('ui/js-oshi') ?>
+  <?!= include('ui/js-goals') ?>
   <?!= include('ui/js-start') ?>
   </script>
 </body>
