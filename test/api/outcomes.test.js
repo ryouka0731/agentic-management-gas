@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeEnv, expectScreenSafe, expectRefused, asUser, ADMIN, OTHER } from './setup.js';
+import { makeEnv, expectScreenSafe, expectRefused, asUser, ADMIN, OTHER, OWNER } from './setup.js';
 
 /*
  * 画面の API: 成果の数 (src/api/Outcomes.gs)。
@@ -52,5 +52,41 @@ describe('apiOutcomes', () => {
     expect(ctx.apiOutcomes(27).weeks).toHaveLength(8);
     expect(ctx.apiOutcomes(3).weeks).toHaveLength(3);
     expect(ctx.apiOutcomes(3).since).toBe('');
+  });
+});
+
+describe('手元からの命令で書いた行は、命令を置いた人として数える', () => {
+  function runQueued(ctx, op, args, owner) {
+    const f = ctx.commandQueueFolder_().createFile('c' + Math.random().toString(36).slice(2) + '.cmd.json',
+      JSON.stringify({ op, args }), 'text/plain');
+    f._setOwner(owner);
+    ctx.processCommandQueue();
+  }
+
+  it('持ち主の名で残った行でも、記録した人は置いた人になる (持ち主だけで3人に届かない)', () => {
+    const { ctx } = makeEnv({ file: false });
+    const today = ctx.usageDay(new Date());
+    runQueued(ctx, 'issueCreate', { title: '手元から作った' }, 'h@example.com');
+    // 台帳には持ち主 (トリガーの人) の名で残る
+    expect(ctx.dbReadAll('change_log').map((r) => r.actor)).toContain(OWNER);
+    const led = ctx.outcomesLedger_();
+    const who = led.people.filter((p) => ctx.outcomesDayOf_(p.at) === today).map((p) => p.who);
+    expect(who).toContain('h@example.com');
+    expect(who).not.toContain(OWNER);
+    expect(ctx.outcomesTally_(today, led).activePeople).toBe(1);
+  });
+
+  it('置いた人が分からない命令の行は、誰としても数えない', () => {
+    const { ctx } = makeEnv({ file: false });
+    const today = ctx.usageDay(new Date());
+    runQueued(ctx, 'issueCreate', { title: '持ち主の分からない命令' }, '');
+    expect(ctx.outcomesTally_(today).activePeople).toBe(0);
+  });
+
+  it('画面から持ち主が書いたぶんは、そのまま持ち主として数える', () => {
+    const { ctx } = makeEnv({ file: false });
+    const today = ctx.usageDay(new Date());
+    ctx.apiIssueCreate('画面から作った', '', []);
+    expect(ctx.outcomesTally_(today).activePeople).toBe(1);
   });
 });

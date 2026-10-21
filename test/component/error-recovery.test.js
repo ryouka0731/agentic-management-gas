@@ -152,4 +152,47 @@ describe('[もう一度] (混み合いのときだけ)', () => {
     expect($('#issue-list .fail-again')).toBe(null);
     vi.restoreAllMocks();
   });
+
+  it('開き直した入力欄から送り直したら、[もう一度] は外れる (古い [もう一度] を押しても何も起きない)', () => {
+    let n = 0;
+    const app = openIssues({ apiIssueCreate: () => (++n === 1 ? busy() : { number: 9, title: '就業規則の読み合わせ' }) });
+    $('#issue-create-btn').click();
+    $('#side-body form [name="title"]').value = '就業規則の読み合わせ';
+    $('#side-body form .btn-primary').click();
+    const stale = againBtn();
+    expect(stale).toBeTruthy();
+    // 書いたまま開き直してある欄から送る
+    expect($('#side-body form [name="title"]').value).toBe('就業規則の読み合わせ');
+    $('#side-body form .btn-primary').click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate')).toHaveLength(2);
+    expect(againBtn()).toBe(undefined);
+    stale.click();
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate')).toHaveLength(2);
+  });
+
+  it('[もう一度] を押したら、開き直した入力欄は閉じる', () => {
+    let n = 0;
+    const app = openIssues({ apiIssueCreate: () => (++n === 1 ? busy() : { number: 9, title: 'x' }) });
+    $('#issue-create-btn').click();
+    $('#side-body form [name="title"]').value = 'x';
+    $('#side-body form .btn-primary').click();
+    expect($('#side-body form.inline-form')).not.toBe(null);
+    againBtn().click();
+    expect($('#side-body form.inline-form')).toBe(null);
+    expect(app.calls.filter((c) => c.name === 'apiIssueCreate')).toHaveLength(2);
+  });
+
+  it('押せるように戻したボタン (failEnable) を押したら、[もう一度] は外れる', () => {
+    const app = mount({ apiCommit: busy() });
+    const commit = document.getElementById('commit-btn');
+    commit.click();
+    document.querySelector('#side-body form input').value = '第3条を改訂';
+    document.querySelector('#side-body form .btn-primary').click();
+    const stale = againBtn();
+    expect(stale).toBeTruthy();
+    commit.click();
+    expect(againBtn()).toBe(undefined);
+    stale.click();
+    expect(app.calls.filter((c) => c.name === 'apiCommit')).toHaveLength(1);
+  });
 });

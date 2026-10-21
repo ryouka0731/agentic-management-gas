@@ -152,18 +152,49 @@ function dbWithLock_(waitMs, fn, onBusy) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(waitMs)) {
     if (onBusy) return onBusy();
-    // 人に断る「混み合っています」だけを数える (成果の数の busyErrors)。onBusy で黙って次に回すものは数えない
+    // 断った数を数える (成果の数の busyErrors)。onBusy で黙って次に回すものは数えない
     dbBusyNote_();
-    throw new Error('混み合っています。少し待ってからもう一度お試しください');
+    // **同じ実行の中で、もう鍵の中の処理を1つ済ませていたら、別の字で断る。** やることを作る
+    // (番号を振る → カードを置く → 担当を書く) のように鍵を続けて取る操作では、2つ目で断られた
+    // ときには1つ目の行がもう書かれている。「混み合っています」と言うと画面は [もう一度] を出し、
+    // 押すと同じものが2つできる。この字は押し直しを勧めない型 (partial) になる (ErrorKind.js)
+    if (dbWroteThisRun_) throw new Error(DB_PARTIAL_TEXT());
+    throw new Error(DB_BUSY_TEXT());
   }
 
   dbLockDepth_++;
   try {
-    return fn();
+    var out = fn();
+    dbWroteThisRun_ = true;
+    return out;
   } finally {
     dbLockDepth_--;
     lock.releaseLock();
   }
+}
+
+/**
+ * この実行の中で、鍵の中の処理を1つでも済ませたか。
+ *
+ * **Apps Script は呼び出し (画面からの1回・トリガーの1回) ごとにグローバルを初めから読み直す**ので、
+ * ここに置けば「この実行の中で」になる。テストは同じ文脈で何度も呼ぶので、test/harness.js が
+ * 外から呼んだ1回ごとに dbRunBegin_() で戻す。
+ */
+var dbWroteThisRun_ = false;
+
+/** 1回の実行の始まり (テストの harness が呼ぶ。実機ではグローバルの読み直しで同じことになる) */
+function dbRunBegin_() {
+  dbWroteThisRun_ = false;
+}
+
+/** 鍵が取れなかったときの断り。**この字のときだけ**画面は [もう一度] を出す (ErrorKind.js の busy) */
+function DB_BUSY_TEXT() {
+  return '混み合っています。少し待ってからもう一度お試しください';
+}
+
+/** 途中まで書いたあとで鍵が取れなかったときの断り (ErrorKind.js の partial。押し直しを勧めない) */
+function DB_PARTIAL_TEXT() {
+  return '途中まで済みましたが、混み合って続きができませんでした。一覧で確かめてください';
 }
 
 /**
