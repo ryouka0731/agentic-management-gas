@@ -55,18 +55,21 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **テストは `test/ui-source.js` の `APP` だけを読む。** `wiki.html` の include を読んで
   本番と同じ順につなぐ。テストに並びを写さない。`test/ui-assemble.test.js` が、`Main.gs` の
   `include()` でテンプレートを評価したものと同じ字になるかを見ている
-- **部分ファイルは JS でも、HtmlService に「HTML のファイル」として読まれる。** 読むときに HTML として
-  壊れていないかを検査され、壊れていると「形式が正しくない HTML コンテンツ」で**画面全体が開けなくなる**。
-  2026-10-22 に Google 側の検査が厳しくなり、前日まで通っていた字で本番が開けなくなった (@188 → @189 で直した)。
-  本番で1行ずつ確かめて分かった、拒まれる書き方は2つ:
-  - タグに見える字 (`<` + 英字) の属性の値に `"` が入る: 正規表現の `/<img data-sha="([^"]*)">/` の `[^"]`。
-    `[^\x22]` と書く (同じ意味)
-  - タグに見える字の中に、もう1つ `<` や `?` がある: 説明コメントの型 `Array<Array<string>>` /
-    `Array<?HTMLElement>`。`string[][]` / `(HTMLElement|null)[]` と書く
-  `Object<string, string>`・`<li>`・`/^<h([1-6])>/`・`'</' + open + '>'` は通る。`test/ui-html-safe.test.js` が
-  全部の部分ファイルを走査している (本番の検査そのものは写せないので、本番で NG / ok と分かった字で探し方を固定してある)。
+- **`include()` は `createTemplateFromFile(f).getRawContent()` で、そのままの字を返す。**
+  `createHtmlOutputFromFile(f).getContent()` に戻さない。そちらは部分ファイルを「HTML のファイル」として読み直してから返す。
+  2026-10-22 に Google 側のその読み方が変わり、前日まで何も変えていない部分ファイルで本番が2段階に壊れた:
+  1. 読むときの検査が厳しくなり、「形式が正しくない HTML コンテンツ」で**画面全体が開けなくなった** (@188)。拒まれたのは、
+     タグに見える字 (`<` + 英字) の属性の値に `"` が入る正規表現 (`/<img data-sha="([^"]*)">/` の `[^"]`) と、
+     タグに見える字の中にもう1つ `<` や `?` がある説明コメントの型 (`Array<Array<string>>` / `Array<?HTMLElement>`)。
+     `[^\x22]` / `string[][]` / `(HTMLElement|null)[]` に直した (@189)
+  2. 読み直した字を返すようになり、JS の `<` が `&lt;` に、CSS のコメントが消えて返った (`for (var i = 0; i &lt; n; i++)`)。
+     画面の JS 全体が文法エラーになり、**ボタンが押せずアイコンも出ない** (@189)。`include()` を `getRawContent()` にして直した (@190)
+  部分ファイルは `<script>` / `<style>` の中身なので、HTML として読ませる理由がそもそも無い。`test/ui-assemble.test.js` は
+  `getRawContent` しか無い HtmlService の上で `include()` を動かすので、戻すと落ちる。`test/ui-html-safe.test.js` は 1. の
+  書き方を全部の部分ファイルから探す (二重の守り。本番の検査そのものは写せないので、本番で NG / ok と分かった字で探し方を固定してある)。
   本番で確かめるには、`CommandQueue.gs` に一時的な命令を足して `clasp push` し (配信は差し替えない。命令キューは
-  送った最新の中身で回る)、`HtmlService.createHtmlOutputFromFile(f)` を部分ファイルごとに試すと、どれが拒まれるかが分かる
+  送った最新の中身で回る)、部分ファイルごとに `getRawContent()` と `include(f)` を見比べ、`evaluate().getContent()` に
+  `i < n; i++` のような字がそのまま残るかを見る。点検の命令はコミットしない
 
 ## 断りに「次にすること」を添える
 
