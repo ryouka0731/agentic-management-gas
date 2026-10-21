@@ -175,8 +175,10 @@ describe('サーバを呼ぶところ', () => {
     // 帯は数秒で消えるため、後から見た人に「ここが出ていない」が伝わらない
     openIssues({ apiIssueList: new Error('台帳が読めません') });
 
-    expect(document.getElementById('issue-list').textContent)
+    expect(document.querySelector('#issue-list .fail-text').textContent)
       .toBe('エラー: 台帳が読めません');
+    // 器に出す断りにも、次にすることを添える (消えないので後から見た人にも伝わる)
+    expect(document.querySelector('#issue-list .fail-next').textContent).toMatch(/^次にすること: /);
   });
 
   it('失敗しても押し直せる', () => {

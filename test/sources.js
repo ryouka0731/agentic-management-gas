@@ -43,7 +43,7 @@ export const CORE_SOURCES = [
   'src/core/ScrumView.js', 'src/core/Grouping.js', 'src/core/IssueTree.js',
   'src/core/CommandQueue.gs', 'src/core/Motivation.gs', 'src/core/Game.gs', 'src/core/Focus.gs',
   'src/core/Gantt.js', 'src/core/Home.gs', 'src/core/Search.gs',
-  'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs',
+  'src/core/WorkStyleTypes.js', 'src/core/WorkStyle.gs', 'src/core/Outcomes.gs',
   'src/core/Oshi.js', 'src/core/OshiStore.gs',
 ];
 
@@ -52,6 +52,7 @@ export const API_SOURCES = [
   'src/api/Files.gs', 'src/api/Commit.gs', 'src/api/Pr.gs', 'src/api/Outbox.gs',
   'src/api/Issue.gs', 'src/api/Inquiry.gs', 'src/api/People.gs', 'src/api/Home.gs',
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
+  'src/api/Outcomes.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
@@ -65,4 +66,5 @@ export const OSHI_DEFAULT_SOURCES = [
 
 export const FULL_SOURCES = APP_SOURCES.concat([
   'src/core/GoogleTasks.gs', 'src/core/FileUrl.js', 'src/core/MarkdownView.js', 'src/core/Terms.js',
+  'src/core/ErrorKind.js',
 ], KIT_SOURCES, OSHI_DEFAULT_SOURCES);
