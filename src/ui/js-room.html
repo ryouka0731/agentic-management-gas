@@ -1252,7 +1252,16 @@
     say.className = 'room-oshi-say';
     say.setAttribute('aria-live', 'polite');
     say.textContent = oshiLine('pat') || '';
-    el.querySelector('.room-stage').appendChild(say);
+    var stage = el.querySelector('.room-stage');
+    // 絵の高さはキャラごとに違うので、吹き出しは絵の実際の箱から頭の右上に置く (重ねない)。箱が測れない (jsdom) ときは CSS の既定
+    var fr = fig.getBoundingClientRect();
+    var sr = stage.getBoundingClientRect();
+    if (sr.width > 0 && sr.height > 0 && fr.height > 0) {
+      var pct = function (v) { return Math.round(v * 10) / 10; };
+      say.style.left = pct(Math.min(70, (fr.right - sr.left) / sr.width * 100 + 1)) + '%';
+      say.style.bottom = pct(Math.max(5, Math.min(85, (sr.bottom - fr.top) / sr.height * 100 - 6))) + '%';
+    }
+    stage.appendChild(say);
     if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
     roomPatTimer = setTimeout(function () {
       roomPatTimer = null;
