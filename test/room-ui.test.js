@@ -11,7 +11,7 @@ const RENDERERS = ['roomRenderRain', 'roomRenderKeys', 'roomRenderFire', 'roomRe
 const r = ui([
   'ROOM_SOUNDS', 'roomClamp01', 'roomMasterGain', 'roomMixDefault', 'roomMixClean', 'roomPhaseOf', 'roomPhaseLabel',
   'roomNoise', 'roomBiquad', 'roomFilter', 'roomSmoothPoints', 'roomSmoothAt', 'roomPut', 'roomPing', 'roomClick',
-  'roomKeyStroke', 'roomRender', 'focusNormalize', 'focusLoopSeam',
+  'roomKeyStroke', 'roomRender', 'roomRenderSteps', 'roomRunSteps', 'roomSpan', 'roomStepsRain', 'roomStepsKeys', 'roomStepsFire', 'roomStepsWind', 'roomStepsCafe', 'focusNormalize', 'focusLoopSeam',
 ].concat(RENDERERS), { ROOM_GAIN_MAX: 0.5 });
 
 /** 決まった並びの乱数 (確かめるたびに同じ音になる) */
@@ -37,6 +37,8 @@ describe('混ぜ方', () => {
     const d = r.roomMixDefault();
     expect(Object.keys(d.sounds).filter((k) => d.sounds[k].on)).toEqual(['rain']);
     r.ROOM_SOUNDS().forEach((s) => expect(s.seconds).toBeGreaterThanOrEqual(20));
+    // カフェは声らしいものを6つ重ねるので、低い標本の数で描く (描く手間を減らす)
+    expect(r.ROOM_SOUNDS().map((s) => s.rate)).toEqual([24000, 24000, 24000, 24000, 12000]);
   });
 
   it('覚えた混ぜ方を読める形にそろえる。知らない音は捨て、欠けた音と読めない値は既定', () => {
@@ -103,6 +105,17 @@ describe('音の形', () => {
     const levels = [];
     for (let i = 0; i + win <= a.length; i += win) levels.push(rms(a, i, i + win));
     expect(Math.max(...levels) / Math.min(...levels)).toBeGreaterThan(1.5);
+  });
+
+  it('描く手順は刻みに分かれていて、順に走らせると一度に描いたものと同じ音になる', () => {
+    for (const s of r.ROOM_SOUNDS()) {
+      const steps = r.roomRenderSteps(s.key, RATE, 3, seeded(9));
+      expect(steps.length, s.key).toBeGreaterThan(3);
+      let out;
+      steps.forEach((fn) => { out = fn(); });
+      expect(Array.from(out), s.key).toEqual(Array.from(r.roomRender(s.key, RATE, 3, seeded(9))));
+    }
+    expect(r.roomRenderSteps('speech', RATE, 1, seeded(1))).toBe(null);
   });
 
   it('知らない音は描かない', () => {

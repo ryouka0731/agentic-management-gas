@@ -557,7 +557,8 @@
     // 触れられると、その下の要素に触れられなくなる
     el.setAttribute('aria-hidden', 'true');
 
-    document.body.appendChild(el);
+    // 全画面のあいだは、その中のものしか見えない (作業部屋)
+    (document.fullscreenElement || document.body).appendChild(el);
     return el;
   }
 
@@ -2120,7 +2121,8 @@
     closeBtn.addEventListener('click', function () { bar.remove(); });
     bar.appendChild(closeBtn);
 
-    document.body.appendChild(bar);
+    // 全画面のあいだは、その中のものしか見えない (作業部屋)
+    (document.fullscreenElement || document.body).appendChild(bar);
 
     // 押す間が要るものは長めに出す
     var ms = options.ms || (options.undo || options.action ? 10000 : 5000);

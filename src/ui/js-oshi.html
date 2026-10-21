@@ -424,7 +424,9 @@
    * @returns {string}
    */
   function oshiChosenState() {
-    var all = ((oshiData && oshiData.states) || []).map(function (s) { return s.key; });
+    // 決まった場面でだけ出す表情 (作業中) は、でたらめには選ばない
+    var all = ((oshiData && oshiData.states) || []).filter(function (s) { return !s.scene; })
+      .map(function (s) { return s.key; });
     var pool = all;
     var mine = oshiActiveMine();
     if (mine) {

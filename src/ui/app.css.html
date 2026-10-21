@@ -1150,7 +1150,8 @@ select option { color: var(--ink); background-color: var(--surface-raised); }
   color: var(--ink);
   box-shadow: var(--shadow);
   font-size: 13px;
-  z-index: 100;
+  /* 作業部屋 (.room) より上。部屋を開いていても知らせが見える */
+  z-index: 395;
 }
 
 .snackbar.ok { border-left-color: var(--success); }
@@ -2998,7 +2999,8 @@ button.gantt-name:hover { color: var(--accent); }
  */
 .hint-bubble {
   position: fixed;
-  z-index: 300;
+  /* 作業部屋 (.room) と帯より上 */
+  z-index: 396;
   max-width: min(280px, calc(100vw - 16px));
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
@@ -5206,7 +5208,7 @@ body.focus-mode .mobile-nav { display: none !important; }
 }
 /* ===== 作業部屋 (js-room。自分の設定でオンにした人だけ) =====
    画面いっぱいの重ね。左に部屋の絵 (16:9)、右に音の欄。狭い画面では縦に積む */
-.room { position: fixed; inset: 0; z-index: 390; display: flex; flex-direction: column;
+.room { position: fixed; inset: 0; z-index: 393; display: flex; flex-direction: column;
   background: var(--bg); color: var(--ink); }
 .room-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4);
   background: var(--bg-2); box-shadow: var(--elev-1); position: relative; z-index: 1; }
@@ -5304,6 +5306,7 @@ body.focus-mode .mobile-nav { display: none !important; }
 .room-sound-toggle { justify-content: flex-start; }
 .room-master, .room-sound-volume { width: 100%; min-width: 0; }
 .room-note { margin: 0; }
+.room-mix-note { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--danger-bg); color: var(--danger); }
 .room:fullscreen .room-stage { max-width: calc((100vh - 64px) * 16 / 9); }
 @media (max-width: 767px) {
   .room-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
