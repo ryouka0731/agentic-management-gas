@@ -30,12 +30,18 @@ class FakeAudio {
     this.src = src;
     return src;
   }
+  createOscillator() {
+    const osc = { frequency: { setValueAtTime: (v) => { osc.freq = v; } }, connect(to) { osc.to = to; }, disconnect() {},
+      start(t) { osc.startAt = t; }, stop() { osc.stopped = true; } };
+    (this.oscs = this.oscs || []).push(osc);
+    return osc;
+  }
   suspend() { this.state = 'suspended'; }
   resume() { this.state = 'running'; }
   close() { this.state = 'closed'; this.closed = true; }
   createGain() {
     const p = { value: 0, setValueAtTime() {}, linearRampToValueAtTime: (v) => { p.last = v; }, cancelScheduledValues() {},
-      setTargetAtTime: (v) => { p.last = v; } };
+      setTargetAtTime: (v) => { p.last = v; }, exponentialRampToValueAtTime() {} };
     const g = { gain: p, connect() {}, disconnect() { g.disconnected = true; } };
     (this.gains = this.gains || []).push(g);
     return g;
@@ -703,7 +709,7 @@ describe('作業部屋', () => {
       expect(others.length).toBeGreaterThan(0);
       expect(others.every((el) => el.hasAttribute('inert'))).toBe(true);
       expect(room().hasAttribute('inert')).toBe(false);
-      const focusables = [...room().querySelectorAll('button:not([disabled]), input')];
+      const focusables = [...room().querySelectorAll('button:not([disabled]), input, select')];
       const last = focusables[focusables.length - 1];
       last.focus();
       last.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -790,6 +796,179 @@ describe('作業部屋', () => {
       const drops = [...room().querySelectorAll('.room-drop')];
       expect(drops.length).toBeGreaterThan(0);
       expect(drops.every((d) => /%$/.test(d.style.top))).toBe(true);
+    });
+  });
+
+  describe('ポモドーロ', () => {
+    const MIN = 60000;
+    const pomo = () => room().querySelector('.room-pomodoro');
+    const time = () => pomo().querySelector('.room-pomo-time').textContent;
+    const phase = () => pomo().querySelector('.room-pomo-phase').textContent;
+    const main = () => pomo().querySelector('.room-pomo-main');
+    const stopBtn = () => pomo().querySelector('.room-pomo-stop');
+    const total = () => pomo().querySelector('.room-pomo-total').textContent;
+    const saved = () => JSON.parse(window.localStorage.getItem('roomPomodoroTotal'));
+    const DONE = Object.assign({}, OSHI, { events: OSHI.events.concat([
+      { key: 'done', label: 'やることを済ませた', state: 'celebrate', lines: ['おつかれさま！'], mine: [] }]) });
+    /** 最初の mount は本物の時計で。部屋の1秒の時計を偽の時計で回すため、開くのは偽の時計にしてから */
+    function openPomo(over) {
+      const app = mountRoom(ON, over);
+      vi.useFakeTimers();
+      openFromMe();
+      return app;
+    }
+
+    it('始めると残りが減り、一時停止で止まり、再開で続きから。作業が終わると休憩に切り替わり、作業の秒を合計に足す', () => {
+      const app = openPomo({ apiOshiGet: DONE });
+      expect(phase()).toBe('作業');
+      expect(time()).toBe('25:00');
+      expect(main().textContent).toBe('始める');
+      expect(stopBtn().disabled).toBe(true);
+      expect(total()).toBe('今日 0分 ・ 通算 0分');
+      main().click();
+      expect(main().textContent).toBe('一時停止');
+      vi.advanceTimersByTime(1000);
+      expect(time()).toBe('24:59');
+      vi.advanceTimersByTime(60000);
+      expect(time()).toBe('23:59');
+      main().click();
+      expect(main().textContent).toBe('再開');
+      // 一時停止でそこまでの作業 (61秒) を足す
+      expect(saved().today).toBe(61);
+      expect(total()).toBe('今日 1分 ・ 通算 1分');
+      vi.advanceTimersByTime(5 * MIN);
+      expect(time()).toBe('23:59');
+      expect(pomo().querySelector('.room-pomo-round').textContent).toBe('1回目 ・ 一時停止中');
+      main().click();
+      vi.advanceTimersByTime(1000);
+      expect(time()).toBe('23:58');
+      vi.advanceTimersByTime(23 * MIN + 58000);
+      expect(phase()).toBe('休憩');
+      expect(time()).toBe('05:00');
+      expect(pomo().dataset.phase).toBe('rest');
+      // 一時停止で足した分は二度足さない (25分ちょうど)
+      expect(saved().today).toBe(25 * 60);
+      expect(saved().all).toBe(25 * 60);
+      expect(total()).toBe('今日 25分 ・ 通算 25分');
+      const note = pomo().querySelector('.room-pomo-note');
+      expect(note.hidden).toBe(false);
+      expect(note.textContent).toContain('休憩しましょう');
+      // 推しが「済ませた」のせりふを言う
+      expect(room().querySelector('.room-pomo-say').textContent).toBe('おつかれさま！');
+      vi.advanceTimersByTime(5000);
+      expect(room().querySelector('.room-pomo-say')).toBe(null);
+      // 休憩が終わると次の回の作業
+      vi.advanceTimersByTime(5 * MIN);
+      expect(phase()).toBe('作業');
+      expect(pomo().querySelector('.room-pomo-round').textContent).toBe('2回目');
+      expect(saved().today).toBe(25 * 60);
+      // 部屋のポモドーロは集中を始めない
+      expect(callsOf(app, 'apiFocusStart')).toEqual([]);
+    });
+
+    it('止めると、そこまでの作業を合計に足して始める前に戻す', () => {
+      openPomo();
+      main().click();
+      vi.advanceTimersByTime(10 * MIN);
+      expect(time()).toBe('15:00');
+      stopBtn().click();
+      expect(saved().today).toBe(600);
+      expect(total()).toBe('今日 10分 ・ 通算 10分');
+      expect(time()).toBe('25:00');
+      expect(main().textContent).toBe('始める');
+      expect(stopBtn().disabled).toBe(true);
+      vi.advanceTimersByTime(5000);
+      expect(time()).toBe('25:00');
+    });
+
+    it('見ていないタブで時計が遅れても、開始時刻から数えて追いつく。4回目の作業のあとは長い休憩', () => {
+      openPomo();
+      const work = pomo().querySelector('.room-pomo-work');
+      work.value = '15';
+      work.dispatchEvent(new window.Event('change'));
+      expect(time()).toBe('15:00');
+      main().click();
+      // 刻みを走らせずに時刻だけ 16 分進める (背景のタブで間引かれた)
+      vi.setSystemTime(Date.now() + 16 * MIN);
+      vi.advanceTimersByTime(1000);
+      expect(phase()).toBe('休憩');
+      expect(time()).toBe('03:59');
+      expect(saved().today).toBe(15 * 60);
+      // 作業 15 × 4 + 休憩 5 × 3 = 75 分で4回目の作業が終わる
+      // いまは開始から 16 分 1 秒。75 分を 1 秒過ぎた所で刻む
+      vi.setSystemTime(Date.now() + (75 - 16) * MIN - 1000);
+      vi.advanceTimersByTime(1000);
+      expect(phase()).toBe('長い休憩');
+      expect(time()).toBe('14:59');
+      expect(pomo().querySelector('.room-pomo-round').textContent).toBe('4回目');
+      expect(saved().today).toBe(4 * 15 * 60);
+    });
+
+    it('開き直しても、長さの設定と合計が残る。閉じると一時停止になり、開き直すと続きから', () => {
+      openPomo();
+      const work = pomo().querySelector('.room-pomo-work');
+      const rest = pomo().querySelector('.room-pomo-rest');
+      expect(work.value).toBe('25');
+      expect(rest.value).toBe('5');
+      work.value = '50';
+      work.dispatchEvent(new window.Event('change'));
+      rest.value = '10';
+      rest.dispatchEvent(new window.Event('change'));
+      expect(JSON.parse(window.localStorage.getItem('roomPomodoro'))).toEqual({ work: 50, rest: 10 });
+      expect(time()).toBe('50:00');
+      main().click();
+      vi.advanceTimersByTime(2 * MIN);
+      room().querySelector('.room-close').click();
+      expect(saved().today).toBe(120);
+      vi.advanceTimersByTime(10 * MIN);
+      openFromMe();
+      expect(main().textContent).toBe('再開');
+      expect(time()).toBe('48:00');
+      vi.useRealTimers();
+
+      mountRoom(ON);
+      openFromMe();
+      expect(pomo().querySelector('.room-pomo-work').value).toBe('50');
+      expect(pomo().querySelector('.room-pomo-rest').value).toBe('10');
+      expect(time()).toBe('50:00');
+      expect(total()).toBe('今日 2分 ・ 通算 2分');
+    });
+
+    it('日付が変わると、今日はゼロに戻る (通算は残る)', () => {
+      mountRoom(ON);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 9, 22, 23, 50, 0));
+      window.localStorage.setItem('roomPomodoroTotal', JSON.stringify({ day: '2026-10-22', today: 3000, all: 9000 }));
+      openFromMe();
+      expect(total()).toBe('今日 50分 ・ 通算 2時間30分');
+      vi.advanceTimersByTime(11 * MIN);
+      expect(total()).toBe('今日 0分 ・ 通算 2時間30分');
+      main().click();
+      vi.advanceTimersByTime(MIN);
+      main().click();
+      expect(saved()).toEqual({ day: '2026-10-23', today: 60, all: 9060 });
+      expect(total()).toBe('今日 1分 ・ 通算 2時間31分');
+      // 前の日の記録が残っていても、今日には数えない
+      window.localStorage.setItem('roomPomodoroTotal', JSON.stringify({ day: '2026-10-20', today: 4000, all: 5 * 3600 }));
+      vi.advanceTimersByTime(1000);
+      expect(total()).toBe('今日 0分 ・ 通算 5時間');
+    });
+
+    it('部屋の音を流しているときは、作業の終わりに2音の合図を鳴らす (流していなければ音の仕組みを作らない)', () => {
+      window.AudioContext = FakeAudio;
+      openPomo();
+      main().click();
+      vi.advanceTimersByTime(25 * MIN);
+      expect(phase()).toBe('休憩');
+      expect(FakeAudio.made.length).toBe(0);
+      stopBtn().click();
+      room().querySelector('.room-play').click();
+      flush();
+      const ctx = FakeAudio.made[0];
+      main().click();
+      vi.advanceTimersByTime(25 * MIN);
+      expect(ctx.oscs.map((o) => o.freq)).toEqual([1046.5, 784]);
+      expect(ctx.oscs.every((o) => o.to && o.stopped)).toBe(true);
     });
   });
 });
