@@ -64,6 +64,12 @@ describe('1枚の表のマス (oshiSheetCells)', () => {
     expect(col[col.length - 1].y + col[col.length - 1].h).toBe(767);
   });
 
+  it('列が画像の幅より多い・行が高さより多いときは、幅と高さで止める (0px のマスを作らない)', () => {
+    const cells = f.oshiSheetCells(3, 2, 4, 8);
+    expect(cells.length).toBe(6);
+    expect(cells.every((c) => c.w >= 1 && c.h >= 1)).toBe(true);
+  });
+
   it('行と列は 1 より小さくしない', () => {
     expect(f.oshiSheetCells(10, 10, 0, -2)).toEqual([{ index: 0, row: 0, col: 0, x: 0, y: 0, w: 10, h: 10 }]);
   });

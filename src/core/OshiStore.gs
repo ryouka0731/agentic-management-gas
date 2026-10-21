@@ -923,11 +923,15 @@ function oshiSetCharProfile_(email, id, value) {
  * @returns {{name: string, tone: string, lines: Object<string, string[]>, profile: {items: object[], clearLine: string}}}
  */
 function oshiCharImportValid_(text) {
-  var raw = oshiExtractJson(text);
+  var pasted = String(text == null ? '' : text);
+  if (pasted.length > OSHI_CHARKIT_TEXT_MAX()) {
+    throw new Error('貼った字が長すぎます。AI の答えは' + OSHI_CHARKIT_TEXT_MAX() + '字までにしてください (JSON のところだけを貼っても取り込めます)');
+  }
+  var raw = oshiExtractJson(pasted);
   if (!raw) throw new Error('AI の答えの中に JSON が見つかりませんでした。{ から } までを全部貼ってください');
   var got = JSON.parse(raw);
   if (!got || typeof got !== 'object' || Array.isArray(got)) throw new Error('AI の答えの JSON は、欄を { } で囲んだ形にしてください');
-  var name = oshiCleanName_(typeof got.name === 'string' ? got.name : '');
+  var name = oshiCleanName_(typeof got.name === 'string' ? oshiCharKitText_(got.name) : '');
   if (!name) throw new Error('名前 (name) が書かれていません');
   var tone = typeof got.tone === 'string' ? got.tone.replace(/^\s+|\s+$/g, '') : '';
   if (!oshiToneKnown(tone)) {
@@ -941,7 +945,8 @@ function oshiCharImportValid_(text) {
     if (!Array.isArray(v) && typeof v !== 'string') throw new Error('「' + e.label + '」のせりふは字の並び (["…"]) にしてください');
     var clean;
     try {
-      clean = oshiCleanLines(Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? x : ''; }) : v);
+      clean = oshiCleanLines(Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? oshiCharKitText_(x) : ''; })
+        : oshiCharKitText_(v));
     } catch (err) {
       throw new Error('「' + e.label + '」のせりふを直してください。' + err.message);
     }
@@ -951,10 +956,44 @@ function oshiCharImportValid_(text) {
   var items = Array.isArray(p.items) ? p.items.map(function (it) {
     if (!it || typeof it !== 'object' || Array.isArray(it)) return it;
     var lv = typeof it.lv === 'string' && /^\s*\d+\s*$/.test(it.lv) ? Number(it.lv) : it.lv;
-    return { lv: lv, label: it.label, text: it.text };
+    return { lv: lv, label: oshiCharKitText_(it.label), text: oshiCharKitText_(it.text) };
   }) : [];
-  var profile = oshiProfileValid_({ items: items, clearLine: p.clearLine === undefined ? null : p.clearLine });
+  var profile = oshiProfileValid_({ items: items, clearLine: p.clearLine === undefined ? null : oshiCharKitText_(p.clearLine) });
+  oshiCharKitLinesFit_(lines);
   return { name: name, tone: tone, lines: lines, profile: { items: profile.items, clearLine: profile.clearLine } };
+}
+
+/** 貼れる AI の答えの長さの上限 (取り出す前に断る) */
+function OSHI_CHARKIT_TEXT_MAX() {
+  return 60000;
+}
+
+/** 台帳に書くせりふの JSON の長さの上限。セルは5万字までなので、プロフィール (OSHI_PROFILE_JSON_MAX) と同じく余裕を見る */
+function OSHI_LINES_JSON_MAX() {
+  return 45000;
+}
+
+/**
+ * AI の答えの字から、制御文字 (改行・タブを除く C0・DEL・C1) と、字の向きを変える印・幅の無い空白・BOM を落とす。
+ * 見えないうえに、JSON にすると \uXXXX の6字に膨らむ (oshiProfileText_ と同じ考え。字でないものはそのまま返す)。
+ *
+ * @param {*} v
+ * @returns {*}
+ */
+function oshiCharKitText_(v) {
+  if (typeof v !== 'string') return v;
+  return v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/g, '');
+}
+
+/**
+ * せりふが台帳の1つのセルに収まるか。書く形 (JSON) の長さで見て、超えればふつうの言葉で断る。
+ *
+ * @param {Object<string, string[]>} lines
+ */
+function oshiCharKitLinesFit_(lines) {
+  if (JSON.stringify(lines).length > OSHI_LINES_JSON_MAX()) {
+    throw new Error('せりふが長すぎます。せりふを JSON にして' + OSHI_LINES_JSON_MAX() + '字までにしてください');
+  }
 }
 
 /**
@@ -971,13 +1010,24 @@ function oshiCharImport_(email, id, text) {
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   var v = oshiCharImportValid_(text);
+  /** 残す場面のせりふに、答えのせりふを重ねる */
+  function merged(before) {
+    var out = {};
+    Object.keys(before || {}).forEach(function (k) { out[k] = before[k]; });
+    Object.keys(v.lines).forEach(function (k) { out[k] = v.lines[k]; });
+    return out;
+  }
+  // 直すときは、残す場面と合わせた長さも鍵を取る前に見る (鍵の中でも読み直して見る)
+  if (id) oshiCharKitLinesFit_(merged(oshiProfile_(who, id).lines));
   return dbWithLock_(30000, function () {
     var created = !id;
+    if (!created) {
+      oshiAssertMine_(who, id);
+      oshiCharKitLinesFit_(merged(oshiProfile_(who, id).lines));
+    }
     var cid = created ? oshiCharCreate_(who, v.name, v.tone).id : id;
-    if (!created) oshiAssertMine_(who, cid);
     var cur = oshiProfile_(who, cid);
-    var lines = created ? {} : cur.lines;
-    Object.keys(v.lines).forEach(function (k) { lines[k] = v.lines[k]; });
+    var lines = merged(created ? {} : cur.lines);
     var video = cur.profile ? cur.profile.clearVideo : '';
     var empty = !v.profile.items.length && !v.profile.clearLine && !video;
     oshiProfileWrite_(who, cid, {

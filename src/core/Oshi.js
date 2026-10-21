@@ -572,55 +572,68 @@ function oshiCharKitPrompt(tool, maxLevel) {
 }
 
 /**
- * AI の答えから、最初の JSON の物 ({...}) を取り出す。```json の囲みがあればその中を先に見る。
- * 前後の説明の字は捨てる。字の中の { } は数えない。見つからなければ null。
+ * AI の答えから、最初の JSON の物 ({...}) を取り出す。```json の囲みを先に、無ければほかの囲み、それも無ければ
+ * 答え全体を見る。前後の説明の字は捨てる。字の中の { } は数えない。
+ * **最初の物が読めなければ断る** (中や後ろの物に逃げると、壊れた答えの一部を答えとして取り込んでしまう)。
+ * 1回なめるだけにしてある (閉じていない { がたくさんあっても、数え直さない)。
  *
  * @param {*} text
- * @returns {string|null} JSON の字
+ * @returns {string|null} JSON の字。{ が1つも無ければ null
  */
 function oshiExtractJson(text) {
   var s = String(text == null ? '' : text);
-  var fence = /```[a-zA-Z]*[ \t]*\r?\n([\s\S]*?)```/.exec(s);
-  if (fence) {
-    var inner = oshiFirstObject_(fence[1]);
-    if (inner) return inner;
-  }
+  var fence = oshiFenceBody_(s, /```json[ \t]*\r?\n/ig) || oshiFenceBody_(s, /```[a-zA-Z]*[ \t]*\r?\n/g);
+  if (fence && fence.indexOf('{') >= 0) return oshiFirstObject_(fence);
   return oshiFirstObject_(s);
 }
 
 /**
- * 字の中の、最初の釣り合った { … }。字 ("…") の中の括弧と \" は数えない。
+ * 最初の囲みの中身 (開きの印 open に当たったところから、次の ``` まで)。閉じが無ければ null。
+ * 正規表現で中身まで取ると、閉じていない囲みが多いときに何度もなめ直すので、閉じは indexOf で探す。
+ *
+ * @param {string} s
+ * @param {RegExp} open g 付き
+ * @returns {string|null}
+ */
+function oshiFenceBody_(s, open) {
+  var m = open.exec(s);
+  if (!m) return null;
+  var from = m.index + m[0].length;
+  var end = s.indexOf('```', from);
+  return end < 0 ? null : s.slice(from, end);
+}
+
+/**
+ * 字の中の、最初の釣り合った { … }。字 ("…") の中の括弧と \" は数えない。最初の { から1回だけなめる。
  *
  * @param {string} s
  * @returns {string|null}
  */
 function oshiFirstObject_(s) {
   var start = s.indexOf('{');
-  while (start >= 0) {
-    var depth = 0;
-    var inStr = false;
-    for (var i = start; i < s.length; i++) {
-      var ch = s.charAt(i);
-      if (inStr) {
-        if (ch === '\\') i++;
-        else if (ch === '"') inStr = false;
-        continue;
-      }
-      if (ch === '"') inStr = true;
-      else if (ch === '{') depth++;
-      else if (ch === '}' && --depth === 0) {
-        var got = s.slice(start, i + 1);
-        try {
-          JSON.parse(got);
-          return got;
-        } catch (e) {
-          break;
-        }
-      }
+  if (start < 0) return null;
+  var depth = 0;
+  var inStr = false;
+  for (var i = start; i < s.length; i++) {
+    var ch = s.charAt(i);
+    if (inStr) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inStr = false;
+      continue;
     }
-    start = s.indexOf('{', start + 1);
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) {
+      var got = s.slice(start, i + 1);
+      try {
+        JSON.parse(got);
+      } catch (e) {
+        break;
+      }
+      return got;
+    }
   }
-  return null;
+  throw new Error('AI の答えの JSON を読めませんでした。{ から } までが欠けずに入っているか、"" や , が抜けていないかを確かめてください');
 }
 
 /**
@@ -783,7 +796,7 @@ function oshiGreetingOf(hour) {
 function oshiCleanLines(lines) {
   var lim = OSHI_TEXT_LIMITS();
   var list = Array.isArray(lines) ? lines : String(lines == null ? '' : lines).split('\n');
-  var seen = {};
+  var seen = Object.create(null);
   var out = [];
   for (var i = 0; i < list.length; i++) {
     var one = String(list[i] == null ? '' : list[i]).replace(/^\s+|\s+$/g, '');
