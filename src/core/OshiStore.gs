@@ -238,7 +238,7 @@ function oshiSetProfile_(email, id, name, tone) {
  */
 function oshiSetLines_(email, id, event, lines) {
   if (!oshiEventOf(event)) throw new Error('知らない場面です: ' + event);
-  var clean = oshiCleanLines(lines);
+  var clean = oshiCleanEventLines(event, lines);
   var who = oshiWho_(email);
   if (!who) throw new Error('誰の推しか分かりません');
   return dbWithLock_(30000, function () {
@@ -625,6 +625,42 @@ function oshiChoice_(email) {
   return { value: value, kind: c.kind, key: c.key, id: c.id, fallback: fb && fb.kind === 'builtin' ? fb.key : '' };
 }
 
+/**
+ * その人がいま使うキャラの、考え中のせりふ (Claude Code の spinnerVerbs に書くもの。命令 oshiSpinner)。
+ * **見るのは渡された人の自分の設定だけ** (oshi.on と oshi.char。開いている本人ではない)。自分のキャラなら、そのキャラの
+ * 考え中のせりふを先に、口調のせりふを後に並べる (画面の吹き出しと同じ順)。どれも oshiSpinnerPick を通す。
+ * 推しがオフ・言えるせりふが無いときは、空の並びと理由を返す (手元の道具は書かない)。
+ *
+ * @param {string} email
+ * @returns {{on: boolean, char: string, name: string, lines: string[], reason: string}}
+ */
+function oshiSpinnerLines_(email) {
+  var who = oshiWho_(email);
+  if (!who) throw new Error('誰の推しか分かりません');
+  if (prefGet_('oshi.on', who) !== true) {
+    return { on: false, char: '', name: '', lines: [],
+      reason: '推しがオフです。画面の「設定」→ 自分の設定の「推し」で「推しに応援してもらう」をオンにすると出せます' };
+  }
+  var c = oshiChoice_(who);
+  var name;
+  var tone;
+  var mine = [];
+  if (c.kind === 'mine') {
+    var p = oshiProfile_(who, c.id);
+    name = p.name;
+    tone = p.tone;
+    mine = p.lines.spinner || [];
+  } else {
+    var b = oshiBuiltinOf(c.key);
+    name = b.name;
+    tone = b.tone;
+  }
+  var lines = oshiSpinnerPick(mine.concat(oshiToneLines(tone, 'spinner')));
+  var char = c.kind === 'mine' ? 'mine:' + c.id : 'builtin:' + c.key;
+  if (!lines.length) return { on: true, char: char, name: name, lines: [], reason: '使うキャラに、考え中のせりふがありません' };
+  return { on: true, char: char, name: name, lines: lines, reason: '' };
+}
+
 // ----- プロフィール (Lv で少しずつ分かる) と、クリア -----
 
 /**
@@ -947,7 +983,7 @@ function oshiSetCharProfile_(email, id, value) {
  *
  * - 知らない欄は捨てる (上の欄・場面・プロフィールの中)。AI はよく欄を足すので、断ると貼るたびに直すことになる
  * - name は要る (OSHI_TEXT_LIMITS の長さまで)、tone は OSHI_TONES の key だけ
- * - lines は知っている場面だけ。長さと数は oshiCleanLines で見る
+ * - lines は知っている場面だけ。長さと数は oshiCleanLines で見る (考え中 spinner は oshiLineMaxOf の 24 字まで)
  * - profile は items と clearLine だけを拾い、oshiProfileValid_ で見る (lv の "2" のような数の字は数にする)。
  *   動画 (clearVideo) は取り込まない (AI に動画のリンクを作らせない。あとで「プロフィール (JSON)」で足せる)
  *
@@ -977,7 +1013,7 @@ function oshiCharImportValid_(text) {
     if (!Array.isArray(v) && typeof v !== 'string') throw new Error('「' + e.label + '」のせりふは字の並び (["…"]) にしてください');
     var clean;
     try {
-      clean = oshiCleanLines(Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? oshiCharKitText_(x) : ''; })
+      clean = oshiCleanEventLines(e.key, Array.isArray(v) ? v.map(function (x) { return typeof x === 'string' ? oshiCharKitText_(x) : ''; })
         : oshiCharKitText_(v));
     } catch (err) {
       throw new Error('「' + e.label + '」のせりふを直してください。' + err.message);
