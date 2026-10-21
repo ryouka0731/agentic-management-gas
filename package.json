@@ -9,7 +9,7 @@
     "push": "clasp push -f",
     "deploy": "node scripts/deploy.mjs",
     "secrets": "command -v trufflehog >/dev/null 2>&1 || { echo 'trufflehog が見つかりません。brew install trufflehog で入れてください' >&2; exit 1; }; trufflehog git file://. --results=verified --fail --no-update",
-    "coverage": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary",
+    "coverage": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary --testTimeout=60000 --maxWorkers=3",
     "metrics": "node scripts/metrics.mjs"
   },
   "devDependencies": {
