@@ -133,8 +133,9 @@ function OSHI_MINE_MAX() {
 }
 
 /**
- * 使うキャラの名指しを読む。'builtin:<key>' (最初からいるキャラ) か 'mine:<番号>' (自分のキャラ)。
- * 形だけを見る (自分のキャラが本当にあるかは OshiStore.gs が見る)。
+ * 使うキャラの名指しを読む。'builtin:<key>' (最初からいるキャラ)・'mine:<番号>' (自分のキャラ)・
+ * 'shared:<番号>' (ほかの人がみんなに公開したキャラ。番号は台帳 oshi の行の通し番号で、人ごとの charId ではない)。
+ * 形だけを見る (自分のキャラが本当にあるか・公開されているかは OshiStore.gs / OshiShare.gs が見る)。
  *
  * @param {*} v
  * @returns {{kind: string, key: string, id: number}|null} 読めなければ null
@@ -145,6 +146,8 @@ function oshiCharParse(v) {
   if (m) return oshiBuiltinOf(m[1]) ? { kind: 'builtin', key: m[1], id: 0 } : null;
   m = /^mine:([1-9][0-9]{0,5})$/.exec(s);
   if (m) return { kind: 'mine', key: '', id: Number(m[1]) };
+  m = /^shared:([1-9][0-9]{0,8})$/.exec(s);
+  if (m) return { kind: 'shared', key: '', id: Number(m[1]) };
   return null;
 }
 
