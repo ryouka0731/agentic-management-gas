@@ -80,6 +80,32 @@ describe('画面とサーバで同じ答えになる', () => {
     });
   });
 
+  it('coworkLinkParse_ / coworkLinkPartsValid_ / coworkLinkOf_ / coworkLinkKindLabel_', () => {
+    // 作業雑談部屋のリンク (src/core/CoworkLink.js)。ずれると、画面では通るのに保存で断られる (または逆の) リンクが出る
+    const core = loadGas('src/core/CoworkLink.js');
+    const names = ['coworkLinkRe_', 'coworkSlackReserved_', 'coworkLinkParse_', 'coworkLinkPartsValid_', 'coworkLinkOf_',
+      'coworkLinkKindLabel_'];
+    const view = ui(names);
+    const urls = [
+      'https://meet.google.com/abc-defg-hij', 'https://meet.google.com/abc-defg-hij/?authuser=0',
+      'HTTPS://MEET.GOOGLE.COM/abc-defg-hij', 'https://meet.google.com/lookup/team-room',
+      'https://app.slack.com/huddle/T01ABCDEF/C02GHIJKL', 'https://Team-X.slack.com/archives/C02GHIJKL',
+      'http://meet.google.com/abc-defg-hij', 'javascript:alert(1)', 'https://meet.google.com.evil.com/abc-defg-hij',
+      'https://meet.google.com:443/abc-defg-hij', 'https://u@meet.google.com/abc-defg-hij', 'https://www.slack.com/archives/C02GHIJKL',
+      'https://team.slack.com/archives/C02GHIJKL/p1', 'https://app.slack.com/huddle/T01ABCDEF', '', null, 7,
+      'https://zoom.us/j/1', 'https://meet.google.com/' + 'a'.repeat(400),
+    ];
+    urls.forEach((u) => {
+      const a = core.coworkLinkParse_(u);
+      const b = view.coworkLinkParse_(u);
+      expect(same(a, b), String(u)).toBe(true);
+      const p = a.parts || { kind: 'x' };
+      expect(view.coworkLinkPartsValid_(p)).toBe(core.coworkLinkPartsValid_(p));
+      expect(view.coworkLinkOf_(p)).toBe(core.coworkLinkOf_(p));
+      expect(view.coworkLinkKindLabel_(p)).toBe(core.coworkLinkKindLabel_(p));
+    });
+  });
+
   it('oshiGreetingOf (推しのあいさつの区切り)', () => {
     const core = loadGas('src/core/Oshi.js');
     const view = ui(['oshiGreetingOf']);

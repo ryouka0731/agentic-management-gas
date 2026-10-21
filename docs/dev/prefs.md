@@ -38,3 +38,8 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `prefValid_` は部品の形 (`focusMusicPartsValid_`) を見るので、台帳を手で書き換えた崩れた値は既定に倒れる。
 画面へは `items` の value に部品から組み直したリンク、`effective.focus.musicParts` に部品を渡す (埋め込みの URL は画面が組む)。
 `Prefs.gs` が `FocusMusic.js` を呼ぶので、`Prefs.gs` を読むテストの SOURCES には `src/core/FocusMusic.js` も要る。
+
+「作業雑談部屋」は `cowork.enabled` (チームの設定、既定オフ) と `cowork.showFocus` (自分の設定、既定オフ) だけが `PREFS_SCHEMA()` に入る。
+**部屋の一覧は項目にしない。** 名前とリンクの部品の並びで、汎用の欄では組めないので、スクリプトプロパティ `COWORK_ROOMS` に置き、
+書くのは `apiCoworkSetRooms` (管理者だけ) だけにしてある。画面の欄は `js-cowork` の `makeCoworkRoomsEditor` が `cowork.enabled` の節に添える。
+`Prefs.gs` は `CoworkLink.js` を呼ばない (`Prefs.gs` を読むテストの SOURCES を増やさないため)。

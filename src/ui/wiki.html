@@ -68,6 +68,15 @@
         </button>
       </div>
 
+      <!-- 作業雑談部屋 (Google Meet / Slack の部屋)。既定はオフで、チームの設定でオンにしたときだけ出す (js-cowork の coworkPrefsChanged) -->
+      <div class="nav-section" id="nav-cowork" hidden>
+        <h2>作業雑談部屋</h2>
+        <button class="nav-item" data-tab="cowork">
+          <span class="nav-label">作業雑談部屋</span>
+          <span class="nav-desc">いま誰が部屋にいるか</span>
+        </button>
+      </div>
+
       <div class="nav-section">
         <h2>困ったとき</h2>
         <button class="nav-item" data-tab="help">
@@ -422,6 +431,14 @@
         <div class="list-area" id="goals"></div>
       </div>
 
+      <div class="panel panel-col" id="panel-cowork" hidden>
+        <div class="panel-actions">
+          <span class="spacer"></span>
+          <button class="btn" id="cowork-refresh" type="button">いまの様子を見る</button>
+        </div>
+        <div class="list-area" id="cowork-rooms"></div>
+      </div>
+
       <div class="panel" id="panel-help" hidden>
         <div class="guide" id="guide"></div>
         <aside class="guide-aside" id="guide-toc"
@@ -543,6 +560,7 @@
   <?!= include('ui/js-oshi') ?>
   <?!= include('ui/js-goals') ?>
   <?!= include('ui/js-luck') ?>
+  <?!= include('ui/js-cowork') ?>
   <?!= include('ui/js-start') ?>
   </script>
 </body>
