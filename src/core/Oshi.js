@@ -5,7 +5,8 @@
  * 番頭に上げる。上げたキャラクターが、済ませたときにほめ、あいさつし、活動に合わせて育つ。
  *
  * **ここが唯一の定義である。** 表情 (OSHI_STATES)・口調 (OSHI_TONES)・場面 (OSHI_EVENTS)・
- * せりふ (OSHI_LINES)・作り方の頼み文 (oshiPrompt / OSHI_PROMPT_BASE)・育ちの段 (OSHI_STAGES)・
+ * せりふ (OSHI_LINES)・作り方の頼み文 (oshiPrompt / OSHI_PROMPT_BASE)・キャラ作成キットの頼み文 (oshiCharKitPrompt)・
+ * 育ちの段 (OSHI_STAGES)・
  * 画像の上限 (OSHI_IMAGE_LIMITS)・プロフィールの上限と見せ方 (OSHI_PROFILE_LIMITS / oshiProfileReveal) を、画面は apiOshiGet で受け取って使う。手引き
  * (docs/manual/oshi.md) は説明だけで、頼み文を写さない (test/oshi.test.js が見ている)。
  *
@@ -419,12 +420,257 @@ function OSHI_PROMPT_RULES() {
     '決まり:',
     '- 参考画像と同じキャラクター (同じ顔立ち・髪型・髪の色・目の色・服装・配色) で描く',
     '- 正方形 (縦横 1:1) の PNG。背景は透明。透明にできなければ、白一色の無地',
+  ].concat(OSHI_PROMPT_LOOK_RULES());
+}
+
+/**
+ * 絵の見せ方の決まり (背景と「誰を描くか」を除く)。表情ごとの頼み文 (OSHI_PROMPT_RULES) と
+ * キャラ作成キット (oshiCharKitPrompt) の両方に付ける。
+ *
+ * @returns {string[]}
+ */
+function OSHI_PROMPT_LOOK_RULES() {
+  return [
     '- 胸から上 (上半身)。キャラクターを真ん中に大きく',
     '- 表情がはっきり分かるように',
     '- 画像の中に文字・吹き出し・ロゴ・署名を入れない',
     '- 職場で見せて困らない、健全な表現にする (肌の露出・暴力・流血を描かない)',
     '- 画風・線の太さ・塗り方は、これまでの画像とそろえる',
   ];
+}
+
+// ----- キャラ作成キット (写真とリンクから、AI の道具にキャラを1人作ってもらう) -----
+
+/**
+ * キャラ作成キットの道具。**頼み文の唯一の定義** (画面の「コピー」と手元の道具の oshi-prompt は、どちらも
+ * oshiCharKitPrompt を番頭から受け取る)。key は画面と手元の道具の引数に出るので変えない。
+ *
+ * - images: 絵の受け取り方。png = 表情ごとの透明な PNG、green = 表情ごとの緑一色の背景 (番頭で抜く)、
+ *   text = 絵は作らず、画像を作る道具に貼る頼み文を書く、sheet = 1枚の表の画像を手元で切り分ける
+ * - steps: その道具に頼む手順 (表情の並びと JSON の形は oshiCharKitPrompt が足す)
+ *
+ * @returns {Array<{key: string, label: string, images: string, steps: string[]}>}
+ */
+function OSHI_CHARKIT_TOOLS() {
+  return [
+    { key: 'chatgpt', label: 'ChatGPT', images: 'png', steps: [
+      '絵は、下の表情ごとに1枚ずつ、別の画像として作ってください (1枚に1つの表情)。',
+      '- 背景は透明にして、透明な PNG で書き出す (白や模様の背景を付けない)',
+      '- 正方形 (縦横 1:1)',
+      '- ファイルの名前は表情の key に合わせる (例: idle.png)',
+      '1枚目 (idle) を作ったら、同じキャラクターのまま残りを順に作ってください。',
+    ] },
+    { key: 'gemini', label: 'Gemini', images: 'green', steps: [
+      '絵は、下の表情ごとに1枚ずつ、別の画像として作ってください (1枚に1つの表情)。',
+      '- 背景は透明にせず、#00FF00 (明るい緑) 一色の無地にする。緑の背景は、あとで番頭が抜いて透明にする',
+      '- キャラクターの髪・目・服・小物には緑を使わない (背景と一緒に抜けてしまう)',
+      '- 背景に影・ぼかし・光・模様を付けない。キャラクターの輪郭の外は、すべて同じ緑にする',
+      '- 正方形 (縦横 1:1)',
+      '1枚目 (idle) を作ったら、同じキャラクターのまま残りを順に作ってください。',
+    ] },
+    { key: 'claude', label: 'Claude', images: 'text', steps: [
+      'あなたは絵を作らなくてかまいません。代わりに、画像を作る道具に貼れる頼み文を書いてください。',
+      '- まず、キャラクターの見た目 (髪型・髪の色・目の色・服装・小物・配色・画風) を1つの段落にまとめる',
+      '- 次に、下の表情ごとに1つずつ、その段落をそのまま入れた頼み文を書く (表情の key を見出しにする)',
+      '- 頼み文には「正方形 (縦横 1:1)・背景は透明な PNG (できなければ #00FF00 一色の無地)・1枚に1つの表情」と、下の絵の決まりを入れる',
+      '- 頼み文は1つずつ貼っても分かるように書く。「参考画像」とは書かず、見た目の段落で言い換える。先頭に「同じ会話の中で、idle から順に作る」と添える',
+    ] },
+    { key: 'codex', label: 'Codex', images: 'sheet', steps: [
+      'このフォルダには、表情を1枚に並べた表の画像 (例: sheet.png) が1つあります。それを表情ごとの透明な PNG に切り分けてください。',
+      '1. 表の画像を開き、縦横の大きさと、行と列の数を確かめる。ふつうは下の並びの順に、左上から右へ、行が終わったら次の行へ並んでいる',
+      '2. マスごとに中身を見る。同じキャラクターか・表情が描き分けてあるか・空のマスはどれかを確かめ、違っていれば切る前に利用者に伝える',
+      '3. 行と列の数・どのマスがどの表情か (並びの順でよいか) を利用者に確かめてから切る。分からないマスは使わない',
+      '4. マスごとに切り出す。マスの幅は (画像の幅 ÷ 列の数)、高さは (画像の高さ ÷ 行の数) で、端数は四捨五入する',
+      '5. 背景を透明にする。背景が一色 (#00FF00 の緑や白) なら、マスの縁からつながっていて四隅の色に近い画素 (色の差がおよそ 60 まで) だけを透明にする。' +
+        'キャラクターの中の同じ色は消さない。境目の中間の色は少し透かす',
+      '6. 正方形になるように透明な余白を足し、長い辺が 512px より大きければ 512px に縮める (小さければ大きくしない)',
+      '7. oshi/<表情の key>.png の名前で保存する (例: oshi/idle.png・oshi/praise.png)。使わない表情のファイルは作らない',
+      '8. 下の JSON を oshi/character.json に保存する',
+      '切るのは手元にある道具 (Python の Pillow・ImageMagick・Node.js など) で行い、新しく入れるものがあれば、入れる前に利用者に確かめてください。',
+      '表の画像が見つからないときは、作らずに、利用者に置き場所を尋ねてください。',
+    ] },
+  ];
+}
+
+/**
+ * @param {string} key
+ * @returns {object|null}
+ */
+function oshiCharKitToolOf(key) {
+  var list = OSHI_CHARKIT_TOOLS();
+  for (var i = 0; i < list.length; i++) if (list[i].key === String(key)) return list[i];
+  return null;
+}
+
+/**
+ * 写真とリンクは手がかりにだけ使い、実在の人をそのまま描かない・名前を出さない、という決まり。どの道具の頼み文にも付ける。
+ *
+ * @returns {string[]}
+ */
+function OSHI_CHARKIT_ORIGINAL_RULES() {
+  return [
+    '大事な決まり:',
+    '- 添付した写真とリンク先のページは、雰囲気 (色・服の感じ・好きなもの・話し方) の手がかりとして使うだけにする',
+    '- 写っている人や紹介されている人をそのまま描かない。顔立ちを似せず、新しいオリジナルのキャラクターを考える',
+    '- 答えの中に、実在の人の名前・所属 (グループ・会社・学校など)・肩書きを書かない。名前もオリジナルにする',
+    '- リンク先が開けないとき・写真やリンクが無いときは、ある手がかり (写真・言葉で伝えられた雰囲気) だけで考える',
+  ];
+}
+
+/**
+ * プロフィールの項目に使う Lv。いちばん早い Lv (OSHI_PROFILE_LIMITS の lvMin) から、最高の Lv の1つ手前まで 2 ずつ
+ * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最高の Lv で全部分かる (クリア)。
+ *
+ * @param {number} maxLevel 最高の Lv (1 + 実績の数)
+ * @returns {number[]}
+ */
+function oshiCharKitLevels(maxLevel) {
+  var lim = OSHI_PROFILE_LIMITS();
+  var top = Math.min(lim.lvMax, Math.floor(Number(maxLevel) || 0) - 1);
+  var out = [];
+  for (var lv = lim.lvMin; lv <= top && out.length < lim.itemsMax; lv += 2) out.push(lv);
+  return out;
+}
+
+/**
+ * 1枚の表に並べるときの行と列 (表情の数から決める)。11 の表情なら 4 列 × 3 行。
+ *
+ * @param {number} n
+ * @returns {{rows: number, cols: number}}
+ */
+function oshiSheetGrid(n) {
+  var count = Math.max(1, Math.floor(Number(n) || 1));
+  var cols = Math.ceil(Math.sqrt(count));
+  return { rows: Math.ceil(count / cols), cols: cols };
+}
+
+/**
+ * キャラ作成キットの頼み文。写真とプロフィールのリンクを添えて、道具に1回で貼る。
+ * 中身: 何を作るか → 実在の人を描かない決まり → 道具ごとの絵の作り方 → 表情の並び → 絵の決まり → JSON の形と長さ。
+ *
+ * @param {string} tool OSHI_CHARKIT_TOOLS の key
+ * @param {number} maxLevel 最高の Lv (1 + 実績の数)
+ * @returns {string} 知らない道具なら空
+ */
+function oshiCharKitPrompt(tool, maxLevel) {
+  var t = oshiCharKitToolOf(tool);
+  if (!t) return '';
+  var text = OSHI_TEXT_LIMITS();
+  var prof = OSHI_PROFILE_LIMITS();
+  var levels = oshiCharKitLevels(maxLevel);
+  var top = Math.floor(Number(maxLevel) || 0);
+  var states = OSHI_STATES();
+  var grid = oshiSheetGrid(states.length);
+  var out = [
+    'これから、仕事の道具「番頭」の画面に出る、オリジナルのキャラクターを1人作ってもらいます。',
+    '作るのは、キャラクターのプロフィール・キャラクターの口調のせりふ・表情ごとの絵の3つです。',
+    '',
+  ].concat(OSHI_CHARKIT_ORIGINAL_RULES(), [
+    '',
+    '絵の作り方:',
+  ], t.steps, [
+    '',
+    '表情 (key と、表情としぐさ。「参考画像」と書いてあるところは、あなたが考えたキャラクターのいつもの姿のこと):',
+  ]);
+  states.forEach(function (s) { out.push('- ' + s.key + ' (' + s.label + '): ' + s.pose); });
+  if (t.images === 'sheet') {
+    out.push('表に並べるときは ' + grid.cols + ' 列 × ' + grid.rows + ' 行で、上の順に左上から並べる (余ったマスは空ける)。');
+  }
+  out.push('', '絵の決まり:', '- 上の表情を全部、同じキャラクター (同じ顔立ち・髪型・色・服装) で描く');
+  out = out.concat(OSHI_PROMPT_LOOK_RULES());
+  out.push(
+    '',
+    '最後に、次の形の JSON を1つだけ、```json の囲みに入れて出してください。ここに挙げた欄のほかは書かないでください。',
+    '```json',
+    '{',
+    '  "name": "名前",',
+    '  "tone": "口調の key",',
+    '  "lines": { "' + OSHI_EVENTS()[0].key + '": ["せりふ", "せりふ"], "' + OSHI_EVENTS()[1].key + '": ["せりふ", "せりふ"] },',
+    '  "profile": {',
+    '    "items": [{ "lv": ' + (levels[0] || prof.lvMin) + ', "label": "見出し", "text": "中身" }],',
+    '    "clearLine": "お祝いの言葉"',
+    '  }',
+    '}',
+    '```',
+    '- name: キャラクターの名前。' + text.nameMax + '字まで。実在の人の名前にしない',
+    '- tone: 口調。次の key のどれか1つ: ' + OSHI_TONES().map(function (x) { return x.key + ' (' + x.label + ')'; }).join(' / '),
+    '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (' + text.linesPerEvent + '個まで)、1つ' +
+      text.lineMax + '字まで。キャラクターの口調で書き、相手を責めない・急かさない (うまくいかなかったときも、やさしく寄り添う)'
+  );
+  OSHI_EVENTS().forEach(function (e) { out.push('  - ' + e.key + ': ' + e.label); });
+  out.push(
+    '- profile.items: Lv が上がると少しずつ分かるプロフィール。lv は ' + levels.join(', ') + ' の ' + levels.length +
+      ' 項目 (1つの lv に1項目)。label (見出し) は' + prof.labelMax + '字まで、text (中身) は' + prof.textMax +
+      '字まで。好きなもの・苦手なもの・口ぐせ・小さな秘密など、Lv が上がるほど深い話にする',
+    '- profile.clearLine: 全部分かったとき (Lv ' + top + '、実績を全部取ったとき) のお祝いの言葉。' + prof.clearLineMax + '字まで',
+    '- どの字にも、実在の人の名前・所属・肩書きを書かない'
+  );
+  return out.join('\n');
+}
+
+/**
+ * AI の答えから、最初の JSON の物 ({...}) を取り出す。```json の囲みを先に、無ければほかの囲み、それも無ければ
+ * 答え全体を見る。前後の説明の字は捨てる。字の中の { } は数えない。
+ * **最初の物が読めなければ断る** (中や後ろの物に逃げると、壊れた答えの一部を答えとして取り込んでしまう)。
+ * 1回なめるだけにしてある (閉じていない { がたくさんあっても、数え直さない)。
+ *
+ * @param {*} text
+ * @returns {string|null} JSON の字。{ が1つも無ければ null
+ */
+function oshiExtractJson(text) {
+  var s = String(text == null ? '' : text);
+  var fence = oshiFenceBody_(s, /```json[ \t]*\r?\n/ig) || oshiFenceBody_(s, /```[a-zA-Z]*[ \t]*\r?\n/g);
+  if (fence && fence.indexOf('{') >= 0) return oshiFirstObject_(fence);
+  return oshiFirstObject_(s);
+}
+
+/**
+ * 最初の囲みの中身 (開きの印 open に当たったところから、次の ``` まで)。閉じが無ければ null。
+ * 正規表現で中身まで取ると、閉じていない囲みが多いときに何度もなめ直すので、閉じは indexOf で探す。
+ *
+ * @param {string} s
+ * @param {RegExp} open g 付き
+ * @returns {string|null}
+ */
+function oshiFenceBody_(s, open) {
+  var m = open.exec(s);
+  if (!m) return null;
+  var from = m.index + m[0].length;
+  var end = s.indexOf('```', from);
+  return end < 0 ? null : s.slice(from, end);
+}
+
+/**
+ * 字の中の、最初の釣り合った { … }。字 ("…") の中の括弧と \" は数えない。最初の { から1回だけなめる。
+ *
+ * @param {string} s
+ * @returns {string|null}
+ */
+function oshiFirstObject_(s) {
+  var start = s.indexOf('{');
+  if (start < 0) return null;
+  var depth = 0;
+  var inStr = false;
+  for (var i = start; i < s.length; i++) {
+    var ch = s.charAt(i);
+    if (inStr) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) {
+      var got = s.slice(start, i + 1);
+      try {
+        JSON.parse(got);
+      } catch (e) {
+        break;
+      }
+      return got;
+    }
+  }
+  throw new Error('AI の答えの JSON を読めませんでした。{ から } までが欠けずに入っているか、"" や , が抜けていないかを確かめてください');
 }
 
 /**
@@ -587,7 +833,7 @@ function oshiGreetingOf(hour) {
 function oshiCleanLines(lines) {
   var lim = OSHI_TEXT_LIMITS();
   var list = Array.isArray(lines) ? lines : String(lines == null ? '' : lines).split('\n');
-  var seen = {};
+  var seen = Object.create(null);
   var out = [];
   for (var i = 0; i < list.length; i++) {
     var one = String(list[i] == null ? '' : list[i]).replace(/^\s+|\s+$/g, '');
