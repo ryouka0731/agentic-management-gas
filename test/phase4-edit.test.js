@@ -587,6 +587,20 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     ['apiKitStatus', (ctx) => ctx.apiKitStatus()],
+    // 実績。取ったもの (日時の欄) と今回取ったもの (newly) が埋まった形を検査する
+    ['apiAchievementsCheck', (ctx) => {
+      closedToday(ctx);
+      const out = ctx.apiAchievementsCheck();
+      if (!out.newly.length || !out.unlocked[0].at) throw new Error('取った実績が空のまま検査されている');
+      return out;
+    }],
+    ['apiAchievements', (ctx) => {
+      closedToday(ctx);
+      ctx.apiAchievementsCheck();
+      const out = ctx.apiAchievements();
+      if (!out.unlocked.length || !out.next.length) throw new Error('取った実績と次の実績が空のまま検査されている');
+      return out;
+    }],
     ['apiCalendarPlan', (ctx, env) => {
       calendarReady(ctx, env);
       const out = ctx.apiCalendarPlan();

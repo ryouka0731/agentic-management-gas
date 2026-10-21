@@ -108,6 +108,8 @@ describe('使えるポイントの数え方', () => {
     const { ctx } = setup({ start: false });
     const old = ctx.apiIssueCreate('前からあったもの', '', []).number;
     ctx.apiIssueUpdate(old, { assignee: ME });
+    // 作った時刻と数え始めが同じミリ秒になると「前から」と言えない (重い全体の走りで時々落ちていた)。1分前に作ったことにする
+    ctx.dbUpdate('issues', 'number', old, { createdAt: new Date(Date.now() - 60000) });
     ctx.apiRewardGet();
     ctx.issueClose(old, null);
     closeMine(ctx);

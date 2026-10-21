@@ -234,12 +234,15 @@
     // ここで取り直すと、起動のたびにカードの api を2回ずつ呼ぶ
     if (!homeCardOn('game')) removeAll(homeCardsEl, '.game-card');
     if (!homeCardOn('team')) removeAll(homeCardsEl, '.team-progress');
+    if (!achOn() || !homeCardOn('ach')) removeAll(homeCardsEl, '.ach-card');
     return true;
   }
 
   /** 起動のときの設定が届いた (または取れなかった)。待たせていたポイントのカードを描く */
   function settlePrefs() {
     prefsSettled = true;
+    // 開いたときの実績の数え直しは、設定 (ach.on) が届いてから (js-ach)
+    if (achWaitPrefs) achOpenCheck();
     if (!panelHome.hidden && homeCardsLast && progressNotesOn()) renderHomeCards.apply(null, homeCardsLast);
   }
 

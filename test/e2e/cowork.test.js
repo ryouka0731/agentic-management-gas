@@ -85,6 +85,10 @@ describe('作業雑談部屋', () => {
 
     // 台帳には誰が入ったかが残らない
     expect(JSON.stringify(b3.rows('change_log'))).not.toContain(A);
-    expect(JSON.stringify(server.fake.PropertiesService.getScriptProperties().getProperties())).not.toContain(A);
+    // 実績 (ACH:) は開いた日を本人の行に数えるもので、部屋に入ったこととは別
+    const props = server.fake.PropertiesService.getScriptProperties().getProperties();
+    const roomProps = Object.keys(props).filter((k) => k.indexOf('ACH:') !== 0).map((k) => [k, props[k]]);
+    expect(JSON.stringify(roomProps)).not.toContain(A);
+    expect(String(props['ACH:' + A] || '')).not.toMatch(/cowork|もくもく/);
   }, 60000);
 });

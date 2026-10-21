@@ -79,15 +79,15 @@ describe('定義 (Oshi.js)', () => {
     expect(pure.OSHI_PROMPT_BASE()).toContain('参考画像');
   });
 
-  it('育ちの段は数で決まり、届いた段より下には戻らない', () => {
-    expect(pure.oshiStageOf(0).key).toBe('grow1');
-    expect(pure.oshiStageOf(5).meter).toBe(50);
-    expect(pure.oshiStageOf(5).toNext).toBe(5);
-    expect(pure.oshiStageOf(10).key).toBe('grow2');
-    expect(pure.oshiStageOf(40)).toMatchObject({ key: 'grow3', meter: 100, toNext: 0 });
-    // 取り消して数が減っても、届いた段に留まる
-    expect(pure.oshiStageOf(3, 1).key).toBe('grow2');
-    expect(pure.oshiStageOf(3, 9).key).toBe('grow3');
+  it('育ちの段はレベル (Lv) で決まる (見習い Lv1〜4・一人前 Lv5〜14・名人 Lv15〜)', () => {
+    expect(pure.oshiStageOf(1)).toMatchObject({ key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1 });
+    expect(pure.oshiStageOf(0).level).toBe(1);
+    expect(pure.oshiStageOf(3)).toMatchObject({ key: 'grow1', meter: 50, toNext: 2 });
+    expect(pure.oshiStageOf(4).key).toBe('grow1');
+    expect(pure.oshiStageOf(5)).toMatchObject({ key: 'grow2', label: '一人前', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(14).key).toBe('grow2');
+    expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: '名人', meter: 100, toNext: 0 });
+    expect(pure.oshiStageOf(99).key).toBe('grow3');
   });
 
   it('あいさつの場面は時刻で決まる', () => {
@@ -283,41 +283,46 @@ describe('名前・口調・せりふ', () => {
   });
 });
 
-describe('育てる', () => {
+describe('育てる (Lv = 1 + 取った実績の数)', () => {
   function closeFor(ctx, who) {
     const i = ctx.issueCreate('しごと', '', []);
     ctx.dbUpdate('issues', 'number', i.number, { assignee: who });
     ctx.issueClose(i.number, null);
     return i.number;
   }
+  const now = new Date('2026-10-21T03:00:00Z');
 
-  it('ポイントに参加していなければ、済ませたやることの数で育つ (本人のぶんだけ)', () => {
+  it('実績を取るとレベルが上がり、段が決まる (本人のぶんだけ)', () => {
     const { ctx } = setup();
-    for (let i = 0; i < 10; i++) closeFor(ctx, 'tester@example.com');
+    expect(ctx.apiOshiGet().growth).toMatchObject({ key: 'grow1', level: 1, unlocked: 0 });
+    // 開いた1日目 (はじめの一日) と、はじめて片づけた
+    ctx.achCheck_('tester@example.com', now, { countDay: true });
+    closeFor(ctx, 'tester@example.com');
     closeFor(ctx, 'other@example.com');
+    ctx.achCheck_('tester@example.com', now, {});
     const g = ctx.apiOshiGet().growth;
-    expect(g).toMatchObject({ key: 'grow2', label: '一人前', points: 10, source: 'count' });
+    expect(g).toMatchObject({ key: 'grow1', level: 3, unlocked: 2, toNext: 2 });
   });
 
-  it('ポイントに参加している人はポイントで育つ', () => {
+  it('ポイントは推しの育ちに効かない (前はポイントで育っていた)', () => {
     const { ctx } = setup();
     ctx.apiSetGameEnabled(true);
     ctx.apiGameJoin(true);
-    closeFor(ctx, 'tester@example.com');
-    const g = ctx.apiOshiGet().growth;
-    expect(g.source).toBe('game');
-    expect(g.points).toBe(ctx.gamePointsByPerson_('', '')['tester@example.com']);
+    for (let i = 0; i < 12; i++) closeFor(ctx, 'tester@example.com');
+    // まだ数え直していないので、実績は無い
+    expect(ctx.apiOshiGet().growth).toMatchObject({ level: 1, key: 'grow1' });
   });
 
-  it('取り消しても届いた段から下がらない (最高の段だけを覚える)', () => {
+  it('取り消しても下がらない (取った実績は消えない)', () => {
     const { ctx } = setup();
     const nums = [];
     for (let i = 0; i < 10; i++) nums.push(closeFor(ctx, 'tester@example.com'));
-    expect(ctx.apiOshiGet().growth.key).toBe('grow2');
+    ctx.achCheck_('tester@example.com', now, { countDay: true });
+    const before = ctx.apiOshiGet().growth;
+    expect(before.level).toBe(4); // 1 + はじめの一日・はじめて片づけた・10件片づけた
     nums.forEach((n) => ctx.issueReopen(n));
-    const g = ctx.apiOshiGet().growth;
-    expect(g.points).toBe(0);
-    expect(g.key).toBe('grow2');
+    ctx.achCheck_('tester@example.com', now, {});
+    expect(ctx.apiOshiGet().growth.level).toBe(4);
   });
 });
 
@@ -369,7 +374,7 @@ describe('手引き (docs/manual/oshi.md)', () => {
     expect(text).toContain(pure.OSHI_TEXT_LIMITS().linesPerEvent + '個まで');
     expect(text).toContain(pure.OSHI_TEXT_LIMITS().lineMax + '字まで');
     expect(text).toContain(pure.OSHI_LUCKY_ONE_IN() + ' 回に 1 回');
-    for (const st of pure.OSHI_STAGES().slice(1)) expect(text).toContain(st.min + ' で' + st.label);
+    for (const st of pure.OSHI_STAGES().slice(1)) expect(text).toContain('Lv' + st.min + ' で' + st.label);
   });
 });
 
