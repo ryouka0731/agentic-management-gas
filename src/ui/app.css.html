@@ -1470,6 +1470,23 @@ body.doc-full .mobile-nav,
 body.doc-full .nav-scrim,
 body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn),
 body.doc-full .crumbs > :not(h1) { display: none !important; }
+/* 文書のリンク (?doc=…&full=1) で開かれたとき。番頭の画面を出さず文書だけ。全画面を閉じても周りは出さず、
+   全画面のボタンも出さない (戻る先が無い)。サーバが最初の描画から body に付ける (Main.gs の doGet) */
+body.doc-link .sidebar,
+body.doc-link .resizer,
+body.doc-link .side-panel,
+body.doc-link .tabs,
+body.doc-link .doc-modes,
+body.doc-link .linked-issues,
+body.doc-link .doc-link-row,
+body.doc-link .mobile-nav,
+body.doc-link .nav-scrim,
+body.doc-link #panel-home,
+body.doc-link #doc-full-btn,
+body.doc-link .toolbar > :not(.crumbs),
+body.doc-link .crumbs > :not(h1) { display: none !important; }
+body.doc-link .toolbar { padding: var(--sp-1) var(--sp-4); }
+.link-loading { margin: 0; padding: var(--sp-4); }
 
 body.doc-full .toolbar { padding: var(--sp-1) var(--sp-4); }
 /* 間を空ける .spacer も隠れるので、閉じるボタンを右へ寄せる */

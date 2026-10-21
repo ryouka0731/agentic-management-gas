@@ -145,19 +145,30 @@
     failInto(docListEl)(err);
     settleStartupFiles(false);
   });
-  // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
-  // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
-  switchTab('home');
-  // 全画面のリンク (?doc=…&full=1) で開かれたら、その文書を開く。
-  // iframe の中なので location は使えない。ホームを出した時点から人が移ったら開かない
-  var startupNav = navCount;
-  if (google.script.url && google.script.url.getLocation) {
-    google.script.url.getLocation(function (loc) {
-      var param = (loc && loc.parameter) || {};
-      openFromLink(param, startupNav);
-      loadStartPrefs(!!param.doc, startupNav);
-    });
+  var linkDoc = docLinkOfPage();
+  if (linkDoc) {
+    // 文書のリンク (?doc=…&full=1) で開かれた。番頭の画面 (ホーム・左の行き先・上の操作) は出さず、文書だけを出す。
+    // サーバ (Main.gs の doGet) が body に doc-link と文書の id を付けているので、最初の描画から周りは隠れている。
+    // ホームは出さない (取りにも行かない)。文書が開けなければ、ふつうの画面に戻して知らせる (openFromLink)
+    var linkNav = navCount;
+    enterDocLink();
+    openFromLink({ doc: linkDoc, full: '1' }, linkNav);
+    loadStartPrefs(true, linkNav);
   } else {
-    loadStartPrefs(false, startupNav);
+    // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
+    // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
+    switchTab('home');
+    // 古い形のリンク (?doc=… だけ) は、ホームを出してから文書を開く。
+    // iframe の中なので location は使えない。ホームを出した時点から人が移ったら開かない
+    var startupNav = navCount;
+    if (google.script.url && google.script.url.getLocation) {
+      google.script.url.getLocation(function (loc) {
+        var param = (loc && loc.parameter) || {};
+        openFromLink(param, startupNav);
+        loadStartPrefs(!!param.doc, startupNav);
+      });
+    } else {
+      loadStartPrefs(false, startupNav);
+    }
   }
 })();
