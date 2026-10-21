@@ -283,8 +283,7 @@
     // 絵が無くてもよい表情 (むっ) は、まずその代わりの表情 (しんぱい) に代える。自分のキャラに むっ の絵が無く、
     // 代わりの表情の絵があれば、最初からいるキャラの むっ (の代わり) より自分の絵を先に出す
     var fb = oshiStateFallback(state);
-    var mine = oshiActiveMine();
-    if (fb && mine && !oshiImageRow(state, mine) && oshiImageRow(fb, mine)) return fb;
+    if (fb && own && !oshiImageRow(state, own) && oshiImageRow(fb, own)) return fb;
     var order = [state, fb, grow, 'idle'];
     for (var i = 0; i < order.length; i++) if (order[i] && oshiHasPicture(order[i])) return order[i];
     return null;
@@ -298,8 +297,8 @@
   }
 
   /**
-   * その段か、それより下の段のうち、絵のあるいちばん上の段 (達人・師範の絵が無いキャラは、持っている段の絵で出す)。
-   * 自分のキャラは自分の絵だけを見る。最初からいるキャラは段を返し、絵が無ければ fallback (名人) を出す (oshiDefaultImage)。
+   * その段か、それより下の段のうち、絵のあるいちばん上の段 (べったり・家族の絵が無いキャラは、持っている段の絵で出す)。
+   * 自分のキャラは自分の絵だけを見る。最初からいるキャラは段を返し、絵が無ければ fallback (なついた) を出す (oshiDefaultImage)。
    *
    * @param {string} key 段の key
    * @param {object|null} own いま使う自分のキャラ
