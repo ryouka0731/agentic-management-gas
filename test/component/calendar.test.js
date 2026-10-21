@@ -66,7 +66,7 @@ describe('ホームの今日の予定', () => {
   });
 
   it('その日にまだ組んでいなければ、1回だけ黙って組む', () => {
-    const app = mountOn({ apiCalendarToday: today({ plannedToday: false, blocks: [] }) });
+    const app = mountOn({ apiCalendarToday: today({ plannedToday: false }) });
     expect(callsOf(app, 'apiCalendarPlan')).toHaveLength(1);
     expect(document.querySelectorAll('#home-calendar .home-calendar-row')).toHaveLength(2);
     // ホームを開き直しても、同じ日には二度頼まない
@@ -165,5 +165,47 @@ describe('設定の予定に入れる', () => {
     $('#calendar-team .calendar-id').value = ' x@group.calendar.google.com ';
     [...document.querySelectorAll('#calendar-team button')].find((b) => b.textContent === 'この ID にする').click();
     expect(callsOf(app, 'apiCalendarSetShared').map((c) => c.args)).toEqual([['x@group.calendar.google.com']]);
+  });
+});
+
+describe('レビューで直したもの (画面)', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('自動の組み直しは {auto: true} で頼み、済んだら今日の予定を取り直して描く', () => {
+    let n = 0;
+    const app = mountOn({
+      apiCalendarToday: () => (++n === 1 ? today({ plannedToday: false, blocks: [] }) : today({ blocks: [BLOCKS[0]] })),
+    });
+    expect(callsOf(app, 'apiCalendarPlan').map((c) => c.args)).toEqual([[{ auto: true }]]);
+    expect(callsOf(app, 'apiCalendarToday')).toHaveLength(2);
+    expect(document.querySelectorAll('#home-calendar .home-calendar-row')).toHaveLength(1);
+  });
+
+  it('続けて押して断られたら、残りの秒のあいだボタンを押せないままにする', () => {
+    mountOn({ apiCalendarPlan: { ok: false, reason: 'さっき組み直したところです。あと45秒待ってください', waitSeconds: 45,
+      blocks: [], late: [], unplaced: [] } });
+    $('.nav-item[data-tab="settings"]').click();
+    const btn = $('#calendar-mine .calendar-replan');
+    btn.click();
+    expect(btn.disabled).toBe(true);
+    expect(document.getElementById('snackbar').textContent).toContain('45秒');
+  });
+
+  it('やめたときに消せなかった予定の数を、設定の欄に残す', () => {
+    const off = prefsFixture({ values: {} });
+    off.calendarLeft = 2;
+    mountOn({ apiPrefSet: off });
+    $('.nav-item[data-tab="settings"]').click();
+    $('[data-pref="calendar.plan"] button[role="switch"]').click();
+    const panel = $('#calendar-mine');
+    expect(panel.hidden).toBe(false);
+    expect(panel.textContent).toContain('消せなかった予定が 2 件あります (カレンダーで消してください)');
+  });
+
+  it('上限で止まったときは「入りきらない」ではなく、上限で止めたと添える', () => {
+    mountOn({ apiCalendarPlan: { ok: true, reason: '', blocks: BLOCKS, late: [], unplaced: [], capped: true } });
+    $('.nav-item[data-tab="settings"]').click();
+    $('#calendar-mine .calendar-replan').click();
+    expect($('#calendar-mine').textContent).toContain('1回に入れられる数');
   });
 });

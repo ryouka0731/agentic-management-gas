@@ -17,8 +17,6 @@ describe('apiCalendarCreateShared / apiCalendarSetShared', () => {
     expect(out).toMatchObject({ sharedSet: true, canOpen: true, canWrite: true, sharedName: '番頭の予定', isAdmin: true });
     const id = ctx.calendarSharedId_();
     expect(id).toMatch(/@group\.calendar\.google\.com$/);
-    expect(out.settingsUrl).toBe('https://calendar.google.com/calendar/r/settings/calendar/' +
-      Buffer.from(id).toString('base64').replace(/=+$/, ''));
     expect(out.calendarUrl).toBe('https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(id));
     // 2つ目は作らない
     asUser(fake, ADMIN, () => expectRefused(() => ctx.apiCalendarCreateShared(), /もうあります/));
@@ -90,7 +88,9 @@ describe('apiCalendarPlan / apiCalendarToday', () => {
     expect(out.blocks.every((b) => b.issueNumber === n && b.title === '規程')).toBe(true);
     expect(out.calendarUrl).toMatch(/^https:\/\/calendar\.google\.com\//);
     // 入口はアドレスを受けない
-    expect(ctx.apiCalendarPlan.length).toBe(0);
+    // apiCalendarPlan が受けるのは {auto} だけ。字 (アドレス) を渡しても開いている本人のぶんを組む
+    const named = asUser(fake, OTHER, () => ctx.apiCalendarPlan('tester@example.com'));
+    expect(named.blocks.every((b) => b.issueNumber === n)).toBe(true);
     expect(ctx.apiCalendarToday.length).toBe(0);
     expect(ctx.apiCalendarStatus.length).toBe(0);
     const today = asUser(fake, OTHER, () => expectScreenSafe(ctx.apiCalendarToday()));
@@ -116,5 +116,46 @@ describe('apiCalendarPlan / apiCalendarToday', () => {
     const today = asUser(fake, OTHER, () => ctx.apiCalendarToday());
     expect(today.ok).toBe(false);
     expect(today.reason).toMatch(/予定の変更/);
+  });
+});
+
+describe('レビューで直したもの (API)', () => {
+  it('共有の相手を足す頁は web-safe な base64 で /u/0/ の形', () => {
+    const { ctx, fake } = makeEnv({ file: false });
+    const out = asUser(fake, ADMIN, () => ctx.apiCalendarCreateShared());
+    const id = ctx.calendarSharedId_();
+    expect(out.settingsUrl).toBe('https://calendar.google.com/calendar/u/0/r/settings/calendar/' +
+      Buffer.from(id).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+  });
+
+  it('apiCalendarPlan は {auto: true} を受け、その日に組んであれば組み直さない', () => {
+    const { ctx, fake } = makeEnv({ file: false });
+    ctx.apiCalendarCreateShared();
+    ctx.apiPrefSet('calendar.plan', true);
+    ctx.apiIssueUpdate(ctx.apiIssueCreate('a', '', []).number, { assignee: 'tester@example.com' });
+    expect(ctx.apiCalendarPlan().ok).toBe(true);
+    const made = fake._calCalls.createEvent;
+    const auto = expectScreenSafe(ctx.apiCalendarPlan({ auto: true }));
+    expect(auto).toMatchObject({ ok: true, skipped: true });
+    expect(fake._calCalls.createEvent).toBe(made);
+  });
+
+  it('様子を尋ねるだけでは登録しに行かない (開くたびに登録を試さない)', () => {
+    const { ctx, fake } = makeEnv({ file: false });
+    ctx.apiCalendarCreateShared();
+    let subs = 0;
+    const orig = ctx.CalendarApp.subscribeToCalendar;
+    ctx.CalendarApp.subscribeToCalendar = (id) => { subs++; return orig(id); };
+    // 共有されていない人・共有されたがまだ登録していない人
+    asUser(fake, OTHER, () => ctx.apiCalendarStatus());
+    fake._calShare(ctx.calendarSharedId_(), OTHER, 'writer');
+    const out = asUser(fake, OTHER, () => ctx.apiCalendarStatus());
+    expect(subs).toBe(0);
+    expect(out.reason).toMatch(/予定を組み直す/);
+    // 組み直すときには登録する
+    on({ ctx, fake }, OTHER);
+    asUser(fake, OTHER, () => ctx.apiCalendarPlan());
+    expect(subs).toBe(1);
+    expect(asUser(fake, OTHER, () => ctx.apiCalendarStatus()).canOpen).toBe(true);
   });
 });

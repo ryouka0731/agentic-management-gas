@@ -13,6 +13,15 @@
   /** 最後に組んだときの、期限までに入りきらないもの (設定の欄に添える) */
   var calendarLateLast = [];
 
+  /** 最後に組んだとき、1回に入れられる数で止めたか */
+  var calendarCappedLast = false;
+
+  /** やめたときに消せなかった番頭の予定の数 (設定の欄に残す) */
+  var calendarLeftLast = 0;
+
+  /** 「予定を組み直す」を押せるようになる時刻 (ミリ秒)。サーバは60秒に1回まで受ける */
+  var calendarReplanUntil = 0;
+
   /** 「やることを予定に入れる」がオンか (設定が届くまではオフ) */
   function calendarOn() {
     var c = prefs && prefs.effective && prefs.effective.calendar;
@@ -84,13 +93,23 @@
       renderHomeCalendar(res.blocks || [], res);
       if (!res.ok || res.plannedToday || calendarAutoDay === calendarToday()) return;
       calendarAutoDay = calendarToday();
-      call('apiCalendarPlan', [], function (plan) {
+      // サーバも、組み直し中の印の中でその日にもう組めたかを見直す (別の画面が先に組んでいれば何もしない)
+      call('apiCalendarPlan', [{ auto: true }], function (plan) {
         if (!still() || panelHome.hidden || !calendarOn()) return;
         plan = plan || {};
         if (!plan.ok) return;
-        calendarLateLast = plan.late || [];
-        renderHomeCalendar((plan.blocks || []).filter(function (b) { return calendarIsToday(b.start); }), plan);
-      }, failQuiet('自動の組み直しはホームを開くたびに試す。予定が出なくてもホームは使える'));
+        if (!plan.skipped) {
+          calendarLateLast = plan.late || [];
+          calendarCappedLast = !!plan.capped;
+        }
+        // 続いている予定・人が直した予定も出すので、組んだ結果ではなく今日の予定を取り直して描く
+        call('apiCalendarToday', [], function (again) {
+          if (!still() || panelHome.hidden || !calendarOn()) return;
+          again = again || {};
+          renderHomeCalendar(again.blocks || [], { reason: again.reason, calendarUrl: again.calendarUrl,
+            late: plan.late || [] });
+        }, failQuiet('組み直したあとの今日の予定が出なくても、ホームのほかの区画は使える'));
+      }, failQuiet('自動で組めなかった日は組めた日に数えないので、次にホームを開いたときにもう一度試す'));
     }, failQuiet('今日の予定のカードが出なくても、ホームのほかの区画は使える'));
   }
 
@@ -149,6 +168,9 @@
 
   /** 設定が変わった。オフにしたらカードを消し、オンにしたらホームを開いているときだけ取りに行く */
   function calendarPrefsChanged() {
+    // やめたときに消せなかった数は apiPrefSet の返事に付いてくる
+    if (prefs && prefs.calendarLeft) calendarLeftLast = Number(prefs.calendarLeft) || 0;
+    else if (calendarOn()) calendarLeftLast = 0;
     var box = homeCalendarBox();
     if (!calendarOn()) {
       if (box) box.textContent = '';
@@ -176,8 +198,14 @@
   /** @param {HTMLElement} box */
   function fillCalendarMine(box) {
     box.textContent = '';
+    if (calendarLeftLast > 0) {
+      var stuck = document.createElement('p');
+      stuck.className = 'settings-warning calendar-left';
+      stuck.textContent = '消せなかった予定が ' + calendarLeftLast + ' 件あります (カレンダーで消してください)';
+      box.appendChild(stuck);
+    }
     if (!calendarOn()) {
-      box.hidden = true;
+      box.hidden = calendarLeftLast <= 0;
       return;
     }
     box.hidden = false;
@@ -200,16 +228,24 @@
     btn.type = 'button';
     btn.className = 'btn btn-primary calendar-replan';
     btn.textContent = '予定を組み直す';
+    calendarHoldReplan(btn);
     btn.addEventListener('click', function () {
       btn.disabled = true;
       call('apiCalendarPlan', [], function (res) {
         btn.disabled = false;
         res = res || {};
         if (!res.ok) {
+          // 続けて押したときは、残りの秒のあいだ押せないままにする
+          if (res.waitSeconds) {
+            calendarReplanUntil = Date.now() + Number(res.waitSeconds) * 1000;
+            calendarHoldReplan(btn);
+          }
           showSnack(res.reason || '組み直せませんでした', { kind: 'ng' });
           return;
         }
+        calendarReplanUntil = Date.now() + 60000;
         calendarLateLast = res.late || [];
+        calendarCappedLast = !!res.capped;
         showSnack('予定を組み直しました (' + (res.blocks || []).length + '件)', { kind: 'ok' });
         refreshCalendarStatus();
         // ホームのカードは次にホームを開いたときに描き直す
@@ -228,6 +264,24 @@
       '。1日1回、その日に初めてホームを開いたときにも組み直します。番頭が触るのは、番頭が入れた予定だけです。';
     box.appendChild(when);
     appendCalendarLate(box, calendarLateLast);
+    if (calendarCappedLast) {
+      var cap = document.createElement('p');
+      cap.className = 'row-meta calendar-capped';
+      cap.textContent = '1回に入れられる数 (20件) で止めました。続きは、次に組み直したときに入ります';
+      box.appendChild(cap);
+    }
+  }
+
+  /**
+   * 組み直してから60秒 (サーバが受けない間) は「予定を組み直す」を押せないままにし、過ぎたら戻す。
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  function calendarHoldReplan(btn) {
+    var wait = calendarReplanUntil - Date.now();
+    if (wait <= 0) return;
+    btn.disabled = true;
+    setTimeout(function () { if (btn.isConnected) btn.disabled = false; }, wait);
   }
 
   /**
