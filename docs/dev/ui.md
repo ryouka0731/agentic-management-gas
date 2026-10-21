@@ -369,6 +369,16 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   画面の管理者の節 (`makeOshiBuiltinProfileSettings`。`settings.canEdit` のときだけ組み、`apiOshiBuiltinProfiles` を取る)
 - 試すのは `test/component/oshi.test.js` (返事はサーバの `apiOshiGet` から作る)、通しは `test/e2e/oshi.test.js`。
   プロフィールとクリアは `test/component/oshi-profile.test.js` と `test/oshi-profile.test.js`
+- **機嫌 (`oshi.mood`、既定オフ) は返事を描くだけ。** 決めるのはサーバ (`OSHI_MOOD_RULES()` / `oshiMoodOf` は `Oshi.js`、数えるのは
+  `src/core/OshiMood.gs` の `oshiMood_`)。`apiOshiGet` の `mood` (オフなら null) を、しょんぼり・むっ・直ったばかりのときだけ
+  ホームのカード (あいさつの代わり) と推しの頁の「機嫌」の節 (`makeOshiMood`) に出す。「どうして？」(`makeOshiMoodWhy`) はわけを数だけで
+  出し、期限切れには改善のヒントと同じ `adviceGo({kind: 'issues-overdue'})` の「見る」を付ける (ほかのわけには合う絞り込みが無いので付けない)。
+  済ませた・取り消した・直した・捨てた・戻したあと (`oshiMoodAfter`) に `apiOshiMood` で取り直し、直っていたら `oshiSayNext('mood_recover')`
+  (済ませたほめ言葉に重ねない)。**変わるのは表情とせりふだけで、何も取り上げない・知らせない**
+- 表情 `pout` (むっ) は `optional` (絵が無くてもよい) で `fallback: 'worry'`。最初からいるキャラにはまだ絵が無いので、
+  `build-oshi-default.mjs` は optional の表情の絵が無ければ焼かず、`apiOshiDefaultImage` は null を返す。画面は `oshiPickState` が
+  `fallback` を先に試し、最初からいるキャラの絵が null なら `oshiDefaultMissing` に覚えて代わりの表情の絵を出す (2回取りに行かない)。
+  `scene: true` なので、でたらめに選ぶ表情には入れない。試すのは `test/component/oshi-mood.test.js` と `test/oshi-mood.test.js`
 
 ## 実績 (`js-ach`)
 
