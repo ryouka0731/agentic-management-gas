@@ -21,7 +21,6 @@ const SOURCES = [
   'src/core/CurrentUser.gs',
   'src/core/Repo.gs',
   'src/core/CommandQueue.gs',
-  'src/KitFiles.gs',
   'src/core/AgentKit.gs',
 ];
 
@@ -130,13 +129,34 @@ describe('中身が壊れずに運ばれるか', () => {
 
   it('kit/ を直したら焼き直しが要ると分かる', () => {
     // 焼き直しを忘れると、古い中身が配られ続ける
-    const now = fs.readFileSync('src/KitFiles.gs', 'utf8');
+    const now = fs.readFileSync('src/ui/kit-files.html', 'utf8');
     expect(buildKitSource()).toBe(now);
   });
 
-  it('焼き直したものは手で直さないと書いてある', () => {
-    expect(fs.readFileSync('src/KitFiles.gs', 'utf8'))
-      .toContain('手で直さない');
+  it('焼き直したものは HTML のファイル (JSON の字だけ) で、スクリプトには焼かない', () => {
+    // GAS はどの呼び出しでも全部のスクリプトを読み込む。以前の src/KitFiles.gs (400KB) が画面のどの api* も遅くした
+    expect(fs.existsSync('src/KitFiles.gs')).toBe(false);
+    const map = JSON.parse(fs.readFileSync('src/ui/kit-files.html', 'utf8'));
+    expect(Object.keys(map)).toContain('agent.mjs');
+    // 手で直さないことはフックが止める (scripts/guard-hook.mjs の GENERATED)
+    expect(fs.readFileSync('scripts/guard-hook.mjs', 'utf8')).toContain("'src/ui/kit-files.html'");
+  });
+
+  it('同じ実行の中では1回だけ読み、写しを返す。読めなければふつうの言葉で断る', () => {
+    const { ctx, fake } = setup();
+    const asked = [];
+    const raw = fake.HtmlService.createTemplateFromFile;
+    fake.HtmlService.createTemplateFromFile = (name) => { asked.push(name); return raw(name); };
+    const a = ctx.KIT_FILES();
+    a['agent.mjs'] = 'x';
+    expect(ctx.KIT_FILES()['agent.mjs']).not.toBe('x');
+    ctx.kitPrint_();
+    expect(asked).toEqual(['ui/kit-files']);
+
+    const broken = createFakeGas();
+    broken._setKitFile('ui/kit-files', '{壊れた');
+    const ctx2 = loadGasWith(broken, ...SOURCES);
+    expect(() => ctx2.KIT_FILES()).toThrow('配る道具の中身を読めませんでした');
   });
 });
 

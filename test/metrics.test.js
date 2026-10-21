@@ -12,7 +12,8 @@ describe('コードの測り', () => {
     expect(files).toContain('kit/agent.mjs');
     expect(files).toContain('src/ui/js-pulls.html');
     // 焼き直した中身は数えない
-    expect(files).not.toContain('src/KitFiles.gs');
+    expect(files).not.toContain('src/ui/kit-files.html');
+    expect(files.filter((f) => f.startsWith('src/ui/oshi-default/'))).toEqual([]);
   });
 
   it('画面を包む一番外の関数は1つの関数として数えない (数えると最長が1万行を超える)', () => {
