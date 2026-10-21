@@ -22,7 +22,10 @@ function ACH_GROUPS() {
     { key: 'days', label: '通算の日' },
     { key: 'done', label: '片づけた' },
     { key: 'team', label: 'いっしょに' },
-    { key: 'first', label: 'はじめて' },
+    { key: 'first', label: 'はじめて: 文書' },
+    { key: 'work', label: 'はじめて: やること' },
+    { key: 'me', label: 'はじめて: 自分と道具' },
+    { key: 'oshi', label: '推しと部屋' },
   ];
 }
 
@@ -37,21 +40,46 @@ function ACH_METRICS() {
     done: { label: '済ませたやること (担当)', unit: '件' },
     merged: { label: '反映まで届いた自分の確認依頼', unit: '件' },
     reviews: { label: 'ほかの人の確認依頼への返事', unit: '件' },
+    pats: { label: '推しの頭をなでた (通算)', unit: '回' },
+    rooms: { label: '作業部屋を開いた (通算)', unit: '回' },
     branch: { label: '改訂版を作った', unit: '', first: true },
     pull: { label: '確認依頼を出した', unit: '', first: true },
     merge: { label: '反映した', unit: '', first: true },
     approve: { label: '承認した', unit: '', first: true },
     markdown: { label: 'Markdown で保存した', unit: '', first: true },
+    register: { label: '文書を登録した', unit: '', first: true },
+    commit: { label: '変更を記録した', unit: '', first: true },
+    addFile: { label: '改訂版に文書を足した', unit: '', first: true },
+    docLink: { label: '全画面のリンクを写した', unit: '', first: true },
+    issue: { label: 'やることを作った', unit: '', first: true },
     comment: { label: 'やりとりを書いた', unit: '', first: true },
     inquiry: { label: '報告を書いた', unit: '', first: true },
     reportCopy: { label: '日報をコピーした', unit: '', first: true },
-    focus: { label: '集中を始めた', unit: '', first: true },
-    style: { label: '仕事のスタンス診断を受けた', unit: '', first: true },
-    oshi: { label: '推しを選んだ', unit: '', first: true },
+    template: { label: '下書き (ひな形) を使った', unit: '', first: true },
+    tag: { label: 'タグを付けた', unit: '', first: true },
+    board: { label: '進捗ボードで動かした', unit: '', first: true },
+    gantt: { label: '工程表を見た', unit: '', first: true },
+    sprint: { label: '作業期間を作った', unit: '', first: true },
+    impediment: { label: '困りごとを書き出した', unit: '', first: true },
     goal: { label: '目標を立てた', unit: '', first: true },
     calendar: { label: '予定に入れた', unit: '', first: true },
-    kit: { label: '手元の道具を使った', unit: '', first: true },
+    tasks: { label: 'Google ToDo に送った', unit: '', first: true },
     search: { label: '探す (Ctrl+K) を使った', unit: '', first: true },
+    focus: { label: '集中を始めた', unit: '', first: true },
+    style: { label: '仕事のスタンス診断を受けた', unit: '', first: true },
+    kit: { label: '手元の道具を使った', unit: '', first: true },
+    settings: { label: '自分の設定を変えた', unit: '', first: true },
+    help: { label: '使い方を開いた', unit: '', first: true },
+    usageView: { label: '使われ方を見た', unit: '', first: true },
+    achPage: { label: '実績の頁を見た', unit: '', first: true },
+    oshi: { label: '推しを選んだ', unit: '', first: true },
+    mychar: { label: '自分のキャラを作った', unit: '', first: true },
+    charkit: { label: 'キャラ作成キットで取り込んだ', unit: '', first: true },
+    mood: { label: '推しの機嫌をオンにした', unit: '', first: true },
+    pat: { label: '推しの頭をなでた', unit: '', first: true },
+    room: { label: '作業部屋を開いた', unit: '', first: true },
+    roomSound: { label: '作業部屋で音を流した', unit: '', first: true },
+    cowork: { label: '作業雑談部屋をのぞいた', unit: '', first: true },
   };
 }
 
@@ -85,15 +113,46 @@ function ACHIEVEMENTS() {
     add('team', 'reviews', d[0], 'reviews-' + d[0], d[1],
       'ほかの人の確認依頼に、通算で ' + d[0] + ' 件返事をした (同じ依頼には1日1件と数えます)', d[2]);
   });
-  // はじめて (どれも1回で取れる)
-  [['branch', '改訂版を作った', '📝'], ['pull', '確認依頼を出した', '📨'], ['merge', '反映した', '🎉'],
-    ['approve', '承認した', '👍'], ['markdown', 'Markdown で保存した', '💾'], ['comment', 'やりとりを書いた', '💬'],
-    ['inquiry', '報告を書いた', '📮'], ['reportCopy', '日報をコピーした', '📋'], ['focus', '集中を始めた', '🔥'],
-    ['style', '仕事のスタンス診断を受けた', '🧭'], ['oshi', '推しを選んだ', '💖'], ['goal', '目標を立てた', '🎯'],
-    ['calendar', '予定に入れた', '📅'], ['kit', '手元の道具を使った', '🧰'], ['search', '探す (Ctrl+K) を使った', '🔍']]
-    .forEach(function (d) {
-      add('first', d[0], 1, 'first-' + d[0], d[1], d[1] + ' (はじめての1回で取れます)', d[2]);
+  // はじめて (どれも1回で取れる)。まとまりは使う場所ごと。**key は取った印に残るので、まとまりを移しても key は変えない**
+  // (はじめの15は、もとは1つの「はじめて」にあった)
+  function firsts(group, list) {
+    list.forEach(function (d) {
+      add(group, d[0], 1, 'first-' + d[0], d[1], (d[3] || d[1]) + ' (はじめての1回で取れます)', d[2]);
     });
+  }
+  firsts('first', [['branch', '改訂版を作った', '📝'], ['pull', '確認依頼を出した', '📨'], ['merge', '反映した', '🎉'],
+    ['approve', '承認した', '👍'], ['markdown', 'Markdown で保存した', '💾'],
+    ['register', '文書を登録した', '📥', '文書を番頭に登録した'],
+    ['commit', '変更を記録した', '🖊️', '文書の変更を記録した (自分で記録したもの)'],
+    ['addFile', '改訂版に文書を足した', '📎', '作ってある改訂版に、別の文書を足した'],
+    ['docLink', '全画面のリンクを写した', '🔗', '文書を全画面で開くリンクを写した']]);
+  firsts('work', [['issue', 'やることを作った', '🆕'], ['comment', 'やりとりを書いた', '💬'], ['inquiry', '報告を書いた', '📮'],
+    ['reportCopy', '日報をコピーした', '📋'],
+    ['template', '下書き (ひな形) を使った', '🧩', 'やることの本文に下書き (ひな形) を入れた・自分の下書きを作った'],
+    ['tag', 'タグを付けた', '🏷️', 'やることにタグを付けた・新しいタグを作った'],
+    ['board', '進捗ボードで動かした', '🗃️', '進捗ボードで、やることのカードを動かした'],
+    ['gantt', '工程表を見た', '📊', 'やることを工程表で見た'],
+    ['sprint', '作業期間を作った', '🏁', '作業期間 (スプリント) を作った'],
+    ['impediment', '困りごとを書き出した', '🚧', 'チームの進みを妨げている困りごと (障害物) を書き出した'],
+    ['goal', '目標を立てた', '🎯'], ['calendar', '予定に入れた', '📅'],
+    ['tasks', 'Google ToDo に送った', '☑️', 'やることを Google ToDo に送った'],
+    ['search', '探す (Ctrl+K) を使った', '🔍']]);
+  firsts('me', [['focus', '集中を始めた', '🔥'], ['style', '仕事のスタンス診断を受けた', '🧭'], ['kit', '手元の道具を使った', '🧰'],
+    ['settings', '自分の設定を変えた', '⚙️'], ['help', '使い方を開いた', '📖', '左の「使い方」を開いた'],
+    ['usageView', '使われ方を見た', '📈', '左の「使われ方」を開いた'], ['achPage', '実績の頁を見た', '🏆', '実績の頁を開いた']]);
+  firsts('oshi', [['oshi', '推しを選んだ', '💖'], ['mychar', '自分のキャラを作った', '🎨', '推しに使う自分のキャラを作った'],
+    ['charkit', 'キャラ作成キットで取り込んだ', '📦', 'キャラ作成キットで作ったキャラを取り込んだ'],
+    ['mood', '推しの機嫌をオンにした', '🌦️', '自分の設定で「推しの機嫌」をオンにした'],
+    ['pat', '推しの頭をなでた', '🫶', '推しの頁か作業部屋で、推しの頭をなでた'],
+    ['room', '作業部屋を開いた', '🏠'], ['roomSound', '作業部屋で音を流した', '🎧', '作業部屋で雨やたき火の音を流した'],
+    ['cowork', '作業雑談部屋をのぞいた', '☕', '左の「作業雑談部屋」を開いた']]);
+  // 推しと部屋の通算 (続けなくても数える)
+  [[10, '10回なでた', '💞'], [50, '50回なでた', '💝']].forEach(function (d) {
+    add('oshi', 'pats', d[0], 'pats-' + d[0], d[1], '推しの頭を、通算で ' + d[0] + ' 回なでた', d[2]);
+  });
+  [[10, '部屋の常連', '🛋️'], [50, '部屋の住人', '🏡']].forEach(function (d) {
+    add('oshi', 'rooms', d[0], 'rooms-' + d[0], d[1], '作業部屋を、通算で ' + d[0] + ' 回開いた', d[2]);
+  });
   return out;
 }
 

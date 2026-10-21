@@ -1204,6 +1204,8 @@
     }
     function pat(x, y) {
       if (smileTimer) return; // 笑顔のあいだは、なでても変わらない (絵を取り直さない)
+      // 実績 (推しの頭をなでた・通算) のための使われ方。笑顔のあいだは数えない
+      usageCount('action', 'oshi-pat');
       show('praise');
       sec.classList.add('is-patted');
       caption.textContent = oshiLine('pat') || (name + 'はうれしそうです');

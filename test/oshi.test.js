@@ -349,13 +349,13 @@ describe('育てる (Lv = 1 + 取った実績の数)', () => {
   it('実績を取るとレベルが上がり、段が決まる (本人のぶんだけ)', () => {
     const { ctx } = setup();
     expect(ctx.apiOshiGet().growth).toMatchObject({ key: 'grow1', level: 1, unlocked: 0 });
-    // 開いた1日目 (はじめの一日) と、はじめて片づけた
+    // 開いた1日目 (はじめの一日) と、はじめて片づけた・やることを作った
     ctx.achCheck_('tester@example.com', now, { countDay: true });
     closeFor(ctx, 'tester@example.com');
     closeFor(ctx, 'other@example.com');
     ctx.achCheck_('tester@example.com', now, {});
     const g = ctx.apiOshiGet().growth;
-    expect(g).toMatchObject({ key: 'grow1', level: 3, unlocked: 2, toNext: 2 });
+    expect(g).toMatchObject({ key: 'grow1', level: 4, unlocked: 3, toNext: 1 });
   });
 
   it('ポイントは推しの育ちに効かない (前はポイントで育っていた)', () => {
@@ -373,10 +373,10 @@ describe('育てる (Lv = 1 + 取った実績の数)', () => {
     for (let i = 0; i < 10; i++) nums.push(closeFor(ctx, 'tester@example.com'));
     ctx.achCheck_('tester@example.com', now, { countDay: true });
     const before = ctx.apiOshiGet().growth;
-    expect(before.level).toBe(4); // 1 + はじめの一日・はじめて片づけた・10件片づけた
+    expect(before.level).toBe(5); // 1 + はじめの一日・はじめて片づけた・10件片づけた・やることを作った
     nums.forEach((n) => ctx.issueReopen(n));
     ctx.achCheck_('tester@example.com', now, {});
-    expect(ctx.apiOshiGet().growth.level).toBe(4);
+    expect(ctx.apiOshiGet().growth.level).toBe(5);
   });
 });
 

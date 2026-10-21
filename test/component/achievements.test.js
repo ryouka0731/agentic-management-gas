@@ -22,21 +22,24 @@ function server() {
 }
 const wire = (v) => JSON.parse(JSON.stringify(v));
 
-/** 開いたとき「はじめの一日」を取った返事 (newly あり) と、そのあと何も無い返事 */
+/**
+ * 開いたとき「はじめの一日」を取った返事 (newly あり) と、そのあと何も無い返事。
+ * 頁を開くと「実績の頁を見た」も取るので、先に1回開いておく (Lv は 1 + 2 = 3)
+ */
 function firstDay() {
   const { ctx } = server();
+  ctx.apiAchievements();
   const check = wire(ctx.apiAchievementsCheck());
   const after = wire(ctx.apiAchievements());
   const oshi = wire(ctx.apiOshiGet());
   return { check, after, oshi, ctx };
 }
 
-/** 段が上がる返事 (Lv4 → Lv5) */
+/** 段が上がる返事 (Lv4 → Lv6。はじめの一日・改訂版・実績の頁 → 片づけた・やることを作った) */
 function crossing() {
   const { ctx } = server();
   ctx.apiAchievementsCheck();
   ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
-  ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: ME, at: new Date(), state: 'open' });
   const before = wire(ctx.apiAchievements());
   const n = ctx.issueCreate('しごと', '', []).number;
   ctx.dbUpdate('issues', 'number', n, { assignee: ME });
@@ -82,7 +85,7 @@ describe('実績', () => {
     expect(t.classList.contains('is-shown')).toBe(true);
     expect(t.getAttribute('role')).toBe('status');
     expect(t.textContent).toContain('実績「はじめの一日」を取りました');
-    expect(t.textContent).toContain('Lv 2');
+    expect(t.textContent).toContain('Lv 3');
     // 知らせは焦点を奪わない
     expect(t.contains(document.activeElement)).toBe(false);
     expect(bubble().dataset.event).toBe('badge');
@@ -135,11 +138,13 @@ describe('実績', () => {
     // 「はじめて」は手がかりを出さず、まとまりの名前だけ
     const first = page.querySelector('.ach-badge[data-ach="first-comment"]');
     expect(first.querySelector('.ach-name').textContent).toBe('???');
-    expect(first.querySelector('.ach-sub').textContent).toBe('はじめて');
+    expect(first.querySelector('.ach-sub').textContent).toBe('はじめて: やること');
     expect(page.textContent).not.toContain('手元の道具を使った');
     const heads = [...page.querySelectorAll('.ach-head')].map((h) => h.textContent);
     expect(heads).toContain('通算の日 1 / 8');
-    expect(page.querySelector('.ach-level-head').textContent).toContain('なつき度 Lv 2');
+    expect(page.querySelector('.ach-level-head').textContent).toContain('なつき度 Lv 3');
+    // 推しと部屋のまとまりも出る (まとまりは種類ごと)
+    expect(heads.some((h) => h.startsWith('推しと部屋'))).toBe(true);
     expect(page.textContent).toContain('あなたにだけ見えます');
     expect(page.textContent).not.toMatch(/連続|\d+ *位/);
   });
@@ -150,7 +155,7 @@ describe('実績', () => {
     const card = document.querySelector('#home-cards .ach-card');
     expect(card).toBeTruthy();
     expect(card.textContent).toContain('はじめの一日');
-    expect(card.textContent).toContain('なつき度 Lv 2');
+    expect(card.textContent).toContain('なつき度 Lv 3');
     mountAch({ 'home.cards.ach': false }, { apiAchievementsCheck: d.check, apiOshiGet: d.oshi });
     expect(document.querySelector('.ach-card')).toBe(null);
   });
@@ -194,15 +199,16 @@ describe('実績', () => {
 
   it('段が上がったら「なつき度の段が上がった」を、上がった段の表情で言う。推しの育ちも Lv に揃える', () => {
     const c = crossing();
-    expect(c.cross).toMatchObject({ crossed: true, level: 5, stage: { key: 'grow2' } });
+    expect(c.before).toMatchObject({ level: 4, stage: { key: 'grow1' } });
+    expect(c.cross).toMatchObject({ crossed: true, level: 6, stage: { key: 'grow2' } });
     // 推しの返事は1つ前の Lv (取る前に取った返事)
     const stale = Object.assign({}, c.oshi, { growth: Object.assign({}, c.oshi.growth, { level: 4, key: 'grow1', label: 'よそよそしい' }) });
     mountAch({}, { apiAchievementsCheck: c.cross, apiOshiGet: stale });
     expect(bubble().dataset.event).toBe('levelup');
     expect(bubble().dataset.state).toBe('grow2');
-    expect(toast().textContent).toContain('なつき度が Lv 5 になりました (なれてきた)');
+    expect(toast().textContent).toContain('なつき度が Lv 6 になりました (なれてきた)');
     const stage = document.querySelector('#home-cards .oshi-card .oshi-stage');
-    expect(stage.textContent).toContain('Lv 5');
+    expect(stage.textContent).toContain('Lv 6');
     expect(stage.dataset.stage).toBe('grow2');
   });
 });

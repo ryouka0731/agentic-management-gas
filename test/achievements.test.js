@@ -31,7 +31,7 @@ describe('定義 (Achievements.js)', () => {
     const keys = list.map((a) => a.key);
     expect(new Set(keys).size).toBe(keys.length);
     const groups = pure.ACH_GROUPS().map((g) => g.key);
-    expect(groups).toEqual(['days', 'done', 'team', 'first']);
+    expect(groups).toEqual(['days', 'done', 'team', 'first', 'work', 'me', 'oshi']);
     const metrics = pure.ACH_METRICS();
     for (const a of list) {
       expect(groups, a.key).toContain(a.group);
@@ -54,14 +54,25 @@ describe('定義 (Achievements.js)', () => {
     expect(by.reviews).toEqual([1, 10, 50]);
   });
 
-  it('「はじめて」は15あり、どれも1回で取れる', () => {
-    const first = list.filter((a) => a.group === 'first');
-    expect(first.map((a) => a.metric)).toEqual(['branch', 'pull', 'merge', 'approve', 'markdown', 'comment', 'inquiry',
-      'reportCopy', 'focus', 'style', 'oshi', 'goal', 'calendar', 'kit', 'search']);
+  it('「はじめて」は機能ごとに1つずつ (key は first-<数えるもの>)、どれも1回で取れる。まとまりは使う場所ごと', () => {
+    const first = list.filter((a) => pure.ACH_METRICS()[a.metric].first);
+    const by = (g) => first.filter((a) => a.group === g).map((a) => a.metric);
+    expect(by('first')).toEqual(['branch', 'pull', 'merge', 'approve', 'markdown', 'register', 'commit', 'addFile', 'docLink']);
+    expect(by('work')).toEqual(['issue', 'comment', 'inquiry', 'reportCopy', 'template', 'tag', 'board', 'gantt', 'sprint',
+      'impediment', 'goal', 'calendar', 'tasks', 'search']);
+    expect(by('me')).toEqual(['focus', 'style', 'kit', 'settings', 'help', 'usageView', 'achPage']);
+    expect(by('oshi')).toEqual(['oshi', 'mychar', 'charkit', 'mood', 'pat', 'room', 'roomSound', 'cowork']);
     for (const a of first) {
       expect(a.threshold).toBe(1);
-      expect(pure.ACH_METRICS()[a.metric].first, a.key).toBe(true);
+      expect(a.key).toBe('first-' + a.metric);
     }
+    // はじめからある15の key は変えない (取った印に残っている)
+    for (const k of ['branch', 'pull', 'merge', 'approve', 'markdown', 'comment', 'inquiry', 'reportCopy', 'focus', 'style',
+      'oshi', 'goal', 'calendar', 'kit', 'search']) expect(pure.achOf('first-' + k), k).toBeTruthy();
+    // 通算の「推しと部屋」(なでた・作業部屋) は続けなくても数える
+    expect(list.filter((a) => a.metric === 'pats' || a.metric === 'rooms').map((a) => a.key))
+      .toEqual(['pats-10', 'pats-50', 'rooms-10', 'rooms-50']);
+    expect(list.length).toBe(63);
   });
 
   it('続けることを求めない (連続・毎日の実績は無い) / Git の言葉を見せない', () => {
@@ -110,10 +121,14 @@ describe('定義 (Achievements.js)', () => {
   it('画面の使われ方の場所はサーバの ACH_USAGE_PLACES と同じ', () => {
     const { ctx } = setup();
     const f = ui(['ACH_USAGE_TARGETS', 'ACH_USAGE_METRICS']);
-    expect(f.ACH_USAGE_TARGETS().slice().sort()).toEqual(Object.values(ctx.ACH_USAGE_PLACES()).sort());
-    // 場所 → 数えるもの も同じ (済ませたあとの数え直しは、この数えるものを名指す)
+    expect(f.ACH_USAGE_TARGETS().slice().sort()).toEqual([...new Set(Object.values(ctx.ACH_USAGE_PLACES()))].sort());
+    // 場所 → 数えるもの も同じ (済ませたあとの数え直しは、この数えるものを名指す)。サーバの数えるものは全部、画面の表にある
     const places = ctx.ACH_USAGE_PLACES();
-    for (const [place, metric] of Object.entries(f.ACH_USAGE_METRICS())) expect(places[metric], place).toBe(place);
+    const named = [];
+    for (const [place, metrics] of Object.entries(f.ACH_USAGE_METRICS())) {
+      for (const m of metrics) { expect(places[m], place).toBe(place); named.push(m); }
+    }
+    expect(named.sort()).toEqual(Object.keys(places).sort());
   });
 });
 
@@ -174,7 +189,8 @@ describe('数え方 (台帳から)', () => {
     const { ctx } = setup();
     for (let i = 0; i < 10; i++) close(ctx, i % 2 ? 'Tester@Example.com' : ME);
     close(ctx, 'other@example.com');
-    expect(keysOf(ctx.achCheck_(ME, DAY1, {}))).toEqual(['done-1', 'done-10']);
+    // やることを作ったのも本人 (変更の履歴に作った人の名が残る)
+    expect(keysOf(ctx.achCheck_(ME, DAY1, {}))).toEqual(['done-1', 'done-10', 'first-issue']);
     expect(ctx.achCheck_('other@example.com', DAY1, {}).newly).toEqual(['done-1']);
   });
 
@@ -227,7 +243,9 @@ describe('数え方 (台帳から)', () => {
     ctx.apiPrefSet('oshi.char', 'builtin:itsuki');
     props(ctx).setProperty('CAL_PLANNED:' + ME, JSON.stringify({ day: '2026-10-21', at: 'x', ok: true }));
     ctx.outcomesQueueNote_(1, 2, 'owner@example.com', ME);
-    expect(keysOf(ctx.achCheck_(ME, DAY1, {}))).toEqual(['first-calendar', 'first-kit', 'first-oshi', 'first-style'].sort());
+    // 推しを選んだのは自分の設定を変えたことでもある
+    expect(keysOf(ctx.achCheck_(ME, DAY1, {}))).toEqual(
+      ['first-calendar', 'first-kit', 'first-oshi', 'first-settings', 'first-style'].sort());
   });
 
   it('全部取った数えるものの表は読まない', () => {
@@ -253,15 +271,16 @@ describe('一度取ったら消さない', () => {
     ctx.issueClose(i.number, null);
     ctx.usageRecord([{ kind: 'action', target: 'search-open', count: 1 }]);
     const first = ctx.achCheck_(ME, DAY1, {});
-    expect(keysOf(first)).toEqual(['done-1', 'first-search']);
+    expect(keysOf(first)).toEqual(['done-1', 'first-issue', 'first-search']);
     ctx.issueReopen(i.number);
     ctx.dbDelete('usage', 'target', 'search-open');
     const again = ctx.achCheck_(ME, new Date('2026-10-22T03:00:00Z'), {});
     expect(again.newly).toEqual([]);
-    expect(Object.keys(again.have).sort()).toEqual(['done-1', 'first-search']);
+    expect(Object.keys(again.have).sort()).toEqual(['done-1', 'first-issue', 'first-search']);
     // 取った日は最初に取った日 (東京の暦日) のまま
     expect(again.have['done-1']).toBe('2026-10-21');
-    expect(ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['done-1', 'first-search']);
+    // 頁を開いたので「実績の頁を見た」も取る
+    expect(ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['done-1', 'first-achPage', 'first-issue', 'first-search']);
   });
 
   it('2つのタブで同時に届いても、取ったと言うのは1回だけ (鍵の中で読み直して足す)', () => {
@@ -280,7 +299,8 @@ describe('一度取ったら消さない', () => {
       return orig(ms, fn, busy);
     };
     const res = ctx.achCheck_(ME, DAY1, {});
-    expect(res.newly).toEqual([]);
+    // やることを作った (first-issue) は、ほかのタブが取っていないので取る
+    expect(res.newly).toEqual(['first-issue']);
     expect(res.have['done-1']).toBe('2026-10-20');
   });
 
@@ -311,10 +331,11 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     expect(ctx.apiAchievementsCheck.length).toBe(1);
     fake._setUser('b@example.com');
     ctx.apiAchievementsCheck();
-    expect(ctx.apiAchievements().unlocked.map((a) => a.key)).toEqual(['days-1']);
+    expect(ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['days-1', 'first-achPage']);
     fake._setUser(ME);
     const mine = ctx.apiAchievements();
-    expect(mine.unlocked).toEqual([]);
+    // 開いた日は数えない (頁を開いたことだけ)
+    expect(mine.unlocked.map((a) => a.key)).toEqual(['first-achPage']);
     expect(JSON.stringify(mine)).not.toContain('b@example.com');
     // アドレスを渡しても、開いている本人 (tester) のぶんを数える
     ctx.apiAchievementsCheck('b@example.com');
@@ -336,7 +357,7 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     }
     expect(res.items.find((a) => a.key === 'days-3').hint).toBe('あと 2 日で…');
     expect(res.items.find((a) => a.key === 'days-7').hint).toBe('');
-    expect(res.items.find((a) => a.key === 'first-comment')).toMatchObject({ hint: '', groupLabel: 'はじめて' });
+    expect(res.items.find((a) => a.key === 'first-comment')).toMatchObject({ hint: '', groupLabel: 'はじめて: やること' });
     // 手元の道具だけは、取り方の手がかりを出す (ACH_TIPS。名前は出さない)
     expect(res.items.find((a) => a.key === 'first-kit').hint).toContain('手元の道具');
     expect(res.next.length).toBeLessThanOrEqual(3);
@@ -357,9 +378,10 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     ctx.dbAppend('branches', { name: '見直し', createdBy: ME });
     ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: ME, at: DAY1, state: 'open' });
     const r2 = ctx.apiAchievements();
-    expect(r2.newly.map((a) => a.key).sort()).toEqual(['done-1', 'first-branch', 'first-inquiry']);
-    expect(r2).toMatchObject({ level: 5, crossed: true, stage: { key: 'grow2', label: 'なれてきた' } });
-    expect(ctx.apiOshiGet().growth).toMatchObject({ level: 5, key: 'grow2' });
+    // やることを作った・実績の頁を見た も届く (1 + 6 = Lv7)
+    expect(r2.newly.map((a) => a.key).sort()).toEqual(['done-1', 'first-achPage', 'first-branch', 'first-inquiry', 'first-issue']);
+    expect(r2).toMatchObject({ level: 7, crossed: true, stage: { key: 'grow2', label: 'なれてきた' } });
+    expect(ctx.apiOshiGet().growth).toMatchObject({ level: 7, key: 'grow2' });
     expect(ctx.apiAchievements()).toMatchObject({ crossed: false, newly: [] });
   });
 
