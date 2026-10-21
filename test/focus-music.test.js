@@ -93,6 +93,37 @@ describe('貼られた URL を読み解く', () => {
     bad.forEach((u) => expect(parse(u).ok, u).toBe(false));
   });
 
+  it('youtu.be の末尾の / は外して受ける', () => {
+    expect(parts('https://youtu.be/' + VID + '/')).toEqual({ kind: 'youtube', video: VID });
+    expect(parts('https://youtu.be/' + VID + '/?si=1')).toEqual({ kind: 'youtube', video: VID });
+  });
+
+  it('videoseries は動画の id ではない。再生リストが無ければ断る', () => {
+    expect(parse('https://www.youtube.com/embed/videoseries').ok).toBe(false);
+    expect(parse('https://youtu.be/videoseries').ok).toBe(false);
+    expect(parse('https://www.youtube.com/watch?v=videoseries').ok).toBe(false);
+    expect(parts('https://www.youtube.com/embed/videoseries?list=' + LIST)).toEqual({ kind: 'youtube', list: LIST });
+    expect(core.focusMusicPartsValid_({ kind: 'youtube', video: 'videoseries' })).toBe(false);
+  });
+
+  it('動画に付いた使えない再生リスト (LL・WL・形の合わないもの・ミックス) は捨てて動画を流す', () => {
+    ['LL', 'WL', 'PL%3Cx%3E', 'RD' + VID].forEach((l) => {
+      expect(parts('https://www.youtube.com/watch?v=' + VID + '&list=' + l), l).toEqual({ kind: 'youtube', video: VID });
+    });
+  });
+
+  it('動画の無いミックス (RD…)・使えない再生リストは、平らな日本語で断る', () => {
+    expect(parse('https://www.youtube.com/playlist?list=RD' + VID).error)
+      .toBe('YouTube が自動で作る「ミックス」は埋め込めません。自分で作った再生リストのリンクを貼ってください');
+    expect(parse('https://www.youtube.com/playlist?list=LL').error).toMatch(/この再生リストは使えません/);
+    expect(core.focusMusicPartsValid_({ kind: 'youtube', list: 'RD' + VID + 'abc' })).toBe(false);
+  });
+
+  it('SoundCloud の短いリンクには、写し直し方を添えて断る', () => {
+    expect(parse('https://on.soundcloud.com/AbCd1234').error)
+      .toBe('短いリンクは使えません。ブラウザで開いて soundcloud.com のアドレスを写してください');
+  });
+
   it('ほかの欄 (autoplay など) は混ぜ込んでも捨てられ、組み直した URL に出ない', () => {
     const p = parse('https://www.youtube.com/watch?v=' + VID + '&autoplay=1&mute=1&origin=https://evil.com').parts;
     expect(core.focusMusicEmbedUrl_(p)).toBe('https://www.youtube-nocookie.com/embed/' + VID + '?rel=0&modestbranding=1');

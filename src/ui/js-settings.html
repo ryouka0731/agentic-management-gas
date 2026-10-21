@@ -654,6 +654,8 @@
 
     var control;
     var inputs = [];
+    /** 欄を値でそろえたあとに走らせるもの (自分の曲のリンクの確かめ) */
+    var afterSync = null;
     var reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'btn pref-reset';
@@ -665,7 +667,8 @@
       else if (item.type === 'steps') inputs.forEach(function (el, i) { el.value = String(current.value[i]); });
       else control.value = String(current.value);
       reset.hidden = !current.custom;
-      attachHint(reset, '既定 (' + prefValueText(item, item.def) + ') に戻します');
+      // 既定が空の欄 (自分の曲のリンク) は「既定 () に戻します」と読めてしまうので言い換える
+      attachHint(reset, item.def === '' ? '空に戻します' : '既定 (' + prefValueText(item, item.def) + ') に戻します');
     }
 
     function save(value, busy) {
@@ -682,6 +685,8 @@
           { kind: 'ok' });
       }, function (err) {
         sync(current);
+        // 欄を元の値に戻したので、その下の確かめの字も元の値に合わせる (自分の曲のリンク)
+        if (afterSync) afterSync();
         if (busy) failEnable(busy, '保存できませんでした: ')(err);
         else failSnack('保存できませんでした: ')(err);
       });
@@ -751,6 +756,7 @@
             : (p.list ? 'YouTube の再生リスト' : 'YouTube の動画'));
           return got;
         };
+        afterSync = showCheck;
         control.addEventListener('input', showCheck);
         control.addEventListener('change', function () {
           var got = showCheck();

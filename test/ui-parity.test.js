@@ -44,15 +44,30 @@ describe('画面とサーバで同じ答えになる', () => {
     const core = loadGas('src/core/FocusMusic.js');
     const VID = 'dQw4w9WgXcQ';
     const LIST = 'PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG';
-    const names = ['focusMusicRe_', 'focusMusicHosts_', 'focusMusicSoundcloudReserved_', 'focusMusicParse_',
-      'focusMusicQuery_', 'focusMusicPartsValid_', 'focusMusicEmbedUrl_', 'focusMusicLinkOf_'];
+    const names = ['focusMusicRe_', 'focusMusicHosts_', 'focusMusicIsMix_', 'focusMusicSoundcloudReserved_',
+      'focusMusicParse_', 'focusMusicQuery_', 'focusMusicPartsValid_', 'focusMusicEmbedUrl_', 'focusMusicLinkOf_'];
     const view = ui(names);
-        const urls = [
-      'https://www.youtube.com/watch?v=' + VID, 'https://youtu.be/' + VID, 'https://www.youtube.com/playlist?list=' + LIST,
+    const urls = [
+      'https://www.youtube.com/watch?v=' + VID, 'https://youtu.be/' + VID, 'https://youtu.be/' + VID + '/',
+      'https://www.youtube.com/playlist?list=' + LIST,
       'https://music.youtube.com/watch?v=' + VID + '&list=' + LIST, 'https://soundcloud.com/a/b',
       'https://soundcloud.com/a/sets/c', 'http://youtube.com/watch?v=' + VID, 'https://youtube.com.evil.com/x',
       'javascript:alert(1)', '', null, 'https://www.youtube.com/watch?v=' + VID + '&v=' + VID,
       'https://www.youtube.com/shorts/' + VID, 'https://soundcloud.com/discover/sets/x',
+      // 大文字の場所・符号にした値・壊れた % の並び
+      'HTTPS://WWW.YOUTUBE.COM/watch?v=' + VID, 'https://SoundCloud.com/a/b', 'https://YOUTU.BE/' + VID,
+      'https://www.youtube.com/watch?v=' + encodeURIComponent(VID), 'https://www.youtube.com/watch?%76=' + VID,
+      'https://www.youtube.com/watch?v=abc%26autoplay%3D1', 'https://www.youtube.com/watch?v=%E0%A4%A',
+      'https://www.youtube.com/playlist?list=%zz', 'https://www.youtube.com/watch?v=' + VID + '&x=%',
+      // ミックス (RD)・高く評価した動画 (LL)・後で見る (WL)・同じ list が2つ
+      'https://www.youtube.com/playlist?list=RD' + VID, 'https://www.youtube.com/watch?v=' + VID + '&list=RD' + VID,
+      'https://www.youtube.com/watch?v=' + VID + '&list=LL', 'https://www.youtube.com/watch?v=' + VID + '&list=WL',
+      'https://www.youtube.com/playlist?list=LL', 'https://www.youtube.com/playlist?list=' + LIST + '&list=' + LIST,
+      'https://www.youtube.com/embed/videoseries', 'https://www.youtube.com/embed/videoseries?list=' + LIST,
+      'https://youtu.be/videoseries',
+      // SoundCloud の、曲の名前の位置に来ても曲ではないもの・短いリンク
+      'https://soundcloud.com/a/likes', 'https://soundcloud.com/a/tracks', 'https://soundcloud.com/a/reposts',
+      'https://soundcloud.com/a/followers', 'https://soundcloud.com/a/popular-tracks', 'https://on.soundcloud.com/AbCd1',
     ];
     urls.forEach((u) => {
       const a = core.focusMusicParse_(u);
@@ -64,6 +79,7 @@ describe('画面とサーバで同じ答えになる', () => {
       expect(view.focusMusicLinkOf_(p)).toBe(core.focusMusicLinkOf_(p));
     });
   });
+
   it('oshiGreetingOf (推しのあいさつの区切り)', () => {
     const core = loadGas('src/core/Oshi.js');
     const view = ui(['oshiGreetingOf']);

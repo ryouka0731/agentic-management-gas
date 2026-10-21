@@ -123,7 +123,8 @@ function PREF_FOCUS_ITEMS_() {
       def: 'off' },
     { key: 'focus.musicUrl', scope: 'me', type: 'music', section: '集中のしかた', label: '自分の曲のリンク',
       help: 'YouTube は再生リストを開いて「共有」→「コピー」、SoundCloud は曲かプレイリストの「Share」→「Copy」で' +
-        '写したリンクを貼ります。https:// の YouTube (youtube.com / youtu.be) と SoundCloud だけ使えます。' +
+        '写したリンクを貼ります。https:// の YouTube (youtube.com / youtu.be) と SoundCloud (soundcloud.com) だけ使えます。' +
+        'SoundCloud の短いリンク (on.soundcloud.com) は、ブラウザで開いて soundcloud.com のアドレスを写してください。' +
         '番頭が覚えるのはリンクの中の id だけです',
       def: '' },
   ];
