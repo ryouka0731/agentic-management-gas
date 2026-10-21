@@ -86,7 +86,7 @@ describe('定義 (Achievements.js)', () => {
     expect(pure.achNext({}, {}, 99).some((n) => n.group === 'first')).toBe(false);
   });
 
-  it('推しの Lv は 1 + 取った数。段は見習い Lv1〜4・一人前 Lv5〜14・名人 Lv15〜', () => {
+  it('推しの Lv は 1 + 取った数。段はよそよそしい Lv1〜4・なれてきた Lv5〜14・なついた Lv15〜', () => {
     expect(pure.achLevelOf(0)).toBe(1);
     expect(pure.achLevelOf(4)).toBe(5);
     expect(pure.oshiStageOf(pure.achLevelOf(3)).key).toBe('grow1');
@@ -95,7 +95,7 @@ describe('定義 (Achievements.js)', () => {
     expect(pure.oshiStageOf(pure.achLevelOf(14)).key).toBe('grow3');
   });
 
-  it('推しは「実績を取った」「育ちの段が上がった」を、どの口調でも3つ以上言える', () => {
+  it('推しは「実績を取った」「なつき度の段が上がった」を、どの口調でも3つ以上言える', () => {
     const lines = pure.OSHI_LINES();
     const ev = pure.OSHI_EVENTS().map((e) => e.key);
     expect(ev).toContain('badge');
@@ -336,7 +336,9 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     }
     expect(res.items.find((a) => a.key === 'days-3').hint).toBe('あと 2 日で…');
     expect(res.items.find((a) => a.key === 'days-7').hint).toBe('');
-    expect(res.items.find((a) => a.key === 'first-kit')).toMatchObject({ hint: '', groupLabel: 'はじめて' });
+    expect(res.items.find((a) => a.key === 'first-comment')).toMatchObject({ hint: '', groupLabel: 'はじめて' });
+    // 手元の道具だけは、取り方の手がかりを出す (ACH_TIPS。名前は出さない)
+    expect(res.items.find((a) => a.key === 'first-kit').hint).toContain('手元の道具');
     expect(res.next.length).toBeLessThanOrEqual(3);
     expect(res.next.every((n) => !n.title)).toBe(true);
     expect(res.groups.find((g) => g.key === 'days')).toMatchObject({ got: 1, total: 8 });
@@ -346,7 +348,7 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     const { ctx } = setup();
     const r1 = ctx.apiAchievementsCheck();
     expect(r1).toMatchObject({ level: 2, crossed: false, stage: { key: 'grow1', toNext: 3 } });
-    // あと3つで Lv5 (一人前)
+    // あと3つで Lv5 (なれてきた)
     for (let i = 0; i < 3; i++) {
       const n = ctx.issueCreate('しごと' + i, '', []).number;
       ctx.dbUpdate('issues', 'number', n, { assignee: ME });
@@ -356,7 +358,7 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     ctx.dbAppend('inquiries', { number: 1, kind: 'bug', body: 'x', by: ME, at: DAY1, state: 'open' });
     const r2 = ctx.apiAchievements();
     expect(r2.newly.map((a) => a.key).sort()).toEqual(['done-1', 'first-branch', 'first-inquiry']);
-    expect(r2).toMatchObject({ level: 5, crossed: true, stage: { key: 'grow2', label: '一人前' } });
+    expect(r2).toMatchObject({ level: 5, crossed: true, stage: { key: 'grow2', label: 'なれてきた' } });
     expect(ctx.apiOshiGet().growth).toMatchObject({ level: 5, key: 'grow2' });
     expect(ctx.apiAchievements()).toMatchObject({ crossed: false, newly: [] });
   });
@@ -411,7 +413,7 @@ describe('見直し (レビューで見つかったもの)', () => {
     expect(fake).toBeTruthy();
   });
 
-  it('床が一人前のとき、Lv が名人に届けば「段が上がった」と言う', () => {
+  it('床がなれてきたのとき、Lv がなついたに届けば「段が上がった」と言う', () => {
     const { ctx } = setup();
     ctx.PropertiesService.getUserProperties().setProperty('OSHI_STAGE_MAX:' + ME, '1');
     const all = {};
@@ -466,6 +468,31 @@ describe('見直し (レビューで見つかったもの)', () => {
     read.length = 0;
     ctx.apiAchievementsCheck({ metrics: ['nope'] });
     expect(read).toEqual([]);
+  });
+
+  it('その日2回目に開いたときも、「まだ」と分かった「はじめて」は読み直さない (その日の最初に開いたときは全部数える)', () => {
+    const { ctx } = setup();
+    withCache(ctx);
+    let read = readsOf(ctx);
+    ctx.apiAchievementsCheck();
+    expect(read).toContain('branches');
+    read.length = 0;
+    ctx.apiAchievementsCheck();
+    expect(read).not.toContain('branches');
+    expect(read).not.toContain('goals');
+    // まだのものは、その次の頁でも読まない (2回目に開いたときに覚えを消さない)
+    read.length = 0;
+    ctx.apiAchievements();
+    expect(read).not.toContain('branches');
+  });
+
+  it('手元からの命令の覚え (outcomesQueueWindows_) は、1回の数え直しで1回だけ読む', () => {
+    const { ctx } = setup();
+    let n = 0;
+    const real = ctx.outcomesQueueWindows_;
+    ctx.outcomesQueueWindows_ = () => { n++; return real(); };
+    ctx.apiAchievementsCheck();
+    expect(n).toBe(1);
   });
 
   it('「はじめて」がまだのことは、その日のうちは覚えておき、頁を開くたびに読み直さない (開いたときは全部数える)', () => {

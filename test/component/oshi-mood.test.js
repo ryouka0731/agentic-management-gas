@@ -128,7 +128,7 @@ describe('推しの機嫌', () => {
     expect(sec.querySelector('.oshi-mood-label').textContent).toBe('むっ');
     expect(sec.querySelector('.oshi-mood-line').textContent).toBe(d.mood.line);
     expect(sec.querySelector('img.oshi-img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'worry'));
-    expect(sec.textContent).toContain('Lv・実績・ポイントは減りません');
+    expect(sec.textContent).toContain('なつき度は下がりません');
     const again = app.calls.filter((c) => c.name === 'apiOshiDefaultImage').map((c) => c.args[2]);
     expect(again.filter((k) => k === 'pout').length).toBe(1);
   });

@@ -383,7 +383,9 @@
       String(issue.assignee || '').split(',')
         .map(function (x) { return x.replace(/^\s+|\s+$/g, ''); });
 
-    return list.indexOf(String(who)) >= 0;
+    // 字の大小は見ない (改善のヒントの「期限切れを見る」と推しの機嫌も同じ人として数える)
+    var me = String(who).toLowerCase();
+    return list.some(function (x) { return String(x).toLowerCase() === me; });
   }
 
   function matchesFilter(issue) {

@@ -66,8 +66,8 @@
 読み書きする (`test/oshi.test.js` の「入口はアドレスを受けない」)。画像は中身の指紋ではなく、自分のキャラの番号 (`charId`) と表情の
 名前で引くので、ほかの人の画像の指紋を知っていても読めない。**`charId` は人ごとの番号**なので、ほかの人の番号を名指しても
 自分の中から探すだけで、無ければ「そのキャラは見つかりません」で断る (読む道は null)。使うキャラ (`oshi.char`) に選べるのも、
-最初からいるキャラと本人のキャラだけ。育ちは **Lv = 1 + 取った実績の数** で決まり (`oshiGrowth_` → `achLevel_`)、ポイントでは
-育たない。実績は消さないので段も下がらない (前の `OSHI_STAGE_MAX:` は読まない)。**ただし台帳 (`oshi` / `oshi_images`) と
+最初からいるキャラと本人のキャラだけ。なつき度は **Lv = 1 + 取った実績の数** で決まり (`oshiGrowth_` → `achLevel_`)、ポイントでは
+育たない。実績は消さないので段も下がらない (前の `OSHI_STAGE_MAX:` は床として読むだけで書かない。下の「実績」の `achStageFloor_`)。**ただし台帳 (`oshi` / `oshi_images`) と
 `objects/` は入れ物の中にあり、Drive で共有している人は直に開ける。** 画面と手引きにもそう書いてある (隠せるとは言わない)。
 
 キャラ作成キットの取り込み (`apiOshiCharImport`) もアドレスを受けず、開いている本人のキャラを作るか直すだけ (番号は自分の中から探す)。
@@ -81,8 +81,19 @@
 言葉と動画の id は**クリアするまで返さない** (`apiOshiGet` の `clear` は null)。**最初からいるキャラのプロフィールはリポジトリに
 置かない** (実在の人に寄せた中身になりうるため。スクリプトプロパティ `OSHI_PROFILE:<key>` にだけ置き、1つ 9KB を超えるときは
 頭に `{"parts": N, "v": 版}` を置いて続きを `OSHI_PROFILE:<key>:<版>:0`〜 に分ける。**新しい版の続きを置く → 頭を替える → 前の版の
-続きを消す、の順** (前を先に消すと、途中で止まったときにプロフィールが消える)。版の無い `{"parts": N}` と `:0`〜 も読む)。
-クリアは一度届いたら覚える (`OSHI_CLEARED:<小文字のアドレス>` = 届いた日。`oshiCleared_`)。あとから実績を足しても、クリアを取り上げない。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
+続きを消す、の順** (前を先に消すと、途中で止まったときにプロフィールが消える)。版は置き直すたびに変わる数 (時刻) で、頭を替えたあと
+いまの版でない続きを全部消す (途中で止まった版も残さない)。読むときは続きを1つずつ問い合わせず、`getProperties()` の1回で読み、
+版ごとに CacheService `OSHI_PROFILE_C:` に6時間覚える。版の無い `{"parts": N}` と `:0`〜 も読む)。
+クリアは一度届いたら覚える (`OSHI_CLEARED:<小文字のアドレス>` = 届いた日。`oshiCleared_`)。あとから実績を足しても、クリアを取り上げない。
+**クリアは「この環境で取れる実績 + 取った実績」を全部取ったとき** (`oshiClearedOf_(have, off)`)。取れない実績と理由を決めるのは
+`achUnavailable_` (AchievementsStore.gs) だけで、実績の頁の数 (`total` / `got` / groups)・「あと◯件で…」・「クリアで分かる」の Lv
+(`reveal.maxLevel`) も同じものを使う。**外すのはチームと環境の理由だけ** (1人・チームの `goals.enabled` / `usage.enabled`・共有カレンダーが無い)。
+自分の設定 (`usage.self` / `oshi.on` / `focus.start` / `calendar.plan`) で止めているものは外さず、`achPersonalTips_` が手がかりを出すだけ
+(自分で切るだけでクリアに届き、クリアは消えないので取り返せない)。1人かどうか (`achSolo_`) は、Drive (共有ドライブなら `driveMembers_` の admins、
+マイドライブなら入れ物の持ち主と `getEditors`) が1人と言い、**しかも台帳 (members / pulls / reviews / issue_comments / issues の担当 / usage) に
+本人のほかのアドレスが無いときだけ** 1人 (ドメインやリンクでの共有は getEditors に出ない)。答えは CacheService `ACH_PEOPLE:<小文字のアドレス>` に
+覚える (1人・ほかの人がいる は10分、読めなかった `unknown` は2分)。**読めないときは1人と言わない。** 取れる実績が増えても、覚えたクリアはそのまま
+(`apiAchievements` の `cleared`。届いたその返事だけ `clearedNow`)。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
 命令 `oshiProfileSet`。どれも `oshiBuiltinProfileSet_` → `repoAssertAdmin_`)。テストの中身は作り話 (「テストの好物」など) にする。
 自分のキャラのプロフィールは台帳 (`oshi.profile`) にあり、Drive で台帳を開ける人は直に読める (手引きにそう書いた)。
 検査は `oshiProfileValid_` だけ (設定の欄・命令・自分のキャラの欄・置き場から読むとき)。動画のリンクは `focusMusicParse_` で読み解き、
@@ -90,7 +101,8 @@ YouTube の動画1本の id だけを残す。
 
 **推しの機嫌 (`src/core/OshiMood.gs`。`apiOshiGet` の `mood` と `apiOshiMood`) は本人にだけ。** どちらもアドレスを受けず、開いている本人の
 ぶんだけ数える。ほかの人 (上長・管理者を含む) の機嫌を読む入口は作らない。数えるのは本人のやること (担当に本人。担当なしなら本人が作った
-もの = `adviceMadeBy_`。担当は大文字小文字を見ずに比べ、作った人は変更の履歴の字のまま比べる。期限切れだけは改善のヒントと同じく担当の字のまま比べ、「見る」の一覧と揃える)。**変わるのは表情とせりふだけ** で、Lv・実績・ポイント・当たり・プロフィール・クリアは
+もの = `adviceMadeBy_`。担当は大文字小文字を見ずに比べ、作った人は変更の履歴の字のまま比べる。期限切れも担当の大文字小文字を見ない。改善のヒントの期限切れ (`homeAdvice_`) と「見る」で開く一覧 (`hasAssignee`) も同じく大文字小文字を見ないので、数が揃う)。
+やることを消したとき (`issuePurge`) も `issueMoodForget_` で覚えを消す。**変わるのは表情とせりふだけ** で、Lv・実績・ポイント・当たり・プロフィール・クリアは
 動かさず、知らせ・メール・使われ方にも出さない。オフ (`oshi.on` か `oshi.mood` が false) の人は台帳を読まない。覚えは CacheService の
 `OSHI_MOOD:<小文字のアドレス>` (5分、日が変われば数え直す) と、直ったかを見る `OSHI_MOOD_LAST:<小文字のアドレス>` (6時間) だけで、
 台帳とスクリプトプロパティには残さない。やることを済ませた・取り消した・直した・捨てた・戻したときは `issueMoodForget_` (Issue.gs) が
@@ -103,10 +115,12 @@ YouTube の動画1本の id だけを残す。
 置き場は台帳ではなくスクリプトプロパティの1つの値: `ACH:<小文字のアドレス>` = `{days: {n, last}, got: {key: 取った日}}` (日は東京の暦日。
 値は1つ 9KB までなので時刻を置かない)。前の形 (`ACH_DAYS:` と時刻) は `achRead_` が読んで今の形にし、`achWrite_` (鍵の中) が `ACH_DAYS:` を消す。
 **取った印は消さない** (使われ方は180日で間引かれ、完了は取り消せる)。推しの段は、実績の前に届いていた段 (本人の UserProperties の
-`OSHI_STAGE_MAX:`) より下にしない (`achStageFloor_`。この鍵は消さない)。その床だけで `crossed` にはしない。
+`OSHI_STAGE_MAX:`) より下にしない (`achStageFloor_`。この鍵は消さない)。その床だけで `crossed` にはしない。床で Lv より上の段に出すときは
+`oshiStageOf` が `floored: true` を返し、棒 (`meter`) と `toNext` は出している段の次の段まで Lv1 から数える (画面は「以前のなつき度を保っています」と添える)。
 全部を数え直すのは開いたとき (`apiAchievementsCheck()` を引数なしで) だけ。済ませたあとは `apiAchievementsCheck({metrics})` で
-変わりうる数えるものだけを数え、頁 (`apiAchievements`) はその日に「まだ」と分かった「はじめて」を CacheService (`ACH_NEG:<アドレス>:<日>`)
-から読んで数えない。手元からの命令で反映した記録は持ち主の名で残るので、`OUTCOME_QUEUE:` の時間の中なら命令を置いた人のものにする (`achPersonOf_`)。
+変わりうる数えるものだけを数え、頁 (`apiAchievements`) と、その日2回目からの開いたときは、その日に「まだ」と分かった「はじめて」を
+CacheService (`ACH_NEG:<アドレス>:<日>`) から読んで数えない (その日の最初に開いたときは全部数える)。手元からの命令の覚え
+(`outcomesQueueWindows_`) は1回の数え直しで1回だけ読む。手元からの命令で反映した記録は持ち主の名で残るので、`OUTCOME_QUEUE:` の時間の中なら命令を置いた人のものにする (`achPersonOf_`)。
 開いた日は東京の暦日ごとに1回、見ると足すを1つの鍵 (`dbWithLock_`) の中で行う (2つのタブで2日にしない)。取った印も鍵の中で
 読み直してから足す (2つのタブで2回「取った」と言わない)。鍵の中で台帳も Drive も読まない。数は台帳と、今あるスクリプトプロパティ
 (`STYLE:` / `CAL_PLANNED:` / `MYPREF:` / `OUTCOME_QUEUE:`) と使われ方の場所 (`ACH_USAGE_PLACES()`) から数え、実績のための
