@@ -509,6 +509,13 @@ describe('画面に渡せる形か', () => {
     return goal;
   }
 
+  /** 共有カレンダーを作り、予定に入れるをオンにして、やることを担当にする */
+  function calendarReady(ctx, env) {
+    ctx.apiCalendarCreateShared();
+    ctx.apiPrefSet('calendar.plan', true);
+    ctx.apiIssueUpdate(env.issue.number, { assignee: 'tester@example.com', plannedHours: 0.5 });
+  }
+
   const CASES = [
     // 目標 (既定はオフ)。承認まで進めて、日時の欄が埋まった形を検査する
     ['apiGoalState', (ctx, env) => { goalReady(ctx, env); return ctx.apiGoalState(); }],
@@ -569,6 +576,26 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     ['apiKitStatus', (ctx) => ctx.apiKitStatus()],
+    ['apiCalendarPlan', (ctx, env) => {
+      calendarReady(ctx, env);
+      const out = ctx.apiCalendarPlan();
+      if (!out.ok || !out.blocks.length) throw new Error('予定が空のまま検査されている: ' + out.reason);
+      return out;
+    }],
+    ['apiCalendarToday', (ctx, env) => {
+      calendarReady(ctx, env);
+      ctx.apiCalendarPlan();
+      return ctx.apiCalendarToday();
+    }],
+    ['apiCalendarStatus', (ctx, env) => {
+      calendarReady(ctx, env);
+      ctx.apiCalendarPlan();
+      const out = ctx.apiCalendarStatus();
+      if (!out.lastPlanned || !out.settingsUrl) throw new Error('様子が空のまま検査されている');
+      return out;
+    }],
+    ['apiCalendarCreateShared', (ctx) => ctx.apiCalendarCreateShared()],
+    ['apiCalendarSetShared', (ctx) => ctx.apiCalendarSetShared('')],
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],
     ['apiIssuesForFile', (ctx, env) => ctx.apiIssuesForFile(env.fileId)],
     ['apiProjectBoard', (ctx) => ctx.apiProjectBoard()],
@@ -1287,7 +1314,7 @@ describe('エディタ専用の関数は、持ち主以外には動かない', (
     'debugVerifyPhase3b', 'debugMarkdownRoundTrip', 'setupCommandQueue',
     'debugVerifyCommandQueue', 'debugCleanupVerifyIssues', 'debugDumpIssues',
     'debugListWorkingCopies', 'debugFindConvertedCells', 'debugVerifyScrum',
-    'debugVerifySharedDrive',
+    'debugVerifySharedDrive', 'debugVerifyCalendar',
   ];
 
   it('エディタ用の関数はすべて上に並んでいる', () => {

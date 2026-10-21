@@ -23,6 +23,7 @@
     loadOverview();
     loadHomeCards();
     loadHomeSummary();
+    loadHomeCalendar();
     call('apiHomeActivity', [], function (act) {
       if (panelHome.hidden) return;
       fillBlock(homeActivityEl, makeActivityBlock(act || { weeks: [], meTotal: 0 }));

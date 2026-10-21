@@ -166,6 +166,8 @@
           <div class="home-grid">
             <div class="home-main">
               <section class="home-block" id="home-turn" aria-label="あなたの番"></section>
+              <!-- 今日の予定 (番頭が組んだもの)。予定に入れるがオンのときだけ描く。空なら隠れる -->
+              <section class="home-block" id="home-calendar" aria-label="今日の予定"></section>
               <!-- 改善のヒント。当たる規則が無ければ空のまま (.home-block:empty で隠れる) -->
               <section class="home-block" id="home-advice" aria-label="改善のヒント"></section>
               <section class="home-block" id="home-activity" aria-label="アクティビティ"></section>
@@ -532,6 +534,7 @@
   <?!= include('ui/js-reports') ?>
   <?!= include('ui/js-me') ?>
   <?!= include('ui/js-style') ?>
+  <?!= include('ui/js-calendar') ?>
   <?!= include('ui/js-init') ?>
   <?!= include('ui/js-settings') ?>
   <?!= include('ui/js-scrum') ?>
