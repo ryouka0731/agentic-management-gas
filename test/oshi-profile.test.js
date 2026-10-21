@@ -87,7 +87,7 @@ describe('最初からいるキャラのプロフィール (スクリプトプ�
     expect(JSON.stringify(e.ctx.dbReadAll('oshi'))).not.toContain('テストの好物');
     const list = asUser(e.fake, ADMIN, () => e.ctx.apiOshiBuiltinProfiles());
     expectScreenSafe(list);
-    expect(list.chars.map((c) => [c.key, c.items])).toEqual([['taku', 3], ['itsuki', 0]]);
+    expect(list.chars.map((c) => [c.key, c.items])).toEqual([['taku', 3], ['itsuki', 0], ['tsujippi', 0], ['ikkun', 0], ['ryoka', 0], ['satomi', 0]]);
     // 直す欄には動画をリンクで出す
     expect(JSON.parse(list.chars[0].json).clearVideo).toBe('https://www.youtube.com/watch?v=' + VIDEO);
   });

@@ -159,7 +159,8 @@ function oshiProfileWrite_(email, id, patch) {
 function oshiCleanName_(name) {
   var lim = OSHI_TEXT_LIMITS();
   var n = String(name == null ? '' : name).replace(/^\s+|\s+$/g, '');
-  if (n.length > lim.nameMax) throw new Error('名前は' + lim.nameMax + '字までにしてください');
+  // 字の数は見た目の1字ずつ数える (絵文字も1字。せりふの oshiCleanLines と同じ)
+  if (Array.from(n).length > lim.nameMax) throw new Error('名前は' + lim.nameMax + '字までにしてください');
   return n;
 }
 
@@ -592,6 +593,10 @@ function oshiDefaultImage_(char, style, state) {
 function oshiDefaultPictures_(char, style) {
   if (char === 'itsuki') return style === 'normal' ? OSHI_DEFAULT_ITSUKI_NORMAL() : OSHI_DEFAULT_ITSUKI_CHIBI();
   if (char === 'taku') return style === 'normal' ? OSHI_DEFAULT_TAKU_NORMAL() : OSHI_DEFAULT_TAKU_CHIBI();
+  if (char === 'tsujippi') return style === 'normal' ? OSHI_DEFAULT_TSUJIPPI_NORMAL() : OSHI_DEFAULT_TSUJIPPI_CHIBI();
+  if (char === 'ikkun') return style === 'normal' ? OSHI_DEFAULT_IKKUN_NORMAL() : OSHI_DEFAULT_IKKUN_CHIBI();
+  if (char === 'ryoka') return style === 'normal' ? OSHI_DEFAULT_RYOKA_NORMAL() : OSHI_DEFAULT_RYOKA_CHIBI();
+  if (char === 'satomi') return style === 'normal' ? OSHI_DEFAULT_SATOMI_NORMAL() : OSHI_DEFAULT_SATOMI_CHIBI();
   return null;
 }
 

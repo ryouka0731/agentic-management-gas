@@ -272,7 +272,7 @@ function apiOshiImage(charId, state) {
  * 最初からいるキャラクターの絵1枚 (data URL)。**最初のページには入れず、要るときに1枚ずつ渡す**
  * (1人の2つの形で 1MB 近くある)。画面がその場で覚える。
  *
- * @param {string} char itsuki / taku (OSHI_BUILTINS の key)
+ * @param {string} char taku / itsuki / tsujippi / ikkun / ryoka / satomi (OSHI_BUILTINS の key)
  * @param {string} style chibi / normal
  * @param {string} state 表情
  * @returns {{char: string, style: string, state: string, dataUrl: string}|null}

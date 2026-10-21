@@ -244,7 +244,7 @@ describe('設定の画面の「最初からいるキャラのプロフィール�
     const box = document.querySelector('#settings-team .oshi-builtin-profiles');
     expect(box.textContent).toContain('管理者だけ');
     const fields = [...box.querySelectorAll('.oshi-builtin-profile')];
-    expect(fields.map((f) => f.dataset.char)).toEqual(['taku', 'itsuki']);
+    expect(fields.map((f) => f.dataset.char)).toEqual(['taku', 'itsuki', 'tsujippi', 'ikkun', 'ryoka', 'satomi']);
     expect(fields[0].textContent).toContain('タク (2 項目)');
     const area = fields[1].querySelector('textarea');
     const text = JSON.stringify({ items: [{ lv: 3, label: 'テストの趣味', text: 'テスト' }] });

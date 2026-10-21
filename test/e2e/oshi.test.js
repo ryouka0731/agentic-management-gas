@@ -74,6 +74,30 @@ describe('推しにほめてもらう', () => {
     expect(other.ctx.apiOshiGet()).toMatchObject({ name: 'タク', mine: [] });
   });
 
+  it('使うキャラのカードに、最初からいるキャラが全員 (タク・イツキ・つじっぴ・いっくん・りょうか・さと美) ふつうの顔の絵つきで並び、選ぶとその口調で礼を言う', async () => {
+    const e2e = mountFullstack();
+    await e2e.settle();
+    go('settings'); await e2e.settle();
+    const builtins = e2e.ctx.OSHI_BUILTINS();
+    expect(builtins.map((c) => c.key)).toEqual(['taku', 'itsuki', 'tsujippi', 'ikkun', 'ryoka', 'satomi']);
+    const card = (key) => $('[data-pref="oshi.char"] .oshi-choice[data-char="builtin:' + key + '"]');
+    for (const c of builtins) {
+      expect(card(c.key), c.key).toBeTruthy();
+      await waitFor(e2e, () => !!card(c.key).querySelector('img'));
+      expect(card(c.key).querySelector('img').getAttribute('src'), c.key).toBe(e2e.ctx.apiOshiDefaultImage(c.key, 'chibi', 'idle').dataUrl);
+      expect(card(c.key).querySelector('.oshi-choice-name').textContent).toBe(c.name);
+    }
+    for (const c of builtins.slice(2)) {
+      click(card(c.key)); await e2e.settle();
+      expect(e2e.ctx.prefGet_('oshi.char', 'tester@example.com')).toBe('builtin:' + c.key);
+      await waitFor(e2e, () => $('#oshi-bubble') && $('#oshi-bubble').dataset.event === 'chosen' &&
+        $('#oshi-bubble .oshi-name').textContent === c.name && !!$('#oshi-bubble img.oshi-img'));
+      expect(e2e.ctx.OSHI_LINES()[c.tone].chosen).toContain($('#oshi-bubble .oshi-line').textContent);
+      const st = $('#oshi-bubble').dataset.state;
+      expect($('#oshi-bubble img.oshi-img').getAttribute('src')).toBe(e2e.ctx.apiOshiDefaultImage(c.key, 'chibi', st).dataUrl);
+    }
+  });
+
   it('設定でイツキを選ぶ → 済ませるとイツキがほめる。自分のキャラを作って選び、絵を1枚入れると、ほかの表情は選んだ最初からいるキャラ', async () => {
     const e2e = mountFullstack();
     await e2e.settle();

@@ -19,6 +19,8 @@
  *                  読むので、画面とサーバを通しで動かす test/e2e/ はこれで読む (画面の起動で
  *                  apiTasksState / apiKitStatus も呼ばれる)
  */
+
+import { oshiDefaultTargets } from '../scripts/build-oshi-default.mjs';
 export const ISSUE_SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/Plain.js', 'src/core/Archive.js', 'src/core/Staleness.js', 'src/core/FocusMusic.js', 'src/core/Prefs.gs',
@@ -62,10 +64,9 @@ export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
 
 export const KIT_SOURCES = ['src/KitFiles.gs', 'src/core/AgentKit.gs'];
 
-export const OSHI_DEFAULT_SOURCES = [
-  'src/core/OshiDefaultItsukiNormal.gs', 'src/core/OshiDefaultItsukiChibi.gs',
-  'src/core/OshiDefaultTakuNormal.gs', 'src/core/OshiDefaultTakuChibi.gs',
-];
+// 最初からいるキャラの絵 (焼いたもの)。キャラ×形の並びは scripts/build-oshi-default.mjs (Oshi.js の OSHI_BUILTINS × OSHI_STYLES) が
+// 唯一の定義なので、そこから作る。キャラを足しても、ここは直さない
+export const OSHI_DEFAULT_SOURCES = oshiDefaultTargets().map((t) => t.file);
 
 export const FULL_SOURCES = APP_SOURCES.concat([
   'src/core/GoogleTasks.gs', 'src/core/FileUrl.js', 'src/core/MarkdownView.js', 'src/core/Terms.js',
