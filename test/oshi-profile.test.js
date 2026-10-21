@@ -353,6 +353,37 @@ describe('見直しで直したところ', () => {
     expect(keys.sort()).toEqual(Array.from({ length: head.parts }, (_, i) => 'OSHI_PROFILE:taku:' + head.v + ':' + i).sort());
   });
 
+  it('分けて置いたプロフィールは、続きを1つずつ問い合わせず1回で読み、版ごとに覚える', () => {
+    const e = env();
+    const big = { items: Array.from({ length: 40 }, (_, i) => ({ lv: 2 + i, label: 'テストの見出し' + i, text: 'て'.repeat(200) })) };
+    e.ctx.apiOshiBuiltinProfileSet('taku', big);
+    const store = new Map();
+    e.ctx.CacheService = { getScriptCache: () => ({
+      get: (k) => (store.has(k) ? store.get(k) : null),
+      put: (k, v) => { store.set(k, String(v)); },
+      remove: (k) => { store.delete(k); },
+    }) };
+    const real = e.fake.PropertiesService.getScriptProperties;
+    const calls = { one: 0, all: 0 };
+    e.fake.PropertiesService.getScriptProperties = () => {
+      const p = real();
+      return Object.assign({}, p, {
+        getProperty: (k) => { calls.one++; return p.getProperty(k); },
+        getProperties: () => { calls.all++; return p.getProperties(); },
+      });
+    };
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items.length).toBe(40);
+    expect(calls).toEqual({ one: 1, all: 1 });
+    // 2回目は頭だけ読み、続きは覚えから
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items.length).toBe(40);
+    expect(calls).toEqual({ one: 2, all: 1 });
+    // 置き直すと版が変わるので、古い覚えは使わない
+    e.fake.PropertiesService.getScriptProperties = real;
+    const big2 = { items: big.items.map((it) => Object.assign({}, it, { label: it.label + 'あと' })) };
+    e.ctx.apiOshiBuiltinProfileSet('taku', big2);
+    expect(e.ctx.oshiBuiltinProfileRead_('taku').items[0].label).toBe('テストの見出し0あと');
+  });
+
   it('版の無い分け方 ({"parts": N} と :0〜) も読める', () => {
     const e = env();
     const json = JSON.stringify({ items: SAMPLE.items, clearLine: '', clearVideo: '' });

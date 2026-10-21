@@ -107,7 +107,7 @@ describe('キャラ作成キットの頼み文 (oshiCharKitPrompt)', () => {
     const codex = pure.oshiCharKitPrompt('codex', MAX);
     expect(codex).toContain('oshi/idle.png');
     expect(codex).toContain('oshi/character.json');
-    expect(codex).toContain('4 列 × 3 行');
+    expect(codex).toContain('4 列 × 4 行');
     expect(codex).toContain('利用者に確かめ');
   });
 
@@ -115,7 +115,8 @@ describe('キャラ作成キットの頼み文 (oshiCharKitPrompt)', () => {
     expect(pure.oshiSheetGrid(11)).toEqual({ rows: 3, cols: 4 });
     expect(pure.oshiSheetGrid(9)).toEqual({ rows: 3, cols: 3 });
     expect(pure.oshiSheetGrid(1)).toEqual({ rows: 1, cols: 1 });
-    expect(pure.oshiSheetGrid(pure.OSHI_STATES().length)).toEqual({ rows: 3, cols: 4 });
+    // 14 の表情 (育ちの5段を含む) なら 4 × 4 (余った2マスは空ける)
+    expect(pure.oshiSheetGrid(pure.OSHI_STATES().length)).toEqual({ rows: 4, cols: 4 });
   });
 
   it('Git の言葉を人に見せない', () => {
@@ -250,7 +251,7 @@ describe('入口 (api)', () => {
     const got = ctx.apiOshiGet();
     expect(got.kitTools.map((t) => t.key)).toEqual(TOOLS);
     expect(got.kitTools[0]).toEqual({ key: 'chatgpt', label: 'ChatGPT' });
-    expect(got.sheet).toEqual({ rows: 3, cols: 4 });
+    expect(got.sheet).toEqual({ rows: 4, cols: 4 });
   });
 
   it('apiOshiCharImport(0, …) は新しいキャラを作り、名前・口調・せりふ・プロフィールを入れる', () => {

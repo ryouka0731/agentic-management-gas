@@ -31,10 +31,14 @@ const make = (ctx, name, tone) => ctx.apiOshiCharCreate(name || '', tone || 'pol
 const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' + sha + '.' + ext).hasNext();
 
 describe('定義 (Oshi.js)', () => {
-  it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
+  it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの5段 (4段目と5段目は後から足したので末尾)', () => {
     const keys = pure.OSHI_STATES().map((s) => s.key);
-    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work', 'pout']);
-    expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3']);
+    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work', 'pout',
+      'grow4', 'grow5']);
+    expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3', 'grow4', 'grow5']);
+    // べったり・家族は絵が無くてもよく、無ければなついたの絵 (最初からいるキャラはなついたまで)
+    expect(pure.oshiStateOf('grow4')).toMatchObject({ grow: true, optional: true, fallback: 'grow3' });
+    expect(pure.oshiStateOf('grow5')).toMatchObject({ grow: true, optional: true, fallback: 'grow3' });
     // 作業中は作業部屋でだけ、むっは機嫌でだけ出す (でたらめに選ぶ表情に入れない)
     expect(pure.OSHI_STATES().filter((s) => s.scene).map((s) => s.key)).toEqual(['work', 'pout']);
     // むっは絵が無くてもよく、無ければしんぱいの絵
@@ -43,10 +47,11 @@ describe('定義 (Oshi.js)', () => {
 
   it('せりふは口調ごとに全部の場面を持ち、どの場面にも2つ以上ある (回すため)', () => {
     const lines = pure.OSHI_LINES();
-    const events = pure.OSHI_EVENTS().map((e) => e.key);
+    // 考え中 (spinner) は無くてもよい (既定の言葉に倒れる。test/oshi-spinner.test.js)。口調を足す枝が書き忘れても落とさない
+    const events = pure.OSHI_EVENTS().filter((e) => !e.spinner).map((e) => e.key);
     expect(Object.keys(lines).sort()).toEqual(pure.OSHI_TONES().map((t) => t.key).sort());
     for (const tone of Object.keys(lines)) {
-      expect(Object.keys(lines[tone]).sort(), tone).toEqual([...events].sort());
+      expect(Object.keys(lines[tone]).filter((k) => k !== 'spinner').sort(), tone).toEqual([...events].sort());
       for (const e of events) expect(lines[tone][e].length, tone + '.' + e).toBeGreaterThanOrEqual(2);
     }
   });
@@ -83,15 +88,51 @@ describe('定義 (Oshi.js)', () => {
     expect(pure.OSHI_PROMPT_BASE()).toContain('参考画像');
   });
 
-  it('育ちの段はレベル (Lv) で決まる (見習い Lv1〜4・一人前 Lv5〜14・名人 Lv15〜)', () => {
-    expect(pure.oshiStageOf(1)).toMatchObject({ key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1 });
+  it('育ちの段はレベル (Lv) で決まる (よそよそしい Lv1〜4・なれてきた Lv5〜14・なついた Lv15〜24・べったり Lv25〜34・家族 Lv35〜)', () => {
+    expect(pure.oshiStageOf(1)).toMatchObject({ key: 'grow1', label: 'よそよそしい', meter: 0, toNext: 4, level: 1 });
     expect(pure.oshiStageOf(0).level).toBe(1);
     expect(pure.oshiStageOf(3)).toMatchObject({ key: 'grow1', meter: 50, toNext: 2 });
     expect(pure.oshiStageOf(4).key).toBe('grow1');
-    expect(pure.oshiStageOf(5)).toMatchObject({ key: 'grow2', label: '一人前', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(5)).toMatchObject({ key: 'grow2', label: 'なれてきた', meter: 0, toNext: 10 });
     expect(pure.oshiStageOf(14).key).toBe('grow2');
-    expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: '名人', meter: 100, toNext: 0 });
-    expect(pure.oshiStageOf(99).key).toBe('grow3');
+    expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: 'なついた', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(24).key).toBe('grow3');
+    expect(pure.oshiStageOf(25)).toMatchObject({ key: 'grow4', label: 'べったり', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(35)).toMatchObject({ key: 'grow5', label: '家族', meter: 100, toNext: 0 });
+    expect(pure.oshiStageOf(99).key).toBe('grow5');
+    expect(pure.oshiStageOf(5).floored).toBe(false);
+  });
+
+  it('段の名前は なつき度 (よそよそしい・なれてきた・なついた・べったり・家族)。段の絵の表情の名前も同じ', () => {
+    const names = ['よそよそしい', 'なれてきた', 'なついた', 'べったり', '家族'];
+    expect(pure.OSHI_STAGES().map((s) => s.label)).toEqual(names);
+    expect(pure.OSHI_STAGES().map((s) => s.min)).toEqual([1, 5, 15, 25, 35]);
+    pure.OSHI_STAGES().forEach((st, i) => expect(pure.oshiStateOf(st.key).label).toContain(names[i]));
+    expect(pure.OSHI_EVENTS().find((e) => e.key === 'levelup').label).toContain('なつき度');
+  });
+
+  it('段が上がったときのせりふは、前の段の名前や「成長」を言わない (この枝の口調)', () => {
+    const old = /見習い|一人前|名人|達人|師範|成長|育っ|段が上が|新しい段|新たな段|大きくな/;
+    for (const t of ['polite', 'genki', 'cool', 'kansai', 'butler', 'gothic', 'buddy']) {
+      for (const l of pure.OSHI_LINES()[t].levelup) expect(l, t).not.toMatch(old);
+    }
+  });
+
+  it('キャラ作成キットの頼み文: お祝いの言葉はクリア (実績を全部) のとき。最後の項目はその1つ手前の Lv', () => {
+    const top = 37;
+    const p = pure.oshiCharKitPrompt(pure.OSHI_CHARKIT_TOOLS()[0].key, top);
+    expect(p).toContain('実績を全部取ったとき (クリア。Lv 37)');
+    expect(p).toContain('最後の項目 (Lv 36)');
+    expect(p).not.toContain('全部分かったとき');
+  });
+
+  it('前の段 (床) で上の段に出すときは floored。棒と「あと N Lv」は、出している段の次の段へ Lv1 から進む', () => {
+    // Lv3 でなれてきたに出す: 次はなついた (Lv15)。あと 12 Lv、棒は Lv1→15 のうち Lv3 まで
+    expect(pure.oshiStageOf(3, 1)).toMatchObject({ key: 'grow2', floored: true, toNext: 12, meter: Math.floor(2 / 14 * 100) });
+    expect(pure.oshiStageOf(3, 2)).toMatchObject({ key: 'grow3', floored: true, toNext: 22, meter: Math.floor(2 / 24 * 100) });
+    expect(pure.oshiStageOf(3, 4)).toMatchObject({ key: 'grow5', floored: true, toNext: 0, meter: 100 });
+    // 床より Lv の段が上なら、床は効いていない
+    expect(pure.oshiStageOf(6, 1)).toMatchObject({ key: 'grow2', floored: false, meter: 10, toNext: 9 });
   });
 
   it('あいさつの場面は時刻で決まる', () => {
@@ -393,7 +434,9 @@ describe('手引き (docs/manual/oshi.md)', () => {
 
 
 /** むっ (optional) の絵を焼いてあるキャラ:形。合う絵があるものだけ */
-const POUT_BAKED = ['tsujippi:chibi', 'ikkun:chibi', 'ryoka:chibi', 'ryoka:normal'];
+// 絵が無くてもよい表情 (むっ・なつき度の4段目と5段目) のうち、焼いてあるキャラ:形。それ以外は null (画面が fallback の表情に代える)
+const OPTIONAL_BAKED = { pout: ['tsujippi:chibi', 'ikkun:chibi', 'ryoka:chibi', 'ryoka:normal'], grow4: [], grow5: [] };
+const OPTIONAL_BAKED_COUNT = Object.values(OPTIONAL_BAKED).reduce((n, a) => n + a.length, 0);
 
 function setupWithPictures() {
   const fake = createFakeGas();
@@ -468,7 +511,8 @@ describe('最初からいるキャラ', () => {
     expect(pure.OSHI_TONES().find((t) => t.key === 'buddy').label).toBe('明るい相棒');
     for (const e of pure.OSHI_EVENTS()) {
       expect(b[e.key].length, e.key).toBeGreaterThanOrEqual(3);
-      expect(b[e.key].length, e.key).toBeLessThanOrEqual(4);
+      // 考え中 (spinner) は吹き出しで回さず、Claude Code の考え中の字に並べるので多くてよい
+      if (!e.spinner) expect(b[e.key].length, e.key).toBeLessThanOrEqual(4);
       expect(b[e.key].some((l) => /です|ます|しょう/.test(l)), e.key).toBe(true);
       for (const l of b[e.key]) {
         expect(l, e.key).not.toMatch(/のだ|俺|でございます/);
@@ -582,8 +626,8 @@ describe('最初からいるキャラ', () => {
       for (const st of pure.OSHI_STYLES()) {
         for (const s of pure.OSHI_STATES()) {
           const got = ctx.apiOshiDefaultImage(c.key, st.key, s.key);
-          // 絵が無くてもよい表情 (むっ) は、合う絵があるキャラ・形だけ焼いてある (無ければ画面が fallback の表情に代える)
-          if (s.optional && POUT_BAKED.indexOf(c.key + ':' + st.key) < 0) {
+          // 絵が無くてもよい表情は、合う絵があるキャラ・形だけ焼いてある (無ければ画面が fallback の表情に代える)
+          if (s.optional && (OPTIONAL_BAKED[s.key] || []).indexOf(c.key + ':' + st.key) < 0) {
             expect(got, c.key + st.key + s.key).toBe(null);
             continue;
           }
@@ -596,7 +640,7 @@ describe('最初からいるキャラ', () => {
     }
     // 取り違えていない (キャラ・形・表情ごとに別の絵)
     expect(seen.size).toBe(pure.OSHI_BUILTINS().length * pure.OSHI_STYLES().length *
-      pure.OSHI_STATES().filter((s) => !s.optional).length + POUT_BAKED.length);
+      pure.OSHI_STATES().filter((s) => !s.optional).length + OPTIONAL_BAKED_COUNT);
   });
 
   it('知らないキャラ・形・表情はふつうの言葉で断る', () => {

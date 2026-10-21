@@ -47,7 +47,7 @@ function dirs() {
 /** 欠けると入れないもの (REQUIRED_FILES) と、固定する公開鍵 */
 const kit = (agent, pub, more) => ({
   'agent.mjs': b64(agent), 'track/hook.mjs': b64('hook'), 'track/update.mjs': b64('update'),
-  'track/track.mjs': b64('track'), 'track/local.mjs': b64('local'),
+  'track/track.mjs': b64('track'), 'track/local.mjs': b64('local'), 'track/spinner.mjs': b64('spinner'),
   ...(pub ? { 'track/kit-key.pem': b64(pub) } : {}), ...(more || {}),
 });
 

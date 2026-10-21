@@ -1024,6 +1024,12 @@ describe('使い方の図', () => {
     'やることが予定に入るまで',
     '仕事のスタンス診断',
     '目標を立てて、期末にまとめるまで',
+    '推しが応援するまで',
+    '実績から推しがなつくまで',
+    '推しの機嫌が変わるとき',
+    '楽しい演出 (当たり・ご褒美)',
+    '作業部屋で作業する',
+    '作業雑談部屋に入って出るまで',
   ];
 
   it('どの節にも図がある', () => {
@@ -1257,6 +1263,55 @@ describe('使い方を強くする', () => {
       .find((f) => f.querySelector('title').textContent === 'ホームの見方');
     expect(homeFig.querySelectorAll('rect.diagram-box')).toHaveLength(6);
     expect(homeFig.querySelector('desc').textContent).toContain('チームの前進');
+  });
+
+  it('後から足した機能にも節があり、決めた中身に触れている', () => {
+    openHelp();
+    const text = (id) => {
+      const h = document.getElementById(id);
+      let el = h.nextElementSibling;
+      while (el && el.tagName !== 'UL') el = el.nextElementSibling;
+      return el.textContent;
+    };
+
+    // 推し・実績・機嫌・楽しい演出・作業部屋・作業雑談部屋。どれも画面にあるのに、使い方に節が無かった
+    ['使うキャラ', 'あいさつ', '2頭身', '新しいキャラを作る', 'AI に作ってもらう', 'AI の答えを貼る',
+      '緑の背景を抜く', '1枚の表から切り分ける', '実在の人の顔', '許し']
+      .forEach((w) => expect(text('guide-sec-oshi')).toContain(w));
+    ['なつき度 Lv', 'よそよそしい', 'なれてきた', 'なついた', 'べったり', '家族', '下がりません', '機嫌はその日の気分', 'この環境では取れません', 'クリア', '動画を見る', '消えず']
+      .forEach((w) => expect(text('guide-sec-grow')).toContain(w));
+    ['最初はオフ', '表情とせりふだけ', '減ったり消えたりしません', 'すぐに機嫌が直って', 'どうして？']
+      .forEach((w) => expect(text('guide-sec-mood')).toContain(w));
+    ['打つと盛り上がる', '言葉に反応する', '済ませたらお祝い', '大当たり', 'ノリノリタイム', '自分へのご褒美', '最初はオフ']
+      .forEach((w) => expect(text('guide-sec-fun')).toContain(w));
+    ['雨', 'カフェ', '作業中', 'Esc', '全画面', '動きを減らす', '最初はオフ']
+      .forEach((w) => expect(text('guide-sec-room')).toContain(w));
+    ['Meet', 'Slack', '入る', '出る', '集中中', '表示名', '2分', '記録しません']
+      .forEach((w) => expect(text('guide-sec-cowork')).toContain(w));
+    ['YouTube', 'SoundCloud', '読み込む']
+      .forEach((w) => expect(text('guide-sec-focus')).toContain(w));
+    ['oshi-prompt', 'oshi-spinner', 'track', 'doctor', 'update']
+      .forEach((w) => expect(text('guide-sec-local')).toContain(w));
+    ['180日', '時間切れ', '管理者だというだけでは', '手元の道具からの命令は数えません', '「?」']
+      .forEach((w) => expect(text('guide-sec-usage')).toContain(w));
+    // 設定の組 (PREFS_SCHEMA の section) はどれも、最初の値と一緒に挙げる
+    ['最初に出す画面', '言葉の表し方', 'ホームに出すもの', '楽しい演出', '思いがけない当たり', '推し', '実績',
+      '集中のしかた', '作業部屋', '予定に入れる', '診断の型の名前をチームに見せる', '通知メール', '自分の使われ方を記録する',
+      '部屋にいるとき『集中中』を添える', '作業雑談部屋', '「期限が近い」', '残す日数', '改善のヒント', '「動きなし」', '日報の形', '目標', '共有カレンダー']
+      .forEach((w) => expect(text('guide-sec-settings')).toContain(w));
+  });
+
+  it('後から足した節も、探す (Ctrl+K) から開ける', () => {
+    mount();
+    const input = document.getElementById('search-input');
+    input.focus();
+    input.dispatchEvent(new window.Event('focus'));
+    input.value = '作業雑談部屋';
+    input.dispatchEvent(new window.Event('input'));
+
+    const hit = [...document.querySelectorAll('#search-results [data-kind="guide"]')]
+      .map((el) => el.textContent);
+    expect(hit.some((t) => t.indexOf('作業雑談部屋 (使う人だけ)') >= 0)).toBe(true);
   });
 
   it('管理者向けの節には札を付ける。隠しはしない', () => {

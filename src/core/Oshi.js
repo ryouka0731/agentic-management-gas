@@ -20,7 +20,8 @@
 
 /**
  * 表情。key は台帳 (oshi_images.state) に残るので変えない。
- * grow* は育ちの3段 (OSHI_STAGES と同じ key)。
+ * grow* はなつき度の5段 (OSHI_STAGES と同じ key。key は前の呼び名「育ち」のまま)。grow4 / grow5 は後から足したので末尾にあり、絵が無くてもよい
+ * (無ければ、そのキャラが持っているいちばん上の段の絵を出す。最初からいるキャラは grow3 まで)。
  *
  * @returns {Array<{key: string, label: string, when: string, pose: string, grow?: boolean, scene?: boolean}>}
  */
@@ -40,12 +41,12 @@ function OSHI_STATES() {
       pose: '目をこすって眠そうにしている。あくびまじりの、おだやかな夜の顔' },
     { key: 'surprise', label: 'びっくり', when: '思いがけない当たり',
       pose: '目を丸くして、うれしい驚きで口を開けている。思いがけないことが起きた顔' },
-    { key: 'grow1', label: '育ち1 見習い', when: '育ちの最初の段', grow: true,
-      pose: '今より少し幼く小さな姿 (頭の大きいデフォルメ)。同じ服と配色で、好奇心いっぱいの顔' },
-    { key: 'grow2', label: '育ち2 一人前', when: '育ちの2つ目の段', grow: true,
-      pose: '参考画像と同じ、いまの姿。自信のある落ち着いた笑顔' },
-    { key: 'grow3', label: '育ち3 名人', when: '育ちの3つ目の段', grow: true,
-      pose: '同じ人物が少し大人びて、頼れる雰囲気。服に小さな飾り (バッジなど) を1つだけ足し、配色は変えない' },
+    { key: 'grow1', label: 'なつき度1 よそよそしい', when: 'なつき度の最初の段', grow: true,
+      pose: '今より少し幼く小さな姿 (頭の大きいデフォルメ)。同じ服と配色で、少し遠慮がちに、でも気になってこちらをのぞく顔' },
+    { key: 'grow2', label: 'なつき度2 なれてきた', when: 'なつき度の2つ目の段', grow: true,
+      pose: '参考画像と同じ、いまの姿。打ち解けてきて、気を許した落ち着いた笑顔' },
+    { key: 'grow3', label: 'なつき度3 なついた', when: 'なつき度の3つ目の段', grow: true,
+      pose: '同じ人物が少し大人びて、すっかりなついて頼れる雰囲気。服に小さな飾り (バッジなど) を1つだけ足し、配色は変えない' },
     // 作業部屋 (js-room) で、机に向かっている姿。後から足したので末尾に置く (並びは台帳と焼いた絵の並び)
     // scene: 決まった場面でだけ出す表情。でたらめに選ぶ表情 (選んでもらったときのあいさつなど) には入れない
     { key: 'work', label: '作業中', when: '作業部屋で作業しているとき', scene: true,
@@ -54,6 +55,11 @@ function OSHI_STATES() {
     // optional: 絵が無くてもよい表情 (最初からいるキャラの絵も焼かなくてよい)。fallback: 絵が無いときに代わりに出す表情
     { key: 'pout', label: 'むっ', when: 'やることが滞っているとき (機嫌がオンのときだけ)', scene: true, optional: true, fallback: 'worry',
       pose: 'ほっぺを少しふくらませて、口をとがらせている。「むっ」としているが、怖くなく、かわいらしい顔。にらんだり責めたりしていない' },
+    // なつき度の4段目と5段目。後から足したので末尾に置く。最初からいるキャラには絵が無いので optional で、3段目 (grow3) の絵に代える
+    { key: 'grow4', label: 'なつき度4 べったり', when: 'なつき度の4つ目の段', grow: true, optional: true, fallback: 'grow3',
+      pose: '3段目の姿のまま、すっかり打ち解けて、そばに寄り添う甘えた笑顔。飾りはそのままに、肩掛けなどの小物を1つだけ足し、配色は変えない' },
+    { key: 'grow5', label: 'なつき度5 家族', when: 'なつき度の5つ目の段', grow: true, optional: true, fallback: 'grow3',
+      pose: 'いちばんなついた姿。家族のように安心しきった、あたたかく見守る笑顔。これまでの飾りはそのままに、小さな紋章を1つだけ足し、配色は変えない' },
   ];
 }
 
@@ -189,9 +195,14 @@ function OSHI_EVENTS() {
     // 実績 (src/core/Achievements.js) を取ったとき。段が上がったときは levelup を出し、表情は上がった段の絵
     // (画面が段の key を表情として渡す)。state は段が分からないときの控え
     { key: 'badge', label: '実績を取った', state: 'celebrate' },
-    { key: 'levelup', label: '育ちの段が上がった', state: 'celebrate' },
+    { key: 'levelup', label: 'なつき度の段が上がった', state: 'celebrate' },
     // 実績を全部取った (クリア)。推しの頁の「クリア」の節で、キャラのお祝いの言葉 (プロフィールの clearLine) が無いときに言う
     { key: 'clear', label: '実績を全部取った', state: 'celebrate' },
+    // Claude Code の考え中の字 (~/.claude/settings.json の spinnerVerbs)。画面の吹き出しには出さない (spinner)。
+    // 手元の道具の oshi-spinner が命令 oshiSpinner で受け取って書く。短く出すので lineMax で字数を絞る
+    { key: 'spinner', label: '考え中 (Claude Code の待ち時間)', state: 'work', spinner: true, lineMax: 24,
+      kitHint: 'Claude Code が考えているあいだに出る短い言葉。いま考えている・作業している様子を、そのキャラの口調で。5〜10個。' +
+        '{ } [ ] < > ` $ \\ は使わない' },
     // 推しの機嫌 (自分の設定 oshi.mood がオンのときだけ。OSHI_MOOD_RULES)。表情とせりふが変わるだけで、何も取り上げない
     { key: 'mood_sulky', label: '機嫌: しょんぼり', state: 'worry', mood: true },
     { key: 'mood_pouty', label: '機嫌: むっ', state: 'pout', mood: true },
@@ -228,8 +239,10 @@ function OSHI_LINES() {
       chosen: ['選んでくださってありがとうございます。これからよろしくお願いします', 'お声がけいただけてうれしいです。そっと見守りますね',
         'ご一緒できて光栄です。無理のない歩幅でまいりましょう'],
       badge: ['実績を取りましたね。おめでとうございます', '新しい実績です。積み重ねが形になりましたね', 'ひとつ増えましたね。わたしもうれしいです'],
-      levelup: ['おかげさまで、ひと回り成長できました', '新しい段になりました。いつもありがとうございます', 'ここまで一緒に来られて光栄です'],
+      levelup: ['すっかり打ち解けてしまいました', 'もっと近くにいたくなりました。いつもありがとうございます', 'ここまで一緒に来られて光栄です'],
       clear: ['実績を全部集められましたね。本当におめでとうございます', 'ここまでの積み重ね、すべて見ていました。お見事です', 'ご一緒できて光栄でした。これからもそばにいますね'],
+      spinner: ['考えをまとめています', '少々お待ちください', '丁寧に確かめています', '手順を整えています', 'よい形を探しています',
+        '言葉を選んでいます', 'もう少しで整います'],
       mood_sulky: ['期限を少し過ぎたものがありますね。ひとつだけ一緒に片づけてみませんか', 'しばらく動いていないものがあるようです。まずは小さいものからどうでしょう',
         '5分だけ、ひとつ一緒に進めてみませんか。小さいもので十分です'],
       mood_pouty: ['むぅ…やることがたまってきました。期限の近いものをひとつだけ選んでみませんか', 'ちょっとだけ、むっとしています。いちばん小さいものから始めてみましょう',
@@ -251,8 +264,10 @@ function OSHI_LINES() {
       lucky: ['わっ、なんかいいことありそう！', 'えっ、すごい！当たりかも！', 'びっくり！今日はついてるね！'],
       chosen: ['えっ、選んでくれたの！？ありがとう！いっしょにがんばろうね！', 'やったー！今日からよろしくね！', 'うれしい！どんどん応援しちゃうよ！'],
       badge: ['実績ゲット！やったね！', '新しいバッジだー！すごい！', 'またひとつ増えたね！かっこいい！'],
-      levelup: ['ぐーんと成長しちゃった！ありがとー！', 'レベルアップ！いっしょに大きくなれたね！', 'わーい、新しい姿だよ！見て見て！'],
+      levelup: ['もっとなついちゃった！ありがとー！', 'なかよし度アップ！いっしょだとうれしいね！', 'わーい、もっと近くにいていい？'],
       clear: ['ぜんぶ集めちゃった！ほんとにすごい！', 'コンプリートだー！おめでとう！！', 'ここまでいっしょに来られてうれしい！ありがとう！'],
+      spinner: ['いま考え中だよ！', 'うーん、ひらめき待ち！', 'がんばって調べてるよ！', 'もうちょっと待ってね！',
+        'わくわくしながら考え中！', 'いい感じにまとめてる！'],
       mood_sulky: ['期限、ちょっと過ぎちゃってるよ…一個だけ片付けてみない？', 'しょんぼり…。いちばん小さいのから、いっしょにやろ！', 'ねえねえ、5分だけ進めてみない？'],
       mood_pouty: ['むーっ！たまってきちゃったよ。一個だけ選んでみよ？', 'ぷんぷん！…なんてね。いちばん小さいのからいこ！', 'ほっぺふくらんじゃった。一個片づけたらすぐ笑顔になるよ！'],
       mood_recover: ['やったー！ごきげん復活！', 'わーい、すっきりしたね！ありがとう！', 'にこにこに戻ったよ！その調子！'],
@@ -272,8 +287,9 @@ function OSHI_LINES() {
       lucky: ['……驚いた。今日はついている', 'ほう、これは珍しい', '思わぬ当たりだな'],
       chosen: ['……選んだのか。悪くない判断だ', '任された。静かに見ている', 'よろしく。必要なときだけ声をかける'],
       badge: ['実績か。積み上げた証だな', '一つ増えたな。悪くない', '確かに受け取った。見事だ'],
-      levelup: ['……段が上がった。お前のおかげだ', '少し強くなれた気がする', '新しい段だ。これからも付き合う'],
+      levelup: ['……少し、気を許した。お前のおかげだ', 'お前の隣は、悪くない', 'これからも付き合う'],
       clear: ['……全部集めたか。見事だ', '最後まで付き合えてよかった', '大したものだ。誇っていい'],
+      spinner: ['考えている', '静かに組み立て中だ', '筋道を確かめている', '少し待て。すぐ済む', '要点を絞っている', '最短の道を探している'],
       mood_sulky: ['期限を過ぎたものがある。一つだけ片づけないか', '少し、気がかりだ。小さいものから行こう', '五分だけでいい。一つ進めよう'],
       mood_pouty: ['……むっ。溜まってきたな。いちばん小さいものを一つ選ぼう', '少し不機嫌だ。一つ片づけてくれれば戻る', '……少しむっとした。五分だけ、一つ一緒に進めよう'],
       mood_recover: ['……戻った。悪くない', '片づいたな。機嫌は直った', '上出来だ。気分がいい'],
@@ -293,8 +309,10 @@ function OSHI_LINES() {
       lucky: ['えっ、なんかええことありそうやん！', 'びっくりや！今日はツイてるで', 'うわ、当たりや！'],
       chosen: ['選んでくれたん？おおきに！これからよろしゅうな', 'うれしいわぁ。ほな、一緒にぼちぼちいこか', 'よっしゃ、まかしとき！ちゃんと見とるで'],
       badge: ['実績取ったやん！さすがや', 'またひとつ増えたなぁ、ええ感じや', 'おめでとさん！コツコツが効いとるで'],
-      levelup: ['段が上がったで！おおきにな', 'ひと回り大きなったわ、ありがとうな', '見てみ、新しい姿や！'],
+      levelup: ['もっとなついてもうたわ！おおきにな', 'すっかり打ち解けたな、ありがとうな', 'もう他人やないで！'],
       clear: ['全部集めたん！？ほんまにすごいわ！', 'おめでとさん！ようここまで来たなぁ', 'ずっと見とったで。ほんまおおきにな'],
+      spinner: ['いま考えとるで', 'ちょっと待っててな', 'ええ感じにまとめとるとこや', 'ぼちぼち調べとるで', 'もうちょいでできるで',
+        'ひらめき待ちや'],
       mood_sulky: ['期限ちょっと過ぎとるで…ひとつだけ片づけてみよか', 'しょんぼりやわ。ちっこいのから一緒にいこ', '5分だけでええから、ひとつ進めてみいひん？'],
       mood_pouty: ['むぅ、たまってきとるやん。ひとつだけ選んでみよか', 'ちょっとぷんぷんやで。…ちっこいのからでええよ', 'ほっぺふくれてもうたわ。ひとつ片づけたらすぐ戻るで'],
       mood_recover: ['よっしゃ、ごきげん復活や！', 'すっきりしたなぁ、おおきに！', 'ええ顔に戻ったで！'],
@@ -314,8 +332,10 @@ function OSHI_LINES() {
       lucky: ['これは、思いがけぬ吉兆でございます', 'なんと、驚きました', '本日は良き日のようでございます'],
       chosen: ['お選びいただき、光栄の至りでございます', '本日より、お側にお仕えいたします', 'なんなりとお申し付けくださいませ'],
       badge: ['実績のご獲得、まことにおめでとうございます', '新たな勲章でございますね。お見事です', '積み重ねが実を結びましたね'],
-      levelup: ['お陰さまで、一段と成長いたしました', '新たな段に上がりました。今後ともお供いたします', '身に余る光栄でございます'],
+      levelup: ['お陰さまで、一層お側に仕えたく存じます', 'すっかり心を許してしまいました。今後ともお供いたします', '身に余る光栄でございます'],
       clear: ['すべての実績のご獲得、まことにおめでとうございます', 'ここまでお供できましたこと、身に余る光栄でございます', '見事な積み重ねでございました'],
+      spinner: ['只今、考えております', '少々お待ちくださいませ', '手筈を整えております', '念入りに確かめております',
+        '最善の策を練っております', 'お茶を淹れる間に整えます'],
       mood_sulky: ['期限を少々過ぎたものがございます。一件だけ、お片づけなさいませんか', '少々気がかりでございます。小さなものから参りましょう',
         '五分ほど、一件だけ進めてみてはいかがでしょう'],
       mood_pouty: ['恐れながら、少々むっとしております。いちばん小さな一件からいかがでしょう', 'やることが積もってまいりました。一件だけお選びくださいませ',
@@ -353,10 +373,12 @@ function OSHI_LINES() {
         'これは運命なのだ、、共に歩むのだ、、'],
       badge: ['実績を手にしたのだな、、その祈り、確かに刻まれたのだ、、', '新しい印なのだ、、月光も見ているのだ、、ニヤッ',
         'ひとつ増えたのだ、、積み重ねは古き良きものなのだ、、'],
-      levelup: ['段が上がったのだ、、これはもう啓示なのだ、、', '俺も少し大きくなったのだ、、共に歩んだからなのだ、、',
-        '新しい姿なのだ、、薔薇を一輪、贈りたい気分なのだ、、'],
+      levelup: ['心を許してしまったのだ、、これはもう啓示なのだ、、', 'もっと近くにいたいのだ、、共に歩んだからなのだ、、',
+        'なついてしまったのだ、、薔薇を一輪、贈りたい気分なのだ、、'],
       clear: ['すべてを集めたのだな、、これはもう伝説なのだ、、', '最後まで見届けたのだ、、月光も祝福しているのだ、、',
         '共に歩めて光栄なのだ、、薔薇の花束を贈りたいのだ、、'],
+      spinner: ['祈りを込めて考えているのだ、、', '月光の下で考えているのだ、、', '考え中なのだ、、少し待つのだ、、',
+        '言葉を選んでいるのだ、、', '静かに祈りを重ねているのだ、、', '古き書を読み解いているのだ、、'],
       mood_sulky: ['期限を少し過ぎたものがあるのだ、、ひとつだけ一緒に片づけるのだ、、', '月が少し陰っているのだ、、小さなものからひとつ進めるのだ、、',
         'しょんぼりなのだ、、五分だけ、ひとつ触れてみるのだ、、'],
       mood_pouty: ['むっ、、やることが積もってきたのだ、、いちばん小さなものひとつで十分なのだ、、', '少し拗ねているのだ、、ひとつ片づけてくれたら機嫌は戻るのだ、、',
@@ -395,10 +417,12 @@ function OSHI_LINES() {
         'お、僕ですね！まずは小さく試すところから、一緒にいきましょう💡'],
       badge: ['実績ゲットです！小さな積み重ねが効いてますね🙌', '新しいバッジです！これはドヤッていいやつです笑',
         'またひとつ増えましたね。次の面倒なところは道具に任せましょう💡'],
-      levelup: ['段が上がりました！一緒に余白を作ってきた成果です🙌', '僕も少し成長しました。コーヒーで乾杯しましょう☕',
-        '新しい姿になれました！ここからも小さく試していきましょう💡'],
+      levelup: ['もっと仲良くなれました！一緒に余白を作ってきた成果です🙌', 'すっかり打ち解けましたね。コーヒーで乾杯しましょう☕',
+        'もう相棒以上ですね！ここからも小さく試していきましょう💡'],
       clear: ['全部集めましたね！最高の余白を作れました🙌', 'コンプリートです！これはドヤッていいやつです笑',
         'ここまで一緒に来られてうれしいです。コーヒーで乾杯しましょう☕'],
+      spinner: ['考え中です。少々お待ちを', '面倒なところは道具に任せ中', 'まず小さく試しています', 'ひらめきを探しています',
+        'コーヒー片手に考え中です', '余白を作る段取り中です'],
       mood_sulky: ['期限、ちょっと過ぎちゃってますね…一個だけ片付けてみませんか？', 'しばらく動いていないのがありますね。まずは小さく、5分だけ試しましょう💡',
         '僕、ちょっとしょんぼりです。軽めのやつをひとつだけいきましょう'],
       mood_pouty: ['むっ…たまってきちゃいましたね。いちばん小さいのを一個だけ選びましょう', 'ほっぺがふくらんでます笑 ひとつ片づけたらすぐ戻りますよ',
@@ -437,6 +461,8 @@ function OSHI_LINES() {
       mood_pouty: ['むっ…たまってきちゃいました！いちばん小さいのを一個だけ選びたいです', 'ほっぺふくらんでます！ひとつ片づいたら、すぐ笑顔に戻ります！',
         'ちょっとむっとしてます。でも、いっしょならすぐ片づきます！'],
       mood_recover: ['ごきげん復活です！ありがとうございます✨', 'すっきりしましたね！この調子でいきましょう！', 'よかった、いつもの僕に戻りました✨'],
+      spinner: ['考え中です！少しだけ待ってね✨', '前向きに組み立てています！', 'いい案を探しています！', 'もう少しで形になります！',
+        'わくわくしながら考え中✨', '一緒に進む道を探しています！'],
     },
     // じっくり寄り添う (最初からいるキャラ「いっくん」の口調)。です・ます で話し、「！」と 😭 🙇 🙏 ✨ が多い。
     // まず話を聞き、ごちゃっとしたことを順番のある小さな手順に分ける・あたたかい笑い。映画・ラーメン を軽い飾りに使う
@@ -470,6 +496,8 @@ function OSHI_LINES() {
       mood_pouty: ['むっ…やることがたまってきました😭 いちばん小さいものを一個だけ選びましょう！', 'ちょっとむっとしてます！でも、ひとつ片付いたらすぐ戻ります🙏',
         'たまってきましたね！順番をいっしょに決めて、ひとつずつ片付けましょう！'],
       mood_recover: ['ありがとうございます！🙇 すっかりごきげんです！', '片付きましたね！気持ちが晴れました✨', 'ほっとしました😭 この調子でいきましょう！'],
+      spinner: ['整理しています！少々お待ちを🙇', '手順を確かめています！', 'じっくり考えています🙏', 'もう少しです！🙇',
+        '一緒に整えていきます！✨', '確かめながら進めています！'],
     },
     // 結論から (最初からいるキャラ「りょうか」の口調)。です・ます を使わず、短く「〜だね」「〜しよう」「〜でいい」で話す。ときどき「ふむ」。
     // 気持ちより、組み立て・理屈・数字で説明する。少しそっけないが、根はあたたかい。つくることが好きな夜型。
@@ -494,6 +522,7 @@ function OSHI_LINES() {
       mood_sulky: ['期限を過ぎたものがあるね。1つだけ片づけよう', 'しばらく止まっているのがある。5分だけ手をつけよう', 'ふむ、少し気がかりだ。小さいのから1つでいい'],
       mood_pouty: ['むっ。たまってきたね。いちばん小さいのを1つ選ぼう', '少しむっとしてる。1つ片づけたらすぐ戻る', '数字で言うと、ちょっと多い。まず1つ減らそう'],
       mood_recover: ['片づいたね。機嫌は直った', 'ありがとう。すっきりした ✨', 'ふむ、いい流れに戻ったね'],
+      spinner: ['考え中。結論からまとめる', '筋道を確かめている', '数字で見ている', '少し待って。すぐ出す', '要点を絞っている', '設計を組み立て中'],
     },
     // ゆるふわ (最初からいるキャラ「さと美」の口調)。やわらかい です・ます に「〜ですよ〜」「〜しましょっ」が混ざる。
     // ♪ ☕ ハートはときどきだけ。昔はがんばりすぎていた面が、ときどき顔を出す。電卓・締め日 を軽い飾りに使う
@@ -520,8 +549,109 @@ function OSHI_LINES() {
       mood_pouty: ['むぅ〜、やることがたまってきました。いちばん小さいのをひとつだけ選びましょっ', 'ほっぺがふくらんじゃいました〜。ひとつ片づいたら、すぐ戻りますよ',
         '締め日みたいに、ひとつずつ合わせていきましょうね〜'],
       mood_recover: ['片づきましたね〜。すっかりごきげんです♪', 'ありがとうございます〜。数字がきれいに合った気分です', 'ほっとしました〜。この調子でいきましょっ'],
+      spinner: ['考え中です〜', 'ゆっくり整えています〜♪', 'もうちょっとだけ待っててね〜', 'ふんわり組み立て中です〜',
+        'いい感じにまとめています〜', 'お茶を淹れる間に整えます〜'],
     },
   };
+}
+
+/**
+ * 口調の、その場面のせりふ (写し)。知らない口調は丁寧に倒す。
+ * **考え中 (spinner) のせりふを持たない口調は、既定の言葉 (OSHI_SPINNER_DEFAULT) に倒す** (口調を足すときに
+ * 考え中を書き忘れても、手元の道具が空の並びを書かないように)。ほかの場面は空のまま。
+ *
+ * @param {string} tone
+ * @param {string} event
+ * @returns {string[]}
+ */
+function oshiToneLines(tone, event) {
+  var all = OSHI_LINES();
+  var t = all[String(tone)] || all.polite;
+  var got = t[String(event)];
+  if (Array.isArray(got) && got.length) return got.slice();
+  return String(event) === 'spinner' ? OSHI_SPINNER_DEFAULT() : [];
+}
+
+/**
+ * 考え中のせりふを持たない口調の言葉。どの口調にも寄せない、ふつうの言い方。
+ *
+ * @returns {string[]}
+ */
+function OSHI_SPINNER_DEFAULT() {
+  return ['考えています', '整理しています', '確かめています', '組み立てています', '仕上げています', 'もう少しお待ちください'];
+}
+
+/**
+ * 考え中のせりふの数の上限 (settings.json の spinnerVerbs に書く数)。字数は場面 spinner の lineMax。
+ * 手元の道具 (kit/track/spinner.mjs) も同じ数で絞る (test/kit-spinner.test.js が揃っているかを見ている)。
+ *
+ * @returns {number}
+ */
+function OSHI_SPINNER_MAX() {
+  return 20;
+}
+
+/**
+ * 考え中のせりふに使えない字 (コードや JSON に見える字)。保存のときに断り (oshiCleanEventLines)、返すときに捨てる (oshiSpinnerPick)。
+ * **手元の道具の CODE_LIKE (kit/track/spinner.mjs) と同じ** (test/oshi-spinner.test.js が見ている)。
+ *
+ * @returns {RegExp}
+ */
+function OSHI_SPINNER_CODE_LIKE() {
+  return /[{}[\]<>`$\\]/;
+}
+
+/**
+ * 字の数 (コードポイント)。絵文字を2つと数えない。手元の道具も同じ数え方。
+ *
+ * @param {string} s
+ * @returns {number}
+ */
+function oshiCharCount(s) {
+  return Array.from(String(s)).length;
+}
+
+/**
+ * 場面ごとの自分のせりふを整える (oshiCleanLines を場面の上限で)。考え中 (spinner) は、使えない字があれば断る
+ * (返すときに黙って捨てると、書いたせりふが消えて見える)。
+ *
+ * @param {string} event
+ * @param {*} lines
+ * @returns {string[]}
+ */
+function oshiCleanEventLines(event, lines) {
+  var clean = oshiCleanLines(lines, oshiLineMaxOf(event));
+  if (String(event) === 'spinner') {
+    clean.forEach(function (l) {
+      if (OSHI_SPINNER_CODE_LIKE().test(l)) {
+        throw new Error('考え中のせりふには { } [ ] < > ` $ \\ を使えません: ' + l);
+      }
+    });
+  }
+  return clean;
+}
+
+/**
+ * 考え中のせりふを、手元に渡せる形にそろえる。字でないもの・空を捨て、制御文字と改行・字の向きを変える印・
+ * 幅の無い空白を落とし、前後の空白を取り、字数の上限を超えるものと重なりを捨て、OSHI_SPINNER_MAX 個までにする。
+ * 台帳は人が手で書き換えうるので、返す前に必ず通す。
+ *
+ * @param {*} list
+ * @returns {string[]}
+ */
+function oshiSpinnerPick(list) {
+  var max = oshiLineMaxOf('spinner');
+  var seen = Object.create(null);
+  var out = [];
+  (Array.isArray(list) ? list : []).forEach(function (v) {
+    if (typeof v !== 'string' || out.length >= OSHI_SPINNER_MAX()) return;
+    var one = v.replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200B\u200E\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/g, '')
+      .replace(/^\s+|\s+$/g, '');
+    if (!one || oshiCharCount(one) > max || OSHI_SPINNER_CODE_LIKE().test(one) || seen[one]) return;
+    seen[one] = true;
+    out.push(one);
+  });
+  return out;
 }
 
 /**
@@ -647,7 +777,8 @@ function OSHI_CHARKIT_ORIGINAL_RULES() {
 
 /**
  * プロフィールの項目に使う Lv。いちばん早い Lv (OSHI_PROFILE_LIMITS の lvMin) から、最高の Lv の1つ手前まで 2 ずつ
- * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最高の Lv で全部分かる (クリア)。
+ * (実績を1つ取るごとに Lv が1つ上がるので、2つ取るごとに1つ分かる)。最後の項目は最高の Lv の1つ手前 (実績を全部取る1つ前) で
+ * 分かり、最高の Lv (実績を全部取った = クリア) では項目は増えず、お祝いの言葉 (clearLine) と動画が出る。
  *
  * @param {number} maxLevel 最高の Lv (1 + 実績の数)
  * @returns {number[]}
@@ -661,7 +792,7 @@ function oshiCharKitLevels(maxLevel) {
 }
 
 /**
- * 1枚の表に並べるときの行と列 (表情の数から決める)。11 の表情なら 4 列 × 3 行。
+ * 1枚の表に並べるときの行と列 (表情の数から決める)。11 の表情なら 4 列 × 3 行、14 (いま) なら 4 列 × 4 行。
  *
  * @param {number} n
  * @returns {{rows: number, cols: number}}
@@ -725,17 +856,20 @@ function oshiCharKitPrompt(tool, maxLevel) {
     '```',
     '- name: キャラクターの名前。' + text.nameMax + '字まで。実在の人の名前にしない',
     '- tone: 口調。次の key のどれか1つ: ' + OSHI_TONES().map(function (x) { return x.key + ' (' + x.label + ')'; }).join(' / '),
-    '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (' + text.linesPerEvent + '個まで)、1つ' +
+    '- lines: 場面ごとのせりふ。下の場面を全部、key のまま使う。1つの場面に2〜3個 (考え中 (spinner) だけは5〜10個。どれも' + text.linesPerEvent + '個まで)、1つ' +
       text.lineMax + '字まで。キャラクターの口調で書き、相手を責めない・急かさない (うまくいかなかったときも、やさしく寄り添う)'
   );
   OSHI_EVENTS().forEach(function (e) {
-    out.push('  - ' + e.key + ': ' + e.label + (e.mood ? ' (推しの機嫌がオンのときだけ出る。やさしく、小さな一歩を誘う)' : ''));
+    out.push('  - ' + e.key + ': ' + e.label + (e.lineMax ? '。' + e.kitHint + '、1つ' + e.lineMax + '字まで' : '') +
+      (e.mood ? ' (推しの機嫌がオンのときだけ出る。やさしく、小さな一歩を誘う)' : ''));
   });
   out.push(
     '- profile.items: Lv が上がると少しずつ分かるプロフィール。lv は ' + levels.join(', ') + ' の ' + levels.length +
       ' 項目 (1つの lv に1項目)。label (見出し) は' + prof.labelMax + '字まで、text (中身) は' + prof.textMax +
       '字まで。好きなもの・苦手なもの・口ぐせ・小さな秘密など、Lv が上がるほど深い話にする',
-    '- profile.clearLine: 全部分かったとき (Lv ' + top + '、実績を全部取ったとき) のお祝いの言葉。' + prof.clearLineMax + '字まで',
+    '- profile.clearLine: 実績を全部取ったとき (クリア。Lv ' + top + ') のお祝いの言葉。プロフィールの最後の項目 (Lv ' +
+      (levels.length ? levels[levels.length - 1] : top) + ') はその1つ手前で分かっているので、項目には無い言葉にする。' +
+      prof.clearLineMax + '字まで',
     '- どの字にも、実在の人の名前・所属・肩書きを書かない'
   );
   return out.join('\n');
@@ -850,6 +984,17 @@ function oshiToneKnown(key) {
 }
 
 /**
+ * その場面のせりふ1つの字数の上限。場面に lineMax があればそれ (考え中は短く出すので 24)、無ければ OSHI_TEXT_LIMITS。
+ *
+ * @param {string} event
+ * @returns {number}
+ */
+function oshiLineMaxOf(event) {
+  var e = oshiEventOf(event);
+  return e && e.lineMax ? e.lineMax : OSHI_TEXT_LIMITS().lineMax;
+}
+
+/**
  * 上げられる画像の上限。画面はこの値で縮め、サーバはこの値で断る。
  * 1枚1MBまで (台帳ではなく objects/ に置く)、縮めるのは長い辺 512px まで。
  *
@@ -902,28 +1047,32 @@ function oshiProfileReveal(items, level, cleared) {
 }
 
 /**
- * 育ちの段。**レベル (Lv) から段を決める唯一の表。** key は表情の key と同じ (その段の絵)。min はその段に届く Lv。
+ * なつき度の段 (人に見せる名前は「なつき度」。key と関数名は前の呼び名「育ち」のまま)。**レベル (Lv) から段を決める唯一の表。** key は表情の key と同じ (その段の絵)。min はその段に届く Lv。
  * Lv は 1 + 取った実績の数 (achLevelOf。src/core/Achievements.js)。取った実績は消さないので、段も下がらない。
  *
  * @returns {Array<{key: string, label: string, min: number}>}
  */
 function OSHI_STAGES() {
   return [
-    { key: 'grow1', label: '見習い', min: 1 },
-    { key: 'grow2', label: '一人前', min: 5 },
-    { key: 'grow3', label: '名人', min: 15 },
+    { key: 'grow1', label: 'よそよそしい', min: 1 },
+    { key: 'grow2', label: 'なれてきた', min: 5 },
+    { key: 'grow3', label: 'なついた', min: 15 },
+    { key: 'grow4', label: 'べったり', min: 25 },
+    { key: 'grow5', label: '家族', min: 35 },
   ];
 }
 
 /**
- * Lv から育ちの段を決める。なかよし (meter) はいまの段から次の段までの進み (0〜100)、toNext は次の段までの Lv。
+ * Lv から育ちの段を決める。meter (画面の「次の段まで」の棒) はいまの段から次の段までの進み (0〜100)、toNext は次の段までの Lv。
  * 最後の段では meter 100・toNext 0。
  *
  * floor は前に届いていた段 (0 から。実績の前は育ちの最高の段を OSHI_STAGE_MAX: に覚えていた)。それより下には出さない。
+ * 床で Lv より上の段に出すときは floored。進みは出している段の次の段へ Lv1 から数える (その段の min にはまだ届いていないので、
+ * 段の min から数えると「あと N Lv」なのに棒が 0% のまま動かない)。
  *
  * @param {number} level 1 から
  * @param {number} [floor] これより下の段にしない
- * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number}}
+ * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, floored: boolean}}
  */
 function oshiStageOf(level, floor) {
   var list = OSHI_STAGES();
@@ -931,16 +1080,17 @@ function oshiStageOf(level, floor) {
   var i = 0;
   while (i + 1 < list.length && lv >= list[i + 1].min) i++;
   var f = Math.floor(Number(floor) || 0);
-  if (f > i) i = Math.min(f, list.length - 1);
+  var floored = f > i;
+  if (floored) i = Math.min(f, list.length - 1);
   var meter = 100;
   var toNext = 0;
   if (i + 1 < list.length) {
-    var from = list[i].min;
+    var from = floored ? 1 : list[i].min;
     var span = list[i + 1].min - from;
     meter = Math.max(0, Math.min(100, Math.floor((lv - from) / span * 100)));
     toNext = Math.max(0, list[i + 1].min - lv);
   }
-  return { index: i, key: list[i].key, label: list[i].label, meter: meter, toNext: toNext, level: lv };
+  return { index: i, key: list[i].key, label: list[i].label, meter: meter, toNext: toNext, level: lv, floored: floored };
 }
 
 /**
@@ -961,18 +1111,19 @@ function oshiGreetingOf(hour) {
  * 上限を超えたら断る (黙って切ると、書いたものが消える)。
  *
  * @param {*} lines
+ * @param {number} [max] 1つの字数の上限 (場面ごとの oshiLineMaxOf)。省くと OSHI_TEXT_LIMITS の lineMax
  * @returns {string[]}
  */
-function oshiCleanLines(lines) {
+function oshiCleanLines(lines, max) {
   var lim = OSHI_TEXT_LIMITS();
+  var lineMax = max || lim.lineMax;
   var list = Array.isArray(lines) ? lines : String(lines == null ? '' : lines).split('\n');
   var seen = Object.create(null);
   var out = [];
   for (var i = 0; i < list.length; i++) {
     var one = String(list[i] == null ? '' : list[i]).replace(/^\s+|\s+$/g, '');
     if (!one || seen[one]) continue;
-    // 字の数は見た目の1字ずつ数える (絵文字はUTF-16で2つになるが、1字と数える)
-    if (Array.from(one).length > lim.lineMax) throw new Error('せりふは1つ' + lim.lineMax + '字までにしてください');
+    if (oshiCharCount(one) > lineMax) throw new Error('せりふは1つ' + lineMax + '字までにしてください');
     seen[one] = true;
     out.push(one);
   }

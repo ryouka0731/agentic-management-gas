@@ -179,6 +179,7 @@
     g.label = res.stage.label;
     g.meter = res.stage.meter;
     g.toNext = res.stage.toNext;
+    g.floored = !!res.stage.floored;
     g.level = res.level;
     g.unlocked = (res.unlocked || []).length;
     Array.prototype.forEach.call(document.querySelectorAll('.oshi-growth'), function (old) {
@@ -210,16 +211,23 @@
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
-    var all = (res.items || []).length > 0 && res.items.every(function (it) { return it.done; });
-    achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
-      (opened ? ' ・ 推しのプロフィールが ' + opened + ' つ分かりました' : '') +
-      (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : ''));
+    // クリアに届いたその返事だけ (サーバの clearedNow)。クリアしたあとで取れる実績が増えても、取るたびには言わない
+    var all = !!res.clearedNow;
+    // 推しがオフなら Lv だけ (推しの段・プロフィール・クリアは推しの頁のもの)
+    var oshi = oshiOn();
+    achToast(first.icon, text + (oshi
+      ? ' ・ なつき度が Lv ' + res.level + ' になりました (' + res.stage.label + ')' +
+        (opened ? ' ・ 推しのプロフィールが ' + opened + ' 項目分かりました' : '') +
+        (all ? ' ・ 全部取りました。推しの頁にクリアが出ています' : '')
+      : ' ・ Lv ' + res.level + (all ? ' ・ 全部取りました' : '')));
     if (typeof funOn === 'function' && funOn('cheer') && typeof funBanner === 'function') {
       try { funBanner('BADGE GET!', 'big', 'success', null, first.title); } catch (e) { /* 飾りが落ちても知らせは出ている */ }
     }
     // 済ませたときのほめ言葉が出ていれば、それが消えてから言う (上書きしない)
-    if (oshiOn()) {
-      if (res.crossed) oshiSayNext('levelup', res.stage.key);
+    // 最後の実績を取ったとき (= クリアの瞬間) は「実績を全部取った」を1回だけ言う (取ったものが無ければここに来ない)
+    if (oshi) {
+      if (all) oshiSayNext('clear', '');
+      else if (res.crossed) oshiSayNext('levelup', res.stage.key);
       else oshiSayNext('badge', '');
     }
   }
@@ -289,7 +297,7 @@
     btn.className = 'btn ach-open';
     btn.appendChild(makeIcon('clipboard-check'));
     btn.appendChild(document.createTextNode('実績'));
-    attachHint(btn, '取った実績 (バッジ) と推しのレベルを見ます。あなたにだけ見えます');
+    attachHint(btn, '取った実績 (バッジ) と推しのなつき度を見ます。あなたにだけ見えます');
     btn.addEventListener('click', function () {
       closeMe();
       openAchievements(btn);
@@ -330,7 +338,7 @@
   }
 
   /**
-   * 推しの Lv と次の段までの棒。
+   * 推しの Lv と次の段までの棒。推しがオフなら「Lv ◯」だけ (段と棒は推しのもの)。
    *
    * @param {object} res
    * @returns {HTMLElement}
@@ -340,8 +348,14 @@
     box.className = 'ach-level';
     var head = document.createElement('div');
     head.className = 'ach-level-head';
-    head.textContent = '推しの Lv ' + res.level + ' ・ ' + res.stage.label +
-      (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です');
+    if (!oshiOn()) {
+      head.textContent = 'Lv ' + res.level;
+      box.appendChild(head);
+      return box;
+    }
+    head.textContent = 'なつき度 Lv ' + res.level + ' ・ ' + res.stage.label +
+      (res.stage.toNext > 0 ? ' ・ 次の段まであと ' + res.stage.toNext + ' Lv' : ' ・ いちばん上の段です') +
+      (res.stage.floored ? ' (以前のなつき度を保っています)' : '');
     box.appendChild(head);
     var bar = document.createElement('div');
     bar.className = 'game-level-bar ach-meter';
@@ -366,9 +380,14 @@
   function drawAchPage(box, res) {
     box.textContent = '';
     box.appendChild(achNote('実績はあなたにだけ見えます。順位も、続けた日数もありません。一度取った実績は消えません。' +
-      '推しのレベルは 1 + 取った実績の数です'));
+      (oshiOn() ? '推しのなつき度 (Lv)' : 'レベル (Lv)') + 'は 1 + 取った実績の数です'));
     box.appendChild(makeAchLevel(res));
     box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
+    var rest = Math.max(0, (Number(res.total) || 0) - (Number(res.got) || 0));
+    box.appendChild(achNote((res.cleared ? 'クリアしました' + (rest ? ' (あとから取れるようになった実績が ' + rest + ' 個あります)' : '')
+      : 'クリアまで あと ' + rest + ' 個') +
+      ' ・ この環境で取れる実績は ' + (Number(res.total) || 0) + ' 個です。「この環境では取れません」の実績は数えません。' +
+      'クリアは一度届けば消えません。あとから取れる実績が増えても、クリアはそのまま'));
 
     if ((res.next || []).length) {
       var nh = document.createElement('h3');
@@ -403,13 +422,14 @@
 
   /**
    * 実績1つ。まだのものは ??? (名前は出さない)。数のある実績は、いちばん近い1つにだけ手がかり。
+   * この環境で取れないもの (off) は札と理由。取れる実績の残りが少ないとき (near) は名前と説明を見せる。
    *
    * @param {object} a items の1つ
    * @returns {HTMLElement}
    */
   function makeAchBadge(a) {
     var li = document.createElement('li');
-    li.className = 'ach-badge' + (a.done ? ' is-done' : '');
+    li.className = 'ach-badge' + (a.done ? ' is-done' : a.off ? ' is-off' : a.near ? ' is-near' : '');
     li.dataset.ach = a.key;
     var medal = document.createElement('span');
     medal.className = 'ach-medal';
@@ -418,13 +438,14 @@
     li.appendChild(medal);
     var name = document.createElement('span');
     name.className = 'ach-name';
-    name.textContent = a.done ? a.title : '???';
+    name.textContent = a.done || a.near ? a.title : '???';
     li.appendChild(name);
+    if (a.off) li.appendChild(makePill('この環境では取れません', 'chip'));
     var sub = document.createElement('span');
     sub.className = 'ach-sub';
     sub.textContent = a.done
       ? a.desc + (a.at ? ' (' + a.at + ')' : '')
-      : (a.hint || a.groupLabel);
+      : a.off ? a.reason : a.near ? a.desc : (a.hint || a.groupLabel);
     li.appendChild(sub);
     return li;
   }

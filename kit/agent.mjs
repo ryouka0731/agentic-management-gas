@@ -25,6 +25,7 @@ import { bantoHome, trackedFolders } from './track/hook.mjs';
 import * as track from './track/track.mjs';
 import * as update from './track/update.mjs';
 import * as local from './track/local.mjs';
+import * as spinner from './track/spinner.mjs';
 
 const CONFIG_NAMES = ['.agentkit.json', 'agentkit.json'];
 
@@ -678,6 +679,149 @@ async function maybeUpdate() {
 }
 
 /**
+ * 1日1回、Claude Code の考え中の字を推しのせりふで取り直す (oshi-spinner on にした人だけ)。待たない。
+ * 命令は on にしたときの入れ先に置く。出すのは標準エラーだけ (標準出力は Claude が読む結果)。
+ */
+function maybeSpinner() {
+  const home = bantoHome();
+  try {
+    const st = spinner.spinnerState(home);
+    if (st.on !== true || !st.queueDir || !fs.existsSync(st.queueDir)) return;
+    const hands = queueHands({ queueDir: st.queueDir });
+    // 道具の更新の確認 (maybeUpdate) は ~/.banto/kit から動かすときしか片付けないので、ここでも片付ける。
+    // 道具の更新が待っている命令は残す
+    const sweep = (keep, now) => {
+      const c = update.readConfig(home);
+      const held = keep.concat(c && c.pendingUpdate && c.pendingUpdate.id ? [String(c.pendingUpdate.id)] : []);
+      for (const name of update.staleUpdateFiles(fs.readdirSync(st.queueDir), now, '')) {
+        if (held.some((id) => name.startsWith(id + '.'))) continue;
+        try { fs.unlinkSync(path.join(st.queueDir, name)); } catch (e) { /* 次にまた試す */ }
+      }
+    };
+    const r = spinner.tickSpinner({ home, claude: track.claudeHome(), place: hands.place, collect: hands.collect, drop: hands.drop, sweep });
+    if (r.state === 'updated') {
+      process.stderr.write('Claude Code の考え中の字を、' + (r.name || '推し') + 'のせりふで入れ替えました:\n' +
+        fenced(r.verbs.join('\n')) + '\n');
+    } else if (r.state === 'mine-changed') {
+      process.stderr.write((r.name || '自分のキャラ') + 'の考え中のせりふが変わりました。node agent.mjs oshi-spinner on で確かめて入れ替えてください' +
+        ' (自分のキャラのせりふは自動では入れ替えません)\n');
+    }
+  } catch (e) {
+    process.stderr.write('考え中の字を入れ替えられませんでした: ' + (e.message || e) + '\n');
+  }
+}
+
+/**
+ * 人に「よいか」を尋ねる。--yes なら尋ねない。尋ねられない (TTY でない) ときは、--yes の付け方を出して止める (終わりの番号 2)。
+ *
+ * @param {string[]} rest
+ * @param {string} question
+ * @param {string} what 尋ねられなかったときの「◯てよいか」
+ * @returns {Promise<boolean>}
+ */
+async function askYes(rest, question, what) {
+  if (rest.includes('--yes')) return true;
+  if (!process.stdin.isTTY) {
+    process.stderr.write(what + '尋ねられませんでした。--yes を付けて実行してください' +
+      ' (Claude に頼むときは、利用者に上の中身を伝えて確かめてから --yes を付ける)\n');
+    process.exitCode = 2;
+    return false;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question(question + ' [y/N] ');
+  rl.close();
+  return /^y/i.test(answer.trim());
+}
+
+/** spinnerVerbs の値を、見せる字にする (無ければ「(無し)」) */
+function spinnerShown(has, value) {
+  return has ? JSON.stringify(value) : '(無し)';
+}
+
+/**
+ * Claude Code の考え中の字を、番頭で選んでいる推しのせりふにする (on) / 戻す (off) / 様子を見る (status)。
+ *
+ * **settings.json に書くのは人が ok した on と off だけ** (on は書く前に中身を見せて尋ねる。--yes なら尋ねない)。
+ * 書くのは spinnerVerbs の1つの鍵だけ。オンのあいだは1日1回せりふを取り直す (maybeSpinner)。
+ */
+async function runOshiSpinner(argv) {
+  const home = bantoHome();
+  const claude = track.claudeHome();
+  const [sub, ...a] = withoutQueueFlag(argv);
+
+  if (sub === 'status') {
+    const s = spinner.spinnerStatus({ home, claude });
+    const lines = [s.on ? 'オンです (' + (s.name || '名前なし') + 'のせりふ ' + s.count + '個)' : 'オフです'];
+    if (s.on && !s.matches) lines.push(spinner.settingsFile(claude) + ' の spinnerVerbs が手で直されているので、入れ替えを止めています (戻すときは off)');
+    if (s.on) lines.push('最後に取り直した日時: ' + (s.lastCheck || '(まだ)') + (s.pending ? ' (返事待ちが1つあります)' : ''));
+    process.stdout.write(lines.join('\n') + '\n');
+    return;
+  }
+
+  if (sub === 'off') {
+    // 待っている命令は on が覚えた入れ先にある (いまの設定の入れ先とは限らない)
+    const q = spinner.spinnerState(home).queueDir;
+    const r = spinner.turnOff({ home, claude, drop: q ? queueHands({ queueDir: q }).drop : undefined });
+    const said = {
+      off: 'オンにしていません。何も変えていません',
+      restored: spinnerFileSaid(r.file) + 'の spinnerVerbs を、オンにする前の値に戻しました',
+      removed: spinnerFileSaid(r.file) + 'から spinnerVerbs を外しました (オンにする前は無かったため)',
+      edited: spinnerFileSaid(r.file) + 'の spinnerVerbs は手で直されていたので、そのままにしました。入れ替えは止めました',
+    };
+    process.stdout.write(said[r.state] + '\n');
+    return;
+  }
+
+  if (sub === 'on') {
+    const config = loadConfig();
+    const got = spinner.verbsFromResult(stripControl(await send(config.queueDir, spinner.SPINNER_OP, {})));
+    if (!got.verbs.length) {
+      process.stderr.write(got.reason + '。何も変えていません\n');
+      process.exitCode = 1;
+      return;
+    }
+    const plan = spinner.planOn({ home, claude, verbs: got.verbs });
+    const print = spinner.verbsPrint(got.verbs);
+    const yes = a.find((x) => x === '--yes' || x.startsWith('--yes='));
+    const want = yes && yes.startsWith('--yes=') ? yes.slice('--yes='.length) : '';
+    process.stderr.write([
+      (got.name || '名前なし') + 'の考え中のせりふ (' + got.verbs.length + '個):',
+      fenced(got.verbs.join('\n')),
+      '次のように変えます (変えるのは spinnerVerbs だけで、ほかの設定は変えません。今の設定は控えを取って残します):',
+      '  ' + plan.file,
+      '  いま: ' + spinnerShown(plan.has, plan.before),
+      '  これから: ' + JSON.stringify(plan.next),
+      'オンのあいだは1日1回せりふを取り直します。最初からいるキャラに替えたときは1日のうちに追いつき、自分のキャラのときは on で確かめ直してもらいます。',
+      '戻す: node agent.mjs oshi-spinner off (手で直したあとは、どちらも触りません)',
+      '確かめの印: ' + print + ' (このせりふのまま書くなら node agent.mjs oshi-spinner on --yes=' + print + ')',
+    ].join('\n') + '\n');
+    if (yes && yes.startsWith('--yes=') && !want) {
+      process.stderr.write('--yes= の印が空です。上の確かめの印を付けて実行してください。何も変えていません\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (yes && want && want !== print) {
+      process.stderr.write('確かめたときからせりふが変わりました (印 ' + want + ' → ' + print + ')。上のせりふを確かめてから、' +
+        'もう一度 --yes=' + print + ' で実行してください。何も変えていません\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (!yes && !(await askYes(a, '考え中の字を変えますか', '変えてよいか'))) return;
+    const done = spinner.turnOn({ home, claude, plan, queueDir: config.queueDir, name: got.name, char: got.char });
+    process.stdout.write(spinnerFileSaid(done.file) + 'の spinnerVerbs を推しのせりふにしました' +
+      (done.backup ? ' (控え: ' + done.backup + ')' : '') + '。Claude Code に出るのは、次に開いたときからかもしれません\n');
+    return;
+  }
+
+  process.stderr.write('oshi-spinner の後には on / off / status のどれかを書いてください\n');
+  process.exitCode = 2;
+}
+
+function spinnerFileSaid(file) {
+  return file + ' ';
+}
+
+/**
  * 入れる前に、入れるものと自動更新の危険・切り方を出す。
  *
  * **--yes でも必ず出す。** Claude が利用者に確かめずに --yes を付けたときも、
@@ -700,17 +844,7 @@ async function confirmInstall(rest) {
     '切る: ' + path.join(home, 'config.json') + ' に "autoUpdate": false と書くと、知らせるだけになります。',
   ].join('\n');
   process.stderr.write(plan + '\n');
-  if (rest.includes('--yes')) return true;
-  if (!process.stdin.isTTY) {
-    process.stderr.write('入れてよいか尋ねられませんでした。--yes を付けて実行してください' +
-      ' (Claude に頼むときは、利用者に上の危険と切り方を伝えて確かめてから --yes を付ける)\n');
-    process.exitCode = 2;
-    return false;
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question('入れますか [y/N] ');
-  rl.close();
-  return /^y/i.test(answer.trim());
+  return askYes(rest, '入れますか', '入れてよいか');
 }
 
 async function runTrack(rest) {
@@ -835,6 +969,7 @@ function usage() {
   lines.push('');
   lines.push('推しのキャラを AI に作ってもらう:');
   lines.push('  oshi-prompt <' + OSHI_PROMPT_TOOLS.join('|') + '>   頼み文を出す (スキル banto-oshi-chara)');
+  lines.push('  oshi-spinner <on|off|status>   Claude Code の考え中の字を、選んでいる推しのせりふにする (on は確かめてから書く)');
 
   lines.push('');
   lines.push('例:');
@@ -876,6 +1011,8 @@ const LOCAL_COMMANDS = {
   setup: async () => { process.stdout.write(setupGuide() + '\n'); },
   track: async (argv) => { await runTrack(argv); },
   update: async (argv) => { await runUpdate(argv); },
+  // 考え中の字。on は番頭に頼む (send) が、settings.json を書くので人に確かめる。off / status は番頭に頼まない
+  'oshi-spinner': async (argv) => { await runOshiSpinner(argv); },
   doctor: async () => {
     const r = local.doctor({ config: findConfig(), home: bantoHome(), claude: track.claudeHome() });
     process.stdout.write(r.text + '\n');
@@ -957,6 +1094,7 @@ async function main() {
   printResult(name, view, res, rest);
   if (!res.ok) process.exitCode = 1;
   await maybeUpdate();
+  maybeSpinner();
 }
 
 main().catch((err) => {

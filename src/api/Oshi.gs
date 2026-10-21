@@ -14,11 +14,12 @@
  * @returns {object[]}
  */
 function oshiEventsPlain_(tone, mine) {
-  var defaults = OSHI_LINES()[tone] || OSHI_LINES().polite;
   return OSHI_EVENTS().map(function (e) {
     return { key: plainText(e.key), label: plainText(e.label), state: plainText(e.state), praise: !!e.praise,
       randomState: !!e.randomState, mood: !!e.mood,
-      lines: (defaults[e.key] || []).map(plainText),
+      // 考え中 (spinner) は画面の吹き出しには出さず、自分のせりふの欄で直すだけ。字数の上限は場面ごと
+      spinner: !!e.spinner, lineMax: plainNumber(oshiLineMaxOf(e.key)),
+      lines: oshiToneLines(tone, e.key).map(plainText),
       mine: ((mine || {})[e.key] || []).map(plainText) };
   });
 }
@@ -72,7 +73,9 @@ function apiOshiGet() {
   var builtin = active ? null : oshiBuiltinOf(choice.key);
   var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
   mine.forEach(function (m) { delete m.profile; });
-  var cleared = oshiCleared_(me);
+  // 取れない実績は1回だけ数え、クリアと「クリアで分かる」の Lv の両方に使う
+  var off = achUnavailable_(me);
+  var cleared = oshiCleared_(me, off);
   var events = active ? active.events : oshiEventsPlain_(builtin.tone, {});
   return {
     char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
@@ -103,7 +106,7 @@ function apiOshiGet() {
     growth: {
       index: plainNumber(g.index), key: plainText(g.key), label: plainText(g.label),
       meter: plainNumber(g.meter), toNext: plainNumber(g.toNext), level: plainNumber(g.level),
-      unlocked: plainNumber(g.unlocked),
+      unlocked: plainNumber(g.unlocked), floored: !!g.floored,
       stages: OSHI_STAGES().map(function (s) { return { key: plainText(s.key), label: plainText(s.label), min: plainNumber(s.min) }; }),
     },
     limits: {
@@ -112,7 +115,7 @@ function apiOshiGet() {
       nameMax: plainNumber(text.nameMax), lineMax: plainNumber(text.lineMax),
       linesPerEvent: plainNumber(text.linesPerEvent),
     },
-    reveal: oshiRevealPlain_(profile, g.level, cleared),
+    reveal: oshiRevealPlain_(profile, g.level, cleared, achLevelOf(ACHIEVEMENTS().length - Object.keys(off).length)),
     achOn: prefGet_('ach.on', me) !== false,
     cleared: cleared,
     // クリアの言葉と動画は、クリアしたときだけ入れる (動画の id もそれまで画面に渡さない)
@@ -154,9 +157,10 @@ function apiOshiMood() {
  * @param {?object} profile
  * @param {number} level
  * @param {boolean} cleared
- * @returns {{items: object[], open: number, total: number, limits: object}}
+ * @param {number} maxLevel 最高の Lv (1 + この環境で取れる実績と取った実績の数)
+ * @returns {{items: object[], open: number, total: number, maxLevel: number, limits: object}}
  */
-function oshiRevealPlain_(profile, level, cleared) {
+function oshiRevealPlain_(profile, level, cleared, maxLevel) {
   var lim = OSHI_PROFILE_LIMITS();
   var items = oshiProfileReveal(profile ? profile.items : [], level, cleared).map(function (it) {
     return { lv: plainNumber(it.lv), open: !!it.open, label: plainText(it.label), text: plainText(it.text) };
@@ -165,6 +169,8 @@ function oshiRevealPlain_(profile, level, cleared) {
     items: items,
     open: plainNumber(items.filter(function (it) { return it.open; }).length),
     total: plainNumber(items.length),
+    // 最高の Lv (この環境で取れる実績を全部取った = クリア)。これより上の Lv の項目は Lv では届かず、クリアで分かる
+    maxLevel: plainNumber(maxLevel),
     limits: {
       itemsMax: plainNumber(lim.itemsMax), labelMax: plainNumber(lim.labelMax), textMax: plainNumber(lim.textMax),
       lvMin: plainNumber(lim.lvMin), lvMax: plainNumber(lim.lvMax), clearLineMax: plainNumber(lim.clearLineMax),
@@ -364,7 +370,7 @@ function apiOshiSetLines(charId, event, lines) {
 }
 
 /**
- * 自分のキャラをまとめて消す (育ちの覚えも)。使うキャラの選び方も既定に戻す。
+ * 自分のキャラをまとめて消す (絵・名前・口調・せりふ・プロフィール)。育ちは実績で決まるので消さない。使うキャラの選び方も既定に戻す。
  *
  * @returns {{removed: number}}
  */
