@@ -2664,7 +2664,7 @@
    *
    * @param {HTMLElement} host
    * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean,
- *   choices?: Array<Array<string>>}>} fields
+ *   choices?: string[][]}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
    * @param {HTMLElement} [sourceEl] この入力が対象としている要素
@@ -2758,7 +2758,7 @@
    *
    * @param {string} title 何の入力かを示す見出し
    * @param {Array<{name:string, label:string, multiline?:boolean, required?:boolean,
- *   choices?: Array<Array<string>>}>} fields
+ *   choices?: string[][]}>} fields
    * @param {string} submitLabel
    * @param {function(Object<string,string>): void} onSubmit
    * @returns {HTMLElement} 差し込んだフォーム
@@ -3401,10 +3401,10 @@
       };
     }
 
-    var mi = /^<img data-sha="([^"]*)" alt="([^"]*)">$/.exec(raw);
+    var mi = /^<img data-sha="([^\x22]*)" alt="([^\x22]*)">$/.exec(raw);
     if (mi) return { kind: '画像', text: strip(mi[2]) || '(説明なし)' };
 
-    var ms = /^<table data-sheet="([^"]*)">$/.exec(raw);
+    var ms = /^<table data-sheet="([^\x22]*)">$/.exec(raw);
     if (ms) return { kind: 'シート', text: strip(ms[1]) };
 
     var msl = /^<section data-slide="(\d+)">$/.exec(raw);
@@ -3415,7 +3415,7 @@
 
     if (raw.indexOf('<tr>') === 0) {
       var cells = [];
-      var re = /<td(?: data-formula="[^"]*")?>([\s\S]*?)<\/td>/g;
+      var re = /<td(?: data-formula="[^\x22]*")?>([\s\S]*?)<\/td>/g;
       var m;
       while ((m = re.exec(raw)) !== null) cells.push(strip(m[1]));
       return { kind: '行', text: cells.join(' | ') };
