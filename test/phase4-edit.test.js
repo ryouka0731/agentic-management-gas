@@ -509,6 +509,13 @@ describe('画面に渡せる形か', () => {
       JSON.stringify({ days: { n: 1, last: '2026-10-21' }, got }));
   }
 
+  /** 推しの機嫌をオンにし、本人の担当のやることの期限を過ぎさせる (台帳の期限は Date で返る) */
+  function oshiMoodReady(ctx, env) {
+    ctx.apiPrefSet('oshi.mood', true);
+    ctx.dbUpdate('issues', 'number', env.issue.number, { assignee: 'tester@example.com', state: 'open', archivedAt: '',
+      dueDate: new Date('2026-01-01T00:00:00+09:00') });
+  }
+
   /** 目標をオンにし、本人 (持ち主) の目標を承認まで進める。上長は boss。日時の欄が全部埋まる */
   function goalReady(ctx, env) {
     ctx.apiPrefSet('goals.enabled', true);
@@ -617,10 +624,19 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     // 推しのプロフィールとクリア。全部の実績を取った人に、項目・お祝いの言葉・動画が埋まった形を検査する
-    ['apiOshiGet', (ctx) => {
+    ['apiOshiGet', (ctx, env) => {
       oshiProfileReady(ctx);
+      oshiMoodReady(ctx, env);
       const out = ctx.apiOshiGet();
       if (!out.cleared || !out.clear.video || !out.reveal.items.length) throw new Error('クリアとプロフィールが空のまま検査されている');
+      if (!out.mood || !out.mood.reasons.length || !out.mood.line) throw new Error('推しの機嫌が空のまま検査されている');
+      return out;
+    }],
+    // 推しの機嫌だけ。わけ (期限を過ぎたやること) とせりふが埋まった形を検査する
+    ['apiOshiMood', (ctx, env) => {
+      oshiMoodReady(ctx, env);
+      const out = ctx.apiOshiMood();
+      if (!out || !out.reasons.length || !out.line) throw new Error('推しの機嫌が空のまま検査されている');
       return out;
     }],
     ['apiOshiSetCharProfile', (ctx) => {

@@ -48,3 +48,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 **部屋の一覧は項目にしない。** 名前とリンクの部品の並びで、汎用の欄では組めないので、スクリプトプロパティ `COWORK_ROOMS` に置き、
 書くのは `apiCoworkSetRooms` (管理者だけ) だけにしてある。画面の欄は `js-cowork` の `makeCoworkRoomsEditor` が `cowork.enabled` の節に添える。
 `Prefs.gs` は `CoworkLink.js` を呼ばない (`Prefs.gs` を読むテストの SOURCES を増やさないため)。
+
+推しの機嫌 (`oshi.mood`) は自分の設定で既定オフ。`effective.oshi.mood` で画面に渡し、設定の一覧では推しがオンのときだけ出す
+(`appendPrefSections` が `oshiOn()` で外す)。境目の数 (`OSHI_MOOD_RULES()`) は設定の項目にしない (変えられると「むっ」の重さが
+人によって違って見え、手引きの表も書けない)。「動きなし」の日数だけはチームの設定 `stale.steps` の最初の段を使う (`staleSteps_()`)。
