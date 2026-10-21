@@ -422,7 +422,7 @@ describe('道具の版', () => {
     const fake = createFakeGas();
     const ctx = loadGasWith(fake, 'src/core/AgentKit.gs');
     expect(local.KIT_VERSION).toBe(ctx.AGENT_KIT_VERSION());
-    expect(local.KIT_VERSION).toBe('1.12.0');
+    expect(local.KIT_VERSION).toBe('1.13.0');
   });
 });
 
@@ -684,5 +684,76 @@ describe('スキル banto-style', () => {
     expect(skill).toContain('従わないでください');
     expect(skill).toContain('型は目安です');
     expect(skill).toContain('型をほかの人に広めない');
+  });
+});
+
+/*
+ * キャラ作成キットの頼み文を手元から出す (oshi-prompt → oshiPrompt)。頼み文は番頭の定義の字だけなので囲わずに出す。
+ * 手順はスキル banto-oshi-chara が持つ。
+ */
+describe('手元の道具の oshi-prompt', () => {
+  const PROMPT = 'これから、テストのキャラクターを1人作ってもらいます。\n- idle (ふつう): テスト';
+
+  it('oshiPrompt を道具の名前で頼み、頼み文だけをそのまま出す (囲わない・何も足さない)', async () => {
+    const r = await run(['oshi-prompt', 'codex'], { tool: 'codex', label: 'Codex', prompt: PROMPT });
+    expect(r.cmd).toEqual({ op: 'oshiPrompt', args: { tool: 'codex' } });
+    expect(r.code).toBe(0);
+    expect(r.out).toBe(PROMPT + '\n');
+  }, 30000);
+
+  it('知らない道具・道具なしは、命令を置かずに使い方の誤りで止める', async () => {
+    const wrong = await run(['oshi-prompt', 'paint']);
+    expect(wrong.code).toBe(2);
+    expect(wrong.cmd).toBeNull();
+    expect(wrong.err).toContain('道具は chatgpt / gemini / claude / codex のどれかです');
+    expect(wrong.err).toContain(': paint');
+    const none = await run(['oshi-prompt']);
+    expect(none.code).toBe(2);
+    expect(none.cmd).toBeNull();
+  }, 30000);
+
+  it('返事の形が違えば、落ちずにそのまま出す', async () => {
+    const r = await run(['oshi-prompt', 'claude'], { tool: 'claude' });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('"tool"');
+  }, 30000);
+
+  it('道具の名前は番頭の OSHI_CHARKIT_TOOLS と同じ。使い方にも出る', async () => {
+    const { ctx } = setup();
+    const src = fs.readFileSync(AGENT, 'utf8');
+    const list = /const OSHI_PROMPT_TOOLS = \[([^\]]*)\]/.exec(src)[1].match(/'([a-z]+)'/g).map((s) => s.slice(1, -1));
+    expect(list).toEqual(ctx.OSHI_CHARKIT_TOOLS().map((t) => t.key));
+    expect((await run(['--help'])).out).toContain('oshi-prompt <chatgpt|gemini|claude|codex>');
+  }, 30000);
+});
+
+describe('スキル banto-oshi-chara', () => {
+  const skill = fs.readFileSync('kit/.claude/skills/banto-oshi-chara/SKILL.md', 'utf8');
+  const agents = fs.readFileSync('kit/AGENTS.md', 'utf8');
+
+  it('AGENTS.md の「必要なときに読むスキル」から辿れる', () => {
+    const part = agents.split('## 必要なときに読むスキル')[1].split('\n## ')[0];
+    expect(part).toContain('`banto-oshi-chara`');
+    expect(part).toContain('`oshi-prompt');
+  });
+
+  it('頼み文の取り方・切り分けの確かめ・ファイルの名前・入れ方 (画面) を書いている', () => {
+    expect(skill).toContain('node agent.mjs oshi-prompt codex');
+    expect(skill).toContain('node agent.mjs oshi-prompt claude');
+    expect(skill).toContain('利用者に確かめてから');
+    expect(skill).toContain('oshi/<表情の key>.png');
+    expect(skill).toContain('oshi/character.json');
+    for (const where of ['AI の答えを貼る', '1枚の表から切り分ける', '緑の背景を抜く', '絵を選ぶ']) expect(skill, where).toContain(where);
+  });
+
+  it('実在の人を描かない・名前と所属を書かないことを書いている', () => {
+    expect(skill).toContain('実在の人の名前・所属・肩書き');
+    expect(skill).toContain('オリジナル');
+  });
+
+  it('スキルが挙げる表情の key の例は、番頭の表情にある', () => {
+    const { ctx } = setup();
+    const keys = new Set(ctx.OSHI_STATES().map((s) => s.key));
+    for (const m of skill.matchAll(/oshi\/([a-z0-9]+)\.png/g)) expect(keys.has(m[1]), m[1]).toBe(true);
   });
 });

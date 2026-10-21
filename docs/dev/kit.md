@@ -83,3 +83,7 @@
 - **`style` (命令 `workStyle`) の手伝い方の言葉は番頭の `WORK_STYLE_AXES()` の `support` が本体。** スキル `banto-style` の表は
   それを具体的な動きにしたもので、食い違ったら返事の行に従うと書いてある。極を足したら表にも足す
   (`test/kit-commands.test.js` の「番頭の軸と極を全部挙げている」が見ている)。返事は囲いに入れて出す (VIEWS)
+- **`oshi-prompt` (命令 `oshiPrompt`) だけは囲わずに出す** (VIEWS の `plain`)。返すのは番頭の定義 (`oshiCharKitPrompt`) の字だけで、
+  人が書いた字を含まないため (利用者が AI の道具に貼り、Codex にはそのまま手順になる)。人の字が混ざる返事を `plain` にしない。
+  道具の名前 (`OSHI_PROMPT_TOOLS`) は番頭の `OSHI_CHARKIT_TOOLS()` の写しで、`test/kit-commands.test.js` が揃っているかを見ている。
+  手順はスキル `banto-oshi-chara`。番頭に絵を入れる命令は置かない (入れるのは人が推しの頁で行う)
