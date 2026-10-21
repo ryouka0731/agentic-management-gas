@@ -1,0 +1,65 @@
+{
+  "note": "satomi の絵の切り出し表。normal.webp は並んだ絵の上2段 (見出しを除く) の下に1枚ずつの絵を2つ、chibi.webp は下1段 (見出しを除く) の下に1枚ずつの絵を6つ並べたもの。cells は枠 [x, y, 幅, 高さ]、states は表情ごとに使う枠の名前。使わない枠も残す。scripts/cut-oshi-sheet.mjs が読む",
+  "cells": {
+    "normal": {
+      "smile": {"box": [0, 0, 269, 310], "cut": [0, 0, 262, 310]},
+      "laugh": {"box": [269, 0, 249, 310], "cut": [269, 0, 243, 310]},
+      "coffee": {"box": [518, 0, 202, 310], "cut": [534, 0, 238, 310]},
+      "ok_wink": {"box": [720, 0, 323, 310], "cut": [788, 0, 240, 310]},
+      "think": {"box": [1043, 0, 225, 310], "cut": [1058, 0, 204, 310]},
+      "hands_cheeks": {"box": [1268, 0, 268, 310], "cut": [1275, 0, 261, 310]},
+      "cheer": {"box": [0, 310, 236, 326], "cut": [0, 310, 219, 326]},
+      "laptop": [220, 310, 307, 326],
+      "calc": [527, 310, 289, 326],
+      "binders": [816, 310, 242, 326],
+      "hearts": [1058, 310, 226, 326],
+      "cozy": [1284, 310, 252, 326],
+      "calc_single": [0, 636, 512, 512],
+      "cheer_single": [512, 636, 512, 512]
+    },
+    "chibi": {
+      "neutral": [0, 0, 175, 250],
+      "wave": [175, 0, 200, 250],
+      "laptop": [375, 0, 193, 250],
+      "calc": [568, 0, 150, 250],
+      "idea": [718, 0, 197, 250],
+      "binders": [915, 0, 205, 250],
+      "cozy": [1120, 0, 172, 250],
+      "blanket": [1292, 0, 244, 250],
+      "neutral_single": [0, 250, 512, 512],
+      "wave_single": [512, 250, 512, 512],
+      "cozy_single": [1024, 250, 512, 512],
+      "calc_single": [1536, 250, 512, 512],
+      "laptop_single": [2048, 250, 512, 512],
+      "idea_single": [2560, 250, 512, 512]
+    }
+  },
+  "states": {
+    "chibi": {
+      "idle": "neutral_single",
+      "praise": "calc_single",
+      "celebrate": "wave_single",
+      "cheer": "idea",
+      "worry": "binders",
+      "sleepy": "blanket",
+      "surprise": "idea_single",
+      "grow1": "neutral",
+      "grow2": "wave",
+      "grow3": "cozy_single",
+      "work": "laptop_single"
+    },
+    "normal": {
+      "idle": "smile",
+      "praise": "ok_wink",
+      "celebrate": "cheer_single",
+      "cheer": "laugh",
+      "worry": "binders",
+      "sleepy": "cozy",
+      "surprise": "hands_cheeks",
+      "grow1": "think",
+      "grow2": "coffee",
+      "grow3": "hearts",
+      "work": "laptop"
+    }
+  }
+}
