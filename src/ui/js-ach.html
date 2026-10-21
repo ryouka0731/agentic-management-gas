@@ -153,11 +153,16 @@
     if (!res || !res.on) return;
     achLast = res;
     try {
-      // 揃える前の Lv (上がった分で新しく分かるプロフィールを数える)
+      // 新しく分かるプロフィールの数は、揃える前の推しの返事で数える (揃えると推しの頁は取り直しに入り、返事が空になる)
       var before = oshiData && oshiData.growth ? Number(oshiData.growth.level) || 0 : 0;
+      var opened = oshiProfileOpening(before, Number(res.level) || 0);
       achSyncOshi(res);
       achRefreshViews(res);
-      if (res.newly && res.newly.length) achCelebrate(res, before);
+      if (res.newly && res.newly.length) {
+        // 推しの頁が出ていれば、Lv で分かるプロフィールとクリアを取り直す (どこまで見せるかはサーバが決める)
+        oshiRevealRefresh();
+        achCelebrate(res, opened);
+      }
     } catch (e) {
       if (window.console) console.warn('実績を出せませんでした', e);
     }
@@ -179,8 +184,6 @@
     Array.prototype.forEach.call(document.querySelectorAll('.oshi-growth'), function (old) {
       old.parentNode.replaceChild(makeOshiGrowth(g), old);
     });
-    // 推しの頁が出ていれば、Lv で分かるプロフィールとクリアを取り直す (どこまで見せるかはサーバが決める)
-    oshiRevealRefresh();
   }
 
   /** 出ている実績の頁とホームのカードを描き直す。絞って数え直した返事 (partial) では頁を描き直さない (手がかりが欠ける) */
@@ -198,16 +201,15 @@
    * 上がった Lv で推しのプロフィールが新しく分かれば、その数を添える。全部取ったら「クリア」と添える。
    *
    * @param {object} res
-   * @param {number} [before] 揃える前の推しの Lv (分からなければ 0)
+   * @param {number} [opened] 新しく分かった推しのプロフィールの項目の数 (achGot が揃える前に数える)
    */
-  function achCelebrate(res, before) {
+  function achCelebrate(res, opened) {
     if (!achCheerOn()) return;
     var got = res.newly;
     var first = got[0];
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
-    var opened = oshiProfileOpening(Number(before) || 0, Number(res.level) || 0);
     var all = (res.items || []).length > 0 && res.items.every(function (it) { return it.done; });
     achToast(first.icon, text + ' ・ 推しの Lv ' + res.level + (res.crossed ? ' (' + res.stage.label + 'になりました)' : '') +
       (opened ? ' ・ 推しのプロフィールが ' + opened + ' つ分かりました' : '') +

@@ -43,6 +43,8 @@ export function createFakeGas() {
       getId: () => id,
       getName: () => f._name,
       setName: (n) => { f._name = n; return f; },
+      // 中身を書き換える (実機の File.setContent と同じく字で)
+      setContent: (c) => { f._content = String(c); f._updated = new Date(); return f; },
       getMimeType: () => f._mime,
       getUrl: () => 'https://example.invalid/d/' + id,
       // 実機と同じく、変わらない限り同じ時刻を返す。呼ぶたびに今を返すと、
