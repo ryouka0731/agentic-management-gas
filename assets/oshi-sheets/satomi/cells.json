@@ -1,5 +1,5 @@
 {
-  "note": "satomi の絵の切り出し表。normal.webp は並んだ絵の上2段 (見出しを除く) の下に1枚ずつの絵を2つ、chibi.webp は下1段 (見出しを除く) の下に1枚ずつの絵を6つ並べたもの。cells は枠 [x, y, 幅, 高さ]、states は表情ごとに使う枠の名前。使わない枠も残す。scripts/cut-oshi-sheet.mjs が読む",
+  "note": "satomi の絵の切り出し表。normal.webp は並んだ絵の上2段 (見出しを除く) の下に1枚ずつの絵を2つ、chibi.webp は下1段 (見出しを除く) の下に1枚ずつの絵を6つ並べたもの。cells は枠 [x, y, 幅, 高さ]、states は表情ごとに使う枠の名前。使わない枠も残す。chibi はポーズが8つ (小さい枠と _single は同じポーズ) しか無く表情は11あるので、重なりは避けられない。ずっと出る段の絵 (grow1〜3。待機の顔は段の絵に代わる) と作業中・ねむいを別のポーズにし、重なりは一時の表情どうし (ほめる と おいわい) と、作業部屋でしか出ない作業中 (びっくり と同じポーズ) と、段の絵に隠れる idle に寄せた。表情ごとの絵はバイト単位で別でなければならない (test/oshi.test.js) ので、1つの枠を2つの表情に使わない。scripts/cut-oshi-sheet.mjs が読む",
   "cells": {
     "normal": {
       "smile": {"box": [0, 0, 269, 310], "cut": [0, 0, 262, 310]},
@@ -36,15 +36,15 @@
   },
   "states": {
     "chibi": {
-      "idle": "neutral_single",
+      "idle": "neutral",
       "praise": "calc_single",
-      "celebrate": "wave_single",
+      "celebrate": "calc",
       "cheer": "idea",
       "worry": "binders",
       "sleepy": "blanket",
-      "surprise": "idea_single",
-      "grow1": "neutral",
-      "grow2": "wave",
+      "surprise": "laptop",
+      "grow1": "neutral_single",
+      "grow2": "wave_single",
       "grow3": "cozy_single",
       "work": "laptop_single"
     },

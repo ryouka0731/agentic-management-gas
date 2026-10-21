@@ -272,6 +272,8 @@ describe('共有ドライブの持ち主と管理者', () => {
     expect(ctx.driveMembers_('drive-1')).toEqual({
       owners: ['tester@example.com', 'boss@example.com'],
       admins: ['tester@example.com', 'boss@example.com', 'manager@example.com', 'writer@example.com'],
+      // グループの役割がある (何人いるか分からない)
+      wide: true,
     });
   });
 

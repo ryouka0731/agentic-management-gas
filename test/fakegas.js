@@ -165,6 +165,10 @@ export function createFakeGas() {
         return fo._editors.map((e) => ({ getEmail: () => e }));
       },
       _addEditor: (email) => { fo._editors.push(email); return fo; },
+      // 誰に開いているか (DriveApp.Access の値)。既定は持ち主と名指しした人だけ
+      _access: 'PRIVATE',
+      getSharingAccess: () => fo._access,
+      _setAccess: (a) => { fo._access = a; return fo; },
     };
     folders.set(id, fo);
     return fo;
@@ -175,7 +179,7 @@ export function createFakeGas() {
   const DriveApp = {
     createFolder: (n) => makeFolder(n, rootFolder.getId()),
     getRootFolder: () => rootFolder,
-    Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+    Access: { ANYONE: 'ANYONE', ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', DOMAIN: 'DOMAIN', DOMAIN_WITH_LINK: 'DOMAIN_WITH_LINK', PRIVATE: 'PRIVATE' },
     Permission: { VIEW: 'VIEW' },
     getFolderById: (id) => {
       const fo = folders.get(id);

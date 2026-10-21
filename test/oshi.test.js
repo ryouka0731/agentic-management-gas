@@ -420,7 +420,7 @@ describe('手引き (docs/manual/oshi.md)', () => {
   });
 
   it('表情・口調の名前と、上限の数は定義と同じ', () => {
-    for (const s of pure.OSHI_STATES()) expect(text, s.label).toContain(s.label.replace(/^育ち\d /, ''));
+    for (const s of pure.OSHI_STATES()) expect(text, s.label).toContain(s.label);
     for (const t of pure.OSHI_TONES()) expect(text, t.label).toContain(t.label);
     const lim = pure.OSHI_IMAGE_LIMITS();
     expect(text).toContain(Math.round(lim.maxBytes / 1024 / 1024) + 'MB');

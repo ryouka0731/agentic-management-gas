@@ -90,8 +90,11 @@
 (`reveal.maxLevel`) も同じものを使う。**外すのはチームと環境の理由だけ** (1人・チームの `goals.enabled` / `usage.enabled`・共有カレンダーが無い)。
 自分の設定 (`usage.self` / `oshi.on` / `focus.start` / `calendar.plan`) で止めているものは外さず、`achPersonalTips_` が手がかりを出すだけ
 (自分で切るだけでクリアに届き、クリアは消えないので取り返せない)。1人かどうか (`achSolo_`) は、Drive (共有ドライブなら `driveMembers_` の admins、
-マイドライブなら入れ物の持ち主と `getEditors`) が1人と言い、**しかも台帳 (members / pulls / reviews / issue_comments / issues の担当 / usage) に
-本人のほかのアドレスが無いときだけ** 1人 (ドメインやリンクでの共有は getEditors に出ない)。答えは CacheService `ACH_PEOPLE:<小文字のアドレス>` に
+マイドライブなら入れ物の持ち主と `getEditors`) が1人と言い、**しかも台帳 (members / pulls の作った人と確認を頼まれた人 (reviewers) /
+reviews / issue_comments / issues の担当 / usage) に本人のほかのアドレスが無いときだけ** 1人。**グループ・ドメイン・リンクでの共有があれば
+何人いるか分からないので `unknown`** (共有ドライブは役割に type が user 以外のもの (group / domain / anyone) があるとき、`driveMembers_` が
+`wide` を立てる。マイドライブは入れ物の `getSharingAccess()` が PRIVATE でないとき。読めなければ unknown。どちらも getEditors や
+admins には出ない)。答えは CacheService `ACH_PEOPLE:<小文字のアドレス>` に
 覚える (1人・ほかの人がいる は10分、読めなかった `unknown` は2分)。**読めないときは1人と言わない。** 取れる実績が増えても、覚えたクリアはそのまま
 (`apiAchievements` の `cleared`。届いたその返事だけ `clearedNow`)。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
 命令 `oshiProfileSet`。どれも `oshiBuiltinProfileSet_` → `repoAssertAdmin_`)。テストの中身は作り話 (「テストの好物」など) にする。
