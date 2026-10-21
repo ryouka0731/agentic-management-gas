@@ -29,6 +29,7 @@ Google Workspace の文書（Docs / Sheets / Slides）に、Git 相当の版管�
 | 使われ方 | どこが押され、どの画面が開かれたか。前の期間との比較・曜日・CSV | [使われ方](docs/manual/usage.md) |
 | 設定 | 自分の設定とチームの設定 (`PREFS_SCHEMA()` の全項目) | [設定](docs/manual/settings.md) |
 | 目標 | OKR・MBO・KPI を期ごとに立てて上長が承認。済ませたやることから進み具合と自動の見立て (評価は上長。既定オフ) | [目標](docs/manual/goals.md) |
+| 作業雑談部屋 | Google Meet / Slack の部屋を並べ、いま誰がいるかを見る。会話は Meet / Slack の中で、番頭は記録しない (既定オフ) | [作業雑談部屋](docs/manual/cowork.md) |
 | 仕事のスタンス診断 | 20問で16の型。おすすめの使い方・共有用の札・手元の Claude が手伝い方を合わせる (遊びの診断。結果は本人だけ) | [仕事のスタンス診断](docs/manual/work-style.md) |
 | 手元から動かす | Drive 上のコマンドキューと、配る道具 (`agent.mjs`) | [コマンドキュー](docs/manual/command-queue.md) / [手元の道具](docs/manual/agent-kit.md) |
 

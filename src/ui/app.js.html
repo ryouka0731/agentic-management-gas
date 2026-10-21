@@ -710,6 +710,7 @@
     sprint: 'clock',
     impediments: 'alert-triangle',
     goals: 'compass',
+    cowork: 'user',
   };
 
   /**
@@ -3465,7 +3466,8 @@
     settings: function () { loadSettingsPanel(); },
     sprint: function () { loadSprint(); },
     impediments: function () { loadImpediments(); },
-    goals: function () { loadGoals(); }
+    goals: function () { loadGoals(); },
+    cowork: function () { loadCowork(); }
   };
 
   /**
@@ -3506,7 +3508,7 @@
       home: panelHome, docs: panelDocs, content: panelContent, history: panelHistory,
       drafts: panelDrafts, branches: panelBranches, pulls: panelPulls, issues: panelIssues,
       help: panelHelp, report: panelReport, usage: panelUsage, settings: panelSettings,
-      sprint: panelSprint, impediments: panelImpediments, goals: panelGoals
+      sprint: panelSprint, impediments: panelImpediments, goals: panelGoals, cowork: panelCowork
     };
   }
 
@@ -3547,7 +3549,7 @@
         home: 'ホーム', docs: '文書', branches: '改訂中の版', pulls: '確認依頼',
         issues: 'やること', board: '進捗ボード', help: '使い方',
         settings: '設定', sprint: termOf('sprint'), impediments: termOf('impediment'),
-        usage: '使われ方', report: '要望・不具合', goals: '目標',
+        usage: '使われ方', report: '要望・不具合', goals: '目標', cowork: '作業雑談部屋',
       };
       titleEl.textContent = names[currentTab] || '文書';
       branchChip.hidden = true;

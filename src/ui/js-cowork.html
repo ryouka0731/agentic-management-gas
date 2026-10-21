@@ -1,0 +1,534 @@
+  // ===== 作業雑談部屋 =====
+  //
+  // チームの設定 cowork.enabled (既定オフ) がオンのときだけ、左に「作業雑談部屋」を出す。管理者が決めた
+  // Google Meet / Slack の部屋に「入る」と、部屋が新しいタブで開き、いまいる人としてチームに名前が見える。
+  // **番頭は Meet / Slack の API を呼ばない。** 話すのは Meet / Slack の中で、番頭はリンクを開くだけ。
+  // いる印はサーバのキャッシュにだけあり、最後の合図から2分で消える (src/core/Cowork.gs)。
+  //
+  // 合図は入っているあいだ1分ごと。番頭のタブが裏に回っても (Meet の画面を見ているあいだ) 送り続け、
+  // 裏のまま COWORK_HIDDEN_GRACE_MS を過ぎたら止める (開いたまま忘れた人を、いつまでも「いる」にしない)。
+  // 戻ってきたらすぐ送り直す。閉じたときは何も送れないので、2分で消えるのに任せる。
+
+  var navCowork = document.getElementById('nav-cowork');
+  var panelCowork = document.getElementById('panel-cowork');
+  var coworkRoomsEl = document.getElementById('cowork-rooms');
+  var coworkRefreshBtn = document.getElementById('cowork-refresh');
+
+  /** 裏に回ったまま合図を送り続ける長さ (ミリ秒) */
+  var COWORK_HIDDEN_GRACE_MS = 30 * 60 * 1000;
+
+  /** 最後に届いた apiCoworkRooms の返り */
+  var coworkState = null;
+  /** この画面で入っている部屋の id ('' なら入っていない) */
+  var coworkMine = '';
+  /** 合図の時計 */
+  var coworkTimer = null;
+  /** 裏に回った時刻 (0 なら表) */
+  var coworkHiddenAt = 0;
+
+  function coworkOn() {
+    return !!(prefs && prefs.effective && prefs.effective.cowork && prefs.effective.cowork.enabled);
+  }
+
+  /** 設定が届いたら、左の行き先を出し入れする。オフにしたら合図を止め、部屋の画面から出る */
+  function coworkPrefsChanged() {
+    if (navCowork) navCowork.hidden = !coworkOn();
+    if (coworkOn()) return;
+    coworkMine = '';
+    coworkStopTimer();
+    if (currentTab === 'cowork') switchTab('home');
+  }
+
+  if (coworkRefreshBtn) coworkRefreshBtn.addEventListener('click', function () { loadCowork(); });
+
+  /** 部屋の画面を開いた (TAB_LOADERS) */
+  function loadCowork() {
+    if (!coworkOn()) return;
+    if (!coworkState) showSkeleton(coworkRoomsEl, 'list', 2);
+    var still = latest('cowork');
+    call('apiCoworkRooms', [], still.only(function (res) {
+      coworkApply(res);
+    }), failInto(coworkRoomsEl));
+    coworkEnsureTimer();
+  }
+
+  /**
+   * 届いた様子を当てる。入っている部屋はこの画面の覚えを先にする (返事が古いことがある)。
+   * 画面を開き直したときは、サーバに残っている印から入っている部屋を戻す。
+   */
+  function coworkApply(res) {
+    if (!res) return;
+    coworkState = res;
+    if (!coworkMine && res.myRoomId) {
+      coworkMine = res.myRoomId;
+      coworkEnsureTimer();
+    }
+    if (currentTab === 'cowork') renderCowork();
+  }
+
+  function renderCowork() {
+    coworkRoomsEl.textContent = '';
+    var res = coworkState || { rooms: [] };
+    var about = document.createElement('p');
+    about.className = 'row-meta cowork-about';
+    about.textContent = '「入る」を押すと、Google Meet か Slack の部屋が新しいタブで開き、ここにあなたの名前が出ます。' +
+      '話すのは Meet / Slack の中です。番頭は誰が入ったかを記録せず、最後の合図から ' +
+      Math.round((res.expireSeconds || 120) / 60) + '分で名前は消えます。';
+    coworkRoomsEl.appendChild(about);
+    if (res.available === false) {
+      coworkRoomsEl.appendChild(makePill('いまは、いる人を出せません (部屋は開けます)', 'chip'));
+    }
+    var rooms = res.rooms || [];
+    if (!rooms.length) {
+      coworkRoomsEl.appendChild(makeBlankState('部屋はまだありません',
+        '管理者が設定の画面の「作業雑談部屋」で部屋を足すと、ここに出ます'));
+      return;
+    }
+    var list = document.createElement('div');
+    list.className = 'cowork-list';
+    rooms.forEach(function (room) { list.appendChild(makeCoworkRoom(room)); });
+    coworkRoomsEl.appendChild(list);
+  }
+
+  /** 名前だけの顔 (アドレスは受け取っていないので makeAvatar は使えない。形は .avatar のまま) */
+  function makeCoworkAvatar(name) {
+    var el = document.createElement('span');
+    el.className = 'avatar';
+    el.textContent = String(name || '?').charAt(0).toUpperCase();
+    el.setAttribute('aria-hidden', 'true');
+    return el;
+  }
+
+  function makeCoworkRoom(room) {
+    var card = document.createElement('article');
+    card.className = 'cowork-room';
+    card.dataset.room = room.id;
+    var inHere = coworkMine === room.id;
+    if (inHere) card.classList.add('is-mine');
+
+    var head = document.createElement('div');
+    head.className = 'cowork-room-head';
+    var title = document.createElement('h3');
+    title.className = 'cowork-room-name';
+    title.textContent = room.name;
+    head.appendChild(title);
+    head.appendChild(makePill(room.kind, 'chip'));
+    var count = document.createElement('span');
+    count.className = 'row-meta cowork-count';
+    count.textContent = 'いま ' + (room.count || 0) + ' 人';
+    head.appendChild(count);
+    card.appendChild(head);
+
+    var people = room.people || [];
+    if (!people.length) {
+      var none = document.createElement('p');
+      none.className = 'row-meta cowork-empty';
+      none.textContent = 'いまは誰もいません';
+      card.appendChild(none);
+    } else {
+      var ul = document.createElement('ul');
+      ul.className = 'cowork-people';
+      people.forEach(function (p) {
+        var li = document.createElement('li');
+        li.className = 'cowork-person';
+        li.appendChild(makeCoworkAvatar(p.name));
+        var name = document.createElement('span');
+        name.className = 'cowork-person-name';
+        name.textContent = p.name + (p.mine ? ' (あなた)' : '');
+        li.appendChild(name);
+        if (p.focus) li.appendChild(makePill('集中中', 'chip'));
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'cowork-actions';
+    if (inHere) {
+      var leave = document.createElement('button');
+      leave.type = 'button';
+      leave.className = 'btn cowork-leave';
+      leave.textContent = '出る';
+      leave.addEventListener('click', function () { coworkLeave(room); });
+      actions.appendChild(leave);
+      var again = document.createElement('button');
+      again.type = 'button';
+      again.className = 'btn cowork-reopen';
+      again.textContent = '部屋をもう一度開く';
+      again.addEventListener('click', function () { coworkOpen(room); });
+      actions.appendChild(again);
+      var note = document.createElement('span');
+      note.className = 'row-meta';
+      note.textContent = '「出る」は名前を消すだけです。Meet / Slack の画面はそちらで閉じてください';
+      actions.appendChild(note);
+    } else {
+      var enter = document.createElement('button');
+      enter.type = 'button';
+      enter.className = 'btn btn-primary cowork-enter';
+      enter.textContent = '入る';
+      enter.setAttribute('aria-label', room.name + ' に入る (新しいタブで開きます)');
+      enter.addEventListener('click', function () { coworkEnter(room); });
+      actions.appendChild(enter);
+    }
+    card.appendChild(actions);
+    return card;
+  }
+
+  /**
+   * 部屋を新しいタブで開く。**押した聞き手の中で開く** (返事を待ってから開くと、ブラウザが窓を止める)。
+   * リンクはサーバが読み解いた部品から組む (coworkLinkOf_)。開いた先から番頭の頁を触らせない (noopener)。
+   *
+   * @returns {boolean} 開けたか
+   */
+  function coworkOpen(room) {
+    var url = coworkLinkOf_(room.parts);
+    if (!url) {
+      showSnack('この部屋のリンクが読めません。管理者に部屋を直してもらってください', { kind: 'ng' });
+      return false;
+    }
+    window.open(url, '_blank', 'noopener');
+    return true;
+  }
+
+  function coworkEnter(room) {
+    if (!coworkOpen(room)) return;
+    var before = coworkMine;
+    coworkMine = room.id;
+    coworkEnsureTimer();
+    renderCowork();
+    call('apiCoworkEnter', [room.id], function (res) {
+      coworkApply(res);
+      if (res && res.saved === false) {
+        showSnack('部屋は開きました。混み合っていて、まだ名前を出せていません (次の合図で出します)');
+      }
+    }, function (err) {
+      coworkMine = before;
+      if (currentTab === 'cowork') renderCowork();
+      failSnack('部屋に入った印を付けられませんでした: ')(err);
+    });
+  }
+
+  function coworkLeave(room) {
+    coworkMine = '';
+    coworkStopTimerIfIdle();
+    renderCowork();
+    call('apiCoworkLeave', [room.id], function (res) {
+      coworkApply(res);
+      showSnack('部屋を出ました', { kind: 'ok' });
+    }, failQuiet('出た印が届かなくても、合図が止まったので2分で名前は消える'));
+  }
+
+  /** 合図の時計を動かす (入っているか、部屋の画面を見ているあいだ) */
+  function coworkEnsureTimer() {
+    if (coworkTimer || !(coworkMine || currentTab === 'cowork')) return;
+    var every = ((coworkState && coworkState.beatSeconds) || 60) * 1000;
+    coworkTimer = setInterval(coworkTick, every);
+  }
+
+  function coworkStopTimer() {
+    if (coworkTimer) clearInterval(coworkTimer);
+    coworkTimer = null;
+  }
+
+  function coworkStopTimerIfIdle() {
+    if (!coworkMine && currentTab !== 'cowork') coworkStopTimer();
+  }
+
+  /** 裏に回ったまま長く経ったか */
+  function coworkHiddenTooLong() {
+    return !!coworkHiddenAt && Date.now() - coworkHiddenAt > COWORK_HIDDEN_GRACE_MS;
+  }
+
+  /** 1分ごと。入っていれば合図、部屋の画面を見ていれば様子を取り直す。どちらでもなければ止める */
+  function coworkTick() {
+    if (!coworkOn()) {
+      coworkStopTimer();
+      return;
+    }
+    if (coworkMine) {
+      if (coworkHiddenTooLong()) return;
+      coworkBeat();
+      return;
+    }
+    if (currentTab === 'cowork') {
+      if (!document.hidden) coworkRefreshQuiet();
+      return;
+    }
+    coworkStopTimer();
+  }
+
+  function coworkBeat() {
+    var room = coworkMine;
+    var still = latest('cowork');
+    call('apiCoworkBeat', [room], still.only(function (res) {
+      if (coworkMine !== room) return;
+      coworkApply(res);
+    }), function (err) {
+      failQuiet('合図が届かなくても、次の合図で付け直す')(err);
+      // 部屋が外された・オフにされたなら、入っていないことにする (送り続けても断られるだけ)
+      var kind = errorKindOf(err && err.message);
+      if (coworkMine === room && (kind === 'gone' || kind === 'invalid')) {
+        coworkMine = '';
+        coworkStopTimerIfIdle();
+        if (currentTab === 'cowork') renderCowork();
+      }
+    });
+  }
+
+  function coworkRefreshQuiet() {
+    var still = latest('cowork');
+    call('apiCoworkRooms', [], still.only(coworkApply), failQuiet('様子が取れなくても、次の時計でまた取る'));
+  }
+
+  // 裏に回った時刻を覚える。表に戻ったら、入っていればすぐ合図を送る (2分を過ぎて消えていても付け直す)
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      coworkHiddenAt = Date.now();
+      return;
+    }
+    var wasLong = coworkHiddenTooLong();
+    coworkHiddenAt = 0;
+    if (coworkMine && coworkOn() && wasLong) coworkBeat();
+  });
+
+  // ----- 設定の画面: 部屋を決める (管理者だけ) -----
+
+  /**
+   * 作業雑談部屋の節に置く、部屋の一覧の欄。管理者でなければ断り書きだけ。
+   * 打つたびにリンクを画面の中で確かめ (coworkLinkParse_ は src/core/CoworkLink.js の写し)、
+   * 「部屋を保存する」で一覧を丸ごと送る。サーバが読み解き直し、部品だけを覚える。
+   *
+   * @param {boolean} editable
+   * @returns {HTMLElement}
+   */
+  function makeCoworkRoomsEditor(editable) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field cowork-editor';
+    wrap.dataset.pref = 'cowork.rooms';
+    var label = document.createElement('p');
+    label.className = 'pref-label';
+    label.textContent = '部屋 (Google Meet の会議・Slack のハドル・Slack のチャンネル)';
+    wrap.appendChild(label);
+    if (!editable) {
+      var ro = document.createElement('p');
+      ro.className = 'row-meta';
+      ro.textContent = '部屋は管理者が決めます。足したい部屋があれば管理者に頼んでください。';
+      wrap.appendChild(ro);
+      return wrap;
+    }
+    var help = document.createElement('p');
+    help.className = 'row-meta';
+    help.textContent = 'Meet は会議の「会議のリンクをコピー」(meet.google.com/abc-defg-hij)、Slack はハドルの「リンクをコピー」' +
+      'かチャンネルの「リンクをコピー」で写したものを貼ります。番頭が覚えるのはリンクの中のコードと id だけです。';
+    wrap.appendChild(help);
+
+    var rowsEl = document.createElement('div');
+    rowsEl.className = 'cowork-editor-rows';
+    wrap.appendChild(rowsEl);
+
+    var bar = document.createElement('div');
+    bar.className = 'cowork-editor-bar';
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn cowork-add';
+    add.textContent = '部屋を足す';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-primary cowork-save';
+    save.textContent = '部屋を保存する';
+    bar.appendChild(add);
+    bar.appendChild(save);
+    wrap.appendChild(bar);
+
+    var limits = { max: 10, nameMax: 30 };
+
+    function syncAdd() {
+      var n = rowsEl.querySelectorAll('.cowork-editor-row').length;
+      add.disabled = n >= limits.max;
+      attachHint(add, add.disabled ? '部屋は ' + limits.max + ' までです' : '');
+    }
+
+    function addRow(room) {
+      var row = document.createElement('div');
+      row.className = 'cowork-editor-row';
+      var name = document.createElement('input');
+      name.type = 'text';
+      name.className = 'cowork-name-input';
+      name.maxLength = limits.nameMax;
+      name.placeholder = '部屋の名前 (例: もくもく作業)';
+      name.setAttribute('aria-label', '部屋の名前');
+      name.value = room ? room.name : '';
+      var url = document.createElement('input');
+      url.type = 'url';
+      url.inputMode = 'url';
+      url.autocomplete = 'off';
+      url.spellcheck = false;
+      url.maxLength = 300;
+      url.className = 'cowork-link-input';
+      url.placeholder = 'https://meet.google.com/abc-defg-hij';
+      url.setAttribute('aria-label', '部屋のリンク');
+      url.value = room ? room.link : '';
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn cowork-remove';
+      remove.textContent = '外す';
+      remove.addEventListener('click', function () {
+        row.remove();
+        syncAdd();
+      });
+      var check = document.createElement('p');
+      check.className = 'row-meta cowork-link-check pref-music-check';
+      check.setAttribute('role', 'status');
+      check.setAttribute('aria-live', 'polite');
+      var show = function () {
+        var text = url.value.replace(/^\s+|\s+$/g, '');
+        check.classList.remove('is-ng');
+        if (!text) {
+          check.textContent = '';
+          return;
+        }
+        var got = coworkLinkParse_(text);
+        if (!got.ok) {
+          check.classList.add('is-ng');
+          check.textContent = got.error;
+          return;
+        }
+        check.textContent = 'このリンクを使えます: ' + coworkLinkKindLabel_(got.parts);
+      };
+      url.addEventListener('input', show);
+      row.appendChild(name);
+      row.appendChild(url);
+      row.appendChild(remove);
+      row.appendChild(check);
+      rowsEl.appendChild(row);
+      show();
+      syncAdd();
+      return row;
+    }
+
+    function fill(res) {
+      rowsEl.textContent = '';
+      if (res) limits = { max: res.max || limits.max, nameMax: res.nameMax || limits.nameMax };
+      ((res && res.rooms) || []).forEach(addRow);
+      syncAdd();
+    }
+
+    add.addEventListener('click', function () {
+      var row = addRow(null);
+      row.querySelector('.cowork-name-input').focus();
+    });
+
+    save.addEventListener('click', function () {
+      var list = Array.prototype.map.call(rowsEl.querySelectorAll('.cowork-editor-row'), function (row) {
+        return { name: row.querySelector('.cowork-name-input').value, link: row.querySelector('.cowork-link-input').value };
+      });
+      var bad = list.filter(function (r) { return !coworkLinkParse_(r.link).ok; })[0];
+      if (bad) {
+        showSnack('使えないリンクがあります。赤い字のところを直してください', { kind: 'ng' });
+        return;
+      }
+      save.disabled = true;
+      call('apiCoworkSetRooms', [list], function (res) {
+        save.disabled = false;
+        fill(res);
+        // 部屋の画面を見たことがあれば、新しい一覧で描き直す
+        if (coworkState) loadCowork();
+        showSnack('部屋を保存しました', { kind: 'ok' });
+      }, failEnable(save, '保存できませんでした: '));
+    });
+
+    call('apiCoworkRoomSettings', [], fill, failInto(rowsEl));
+    return wrap;
+  }
+
+  // ----- リンクの読み解き (src/core/CoworkLink.js の写し。片方だけ直さない。test/ui-parity.test.js が見ている) -----
+
+  function coworkLinkRe_() {
+    return {
+      meet: /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/,
+      lookup: /^[A-Za-z0-9_-]{2,64}$/,
+      team: /^[TE][A-Z0-9]{6,20}$/,
+      channel: /^[CGD][A-Z0-9]{6,20}$/,
+      workspace: /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
+    };
+  }
+
+  function coworkSlackReserved_() {
+    return ['app', 'www', 'api', 'files', 'status', 'slack-files', 'hooks', 'edgeapi', 'wss', 'downloads', 'my', 'join'];
+  }
+
+  function coworkLinkParse_(url) {
+    var ng = function (text) { return { ok: false, error: text }; };
+    if (typeof url !== 'string') return ng('部屋のリンクを貼ってください');
+    var s = url.replace(/^\s+|\s+$/g, '');
+    if (!s) return ng('部屋のリンクを貼ってください');
+    if (s.length > 300) return ng('リンクが長すぎます。Meet か Slack で写したリンクを貼ってください');
+    if (!/^https:\/\//i.test(s)) return ng('https:// で始まる Google Meet か Slack のリンクを貼ってください');
+    var m = /^https:\/\/([A-Za-z0-9.-]+)(\/[^?#\s]*)?(\?[^#\s]*)?(#\S*)?$/i.exec(s);
+    if (!m) return ng('読めないリンクです。Meet か Slack で写したリンクをそのまま貼ってください');
+    var host = m[1].toLowerCase();
+    var path = (m[2] || '/').replace(/\/+$/, '');
+    var re = coworkLinkRe_();
+
+    if (host === 'meet.google.com') {
+      var meet = /^\/([^/]+)$/.exec(path);
+      if (meet && re.meet.test(meet[1])) return { ok: true, parts: { kind: 'meet', code: meet[1] } };
+      var look = /^\/lookup\/([^/]+)$/.exec(path);
+      if (look && re.lookup.test(look[1])) return { ok: true, parts: { kind: 'meet-lookup', code: look[1] } };
+      return ng('Meet の会議のリンク (meet.google.com/abc-defg-hij) を貼ってください');
+    }
+
+    if (host === 'app.slack.com') {
+      var huddle = /^\/huddle\/([^/]+)\/([^/]+)$/.exec(path);
+      if (huddle && re.team.test(huddle[1]) && re.channel.test(huddle[2])) {
+        return { ok: true, parts: { kind: 'slack-huddle', team: huddle[1], channel: huddle[2] } };
+      }
+      return ng('Slack のハドルのリンク (app.slack.com/huddle/…) を貼ってください');
+    }
+
+    var ws = /^([^.]+)\.slack\.com$/.exec(host);
+    if (ws) {
+      if (!re.workspace.test(ws[1]) || coworkSlackReserved_().indexOf(ws[1]) >= 0) {
+        return ng('Slack のチャンネルのリンク (<名前>.slack.com/archives/…) を貼ってください');
+      }
+      var arch = /^\/archives\/([^/]+)$/.exec(path);
+      if (arch && re.channel.test(arch[1])) {
+        return { ok: true, parts: { kind: 'slack-channel', workspace: ws[1], channel: arch[1] } };
+      }
+      return ng('Slack のチャンネルのリンク (<名前>.slack.com/archives/…) を貼ってください。発言へのリンクは使えません');
+    }
+
+    return ng('Google Meet か Slack のリンクだけ使えます');
+  }
+
+  function coworkLinkPartsValid_(p) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
+    var keys = Object.keys(p).sort().join(',');
+    var re = coworkLinkRe_();
+    var str = function (v) { return typeof v === 'string'; };
+    if (p.kind === 'meet') return keys === 'code,kind' && str(p.code) && re.meet.test(p.code);
+    if (p.kind === 'meet-lookup') return keys === 'code,kind' && str(p.code) && re.lookup.test(p.code);
+    if (p.kind === 'slack-huddle') {
+      return keys === 'channel,kind,team' && str(p.team) && str(p.channel) && re.team.test(p.team) && re.channel.test(p.channel);
+    }
+    if (p.kind === 'slack-channel') {
+      return keys === 'channel,kind,workspace' && str(p.workspace) && str(p.channel) &&
+        re.workspace.test(p.workspace) && coworkSlackReserved_().indexOf(p.workspace) < 0 && re.channel.test(p.channel);
+    }
+    return false;
+  }
+
+  function coworkLinkOf_(p) {
+    if (!coworkLinkPartsValid_(p)) return '';
+    if (p.kind === 'meet') return 'https://meet.google.com/' + p.code;
+    if (p.kind === 'meet-lookup') return 'https://meet.google.com/lookup/' + p.code;
+    if (p.kind === 'slack-huddle') return 'https://app.slack.com/huddle/' + p.team + '/' + p.channel;
+    return 'https://' + p.workspace + '.slack.com/archives/' + p.channel;
+  }
+
+  function coworkLinkKindLabel_(p) {
+    if (!coworkLinkPartsValid_(p)) return '';
+    if (p.kind === 'meet' || p.kind === 'meet-lookup') return 'Google Meet';
+    if (p.kind === 'slack-huddle') return 'Slack ハドル';
+    return 'Slack チャンネル';
+  }
