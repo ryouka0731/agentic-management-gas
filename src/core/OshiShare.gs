@@ -9,7 +9,7 @@
  *   (OshiStore.gs の oshiAssertMine_)。借りた人は直せない
  * - 公開を止める・キャラを消すと、使っていた人は既定のキャラに戻る (oshi.char の検査 oshiCharKnownFor_ が通らなくなり、
  *   表示の道は既定に倒す)
- * - ほかの人に返すのは作った人の表示名 (members の名前) だけで、アドレスは返さない。名前が無ければ「名前未設定」
+ * - ほかの人に返すのは作った人の表示名 (members の名前) だけで、アドレスは返さない。名前が無ければ空 (画面が「ほかの人」と言う)
  * - なつき度・実績・機嫌は使う人ごと (借りても自分のもの)
  */
 
@@ -44,7 +44,7 @@ function oshiSharedFind_(sid, rows) {
 }
 
 /**
- * 作った人の表示名。members の名前だけ (アドレスの一部も見せない)。
+ * 作った人の表示名。members の名前だけ (アドレスの一部も見せない)。名前が無ければ空。
  *
  * @param {string} who 小文字のアドレス
  * @param {object[]} memberRows 読んだ members の行
@@ -56,7 +56,7 @@ function oshiOwnerName_(who, memberRows) {
     var name = String(memberRows[i].name || '').replace(/^\s+|\s+$/g, '');
     if (name) return name.substring(0, 40);
   }
-  return '名前未設定';
+  return '';
 }
 
 /**
