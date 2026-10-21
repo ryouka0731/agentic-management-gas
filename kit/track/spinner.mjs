@@ -169,6 +169,12 @@ export function writeSpinner({ claude, value, backup = false, now = Date.now() }
 function replaceFile(file, body) {
   let target = file;
   let mode = 0o600;
+  let link = null;
+  try { link = fs.lstatSync(file); } catch (e) { link = null; }
+  if (link && link.isSymbolicLink() && !fs.existsSync(file)) {
+    // 先の無いリンク。ふつうのファイルに置き換えると、リンクを張った人の意図が黙って消える
+    throw new Error('設定ファイルが、先の無いリンクです: ' + file);
+  }
   if (fs.existsSync(file)) {
     target = fs.realpathSync(file);
     mode = fs.statSync(target).mode & 0o777;
@@ -293,7 +299,7 @@ export function spinnerStatus({ home, claude }) {
 
 /**
  * 1日1回、せりふを番頭から取り直す。**待たない** (update.tickUpdate と同じ): 命令を置いて spinner.pending に覚え、
- * 返事は次に呼ばれたときに拾う。番頭で使うキャラを変えると、1日のうちに考え中の字も変わる。
+ * 返事は次に呼ばれたときに拾う。最初からいるキャラに替えたときは1日のうちに考え中の字も追いつく (自分のキャラは on で確かめ直す)。
  *
  * - オンにしていない人の settings.json は読みもしない (書かない)
  * - いまの値がこちらで最後に書いたものと違えば (人が手で直した) 書かない。命令も置かない
