@@ -5119,6 +5119,15 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .focus-sound { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--bg-2); }
 .focus-sound-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .focus-ear { margin: 0; }
+/* 自分の曲 (YouTube / SoundCloud の埋め込み)。読み込むまで枠は無い。小さく置き、横にははみ出させない */
+.focus-music-head { margin: 0; font-weight: 600; }
+.focus-music-holder:empty { display: none; }
+.focus-music-frame { display: block; width: 100%; max-width: 100%; border: 0; border-radius: var(--radius-sm); background: var(--bg); }
+.focus-music-frame.is-youtube { aspect-ratio: 16 / 9; height: auto; }
+.focus-music-frame.is-soundcloud { height: 166px; }
+.focus-music-toggle { align-self: flex-start; }
+.pref-music-check { margin: 0; }
+.pref-music-check.is-ng { color: var(--danger); }
 .focus-ring { position: relative; width: 120px; height: 120px; }
 .focus-ring svg { width: 120px; height: 120px; display: block; }
 .focus-ring-track { fill: none; stroke: var(--line); stroke-width: 10; }

@@ -113,6 +113,20 @@ function PREF_FOCUS_ITEMS_() {
       help: '集中しているあいだに、画面の中で作った音 (ノイズ・4つ打ちの拍) を流せます。合う人も合わない人もいます。' +
         '合わなければ止めてください。押したときにだけ鳴り、イヤホンで聞く前提です',
       def: false },
+    { key: 'focus.music', scope: 'me', type: 'enum', section: '集中のしかた', label: '自分の曲',
+      help: '集中しているあいだに、あなたの YouTube か SoundCloud の再生リストを流せます。' +
+        '「読み込む」を押すまでは何も読み込みません。押すと YouTube / SoundCloud につながります',
+      options: [
+        { value: 'off', label: '使わない' },
+        { value: 'own', label: '自分の再生リストを流す' },
+      ],
+      def: 'off' },
+    { key: 'focus.musicUrl', scope: 'me', type: 'music', section: '集中のしかた', label: '自分の曲のリンク',
+      help: 'YouTube は再生リストを開いて「共有」→「コピー」、SoundCloud は曲かプレイリストの「Share」→「Copy」で' +
+        '写したリンクを貼ります。https:// の YouTube (youtube.com / youtu.be) と SoundCloud (soundcloud.com) だけ使えます。' +
+        'SoundCloud の短いリンク (on.soundcloud.com) は、ブラウザで開いて soundcloud.com のアドレスを写してください。' +
+        '番頭が覚えるのはリンクの中の id だけです',
+      def: '' },
   ];
 }
 
@@ -392,6 +406,8 @@ function prefValid_(item, v, email) {
   // 共有カレンダーの id はアドレスの形 (…@group.calendar.google.com)。'' は決まっていない (既定)。
   // 開けるかは貼るとき (apiCalendarSetShared) に見る
   if (item.type === 'calendar') return v === '' || typeof v === 'string' && /^[^\s@<>"']{1,200}@[^\s@<>"']{1,200}$/.test(v);
+  // 自分の曲: 読み解いた部品だけを持つ (FocusMusic.js)。'' は決まっていない (既定)。URL の字そのものは通さない
+  if (item.type === 'music') return v === '' || focusMusicPartsValid_(v);
   if (item.type === 'steps') {
     if (!Array.isArray(v) || v.length !== 3) return false;
     for (var i = 0; i < v.length; i++) {
@@ -508,6 +524,16 @@ function apiPrefSet(key, value) {
   var item = prefItem_(key);
   if (!item) throw new Error('知らない設定です: ' + key);
   var reset = value === null || value === undefined;
+  // 自分の曲は URL の字で受け、読み解いた部品だけを書く (貼られた URL はそのまま持たない)
+  if (!reset && item.type === 'music' && typeof value === 'string') {
+    if (value.replace(/^\s+|\s+$/g, '') === '') {
+      reset = true;
+    } else {
+      var music = focusMusicParse_(value);
+      if (!music.ok) throw new Error(music.error);
+      value = music.parts;
+    }
+  }
   // 検査は1回だけ (oshi.char の検査は台帳を読むので、2回呼ぶと2回読む)
   if (!reset && !prefValid_(item, value, currentEmail_())) {
     if (item.type === 'char') {
@@ -610,7 +636,9 @@ function apiPrefs(opts) {
       fun: fun,
       luck: { on: byKey['luck.on'] === true, reward: byKey['luck.reward'] === true },
       focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
-        remind: plainText(byKey['focus.remind']) },
+        remind: plainText(byKey['focus.remind']), music: plainText(byKey['focus.music']),
+        // 埋め込みの URL は画面が部品から組む (focusMusicEmbedUrl_)。URL の字は渡さない
+        musicParts: focusMusicPlainParts_(prefValueOf_(prefItem_('focus.musicUrl'), me, read).value) },
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']) },
@@ -634,7 +662,22 @@ function prefPlainValue_(item, v) {
   if (item.type === 'bool') return !!v;
   if (item.type === 'int') return plainNumber(v);
   if (item.type === 'steps') return (v || []).map(function (n) { return plainNumber(n); });
+  // 自分の曲は部品から組み直したリンクを見せる (貼った字そのものではない)
+  if (item.type === 'music') return plainText(focusMusicLinkOf_(v));
   return plainText(v);
+}
+
+/**
+ * 自分の曲の部品を画面に渡せる形にする。決まっていなければ null。
+ *
+ * @param {*} v
+ * @returns {{kind: string, video?: string, list?: string, path?: string}|null}
+ */
+function focusMusicPlainParts_(v) {
+  if (!focusMusicPartsValid_(v)) return null;
+  var out = { kind: plainText(v.kind) };
+  ['video', 'list', 'path'].forEach(function (k) { if (v[k]) out[k] = plainText(v[k]); });
+  return out;
 }
 
 /**
