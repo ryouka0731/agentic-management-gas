@@ -567,7 +567,7 @@ function oshiGrowth_(email) {
 
 /**
  * 最初からいるキャラクターの絵 (data URL)。キャラ・形・表情は定義にあるものだけを通す。
- * 絵は src/core/OshiDefault<キャラ><形>.gs (scripts/build-oshi-default.mjs が作る)。
+ * 絵は src/ui/oshi-default/<キャラ>-<形>.html (scripts/build-oshi-default.mjs が作る)。
  *
  * @param {string} char OSHI_BUILTINS の key
  * @param {string} style OSHI_STYLES の key
@@ -582,22 +582,36 @@ function oshiDefaultImage_(char, style, state) {
   return all && Object.prototype.hasOwnProperty.call(all, String(state)) ? all[String(state)] : null;
 }
 
+/** 同じ実行の中で読んだ絵の表 ('キャラ-形' → 表。読めなかったら null) */
+var OSHI_DEFAULT_PICTURES_MEMO_ = {};
+
 /**
- * キャラと形 → 焼いた絵の表。キャラを足したら、ここにも足す (test/oshi.test.js が全部の組を引いて見ている)。
- * 呼ぶのは要るときだけ (焼いたファイルは大きいので、読まないテストもある)。
+ * キャラと形 → 焼いた絵の表 (表情 → data URL)。中身は src/ui/oshi-default/<キャラ>-<形>.html の JSON の字。
+ *
+ * **スクリプト (.gs) に焼かない。** GAS はどの呼び出しでも全部のスクリプトを読み込むので、以前の .gs (合わせて 3.3MB) が
+ * 画面のどの api* も遅くしていた。HTML のファイルは読むときだけ読まれる。読むのは getRawContent (そのままの字)。
+ * createHtmlOutputFromFile は HTML として読み直して中身を変えることがある (src/Main.gs の include と同じ理由)。
+ * ファイルの名前に外から来た字を混ぜないよう、キャラと形は定義の key と同じものだけを通す。同じ実行の中では1回だけ読む。
  *
  * @param {string} char
  * @param {string} style
- * @returns {Object<string,string>|null}
+ * @returns {Object<string,string>|null} 無い・読めないときは null (絵が無い扱い)
  */
 function oshiDefaultPictures_(char, style) {
-  if (char === 'itsuki') return style === 'normal' ? OSHI_DEFAULT_ITSUKI_NORMAL() : OSHI_DEFAULT_ITSUKI_CHIBI();
-  if (char === 'taku') return style === 'normal' ? OSHI_DEFAULT_TAKU_NORMAL() : OSHI_DEFAULT_TAKU_CHIBI();
-  if (char === 'tsujippi') return style === 'normal' ? OSHI_DEFAULT_TSUJIPPI_NORMAL() : OSHI_DEFAULT_TSUJIPPI_CHIBI();
-  if (char === 'ikkun') return style === 'normal' ? OSHI_DEFAULT_IKKUN_NORMAL() : OSHI_DEFAULT_IKKUN_CHIBI();
-  if (char === 'ryoka') return style === 'normal' ? OSHI_DEFAULT_RYOKA_NORMAL() : OSHI_DEFAULT_RYOKA_CHIBI();
-  if (char === 'satomi') return style === 'normal' ? OSHI_DEFAULT_SATOMI_NORMAL() : OSHI_DEFAULT_SATOMI_CHIBI();
-  return null;
+  var c = OSHI_BUILTINS().filter(function (b) { return b.key === char; })[0];
+  var st = OSHI_STYLES().filter(function (x) { return x.key === style; })[0];
+  if (!c || !st) return null;
+  var key = c.key + '-' + st.key;
+  if (Object.prototype.hasOwnProperty.call(OSHI_DEFAULT_PICTURES_MEMO_, key)) return OSHI_DEFAULT_PICTURES_MEMO_[key];
+  var out = null;
+  try {
+    var parsed = JSON.parse(HtmlService.createTemplateFromFile('ui/oshi-default/' + key).getRawContent());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) out = parsed;
+  } catch (e) {
+    console.warn('最初からいるキャラの絵を読めませんでした: ' + key + ' ' + e);
+  }
+  OSHI_DEFAULT_PICTURES_MEMO_[key] = out;
+  return out;
 }
 
 /**
