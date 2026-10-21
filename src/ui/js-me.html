@@ -295,6 +295,9 @@
       showSnack('ホームに案内を出しました', { kind: 'ok' });
     });
     out.push(again);
+    // 推しがオンの人にだけ、推しの頁への入口を出す
+    var oshi = makeOshiMeButton();
+    if (oshi) out.push(oshi);
     out.push(makeProgressToggle());
     // 集中のしかたの記録と技の図鑑 (本人にだけ。オフなら出さない)
     var focusRecord = makeFocusRecordButton();

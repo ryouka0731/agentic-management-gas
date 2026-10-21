@@ -1,0 +1,1483 @@
+  // ===== 推し (既定はオン。利用者が決めた例外。既定のキャラはタク) =====
+  //
+  // 自分の設定の「推し」(oshi.on) をオンにした人の画面にだけ出す。自分で作ったキャラクターの絵を上げると、
+  // 済ませたときに隅の吹き出しでほめ、ホームであいさつし、活動に合わせて育つ。
+  //
+  // 表情・口調・場面・せりふ・作り方の頼み文・上限はサーバの src/core/Oshi.js が唯一の定義で、
+  // ここは apiOshiGet の返事を使うだけ (写しを持たない)。ここが持つのは「成功した api の名前 → 場面」
+  // (OSHI_CALL_EVENTS) だけ。FUN_CHEERS と同じく call() の成功の枝から呼ぶ。
+  //
+  // 守ること:
+  // - 字は textContent だけで置く。画像は自分の推しの data URL だけ (外から何も取ってこない)
+  // - キャラクターは叱らない。うまくいかなかったときは「しんぱい」でやさしく寄り添う
+  // - 吹き出しは押せば閉じ、しばらくで消える。動きを減らす設定では、ふわっと出る動きを止める
+  // - 連続日数は数えない。「久しぶり」は端末に最後に開いた日だけを覚える
+
+  /** 吹き出しを出しておく長さ (ミリ秒) */
+  var OSHI_BUBBLE_MS = 6000;
+  /** これだけ日が空くと「久しぶり」と言う */
+  var OSHI_BACK_DAYS = 3;
+
+  /** apiOshiGet の最後の返事。オフの人は取らない */
+  var oshiData = null;
+  var oshiLoading = false;
+  var oshiWaiters = [];
+  /** 中身の指紋 → data URL。同じ画像を取り直さない (サーバはキャッシュに置かない) */
+  var oshiImgs = {};
+  /**
+   * 最初からいるキャラの絵。'キャラ:形:表情' → data URL。開いているあいだだけ覚える
+   * (最初のページには入れず、吹き出し・カード・頁・設定の選び方が要るときに apiOshiDefaultImage で1枚ずつ取る)
+   */
+  var oshiDefaultImgs = {};
+  /** 取りに行っている最中の 'キャラ:形:表情' → 待っている cb。同じ絵を2回取りに行かない */
+  var oshiDefaultWaiting = {};
+  /** 最後に見た「どのキャラを使うか」の設定。変わったら取り直す (名前・口調・絵が変わる) */
+  var oshiDefaultSeen = null;
+  /** 推しの頁で直している自分のキャラの番号 (0 なら、使っているキャラか最初の1人) */
+  var oshiEditing = 0;
+  /** 場面 → 次に出すせりふの番 (順に回す) */
+  var oshiTurn = {};
+  var oshiBubbleTimer = null;
+  /** 吹き出しを出した回数。遅れて届いた画像が、もう別の吹き出しなら差し込まない */
+  var oshiBubbleShown = 0;
+  var oshiBackChecked = false;
+
+  /**
+   * 済ませた操作 → 場面。**唯一の表。** 名前で引き、値は場面の key か、引数を見て決める関数。
+   * 関数にしてあるのは、call() が読み込みの途中で呼ばれても引けるようにするため。
+   *
+   * @returns {Object<string, string|function(Array): string>}
+   */
+  function OSHI_CALL_EVENTS() {
+    return {
+      apiIssueClose: 'done',
+      apiProjectMove: function (args) {
+        if (args && args[1] === 'Done') return 'done';
+        if (args && args[1] === 'In Progress') return 'start';
+        return '';
+      },
+      apiIssueCreateBranch: 'start',
+      apiPrMerge: 'merge',
+      apiPrReview: function (args) { return args && args[1] === 'approve' ? 'approve' : ''; },
+      apiPrCreate: 'ask',
+      apiCommit: 'save',
+      apiCommitMany: 'save',
+      apiSaveMarkdown: 'save',
+    };
+  }
+
+  /** 推しがオンか。設定が届くまではオフ */
+  function oshiOn() {
+    var o = prefs && prefs.effective && prefs.effective.oshi;
+    return !!(o && o.on === true);
+  }
+
+  /**
+   * 最初からいるキャラの名指し ('builtin:<key>') から key。それ以外は空。
+   *
+   * @param {string} v
+   * @returns {string}
+   */
+  function oshiBuiltinKeyOf(v) {
+    var m = /^builtin:([a-z]+)$/.exec(String(v || ''));
+    return m ? m[1] : '';
+  }
+
+  /** 自分のキャラの絵が無い表情に出す、最初からいるキャラの key (自分の設定 oshi.fallback)。出さないなら空 */
+  function oshiFallbackKey() {
+    return oshiOn() ? oshiBuiltinKeyOf(prefs.effective.oshi.fallback) : '';
+  }
+
+  /**
+   * 絵の無い表情に出す最初からいるキャラ。最初からいるキャラを使っていればそのキャラ、自分のキャラなら oshi.fallback。
+   *
+   * @param {object} [c] 自分のキャラ (apiOshiGet の mine の1つ)。省くと、いま使うキャラ
+   * @returns {string} key。出さないなら空
+   */
+  function oshiPictureBuiltin(c) {
+    if (!oshiOn()) return '';
+    if (!c && oshiData && oshiData.kind === 'builtin') return oshiData.builtinKey || '';
+    return oshiFallbackKey();
+  }
+
+  /** 最初からいるキャラの絵の形 (chibi / normal)。知らない値はサーバの既定に任せず 2頭身 */
+  function oshiStyle() {
+    var st = oshiOn() ? prefs.effective.oshi.style : '';
+    return st === 'normal' ? 'normal' : 'chibi';
+  }
+
+  /** ホームのカードを出すか */
+  function oshiHomeOn() {
+    return oshiOn() && !(prefs.effective.oshi.home === false);
+  }
+
+  /**
+   * 推しを取る。取ってあればそれを渡す。取れなくても使えるので黙る。
+   *
+   * @param {function(object)} [cb]
+   */
+  function oshiLoad(cb) {
+    // 読み込みの途中 (この部分ファイルの var より前) に呼ばれても落ちない
+    if (!oshiWaiters) oshiWaiters = [];
+    if (oshiData) {
+      if (cb) cb(oshiData);
+      return;
+    }
+    if (cb) oshiWaiters.push(cb);
+    if (oshiLoading) return;
+    oshiLoading = true;
+    var quiet = failQuiet('推しが出なくても使える');
+    call('apiOshiGet', [], function (d) {
+      oshiLoading = false;
+      oshiData = d || null;
+      var waiting = oshiWaiters.splice(0, oshiWaiters.length);
+      if (oshiData) waiting.forEach(function (fn) { fn(oshiData); });
+    }, function (err) {
+      oshiLoading = false;
+      oshiWaiters.length = 0;
+      quiet(err);
+    });
+  }
+
+  /** 取り直す (名前・口調・画像を変えたあと) */
+  function oshiReload(cb) {
+    oshiData = null;
+    oshiLoad(cb);
+  }
+
+  /**
+   * 設定が届いた・変わった (applyPrefs から呼ぶ)。オフにしたら吹き出しとカードを外す。
+   */
+  function oshiPrefsChanged() {
+    var seen = oshiOn() ? String(prefs.effective.oshi.char) + '|' + String(prefs.effective.oshi.fallback) : '';
+    if (oshiDefaultSeen !== null && seen !== oshiDefaultSeen) oshiData = null;
+    oshiDefaultSeen = seen;
+    if (!oshiOn()) {
+      oshiHide(true);
+      var card = document.querySelector('.oshi-card');
+      if (card) card.remove();
+      return;
+    }
+    if (!oshiHomeOn()) {
+      var c = document.querySelector('.oshi-card');
+      if (c) c.remove();
+    }
+    oshiLoad(function () { oshiCheckBack(); });
+  }
+
+  /** 東京の暦日 'YYYY-MM-DD' */
+  function oshiDay(d) {
+    var t = new Date(d.getTime() + 9 * 3600000);
+    return t.toISOString().slice(0, 10);
+  }
+
+  /** 東京の時刻 (0〜23) */
+  function oshiHour(d) {
+    return new Date(d.getTime() + 9 * 3600000).getUTCHours();
+  }
+
+  /**
+   * 久しぶりか。端末に最後に開いた日だけを覚える (連続日数は数えない)。開くたび1回だけ見る。
+   */
+  function oshiCheckBack() {
+    if (oshiBackChecked) return;
+    oshiBackChecked = true;
+    var today = oshiDay(new Date());
+    var last = '';
+    try {
+      last = String(window.localStorage.getItem('oshiLastSeen') || '');
+      window.localStorage.setItem('oshiLastSeen', today);
+    } catch (e) { return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last)) return;
+    var days = (Date.parse(today) - Date.parse(last)) / 86400000;
+    if (days >= OSHI_BACK_DAYS) oshiSay('back');
+  }
+
+  /** @returns {object|null} 場面 */
+  function oshiEventOf(key) {
+    var list = (oshiData && oshiData.events) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
+    return null;
+  }
+
+  /**
+   * 表情の画像の行。
+   *
+   * @param {string} state
+   * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ (最初からいるキャラなら無い)
+   * @returns {object|null}
+   */
+  function oshiImageRow(state, c) {
+    var list = (c ? c.images : (oshiData && oshiData.images)) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].state === state) return list[i];
+    return null;
+  }
+
+  /**
+   * 出す表情。その場面の表情の絵が無ければ、育ちの段の絵、ふつうの絵の順に代える。
+   * どれも無ければ null (名前の頭文字を出す)。
+   *
+   * @param {string} state
+   * @returns {string|null}
+   */
+  function oshiPickState(state) {
+    var grow = oshiData && oshiData.growth ? oshiData.growth.key : '';
+    var order = [state, grow, 'idle'];
+    for (var i = 0; i < order.length; i++) if (order[i] && oshiHasPicture(order[i])) return order[i];
+    return null;
+  }
+
+  /**
+   * その表情に出せる絵があるか。自分のキャラの絵が先、無ければ最初からいるキャラの絵 (出す設定のときだけ)。
+   *
+   * @param {string} state
+   * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ
+   * @returns {boolean}
+   */
+  function oshiHasPicture(state, c) {
+    if (oshiImageRow(state, c)) return true;
+    return !!oshiPictureBuiltin(c) && oshiDefaultKnown(state);
+  }
+
+  /** 最初からいるキャラに、その表情の絵があるか (表情は apiOshiGet の states にあるものだけ) */
+  function oshiDefaultKnown(state) {
+    var list = (oshiData && oshiData.states) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === state) return true;
+    return false;
+  }
+
+  /** いま使う自分のキャラ (apiOshiGet の mine の1つ)。最初からいるキャラを使っていれば null */
+  function oshiActiveMine() {
+    if (!oshiData || oshiData.kind !== 'mine') return null;
+    return oshiMineOf(oshiData.charId);
+  }
+
+  /** @returns {object|null} 番号の自分のキャラ */
+  function oshiMineOf(id) {
+    var list = (oshiData && oshiData.mine) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].charId === id) return list[i];
+    return null;
+  }
+
+  /**
+   * 表情の絵を取る。取ってあれば同期で渡す。
+   *
+   * @param {string} state
+   * @param {function(string)} cb data URL
+   * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ
+   */
+  function oshiImage(state, cb, c) {
+    var mine = c || oshiActiveMine();
+    var row = mine ? oshiImageRow(state, mine) : null;
+    if (!row) {
+      var key = oshiPictureBuiltin(c);
+      if (key) oshiDefaultImage(key, oshiStyle(), state, cb);
+      return;
+    }
+    if (!oshiImgs) oshiImgs = {};
+    if (oshiImgs[row.sha]) {
+      cb(oshiImgs[row.sha]);
+      return;
+    }
+    call('apiOshiImage', [mine.charId, state], function (res) {
+      if (!res || !res.dataUrl) return;
+      oshiImgs[res.sha] = res.dataUrl;
+      cb(res.dataUrl);
+    }, failQuiet('絵が出なくても、名前とせりふは出る'));
+  }
+
+  /**
+   * 最初からいるキャラの絵を取る。取ってあれば同期で渡す。取りに行っている最中なら、届いたときに渡す。
+   *
+   * @param {string} char itsuki / taku
+   * @param {string} style
+   * @param {string} state
+   * @param {function(string)} cb data URL
+   */
+  function oshiDefaultImage(char, style, state, cb) {
+    if (!oshiDefaultImgs) oshiDefaultImgs = {};
+    if (!oshiDefaultWaiting) oshiDefaultWaiting = {};
+    var key = char + ':' + style + ':' + state;
+    if (oshiDefaultImgs[key]) {
+      cb(oshiDefaultImgs[key]);
+      return;
+    }
+    if (oshiDefaultWaiting[key]) {
+      oshiDefaultWaiting[key].push(cb);
+      return;
+    }
+    oshiDefaultWaiting[key] = [cb];
+    var quiet = failQuiet('絵が出なくても、名前とせりふは出る');
+    call('apiOshiDefaultImage', [char, style, state], function (res) {
+      var waiting = oshiDefaultWaiting[key] || [];
+      delete oshiDefaultWaiting[key];
+      if (!res || !res.dataUrl) return;
+      oshiDefaultImgs[key] = res.dataUrl;
+      // 届くまでに設定を変えていたら、古い形の絵は差し込まない (別のキャラかは、差し込む側の still が見る)
+      if (!oshiOn() || oshiStyle() !== style) return;
+      waiting.forEach(function (fn) { fn(res.dataUrl); });
+    }, function (err) {
+      delete oshiDefaultWaiting[key];
+      quiet(err);
+    });
+  }
+
+  /**
+   * その場面のせりふを1つ。自分のせりふを先に、そのあと口調の既定のせりふを、順に回す。
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  function oshiLine(key) {
+    var ev = oshiEventOf(key);
+    if (!ev) return '';
+    var list = (ev.mine || []).concat(ev.lines || []);
+    if (!list.length) return '';
+    if (!oshiTurn) oshiTurn = {};
+    var n = oshiTurn[key] || 0;
+    oshiTurn[key] = n + 1;
+    return list[n % list.length];
+  }
+
+  /** まれに「思いがけない当たり」 */
+  function oshiLucky() {
+    var n = Number(oshiData && oshiData.luckyOneIn) || 0;
+    return n > 0 && Math.random() * n < 1;
+  }
+
+  /**
+   * call() が成功したあとに呼ぶ。表 (OSHI_CALL_EVENTS) に当たり、オンなら吹き出しを出す。
+   *
+   * @param {string} name
+   * @param {Array} args
+   */
+  function oshiAfter(name, args) {
+    var key = oshiCallEvent(name, args);
+    if (key) oshiSay(key);
+  }
+
+  /**
+   * call() が失敗したあとに呼ぶ。表に当たる (人が押した) 操作だけ、やさしく「しんぱい」する。
+   * 裏で取るだけの呼び出しの失敗では出さない。
+   *
+   * @param {string} name
+   */
+  function oshiAfterFail(name) {
+    if (Object.prototype.hasOwnProperty.call(OSHI_CALL_EVENTS(), name)) oshiSay('oops');
+  }
+
+  /**
+   * @param {string} name
+   * @param {Array} args
+   * @returns {string} 場面。当たらなければ空
+   */
+  function oshiCallEvent(name, args) {
+    var table = OSHI_CALL_EVENTS();
+    if (!Object.prototype.hasOwnProperty.call(table, name)) return '';
+    var v = table[name];
+    return typeof v === 'function' ? v(args || []) : v;
+  }
+
+  /**
+   * 吹き出しを出す。オフなら何もしない。飾りが落ちても本来の返事の扱いは止めない。
+   *
+   * @param {string} key 場面
+   */
+  function oshiSay(key) {
+    if (!oshiOn()) return;
+    try {
+      oshiLoad(function () {
+        if (!oshiOn()) return;
+        var ev = oshiEventOf(key);
+        if (!ev) return;
+        if (ev.praise && oshiLucky()) ev = oshiEventOf('lucky') || ev;
+        oshiShowBubble(ev.key, ev.state, oshiLine(ev.key));
+      });
+    } catch (e) {
+      if (window.console) console.warn('推しを出せませんでした', e);
+    }
+  }
+
+  /**
+   * 使うキャラに選ばれたときの吹き出し。選び直した設定で推しを取り直してから、そのキャラの「選んでもらった」の
+   * せりふと、そのキャラの絵からでたらめに選んだ表情を出す。オフなら何もしない。吹き出しは手元の焦点を奪わない。
+   */
+  function oshiSayChosen() {
+    if (!oshiOn()) return;
+    try {
+      oshiLoad(function () {
+        if (!oshiOn()) return;
+        var ev = oshiEventOf('chosen');
+        if (!ev) return;
+        oshiShowBubble(ev.key, oshiChosenState() || ev.state, oshiLine(ev.key));
+      });
+    } catch (e) {
+      if (window.console) console.warn('推しを出せませんでした', e);
+    }
+  }
+
+  /**
+   * 選ばれたときに出す表情。最初からいるキャラならどの表情からでも、自分のキャラなら絵を入れた表情から選ぶ。
+   * 自分のキャラに絵が1枚も無ければ、絵が無い表情に出す最初からいるキャラのどの表情からでも。どれも無ければ空。
+   *
+   * @returns {string}
+   */
+  function oshiChosenState() {
+    var all = ((oshiData && oshiData.states) || []).map(function (s) { return s.key; });
+    var pool = all;
+    var mine = oshiActiveMine();
+    if (mine) {
+      pool = (mine.images || []).map(function (i) { return i.state; })
+        .filter(function (k) { return all.indexOf(k) >= 0; });
+      if (!pool.length) pool = oshiPictureBuiltin() ? all : [];
+    }
+    if (!pool.length) return '';
+    return pool[Math.min(pool.length - 1, Math.floor(Math.random() * pool.length))];
+  }
+
+  /** 吹き出しの器。初めて要るときに1つだけ作る */
+  function oshiBubbleEl() {
+    var el = document.getElementById('oshi-bubble');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'oshi-bubble';
+    el.className = 'oshi-bubble';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.hidden = true;
+
+    var fig = document.createElement('div');
+    fig.className = 'oshi-figure';
+    el.appendChild(fig);
+
+    var speech = document.createElement('div');
+    speech.className = 'oshi-speech';
+    var name = document.createElement('div');
+    name.className = 'oshi-name';
+    speech.appendChild(name);
+    var line = document.createElement('p');
+    line.className = 'oshi-line';
+    speech.appendChild(line);
+    el.appendChild(speech);
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'side-close oshi-close';
+    close.setAttribute('aria-label', '推しの吹き出しを閉じる');
+    close.textContent = '×';
+    close.addEventListener('click', function () { oshiHide(true); });
+    el.appendChild(close);
+
+    // 読んでいるあいだは消さない
+    el.addEventListener('mouseenter', function () {
+      if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
+      oshiBubbleTimer = null;
+    });
+    el.addEventListener('mouseleave', function () { if (!el.hidden) oshiHideLater(); });
+    // キーボードで中に入った人 (閉じるボタンに Tab で来た人) にも同じく。出たらまた数え始める
+    el.addEventListener('focusin', function () {
+      if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
+      oshiBubbleTimer = null;
+    });
+    el.addEventListener('focusout', function (e) {
+      if (el.hidden || (e.relatedTarget && el.contains(e.relatedTarget))) return;
+      oshiHideLater();
+    });
+
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /**
+   * 絵の入れ物を埋める。絵が無ければ名前の頭文字の丸。
+   *
+   * @param {HTMLElement} fig
+   * @param {string|null} state
+   * @param {string} name
+   * @param {function(): boolean} [still] 届いた時点でまだ同じものを出しているか
+   * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ
+   */
+  function oshiFillFigure(fig, state, name, still, c) {
+    fig.textContent = '';
+    var face = document.createElement('span');
+    face.className = 'oshi-avatar';
+    face.setAttribute('aria-hidden', 'true');
+    face.textContent = (name || '推').slice(0, 1);
+    fig.appendChild(face);
+    if (!state) return;
+    oshiImage(state, function (src) {
+      if (still && !still()) return;
+      fig.textContent = '';
+      var img = document.createElement('img');
+      img.className = 'oshi-img';
+      img.alt = (name || '推し') + 'の「' + oshiStateLabel(state) + '」';
+      img.src = src;
+      fig.appendChild(img);
+    }, c);
+  }
+
+  /** @returns {string} 表情の名前 */
+  function oshiStateLabel(state) {
+    var list = (oshiData && oshiData.states) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === state) return list[i].label;
+    return state;
+  }
+
+  /**
+   * @param {string} key 場面
+   * @param {string} state 表情
+   * @param {string} text せりふ
+   */
+  function oshiShowBubble(key, state, text) {
+    var el = oshiBubbleEl();
+    var seq = ++oshiBubbleShown;
+    var name = (oshiData && oshiData.name) || '推し';
+    var char = oshiData ? oshiData.char : '';
+    el.dataset.char = char;
+    el.dataset.event = key;
+    el.dataset.state = state;
+    el.querySelector('.oshi-name').textContent = name;
+    el.querySelector('.oshi-line').textContent = text;
+    el.classList.remove('is-out');
+    el.hidden = false;
+    oshiFillFigure(el.querySelector('.oshi-figure'), oshiPickState(state), name,
+      function () { return seq === oshiBubbleShown && !el.hidden && !!oshiData && oshiData.char === char; });
+    // 出た印を付け直す (続けて出たときも、ふわっと出し直す。動きを減らす設定では CSS が止める)
+    el.classList.remove('is-in');
+    void el.offsetWidth;
+    el.classList.add('is-in');
+    oshiHideLater();
+  }
+
+  function oshiHideLater() {
+    if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
+    oshiBubbleTimer = window.setTimeout(function () { oshiHide(false); }, OSHI_BUBBLE_MS);
+  }
+
+  /**
+   * 吹き出しを外す。now でなければ薄くしてから隠す。
+   *
+   * @param {boolean} now
+   */
+  function oshiHide(now) {
+    if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
+    oshiBubbleTimer = null;
+    var el = document.getElementById('oshi-bubble');
+    if (!el || el.hidden) return;
+    if (now) {
+      el.hidden = true;
+      return;
+    }
+    el.classList.add('is-out');
+    var seq = oshiBubbleShown;
+    window.setTimeout(function () { if (seq === oshiBubbleShown) el.hidden = true; }, 400);
+  }
+
+  // ----- ホームのカード -----
+
+  /**
+   * ホームの推しのカード。オフ・設定が届く前は出さない。中身は取れてから埋める。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeOshiHomeCard() {
+    if (!oshiHomeOn()) return null;
+    var card = document.createElement('section');
+    card.className = 'home-card oshi-card';
+    card.setAttribute('aria-label', '推し');
+    // 取ってあれば同期で埋まる (まだ並べる前)。遅れて届いたときは、そのとき埋める
+    oshiLoad(function (d) { fillOshiHomeCard(card, d); });
+    return card;
+  }
+
+  /**
+   * @param {HTMLElement} card
+   * @param {object} d apiOshiGet
+   */
+  function fillOshiHomeCard(card, d) {
+    card.textContent = '';
+    var name = d.name || '推し';
+    card.appendChild(homeHead(name, [privatePill()]));
+
+    var row = document.createElement('div');
+    row.className = 'oshi-card-row';
+    var fig = document.createElement('div');
+    fig.className = 'oshi-figure';
+    row.appendChild(fig);
+
+    var key = oshiGreetingKey(new Date());
+    var ev = oshiEventOf(key);
+    var line = document.createElement('p');
+    line.className = 'oshi-line';
+    line.textContent = oshiLine(key);
+    row.appendChild(line);
+    card.appendChild(row);
+    card.dataset.event = key;
+    oshiFillFigure(fig, oshiPickState(ev ? ev.state : 'idle'), name);
+
+    card.appendChild(makeOshiGrowth(d.growth));
+
+    if (d.kind === 'mine' && (!d.images || !d.images.length) && !oshiPictureBuiltin()) {
+      var hint = document.createElement('button');
+      hint.type = 'button';
+      hint.className = 'btn';
+      hint.textContent = '推しの絵を入れる';
+      hint.addEventListener('click', function () { openOshi(hint); });
+      card.appendChild(hint);
+    }
+  }
+
+  /** 時刻からあいさつの場面 (サーバの oshiGreetingOf と同じ区切り。test/ui-parity が見ている) */
+  function oshiGreetingKey(now) {
+    return oshiGreetingOf(oshiHour(now));
+  }
+
+  /**
+   * 時刻からあいさつの場面を決める (東京の時刻)。5〜11時は朝、11〜18時は昼、それ以外は夜。
+   * src/core/Oshi.js の oshiGreetingOf の写し (test/ui-parity.test.js が同じ答えか見ている)。
+   *
+   * @param {number} hour 0〜23
+   * @returns {string} morning / day / night
+   */
+  function oshiGreetingOf(hour) {
+    var h = Number(hour);
+    if (h >= 5 && h < 11) return 'morning';
+    if (h >= 11 && h < 18) return 'day';
+    return 'night';
+  }
+
+  /**
+   * 育ちの段となかよしの棒。
+   *
+   * @param {object} g apiOshiGet の growth
+   * @returns {HTMLElement}
+   */
+  function makeOshiGrowth(g) {
+    var box = document.createElement('div');
+    box.className = 'oshi-growth';
+    var grow = g || { label: '', meter: 0, toNext: 0, stages: [] };
+    var head = document.createElement('div');
+    head.className = 'oshi-stage';
+    head.dataset.stage = grow.key || '';
+    head.textContent = '育ち: ' + (grow.label || '') +
+      (grow.toNext > 0 ? ' ・ 次の段まであと ' + grow.toNext : ' ・ いちばん上の段です');
+    box.appendChild(head);
+
+    var bar = document.createElement('div');
+    bar.className = 'game-level-bar oshi-meter';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', 'なかよし');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-valuenow', String(Number(grow.meter) || 0));
+    var fill = document.createElement('span');
+    fill.style.width = (Number(grow.meter) || 0) + '%';
+    bar.appendChild(fill);
+    box.appendChild(bar);
+
+    var note = document.createElement('div');
+    note.className = 'row-meta';
+    note.textContent = 'なかよし ' + (Number(grow.meter) || 0) + '% ・ ' + (grow.source === 'game'
+      ? 'ポイントで育ちます'
+      : '済ませたやることと、反映した確認依頼の数で育ちます') + '。取り消しても下がりません';
+    box.appendChild(note);
+    return box;
+  }
+
+  // ----- 推しの頁 (自分 → 推し) -----
+
+  /**
+   * 写す。写せなければ字を選んだままにして、手で写してもらう。
+   *
+   * @param {string} text
+   * @param {HTMLElement} [shown] 選んでおく字の要素
+   */
+  function oshiCopy(text, shown) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy') === true;
+    } catch (e) {
+      ok = false;
+    }
+    area.remove();
+    if (ok) {
+      showSnack('写しました。画像を作る道具に貼ってください', { kind: 'ok' });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showSnack('写しました。画像を作る道具に貼ってください', { kind: 'ok' });
+      }, function () { oshiCopyByHand(shown); });
+      return;
+    }
+    oshiCopyByHand(shown);
+  }
+
+  function oshiCopyByHand(shown) {
+    if (shown) {
+      var range = document.createRange();
+      range.selectNodeContents(shown);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    showSnack('写せませんでした。選んだ字を手で写してください', { kind: 'ng' });
+  }
+
+  /** data URL の中身の大きさ (バイト) */
+  function oshiDataBytes(dataUrl) {
+    var i = String(dataUrl).indexOf(',');
+    return Math.floor((String(dataUrl).length - i - 1) * 3 / 4);
+  }
+
+  /**
+   * 選んだ画像を読み、長い辺を maxPx まで縮める (描けない環境・縮めなくてよいものはそのまま)。
+   * GIF は縮めない (動きが消える)。上限はサーバと同じ値 (apiOshiGet の limits)。
+   *
+   * @param {File} file
+   * @param {object} limits
+   * @param {function(string)} ok data URL
+   * @param {function(string)} ng 断りの字
+   */
+  function oshiReadFile(file, limits, ok, ng) {
+    var mb = Math.round(limits.maxBytes / 1024 / 1024);
+    if (!file || (limits.mimes || []).indexOf(String(file.type)) < 0) {
+      ng('受け取れない形式です (PNG・JPEG・WebP・GIF だけ)');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function () { ng('画像を読めませんでした'); };
+    reader.onload = function () {
+      var raw = String(reader.result || '');
+      var fits = function (url) { return oshiDataBytes(url) <= limits.maxBytes; };
+      if (file.type === 'image/gif') {
+        if (fits(raw)) ok(raw);
+        else ng('画像は' + mb + 'MBまでにしてください (GIF は縮められません)');
+        return;
+      }
+      oshiShrink(raw, String(file.type), limits.maxPx, function (small) {
+        var use = small || raw;
+        if (fits(use)) ok(use);
+        else ng('画像は' + mb + 'MBまでにしてください');
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * 縮める。縮められない・縮めなくてよいときは null を渡す。
+   *
+   * @param {string} src
+   * @param {string} type
+   * @param {number} maxPx
+   * @param {function(string|null)} cb
+   */
+  function oshiShrink(src, type, maxPx, cb) {
+    var done = false;
+    function finish(v) { if (!done) { done = true; cb(v); } }
+    var canvas = document.createElement('canvas');
+    var ctx = null;
+    try {
+      ctx = canvas.getContext ? canvas.getContext('2d') : null;
+    } catch (e) {
+      ctx = null;
+    }
+    if (!ctx || typeof Image === 'undefined') {
+      finish(null);
+      return;
+    }
+    var img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth || img.width;
+      var h = img.naturalHeight || img.height;
+      var scale = Math.min(1, maxPx / Math.max(w, h, 1));
+      if (scale >= 1) {
+        finish(null);
+        return;
+      }
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      try {
+        finish(type === 'image/jpeg' ? canvas.toDataURL('image/jpeg', 0.9) : canvas.toDataURL('image/png'));
+      } catch (e) {
+        finish(null);
+      }
+    };
+    img.onerror = function () { finish(null); };
+    // 読み込みが終わらない環境でも止まらない
+    window.setTimeout(function () { finish(null); }, 4000);
+    img.src = src;
+  }
+
+  /**
+   * 自分 → 推し。作り方・頼み文・画像・名前と口調・自分のせりふ・育ちを1つの頁に出す。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openOshi(sourceEl) {
+    closeMe();
+    var box = openSideView('推し', sourceEl || null, null);
+    box.classList.add('oshi-page');
+    var wait = document.createElement('p');
+    wait.className = 'row-meta';
+    wait.textContent = '読み込んでいます…';
+    box.appendChild(wait);
+    oshiReload(function (d) {
+      if (!box.isConnected) return;
+      drawOshiPage(box, d);
+    });
+  }
+
+  /**
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function oshiHeading(text) {
+    var h = document.createElement('h3');
+    h.className = 'oshi-h';
+    h.textContent = text;
+    return h;
+  }
+
+  /**
+   * @param {string} text
+   * @returns {HTMLElement}
+   */
+  function oshiNote(text) {
+    var p = document.createElement('p');
+    p.className = 'row-meta';
+    p.textContent = text;
+    return p;
+  }
+
+  /**
+   * @param {HTMLElement} box
+   * @param {object} d apiOshiGet
+   */
+  function drawOshiPage(box, d) {
+    box.textContent = '';
+    box.appendChild(oshiNote('推しは、済ませたときにほめてくれるキャラクターです。最初からいるキャラ (' +
+      (d.builtins || []).map(function (c) { return c.name; }).join('・') + ') のほかに、自分の絵でキャラを' +
+      d.mineMax + '人まで作れます。あなたの画面にだけ出ます。叱ることはありません。'));
+
+    // 入れてよい絵か。ここを最初に読んでもらう
+    var care = document.createElement('div');
+    care.className = 'oshi-care';
+    [
+      '使ってよい絵だけを入れてください (自分で描いた・作った絵、使ってよいと許された絵)。',
+      '実在の人の顔は、その人の許しがあるときだけにしてください。',
+      '番頭の画面では、あなたにだけ見せます。ただし絵と名前は入れ物 (Drive のフォルダ) の台帳と objects/ に置くので、' +
+        '入れ物を Drive で共有している人は直に開けます。見られて困る絵は入れないでください。',
+    ].forEach(function (t) { care.appendChild(oshiNote(t)); });
+    box.appendChild(care);
+
+    var c = oshiEditingChar(d);
+    box.appendChild(makeOshiMineList(box, d, c));
+    if (c) box.appendChild(makeOshiProfile(box, d, c));
+    box.appendChild(makeOshiSteps(d));
+    if (c) {
+      box.appendChild(makeOshiStates(d, c));
+      box.appendChild(makeOshiLines(d, c));
+    }
+
+    var grow = document.createElement('section');
+    grow.className = 'oshi-section';
+    grow.appendChild(oshiHeading('育ち'));
+    grow.appendChild(makeOshiGrowth(d.growth));
+    grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label; }).join(' → ') +
+      '。どのキャラでも同じ段です。段ごとの絵 (育ち1〜3) を入れると、ホームと吹き出しでその段の姿になります。'));
+    box.appendChild(grow);
+
+    if (!(d.mine || []).length) return;
+    var bye = document.createElement('section');
+    bye.className = 'oshi-section';
+    bye.appendChild(oshiHeading('やめる'));
+    bye.appendChild(oshiNote('自分のキャラを全部 (絵・名前・せりふ) まとめて消します。止めるだけなら、設定の「推しに応援してもらう」を外してください。'));
+    var forget = document.createElement('button');
+    forget.type = 'button';
+    forget.className = 'btn btn-danger oshi-forget';
+    // 消す操作の赤はアイコンだけの形 (docs/dev/design.md)。名前は読み上げと吹き出しに
+    forget.appendChild(makeIcon('trash'));
+    forget.title = '自分のキャラをまとめて消す';
+    forget.setAttribute('aria-label', forget.title);
+    forget.addEventListener('click', function () {
+      openConfirmStrip(bye, '自分のキャラの絵・名前・せりふを全部消します。元には戻せません', '消す', function () {
+        call('apiOshiForget', [], function () {
+          oshiImgs = {};
+          oshiEditing = 0;
+          showSnack('自分のキャラを消しました', { kind: 'ok' });
+          oshiAfterChoice(box);
+        }, failSnack('消せませんでした: '));
+      });
+    });
+    bye.appendChild(forget);
+    box.appendChild(bye);
+  }
+
+  /**
+   * 頁で直す自分のキャラ。選んだもの → 使っているもの → 最初の1人。1人もいなければ null。
+   *
+   * @param {object} d
+   * @returns {object|null}
+   */
+  function oshiEditingChar(d) {
+    var list = d.mine || [];
+    var want = oshiEditing || (d.kind === 'mine' ? d.charId : 0);
+    for (var i = 0; i < list.length; i++) if (list[i].charId === want) return list[i];
+    return list[0] || null;
+  }
+
+  /** 名前の無い自分のキャラの呼び名 */
+  function oshiMineName(c) {
+    return c.name || '名前なし (' + c.charId + '人目)';
+  }
+
+  /**
+   * 使うキャラを選んだ・自分のキャラを足し引きしたあと。設定を取り直し (使うキャラは設定にある)、頁を描き直す。
+   *
+   * @param {HTMLElement} box
+   * @param {object} [prefsRes] apiPrefSet の返事 (あれば取り直さない)
+   */
+  function oshiAfterChoice(box, prefsRes) {
+    function redraw() {
+      oshiReload(function (nd) { if (box && box.isConnected) drawOshiPage(box, nd); });
+    }
+    if (prefsRes) {
+      applyPrefs(prefsRes, ++prefsSeq);
+      redraw();
+      return;
+    }
+    var seq = ++prefsSeq;
+    call('apiPrefs', [], function (res) {
+      if (res) applyPrefs(res, seq);
+      redraw();
+    }, function (err) {
+      failQuiet('設定が取れなくても、頁は描き直せる')(err);
+      redraw();
+    });
+  }
+
+  /**
+   * 使うキャラにする (自分の設定 oshi.char)。書くのは apiPrefSet だけ。
+   *
+   * @param {string} value 'builtin:<key>' / 'mine:<番号>'
+   * @param {string} name
+   * @param {function(object)} ok apiPrefSet の返事
+   * @param {HTMLElement} [btn] 押した間は押せなくする
+   */
+  function oshiChoose(value, name, ok, btn) {
+    if (btn) btn.disabled = true;
+    call('apiPrefSet', ['oshi.char', value], function (res) {
+      if (btn) btn.disabled = false;
+      showSnack('「' + name + '」を使います', { kind: 'ok' });
+      ok(res);
+      // 選んだキャラが、その口調で礼を言う (どんなキャラか分かるように)。オフなら何も取らない
+      oshiSayChosen();
+    }, btn ? failEnable(btn, '選べませんでした: ') : failSnack('選べませんでした: '));
+  }
+
+  /** 自分のキャラの一覧と「新しいキャラを作る」 */
+  function makeOshiMineList(box, d, editing) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-mine';
+    sec.appendChild(oshiHeading('自分のキャラ'));
+    var list = d.mine || [];
+    var now = document.createElement('p');
+    now.className = 'row-meta oshi-using';
+    now.textContent = 'いま使っているキャラ: ' + (d.name || '名前なし') + (d.kind === 'builtin' ? ' (最初からいるキャラ)' : '') +
+      '。設定の「使うキャラ」でも選べます。';
+    sec.appendChild(now);
+    if (!list.length) {
+      sec.appendChild(oshiNote('まだ自分のキャラはいません。作ると、表情ごとの絵・名前・口調・せりふを決められます。'));
+    } else {
+      var tabs = document.createElement('div');
+      tabs.className = 'oshi-mine-tabs';
+      tabs.setAttribute('role', 'group');
+      tabs.setAttribute('aria-label', '直す自分のキャラ');
+      list.forEach(function (c) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn oshi-mine-tab';
+        b.dataset.charId = String(c.charId);
+        b.setAttribute('aria-pressed', editing && editing.charId === c.charId ? 'true' : 'false');
+        b.textContent = oshiMineName(c) + (d.kind === 'mine' && d.charId === c.charId ? ' ・ 使用中' : '');
+        b.addEventListener('click', function () {
+          oshiEditing = c.charId;
+          drawOshiPage(box, d);
+        });
+        tabs.appendChild(b);
+      });
+      sec.appendChild(tabs);
+    }
+    var full = list.length >= d.mineMax;
+    var make = document.createElement('button');
+    make.type = 'button';
+    make.className = 'btn oshi-create';
+    make.textContent = '新しいキャラを作る';
+    make.disabled = full;
+    make.addEventListener('click', function () {
+      make.disabled = true;
+      call('apiOshiCharCreate', ['', 'polite'], function (res) {
+        oshiEditing = res.charId;
+        showSnack('新しいキャラを作りました。名前と絵を決めてください', { kind: 'ok' });
+        oshiReload(function (nd) {
+          if (!box.isConnected) return;
+          drawOshiPage(box, nd);
+          var input = box.querySelector('.oshi-name-input');
+          if (input) input.focus();
+        });
+      }, failEnable(make, '作れませんでした: '));
+    });
+    sec.appendChild(make);
+    sec.appendChild(oshiNote(full ? '自分のキャラは' + d.mineMax + '人までです。作り直すときは、使わないキャラを消してください。'
+      : '自分のキャラは' + d.mineMax + '人まで作れます (いま ' + list.length + '人)。'));
+    return sec;
+  }
+
+  /** 名前と口調、使う・消す */
+  function makeOshiProfile(box, d, c) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-profile';
+    sec.dataset.charId = String(c.charId);
+    sec.appendChild(oshiHeading(oshiMineName(c) + ' の名前と口調'));
+
+    var nameLabel = document.createElement('label');
+    nameLabel.className = 'oshi-field';
+    nameLabel.appendChild(document.createTextNode('名前'));
+    var name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'oshi-name-input';
+    name.maxLength = d.limits.nameMax;
+    name.value = c.name || '';
+    name.placeholder = '例: ルナ';
+    nameLabel.appendChild(name);
+    sec.appendChild(nameLabel);
+
+    var toneLabel = document.createElement('label');
+    toneLabel.className = 'oshi-field';
+    toneLabel.appendChild(document.createTextNode('口調'));
+    var tone = document.createElement('select');
+    tone.className = 'oshi-tone';
+    (d.tones || []).forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t.key;
+      o.textContent = t.label;
+      tone.appendChild(o);
+    });
+    tone.value = c.tone;
+    toneLabel.appendChild(tone);
+    sec.appendChild(toneLabel);
+
+    var actions = document.createElement('div');
+    actions.className = 'oshi-actions';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-primary oshi-profile-save';
+    save.textContent = '決める';
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      call('apiOshiSetProfile', [c.charId, name.value, tone.value], function (res) {
+        save.disabled = false;
+        showSnack((res.name || '名前なし') + 'にしました', { kind: 'ok' });
+        // 口調が変わると口調のせりふも変わるので取り直す
+        oshiReload(function (nd) { if (box.isConnected) drawOshiPage(box, nd); });
+      }, failEnable(save, '決められませんでした: '));
+    });
+    actions.appendChild(save);
+
+    var using = d.kind === 'mine' && d.charId === c.charId;
+    var use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'btn oshi-use';
+    use.textContent = using ? '使っています' : 'このキャラを使う';
+    use.disabled = using;
+    use.addEventListener('click', function () {
+      oshiChoose('mine:' + c.charId, oshiMineName(c), function (res) { oshiAfterChoice(box, res); }, use);
+    });
+    actions.appendChild(use);
+
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-danger oshi-delete';
+    del.appendChild(makeIcon('trash'));
+    del.title = oshiMineName(c) + ' を消す';
+    del.setAttribute('aria-label', del.title);
+    del.addEventListener('click', function () {
+      openConfirmStrip(sec, oshiMineName(c) + ' の絵・名前・せりふを消します。ほかのキャラは残ります。元には戻せません', '消す', function () {
+        call('apiOshiCharDelete', [c.charId], function () {
+          oshiEditing = 0;
+          showSnack(oshiMineName(c) + ' を消しました', { kind: 'ok' });
+          oshiAfterChoice(box);
+        }, failSnack('消せませんでした: '));
+      });
+    });
+    actions.appendChild(del);
+    sec.appendChild(actions);
+    return sec;
+  }
+
+  /** 作り方と、最初に1回の頼み文 */
+  function makeOshiSteps(d) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section';
+    sec.appendChild(oshiHeading('自分のキャラの作り方'));
+    var steps = document.createElement('ol');
+    steps.className = 'setup-steps';
+    [
+      ['参考画像を用意する', '使ってよい絵を1枚。顔と服がはっきり見えるものが向いています。'],
+      ['画像を作る道具を開く', 'ChatGPT や Gemini など、画像を作れる道具を開き、参考画像を添えます。'],
+      ['「最初に1回」の頼み文を貼る', '下の「写す」で写して貼ります。キャラクターの特徴を書き出してもらい、表情ちがいでも同じ姿にします。'],
+      ['表情ごとに頼む', '同じ会話のまま、表情ごとの頼み文を1つずつ写して貼り、できた絵を保存します。'],
+      ['番頭に入れる', '「新しいキャラを作る」で作ったキャラの、表情ごとの「絵を選ぶ」から入れます。PNG・JPEG・WebP・GIF の ' +
+        Math.round(d.limits.maxBytes / 1024 / 1024) + 'MB まで。大きい絵は長い辺 ' + d.limits.maxPx + 'px に縮めて送ります。'],
+    ].forEach(function (pair) {
+      var li = document.createElement('li');
+      var head = document.createElement('strong');
+      head.textContent = pair[0];
+      li.appendChild(head);
+      li.appendChild(oshiNote(pair[1]));
+      steps.appendChild(li);
+    });
+    sec.appendChild(steps);
+    sec.appendChild(oshiNote('自分のキャラの絵をまだ入れていない表情には、設定の「自分のキャラの絵が無い表情」で選んだ' +
+      '最初からいるキャラの絵が出ます (「出さない」なら名前の頭文字)。'));
+    sec.appendChild(makeOshiPrompt('最初に1回 (参考画像と一緒に)', d.basePrompt, 'base'));
+    return sec;
+  }
+
+  /**
+   * 頼み文と「写す」。
+   *
+   * @param {string} label
+   * @param {string} text
+   * @param {string} key
+   * @returns {HTMLElement}
+   */
+  function makeOshiPrompt(label, text, key) {
+    var wrap = document.createElement('details');
+    wrap.className = 'oshi-prompt';
+    wrap.dataset.prompt = key;
+    var sum = document.createElement('summary');
+    sum.textContent = label + 'の頼み文を見る';
+    wrap.appendChild(sum);
+    var pre = document.createElement('pre');
+    pre.className = 'oshi-prompt-text';
+    pre.textContent = text;
+    wrap.appendChild(pre);
+
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn oshi-copy';
+    copy.dataset.prompt = key;
+    copy.textContent = '頼み文を写す';
+    copy.setAttribute('aria-label', label + 'の頼み文を写す');
+    copy.addEventListener('click', function () { oshiCopy(text, pre); });
+
+    var row = document.createElement('div');
+    row.className = 'oshi-prompt-row';
+    row.appendChild(copy);
+    row.appendChild(wrap);
+    return row;
+  }
+
+  /** 表情ごとの頼み文と絵 */
+  function makeOshiStates(d, c) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section oshi-states';
+    sec.dataset.charId = String(c.charId);
+    sec.appendChild(oshiHeading(oshiMineName(c) + ' の表情ごとの絵'));
+    (d.states || []).forEach(function (s) { sec.appendChild(makeOshiStateRow(d, c, s)); });
+    return sec;
+  }
+
+  /**
+   * 自分のキャラの絵の行を置き換える。いま使うキャラなら吹き出しの絵も同じにする。
+   *
+   * @param {object} d
+   * @param {object} c
+   * @param {object[]} list
+   */
+  function oshiSetMineImages(d, c, list) {
+    c.images = list;
+    if (d.kind === 'mine' && d.charId === c.charId) d.images = list;
+    if (oshiData && oshiData !== d) {
+      var live = oshiMineOf(c.charId);
+      if (live) live.images = list;
+      if (oshiData.kind === 'mine' && oshiData.charId === c.charId) oshiData.images = list;
+    }
+  }
+
+  /**
+   * @param {object} d
+   * @param {object} c 自分のキャラ
+   * @param {object} s 表情
+   * @returns {HTMLElement}
+   */
+  function makeOshiStateRow(d, c, s) {
+    var row = document.createElement('div');
+    row.className = 'oshi-state';
+    row.dataset.state = s.key;
+
+    var fig = document.createElement('div');
+    fig.className = 'oshi-figure';
+    row.appendChild(fig);
+    var has = !!oshiImageRow(s.key, c);
+    var sample = !has && !!oshiPictureBuiltin(c);
+    row.dataset.picture = has ? 'mine' : (sample ? 'default' : 'none');
+    if (has || sample) oshiFillFigure(fig, s.key, c.name, null, c);
+    else {
+      var none = document.createElement('span');
+      none.className = 'oshi-avatar oshi-empty';
+      none.textContent = 'まだ';
+      fig.appendChild(none);
+    }
+
+    var body = document.createElement('div');
+    body.className = 'oshi-state-body';
+    var title = document.createElement('strong');
+    title.textContent = s.label;
+    body.appendChild(title);
+    body.appendChild(oshiNote(s.when + (sample ? ' ・ いまは最初からいるキャラの絵' : '')));
+    body.appendChild(makeOshiPrompt('「' + s.label + '」', s.prompt, s.key));
+
+    var actions = document.createElement('div');
+    actions.className = 'oshi-actions';
+    var pickLabel = document.createElement('label');
+    pickLabel.className = 'btn oshi-pick';
+    pickLabel.textContent = has ? '絵を差し替える' : '絵を選ぶ';
+    var pick = document.createElement('input');
+    pick.type = 'file';
+    pick.accept = (d.limits.mimes || []).join(',');
+    pick.className = 'oshi-file';
+    pick.setAttribute('aria-label', '「' + s.label + '」の絵を選ぶ');
+    pickLabel.appendChild(pick);
+    actions.appendChild(pickLabel);
+    pick.addEventListener('change', function () {
+      var file = pick.files && pick.files[0];
+      pick.value = '';
+      if (!file) return;
+      oshiReadFile(file, d.limits, function (dataUrl) {
+        call('apiOshiSetImage', [c.charId, s.key, dataUrl], function (res) {
+          oshiImgs[res.sha] = dataUrl;
+          var list = (c.images || []).filter(function (r) { return r.state !== s.key; });
+          list.push({ state: res.state, sha: res.sha, mime: res.mime, updatedAt: '' });
+          oshiSetMineImages(d, c, list);
+          showSnack('「' + s.label + '」の絵を入れました', { kind: 'ok' });
+          if (row.parentNode) row.parentNode.replaceChild(makeOshiStateRow(d, c, s), row);
+        }, failSnack('絵を入れられませんでした: '));
+      }, function (why) { showSnack(why, { kind: 'ng' }); });
+    });
+
+    if (has) {
+      var clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'btn oshi-clear';
+      clear.textContent = '外す';
+      clear.setAttribute('aria-label', '「' + s.label + '」の絵を外す');
+      clear.addEventListener('click', function () {
+        call('apiOshiClearImage', [c.charId, s.key], function () {
+          oshiSetMineImages(d, c, (c.images || []).filter(function (r) { return r.state !== s.key; }));
+          showSnack('「' + s.label + '」の絵を外しました', { kind: 'ok' });
+          if (row.parentNode) row.parentNode.replaceChild(makeOshiStateRow(d, c, s), row);
+        }, failSnack('外せませんでした: '));
+      });
+      actions.appendChild(clear);
+    }
+    body.appendChild(actions);
+    row.appendChild(body);
+    return row;
+  }
+
+  /** 場面ごとの自分のせりふ */
+  function makeOshiLines(d, c) {
+    var sec = document.createElement('section');
+    sec.className = 'oshi-section';
+    sec.appendChild(oshiHeading(oshiMineName(c) + ' のせりふ'));
+    sec.appendChild(oshiNote('場面ごとに、言ってほしいせりふを足せます (1行に1つ、' + d.limits.linesPerEvent +
+      '個まで・1つ' + d.limits.lineMax + '字まで)。足したせりふと、口調のせりふを順に言います。'));
+    (c.events || []).forEach(function (ev) {
+      var item = document.createElement('details');
+      item.className = 'oshi-lines';
+      item.dataset.event = ev.key;
+      var sum = document.createElement('summary');
+      sum.textContent = ev.label + (ev.mine && ev.mine.length ? ' (自分のせりふ ' + ev.mine.length + ')' : '');
+      item.appendChild(sum);
+      item.appendChild(oshiNote('いまの口調では: ' + (ev.lines || []).join(' / ')));
+      var area = document.createElement('textarea');
+      area.className = 'oshi-lines-input';
+      area.rows = 3;
+      area.value = (ev.mine || []).join('\n');
+      area.setAttribute('aria-label', ev.label + 'のときの自分のせりふ');
+      item.appendChild(area);
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn';
+      save.textContent = '保存';
+      save.addEventListener('click', function () {
+        save.disabled = true;
+        call('apiOshiSetLines', [c.charId, ev.key, area.value.split('\n')], function (res) {
+          save.disabled = false;
+          ev.mine = res.lines || [];
+          // いま使うキャラなら、吹き出しのせりふも同じにする
+          if (oshiData && oshiData.kind === 'mine' && oshiData.charId === c.charId) {
+            var live = oshiEventOf(ev.key);
+            if (live && live !== ev) live.mine = ev.mine;
+          }
+          sum.textContent = ev.label + (ev.mine.length ? ' (自分のせりふ ' + ev.mine.length + ')' : '');
+          area.value = ev.mine.join('\n');
+          showSnack('せりふを保存しました', { kind: 'ok' });
+        }, failEnable(save, '保存できませんでした: '));
+      });
+      item.appendChild(save);
+      sec.appendChild(item);
+    });
+    return sec;
+  }
+
+  // ----- 設定の「使うキャラ」 -----
+
+  /**
+   * 設定の「使うキャラ」(oshi.char)。最初からいるキャラと自分のキャラを、ふつうの顔の絵つきのカードで並べ、
+   * 押したものを apiPrefSet で保存する (書くのは apiPrefSet だけ)。最初からいるキャラは設定の一覧 (item.options)
+   * から、自分のキャラは apiOshiGet から並べる。**絵は推しがオンのときだけ取る** (使わない人は1度も取らない)。
+   *
+   * @param {object} item apiPrefs の items の1つ
+   * @returns {HTMLElement}
+   */
+  function makeOshiCharPicker(item) {
+    var wrap = document.createElement('div');
+    wrap.className = 'settings-field pref-field oshi-picker';
+    wrap.dataset.pref = item.key;
+    var label = document.createElement('div');
+    label.className = 'pref-label';
+    label.id = 'oshi-picker-label';
+    label.textContent = item.label;
+    wrap.appendChild(label);
+    var cards = document.createElement('div');
+    cards.className = 'oshi-choices';
+    cards.setAttribute('role', 'radiogroup');
+    cards.setAttribute('aria-labelledby', 'oshi-picker-label');
+    wrap.appendChild(cards);
+    appendPrefHelp(wrap, item);
+    if (!oshiOn()) wrap.appendChild(oshiNote('「推しに応援してもらう」をオンにすると、絵と自分のキャラも並びます。'));
+
+    var current = item.value;
+    function choices(d) {
+      var out = (item.options || []).map(function (o) {
+        return { value: o.value, name: o.label, kind: 'builtin', key: oshiBuiltinKeyOf(o.value) };
+      });
+      ((d && d.mine) || []).forEach(function (c) {
+        out.push({ value: 'mine:' + c.charId, name: oshiMineName(c), kind: 'mine', mine: c });
+      });
+      // オフのあいだは自分のキャラを取りに行かない。それでも選んであるものは、選んだしるしで出す
+      // (出さないと、どれも選ばれていないように見える)
+      if (!d && /^mine:/.test(String(current)) && !out.some(function (o) { return o.value === current; })) {
+        out.push({ value: current, name: '自分のキャラ', kind: 'mine', mine: null });
+      }
+      return out;
+    }
+    function draw(d) {
+      cards.textContent = '';
+      choices(d).forEach(function (ch) {
+        var b = makeOshiChoice(ch);
+        cards.appendChild(b);
+        if (oshiOn() && (ch.kind === 'builtin' || ch.mine)) oshiChoiceFigure(b, ch);
+      });
+      roving();
+    }
+    function cardList() { return Array.prototype.slice.call(cards.querySelectorAll('.oshi-choice')); }
+    /** Tab で入れるのは選んでいるカード1つだけ (選んでいるものが無ければ先頭)。中は矢印で動く */
+    function roving() {
+      var list = cardList();
+      var on = list.filter(function (el) { return el.dataset.char === current; })[0] || list[0];
+      list.forEach(function (el) { el.tabIndex = el === on ? 0 : -1; });
+    }
+    cards.addEventListener('keydown', function (e) {
+      var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      var list = cardList();
+      var at = list.indexOf(e.target && e.target.closest ? e.target.closest('.oshi-choice') : null);
+      if (at < 0 || !list.length) return;
+      e.preventDefault();
+      var next = list[(at + step + list.length) % list.length];
+      next.focus();
+      next.click();
+    });
+    /** ふつうの顔の絵。描き直して外れたカードには差し込まない */
+    function oshiChoiceFigure(b, ch) {
+      var fig = b.querySelector('.oshi-choice-fig');
+      var put = function (src) {
+        if (b.parentNode !== cards) return;
+        fig.textContent = '';
+        var img = document.createElement('img');
+        img.className = 'oshi-img';
+        img.alt = '';
+        img.src = src;
+        fig.appendChild(img);
+      };
+      if (ch.kind === 'builtin') oshiDefaultImage(ch.key, oshiStyle(), 'idle', put);
+      else if (oshiImageRow('idle', ch.mine)) oshiImage('idle', put, ch.mine);
+    }
+    function makeOshiChoice(ch) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'oshi-choice';
+      b.dataset.char = ch.value;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', ch.value === current ? 'true' : 'false');
+      var fig = document.createElement('span');
+      fig.className = 'oshi-figure oshi-choice-fig';
+      var face = document.createElement('span');
+      face.className = 'oshi-avatar';
+      face.setAttribute('aria-hidden', 'true');
+      face.textContent = (ch.name || '推').slice(0, 1);
+      fig.appendChild(face);
+      b.appendChild(fig);
+      var name = document.createElement('span');
+      name.className = 'oshi-choice-name';
+      name.textContent = ch.name;
+      b.appendChild(name);
+      var kind = document.createElement('span');
+      kind.className = 'row-meta oshi-choice-kind';
+      kind.textContent = ch.kind === 'builtin' ? '最初からいる' : '自分のキャラ';
+      b.appendChild(kind);
+      b.addEventListener('click', function () {
+        if (ch.value === current) return;
+        oshiChoose(ch.value, ch.name, function (res) {
+          applyPrefs(res, ++prefsSeq);
+          var next = ((prefs && prefs.items) || []).filter(function (p) { return p.key === item.key; })[0];
+          current = next ? next.value : ch.value;
+          Array.prototype.forEach.call(cards.querySelectorAll('.oshi-choice'), function (el) {
+            el.setAttribute('aria-checked', el.dataset.char === current ? 'true' : 'false');
+          });
+          roving();
+        });
+      });
+      return b;
+    }
+    draw(null);
+    if (oshiOn()) oshiLoad(draw);
+    return wrap;
+  }
+
+  /**
+   * 自分のところの「推し」のボタン。オンのときだけ出す。
+   *
+   * @returns {HTMLElement|null}
+   */
+  function makeOshiMeButton() {
+    if (!oshiOn()) return null;
+    var btn = document.createElement('button');
+    btn.className = 'btn oshi-open';
+    btn.appendChild(makeIcon('heart'));
+    btn.appendChild(document.createTextNode('推し'));
+    attachHint(btn, '自分のキャラクターの絵・名前・口調・せりふを決めます');
+    btn.addEventListener('click', function () { openOshi(btn); });
+    return btn;
+  }

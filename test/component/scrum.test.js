@@ -804,7 +804,8 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
         apiPrefs: () => ({ later: (ok) => { deliver = ok; } }) }, over));
       return { app, deliver: (res) => deliver(res) };
     }
-    const callsSince = (app, n) => app.calls.slice(n).map((c) => c.name).filter((x) => x !== 'apiUsageRecord');
+    // 推しは既定でオンなので、設定が初めて届いたときに推しを取る (一覧の取り直しではない)
+    const callsSince = (app, n) => app.calls.slice(n).map((c) => c.name).filter((x) => x !== 'apiUsageRecord' && x !== 'apiOshiGet');
 
     it('作業期間の画面は、取り直さずに描き直す', () => {
       const { app, deliver } = late();
