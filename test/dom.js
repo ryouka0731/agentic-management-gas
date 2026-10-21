@@ -223,6 +223,7 @@ const API_NAMES = [
   'apiAppUrl', 'apiWorkStyle', 'apiWorkStyleSave', 'apiWorkStyleForget', 'apiWorkStyleTeam',
   'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
+  'apiOshiSetCharProfile', 'apiOshiBuiltinProfiles', 'apiOshiBuiltinProfileSet',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared',
   'apiOutcomes',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
@@ -358,7 +359,14 @@ export const DEFAULTS = {
     mine: [], mineMax: 5, styles: [], tones: [], states: [], basePrompt: '', luckyOneIn: 0,
     growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
     limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
+    reveal: { items: [], open: 0, total: 0,
+      limits: { itemsMax: 40, labelMax: 20, textMax: 200, lvMin: 2, lvMax: 99, clearLineMax: 200 } },
+    achOn: true, cleared: false, clear: null,
   },
+  // 最初からいるキャラのプロフィール (設定の画面の管理者の欄)。中身はサーバのスクリプトの設定にだけある
+  apiOshiBuiltinProfiles: { chars: [{ key: 'taku', name: 'タク', json: '', items: 0 }, { key: 'itsuki', name: 'イツキ', json: '', items: 0 }] },
+  apiOshiBuiltinProfileSet: { key: 'taku', name: 'タク', json: '', items: 0 },
+  apiOshiSetCharProfile: { charId: 1, items: 0, profileJson: '' },
   apiListFiles: [
     { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
     { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },

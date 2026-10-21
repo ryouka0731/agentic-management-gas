@@ -2,7 +2,9 @@
  * 推しの置き場。定義 (表情・口調・せりふ・頼み文・上限) は src/core/Oshi.js が持つ。
  *
  * - 自分のキャラは1人 OSHI_MINE_MAX 人まで。人ごとの番号 (`charId`) で分ける
- * - 名前・口調・自分のせりふは台帳の `oshi` に、キャラごとに1行
+ * - 名前・口調・自分のせりふ・プロフィールは台帳の `oshi` に、キャラごとに1行 (プロフィールは後から足した列 `profile`)
+ * - 最初からいるキャラのプロフィールは台帳にもリポジトリにも置かず、スクリプトプロパティ `OSHI_PROFILE:<key>` にだけ置く
+ *   (管理者が入れる。oshiBuiltinProfileRead_)
  * - 表情ごとの画像は、中身を objects/ (`oshi-<中身の指紋>.<拡張子>`。oshiObjectName_) に、どの人のどのキャラのどの表情かを
  *   台帳の `oshi_images` に置く (台帳のセルには上限があり、画像は入らない)
  * - **推しの画像は文書の履歴の画像と別の名前で置く。** 履歴の画像も `<sha>.<ext>` で置かれるので、同じ名前だと
@@ -82,12 +84,12 @@ function oshiAssertMine_(email, id) {
 }
 
 /**
- * 自分のキャラの名前・口調・自分のせりふ。名前の行が無ければ (絵だけの1人目) 名前なし・丁寧。
+ * 自分のキャラの名前・口調・自分のせりふ・プロフィール。名前の行が無ければ (絵だけの1人目) 名前なし・丁寧。
  *
  * @param {string} email
  * @param {number} id 自分のキャラの番号
  * @param {object[]} [rows] 読んだ oshi の行
- * @returns {{row: (object|null), id: number, name: string, tone: string, lines: Object<string, string[]>}}
+ * @returns {{row: (object|null), id: number, name: string, tone: string, lines: Object<string, string[]>, profile: ?object}}
  */
 function oshiProfile_(email, id, rows) {
   var who = oshiWho_(email);
@@ -111,7 +113,9 @@ function oshiProfile_(email, id, rows) {
     } catch (e) { /* 読めなければ、せりふは無いことにする */ }
   }
   var tone = row && oshiToneKnown(row.tone) ? String(row.tone) : 'polite';
-  return { row: row, id: id, name: row ? plainText(row.name) : '', tone: tone, lines: lines };
+  // プロフィール (後から足した列)。読めない・検査に通らないものは無いことにする
+  var profile = row ? oshiProfileParse_(row.profile) : null;
+  return { row: row, id: id, name: row ? plainText(row.name) : '', tone: tone, lines: lines, profile: profile };
 }
 
 /**
@@ -120,7 +124,7 @@ function oshiProfile_(email, id, rows) {
  *
  * @param {string} email
  * @param {number} id
- * @param {{name?: string, tone?: string, lines?: Object<string, string[]>}} patch
+ * @param {{name?: string, tone?: string, lines?: Object<string, string[]>, profile?: string}} patch profile は検査を通した JSON の字 (空で外す)
  * @returns {{id: number, name: string, tone: string, lines: Object<string, string[]>}}
  */
 function oshiProfileWrite_(email, id, patch) {
@@ -136,6 +140,9 @@ function oshiProfileWrite_(email, id, patch) {
       lines: JSON.stringify(patch.lines !== undefined ? patch.lines : cur.lines),
       updatedAt: new Date(),
       charId: id,
+      // 読めなかった前の値は残さない (書き直すときに無いことにする)
+      profile: patch.profile !== undefined ? patch.profile
+        : (cur.profile ? JSON.stringify({ items: cur.profile.items, clearLine: cur.profile.clearLine, clearVideo: cur.profile.clearVideo }) : ''),
     };
     if (cur.row) dbUpdate('oshi', 'id', cur.row.id, next);
     else dbAppendNumbered('oshi', 'id', next);
@@ -616,4 +623,316 @@ function oshiChoice_(email) {
   var c = oshiCharParse(value) || oshiCharParse('builtin:' + OSHI_BUILTINS()[0].key);
   var fb = oshiCharParse(prefGet_('oshi.fallback', who));
   return { value: value, kind: c.kind, key: c.key, id: c.id, fallback: fb && fb.kind === 'builtin' ? fb.key : '' };
+}
+
+// ----- プロフィール (Lv で少しずつ分かる) と、クリア -----
+
+/**
+ * プロフィールを確かめて整える。**ここが唯一の検査** (最初からいるキャラの管理者の欄・手元からの命令 oshiProfileSet・
+ * 自分のキャラの欄・置き場から読むときのどれもここを通す)。合わなければふつうの言葉で断る。
+ *
+ * 形: `{items: [{lv, label, text}], clearLine, clearVideo}`。items は OSHI_PROFILE_LIMITS の数まで、lv は整数。
+ * clearVideo は YouTube の動画のリンク (か、読み解いたあとの11字の id) で、id だけを残す (読み解くのは focusMusicParse_)。
+ * 再生リストとほかの場所は断る。JSON の字で渡してもよい。空の字は「プロフィール無し」。
+ *
+ * @param {*} v
+ * @returns {{items: Array<{lv: number, label: string, text: string}>, clearLine: string, clearVideo: string}}
+ */
+function oshiProfileValid_(v) {
+  var lim = OSHI_PROFILE_LIMITS();
+  var p = v;
+  if (typeof p === 'string') {
+    if (!p.replace(/\s+/g, '')) return { items: [], clearLine: '', clearVideo: '' };
+    try {
+      p = JSON.parse(p);
+    } catch (e) {
+      throw new Error('プロフィールを JSON として読めませんでした。items (項目の並び) を持つ形で書いてください');
+    }
+  }
+  if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('プロフィールは items (項目の並び) を持つ JSON の形で書いてください');
+  Object.keys(p).forEach(function (k) {
+    if (['items', 'clearLine', 'clearVideo'].indexOf(k) < 0) {
+      throw new Error('プロフィールに知らない欄があります。使えるのは items・clearLine・clearVideo だけです: ' + k);
+    }
+  });
+  var list = p.items === undefined || p.items === null ? [] : p.items;
+  if (!Array.isArray(list)) throw new Error('items は並び ([...]) で書いてください');
+  if (list.length > lim.itemsMax) throw new Error('プロフィールの項目は' + lim.itemsMax + '個までにしてください');
+  var items = list.map(function (it, i) {
+    var at = (i + 1) + '番目の項目';
+    if (!it || typeof it !== 'object' || Array.isArray(it)) throw new Error(at + 'は lv・label・text を持つ形にしてください');
+    Object.keys(it).forEach(function (k) {
+      if (['lv', 'label', 'text'].indexOf(k) < 0) throw new Error(at + 'に知らない欄があります。使えるのは lv・label・text だけです: ' + k);
+    });
+    var lv = Number(it.lv);
+    if (typeof it.lv !== 'number' || Math.floor(lv) !== lv || lv < lim.lvMin || lv > lim.lvMax) {
+      throw new Error(at + 'の lv は ' + lim.lvMin + ' から ' + lim.lvMax + ' までの整数にしてください');
+    }
+    var label = oshiProfileText_(it.label);
+    var text = oshiProfileText_(it.text);
+    if (!label) throw new Error(at + 'の label (見出し) を書いてください');
+    if (label.length > lim.labelMax) throw new Error(at + 'の label は' + lim.labelMax + '字までにしてください');
+    if (!text) throw new Error(at + 'の text (中身) を書いてください');
+    if (text.length > lim.textMax) throw new Error(at + 'の text は' + lim.textMax + '字までにしてください');
+    return { lv: lv, label: label, text: text };
+  });
+  var line = oshiProfileText_(p.clearLine);
+  if (line.length > lim.clearLineMax) throw new Error('clearLine (クリアのお祝い) は' + lim.clearLineMax + '字までにしてください');
+  var out = { items: items, clearLine: line, clearVideo: oshiProfileVideo_(p.clearVideo) };
+  // 台帳のセルは5万字まで。JSON にすると膨らむ字 (対の無いサロゲートなど) もあるので、書く形の長さで断る
+  if (JSON.stringify(out).length > OSHI_PROFILE_JSON_MAX()) {
+    throw new Error('プロフィールが長すぎます。JSON にして' + OSHI_PROFILE_JSON_MAX() + '字までにしてください');
+  }
+  return out;
+}
+
+/**
+ * プロフィールの字。無い (null / undefined) は空、字でないものは断る。前後の空白は落とす。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function oshiProfileText_(v) {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string') throw new Error('プロフィールの label・text・clearLine は字 ("…") で書いてください');
+  // 制御文字 (改行・タブを除く) は落とす。見えないうえに、JSON にすると \uXXXX の6字に膨らむ
+  return v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/^\s+|\s+$/g, '');
+}
+
+/**
+ * クリアの動画。YouTube の動画1本のリンクか、読み解いたあとの id。id だけを返す (空なら動画なし)。
+ * 読み解くのは集中のしかたの「自分の曲」と同じ focusMusicParse_ (URL の読み方を2つにしない)。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function oshiProfileVideo_(v) {
+  if (v === undefined || v === null || v === '') return '';
+  if (typeof v !== 'string') throw new Error('clearVideo (クリアの動画) は YouTube の動画のリンクを字で書いてください');
+  var s = v.replace(/^\s+|\s+$/g, '');
+  if (!s) return '';
+  if (focusMusicRe_().video.test(s) && s !== 'videoseries') return s;
+  var got = focusMusicParse_(s);
+  if (got.ok && got.parts.kind === 'youtube' && got.parts.video) return got.parts.video;
+  if (got.ok && got.parts.kind === 'youtube') {
+    throw new Error('clearVideo (クリアの動画) は、再生リストの入っていない YouTube の動画1本のリンクにしてください');
+  }
+  throw new Error('clearVideo (クリアの動画) は YouTube の動画のリンクだけ使えます');
+}
+
+/**
+ * 置き場から読んだプロフィール。読めない・検査に通らないものは無いことにする (人がエディタや台帳で書き換えうる)。
+ *
+ * @param {*} raw
+ * @returns {?{items: object[], clearLine: string, clearVideo: string}}
+ */
+function oshiProfileParse_(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  try {
+    var p = oshiProfileValid_(String(raw));
+    return p.items.length || p.clearLine || p.clearVideo ? p : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 直す欄に出す JSON。動画は id ではなくリンクで出す (書いたときの形に近づける)。無ければ空。
+ *
+ * @param {?object} p
+ * @returns {string}
+ */
+function oshiProfileJson_(p) {
+  if (!p) return '';
+  var out = { items: p.items };
+  if (p.clearLine) out.clearLine = p.clearLine;
+  if (p.clearVideo) out.clearVideo = focusMusicLinkOf_({ kind: 'youtube', video: p.clearVideo });
+  return JSON.stringify(out, null, 2);
+}
+
+/** プロフィールを JSON にした字の上限。台帳のセル (5万字) に余裕を見る */
+function OSHI_PROFILE_JSON_MAX() {
+  return 45000;
+}
+
+/** 1つの値に置く UTF-8 のバイトの上限。スクリプトプロパティは1つ 9KB までなので余裕を見る (REWARD_MAX_BYTES と同じ) */
+function OSHI_PROFILE_PART_BYTES() {
+  return 8000;
+}
+
+/** 最初からいるキャラのプロフィールの鍵。分けて置くときは `<鍵>:<0 から>` に続きを置く */
+function oshiBuiltinProfileKey_(key) {
+  return 'OSHI_PROFILE:' + key;
+}
+
+/**
+ * 最初からいるキャラのプロフィール。**中身はリポジトリに置かない** (スクリプトプロパティ OSHI_PROFILE:<key> にだけある。
+ * 管理者が設定の画面か手元からの命令 oshiProfileSet で入れる)。無い・読めない・検査に通らないなら null。
+ *
+ * 1つの値は 9KB までなので、収まらないときは頭に `{"parts": N, "v": 版}` を置き、続きを `OSHI_PROFILE:<key>:<版>:0`〜`N-1` に
+ * 分けて置く。版の無い `{"parts": N}` (続きは `OSHI_PROFILE:<key>:0`〜) も読む (oshiProfileHead_)。
+ *
+ * @param {string} key OSHI_BUILTINS の key
+ * @returns {?object}
+ */
+function oshiBuiltinProfileRead_(key) {
+  if (!oshiBuiltinOf(key)) return null;
+  var props = PropertiesService.getScriptProperties();
+  var base = oshiBuiltinProfileKey_(key);
+  var raw = props.getProperty(base);
+  var head = oshiProfileHead_(raw, base);
+  if (head) {
+    var text = '';
+    for (var i = 0; i < head.parts; i++) {
+      var part = props.getProperty(head.prefix + i);
+      if (part === null || part === undefined) return null;
+      text += part;
+    }
+    raw = text;
+  }
+  return oshiProfileParse_(raw);
+}
+
+/**
+ * 分けて置いたときの頭を読む。分けていない (プロフィールそのもの)・読めないなら null。
+ *
+ * @param {?string} raw OSHI_PROFILE:<key> の値
+ * @param {string} [base] 鍵 (省くと 'OSHI_PROFILE:' を付けない続きの前置きを返さない)
+ * @returns {?{parts: number, v: number, prefix: string}} prefix は続きの鍵の前置き (base を除いた形は使わない)
+ */
+function oshiProfileHead_(raw, base) {
+  var head = null;
+  try { head = raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  if (!head || typeof head !== 'object' || Array.isArray(head) || head.items !== undefined) return null;
+  var n = Number(head.parts);
+  if (!(isFinite(n) && n >= 1 && n <= 20 && Math.floor(n) === n)) return null;
+  var v = head.v === undefined ? 0 : Number(head.v);
+  if (!(isFinite(v) && v >= 0 && Math.floor(v) === v)) return null;
+  return { parts: n, v: v, prefix: (base || '') + ':' + (v ? v + ':' : '') };
+}
+
+/**
+ * 最初からいるキャラのプロフィールを置く (null で外す)。検査を通したものだけを渡す。**鍵の中で書く** (ほぼ同時の2回で、
+ * 続きが混ざらないように)。台帳も Drive も触らない。
+ *
+ * **途中で止まっても前のものを失わない順に書く**: 新しい続きを新しい版の鍵に置く → 頭を替える → 前の版の続きを消す。
+ * 前の続きを先に消すと、頭を替える前に止まったとき、頭が指す続きがもう無い。
+ *
+ * @param {string} key
+ * @param {?object} p oshiProfileValid_ の返り
+ */
+function oshiBuiltinProfileWrite_(key, p) {
+  var props = PropertiesService.getScriptProperties();
+  var base = oshiBuiltinProfileKey_(key);
+  var empty = !p || (!p.items.length && !p.clearLine && !p.clearVideo);
+  var json = empty ? '' : JSON.stringify({ items: p.items, clearLine: p.clearLine, clearVideo: p.clearVideo });
+  dbWithLock_(10000, function () {
+    var parts = [];
+    if (json && rewardBytes_(json) > OSHI_PROFILE_PART_BYTES()) parts = oshiProfileSplit_(json, OSHI_PROFILE_PART_BYTES());
+    var before = oshiProfileHead_(props.getProperty(base), base);
+    if (empty) {
+      props.deleteProperty(base);
+    } else if (!parts.length) {
+      props.setProperty(base, json);
+    } else {
+      var v = (before ? before.v : 0) + 1;
+      parts.forEach(function (part, j) { props.setProperty(base + ':' + v + ':' + j, part); });
+      props.setProperty(base, JSON.stringify({ parts: parts.length, v: v }));
+    }
+    // 頭を替えたあとで、前の版の続きを消す
+    if (before) for (var i = 0; i < before.parts; i++) props.deleteProperty(before.prefix + i);
+  });
+}
+
+/**
+ * 字を UTF-8 のバイトの上限ごとに分ける。字の途中 (サロゲートの組) では切らない。
+ *
+ * @param {string} s
+ * @param {number} max
+ * @returns {string[]}
+ */
+function oshiProfileSplit_(s, max) {
+  var out = [];
+  var cur = '';
+  var bytes = 0;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+    var code = s.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) ch += s.charAt(++i);
+    var b = rewardBytes_(ch);
+    if (bytes + b > max) {
+      out.push(cur);
+      cur = '';
+      bytes = 0;
+    }
+    cur += ch;
+    bytes += b;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/**
+ * 最初からいるキャラのプロフィールを決める。**管理者だけ** (who は画面なら開いている本人、命令なら置いた人)。
+ * 検査に通らなければ何も書かずに断る。空にすると外す。
+ *
+ * @param {string} who
+ * @param {string} key OSHI_BUILTINS の key
+ * @param {*} value プロフィール (JSON の字か、形のままの物)
+ * @returns {{key: string, items: number, clearLine: boolean, clearVideo: boolean, profile: ?object}}
+ */
+function oshiBuiltinProfileSet_(who, key, value) {
+  repoAssertAdmin_('最初からいるキャラのプロフィールを決めること', who);
+  if (!oshiBuiltinOf(key)) throw new Error('知らないキャラです: ' + key);
+  var p = oshiProfileValid_(value);
+  oshiBuiltinProfileWrite_(String(key), p);
+  var now = oshiBuiltinProfileRead_(String(key));
+  return { key: String(key), items: now ? now.items.length : 0, clearLine: !!(now && now.clearLine),
+    clearVideo: !!(now && now.clearVideo), profile: now };
+}
+
+/**
+ * 自分のキャラのプロフィールを決める (台帳 oshi の profile の欄)。空にすると外す。
+ *
+ * @param {string} email
+ * @param {number} id
+ * @param {*} value
+ * @returns {?object} 置いたプロフィール (外したら null)
+ */
+function oshiSetCharProfile_(email, id, value) {
+  var p = oshiProfileValid_(value);
+  var empty = !p.items.length && !p.clearLine && !p.clearVideo;
+  var raw = empty ? '' : JSON.stringify({ items: p.items, clearLine: p.clearLine, clearVideo: p.clearVideo });
+  oshiProfileWrite_(email, id, { profile: raw });
+  return empty ? null : p;
+}
+
+/**
+ * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) を全部取っていれば true。
+ *
+ * @param {Object<string, string>} have achUnlockedRead_ の返り
+ * @returns {boolean}
+ */
+function oshiClearedOf_(have) {
+  var all = ACHIEVEMENTS();
+  return all.length > 0 && all.every(function (a) { return Object.prototype.hasOwnProperty.call(have || {}, a.key); });
+}
+
+/**
+ * その人がクリアしたか。**一度クリアしたら覚えて、あとから実績が増えてもクリアのまま** (スクリプトプロパティ
+ * `OSHI_CLEARED:<小文字のアドレス>` = クリアした日)。取った印と同じく消さない。書くのは1つの値を置くだけなので鍵は取らない
+ * (2回書いても同じ)。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function oshiCleared_(email) {
+  var who = oshiWho_(email);
+  if (!who) return false;
+  var props = PropertiesService.getScriptProperties();
+  var key = 'OSHI_CLEARED:' + who;
+  if (props.getProperty(key)) return true;
+  if (!oshiClearedOf_(achUnlockedRead_(who))) return false;
+  props.setProperty(key, usageDay(new Date()));
+  return true;
 }
