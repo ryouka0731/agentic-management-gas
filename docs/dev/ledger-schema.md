@@ -32,6 +32,10 @@
 上限いっぱいで 5万5千字を超え、`dbUpdate` が英語のまま落ちた)。制御文字 (改行・タブを除く) は検査で落とし、JSON にして
 `OSHI_PROFILE_JSON_MAX()` (4万5千字) を超えるものはふつうの言葉で断る (`test/oshi-profile.test.js`)。
 最初からいるキャラのプロフィールは台帳に置かない (`docs/dev/permissions.md`)。
+`oshi` の末尾の `shared` は「みんなに公開する」の印 (`true` / 空)。**足す前の行は空のままで、公開していないとして読む**
+(`oshiSharedOn_`。手で書いた `TRUE` も公開として読む)。書くのは `oshiSetShared_` だけで、鍵の中で本人のキャラか確かめてから `dbUpdate` で
+その欄だけ書く (`dbUpdate` は渡した欄だけを書くので、名前やせりふを直しても印は残る)。公開したキャラの名指しは行の `id` (`'shared:<id>'`)。
+行を消すと番号は二度出さないので、消したキャラの名指しが別のキャラにすり替わることはない。
 
 `goals` / `goal_items` / `goal_links` (目標。既定はオフ) は `id` をどれも `dbAppendNumbered` / `dbAppendNumberedMany` で振る
 表ごとの通し番号にしている (目標ごとに振ると `dbUpdate` / `dbDelete` が関係のない目標の項目を書き換える)。`who` は小文字のアドレス。

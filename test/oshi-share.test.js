@@ -114,7 +114,7 @@ describe('ほかの人が選ぶ', () => {
     expect(b2.reveal.items.filter((it) => it.open).map((it) => it.text)).toEqual(['テストのパン']);
   });
 
-  it('作った人は自分のキャラを shared: で選べない (mine: で選ぶ)。名前が無ければ「名前未設定」', () => {
+  it('作った人は自分のキャラを shared: で選べない (mine: で選ぶ)。名前が無ければ作った人は空 (アドレスの一部も出さない)', () => {
     const { ctx, fake } = setup();
     fake._setUser('a@example.com');
     const id = ctx.apiOshiCharCreate('ルナ', 'cool').charId;
@@ -123,7 +123,8 @@ describe('ほかの人が選ぶ', () => {
     expect(() => ctx.apiPrefSet('oshi.char', 'shared:' + sid)).toThrow('そのキャラは選べません');
     expect(ctx.apiOshiGet().shared).toEqual([]);
     fake._setUser('b@example.com');
-    expect(ctx.apiOshiGet().shared[0].owner).toBe('名前未設定');
+    expect(ctx.apiOshiGet().shared[0].owner).toBe('');
+    expect(JSON.stringify(ctx.apiOshiGet())).not.toMatch(/a@example|"a"/);
   });
 
   it('公開されていないキャラは選べず、絵も読めない (番号を知っていても)', () => {
