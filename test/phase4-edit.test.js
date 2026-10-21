@@ -3,6 +3,7 @@ import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import fs from 'node:fs';
 import { APP_SOURCES, API_SOURCES, KIT_SOURCES } from './sources.js';
+import { installCoworkCache } from './cowork-cache.js';
 
 /**
  * Phase 4b (Markdown編集 + mainのブランチ保護) の統合テスト。
@@ -827,6 +828,14 @@ describe('画面に渡せる形か', () => {
       if (!out.weeks.some((w) => !w.hidden)) throw new Error('成果の数が空のまま検査されている');
       return out;
     }],
+    // 作業雑談部屋。いる印はキャッシュにだけある (疑似GAS には無いので足す)。入った人がいる形を検査する
+    ['apiCoworkRooms', (ctx, env) => coworkReady(ctx, env, (id) => { ctx.apiCoworkEnter(id); return ctx.apiCoworkRooms(); }, true)],
+    ['apiCoworkEnter', (ctx, env) => coworkReady(ctx, env, (id) => ctx.apiCoworkEnter(id), true)],
+    ['apiCoworkBeat', (ctx, env) => coworkReady(ctx, env, (id) => { ctx.apiCoworkEnter(id); return ctx.apiCoworkBeat(id); }, true)],
+    ['apiCoworkLeave', (ctx, env) => coworkReady(ctx, env, (id) => ctx.apiCoworkLeave(id))],
+    ['apiCoworkRoomSettings', (ctx, env) => coworkReady(ctx, env, () => ctx.apiCoworkRoomSettings())],
+    ['apiCoworkSetRooms', (ctx, env) => coworkReady(ctx, env,
+      () => ctx.apiCoworkSetRooms([{ name: '雑談', link: 'https://app.slack.com/huddle/T01ABCDEF/C02GHIJKL' }]))],
     // 消す側も走査する。返す形を間違えても、成功した以上は気づかれない
     ['apiPrClose', (ctx, env) => ctx.apiPrClose(env.pr.number)],
     // 外せるのは改訂版の無いものだけなので、別にもう1つ登録して外す
@@ -837,6 +846,18 @@ describe('画面に渡せる形か', () => {
       return ctx.apiUnregisterFile(id);
     }],
   ];
+
+  /** 作業雑談部屋をオンにして部屋を1つ置き、その部屋の id で fn を呼ぶ */
+  function coworkReady(ctx, env, fn, wantPeople) {
+    installCoworkCache(env.fake);
+    ctx.apiPrefSet('cowork.enabled', true);
+    ctx.apiCoworkSetRooms([{ name: '雑談', link: 'https://meet.google.com/abc-defg-hij' }]);
+    const out = fn(ctx.coworkRooms_()[0].id);
+    if (wantPeople && !out.rooms[0].people.length) {
+      throw new Error('いる人が空のまま検査されている');
+    }
+    return out;
+  }
 
   CASES.forEach(([name, call]) => {
     it(name + ' は Date を含まない', () => {

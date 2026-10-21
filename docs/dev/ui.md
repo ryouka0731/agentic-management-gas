@@ -110,7 +110,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
   `oshiGreetingOf` /
   `focusMusicParse_` / `focusMusicPartsValid_` / `focusMusicEmbedUrl_` / `focusMusicLinkOf_` (`src/core/FocusMusic.js`。写しは `js-focus`) /
-  `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`)
+  `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`) /
+  `coworkLinkParse_` / `coworkLinkPartsValid_` / `coworkLinkOf_` / `coworkLinkKindLabel_` (`src/core/CoworkLink.js`。写しは `js-cowork`)
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
   図が消える。図の座標は手で置いているため、`test/component/settings-usage-guide.test.js` の
@@ -353,3 +354,17 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 「承認を待つもの」の「期末の評価を付けるもの」には、期が終わったか本人が振り返りを書いたものだけを出す (期の途中から急かさない)
 - やることの詳細の「目標」(`makeIssueGoalBox`) は `apiGoalIssueLinks` で、見られる結び付きと、自分の評価前の項目 (つなぐ先) を取る
 - 試すのは `test/component/goals.test.js` (返事は本物のサーバから作る)・`test/e2e/goals.test.js` (通し)
+
+## 作業雑談部屋 (`js-cowork`)
+
+チームの設定 `cowork.enabled` (既定オフ) がオンのときだけ、左に「作業雑談部屋」(`#nav-cowork`) を出す (`coworkPrefsChanged` を `applyPrefs` から呼ぶ)。
+
+- **部屋は押した聞き手の中で開く** (`coworkOpen`)。返事を待ってから開くとブラウザが窓を止める。URL はサーバが読み解いた部品から
+  `coworkLinkOf_` で組み、`window.open(url, '_blank', 'noopener')`。番頭は Meet / Slack に何も頼まず、何も取ってこない
+- 顔は名前の頭文字だけ (`makeCoworkAvatar`。アドレスを受け取らないので `makeAvatar` は使えない。形は `.avatar` のまま)
+- 合図は入っているあいだ 60 秒ごと (`apiCoworkBeat`、`failQuiet`)。番頭のタブが裏でも30分 (`COWORK_HIDDEN_GRACE_MS`) は送り続ける
+  (Meet の画面を見ているあいだに名前が消えないように)。それを過ぎたら止め、表に戻ったらすぐ送る。閉じたときは何も送らず2分で消えるのに任せる。
+  部屋の画面を見ているあいだは、入っていなくても同じ時計で様子を取り直す。どちらでもなくなったら時計を止める
+- 取り直す返事は `latest('cowork')` を通す (入る・出るも頼み直しとして数え、前に頼んだ様子・合図の返事を捨てる)。サーバに残った印から入っている部屋を
+  戻すのは、その画面で最初に様子が届いたときだけ (出たあとに届いた古い返事で入り直さない。`test/component/cowork.test.js` の「遅れて届く返事」)
+- 試すのは `test/component/cowork.test.js`・`test/e2e/cowork.test.js` (返事は本物のサーバ。キャッシュと時計は `test/cowork-cache.js`)
