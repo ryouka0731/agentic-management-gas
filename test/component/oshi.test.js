@@ -188,13 +188,13 @@ describe('推し', () => {
   });
 
   it('ホームに推しのカード (あいさつ・育ちの段・なかよし)。ホームのあいさつを止めると出さない', () => {
-    mountOshi(ON, { apiOshiGet: oshiFixture({ growth: { key: 'grow2', label: '一人前', meter: 40, toNext: 18 } }) });
+    mountOshi(ON, { apiOshiGet: oshiFixture({ growth: { key: 'grow2', label: 'なれてきた', meter: 40, toNext: 18 } }) });
     const card = document.querySelector('#home-cards .oshi-card');
     expect(card).toBeTruthy();
     expect(['morning', 'day', 'night']).toContain(card.dataset.event);
     expect(card.querySelector('.oshi-line').textContent).not.toBe('');
     expect(card.querySelector('.oshi-stage').dataset.stage).toBe('grow2');
-    expect(card.querySelector('.oshi-stage').textContent).toContain('一人前');
+    expect(card.querySelector('.oshi-stage').textContent).toContain('なれてきた');
     expect(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('40');
 
     mountOshi({ 'oshi.on': true, 'oshi.char': 'mine:1', 'oshi.home': false });
@@ -555,7 +555,9 @@ describe('選んだキャラがあいさつする', () => {
     openSettings();
     app.respond('apiOshiGet', oshiFixture({ char: 'builtin:itsuki' }));
     card('builtin:itsuki').click();
-    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('itsuki', 'normal', STATES[0]));
+    // 選ばれたのは ふつう (STATES[0])。ふつうの顔はいまの段の絵で出す (oshiPickState)
+    expect(STATES[0]).toBe('idle');
+    expect(bubble().querySelector('img').getAttribute('src')).toBe(defaultUrl('itsuki', 'normal', 'grow1'));
   });
 
   it('自分のキャラを選ぶと、そのキャラの口調のせりふと、入れてある絵の中から出す', () => {

@@ -99,6 +99,13 @@ describe('期限切れが溜まっている', () => {
     expect(a.action.kind).toBe('issues-overdue');
   });
 
+  it('担当の字の大小は見ない (推しの機嫌と「見る」の一覧と同じ人として数える)', () => {
+    const { ctx } = setup();
+    const min = rule(ctx, 'overdue').min;
+    late(ctx, min, { assignee: ME.toUpperCase() });
+    expect(ids(ctx.homeAdvice_(ME, NOW))).toContain('overdue');
+  });
+
   it('今日が期限のもの・済み・捨てた・他人の担当は数えない', () => {
     const { ctx } = setup();
     const min = rule(ctx, 'overdue').min;

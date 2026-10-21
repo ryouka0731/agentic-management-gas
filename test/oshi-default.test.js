@@ -55,7 +55,7 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
 
   it('絵が無くてもよい表情 (optional) には、絵が無いときに代わりに出す表情 (fallback) があり、それは必ず焼く表情', () => {
     const opt = pure.OSHI_STATES().filter((s) => s.optional);
-    expect(opt.map((s) => s.key)).toEqual(['pout']);
+    expect(opt.map((s) => s.key)).toEqual(['pout', 'grow4', 'grow5']);
     for (const s of opt) {
       const fb = pure.OSHI_STATES().find((x) => x.key === s.fallback);
       expect(fb, s.key).toBeTruthy();

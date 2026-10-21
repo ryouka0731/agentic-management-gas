@@ -556,12 +556,12 @@ function oshiImageData_(email, id, state) {
  * (achStageFloor_。前から使っている人の推しが、実績を足した日に見習いへ戻らないように)。
  *
  * @param {string} email
- * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number}}
+ * @returns {{index: number, key: string, label: string, meter: number, toNext: number, level: number, unlocked: number, floored: boolean}}
  */
 function oshiGrowth_(email) {
   var lv = achLevel_(oshiWho_(email));
   return { index: lv.index, key: lv.key, label: lv.label, meter: lv.meter, toNext: lv.toNext, level: lv.level,
-    unlocked: lv.unlocked };
+    unlocked: lv.unlocked, floored: lv.floored };
 }
 
 /**
@@ -817,16 +817,43 @@ function oshiBuiltinProfileRead_(key) {
   var base = oshiBuiltinProfileKey_(key);
   var raw = props.getProperty(base);
   var head = oshiProfileHead_(raw, base);
-  if (head) {
-    var text = '';
-    for (var i = 0; i < head.parts; i++) {
-      var part = props.getProperty(head.prefix + i);
-      if (part === null || part === undefined) return null;
-      text += part;
+  if (head) raw = oshiProfilePartsRead_(props, head);
+  return raw === null ? null : oshiProfileParse_(raw);
+}
+
+/**
+ * 分けて置いた続きをつないで読む。**続きを1つずつ問い合わせない** (apiOshiGet のたびに最大20回になる): 版のある形は
+ * CacheService に版ごとに覚え (版は置き直すたびに変わるので、古い覚えは使われない)、無ければ getProperties() の1回で読む。
+ *
+ * @param {object} props スクリプトプロパティ
+ * @param {{parts: number, v: number, prefix: string}} head oshiProfileHead_ の返り
+ * @returns {?string} 欠けていれば null
+ */
+function oshiProfilePartsRead_(props, head) {
+  var cache = null;
+  var ck = 'OSHI_PROFILE_C:' + head.prefix + head.parts;
+  if (head.v) {
+    try {
+      cache = CacheService.getScriptCache();
+      var hit = cache.get(ck);
+      if (hit !== null && hit !== undefined) return hit;
+    } catch (e) {
+      cache = null;
     }
-    raw = text;
   }
-  return oshiProfileParse_(raw);
+  var all = props.getProperties();
+  var text = '';
+  for (var i = 0; i < head.parts; i++) {
+    var part = all[head.prefix + i];
+    if (part === null || part === undefined) return null;
+    text += part;
+  }
+  try {
+    if (cache) cache.put(ck, text, 21600);
+  } catch (e2) {
+    // 覚えられなければ、次も1回で読むだけ (CacheService は1つ 100KB まで)
+  }
+  return text;
 }
 
 /**
@@ -866,17 +893,22 @@ function oshiBuiltinProfileWrite_(key, p) {
     var parts = [];
     if (json && rewardBytes_(json) > OSHI_PROFILE_PART_BYTES()) parts = oshiProfileSplit_(json, OSHI_PROFILE_PART_BYTES());
     var before = oshiProfileHead_(props.getProperty(base), base);
+    var v = 0;
     if (empty) {
       props.deleteProperty(base);
     } else if (!parts.length) {
       props.setProperty(base, json);
     } else {
-      var v = (before ? before.v : 0) + 1;
+      // 版は置き直すたびに必ず変わる数にする (読むときの覚えを版で引くので、前の版の数に戻らないように時刻を使う)
+      v = Math.max((before ? before.v : 0) + 1, Date.now());
       parts.forEach(function (part, j) { props.setProperty(base + ':' + v + ':' + j, part); });
       props.setProperty(base, JSON.stringify({ parts: parts.length, v: v }));
     }
-    // 頭を替えたあとで、前の版の続きを消す
-    if (before) for (var i = 0; i < before.parts; i++) props.deleteProperty(before.prefix + i);
+    // 頭を替えたあとで、いまの版でない続きを全部消す (前の版も、途中で止まった版も。版は時刻なので、止まった版と同じ数にならない)
+    var keep = parts.length ? base + ':' + v + ':' : '';
+    Object.keys(props.getProperties()).forEach(function (k) {
+      if (k.indexOf(base + ':') === 0 && !(keep && k.indexOf(keep) === 0)) props.deleteProperty(k);
+    });
   });
 }
 
@@ -1075,14 +1107,31 @@ function oshiCharImport_(email, id, text) {
 }
 
 /**
- * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) を全部取っていれば true。
+ * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) のうち、この環境で取れるもの (と取ったもの) を全部取っていれば true。
  *
  * @param {Object<string, string>} have achUnlockedRead_ の返り
+ * @param {Object<string, string>} [off] 取れない実績 (achUnavailable_)。省くと全部を数える
  * @returns {boolean}
  */
-function oshiClearedOf_(have) {
+function oshiClearedOf_(have, off) {
   var all = ACHIEVEMENTS();
-  return all.length > 0 && all.every(function (a) { return Object.prototype.hasOwnProperty.call(have || {}, a.key); });
+  var h = have || {};
+  var o = off || {};
+  // この環境で取れない実績 (achUnavailable_) は数えない。取った実績は取れなくなっても数える
+  return all.some(function (a) { return Object.prototype.hasOwnProperty.call(h, a.key); }) && all.every(function (a) {
+    return Object.prototype.hasOwnProperty.call(h, a.key) || Object.prototype.hasOwnProperty.call(o, a.key);
+  });
+}
+
+/**
+ * もうクリアを覚えているか (数え直さない)。
+ *
+ * @param {string} email
+ * @returns {boolean}
+ */
+function oshiClearedSaved_(email) {
+  var who = oshiWho_(email);
+  return !!who && !!PropertiesService.getScriptProperties().getProperty('OSHI_CLEARED:' + who);
 }
 
 /**
@@ -1091,15 +1140,18 @@ function oshiClearedOf_(have) {
  * (2回書いても同じ)。
  *
  * @param {string} email
+ * @param {Object<string, string>} [off] 取れない実績 (achUnavailable_)。省くと数える
+ * @param {Object<string, string>} [have] 取った印。省くと読む
  * @returns {boolean}
  */
-function oshiCleared_(email) {
+function oshiCleared_(email, off, have) {
   var who = oshiWho_(email);
   if (!who) return false;
   var props = PropertiesService.getScriptProperties();
   var key = 'OSHI_CLEARED:' + who;
   if (props.getProperty(key)) return true;
-  if (!oshiClearedOf_(achUnlockedRead_(who))) return false;
+  var h = have || achUnlockedRead_(who);
+  if (!oshiClearedOf_(h, off || achUnavailable_(who, h))) return false;
   props.setProperty(key, usageDay(new Date()));
   return true;
 }

@@ -28,6 +28,181 @@ function achKey_(who) {
   return 'ACH:' + achWho_(who);
 }
 
+/**
+ * **この環境では (まだ) 取れない実績と、その理由。決めるのはここだけ。** クリア (oshiClearedOf_)・実績の頁の数・
+ * 「クリアで分かる」の Lv は、取れない実績を数えない。**取った実績は、取れなくなっても数える** (取り上げない) ので、
+ * 取った印のあるものはここに入れない。理由は、どうすれば取れるかを言う。
+ *
+ * **入れるのはチームか環境の理由だけ。** 自分の設定 (usage.self / oshi.on / focus.start / calendar.plan) で止めているものは
+ * 入れない (自分で切るだけでクリアに届き、クリアは消えないので取り返せない)。それは achPersonalTips_ が取り方を言うだけ。
+ *
+ * - いっしょに (team の6つ)・はじめての 反映した・承認した: 番頭を使っているのが本人1人のとき (achSolo_)
+ * - 目標を立てた: チームの設定 goals.enabled がオフ
+ * - 予定に入れた: 共有カレンダー (calendar.shared) を管理者が決めていない
+ * - 使われ方で数えるもの (Markdown・日報・探す): チームの usage.enabled がオフ
+ *
+ * @param {string} email
+ * @param {Object<string, string>} [have] 取った印 (省くと読む)
+ * @returns {Object<string, string>} key → 理由
+ */
+function achUnavailable_(email, have) {
+  var who = achWho_(email);
+  var got = have || achUnlockedRead_(who);
+  var off = {};
+  function mark(keys, reason) {
+    keys.forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(got, k) && !off[k]) off[k] = reason;
+    });
+  }
+  var all = ACHIEVEMENTS();
+  if (achSolo_(who)) {
+    mark(all.filter(function (a) { return a.group === 'team' || a.key === 'first-merge' || a.key === 'first-approve'; })
+      .map(function (a) { return a.key; }),
+    'ほかの人がいると取れます (いま番頭を使っているのは、あなた1人です。確認や承認をする相手が要ります)');
+  }
+  if (prefGet_('goals.enabled', who) !== true) {
+    mark(['first-goal'], 'チームの設定「目標 (OKR・MBO・KPI) を使う」をオンにすると取れます (管理者が変えられます)');
+  }
+  if (!prefGet_('calendar.shared', who)) {
+    mark(['first-calendar'], '管理者が設定で「予定を入れる共有カレンダー」を決めると取れます');
+  }
+  if (prefGet_('usage.enabled', who) === false) {
+    mark(achUsageKeys_(), 'チームの設定「使われ方を記録する」をオンにすると取れます (管理者が変えられます)');
+  }
+  return off;
+}
+
+/** 使われ方で数える「はじめて」の key (推しを選んだ は設定でも数えるので除く) */
+function achUsageKeys_() {
+  return Object.keys(ACH_USAGE_PLACES()).filter(function (m) { return m !== 'oshi'; })
+    .map(function (m) { return 'first-' + m; });
+}
+
+/**
+ * 自分の設定で止めているために取れない実績の、取り方の手がかり。**クリアの数からは外さない** (achUnavailable_ を見る)。
+ *
+ * @param {string} email
+ * @returns {Object<string, string>} key → 手がかり
+ */
+function achPersonalTips_(email) {
+  var who = achWho_(email);
+  var out = {};
+  if (prefGet_('usage.enabled', who) !== false && prefGet_('usage.self', who) === false) {
+    achUsageKeys_().forEach(function (k) { out[k] = '自分の設定「自分の使われ方を記録する」をオンにすると取れます'; });
+  }
+  if (prefGet_('calendar.shared', who) && prefGet_('calendar.plan', who) !== true) {
+    out['first-calendar'] = '自分の設定「やることを予定に入れる」をオンにすると取れます';
+  }
+  if (prefGet_('focus.start', who) !== true) out['first-focus'] = '自分の設定「今から始める」(集中のしかた) をオンにすると取れます';
+  if (prefGet_('oshi.on', who) === false) out['first-oshi'] = '自分の設定「推しに応援してもらう」をオンにすると取れます';
+  return out;
+}
+
+/**
+ * 番頭を使っているのが本人1人か。**1人と言うのは、Drive が1人と言い、しかも台帳のどこにもほかの人がいないときだけ。**
+ * Drive は、共有ドライブなら台帳を書き換えられる人 (driveMembers_)、マイドライブなら入れ物の持ち主と編集する人 (getEditors) を見る。
+ * ドメイン全体やリンクでの共有は getEditors に出ないので、台帳 (上下関係の名簿・確認依頼・返事・やりとり・担当・使われ方) に
+ * 本人のほかのアドレスがあれば1人ではない。
+ *
+ * **分からないとき (読めない) は1人とは言わない** (取れるものを外すと、クリアに早く届いてしまい、クリアは消えない)。
+ * 答えは CacheService に覚える (1人 / ほかの人がいる は10分、読めなかったことは2分。読めないまま開くたびに Drive に問い合わせない)。
+ *
+ * @param {string} who 小文字のアドレス
+ * @returns {boolean}
+ */
+function achSolo_(who) {
+  var key = 'ACH_PEOPLE:' + who;
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit === 'solo') return true;
+    if (hit === 'team' || hit === 'unknown') return false;
+  } catch (e) {
+    cache = null;
+  }
+  var got = achSoloRead_(who);
+  try {
+    if (cache) cache.put(key, got, got === 'unknown' ? 120 : 600);
+  } catch (e2) {
+    // 覚えられなければ、次も問い合わせるだけ
+  }
+  return got === 'solo';
+}
+
+/**
+ * achSolo_ の本体。
+ *
+ * @param {string} who
+ * @returns {string} solo / team / unknown
+ */
+function achSoloRead_(who) {
+  var seen = {};
+  seen[who] = true;
+  var other = false;
+  function add(v) {
+    var w = achWho_(v);
+    if (!w || seen[w]) return;
+    seen[w] = true;
+    other = true;
+  }
+  var known = false;
+  var driveId = repoDriveIdSafe_();
+  if (driveId) {
+    var m = driveMembers_(driveId);
+    if (m.admins.length) {
+      known = true;
+      m.admins.forEach(add);
+    }
+  } else {
+    var owner = repoOwnerEmail();
+    if (owner) {
+      known = true;
+      add(owner);
+      try {
+        DriveApp.getFolderById(repoConfig().rootId).getEditors().forEach(function (e) { add(e.getEmail()); });
+      } catch (e) {
+        known = false;
+      }
+    }
+  }
+  if (other) return 'team';
+  if (achOthersInLedger_(who)) return 'team';
+  return known ? 'solo' : 'unknown';
+}
+
+/**
+ * 台帳に本人のほかの人がいるか (大文字小文字は見ない)。1人がいたところで読むのをやめる。
+ *
+ * @param {string} who 小文字のアドレス
+ * @returns {boolean}
+ */
+function achOthersInLedger_(who) {
+  function otherIn(v) {
+    return String(v || '').split(',').some(function (p) {
+      var w = achWho_(p);
+      return !!w && w !== who;
+    });
+  }
+  var where = [
+    ['members', ['email', 'manager']], ['pulls', ['author']], ['reviews', ['reviewer']], ['issue_comments', ['by']],
+    ['issues', ['assignee']], ['usage', ['user']],
+  ];
+  for (var i = 0; i < where.length; i++) {
+    var rows;
+    try {
+      rows = dbReadAll(where[i][0]);
+    } catch (e) {
+      continue;
+    }
+    var cols = where[i][1];
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < cols.length; c++) if (otherIn(rows[r][cols[c]])) return true;
+    }
+  }
+  return false;
+}
+
 /** 前の形の、通算で開いた日の鍵 (読んで移すだけ) */
 function achDaysKey_(who) {
   return 'ACH_DAYS:' + achWho_(who);
@@ -222,6 +397,12 @@ function achCounts_(who, have, days, only, skip) {
     return usage[place] ? 1 : 0;
   }
   var places = ACH_USAGE_PLACES();
+  // 手元からの命令の覚え (スクリプトプロパティ) は、反映した・手元の道具 の両方が使うので1回だけ読む
+  var queueWindows = null;
+  function windowsOnce() {
+    if (!queueWindows) queueWindows = outcomesQueueWindows_();
+    return queueWindows;
+  }
   var props = null;
   function prop(key) {
     if (!props) props = prefReader_();
@@ -248,7 +429,7 @@ function achCounts_(who, have, days, only, skip) {
     // 反映すると、反映した人の名で「反映: 確認依頼 #…」の記録が残る (PullRequest.gs)
     // 手元からの命令で反映したものは持ち主の名で残るので、命令を置いた人のものにする
     merge: function () {
-      var windows = outcomesQueueWindows_();
+      var windows = windowsOnce();
       return rows('commits').some(function (c) {
         return String(c.message || '').indexOf('反映: 確認依頼 #') === 0 && achPersonOf_(c.author, c.timestamp, windows) === who;
       }) ? 1 : 0;
@@ -269,7 +450,7 @@ function achCounts_(who, have, days, only, skip) {
     goal: function () { return any('goals', 'who'); },
     calendar: function () { return calendarPlannedOf_(who).day ? 1 : 0; },
     // 手元からの命令は持ち主の名で走るので、命令を置いた人の覚え (outcomesQueueNote_) で見る
-    kit: function () { return outcomesQueueWindows_().some(function (q) { return mine(q.by); }) ? 1 : 0; },
+    kit: function () { return windowsOnce().some(function (q) { return mine(q.by); }) ? 1 : 0; },
     search: function () { return used(places.search); },
   };
   Object.keys(need).forEach(function (m) {
@@ -290,7 +471,7 @@ function achCounts_(who, have, days, only, skip) {
  *
  * - countDay: 開いた日を数える (開いたときに1回だけ)
  * - metrics: 数えるものを絞る (済ませたあと)。無ければ全部数え、「はじめて」でまだなものをその日の覚えに書く
- * - useNeg: その日に「まだ」と分かった「はじめて」を数えない (頁を開いたとき)
+ * - useNeg: その日に「まだ」と分かった「はじめて」を数えない (頁を開いたとき。countDay のときも、覚えがあれば数えない)
  *
  * @param {string} email
  * @param {Date} now
@@ -311,11 +492,14 @@ function achCheck_(email, now, opts) {
     only = {};
     o.metrics.forEach(function (m) { if (Object.prototype.hasOwnProperty.call(known, String(m))) only[String(m)] = true; });
   }
-  var counts = achCounts_(who, have, days, only, o.useNeg && !only ? achNegRead_(who, today) : null);
+  // 頁を開いたときと、その日2回目からの開いたとき (覚えがあるとき) は、その日に「まだ」と分かった「はじめて」を数えない
+  var useNeg = (o.useNeg || o.countDay) && !only;
+  var negKnown = useNeg ? achNegRead_(who, today) : null;
+  var counts = achCounts_(who, have, days, only, negKnown);
   if (!only) {
     var metrics = ACH_METRICS();
     var neg = Object.keys(counts).filter(function (m) { return metrics[m].first && !counts[m]; });
-    if (o.useNeg) Object.keys(achNegRead_(who, today)).forEach(function (m) { if (neg.indexOf(m) < 0) neg.push(m); });
+    if (negKnown) Object.keys(negKnown).forEach(function (m) { if (neg.indexOf(m) < 0) neg.push(m); });
     achNegWrite_(who, today, neg);
   }
   var reached = achNewly(counts, have);
@@ -344,10 +528,11 @@ function achCheck_(email, now, opts) {
  * 推しのレベル (1 + 取った実績の数) と育ちの段 (前に届いていた段より下にしない)。取った印を読むだけで、台帳は読まない。
  *
  * @param {string} email
- * @returns {{level: number, unlocked: number, index: number, key: string, label: string, meter: number, toNext: number}}
+ * @returns {{level: number, unlocked: number, index: number, key: string, label: string, meter: number, toNext: number, floored: boolean}}
  */
 function achLevel_(email) {
   var n = Object.keys(achUnlockedRead_(email)).length;
   var st = oshiStageOf(achLevelOf(n), achStageFloor_(email));
-  return { level: st.level, unlocked: n, index: st.index, key: st.key, label: st.label, meter: st.meter, toNext: st.toNext };
+  return { level: st.level, unlocked: n, index: st.index, key: st.key, label: st.label, meter: st.meter, toNext: st.toNext,
+    floored: st.floored };
 }
