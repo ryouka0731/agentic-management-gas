@@ -5,7 +5,7 @@
  * (リンクの読み解きは CoworkLink.js)。守ること:
  * - **いる印は CacheService (スクリプトのキャッシュ) にだけ置く。台帳にもスクリプトプロパティにも書かない。**
  *   誰がいつ入ったかを残さないため。最後の合図から COWORK_PRESENCE_MS() (2分) で消える
- * - 出すのは「入る」を押した人だけ。名前は members の表示名 (memberNames)。アドレスは返さない
+ * - 出すのは「入る」を押した人だけ。名前は members の表示名 (無ければ「名前未設定」)。アドレスは返さない
  * - チームの設定 cowork.enabled (既定オフ) がオンのときだけ。オフのあいだは部屋もいる人も返さない
  * - キャッシュは1つの値につき 100KB (バイト) まで。1つの部屋の印をそれより小さく保つ (coworkFit_)
  * - 読んで書き直すのは dbWithLock_ の中で、短く待ち、取れなければ黙って次の合図に回す
@@ -43,6 +43,16 @@ function COWORK_CACHE_BYTES() {
 /** キャッシュに置く長さ (秒)。消えるのは最後の合図から2分だが、置いたままにしないため短めに切る */
 function COWORK_CACHE_SECONDS() {
   return 10 * 60;
+}
+
+/** 合図のとき、名前と「集中中」を引き直す間隔 (ミリ秒)。合図のたびに人の表を読まない */
+function COWORK_LOOKUP_MS() {
+  return 10 * 60 * 1000;
+}
+
+/** 表示名の無い人の名前 (アドレスは見せない) */
+function COWORK_NO_NAME() {
+  return '名前未設定';
 }
 
 /** 部屋の一覧のスクリプトプロパティの鍵 */
@@ -191,7 +201,7 @@ function coworkBytes_(s) {
  *
  * @param {string|null} raw
  * @param {number} now ミリ秒
- * @returns {Object<string, {name: string, since: number, seen: number, focus: boolean}>}
+ * @returns {Object<string, {name: string, since: number, seen: number, focus: boolean, at: number}>}
  */
 function coworkPresenceOf_(raw, now) {
   var map;
@@ -209,7 +219,8 @@ function coworkPresenceOf_(raw, now) {
     var since = Number(e.since);
     if (!isFinite(seen) || !isFinite(since)) return;
     if (now - seen > COWORK_PRESENCE_MS() || seen - now > COWORK_PRESENCE_MS()) return;
-    out[who] = { name: String(e.name || ''), since: since, seen: seen, focus: e.focus === true };
+    var at = Number(e.at);
+    out[who] = { name: String(e.name || ''), since: since, seen: seen, focus: e.focus === true, at: isFinite(at) ? at : 0 };
   });
   return out;
 }
@@ -237,15 +248,17 @@ function coworkFit_(map) {
  * @param {object} cache
  * @param {object[]} rooms
  * @param {number} now
- * @returns {Object<string, object>} 部屋の id → 印
+ * @returns {Object<string, object>|null} 部屋の id → 印。**読めなければ null** (空として扱って書き戻すと、
+ *   部屋にいる人を全員消してしまう)
  */
 function coworkReadAll_(cache, rooms, now) {
   var keys = rooms.map(function (r) { return coworkCacheKey_(r.id); });
-  var got = {};
+  var got;
   try {
     got = keys.length ? (cache.getAll(keys) || {}) : {};
   } catch (e) {
-    got = {};
+    console.warn('いる印を読めませんでした: ' + (e && e.message));
+    return null;
   }
   var out = {};
   rooms.forEach(function (r) { out[r.id] = coworkPresenceOf_(got[coworkCacheKey_(r.id)] || null, now); });
@@ -255,10 +268,14 @@ function coworkReadAll_(cache, rooms, now) {
 /**
  * 本人のいる印を付ける・外す。
  *
- * - enter / beat: その部屋に付ける (ほかの部屋にいれば外す。いられるのは1つの部屋だけ)。since は入ったときのまま
- * - leave: その部屋から外す
+ * - enter: その部屋に付ける (ほかの部屋にいれば外す。いられるのは1つの部屋だけ)。since は入ったときのまま
+ * - beat: その部屋にいれば seen を新しくする。どこにもいなければ (2分で消えたあと) 付け直す。
+ *   **ほかの部屋にいれば何もせず false** (別のタブで別の部屋に入った人を、古いタブの合図で連れ戻さない。
+ *   返す myRoomId で画面がいまの部屋に合わせる)
+ * - leave: どの部屋からも外す
  *
- * 鍵は短く待ち、取れなければ何もせず false (次の合図で付く・2分で消える)。
+ * 名前と「集中中」は入るときと、COWORK_LOOKUP_MS() ごとにだけ引き直す (合図のたびに人の表を読まない)。
+ * 鍵は短く待ち、取れなければ何もせず false (次の合図で付く・2分で消える)。キャッシュが読めなければ書かずに false。
  *
  * @param {string} me 小文字のアドレス
  * @param {string} roomId
@@ -273,14 +290,24 @@ function coworkMark_(me, roomId, mode, now) {
   var cache = coworkCache_();
   if (!cache) return false;
   var t = now.getTime();
-  // 名前と「集中中」は鍵の外で決める (台帳を読むので、鍵の中に相乗りさせない)
+  // 先に鍵の外で読み、名前と「集中中」を決める (台帳を読むので、鍵の中に相乗りさせない)
+  var peek = coworkReadAll_(cache, rooms, t);
+  if (!peek) return false;
+  if (mode === 'beat' && coworkElsewhere_(peek, me, room.id)) return false;
   var entry = null;
   if (mode !== 'leave') {
-    var name = String(memberNames([me])[me] || me.split('@')[0]).substring(0, 40);
-    entry = { name: name, since: t, seen: t, focus: coworkFocusOf_(me, now) };
+    var had = peek[room.id][me];
+    if (mode === 'beat' && had && t - had.at < COWORK_LOOKUP_MS()) {
+      entry = { name: had.name, since: t, seen: t, focus: had.focus, at: had.at };
+    } else {
+      entry = { name: coworkDisplayName_(me), since: t, seen: t, focus: coworkFocusOf_(me, now), at: t };
+    }
   }
   return dbWithLock_(3000, function () {
     var all = coworkReadAll_(cache, rooms, t);
+    if (!all) return false;
+    // 読んでから鍵を取るまでに、別のタブで別の部屋に入っていることがある
+    if (mode === 'beat' && coworkElsewhere_(all, me, room.id)) return false;
     var puts = {};
     rooms.forEach(function (r) {
       var map = all[r.id];
@@ -303,6 +330,37 @@ function coworkMark_(me, roomId, mode, now) {
     }
     return true;
   }, function () { return false; });
+}
+
+/**
+ * ほかの部屋にいるか。
+ *
+ * @param {object} all coworkReadAll_ の返り
+ * @param {string} me
+ * @param {string} roomId
+ * @returns {boolean}
+ */
+function coworkElsewhere_(all, me, roomId) {
+  return Object.keys(all).some(function (id) {
+    return id !== roomId && Object.prototype.hasOwnProperty.call(all[id], me);
+  });
+}
+
+/**
+ * 表示名。アドレスの大文字小文字は見ない (台帳と Session で字の大小が違うことがある)。
+ * 名前が無ければ COWORK_NO_NAME() (アドレスの一部も見せない)。
+ *
+ * @param {string} me 小文字のアドレス
+ * @returns {string}
+ */
+function coworkDisplayName_(me) {
+  var rows = dbReadAll('members');
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].email || '').toLowerCase() !== me) continue;
+    var name = String(rows[i].name || '').replace(/^\s+|\s+$/g, '');
+    if (name) return name.substring(0, 40);
+  }
+  return COWORK_NO_NAME();
 }
 
 /**
@@ -332,12 +390,13 @@ function coworkView_(me, now) {
   var rooms = coworkRooms_();
   var cache = coworkCache_();
   var t = now.getTime();
-  var all = cache ? coworkReadAll_(cache, rooms, t) : {};
+  var all = (cache && coworkReadAll_(cache, rooms, t)) || {};
   var mine = '';
   var out = rooms.map(function (r) {
     var map = all[r.id] || {};
     var people = Object.keys(map).sort(function (a, b) {
-      return map[a].since - map[b].since || (map[a].name < map[b].name ? -1 : 1);
+      if (map[a].since !== map[b].since) return map[a].since - map[b].since;
+      return map[a].name < map[b].name ? -1 : (map[a].name > map[b].name ? 1 : 0);
     }).map(function (who) {
       if (who === me) mine = r.id;
       return {

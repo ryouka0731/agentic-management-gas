@@ -54,12 +54,14 @@
 
   /**
    * 届いた様子を当てる。入っている部屋はこの画面の覚えを先にする (返事が古いことがある)。
-   * 画面を開き直したときは、サーバに残っている印から入っている部屋を戻す。
+   * サーバに残っている印から入っている部屋を戻すのは、**この画面で初めて様子が届いたときだけ**
+   * (開き直した直後)。それ以外で戻すと、出たあとに届いた古い返事で部屋に入り直してしまう。
    */
   function coworkApply(res) {
     if (!res) return;
+    var first = coworkState === null;
     coworkState = res;
-    if (!coworkMine && res.myRoomId) {
+    if (first && !coworkMine && res.myRoomId) {
       coworkMine = res.myRoomId;
       coworkEnsureTimer();
     }
@@ -94,7 +96,8 @@
   function makeCoworkAvatar(name) {
     var el = document.createElement('span');
     el.className = 'avatar';
-    el.textContent = String(name || '?').charAt(0).toUpperCase();
+    // 字の単位で頭を取る (絵文字やサロゲートペアの名前を半分に割らない)
+    el.textContent = (Array.from(String(name || '?'))[0] || '?').toUpperCase();
     el.setAttribute('aria-hidden', 'true');
     return el;
   }
@@ -196,8 +199,10 @@
     coworkMine = room.id;
     coworkEnsureTimer();
     renderCowork();
+    // これより前に頼んだ様子・合図の返事は捨てる (入る前の様子で描き直さない)
+    var still = latest('cowork');
     call('apiCoworkEnter', [room.id], function (res) {
-      coworkApply(res);
+      if (still()) coworkApply(res);
       if (res && res.saved === false) {
         showSnack('部屋は開きました。混み合っていて、まだ名前を出せていません (次の合図で出します)');
       }
@@ -212,8 +217,10 @@
     coworkMine = '';
     coworkStopTimerIfIdle();
     renderCowork();
+    // これより前に頼んだ様子・合図の返事は捨てる (出る前の様子で部屋に戻さない)
+    var still = latest('cowork');
     call('apiCoworkLeave', [room.id], function (res) {
-      coworkApply(res);
+      if (still()) coworkApply(res);
       showSnack('部屋を出ました', { kind: 'ok' });
     }, failQuiet('出た印が届かなくても、合図が止まったので2分で名前は消える'));
   }
@@ -262,6 +269,8 @@
     var still = latest('cowork');
     call('apiCoworkBeat', [room], still.only(function (res) {
       if (coworkMine !== room) return;
+      // 別のタブで別の部屋に入っていると、サーバは移さずに断る (saved: false)。いまいる部屋に合わせる
+      if (res && res.saved === false && res.myRoomId && res.myRoomId !== room) coworkMine = res.myRoomId;
       coworkApply(res);
     }), function (err) {
       failQuiet('合図が届かなくても、次の合図で付け直す')(err);

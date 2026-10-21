@@ -121,6 +121,47 @@ describe('入る・出る', () => {
   });
 });
 
+describe('遅れて届く返事', () => {
+  it('出たあとに、出る前に頼んだ様子の返事が届いても、入り直さない', () => {
+    const srv = server();
+    let held = null;
+    const app = open(srv, MEMBER, {
+      apiCoworkRooms: () => {
+        srv.fake._setUser(MEMBER);
+        const res = plain(srv.ctx.apiCoworkRooms());
+        return held === false ? res : { later: (ok) => { held = () => ok(res); } };
+      },
+    });
+    held = false;
+    go();
+    room('雑談').querySelector('.cowork-enter').click();
+    held = null;
+    $('#cowork-refresh').click();
+    room('雑談').querySelector('.cowork-leave').click();
+    expect(typeof held).toBe('function');
+    held();
+    expect(room('雑談').classList.contains('is-mine')).toBe(false);
+    expect(room('雑談').querySelector('.cowork-enter')).not.toBe(null);
+    expect(app.calls.length).toBeGreaterThan(0);
+  });
+
+  it('合図が「別の部屋にいます」と返したら、画面もその部屋にいることにする', () => {
+    vi.useFakeTimers();
+    const srv = server();
+    open(srv, MEMBER);
+    go();
+    room('雑談').querySelector('.cowork-enter').click();
+    // 別のタブで「もくもく」に入った
+    srv.fake._setUser(MEMBER);
+    srv.ctx.apiCoworkEnter(srv.ctx.coworkRooms_()[1].id);
+    $('.nav-item[data-tab="home"]').click();
+    go();
+    vi.advanceTimersByTime(60 * 1000);
+    expect(room('もくもく').classList.contains('is-mine')).toBe(true);
+    expect(room('雑談').classList.contains('is-mine')).toBe(false);
+  });
+});
+
 describe('合図の時計', () => {
   it('入っているあいだ1分ごとに合図を送り、ほかの画面にいても名前は消えない', () => {
     vi.useFakeTimers();

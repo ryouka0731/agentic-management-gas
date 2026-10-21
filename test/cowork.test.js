@@ -165,7 +165,7 @@ describe('いる印', () => {
     const { ctx, clock, rooms } = server();
     const key = 'COWORK:' + rooms[0].id;
     // 長い名前の人をたくさん入れる (名前は40字で切る)。表示名は台帳を引かずに返す
-    ctx.memberNames = (emails) => Object.fromEntries(emails.map((e) => [e, '名前' + '長'.repeat(60) + e]));
+    ctx.coworkDisplayName_ = (e) => ('名前' + '長'.repeat(60) + e).substring(0, 40);
     let first = null;
     for (let i = 0; i < 1500; i++) {
       clock.advance(10);
@@ -204,8 +204,64 @@ describe('いる印', () => {
     ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock));
     expect(ctx.coworkView_(B, at(clock)).rooms[0].people[0].focus).toBe(false);
     ctx.apiPrefSet('cowork.showFocus', true);
+    // 合図では引き直さない (10分ごと)。入り直すと引き直す
     ctx.coworkMark_(A, rooms[0].id, 'beat', at(clock));
+    expect(ctx.coworkView_(B, at(clock)).rooms[0].people[0].focus).toBe(false);
+    ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock));
     expect(ctx.coworkView_(B, at(clock)).rooms[0].people[0].focus).toBe(true);
+  });
+});
+
+describe('いる印 (見直しで直したもの)', () => {
+  it('キャッシュが読めなかったときは書かない (部屋の印を空で上書きしない)', () => {
+    const { ctx, fake, clock, rooms } = server();
+    ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock));
+    const cache = fake.CacheService.getScriptCache();
+    const before = clock.store.get('COWORK:' + rooms[0].id).value;
+    fake.CacheService = { getScriptCache: () => Object.assign({}, cache, { getAll: () => { throw new Error('読めません'); } }) };
+    expect(ctx.coworkMark_(B, rooms[0].id, 'enter', at(clock))).toBe(false);
+    expect(clock.store.get('COWORK:' + rooms[0].id).value).toBe(before);
+  });
+
+  it('合図では部屋を移らない (別のタブで別の部屋に入っていたら、そのまま)', () => {
+    const { ctx, clock, rooms } = server();
+    ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock));
+    expect(ctx.coworkMark_(A, rooms[1].id, 'beat', at(clock))).toBe(false);
+    const view = ctx.coworkView_(A, at(clock));
+    expect(view.myRoomId).toBe(rooms[0].id);
+    expect(view.rooms[1].count).toBe(0);
+    // どこにもいなければ (2分で消えたあと)、合図で付け直す
+    clock.advance(3 * 60 * 1000);
+    expect(ctx.coworkMark_(A, rooms[1].id, 'beat', at(clock))).toBe(true);
+    expect(ctx.coworkView_(A, at(clock)).myRoomId).toBe(rooms[1].id);
+  });
+
+  it('合図では人の表を読まない。入るときと、10分ごとにだけ名前を引き直す', () => {
+    const { ctx, clock, rooms } = server();
+    const orig = ctx.dbReadAll;
+    let reads = 0;
+    ctx.dbReadAll = (t) => { if (t === 'members' || t === 'focus_sessions') reads++; return orig(t); };
+    ctx.coworkMark_(A, rooms[0].id, 'enter', at(clock));
+    const onEnter = reads;
+    expect(onEnter).toBeGreaterThan(0);
+    for (let i = 0; i < 9; i++) {
+      clock.advance(60 * 1000);
+      ctx.coworkMark_(A, rooms[0].id, 'beat', at(clock));
+    }
+    expect(reads).toBe(onEnter);
+    clock.advance(61 * 1000);
+    ctx.coworkMark_(A, rooms[0].id, 'beat', at(clock));
+    expect(reads).toBeGreaterThan(onEnter);
+  });
+
+  it('表示名はアドレスの大文字小文字を見ずに引き、無ければ「名前未設定」', () => {
+    const { ctx, clock, rooms } = server();
+    ctx.memberSet('Maki@Example.com', '', '真木');
+    ctx.coworkMark_('maki@example.com', rooms[0].id, 'enter', at(clock));
+    clock.advance(1000);
+    ctx.coworkMark_('noname@example.com', rooms[0].id, 'enter', at(clock));
+    const names = ctx.coworkView_(A, at(clock)).rooms[0].people.map((p) => p.name);
+    expect(names).toEqual(['真木', '名前未設定']);
   });
 });
 
