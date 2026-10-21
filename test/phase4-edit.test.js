@@ -652,6 +652,14 @@ describe('画面に渡せる形か', () => {
       return out;
     }],
     ['apiOshiBuiltinProfileSet', (ctx) => ctx.apiOshiBuiltinProfileSet('taku', JSON.stringify(OSHI_PROFILE))],
+    // キャラ作成キット。頼み文と、AI の答えの取り込み (作り話の中身)
+    ['apiOshiCharKitPrompt', (ctx) => ctx.apiOshiCharKitPrompt('codex')],
+    ['apiOshiCharImport', (ctx) => {
+      const out = ctx.apiOshiCharImport(0, '```json\n' + JSON.stringify({ name: 'テストのミント', tone: 'genki',
+        lines: { done: ['テストできたね'] }, profile: { items: [{ lv: 2, label: 'テストの好物', text: 'テスト' }], clearLine: 'テスト' } }) + '\n```');
+      if (!out.lines || !out.items) throw new Error('取り込みが空のまま検査されている');
+      return out;
+    }],
     ['apiCalendarPlan', (ctx, env) => {
       calendarReady(ctx, env);
       const out = ctx.apiCalendarPlan();

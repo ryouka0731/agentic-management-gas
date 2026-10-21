@@ -96,6 +96,9 @@ function apiOshiGet() {
         prompt: plainText(oshiPrompt(s.key)), optional: !!s.optional, fallback: plainText(s.fallback || '') };
     }),
     basePrompt: plainText(OSHI_PROMPT_BASE()),
+    // キャラ作成キットの道具 (頼み文の中身は apiOshiCharKitPrompt で1つずつ取る) と、1枚の表を切り分けるときの既定の行と列
+    kitTools: OSHI_CHARKIT_TOOLS().map(function (t) { return { key: plainText(t.key), label: plainText(t.label) }; }),
+    sheet: { rows: plainNumber(oshiSheetGrid(OSHI_STATES().length).rows), cols: plainNumber(oshiSheetGrid(OSHI_STATES().length).cols) },
     luckyOneIn: plainNumber(OSHI_LUCKY_ONE_IN()),
     growth: {
       index: plainNumber(g.index), key: plainText(g.key), label: plainText(g.label),
@@ -167,6 +170,47 @@ function oshiRevealPlain_(profile, level, cleared) {
       lvMin: plainNumber(lim.lvMin), lvMax: plainNumber(lim.lvMax), clearLineMax: plainNumber(lim.clearLineMax),
     },
   };
+}
+
+/**
+ * キャラ作成キットの頼み文 (画面の「コピー」と、手元の道具の命令 oshiPrompt が使う)。
+ * 最高の Lv は 1 + 実績の数 (プロフィールの項目の Lv をそこまでに散らす)。
+ *
+ * @param {string} tool OSHI_CHARKIT_TOOLS の key
+ * @returns {{tool: string, label: string, prompt: string}}
+ */
+function oshiCharKitPromptPlain_(tool) {
+  var t = oshiCharKitToolOf(tool);
+  if (!t) {
+    throw new Error('知らない道具です: ' + tool + '。' + OSHI_CHARKIT_TOOLS().map(function (x) { return x.key; }).join(' / ') + ' のどれかにしてください');
+  }
+  return { tool: plainText(t.key), label: plainText(t.label),
+    prompt: plainText(oshiCharKitPrompt(t.key, achLevelOf(ACHIEVEMENTS().length))) };
+}
+
+/**
+ * キャラ作成キットの頼み文を1つ (画面の「コピー」)。中身は番頭にだけあり、画面は写しを持たない。
+ *
+ * @param {string} tool chatgpt / gemini / claude / codex
+ * @returns {{tool: string, label: string, prompt: string}}
+ */
+function apiOshiCharKitPrompt(tool) {
+  return oshiCharKitPromptPlain_(tool);
+}
+
+/**
+ * AI の答え (キャラ作成キットの JSON) を取り込む。charId が 0 なら新しいキャラを作り、そうでなければそのキャラを書き直す。
+ * 確かめるのはサーバだけ (oshiCharImportValid_)。
+ *
+ * @param {number} charId 0 なら新しく作る
+ * @param {string} text AI の答え (```json の囲みや前後の字があってもよい)
+ * @returns {{charId: number, created: boolean, name: string, tone: string, lines: number, items: number}}
+ */
+function apiOshiCharImport(charId, text) {
+  var id = charId === 0 || charId === '0' || charId === null || charId === undefined || charId === '' ? 0 : oshiCharIdArg_(charId);
+  var got = oshiCharImport_(currentEmail_(), id, text);
+  return { charId: plainNumber(got.id), created: !!got.created, name: plainText(got.name), tone: plainText(got.tone),
+    lines: plainNumber(got.lines), items: plainNumber(got.items) };
 }
 
 /**

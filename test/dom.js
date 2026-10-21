@@ -223,7 +223,7 @@ const API_NAMES = [
   'apiAppUrl', 'apiWorkStyle', 'apiWorkStyleSave', 'apiWorkStyleForget', 'apiWorkStyleTeam',
   'apiOshiGet', 'apiOshiImage', 'apiOshiSetImage', 'apiOshiClearImage', 'apiOshiSetProfile', 'apiOshiSetLines',
   'apiOshiForget', 'apiOshiDefaultImage', 'apiOshiCharCreate', 'apiOshiCharDelete',
-  'apiOshiSetCharProfile', 'apiOshiBuiltinProfiles', 'apiOshiBuiltinProfileSet', 'apiOshiMood',
+  'apiOshiSetCharProfile', 'apiOshiBuiltinProfiles', 'apiOshiBuiltinProfileSet', 'apiOshiCharKitPrompt', 'apiOshiCharImport', 'apiOshiMood',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared',
   'apiOutcomes',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
@@ -358,6 +358,9 @@ export const DEFAULTS = {
     char: 'builtin:taku', kind: 'builtin', builtinKey: 'taku', charId: 0, fallback: '', name: 'タク', tone: 'buddy',
     events: [], images: [], builtins: [{ key: 'taku', name: 'タク', tone: 'buddy' }, { key: 'itsuki', name: 'イツキ', tone: 'gothic' }],
     mine: [], mineMax: 5, styles: [], tones: [], states: [], basePrompt: '', luckyOneIn: 0,
+    kitTools: [{ key: 'chatgpt', label: 'ChatGPT' }, { key: 'gemini', label: 'Gemini' }, { key: 'claude', label: 'Claude' },
+      { key: 'codex', label: 'Codex' }],
+    sheet: { rows: 3, cols: 4 },
     growth: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1, unlocked: 0, stages: [] },
     limits: { maxBytes: 1048576, maxPx: 512, mimes: [], nameMax: 20, lineMax: 60, linesPerEvent: 5 },
     reveal: { items: [], open: 0, total: 0,
@@ -371,6 +374,9 @@ export const DEFAULTS = {
   apiOshiBuiltinProfiles: { chars: [{ key: 'taku', name: 'タク', json: '', items: 0 }, { key: 'itsuki', name: 'イツキ', json: '', items: 0 }] },
   apiOshiBuiltinProfileSet: { key: 'taku', name: 'タク', json: '', items: 0 },
   apiOshiSetCharProfile: { charId: 1, items: 0, profileJson: '' },
+  // キャラ作成キット。頼み文の中身はサーバの Oshi.js にだけある (中身を確かめるのは test/oshi-charkit.test.js)
+  apiOshiCharKitPrompt: { tool: 'chatgpt', label: 'ChatGPT', prompt: '' },
+  apiOshiCharImport: { charId: 1, created: true, name: '', tone: 'polite', lines: 0, items: 0 },
   apiListFiles: [
     { fileId: 'DOC1', path: '就業規則.doc', type: 'doc' },
     { fileId: 'W1', path: 'branches/見直し/就業規則.doc', type: 'doc' },
