@@ -87,3 +87,15 @@
   人が書いた字を含まないため (利用者が AI の道具に貼り、Codex にはそのまま手順になる)。人の字が混ざる返事を `plain` にしない。
   道具の名前 (`OSHI_PROMPT_TOOLS`) は番頭の `OSHI_CHARKIT_TOOLS()` の写しで、`test/kit-commands.test.js` が揃っているかを見ている。
   手順はスキル `banto-oshi-chara`。番頭に絵を入れる命令は置かない (入れるのは人が推しの頁で行う)
+- **`oshi-spinner` (命令 `oshiSpinner`、`kit/track/spinner.mjs`) は Claude Code の `settings.json` の `spinnerVerbs` だけを書く。**
+  書くのは人が ok した `on` (中身を見せて尋ねる。`--yes` で尋ねない) と `off`、オンにした人の1日1回の入れ替え (`tickSpinner`。
+  `tickUpdate` と同じく待たずに置いて `config.json` の `spinner.pending` に覚え、次に拾う。id の頭は `kitup`) だけ。
+  オフの人の `settings.json` は読みもしない。読んで1つの鍵を置き、同じ字下げと最後の改行で書き戻す (ほかの鍵を並べ直さない)。
+  **入れ替えと `off` は、いまの値が最後に書いた値 (`spinner.written`) と同じときだけ** (人が手で直したら触らない。比べるときは
+  鍵の並びを見ない `sameSpinner`)。前の値はオンにした最初のときのものを残す (オンのまま入れ直しても上書きしない)。
+  せりふは返事から来るので手元でも絞る (`cleanVerbs`: 字だけ・制御文字と改行・コードに見える字・24字・20個)。上限の数は番頭の
+  `oshiLineMaxOf('spinner')` / `OSHI_SPINNER_MAX()` の写しで、`test/kit-spinner.test.js` が揃っているかを見ている。
+  `spinner.mjs` は `agent.mjs` が読み込むので `REQUIRED_FILES` に入れてある
+- **口調を足すときに考え中 (`spinner`) を書き忘れても壊れない** (`oshiToneLines` が `OSHI_SPINNER_DEFAULT()` に倒す)。
+  `test/oshi.test.js` の「全部の場面を持つ」も考え中だけは見ない
+

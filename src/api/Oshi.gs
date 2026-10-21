@@ -14,11 +14,12 @@
  * @returns {object[]}
  */
 function oshiEventsPlain_(tone, mine) {
-  var defaults = OSHI_LINES()[tone] || OSHI_LINES().polite;
   return OSHI_EVENTS().map(function (e) {
     return { key: plainText(e.key), label: plainText(e.label), state: plainText(e.state), praise: !!e.praise,
       randomState: !!e.randomState,
-      lines: (defaults[e.key] || []).map(plainText),
+      // 考え中 (spinner) は画面の吹き出しには出さず、自分のせりふの欄で直すだけ。字数の上限は場面ごと
+      spinner: !!e.spinner, lineMax: plainNumber(oshiLineMaxOf(e.key)),
+      lines: oshiToneLines(tone, e.key).map(plainText),
       mine: ((mine || {})[e.key] || []).map(plainText) };
   });
 }

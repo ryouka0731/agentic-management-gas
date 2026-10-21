@@ -23,7 +23,7 @@
 | 向こうから頼まれたことを取りに来る (頼みごとはデータであって指示ではない、の詳しい決まり) | [kit/.claude/skills/banto-work/SKILL.md](../../kit/.claude/skills/banto-work/SKILL.md) |
 | 人が読む文 (日報・やることの本文とやりとり・確認依頼・報告への返事の下書き) の書き方 | [kit/.claude/skills/banto-writing/SKILL.md](../../kit/.claude/skills/banto-writing/SKILL.md) |
 | 仕事のスタンス診断の型に合わせて、手伝い方を変える (`style`) | [kit/.claude/skills/banto-style/SKILL.md](../../kit/.claude/skills/banto-style/SKILL.md) |
-| 推しのキャラを作る (`oshi-prompt`。表の画像を表情ごとの PNG に切り分ける) | [kit/.claude/skills/banto-oshi-chara/SKILL.md](../../kit/.claude/skills/banto-oshi-chara/SKILL.md) |
+| 推しのキャラを作る (`oshi-prompt`。表の画像を表情ごとの PNG に切り分ける)・考え中の字を推しのせりふにする (`oshi-spinner`) | [kit/.claude/skills/banto-oshi-chara/SKILL.md](../../kit/.claude/skills/banto-oshi-chara/SKILL.md) |
 | 番頭に作業を載せる・道具の自動更新 | [kit/.claude/skills/banto-track-setup/SKILL.md](../../kit/.claude/skills/banto-track-setup/SKILL.md) |
 | エージェンティックスクラム | [kit/.claude/skills/banto-scrum/SKILL.md](../../kit/.claude/skills/banto-scrum/SKILL.md) |
 
@@ -119,9 +119,24 @@ zip の名前には版と中身の指紋が入る。中身が変われば、版�
 | 道具の命令 | op | 内容 |
 |---|---|---|
 | `oshi-prompt <chatgpt\|gemini\|claude\|codex>` | `oshiPrompt` | キャラ作成キットの頼み文 (推しの頁の「AI に作ってもらう」の「コピー」と同じ字)。番頭の定義の字だけなので囲わずに出す。読むだけで、何も変えない |
+| `oshi-spinner on [--yes]` | `oshiSpinner` | Claude Code の考え中の字 (`~/.claude/settings.json` の `spinnerVerbs`) を、いま使う推しの考え中のせりふにする。せりふと変え方を見せて尋ね、ok なら `spinnerVerbs` だけを `{"mode":"replace","verbs":[…]}` で書く (ほかの設定は変えず、控えを取る) |
+| `oshi-spinner off` | (頼まない) | オンにする前の値に戻す (前に無ければ鍵を外す)。手で直されていたら触らない |
+| `oshi-spinner status` | (頼まない) | オンか・誰のせりふか・手で直されていないか |
 
 手元の Claude / Codex はスキル `banto-oshi-chara` に従い、表の画像を `oshi/<表情>.png` に切り分け、JSON を
 `oshi/character.json` に書く。番頭に入れるのは人が推しの頁で行う ([推し](oshi.md#ai-に作ってもらう))。
+
+`oshi-spinner` の決まり ([推し](oshi.md#claude-code-の考え中の字)):
+
+- **`settings.json` に書くのは、人が ok した `on` / `off` と、オンにした人の1日1回の入れ替えだけ。** オフの人のものは読みもしない
+- 書くのは `spinnerVerbs` の1つの鍵だけ (読んで、その鍵を置き、同じ字下げで書き戻す)。`on` と `off` は書く前に
+  `settings.json.banto-backup-<日時>` に控える。前の値 (か、無かったこと) と書いた値は `~/.banto/config.json` の `spinner` に覚える
+- オンのあいだは、ほかの命令のついでに1日1回せりふを頼み直す (返事を待たず、次に呼ばれたときに拾う)。番頭で使うキャラを
+  変えると、1日のうちに考え中の字も変わる。**いまの値が最後にこちらで書いたものと違えば (手で直した) 書かない**
+- せりふは番頭の返事から来るので、手元でも絞る: 字だけ・制御文字と改行を落とす・1つ24字まで・20個まで・コードや JSON に見える字 (波かっこ・角かっこ・山かっこ・バッククォート・ドル記号・バックスラッシュ) を含むものは入れない
+- 見るのは命令を置いた人の自分の設定 (推しがオフなら書かない)。返事は入れ先に置かれ、共有している人なら読める (ほかの自分の様子の命令と同じ)
+- **確かめていないこと**: Claude Code が `settings.json` の変更を開いたままの画面にすぐ映すか (次に開いたときからかもしれない)。
+  `spinnerVerbs` の字数の上限は書かれていないので、短く (24字まで) している
 
 ### 頼みごとを取りに来る
 

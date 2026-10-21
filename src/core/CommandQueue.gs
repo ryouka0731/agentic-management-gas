@@ -145,6 +145,15 @@ function COMMAND_OPS() {
     // キャラ作成キットの頼み文 (読むだけ。中身は Oshi.js の定義で、人の字を含まない)。手元の oshi-prompt が出す
     oshiPrompt: function (a) { return oshiCharKitPromptPlain_(String(a.tool || '')); },
     /*
+     * 置いた人がいま使う推しの、考え中のせりふ (読むだけ)。手元の oshi-spinner が Claude Code の spinnerVerbs に書く。
+     * 見るのは置いた人の自分の設定 (oshi.on / oshi.char)。オフなら空の並びと理由
+     */
+    oshiSpinner: function (a, by) {
+      var r = oshiSpinnerLines_(commandBy_(by));
+      return { on: !!r.on, char: plainText(r.char), name: plainText(r.name), lines: r.lines.map(plainText),
+        reason: plainText(r.reason) };
+    },
+    /*
      * 最初からいるキャラのプロフィールを入れる (中身はリポジトリに置かず、スクリプトプロパティにだけ置く)。
      * **置いた人が管理者でなければ断る** (by で決める、ただ1つの命令。置いた人は持ち主と最後に書いた人が
      * 同じときだけ決まる。COMMAND_ADMIN_OPS)。返事には中身を入れない (結果は queue に置かれ、共有している人が読める)
@@ -208,7 +217,7 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle'].concat(COMMAND_ADMIN_OPS());
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner'].concat(COMMAND_ADMIN_OPS());
 }
 
 /**
