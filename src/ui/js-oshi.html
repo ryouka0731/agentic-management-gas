@@ -393,7 +393,8 @@
         if (!oshiOn()) return;
         var ev = oshiEventOf(key);
         if (!ev) return;
-        if (ev.praise && oshiLucky()) ev = oshiEventOf('lucky') || ev;
+        // 思いがけない当たり (js-luck) が出たすぐあとは、推しも「当たり」に驚く
+        if (ev.praise && (luckTakeOshi() || oshiLucky())) ev = oshiEventOf('lucky') || ev;
         oshiShowBubble(ev.key, ev.state, oshiLine(ev.key));
       });
     } catch (e) {

@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-ach` / `js-goals` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -109,6 +109,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   `fileUrlOf` / `diffPairs` / `ganttLayout` / `ganttDaysForEffort` /
   `mentionMatch` / `tagParse` / `issueWouldCycle` / `groupIssues` / `rollupEffort` / `TERMS` / `term` / `termFill` /
   `oshiGreetingOf` /
+  `focusMusicParse_` / `focusMusicPartsValid_` / `focusMusicEmbedUrl_` / `focusMusicLinkOf_` (`src/core/FocusMusic.js`。写しは `js-focus`) /
   `errorKindOf` / `nextStepOf` / `errorTextOf` (`src/core/ErrorKind.js`)
 - **使い方の図は全部の節に置く。** 図だけ見て帰れる状態にしてある。
   `figures` のキーは `GUIDE` の見出しと一字一句同じでなければ、その節だけ
@@ -162,9 +163,34 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 集中のしかた (`js-focus`) の LET'S GO!! と SUPER COMPLETE!! も `FUN_CHEERS()` の行 (`apiFocusStart` / `apiFocusEnd` の done)。
   お祝いがオフの人には js-focus が落ち着いた帯を出す
 
+## 思いがけない当たり・ノリノリタイム・自分へのご褒美 (`js-luck`)
+
+自分の設定の `luck.on` (当たりとノリノリタイム) と `luck.reward` (ご褒美) をオンにした人の画面にだけ出す。**どちらも既定はオフ。**
+パチンコの仕組みを頼まれて入れたもので、線は `docs/superpowers/specs/2026-10-21-motivation-review.md` の「不確実な報酬」。
+
+- **確率は見た目の演出だけに使う。** 当たっても機能・情報・ポイントは増えない。当たりは画面の中だけで決め、サーバに何も
+  送らない (ポイントは台帳から数えるもので、画面の乱数からは付けない)
+- **外れは描かない。** リールは当たったときにだけ作り、回っている帯にも当たりの絵しか並べない (ニアミスを作らない)。
+  `test/component/luck.test.js` が、揃わない絵が1つも描かれないことと、外れで何も描かないことを見ている
+- 引くのは `call()` の成功の枝から `luckAfter` を呼んだときだけ (失敗の枝からは呼ばない)。集中を始めた (`apiFocusStart`) では
+  引かない (始めてすぐやめるのを繰り返せる)。集中しているやることの完了 (`focusClosesSession`) でも引かない (SUPER COMPLETE!! と重ねない)。済ませた手の表は `LUCK_ACTIONS()`、
+  引数で当たるかは `FUN_CHEERS()` の `when` で見る (判定を2つ持たない)。当たったら `funCheerAfter` に `lucky` を渡し、いつもの
+  お祝いは重ねない。推しがオンなら `luckTakeOshi()` で一度だけ `lucky` の場面にする
+- 上限は `LUCK_RULES()` だけ (1/8・1日3回・30分空ける・1時間に3つでノリノリタイム15分)。**上限を先に見て、乱数はそのあと**。
+  数は端末 (`localStorage` の `bantoLuck`) に覚え、読めなければその画面の控え (`luckMem`) だけで数える
+- **ノリノリタイムは黙って終わる** (「終わりました」も残り時間も出さない)。札は「ノリノリタイム」だけで、× で隠せる (覚える)。
+  札は右下 (左下は推しの吹き出し)。集中の置き場 (`#focus-dock`) が出ているあいだは `is-above-dock` でその上に積む (`luckChipPlace`。
+  出入りは MutationObserver で見る)。
+  枠の光 (`.luck-fever-frame`) は押せず読み上げにも載らない。お祝いの字は `is-fever` で大きくする
+- 動きを減らす設定では、当たりは字の札 (`.is-static`) だけ、ノリノリタイムは札だけ (枠を描かない)
+- ご褒美は自分まわりの `makeRewardMeButton` から右のペインに開く。足りないご褒美は押せないだけにする (「あと◯で」と近さを見せない)。
+  取り消しの帯は `undoUntil` で外す (時計は描き直すたびに1つに戻す)。サーバは `src/core/Reward.gs` / `src/api/Reward.gs`
+- 試すのは `test/component/luck.test.js` (押して確かめる)・`test/luck-ui.test.js` (上限の計算)・`test/reward.test.js` (サーバ)・
+  `test/e2e/luck.test.js` (通し)
+
 ## 集中のしかた (`js-focus`)
 
-自分の設定の「集中のしかた」(`focus.start` / `focus.remind` / `focus.sound`) をオンにした人の画面にだけ出す。**既定はオフ。**
+自分の設定の「集中のしかた」(`focus.start` / `focus.remind` / `focus.sound` / `focus.music` / `focus.musicUrl`) をオンにした人の画面にだけ出す。**既定はオフ。**
 項目は `PREFS_SCHEMA()` (`PREF_FOCUS_ITEMS_`) が持ち、画面は `prefs.effective.focus` を `focusOn()` / `focusSoundOn()` /
 `focusRemindEvery()` で読むだけ。オフのあいだは入口 (`makeFocusStartButton` / `makeFocusRecordButton`) が null を返し、
 `apiFocusMine` も呼ばない。サーバは `src/core/Focus.gs` と `src/api/Focus.gs`、台帳は `focus_sessions`。
@@ -188,6 +214,26 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **集中の画面は CSS で隠すだけ** (`body.focus-mode`)。右のペインも掴み手も知らせの数も、状態は変えずに見えなくする。
   Esc で戻り、集中を終えたら必ず戻す (`focusClear`)
 - 置き場 (`#focus-dock`) は初めて要るときに作る。字は `textContent` だけ。色はトークンだけ
+- **自分の曲 (`focus.music` / `focus.musicUrl`) は、この画面が外から取ってくるただ1つの例外** (`CLAUDE.md` の「制約」)。
+  YouTube / SoundCloud の公式の埋め込みの再生機を `<iframe>` で置く。守ること:
+  - **「読み込む」を押すまで何も置かない** (`makeFocusMusicControls` は枠を作らない。`focusMusicLoad` は押した聞き手からだけ呼ぶ)。
+    設定の画面でリンクを確かめるときも読み込まない
+  - src は `prefs.effective.focus.musicParts` (サーバが読み解いた部品) から `focusMusicEmbedUrl_` で組んだものだけ。
+    貼られた URL の字は画面にもサーバにも残さない。YouTube は `www.youtube-nocookie.com`
+  - 枠の属性は `allow="autoplay; encrypted-media; fullscreen"`・`referrerpolicy="strict-origin-when-cross-origin"`・
+    `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"`。
+    再生機は自分の場所のスクリプトと保存 (allow-scripts + allow-same-origin) が要る。YouTube は送り元 (Referer) が無いと
+    再生を断る (error 153) ので `no-referrer` にしない。題名や「YouTube で見る」で開く頁は枠の外で開かせる
+    (`allow-popups-to-escape-sandbox`。付けないと開いた頁も枠の制限を受けて動かない)。`allow-top-navigation` は付けない
+    (番頭の頁を差し替えさせない)
+  - 画面の中で作る音とは同時に流さない (`focusSoundPlay` が `focusMusicClose` を呼び、`focusMusicLoad` が `focusSoundStop` を呼ぶ)。
+    集中を終える (`focusClear`)・設定でやめる (`focusPrefsChanged`) と枠ごと外す
+  - **確かめていないこと**: 番頭は HtmlService の枠 (IFRAME モード、`*.googleusercontent.com`) の中で動き、その枠にも
+    sandbox が付いている。入れ子の枠は外の枠の制限を超えられない。全画面は sandbox ではなく `allow` の `fullscreen` で許すもので
+    (`allow-presentation` は Presentation API = 別の画面へ映す仕組みのためのもの)、外の枠 (HtmlService) が全画面を許していなければ
+    効かない。HtmlService が枠の中の頁に CSP (`frame-src`) を付けて外の枠を止めるかどうか、YouTube / SoundCloud の
+    `X-Frame-Options` / `frame-ancestors` が googleusercontent.com の中で許すかは、実機で確かめていない
+    (どちらの再生機も埋め込み用なので、ふつうは許す)。職場のネットワークで止められることもある
 - 「ADHD」など人を分ける言葉は画面に出さない。「集中のしかた」として全員向けに書き、効き目を約束しない
 - 試すのは `test/component/focus.test.js` (押して確かめる)・`test/focus-ui.test.js` (計算と音の形)・
   `test/focus.test.js` (サーバ)・`test/e2e/focus.test.js` (通し)

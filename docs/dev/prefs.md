@@ -23,6 +23,9 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `prefValueOf_` で人ごとに読む (全員の `STYLE:` を1回の写しで読むので、`prefReader_` と同じ形の口を渡す)。結果の画面の切り替えも
 `apiPrefSet` を呼ぶ (書くのはここだけ、のまま)。`apiWorkStyleForget` は `apiPrefSet('style.share', null)` で既定に戻す。
 
+「思いがけない当たり」(`luck.on` / `luck.reward`) はどちらも自分の設定で既定オフ。`apiPrefs` の `effective.luck` で画面に渡し、
+当たりとノリノリタイムは画面 (js-luck) が、ご褒美は `Reward.gs` が `prefGet_('luck.reward', …)` で見る。
+
 実績 (`ach.on` / `ach.cheer`、ホームの `home.cards.ach`) は自分の設定で、どれも既定でオン (本人にだけ見え、順位も無いので)。
 `ach.on` を切ると、開いた日も数えず (`apiAchievementsCheck` が `on: false` を返す)、頁とカードも出ない。取った印は消さない。
 `ach.cheer` は取ったときの知らせ・推しのお祝い・大きな字 (楽しい演出の `fun.cheer` がオンのとき) をまとめて止める。
@@ -32,3 +35,11 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 `''` は決まっていない)。汎用の欄には出さず `js-calendar` が組む。ほかは自分の設定で `calendar.plan` は既定オフ。
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
 細部は `docs/dev/calendar.md`。
+
+「自分の曲」(`focus.music` = `off` / `own`、`focus.musicUrl`) は自分の設定。`focus.musicUrl` は型 `music` で、
+**`apiPrefSet` は URL の字で受け、`focusMusicParse_` (`src/core/FocusMusic.js`) で読み解いた部品
+(`{kind:'youtube', video}` / `{kind:'youtube', list}` / `{kind:'soundcloud', path}`) だけを書く。** 貼った字は残さない。
+読み解けなければ `focusMusicParse_` の断り (平らな日本語) をそのまま投げる。空の字は既定 (`''` = 無し) に戻す。
+`prefValid_` は部品の形 (`focusMusicPartsValid_`) を見るので、台帳を手で書き換えた崩れた値は既定に倒れる。
+画面へは `items` の value に部品から組み直したリンク、`effective.focus.musicParts` に部品を渡す (埋め込みの URL は画面が組む)。
+`Prefs.gs` が `FocusMusic.js` を呼ぶので、`Prefs.gs` を読むテストの SOURCES には `src/core/FocusMusic.js` も要る。

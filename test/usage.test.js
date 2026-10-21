@@ -9,6 +9,7 @@ const SOURCES = [
   'src/core/CurrentUser.gs',
   'src/core/Repo.gs',
   'src/core/Usage.gs',
+  'src/core/FocusMusic.js',
   'src/core/Prefs.gs',
 ];
 
