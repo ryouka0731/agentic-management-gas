@@ -10,3 +10,5 @@ src/KitSigning.gs
 .claude/settings.local.json
 coverage-ui/
 coverage/
+# 推しの最初からいるキャラの、並んだ絵の元データ (利用者が用意した絵)。切り出し表 (cells.json) だけを置き、絵そのものは手元にだけ置く
+assets/oshi-sheets/**/*.webp
