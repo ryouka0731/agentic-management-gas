@@ -252,6 +252,23 @@ function PREF_GROUPS_() {
           label: f.label, help: f.help, def: false };
       });
     },
+    luck: function () {
+      // 思いがけない当たり・ノリノリタイム・自分へのご褒美。どれも既定はオフ。
+      // 確率を使うのは見た目の演出だけ (docs/superpowers/specs/2026-10-21-motivation-review.md)。
+      // 当たりもノリノリタイムも画面の js-luck が持ち、ポイントは付けない。ご褒美は Reward.gs
+      return [
+        { key: 'luck.on', scope: 'me', type: 'bool', section: '思いがけない当たり',
+          label: '思いがけない当たり',
+          help: '済ませたときに、たまに「大当たり！」の演出が出ます (1日3回まで・30分は空けます)。' +
+            '続けて3つ済ませると、しばらく「ノリノリタイム」になります。見た目だけで、ポイントも何も増えず、外れも失うものもありません',
+          def: false },
+        { key: 'luck.reward', scope: 'me', type: 'bool', section: '思いがけない当たり',
+          label: 'ご褒美と交換する',
+          help: '自分で決めた小さなご褒美 (好きなコーヒー・15分の散歩など) と、たまったポイントを交換します。' +
+            'お金や賞品ではなく、給与や評価とも関係ありません。あなたにだけ見えます',
+          def: false },
+      ];
+    },
     focus: function () {
       return PREF_FOCUS_ITEMS_();
     },
@@ -328,7 +345,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'focus', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -591,6 +608,7 @@ function apiPrefs(opts) {
       termStyle: plainText(byKey['terms.style']),
       homeCards: cards,
       fun: fun,
+      luck: { on: byKey['luck.on'] === true, reward: byKey['luck.reward'] === true },
       focus: { start: byKey['focus.start'] === true, sound: byKey['focus.sound'] === true,
         remind: plainText(byKey['focus.remind']) },
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
