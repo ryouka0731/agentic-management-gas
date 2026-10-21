@@ -28,7 +28,9 @@
 `id` は今までどおり表ごとの通し番号 (`dbAppendNumbered`)。
 `oshi` の末尾の `profile` は自分のキャラのプロフィール (検査を通した JSON。`oshiProfileValid_`)。**足す前の行は空のままで、
 プロフィール無しとして読む** (`oshiProfileParse_`。読めない・検査に通らない値も無いことにし、次に書き直すときに空にする)。
-いちばん大きいもの (40項目) でも 1万字ほどで、セルの上限 (5万字) に収まる (`test/oshi-profile.test.js`)。
+字数の上限 (40項目・200字) だけでは足りない。**JSON にすると膨らむ字がある** (制御文字や対の無いサロゲートは `\uXXXX` の6字。
+上限いっぱいで 5万5千字を超え、`dbUpdate` が英語のまま落ちた)。制御文字 (改行・タブを除く) は検査で落とし、JSON にして
+`OSHI_PROFILE_JSON_MAX()` (4万5千字) を超えるものはふつうの言葉で断る (`test/oshi-profile.test.js`)。
 最初からいるキャラのプロフィールは台帳に置かない (`docs/dev/permissions.md`)。
 
 `goals` / `goal_items` / `goal_links` (目標。既定はオフ) は `id` をどれも `dbAppendNumbered` / `dbAppendNumberedMany` で振る

@@ -13,7 +13,7 @@ import { APP_SOURCES } from '../sources.js';
  */
 
 const ME = 'tester@example.com';
-const VIDEO = 'dQw4w9WgXcQ';
+const VIDEO = 'Tst0Vid_e-1';
 const SAMPLE = {
   items: [
     { lv: 2, label: 'テストの口ぐせ', text: 'まずは小さく試そう' },
@@ -167,6 +167,67 @@ describe('推しのプロフィールとクリア', () => {
     }, { apiAchievementsCheck: check, apiAchievements: wire(ctx.apiAchievements()) });
     const toast = document.getElementById('ach-toast');
     expect(toast.textContent).toContain('推しのプロフィールが 1 つ分かりました');
+  });
+});
+
+describe('見直しで直したところ (推しの頁)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  /** 開いたときの数え直し (Lv1 → Lv2) を、頁を開いたあとに届ける */
+  function delayedCheck() {
+    const ctx = server(0);
+    const before = wire(ctx.apiOshiGet());
+    const check = wire(ctx.apiAchievementsCheck());
+    let deliver = null;
+    return { ctx, before, check, later: { later: (ok) => { deliver = () => ok(check); } }, deliver: () => deliver() };
+  }
+
+  it('推しの頁を開いているときも、新しく分かった項目の数を知らせに添え、頁も描き直す', () => {
+    const t = delayedCheck();
+    let calls = 0;
+    mountOshi(() => (calls++ === 0 ? t.before : wire(t.ctx.apiOshiGet())),
+      { apiAchievementsCheck: t.later, apiAchievements: wire(t.ctx.apiAchievements()) });
+    // 最初の返事 (Lv1) で頁を描く
+    calls = 0;
+    const page = openPage();
+    expect(rows(page)[0].dataset.open).toBe('false');
+    t.deliver();
+    expect(document.getElementById('ach-toast').textContent).toContain('推しのプロフィールが 1 つ分かりました');
+    expect(rows(document.querySelector('.oshi-page'))[0].dataset.open).toBe('true');
+  });
+
+  it('取りに行っている最中に Lv が変わったら、届いた (古い) 返事のあとに取り直す', () => {
+    const t = delayedCheck();
+    const pend = [];
+    let hold = false;
+    const app = mountOshi(() => {
+      if (!hold) return t.before;
+      return { later: (ok) => pend.push(ok) };
+    }, { apiAchievementsCheck: t.later, apiAchievements: wire(t.ctx.apiAchievements()) });
+    hold = true;
+    openPage();
+    expect(pend.length).toBe(1);
+    // 頼んだ返事が届く前に、実績で Lv が上がる
+    t.deliver();
+    const asked = app.calls.filter((c) => c.name === 'apiOshiGet').length;
+    pend.shift()(t.before);
+    // 古い返事で描いたあと、もう一度頼む
+    expect(app.calls.filter((c) => c.name === 'apiOshiGet').length).toBe(asked + 1);
+    pend.shift()(wire(t.ctx.apiOshiGet()));
+    expect(rows(document.querySelector('.oshi-page'))[0].dataset.open).toBe('true');
+  });
+
+  it('「動画を見る」を押したら、焦点を再生機に移す (ボタンが消えても body に落とさない)', () => {
+    const ctx = server();
+    mountOshi(wire(ctx.apiOshiGet()));
+    const clear = openPage().querySelector('.oshi-clear');
+    clear.querySelector('.oshi-clear-play').focus();
+    clear.querySelector('.oshi-clear-play').click();
+    expect(document.activeElement).toBe(clear.querySelector('iframe.oshi-clear-frame'));
   });
 });
 
