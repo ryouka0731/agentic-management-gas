@@ -198,7 +198,9 @@ describe('推しの頁のプロフィールと、まとめて消す', () => {
 
   it('最高の Lv を超える項目は「クリアで分かる」', () => {
     const ctx = server(0);
-    const max = ctx.ACHIEVEMENTS().length + 1;
+    // 最高の Lv は 1 + この環境で取れる実績の数 (疑似GASの入れ物は持ち主1人なので、いっしょに などは数えない)
+    const max = 1 + ctx.ACHIEVEMENTS().length - Object.keys(ctx.achUnavailable_(ME)).length;
+    expect(max).toBeLessThan(ctx.ACHIEVEMENTS().length + 1);
     ctx.apiOshiBuiltinProfileSet('taku', { items: [
       { lv: max, label: 'テストの最後', text: 'テスト' },
       { lv: max + 1, label: 'テストのおまけ', text: 'テスト' },

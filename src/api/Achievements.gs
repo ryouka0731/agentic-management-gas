@@ -48,7 +48,10 @@ function achApi_(opts) {
  * - partial: 済ませたあとの数え直し (数えるものを絞った)。hint と next は数えたものの分しか無い (画面は頁を描き直さない)
  * - unlocked: 取ったもの (取った時刻の新しい順)。newly: 今回取ったもの
  * - next: 近い順に3つまで。名前は返さず、まとまり・いま・要る数・あと何か・手がかりの字
- * - groups: まとまりごとの取った数と全部の数
+ * - groups: まとまりごとの取った数と全部の数 (この環境で取れないものは数えない)
+ * - total / got: クリアまでの数 (取れる実績と取った実績) と取った数
+ * - items の off / reason: この環境では取れない (achUnavailable_) と、どの設定で取れるか。near: 取れる実績の残りが3つ以下で、
+ *   名前と説明を見せる。hint は数の手がかりか、取り方の手がかり (ACH_TIPS)
  *
  * @param {?object} res achCheck_ の返り
  * @param {string} me
@@ -64,7 +67,12 @@ function achPlain_(res, me) {
   var next = res ? achNext(counts, have, 99).filter(function (n) {
     return Object.prototype.hasOwnProperty.call(counts, n.metric);
   }) : [];
+  var off = achUnavailable_(me, have);
+  // 取れない実績には「あと◯件で…」を出さない
+  next = next.filter(function (n) { return !Object.prototype.hasOwnProperty.call(off, n.key); });
   var hintOf = {};
+  var tips = ACH_TIPS();
+  Object.keys(tips).forEach(function (k) { hintOf[k] = tips[k]; });
   next.forEach(function (n) { hintOf[n.key] = achHintOf(n); });
 
   function shown(a) {
@@ -72,10 +80,20 @@ function achPlain_(res, me) {
       title: plainText(a.title), desc: plainText(a.desc), icon: plainText(a.icon), at: plainText(have[a.key]) };
   }
   var all = ACHIEVEMENTS();
+  function had(a) { return Object.prototype.hasOwnProperty.call(have, a.key); }
+  function isOff(a) { return Object.prototype.hasOwnProperty.call(off, a.key); }
+  // 取れる実績の残りが少なければ (3つ以下)、何が残っているかを名前と説明で見せる
+  var left = all.filter(function (a) { return !had(a) && !isOff(a); });
+  var near = left.length > 0 && left.length <= 3;
   var items = all.map(function (a) {
-    if (Object.prototype.hasOwnProperty.call(have, a.key)) return shown(a);
-    return { key: plainText(a.key), group: plainText(a.group), groupLabel: plainText(labelOf[a.group]), done: false,
-      hint: plainText(hintOf[a.key] || '') };
+    if (had(a)) return shown(a);
+    var it = { key: plainText(a.key), group: plainText(a.group), groupLabel: plainText(labelOf[a.group]), done: false,
+      hint: plainText(hintOf[a.key] || ''), off: isOff(a), reason: plainText(off[a.key] || ''), near: near && !isOff(a) };
+    if (it.near) {
+      it.title = plainText(a.title);
+      it.desc = plainText(a.desc);
+    }
+    return it;
   });
   var unlocked = all.filter(function (a) { return Object.prototype.hasOwnProperty.call(have, a.key); }).map(shown);
   // 取った日の新しい順 (同じ日なら一覧の並び)
@@ -98,10 +116,12 @@ function achPlain_(res, me) {
     },
     crossed: newly.length > 0 && st.index > before.index,
     days: plainNumber(res ? res.days.n : 0),
+    total: plainNumber(all.length - Object.keys(off).length),
+    got: plainNumber(all.filter(had).length),
     groups: groups.map(function (g) {
-      var mine = all.filter(function (a) { return a.group === g.key; });
+      var mine = all.filter(function (a) { return a.group === g.key && !isOff(a); });
       return { key: plainText(g.key), label: plainText(g.label), total: plainNumber(mine.length),
-        got: plainNumber(mine.filter(function (a) { return Object.prototype.hasOwnProperty.call(have, a.key); }).length) };
+        got: plainNumber(mine.filter(had).length) };
     }),
     items: items,
     unlocked: unlocked,

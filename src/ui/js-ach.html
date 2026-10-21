@@ -211,7 +211,8 @@
     var text = got.length === 1
       ? '実績「' + first.title + '」を取りました'
       : '実績を ' + got.length + ' 個取りました (「' + first.title + '」ほか)';
-    var all = (res.items || []).length > 0 && res.items.every(function (it) { return it.done; });
+    // クリア = この環境で取れる実績 (と取った実績) を全部取った (数えるのはサーバの total / got)
+    var all = Number(res.total) > 0 && Number(res.got) >= Number(res.total);
     // 推しがオフなら Lv だけ (推しの段・プロフィール・クリアは推しの頁のもの)
     var oshi = oshiOn();
     achToast(first.icon, text + (oshi
@@ -382,6 +383,10 @@
       (oshiOn() ? '推しのレベル' : 'レベル (Lv)') + 'は 1 + 取った実績の数です'));
     box.appendChild(makeAchLevel(res));
     box.appendChild(achNote('番頭を開いた日: 通算 ' + (Number(res.days) || 0) + ' 日'));
+    var rest = Math.max(0, (Number(res.total) || 0) - (Number(res.got) || 0));
+    box.appendChild(achNote((rest ? 'クリアまで あと ' + rest + ' 個' : '取れる実績を全部取りました (クリア)') +
+      ' ・ この環境で取れる実績は ' + (Number(res.total) || 0) + ' 個です。「この環境では取れません」の実績は数えません。' +
+      'クリアは一度届けば消えません。あとから取れる実績が増えても、クリアはそのまま'));
 
     if ((res.next || []).length) {
       var nh = document.createElement('h3');
@@ -416,13 +421,14 @@
 
   /**
    * 実績1つ。まだのものは ??? (名前は出さない)。数のある実績は、いちばん近い1つにだけ手がかり。
+   * この環境で取れないもの (off) は札と理由。取れる実績の残りが少ないとき (near) は名前と説明を見せる。
    *
    * @param {object} a items の1つ
    * @returns {HTMLElement}
    */
   function makeAchBadge(a) {
     var li = document.createElement('li');
-    li.className = 'ach-badge' + (a.done ? ' is-done' : '');
+    li.className = 'ach-badge' + (a.done ? ' is-done' : a.off ? ' is-off' : a.near ? ' is-near' : '');
     li.dataset.ach = a.key;
     var medal = document.createElement('span');
     medal.className = 'ach-medal';
@@ -431,13 +437,14 @@
     li.appendChild(medal);
     var name = document.createElement('span');
     name.className = 'ach-name';
-    name.textContent = a.done ? a.title : '???';
+    name.textContent = a.done || a.near ? a.title : '???';
     li.appendChild(name);
+    if (a.off) li.appendChild(makePill('この環境では取れません', 'chip'));
     var sub = document.createElement('span');
     sub.className = 'ach-sub';
     sub.textContent = a.done
       ? a.desc + (a.at ? ' (' + a.at + ')' : '')
-      : (a.hint || a.groupLabel);
+      : a.off ? a.reason : a.near ? a.desc : (a.hint || a.groupLabel);
     li.appendChild(sub);
     return li;
   }

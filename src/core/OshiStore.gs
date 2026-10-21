@@ -1039,14 +1039,20 @@ function oshiCharImport_(email, id, text) {
 }
 
 /**
- * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) を全部取っていれば true。
+ * 実績を全部取ったか (クリア)。今ある実績の表 (ACHIEVEMENTS) のうち、この環境で取れるもの (と取ったもの) を全部取っていれば true。
  *
  * @param {Object<string, string>} have achUnlockedRead_ の返り
+ * @param {Object<string, string>} [off] 取れない実績 (achUnavailable_)。省くと全部を数える
  * @returns {boolean}
  */
-function oshiClearedOf_(have) {
+function oshiClearedOf_(have, off) {
   var all = ACHIEVEMENTS();
-  return all.length > 0 && all.every(function (a) { return Object.prototype.hasOwnProperty.call(have || {}, a.key); });
+  var h = have || {};
+  var o = off || {};
+  // この環境で取れない実績 (achUnavailable_) は数えない。取った実績は取れなくなっても数える
+  return all.some(function (a) { return Object.prototype.hasOwnProperty.call(h, a.key); }) && all.every(function (a) {
+    return Object.prototype.hasOwnProperty.call(h, a.key) || Object.prototype.hasOwnProperty.call(o, a.key);
+  });
 }
 
 /**
@@ -1063,7 +1069,8 @@ function oshiCleared_(email) {
   var props = PropertiesService.getScriptProperties();
   var key = 'OSHI_CLEARED:' + who;
   if (props.getProperty(key)) return true;
-  if (!oshiClearedOf_(achUnlockedRead_(who))) return false;
+  var have = achUnlockedRead_(who);
+  if (!oshiClearedOf_(have, achUnavailable_(who, have))) return false;
   props.setProperty(key, usageDay(new Date()));
   return true;
 }

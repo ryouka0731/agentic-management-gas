@@ -336,7 +336,9 @@ describe('入口 (apiAchievements / apiAchievementsCheck)', () => {
     }
     expect(res.items.find((a) => a.key === 'days-3').hint).toBe('あと 2 日で…');
     expect(res.items.find((a) => a.key === 'days-7').hint).toBe('');
-    expect(res.items.find((a) => a.key === 'first-kit')).toMatchObject({ hint: '', groupLabel: 'はじめて' });
+    expect(res.items.find((a) => a.key === 'first-comment')).toMatchObject({ hint: '', groupLabel: 'はじめて' });
+    // 手元の道具だけは、取り方の手がかりを出す (ACH_TIPS。名前は出さない)
+    expect(res.items.find((a) => a.key === 'first-kit').hint).toContain('手元の道具');
     expect(res.next.length).toBeLessThanOrEqual(3);
     expect(res.next.every((n) => !n.title)).toBe(true);
     expect(res.groups.find((g) => g.key === 'days')).toMatchObject({ got: 1, total: 8 });

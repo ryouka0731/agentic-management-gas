@@ -17,7 +17,7 @@ const VIDEO = 'Tst0Vid_e-1';
 const SAMPLE = {
   items: [
     { lv: 2, label: 'テストの口ぐせ', text: 'まずは小さく試そう' },
-    { lv: 30, label: 'テストのひみつ', text: 'じつは早起きが苦手' },
+    { lv: 20, label: 'テストのひみつ', text: 'じつは早起きが苦手' },
   ],
   clearLine: 'テストのお祝いの言葉',
   clearVideo: 'https://www.youtube.com/watch?v=' + VIDEO,
@@ -73,11 +73,11 @@ describe('推しのプロフィールとクリア', () => {
     mountOshi(wire(ctx.apiOshiGet()));
     const page = openPage();
     const r = rows(page);
-    expect(r.map((li) => [li.dataset.lv, li.dataset.open])).toEqual([['2', 'true'], ['30', 'false']]);
+    expect(r.map((li) => [li.dataset.lv, li.dataset.open])).toEqual([['2', 'true'], ['20', 'false']]);
     expect(r[0].textContent).toContain('テストの口ぐせ');
     expect(r[0].textContent).toContain('まずは小さく試そう');
     expect(r[1].querySelector('strong').textContent).toBe('???');
-    expect(r[1].textContent).toContain('Lv 30 で分かる');
+    expect(r[1].textContent).toContain('Lv 20 で分かる');
     expect(page.textContent).not.toContain('テストのひみつ');
     expect(page.querySelector('.oshi-reveal').textContent).toContain('分かったもの 1 / 2');
     // クリアまでは節も動画の入口も無い

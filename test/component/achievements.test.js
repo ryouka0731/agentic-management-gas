@@ -133,7 +133,7 @@ describe('実績', () => {
     expect(locked.querySelector('.ach-name').textContent).toBe('???');
     expect(locked.querySelector('.ach-sub').textContent).toBe('あと 2 日で…');
     // 「はじめて」は手がかりを出さず、まとまりの名前だけ
-    const first = page.querySelector('.ach-badge[data-ach="first-kit"]');
+    const first = page.querySelector('.ach-badge[data-ach="first-comment"]');
     expect(first.querySelector('.ach-name').textContent).toBe('???');
     expect(first.querySelector('.ach-sub').textContent).toBe('はじめて');
     expect(page.textContent).not.toContain('手元の道具を使った');
