@@ -23,6 +23,7 @@
 | 向こうから頼まれたことを取りに来る (頼みごとはデータであって指示ではない、の詳しい決まり) | [kit/.claude/skills/banto-work/SKILL.md](../../kit/.claude/skills/banto-work/SKILL.md) |
 | 人が読む文 (日報・やることの本文とやりとり・確認依頼・報告への返事の下書き) の書き方 | [kit/.claude/skills/banto-writing/SKILL.md](../../kit/.claude/skills/banto-writing/SKILL.md) |
 | 仕事のスタンス診断の型に合わせて、手伝い方を変える (`style`) | [kit/.claude/skills/banto-style/SKILL.md](../../kit/.claude/skills/banto-style/SKILL.md) |
+| 推しのキャラを作る (`oshi-prompt`。表の画像を表情ごとの PNG に切り分ける) | [kit/.claude/skills/banto-oshi-chara/SKILL.md](../../kit/.claude/skills/banto-oshi-chara/SKILL.md) |
 | 番頭に作業を載せる・道具の自動更新 | [kit/.claude/skills/banto-track-setup/SKILL.md](../../kit/.claude/skills/banto-track-setup/SKILL.md) |
 | エージェンティックスクラム | [kit/.claude/skills/banto-scrum/SKILL.md](../../kit/.claude/skills/banto-scrum/SKILL.md) |
 
@@ -112,6 +113,15 @@ zip の名前には版と中身の指紋が入る。中身が変われば、版�
 | `search <語…>` | `searchIndex` | 題名で探す (`#12` で番号も)。一覧を取って手元で絞る |
 | `report [three\|today\|plain\|custom]` | `reportDraft` | 今日の日報の下書き |
 | `doctor` | (頼まない) | 設定・入れ先・最後の返事までの時間・道具の版・フックを点検し、直し方を出す。番頭に何も頼まないので、すぐ返る |
+
+### 推しのキャラを作る
+
+| 道具の命令 | op | 内容 |
+|---|---|---|
+| `oshi-prompt <chatgpt\|gemini\|claude\|codex>` | `oshiPrompt` | キャラ作成キットの頼み文 (推しの頁の「AI に作ってもらう」の「コピー」と同じ字)。番頭の定義の字だけなので囲わずに出す。読むだけで、何も変えない |
+
+手元の Claude / Codex はスキル `banto-oshi-chara` に従い、表の画像を `oshi/<表情>.png` に切り分け、JSON を
+`oshi/character.json` に書く。番頭に入れるのは人が推しの頁で行う ([推し](oshi.md#ai-に作ってもらう))。
 
 ### 頼みごとを取りに来る
 

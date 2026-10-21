@@ -142,6 +142,8 @@ function COMMAND_OPS() {
     },
     // 題名・番号・状態だけ (人の名前もアドレスも入らない)。絞るのは手元
     searchIndex: function () { return apiSearchIndex(); },
+    // キャラ作成キットの頼み文 (読むだけ。中身は Oshi.js の定義で、人の字を含まない)。手元の oshi-prompt が出す
+    oshiPrompt: function (a) { return oshiCharKitPromptPlain_(String(a.tool || '')); },
     /*
      * 最初からいるキャラのプロフィールを入れる (中身はリポジトリに置かず、スクリプトプロパティにだけ置く)。
      * **置いた人が管理者でなければ断る** (by で決める、ただ1つの命令。置いた人は持ち主と最後に書いた人が
