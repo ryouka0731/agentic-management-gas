@@ -11,7 +11,11 @@ import { mount } from './mount.js';
 const ON = { 'room.on': true };
 const STATES = ['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work'];
 const defaultUrl = (char, style, state) => 'data:image/webp;base64,' + Buffer.from(char + ':' + style + ':' + state).toString('base64');
-const OSHI = Object.assign({}, DEFAULTS.apiOshiGet, { states: STATES.map((k) => ({ key: k, label: k })) });
+const OSHI = Object.assign({}, DEFAULTS.apiOshiGet, {
+  states: STATES.map((k) => ({ key: k, label: k })),
+  // 頭をなでたときのせりふ (場面 pat)
+  events: [{ key: 'pat', label: 'なでられた', state: 'praise', lines: ['なでられた！うれしい！'], mine: [] }],
+});
 
 /** 音の仕組みの疑似。作った数・描いた長さ・鳴らした・止めたを覚える */
 class FakeAudio {
@@ -68,6 +72,49 @@ function openFromMe() {
 }
 
 describe('作業部屋', () => {
+  it('推しの頭を左右になでると笑顔になってひとこと言い、しばらくで作業中の顔に戻る', () => {
+    // 最初の mount は本物の時計で (test/dom.js が setInterval を包むのは最初の1回だけ)。笑顔の時計だけ偽の時計で進める
+    mountRoom(ON);
+    openFromMe();
+    vi.useFakeTimers();
+    const el = room();
+    const fig = el.querySelector('.room-oshi');
+    expect(fig.dataset.state).toBe('work');
+    fig.getBoundingClientRect = () => ({ top: 0, left: 0, width: 200, height: 200, right: 200, bottom: 200 });
+    const move = (x, y) => fig.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+    // 下半分 (体) では数えない
+    move(20, 150); move(80, 150); move(20, 150); move(80, 150);
+    expect(fig.dataset.state).toBe('work');
+    // 頭を一往復半
+    move(20, 40); move(80, 40); move(20, 40); move(80, 40);
+    expect(fig.dataset.state).toBe('praise');
+    expect(fig.querySelector('.oshi-img').getAttribute('src')).toBe(defaultUrl('taku', 'chibi', 'praise'));
+    const say = el.querySelector('.room-oshi-say');
+    expect(OSHI.events.find((e) => e.key === 'pat').lines).toContain(say.textContent);
+    // 笑顔のあいだはもう一度なでても変わらない
+    move(20, 40); move(80, 40); move(20, 40); move(80, 40);
+    expect(el.querySelectorAll('.room-oshi-say').length).toBe(1);
+    // 画像のドラッグは始まらない
+    const drag = new Event('dragstart', { bubbles: true, cancelable: true });
+    fig.querySelector('.oshi-img').dispatchEvent(drag);
+    expect(drag.defaultPrevented).toBe(true);
+    vi.advanceTimersByTime(4000);
+    expect(fig.dataset.state).toBe('work');
+    expect(el.querySelector('.room-oshi-say')).toBe(null);
+  });
+
+  it('推しがオフの人影は、なでても何も起きない', () => {
+    mountRoom(Object.assign({ 'oshi.on': false }, ON));
+    openFromMe();
+    const el = room();
+    const fig = el.querySelector('.room-oshi');
+    fig.getBoundingClientRect = () => ({ top: 0, left: 0, width: 200, height: 200, right: 200, bottom: 200 });
+    const move = (x, y) => fig.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+    move(20, 40); move(80, 40); move(20, 40); move(80, 40);
+    expect(fig.dataset.state).toBe('none');
+    expect(el.querySelector('.room-oshi-say')).toBe(null);
+  });
+
   let savedAudio;
   beforeEach(() => {
     window.localStorage.clear();

@@ -5298,6 +5298,14 @@ body.focus-mode .mobile-nav { display: none !important; }
   justify-content: center; pointer-events: none; }
 .room-oshi .oshi-img, .room-oshi .room-silhouette { display: block; width: 100%; height: auto; }
 .room-oshi .oshi-avatar { width: 72px; height: 72px; font-size: 28px; }
+/* 部屋でも頭をなでられる (oshiAttachPat)。絵のドラッグと選択は切り、指の動きは入れ物が受ける */
+.room-oshi { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.room-oshi .oshi-img { -webkit-user-drag: none; pointer-events: none; }
+.room-oshi-say {
+  position: absolute; left: 31%; bottom: 62%; max-width: 40%; margin: 0; padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius); background: var(--accent-bg); color: var(--ink); font-size: 13px; line-height: 1.5;
+  box-shadow: var(--shadow);
+}
 .room-silhouette-body { fill: var(--room-silhouette); }
 .room-laptop { fill: var(--room-metal); }
 .room.is-moving .room-oshi.is-breathing { animation: room-breathe 4.5s ease-in-out infinite; transform-origin: 50% 100%; }

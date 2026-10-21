@@ -1222,7 +1222,20 @@
       var r = fig.getBoundingClientRect();
       pat(r.left + r.width / 2, r.top + r.height * 0.3);
     });
-    // 頭の上で指が左右に往復したら、なでたと数える。頭から外れたら数え直し
+    oshiAttachPat(fig, pat);
+    show('idle');
+    return sec;
+  }
+
+  /**
+   * 絵の入れ物に「なでる」を付ける (推しの頁の顔と作業部屋で共用)。頭 (上半分) で指が左右に往復 (向きが2回変わる)
+   * したら onPat(x, y) を呼ぶ。頭から外れたら数え直す。絵の上で指を動かすとブラウザが画像のドラッグ&ドロップを
+   * 始めてしまう (なでられない) ので、ドラッグは止める。
+   *
+   * @param {HTMLElement} fig
+   * @param {function(number, number)} onPat
+   */
+  function oshiAttachPat(fig, onPat) {
     var lastX = null;
     var dir = 0;
     var turns = 0;
@@ -1236,16 +1249,13 @@
           var now = dx > 0 ? 1 : -1;
           if (dir && now !== dir) turns++;
           dir = now;
-          if (turns >= OSHI_PAT_TURNS()) { turns = 0; pat(e.clientX, e.clientY); }
+          if (turns >= OSHI_PAT_TURNS()) { turns = 0; onPat(e.clientX, e.clientY); }
         }
       }
       lastX = e.clientX;
     });
     fig.addEventListener('pointerleave', reset);
-    // 絵の上で指を動かすと、ブラウザが画像のドラッグ&ドロップを始めてしまう (なでられない)。絵は運ばせない
     fig.addEventListener('dragstart', function (e) { e.preventDefault(); });
-    show('idle');
-    return sec;
   }
 
   /**

@@ -315,6 +315,10 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 集中しているあいだは隅に残りの輪 (`.room-focus`、`focusRemainingMs` で数える)。**部屋は集中を始めない**
 - 試すのは `test/component/room.test.js` (押して確かめる) と `test/room-ui.test.js` (音の形)
 
+- **部屋の推しも頭をなでられる** (`oshiAttachPat(fig, roomPat)`。推しの頁の顔と同じ仕組み。2026-10-22 の依頼)。なでると
+  `roomFillCharacter('praise')` にして「なでられた」のせりふを頭の上 (`.room-oshi-say`) に出し、4秒で `work` に戻して
+  手を止める時計 (`roomScheduleGlance`) を仕掛け直す。笑顔のあいだは何度なでても変わらない。オフの人影はなでても何も起きない
+
 ## 仕事のスタンス診断 (`js-style`)
 
 自分まわりの「仕事のスタンス診断」から右のパネルで開く。問い・軸・型・おすすめは `src/core/WorkStyleTypes.js` が唯一の定義で、
