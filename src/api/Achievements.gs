@@ -51,7 +51,8 @@ function achApi_(opts) {
  * - groups: まとまりごとの取った数と全部の数 (この環境で取れないものは数えない)
  * - total / got: クリアまでの数 (取れる実績と取った実績) と取った数
  * - items の off / reason: この環境では取れない (achUnavailable_) と、どの設定で取れるか。near: 取れる実績の残りが3つ以下で、
- *   名前と説明を見せる。hint は数の手がかりか、取り方の手がかり (ACH_TIPS)
+ *   名前と説明を見せる。hint は数の手がかりか、取り方の手がかり (ACH_TIPS と、自分の設定で止めているもの achPersonalTips_)
+ * - cleared: クリアしたか (一度届けば消えない OSHI_CLEARED)。clearedNow: この返事で初めて届いた (お祝いは1回だけ)
  *
  * @param {?object} res achCheck_ の返り
  * @param {string} me
@@ -73,6 +74,8 @@ function achPlain_(res, me) {
   var hintOf = {};
   var tips = ACH_TIPS();
   Object.keys(tips).forEach(function (k) { hintOf[k] = tips[k]; });
+  var mineTips = achPersonalTips_(me);
+  Object.keys(mineTips).forEach(function (k) { hintOf[k] = mineTips[k]; });
   next.forEach(function (n) { hintOf[n.key] = achHintOf(n); });
 
   function shown(a) {
@@ -102,6 +105,8 @@ function achPlain_(res, me) {
   }).map(function (x) { return x.a; });
 
   var count = Object.keys(have).length;
+  var was = oshiClearedSaved_(me);
+  var cleared = res ? oshiCleared_(me, off, have) : was;
   // 前に届いていた段 (OSHI_STAGE_MAX:) より下にしない。その床だけで「段が上がった」とは言わない
   var floor = achStageFloor_(me);
   var st = oshiStageOf(achLevelOf(count), floor);
@@ -117,6 +122,8 @@ function achPlain_(res, me) {
     crossed: newly.length > 0 && st.index > before.index,
     days: plainNumber(res ? res.days.n : 0),
     total: plainNumber(all.length - Object.keys(off).length),
+    cleared: !!cleared,
+    clearedNow: !!cleared && !was,
     got: plainNumber(all.filter(had).length),
     groups: groups.map(function (g) {
       var mine = all.filter(function (a) { return a.group === g.key && !isOff(a); });

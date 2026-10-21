@@ -342,7 +342,7 @@ export function prefsFixture(over) {
  */
 export const ACH_EMPTY = {
   on: true, level: 1, stage: { index: 0, key: 'grow1', label: '見習い', meter: 0, toNext: 4, floored: false }, crossed: false, days: 0,
-  total: 0, got: 0, groups: [], items: [], unlocked: [], newly: [], next: [],
+  total: 0, got: 0, cleared: false, clearedNow: false, groups: [], items: [], unlocked: [], newly: [], next: [],
 };
 
 /** よく使う既定の応答 */

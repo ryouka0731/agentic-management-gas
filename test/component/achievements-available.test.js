@@ -80,6 +80,27 @@ describe('この環境では取れない実績', () => {
     expect(b.querySelector('.ach-sub').textContent).toContain('手元の道具');
   });
 
+  it('クリアしたあとで取れる実績が増えた人には「クリアまで あと」も、取るたびの「全部取りました」も出さない', () => {
+    const ctx = server();
+    const offKeys = Object.keys(ctx.achUnavailable_(ME));
+    gotAll(ctx, ctx.ACHIEVEMENTS().map((a) => a.key).filter((k) => offKeys.indexOf(k) < 0));
+    expect(ctx.apiOshiGet().cleared).toBe(true);
+    // ほかの人が加わって、いっしょに の実績が取れるようになった。そのうち1つを取る
+    ctx.dbAppend('members', { email: 'other@example.com', manager: ME, note: '', updatedAt: new Date(), name: '' });
+    ctx.dbAppend('reviews', { prNumber: 1, reviewer: ME, state: 'approve', at: new Date(), id: 'r1' });
+    ctx.dbAppend('pulls', { number: 1, title: 'x', state: 'open', author: 'other@example.com' });
+    const check = wire(ctx.apiAchievementsCheck());
+    expect(check.newly.length).toBeGreaterThan(0);
+    expect(check).toMatchObject({ cleared: true, clearedNow: false });
+    expect(check.got).toBeLessThan(check.total);
+    mount({ apiPrefs: prefsFixture({ values: {} }), apiAchievementsCheck: check, apiAchievements: check, apiOshiGet: wire(ctx.apiOshiGet()) });
+    expect(document.getElementById('ach-toast').textContent).not.toContain('全部取りました');
+    expect(document.getElementById('oshi-bubble').dataset.event).not.toBe('clear');
+    const page = openPage();
+    expect(page.textContent).not.toContain('クリアまで あと');
+    expect(page.textContent).toContain('クリアしました');
+  });
+
   it('取れる実績を全部取ったら「全部取りました」(取れない実績が残っていても)', () => {
     const ctx = server();
     const off = Object.keys(ctx.achUnavailable_(ME));

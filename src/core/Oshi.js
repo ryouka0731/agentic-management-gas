@@ -540,7 +540,7 @@ function oshiCharKitLevels(maxLevel) {
 }
 
 /**
- * 1枚の表に並べるときの行と列 (表情の数から決める)。11 の表情なら 4 列 × 3 行。
+ * 1枚の表に並べるときの行と列 (表情の数から決める)。11 の表情なら 4 列 × 3 行、14 (いま) なら 4 列 × 4 行。
  *
  * @param {number} n
  * @returns {{rows: number, cols: number}}
@@ -799,7 +799,7 @@ function OSHI_STAGES() {
 }
 
 /**
- * Lv から育ちの段を決める。なかよし (meter) はいまの段から次の段までの進み (0〜100)、toNext は次の段までの Lv。
+ * Lv から育ちの段を決める。meter (画面の「次の段まで」の棒) はいまの段から次の段までの進み (0〜100)、toNext は次の段までの Lv。
  * 最後の段では meter 100・toNext 0。
  *
  * floor は前に届いていた段 (0 から。実績の前は育ちの最高の段を OSHI_STAGE_MAX: に覚えていた)。それより下には出さない。

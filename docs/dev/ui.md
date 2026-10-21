@@ -415,7 +415,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 `ACHIEVEMENTS()` が唯一の定義で、画面は `apiAchievements` / `apiAchievementsCheck` の返事を描くだけ。手引きは `docs/manual/achievements.md`。
 
 - この環境で取れない実績 (items の `off` / `reason`) は札「この環境では取れません」と理由を出す (`.is-off`)。残りが3つ以下なら
-  サーバが名前と説明を入れる (`near`、`.is-near`)。クリアの判定は返事の `total` / `got` (画面で数え直さない)
+  サーバが名前と説明を入れる (`near`、`.is-near`)。クリアは返事の `cleared` (一度届けば消えない)、お祝いは `clearedNow` のときだけ (画面で数え直さない)
 
 - **開いたときの数え直しは js-init が `achOpenCheck()` で1回だけ頼む** (開いた日もこのときだけ数える)。設定が届くまで待ち、
   `settlePrefs` が呼び直す。js-init は js-ach より前に読まれるので、**js-ach の状態の `var` に初期値を書かない** (`var x = false;` と

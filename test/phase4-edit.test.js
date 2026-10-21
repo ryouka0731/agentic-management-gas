@@ -614,6 +614,7 @@ describe('画面に渡せる形か', () => {
       closedToday(ctx);
       const out = ctx.apiAchievementsCheck();
       if (!out.newly.length || !out.unlocked[0].at) throw new Error('取った実績が空のまま検査されている');
+      if (typeof out.cleared !== 'boolean' || typeof out.clearedNow !== 'boolean') throw new Error('クリアの印が検査されていない');
       return out;
     }],
     ['apiAchievements', (ctx) => {
