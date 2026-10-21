@@ -242,9 +242,15 @@
    */
   function oshiPickState(state) {
     var grow = oshiData && oshiData.growth ? oshiData.growth.key : '';
+    var own = oshiActiveMine();
     if (state === 'idle' && grow) {
-      var own = oshiActiveMine();
-      if (own ? !!oshiImageRow(grow, own) : oshiHasPicture(grow)) return grow;
+      var g = oshiStagePicture(grow, own);
+      if (g) return g;
+    }
+    // 段が上がったときの絵も、自分のキャラにその段の絵が無ければ、持っているいちばん上の段の絵
+    if (own && oshiStageIndex(state) >= 0 && !oshiImageRow(state, own)) {
+      var up = oshiStagePicture(state, own);
+      if (up) return up;
     }
     // 絵が無くてもよい表情 (むっ) は、まずその代わりの表情 (しんぱい) に代える。自分のキャラに むっ の絵が無く、
     // 代わりの表情の絵があれば、最初からいるキャラの むっ (の代わり) より自分の絵を先に出す
@@ -254,6 +260,30 @@
     var order = [state, fb, grow, 'idle'];
     for (var i = 0; i < order.length; i++) if (order[i] && oshiHasPicture(order[i])) return order[i];
     return null;
+  }
+
+  /** @returns {number} 育ちの段の並び (apiOshiGet の growth.stages) での位置。段でなければ -1 */
+  function oshiStageIndex(key) {
+    var list = (oshiData && oshiData.growth && oshiData.growth.stages) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return i;
+    return -1;
+  }
+
+  /**
+   * その段か、それより下の段のうち、絵のあるいちばん上の段 (達人・師範の絵が無いキャラは、持っている段の絵で出す)。
+   * 自分のキャラは自分の絵だけを見る。最初からいるキャラは段を返し、絵が無ければ fallback (名人) を出す (oshiDefaultImage)。
+   *
+   * @param {string} key 段の key
+   * @param {object|null} own いま使う自分のキャラ
+   * @returns {string} 無ければ空
+   */
+  function oshiStagePicture(key, own) {
+    var list = (oshiData && oshiData.growth && oshiData.growth.stages) || [];
+    for (var i = oshiStageIndex(key); i >= 0; i--) {
+      var k = list[i].key;
+      if (own ? !!oshiImageRow(k, own) : oshiHasPicture(k)) return k;
+    }
+    return '';
   }
 
   /**
@@ -1157,9 +1187,10 @@
     grow.appendChild(oshiHeading('育ち'));
     grow.appendChild(makeOshiGrowth(d.growth));
     grow.appendChild(oshiNote('育ちの段は ' + (d.growth.stages || []).map(function (s) { return s.label + ' (Lv' + s.min + '〜)'; })
-      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜3) があると、' +
+      .join(' → ') + '。Lv は 1 + 取った実績の数で、どのキャラでも同じです。段ごとの絵 (育ち1〜5) があると、' +
       'ふつうの顔の代わりに、その段の姿で出ます (ホームのあいさつ・作業部屋・吹き出し)。ほめる・おいわい・しんぱい・ねむい ' +
-      'などの場面の顔は、その場面の表情のままです。最初からいるキャラには段ごとの絵があります。' +
+      'などの場面の顔は、その場面の表情のままです。最初からいるキャラには育ち1〜3の絵があり、達人・師範では名人の姿で出ます。' +
+      'その段の絵が無いキャラは、持っているいちばん上の段の絵で出ます。' +
       (d.growth.floored ? '以前に育てたぶんを保っているので、いまの Lv より上の段に出ています。' : '')));
     box.appendChild(grow);
     if (d.cleared && d.clear) box.appendChild(makeOshiClear(d));

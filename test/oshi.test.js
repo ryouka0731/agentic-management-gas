@@ -31,10 +31,14 @@ const make = (ctx, name, tone) => ctx.apiOshiCharCreate(name || '', tone || 'pol
 const oshiHas = (ctx, sha, ext) => ctx.objectsFolder_().getFilesByName('oshi-' + sha + '.' + ext).hasNext();
 
 describe('定義 (Oshi.js)', () => {
-  it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの3段', () => {
+  it('表情は待機・ほめる・おいわい・おうえん・しんぱい・ねむい・びっくりと、育ちの5段 (4段目と5段目は後から足したので末尾)', () => {
     const keys = pure.OSHI_STATES().map((s) => s.key);
-    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work', 'pout']);
-    expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3']);
+    expect(keys).toEqual(['idle', 'praise', 'celebrate', 'cheer', 'worry', 'sleepy', 'surprise', 'grow1', 'grow2', 'grow3', 'work', 'pout',
+      'grow4', 'grow5']);
+    expect(pure.OSHI_STAGES().map((s) => s.key)).toEqual(['grow1', 'grow2', 'grow3', 'grow4', 'grow5']);
+    // 達人・師範は絵が無くてもよく、無ければ名人の絵 (最初からいるキャラは名人まで)
+    expect(pure.oshiStateOf('grow4')).toMatchObject({ grow: true, optional: true, fallback: 'grow3' });
+    expect(pure.oshiStateOf('grow5')).toMatchObject({ grow: true, optional: true, fallback: 'grow3' });
     // 作業中は作業部屋でだけ、むっは機嫌でだけ出す (でたらめに選ぶ表情に入れない)
     expect(pure.OSHI_STATES().filter((s) => s.scene).map((s) => s.key)).toEqual(['work', 'pout']);
     // むっは絵が無くてもよく、無ければしんぱいの絵
@@ -83,15 +87,18 @@ describe('定義 (Oshi.js)', () => {
     expect(pure.OSHI_PROMPT_BASE()).toContain('参考画像');
   });
 
-  it('育ちの段はレベル (Lv) で決まる (見習い Lv1〜4・一人前 Lv5〜14・名人 Lv15〜)', () => {
+  it('育ちの段はレベル (Lv) で決まる (見習い Lv1〜4・一人前 Lv5〜14・名人 Lv15〜24・達人 Lv25〜34・師範 Lv35〜)', () => {
     expect(pure.oshiStageOf(1)).toMatchObject({ key: 'grow1', label: '見習い', meter: 0, toNext: 4, level: 1 });
     expect(pure.oshiStageOf(0).level).toBe(1);
     expect(pure.oshiStageOf(3)).toMatchObject({ key: 'grow1', meter: 50, toNext: 2 });
     expect(pure.oshiStageOf(4).key).toBe('grow1');
     expect(pure.oshiStageOf(5)).toMatchObject({ key: 'grow2', label: '一人前', meter: 0, toNext: 10 });
     expect(pure.oshiStageOf(14).key).toBe('grow2');
-    expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: '名人', meter: 100, toNext: 0 });
-    expect(pure.oshiStageOf(99).key).toBe('grow3');
+    expect(pure.oshiStageOf(15)).toMatchObject({ key: 'grow3', label: '名人', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(24).key).toBe('grow3');
+    expect(pure.oshiStageOf(25)).toMatchObject({ key: 'grow4', label: '達人', meter: 0, toNext: 10 });
+    expect(pure.oshiStageOf(35)).toMatchObject({ key: 'grow5', label: '師範', meter: 100, toNext: 0 });
+    expect(pure.oshiStageOf(99).key).toBe('grow5');
     expect(pure.oshiStageOf(5).floored).toBe(false);
   });
 
@@ -106,7 +113,8 @@ describe('定義 (Oshi.js)', () => {
   it('前の段 (床) で上の段に出すときは floored。棒と「あと N Lv」は、出している段の次の段へ Lv1 から進む', () => {
     // Lv3 で一人前に出す: 次は名人 (Lv15)。あと 12 Lv、棒は Lv1→15 のうち Lv3 まで
     expect(pure.oshiStageOf(3, 1)).toMatchObject({ key: 'grow2', floored: true, toNext: 12, meter: Math.floor(2 / 14 * 100) });
-    expect(pure.oshiStageOf(3, 2)).toMatchObject({ key: 'grow3', floored: true, toNext: 0, meter: 100 });
+    expect(pure.oshiStageOf(3, 2)).toMatchObject({ key: 'grow3', floored: true, toNext: 22, meter: Math.floor(2 / 24 * 100) });
+    expect(pure.oshiStageOf(3, 4)).toMatchObject({ key: 'grow5', floored: true, toNext: 0, meter: 100 });
     // 床より Lv の段が上なら、床は効いていない
     expect(pure.oshiStageOf(6, 1)).toMatchObject({ key: 'grow2', floored: false, meter: 10, toNext: 9 });
   });
