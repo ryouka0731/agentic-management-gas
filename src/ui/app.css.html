@@ -4620,6 +4620,8 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   color: var(--ink-2);
 }
 .home-summary strong { font-size: 15px; color: var(--ink); }
+/* 幅の広い画面で、中身が横いっぱいに伸びて右の列が遠くならないように、真ん中に寄せて幅を抑える */
+.home-scroll > * { max-width: 1360px; margin-left: auto; margin-right: auto; }
 .home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4629,6 +4631,19 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 @media (min-width: 1024px) {
   .home-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
 }
+/* さらに広ければ、右の列 (カード) を2列に並べて縦に積み上がらないようにし、主と従を半々にする */
+@media (min-width: 1440px) {
+  .home-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .home-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* 返事が届くまでの骨組み (homeSkeletonInto)。薄い棒がゆっくり明滅する。動きを減らす設定では止める */
+.home-skel-lines { display: grid; gap: var(--sp-2); padding: var(--sp-3); }
+.home-skel-line { display: block; height: 12px; border-radius: var(--radius-sm); background: var(--bg-3); animation: home-skel 1.4s ease-in-out infinite; }
+.home-skel-line:nth-child(2) { width: 72%; }
+.home-skel-line:nth-child(3) { width: 48%; }
+.home-skel-line:nth-child(4) { width: 86%; }
+@keyframes home-skel { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .home-skel-line { animation: none; } }
 .home-main,
 .home-side,
 .home-cards { display: grid; gap: var(--sp-4); align-content: start; min-width: 0; }
