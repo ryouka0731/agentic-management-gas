@@ -645,8 +645,9 @@
       'overdue-only': '期限切れだけに絞る',
       'goal-create-btn': '目標を立てる',
       'impediment-create-btn': '困りごとを書く',
-      'sprint-create-btn': 'スプリントを作る',
-      'sprint-edit-btn': 'スプリントを直す',
+      // 期間で進めるの言葉は表し方 (一般 / スクラム) に合わせる (画面にスクラムの言葉を直に書かない。test/terms.test.js)
+      'sprint-create-btn': termFill('{sprint}を作る', termStyleNow()),
+      'sprint-edit-btn': termFill('{sprint}を直す', termStyleNow()),
       'guide-link': '使い方を開く (?)',
       'guideline-toggle': 'はじめにの案内をたたむ・広げる',
       'guideline-hide': 'はじめにの案内を閉じる',
@@ -680,7 +681,7 @@
     // 決まった形の id (番号や型が付く)
     if (/^style-use-/.test(target)) return '診断のおすすめを使う';
     if (/^search-opt-/.test(target)) return '探すの候補を開く';
-    if (/^scrum-text-/.test(target)) return 'スクラムの文を直す';
+    if (/^scrum-text-/.test(target)) return termFill('{feature}の文を直す', termStyleNow());
 
     // 表に無い id は、画面にその要素があれば、その字 (読み上げの名前か題名か中の字) を使う。無ければ id のまま
     var el = /^[A-Za-z0-9:_-]{1,60}$/.test(target) ? document.getElementById(target) : null;
