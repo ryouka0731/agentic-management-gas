@@ -46,24 +46,46 @@
       apiWorkStyleSave: ['style'],
       apiGoalSave: ['goal'],
       apiCalendarPlan: ['calendar'],
-      apiPrefSet: function (args) { return args && args[0] === 'oshi.char' ? ['oshi'] : []; },
-      // 使われ方で確かめる実績 (Markdown で保存・日報をコピー・探す・推しを選ぶ) は、送ったあとに数え直す
+      apiPrefSet: function (args) {
+        var key = args && args[0];
+        return ['settings'].concat(key === 'oshi.char' ? ['oshi'] : key === 'oshi.mood' ? ['mood'] : []);
+      },
+      apiRegisterFile: ['register'],
+      apiRegisterFiles: ['register'],
+      apiCommit: ['commit'],
+      apiCommitMany: ['commit'],
+      apiBranchAddFile: ['addFile'],
+      apiIssueCreate: ['issue', 'tag'],
+      apiIssueUpdate: function (args) { return args && args[1] && Object.prototype.hasOwnProperty.call(args[1], 'labels') ? ['tag'] : []; },
+      apiTagCreate: ['tag'],
+      apiTemplateSave: ['template'],
+      apiSprintCreate: ['sprint'],
+      apiImpedimentCreate: ['impediment'],
+      apiTasksSync: ['tasks'],
+      apiOshiCharCreate: ['mychar'],
+      apiOshiCharImport: ['mychar'],
+      // 使われ方で確かめる実績 (Markdown で保存・日報をコピー・探す・推しを選ぶ・作業部屋・なでた など) は、送ったあとに数え直す
       apiUsageRecord: function (args) {
         var rows = (args && args[0]) || [];
         var map = ACH_USAGE_METRICS();
         var out = [];
         rows.forEach(function (r) {
-          var m = r && map[r.target];
-          if (m && out.indexOf(m) < 0) out.push(m);
+          var ms = (r && Object.prototype.hasOwnProperty.call(map, r.target) && map[r.target]) || [];
+          ms.forEach(function (m) { if (out.indexOf(m) < 0) out.push(m); });
         });
         return out;
       },
     };
   }
 
-  /** 使われ方の場所 → 数えるもの */
+  /** 使われ方の場所 → 数えるもの (1つの場所を「はじめて」と「通算」の2つが使うことがある) */
   function ACH_USAGE_METRICS() {
-    return { 'md-save': 'markdown', 'report-copy': 'reportCopy', 'search-open': 'search', 'oshi-choose': 'oshi' };
+    return {
+      'md-save': ['markdown'], 'report-copy': ['reportCopy'], 'search-open': ['search'], 'oshi-choose': ['oshi'],
+      'doc-link-btn': ['docLink'], 'view-gantt': ['gantt'], 'template-use': ['template'], 'board-move': ['board'],
+      'charkit-import': ['charkit'], 'oshi-pat': ['pat', 'pats'], 'room-open': ['room', 'rooms'], 'room-sound': ['roomSound'],
+      help: ['help'], usage: ['usageView'], cowork: ['cowork'],
+    };
   }
 
   /**
@@ -110,6 +132,9 @@
    */
   function achAfterCall(name, args) {
     if (name === 'apiPrefSet' && args && args[0] === 'oshi.char') usageCount('action', 'oshi-choose');
+    // 押した場所では分からない「できた」(カードを別の列へ動かせた・取り込めた) は、成功したあとに数える
+    if (name === 'apiProjectMove') usageCount('action', 'board-move');
+    if (name === 'apiOshiCharImport') usageCount('action', 'charkit-import');
     if (!achOpened || !achOn()) return;
     var table = ACH_CALL_EVENTS();
     if (!Object.prototype.hasOwnProperty.call(table, name)) return;
@@ -399,7 +424,7 @@
       res.next.forEach(function (n) {
         var li = document.createElement('li');
         li.dataset.ach = n.key;
-        li.textContent = n.groupLabel + ': ' + n.have + ' / ' + n.need + ' ' + n.unit + ' ・ ' + n.hint;
+        li.textContent = achGroupLabel(n.groupLabel) + ': ' + n.have + ' / ' + n.need + ' ' + n.unit + ' ・ ' + n.hint;
         nl.appendChild(li);
       });
       box.appendChild(nl);
@@ -408,7 +433,7 @@
     (res.groups || []).forEach(function (g) {
       var h = document.createElement('h3');
       h.className = 'ach-head';
-      h.textContent = g.label + ' ' + g.got + ' / ' + g.total;
+      h.textContent = achGroupLabel(g.label) + ' ' + g.got + ' / ' + g.total;
       box.appendChild(h);
       var grid = document.createElement('ul');
       grid.className = 'ach-badges';
@@ -445,9 +470,20 @@
     sub.className = 'ach-sub';
     sub.textContent = a.done
       ? a.desc + (a.at ? ' (' + a.at + ')' : '')
-      : a.off ? a.reason : a.near ? a.desc : (a.hint || a.groupLabel);
+      : a.off ? a.reason : a.near ? a.desc : (a.hint || achGroupLabel(a.groupLabel));
     li.appendChild(sub);
     return li;
+  }
+
+  /**
+   * まとまりの名前。推しがオフの人には「推し」と言わない (頁の決まり。推しの段やプロフィールを添えないのと同じ)。
+   *
+   * @param {string} label
+   * @returns {string}
+   */
+  function achGroupLabel(label) {
+    var text = String(label || '');
+    return oshiOn() ? text : text.replace('推しと部屋', 'キャラと部屋');
   }
 
   // ----- ホームの「最近の実績」 -----

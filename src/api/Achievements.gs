@@ -22,11 +22,12 @@ function apiAchievementsCheck(hint) {
 
 /**
  * 実績の頁。全部を数え直して届いた実績を取る (開いた日は数えない)。その日に「まだ」と分かった「はじめて」は読み直さない。
+ * 頁を開いたこと自体で「実績の頁を見た」に届く (page)。
  *
  * @returns {object} achPlain_ の形
  */
 function apiAchievements() {
-  return achApi_({ useNeg: true });
+  return achApi_({ useNeg: true, page: true });
 }
 
 /**
