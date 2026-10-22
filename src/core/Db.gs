@@ -819,6 +819,69 @@ function dbUpdateLocked_(table, key, value, patch) {
 }
 
 /**
+ * 同じ表の何行かを、1つの鍵の中で、表を1回読んで1回で書く。
+ *
+ * `dbUpdate` を行の数だけ呼ぶと、そのたびに表を丸ごと読んで1行書く (本番で1回 0.3〜0.8秒)。進捗ボードの列を
+ * 動かす (`projectMove`) は、動かす先の列と元の列の全部のカードの番号を書き直すので、本番でカードが 73 枚のとき
+ * 27〜36 秒かかり、「完了にする」「完了を取り消す」が数十秒黙っていた (2026-10-22)。
+ *
+ * 直す行の最初から最後までを1回の `setValues` で書く。あいだの直さない行も `dbCell_` を通して書き戻す
+ * (`dbUpdateLocked_` が直さない欄を書き戻すのと同じ理由。字のセルは読むと ' の無い字で返る)。
+ * 同じ鍵の値の行が2つあれば、`dbUpdate` と同じく先の1行だけを直す。
+ *
+ * @param {string} table
+ * @param {string} key 探す列
+ * @param {Array<{value: *, patch: object}>} patches 行ごとの直す値。同じ value が2つあれば後が勝つ
+ * @returns {number} 直した行の数
+ */
+function dbUpdateMany(table, key, patches) {
+  if (!patches || !patches.length) return 0;
+  return dbWithLock_(30000, function () {
+    return dbUpdateManyLocked_(table, key, patches);
+  });
+}
+
+function dbUpdateManyLocked_(table, key, patches) {
+  var cols = DB_SCHEMA()[table];
+  var sheet = dbSheet_(table);
+  var last = sheet.getLastRow();
+  if (last < 2) return 0;
+
+  var keyCol = cols.indexOf(key);
+  if (keyCol < 0) throw new Error('未定義のカラムです: ' + key);
+
+  var byKey = {};
+  for (var p = 0; p < patches.length; p++) byKey[String(patches[p].value)] = patches[p].patch;
+
+  var values = sheet.getRange(2, 1, last - 1, cols.length).getValues();
+  var lines = [];
+  var first = -1;
+  var end = -1;
+  var count = 0;
+  for (var r = 0; r < values.length; r++) {
+    var k = String(values[r][keyCol]);
+    var patch = Object.prototype.hasOwnProperty.call(byKey, k) ? byKey[k] : null;
+    if (patch) delete byKey[k];
+    var line = [];
+    for (var c = 0; c < cols.length; c++) {
+      var v = patch && Object.prototype.hasOwnProperty.call(patch, cols[c]) ? patch[cols[c]] : values[r][c];
+      line.push(dbCell_(cols[c], v));
+    }
+    lines.push(line);
+    if (patch) {
+      if (first < 0) first = r;
+      end = r;
+      count++;
+    }
+  }
+  if (first < 0) return 0;
+
+  sheet.getRange(first + 2, 1, end - first + 1, cols.length).setValues(lines.slice(first, end + 1));
+  dbInvalidate_(table);
+  return count;
+}
+
+/**
  * 条件に一致する行をすべて削除する。
  *
  * 行番号は削除のたびにずれるため、必ず下から消す。

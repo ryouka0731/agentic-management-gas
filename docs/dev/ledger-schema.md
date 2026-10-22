@@ -72,8 +72,8 @@
 | 同じ実行の中 | グローバルの `DB_MEMO_` (表 → 行) | その実行のあいだ (Apps Script は呼び出しごとにグローバルを読み直す) | その表を書いたとき・**鍵を取ったとき** |
 | ほかの実行とも | CacheService (スクリプトのキャッシュ) の `DB:<表>:<版>` | `DB_CACHE_SEC()` = 300秒 | 版 `DBV:<表>` を変えたとき |
 
-- **書く道はすべて `dbInvalidate_(表)` を通す。** `dbAppend` / `dbUpdateLocked_` / `dbDeleteLocked_` (と、それを使う
-  `dbAppendNumbered` / `dbAppendNumberedMany` / `dbUpdate` / `dbDelete`) は中で呼ぶ。**Db.gs の外で台帳に直に書く所**も、
+- **書く道はすべて `dbInvalidate_(表)` を通す。** `dbAppend` / `dbUpdateLocked_` / `dbUpdateManyLocked_` / `dbDeleteLocked_` (と、それを使う
+  `dbAppendNumbered` / `dbAppendNumberedMany` / `dbUpdate` / `dbUpdateMany` / `dbDelete`) は中で呼ぶ。**Db.gs の外で台帳に直に書く所**も、
   書いたあとに呼んでいる: `usageRecord` (`Usage.gs`)・`noticeMarkRead` (`Notifier.gs`)・`reviewBackfillIdsLocked_`
   (`PullRequest.gs`)・`outcomesWrite_` (`Outcomes.gs`)。入れ物を作り直す `repoInit` は `dbInvalidateAll_()` を呼ぶ。
   **直に書く所を足すなら、必ず `dbInvalidate_` を通す** (探し方: `grep -rn "appendRow\|setValues\|deleteRow" src`)。
