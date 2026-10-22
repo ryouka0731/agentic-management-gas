@@ -144,21 +144,28 @@ function projectMove(issueNumber, column, order) {
       projectPlace(issueNumber, column);
     }
 
+    // 直す行はためておいて、最後に1回で書く (dbUpdateMany)。1枚ごとに dbUpdate すると、そのたびに表を丸ごと読んで
+    // 1行書くので、本番でカードが 73 枚のとき 27〜36 秒かかっていた
+    var all = dbReadAll('project_items');
+    var from = all.filter(function (r) { return Number(r.issueNumber) === Number(issueNumber); })[0];
+    var fromColumn = from ? String(from.column) : '';
+    var patches = [];
+    function renumber(row, n) {
+      // 番号が変わるものだけ書く
+      if (Number(row.order) !== n) patches.push({ value: row.issueNumber, patch: { order: n } });
+    }
+
     // 別の列から来たなら、元の列の番号も詰める。詰めないと穴が空き、次に末尾へ
     // 足すときに既にある番号と重なる
-    var from = dbFindOne('project_items', 'issueNumber', issueNumber);
-    var fromColumn = from ? String(from.column) : '';
     if (fromColumn && fromColumn !== String(column)) {
-      var rest = dbReadAll('project_items').filter(function (r) {
+      var rest = all.filter(function (r) {
         return String(r.column) === fromColumn && Number(r.issueNumber) !== Number(issueNumber);
       });
       rest.sort(function (a, b) { return Number(a.order) - Number(b.order); });
-      for (var j = 0; j < rest.length; j++) {
-        if (Number(rest[j].order) !== j) dbUpdate('project_items', 'issueNumber', rest[j].issueNumber, { order: j });
-      }
+      for (var j = 0; j < rest.length; j++) renumber(rest[j], j);
     }
 
-    var rows = dbReadAll('project_items').filter(function (r) {
+    var rows = all.filter(function (r) {
       return String(r.column) === String(column) && Number(r.issueNumber) !== Number(issueNumber);
     });
     rows.sort(function (a, b) { return Number(a.order) - Number(b.order); });
@@ -168,13 +175,10 @@ function projectMove(issueNumber, column, order) {
     rows.splice(at, 0, { issueNumber: issueNumber, moved: true });
 
     for (var i = 0; i < rows.length; i++) {
-      if (rows[i].moved) {
-        dbUpdate('project_items', 'issueNumber', issueNumber, { column: column, order: i });
-      } else if (Number(rows[i].order) !== i) {
-        // 番号が変わるものだけ書く (1枚ごとに表を読むので、書かずに済むものは書かない)
-        dbUpdate('project_items', 'issueNumber', rows[i].issueNumber, { order: i });
-      }
+      if (rows[i].moved) patches.push({ value: issueNumber, patch: { column: column, order: i } });
+      else renumber(rows[i], i);
     }
+    dbUpdateMany('project_items', 'issueNumber', patches);
     return { item: dbFindOne('project_items', 'issueNumber', issueNumber), fromColumn: placed ? fromColumn : '' };
   });
   // 「完了」の列に入れた・出したら、推しの機嫌を数え直させる (完了の列のものは開いているものに数えない。OshiMood.gs)。

@@ -238,6 +238,9 @@ export function createFakeGas() {
   // シートを読んだ回数 (シートの名前 → 回数)。台帳の読み取りのキャッシュ (Db.gs の dbReadAll) が効いているかを数える
   const sheetReads = new Map();
   const countRead = (name) => { sheetReads.set(name, (sheetReads.get(name) || 0) + 1); };
+  // シートに書いた回数 (appendRow / setValues の呼び出しごとに1)。1回の操作で何行も直すところが、行ごとに書いていないかを数える
+  const sheetWrites = new Map();
+  const countWrite = (name) => { sheetWrites.set(name, (sheetWrites.get(name) || 0) + 1); };
   function makeSheet(name) {
     const rows = [];
     const sheet = {
@@ -245,7 +248,7 @@ export function createFakeGas() {
       getName: () => name,
       getLastRow: () => rows.length,
       setFrozenRows: () => sheet,
-      appendRow: (vals) => { rows.push(vals.map(asTyped)); return sheet; },
+      appendRow: (vals) => { countWrite(name); rows.push(vals.map(asTyped)); return sheet; },
       deleteRow: (r) => { rows.splice(r - 1, 1); return sheet; },
       /*
        * 実機と同じく、中身のある範囲だけを返す。消したセルは範囲から外れる。
@@ -303,6 +306,7 @@ export function createFakeGas() {
           return out;
         },
         setValues: (vals) => {
+          countWrite(name);
           for (let i = 0; i < vals.length; i++) {
             const r = row - 1 + i;
             while (rows.length <= r) rows.push([]);
@@ -816,6 +820,9 @@ export function createFakeGas() {
     /** シートを読んだ回数。名前を渡せばその表だけ、無ければ全部の合計 */
     _sheetReads: (table) => (table ? (sheetReads.get(table) || 0)
       : Array.from(sheetReads.values()).reduce((a, b) => a + b, 0)),
+    /** シートに書いた回数 (appendRow / setValues ごとに1)。名前を渡せばその表だけ、無ければ全部の合計 */
+    _sheetWrites: (table) => (table ? (sheetWrites.get(table) || 0)
+      : Array.from(sheetWrites.values()).reduce((a, b) => a + b, 0)),
     /** キャッシュの疑似の時計を進める (秒) */
     _cacheAdvance: (sec) => { cacheClock += Number(sec) * 1000; },
     /** スクリプトのキャッシュを空にする (人がシートを直にいじったあと、期限まで待つ代わり) */
