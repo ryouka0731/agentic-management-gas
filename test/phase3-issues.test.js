@@ -239,6 +239,32 @@ describe('カンバンボード', () => {
     expect(ctx.projectBoard()['Backlog'].map((x) => x.order)).toEqual([0, 1]);
   });
 
+  it('列を移すとき、カードが何枚でも台帳に書くのは1回 (1枚ごとに書くと本番で数十秒かかる)', () => {
+    // 2026-10-22: 73 枚のとき projectMove が 27〜36 秒かかり、「完了を取り消す」が数十秒黙っていた
+    const { ctx, fake } = setup();
+    const cards = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((t) => ctx.issueCreate(t, '', []));
+    cards.slice(0, 4).forEach((i) => ctx.projectPlace(i.number, 'Backlog'));
+    cards.slice(4).forEach((i) => ctx.projectPlace(i.number, 'In Progress'));
+    const before = fake._sheetWrites('project_items');
+
+    // 元の列の先頭から、先の列の先頭へ: 元の列の残り3枚と先の列の4枚の番号が全部ずれる
+    ctx.projectMove(cards[0].number, 'In Progress', 0);
+
+    expect(fake._sheetWrites('project_items') - before).toBe(1);
+    const board = ctx.projectBoard();
+    expect(board['Backlog'].map((x) => [x.issueNumber, x.order]))
+      .toEqual([[cards[1].number, 0], [cards[2].number, 1], [cards[3].number, 2]]);
+    expect(board['In Progress'].map((x) => [x.issueNumber, x.order]))
+      .toEqual([[cards[0].number, 0], [cards[4].number, 1], [cards[5].number, 2], [cards[6].number, 3], [cards[7].number, 4]]);
+
+    // 板に無いものを動かすときは、置く (1回) + 動かす (1回)
+    const extra = ctx.issueCreate('I', '', []);
+    const before2 = fake._sheetWrites('project_items');
+    ctx.projectMove(extra.number, 'Backlog', 0);
+    expect(fake._sheetWrites('project_items') - before2).toBeLessThanOrEqual(2);
+    expect(ctx.projectBoard()['Backlog'].map((x) => x.issueNumber)[0]).toBe(extra.number);
+  });
+
   it('定義されていない列には置けない', () => {
     const { ctx } = setup();
     const issue = ctx.issueCreate('改訂', '', []);
