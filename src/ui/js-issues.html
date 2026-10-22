@@ -1278,6 +1278,8 @@
         var use = document.createElement('button');
         use.type = 'button';
         use.className = 'template-use';
+        // 押した場所として数える (実績「下書き (ひな形) を使った」。js-me の usageTargetOf が data-track を拾う)
+        use.dataset.track = 'template-use';
         use.textContent = one.name;
         attachHint(use, one.body.split('\n').slice(0, 4).join('\n'));
 

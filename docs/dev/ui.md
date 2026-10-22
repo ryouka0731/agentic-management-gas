@@ -432,7 +432,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   「なでた」と数え、笑顔 (`praise` を `oshiPickState` に通した絵) にして、場面 `pat` (なでられた) のせりふを絵の下の
   `aria-live` の字に言う (吹き出しは使わない。見ている目の前で言う)。指を動かせない人は「なでる」ボタン。4秒で戻り、
   そのあいだは何度なでても取り直さない。粒は `funBurst` (減らす設定なら出ない)。`touch-action: pan-y` で縦の
-  スクロールは残す。オフの人には出さない (絵を取らない)。なつき度・実績・機嫌には何もしない (遊びの演出)
+  スクロールは残す。オフの人には出さない (絵を取らない)。機嫌には何もしない。なでたら `usageCount('action', 'oshi-pat')` を1つ数える
+  (実績「推しの頭をなでた」と通算。作業部屋の `roomPat` も同じ。笑顔のあいだは数えない)。なつき度が変わるのは実績を取ったときだけ
 - **絵は要るときに取るが、読み込んでから少し待って、いま使うキャラの絵を全部の表情ぶん裏で取っておく** (`oshiWarmImages`。
   `apiOshiGet` が届いて 1.5 秒後から 150ms ずつ)。そのままだと場面が来た瞬間 (済ませた・実績を取った) に、せりふの後から
   絵が遅れて出ていた (2026-10-22 の指摘「ワンテンポ遅れて反映される」)。`oshiImage` を通すので、オフの人・絵を出さない設定の人は
@@ -521,7 +522,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **キャラ作成キット (やること #50)。** 頼み文は `oshiCharKitPrompt` (`src/core/Oshi.js`) が唯一の定義で、道具 (`OSHI_CHARKIT_TOOLS()`) の
   一覧だけを `apiOshiGet` の `kitTools` で渡し、中身は「コピー」を押したときに `apiOshiCharKitPrompt` で取る (画面は写しを持たない)。
   一度取った字は `oshiKitPrompts` に覚え、2回目からは押した中で写す (返事を待ってから写すと、写せない画面がある。そのときは字を選んだままにする)。
-  プロフィールの項目の Lv は `oshiCharKitLevels(1 + 実績の数)` (2 から 2 ずつ)。表情の絵の決まりは `OSHI_PROMPT_LOOK_RULES()` を
+  プロフィールの項目の Lv は `oshiCharKitLevels(1 + 実績の数)` (2 から 2 ずつ、**Lv 36 (`OSHI_CHARKIT_LV_TOP()`) まで**。実績を 36 → 63 に
+  増やしたときも、頼む項目は 18 のまま留めた。前に作ったキャラとそろえるため。クリアの Lv は頼み文に今の数で書く)。表情の絵の決まりは `OSHI_PROMPT_LOOK_RULES()` を
   表情ごとの頼み文と共用し、「参考画像と同じキャラクター」は入れない (写真の人をそのまま描かせない)
   - 「AI の答えを貼る」(`makeOshiImport`) は字をそのまま `apiOshiCharImport(charId | 0, text)` に送る。**取り出し (`oshiExtractJson`) と検査
     (`oshiCharImportValid_`) はサーバだけ**。知らない欄は捨て、口調・長さは断る。書き直すときは答えにある場面だけ置き換え、動画は残す
@@ -573,9 +575,36 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   (`FUN_CHEERS` / `OSHI_CALL_EVENTS` と同じ形)。表の値はその操作で変わりうる数えるもので、数え直しは
   `apiAchievementsCheck({metrics})` (開いた日は数えず、名指したものだけ)。返事を待つあいだに頼まれたものは、返事のあとにまとめて1回だけ頼み直す。
   絞った返事 (`partial`) では頁を描き直さない
-- 使われ方で確かめる実績 (Markdown で保存 `md-save`・日報をコピー `report-copy`・探す `search-open`・推しを選ぶ `oshi-choose`) は、
-  その場で `usageCount('action', …)` を数え、`apiUsageRecord` を送ったあとに数え直す。場所の名前は `ACH_USAGE_TARGETS()` で、
-  サーバの `ACH_USAGE_PLACES()` と同じ (`test/achievements.test.js`)
+- 使われ方で確かめる実績 (Markdown で保存 `md-save`・日報をコピー `report-copy`・探す `search-open`・推しを選ぶ `oshi-choose`・
+  作業部屋 `room-open` / `room-sound`・なでた `oshi-pat`・ボード `board-move`・取り込み `charkit-import`・押した場所 `doc-link-btn` /
+  `view-gantt` / `template-use`・開いた頁 `help` / `usage` / `cowork`) は、その場で `usageCount` を数え、`apiUsageRecord` を送ったあとに
+  数え直す。場所 → 数えるもの は `ACH_USAGE_METRICS()` (値は配列。1つの場所を「はじめて」と「通算」が使う) で、
+  サーバの `ACH_USAGE_PLACES()` (数えるもの → 場所) と同じ (`test/achievements.test.js`)
+- まとまり (`ACH_GROUPS`) は種類ごと: 通算の日 / 片づけた / いっしょに / はじめて: 文書 / はじめて: やること / はじめて: 自分と道具 /
+  推しと部屋。頁はまとまりごとに見出しを立てる。推しがオフの人には「推しと部屋」を「キャラと部屋」と出す (`achGroupLabel`)
+
+### 実績を足すときの決まり
+
+- **「はじめて」は機能ごとに1つ、key は `first-<数えるもの>`**。数えるもの (`ACH_METRICS`) に `first: true` を付け、`achCounts_` の
+  `count` に数え方を足す。**key は取った印 `ACH:` に残るので、名前・まとまりを直しても key は変えない** (2026-10 に「はじめて」を
+  4つのまとまりに分けたときも key はそのまま)。説明は人に分かる字で、Git の言葉を使わない (`test/achievements.test.js` が見ている)
+- **数え方は既にある記録に乗せる。実績のための記録の表・api は作らない。** 順に: 台帳に残る人の名 (作った人・記録した人・変更の履歴の actor)
+  → 自分の設定 (`MYPREF:`) → 使われ方の場所 (`ACH_USAGE_PLACES`)。画面の中だけで起きること (開いた・なでた・音を流した) は、その操作の中で
+  `usageCount('action', 場所)` を数える。押した場所に id か `data-track` があれば、js-me の `usageTargetOf` がそのまま数えるので何も足さない。
+  「できた」が要るもの (ボードで動かせた・取り込めた) は `achAfterCall` で成功したあとに数える。頁を開いたことは `switchTab` の
+  `usageCount('view', 名前)` をそのまま使う。実績の頁だけは `apiAchievements` が `page` で名指す (使われ方を止めていても取れる)
+- 済ませた操作の api は `ACH_CALL_EVENTS` に「変わりうる数えるもの」を足す (足さないと、取れるのが次に開いたときになる)
+- **使われ方だけで数えるものは、チームが `usage.enabled` を切ると取れない** (`achUsageKeys_` が自動で拾う)。台帳や設定でも数えるもの
+  (推しを選んだ・下書き) は `ACH_USAGE_ALSO()` に入れて外す。本人が `usage.self` を切っているときは手がかりだけ (`achPersonalTips_`)
+- **チームの設定・環境で止められる機能は `achUnavailable_` に理由を書く** (取れないものはクリアの数に入れない)。いまは 1人・目標・共有カレンダー・
+  期間で進める (`scrumEnabled`)・作業雑談部屋 (`cowork.enabled`)・Google ToDo (`tasksAvailable`)・使われ方。**自分の設定で止めているもの
+  (作業部屋 `room.on`・推し `oshi.on` など) は入れない** (自分で切るだけでクリアに届いてしまう)。`achPersonalTips_` に取り方を書く
+- **約束を破る数え方はしない。** 作業雑談部屋は「番頭は誰が入ったかを記録しない」と約束しているので、「入った」ではなく「頁をのぞいた」
+  (開いた頁の使われ方) で数える。推しの機嫌は「Lv・実績を動かさない」ので、「機嫌が直った」ではなく「機嫌をオンにした」(自分の設定) で数える
+- **なつき度との整合。** 最高の Lv は 1 + 実績の数 (いま 63 → Lv 64)。段の Lv (1/5/15/25/35) は動かさない。推しのプロフィールの項目は
+  Lv 2〜36 のまま (`OSHI_CHARKIT_LV_TOP`)。項目は Lv 36 までに全部分かり、クリアで出るのはお祝いの言葉と動画だけ。最高の Lv より上の Lv に
+  置いた項目は「クリアで分かる」。実績の頁の「クリアまで あと ◯ 個」・まとまりの数は `achPlain_` が今の `ACHIEVEMENTS()` から数える
+- 足したら `test/achievements-more.test.js` に「操作すると取れる」を1つずつ足し、`docs/manual/achievements.md` の一覧を直す
 - 取ったときは隅の小さな知らせ (`#ach-toast`。`role="status"`・焦点を奪わない・帯 `#snackbar` とは別に出すので「取り消す」を消さない)。
   器は読み込んだときに空で置く (字を入れる前から在る器でないと、最初の知らせを読み上げない)。上の帯の下 (56px + `--sp-2`) に、
   自分まわり・知らせの欄 (160) より手前に出す。

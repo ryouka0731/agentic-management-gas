@@ -39,7 +39,10 @@ function achKey_(who) {
  * - いっしょに (team の6つ)・はじめての 反映した・承認した: 番頭を使っているのが本人1人のとき (achSolo_)
  * - 目標を立てた: チームの設定 goals.enabled がオフ
  * - 予定に入れた: 共有カレンダー (calendar.shared) を管理者が決めていない
- * - 使われ方で数えるもの (Markdown・日報・探す): チームの usage.enabled がオフ
+ * - 作業期間を作った・困りごとを書き出した: 管理者が「期間で進める」(scrumEnabled) をオンにしていない (左に出ない)
+ * - 作業雑談部屋をのぞいた: チームの設定 cowork.enabled がオフ (左に出ない)
+ * - Google ToDo に送った: エディタで Tasks のサービスを足していない (tasksAvailable() が false。画面に入口が出ない)
+ * - 使われ方で数えるもの (Markdown・日報・探す・作業部屋・なでる など achUsageKeys_): チームの usage.enabled がオフ
  *
  * @param {string} email
  * @param {Object<string, string>} [have] 取った印 (省くと読む)
@@ -66,16 +69,38 @@ function achUnavailable_(email, have) {
   if (!prefGet_('calendar.shared', who)) {
     mark(['first-calendar'], '管理者が設定で「予定を入れる共有カレンダー」を決めると取れます');
   }
+  if (typeof scrumEnabled !== 'function' || !scrumEnabled()) {
+    mark(['first-sprint', 'first-impediment'], '管理者が設定で「期間で進める」をオンにすると取れます');
+  }
+  if (prefGet_('cowork.enabled', who) !== true) {
+    mark(['first-cowork'], 'チームの設定「作業雑談部屋を使う」をオンにすると取れます (管理者が変えられます)');
+  }
+  if (typeof tasksAvailable !== 'function' || !tasksAvailable()) {
+    mark(['first-tasks'], '管理者がエディタの「サービス +」から Google Tasks を足すと取れます');
+  }
   if (prefGet_('usage.enabled', who) === false) {
     mark(achUsageKeys_(), 'チームの設定「使われ方を記録する」をオンにすると取れます (管理者が変えられます)');
   }
   return off;
 }
 
-/** 使われ方で数える「はじめて」の key (推しを選んだ は設定でも数えるので除く) */
+/**
+ * 使われ方の場所だけで数える実績の key (通算の なでた・作業部屋 も含む)。台帳や設定でも数えるもの (ACH_USAGE_ALSO) は除く
+ * (使われ方を記録しなくても、そちらで取れる)。
+ *
+ * @returns {string[]}
+ */
 function achUsageKeys_() {
-  return Object.keys(ACH_USAGE_PLACES()).filter(function (m) { return m !== 'oshi'; })
-    .map(function (m) { return 'first-' + m; });
+  var places = ACH_USAGE_PLACES();
+  var also = ACH_USAGE_ALSO();
+  return ACHIEVEMENTS().filter(function (a) {
+    return Object.prototype.hasOwnProperty.call(places, a.metric) && also.indexOf(a.metric) < 0;
+  }).map(function (a) { return a.key; });
+}
+
+/** 使われ方の場所のほかに、台帳か設定でも数える数えるもの (推しを選んだ = 設定、下書き = 自分の下書きを作った) */
+function ACH_USAGE_ALSO() {
+  return ['oshi', 'template'];
 }
 
 /**
@@ -94,7 +119,16 @@ function achPersonalTips_(email) {
     out['first-calendar'] = '自分の設定「やることを予定に入れる」をオンにすると取れます';
   }
   if (prefGet_('focus.start', who) !== true) out['first-focus'] = '自分の設定「今から始める」(集中のしかた) をオンにすると取れます';
-  if (prefGet_('oshi.on', who) === false) out['first-oshi'] = '自分の設定「推しに応援してもらう」をオンにすると取れます';
+  if (prefGet_('oshi.on', who) === false) {
+    ['first-oshi', 'first-pat', 'pats-10', 'pats-50', 'first-mood'].forEach(function (k) {
+      out[k] = '自分の設定「推しに応援してもらう」をオンにすると取れます';
+    });
+  }
+  if (prefGet_('room.on', who) !== true) {
+    ['first-room', 'first-roomSound', 'rooms-10', 'rooms-50'].forEach(function (k) {
+      out[k] = '自分の設定「作業部屋を使う」をオンにすると取れます';
+    });
+  }
   return out;
 }
 
@@ -210,9 +244,25 @@ function achDaysKey_(who) {
   return 'ACH_DAYS:' + achWho_(who);
 }
 
-/** 実績の使われ方の場所。画面が押したときに usageCount('action', ...) で数える (数を足すだけの安い記録) */
+/**
+ * 実績の使われ方の場所 (数えるもの → 使われ方の target)。画面が押したときに usageCount('action', ...) で数えるか、
+ * 画面を開いたときの usageCount('view', 頁の名前) をそのまま使う (数を足すだけの安い記録。**実績のための新しい api は作らない**)。
+ * 画面の写し (js-ach の ACH_USAGE_METRICS) と揃える (test/achievements.test.js が見ている)。
+ * 1つの場所を2つの数えるもので使ってよい (なでた: はじめて と 通算)。通算のもの (unit のあるもの) は回数の合計で数える。
+ *
+ * @returns {Object<string, string>}
+ */
 function ACH_USAGE_PLACES() {
-  return { markdown: 'md-save', reportCopy: 'report-copy', search: 'search-open', oshi: 'oshi-choose' };
+  return {
+    markdown: 'md-save', reportCopy: 'report-copy', search: 'search-open', oshi: 'oshi-choose',
+    // 押した場所 (id か data-track。js-me の usageTargetOf がそのまま数える)
+    docLink: 'doc-link-btn', gantt: 'view-gantt', template: 'template-use',
+    // 画面の中だけで起きること (js-room / js-oshi / js-ach が数える)
+    board: 'board-move', charkit: 'charkit-import', pat: 'oshi-pat', pats: 'oshi-pat', room: 'room-open',
+    rooms: 'room-open', roomSound: 'room-sound',
+    // 開いた頁 (app.js の switchTab が usageCount('view', 名前) で数える)
+    help: 'help', usageView: 'usage', cowork: 'cowork',
+  };
 }
 
 /** @returns {{n: number, last: string}} 読めなければ 0 日 */
@@ -389,14 +439,32 @@ function achCounts_(who, have, days, only, skip) {
     return rows(table).some(function (r) { return mine(r[col]) && (!extra || extra(r)); }) ? 1 : 0;
   }
   var usage = null;
-  function used(place) {
+  // 場所 → 回数の合計 (本人のぶんだけ。日ごとの行を足す)
+  function usageSum(place) {
     if (!usage) {
       usage = {};
       rows('usage').forEach(function (r) {
-        if (mine(r.user) && (Number(r.count) || 0) > 0) usage[String(r.target)] = true;
+        var n = Number(r.count) || 0;
+        if (!mine(r.user) || n <= 0) return;
+        var t = String(r.target);
+        usage[t] = (usage[t] || 0) + n;
       });
     }
-    return usage[place] ? 1 : 0;
+    return usage[place] || 0;
+  }
+  function used(place) { return usageSum(place) > 0 ? 1 : 0; }
+  // 自分の設定 (MYPREF:)。既定と同じ値は残らない
+  var myPrefs;
+  function mySettings() {
+    if (myPrefs === undefined) {
+      var v = prefParse_(prop(prefMineKey_(who)));
+      myPrefs = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    }
+    return myPrefs;
+  }
+  // 番頭が自分で残す変更の記録の文 (人が記録したものではない)。反映・改訂版を作る・足す・最初の記録・空白の記録し直し・退避
+  function autoCommit(msg) {
+    return /^(反映: |最初の記録$|改訂版「|空白の扱いを改めた記録)/.test(msg) || / に足した$/.test(msg) || /退避$/.test(msg);
   }
   var places = ACH_USAGE_PLACES();
   // 手元からの命令の覚え (スクリプトプロパティ) は、反映した・手元の道具 の両方が使うので1回だけ読む
@@ -454,6 +522,55 @@ function achCounts_(who, have, days, only, skip) {
     // 手元からの命令は持ち主の名で走るので、命令を置いた人の覚え (outcomesQueueNote_) で見る
     kit: function () { return windowsOnce().some(function (q) { return mine(q.by); }) ? 1 : 0; },
     search: function () { return used(places.search); },
+    register: function () { return any('files', 'registeredBy'); },
+    // 手元からの命令で記録したものは持ち主の名で残るので、命令を置いた人のものにする (反映した と同じ)
+    commit: function () {
+      var windows = windowsOnce();
+      return rows('commits').some(function (c) {
+        return !autoCommit(String(c.message || '')) && achPersonOf_(c.author, c.timestamp, windows) === who;
+      }) ? 1 : 0;
+    },
+    // 改訂版に足すと「<文書> を <改訂版> に足した」の記録が、足した人の名で残る (Branch.gs の branchAddFile)
+    addFile: function () {
+      return rows('commits').some(function (c) {
+        return String(c.branch) !== 'main' && / に足した$/.test(String(c.message || '')) && mine(c.author);
+      }) ? 1 : 0;
+    },
+    docLink: function () { return used(places.docLink); },
+    // やることを作ると、作った人の名で変更の履歴 (create) が残る (Issue.gs → historyRecord_)
+    issue: function () {
+      return rows('change_log').some(function (h) {
+        return mine(h.actor) && String(h.action) === 'create' && /^issue:/.test(String(h.target));
+      }) ? 1 : 0;
+    },
+    template: function () {
+      return any('templates', 'createdBy', function (t) { return !t.builtin; }) || used(places.template);
+    },
+    // 新しいタグを作った (書いたタグは tagAdopt が作った人の名で一覧に足す) か、やることのタグを直した
+    tag: function () {
+      return any('tags', 'createdBy', function (t) { return !t.builtin; }) || (rows('change_log').some(function (h) {
+        return mine(h.actor) && String(h.field) === 'labels' && String(h.after || '') !== '';
+      }) ? 1 : 0);
+    },
+    board: function () { return used(places.board); },
+    gantt: function () { return used(places.gantt); },
+    sprint: function () { return any('sprints', 'createdBy'); },
+    impediment: function () { return any('impediments', 'reportedBy'); },
+    tasks: function () { return any('task_links', 'user'); },
+    settings: function () { return Object.keys(mySettings()).length ? 1 : 0; },
+    help: function () { return used(places.help); },
+    usageView: function () { return used(places.usageView); },
+    // 実績の頁を開いた (apiAchievements が page で名指す)。ここでは数えない
+    achPage: function () { return 0; },
+    mychar: function () { return any('oshi', 'who'); },
+    charkit: function () { return used(places.charkit); },
+    mood: function () { return mySettings()['oshi.mood'] === true ? 1 : 0; },
+    pat: function () { return used(places.pat); },
+    pats: function () { return usageSum(places.pats); },
+    room: function () { return used(places.room); },
+    rooms: function () { return usageSum(places.rooms); },
+    roomSound: function () { return used(places.roomSound); },
+    cowork: function () { return used(places.cowork); },
   };
   Object.keys(need).forEach(function (m) {
     try {
@@ -474,10 +591,11 @@ function achCounts_(who, have, days, only, skip) {
  * - countDay: 開いた日を数える (開いたときに1回だけ)
  * - metrics: 数えるものを絞る (済ませたあと)。無ければ全部数え、「はじめて」でまだなものをその日の覚えに書く
  * - useNeg: その日に「まだ」と分かった「はじめて」を数えない (頁を開いたとき。countDay のときも、覚えがあれば数えない)
+ * - page: 実績の頁を開いた (「実績の頁を見た」に届く。使われ方は使わない = 記録を止めていても取れる)
  *
  * @param {string} email
  * @param {Date} now
- * @param {{countDay?: boolean, metrics?: string[], useNeg?: boolean}} [opts]
+ * @param {{countDay?: boolean, metrics?: string[], useNeg?: boolean, page?: boolean}} [opts]
  * @returns {{who: string, days: {n: number, last: string}, have: Object<string, string>, newly: string[],
  *   counts: Object<string, number>, partial: boolean}}
  */
@@ -498,6 +616,7 @@ function achCheck_(email, now, opts) {
   var useNeg = (o.useNeg || o.countDay) && !only;
   var negKnown = useNeg ? achNegRead_(who, today) : null;
   var counts = achCounts_(who, have, days, only, negKnown);
+  if (o.page && !Object.prototype.hasOwnProperty.call(have, 'first-achPage')) counts.achPage = 1;
   if (!only) {
     var metrics = ACH_METRICS();
     var neg = Object.keys(counts).filter(function (m) { return metrics[m].first && !counts[m]; });
