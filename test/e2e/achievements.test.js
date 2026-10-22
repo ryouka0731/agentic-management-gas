@@ -65,6 +65,7 @@ describe('実績を取って推しのレベルが上がる', () => {
     const other = e2e.as('b@example.com');
     await other.settle();
     other.fake._setUser('b@example.com');
-    expect(other.ctx.apiAchievements().unlocked.map((a) => a.key)).toEqual(['days-1']);
+    // apiAchievements は頁を開いたことでもあるので「実績の頁を見た」も付く (ほかの人の実績は入らない)
+    expect(other.ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['days-1', 'first-achPage']);
   });
 });
