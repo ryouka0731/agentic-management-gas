@@ -56,10 +56,10 @@ describe('実績を取って推しのレベルが上がる', () => {
     await again.settle();
     expect(e2e.ctx.achDaysRead_(ME).n).toBe(1);
 
-    // 6. 完了を取り消しても実績は消えず、Lv も下がらない
+    // 6. 完了を取り消しても実績は消えず、Lv も下がらない (4 で実績の頁を開いたので「実績の頁を見た」も取れている)
     e2e.ctx.issueReopen(1);
-    expect(e2e.ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['days-1', 'done-1']);
-    expect(e2e.ctx.apiOshiGet().growth.level).toBe(3);
+    expect(e2e.ctx.apiAchievements().unlocked.map((a) => a.key).sort()).toEqual(['days-1', 'done-1', 'first-achPage']);
+    expect(e2e.ctx.apiOshiGet().growth.level).toBe(4);
 
     // 7. ほかの人には見えない (その人の実績は自分の1日目だけ)
     const other = e2e.as('b@example.com');
