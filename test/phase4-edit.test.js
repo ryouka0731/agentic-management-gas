@@ -663,6 +663,22 @@ describe('画面に渡せる形か', () => {
       if (!out.lines || !out.items) throw new Error('取り込みが空のまま検査されている');
       return out;
     }],
+    // みんなに公開したキャラを、ほかの人が借りた形 (kind: 'shared'・作った人の表示名・絵の行の日時)
+    ['apiOshiSetShared', (ctx) => ctx.apiOshiSetShared(ctx.apiOshiCharCreate('テストのルナ', 'polite').charId, true)],
+    ['apiOshiGet (借りたキャラ)', (ctx, env) => {
+      env.fake._setUser('a@example.com');
+      const c = ctx.apiOshiCharCreate('テストのルナ', 'polite').charId;
+      ctx.apiOshiSetImage(c, 'idle', 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64'));
+      ctx.apiOshiSetShared(c, true);
+      env.fake._setUser('tester@example.com');
+      const sid = ctx.dbReadAll('oshi').find((r) => String(r.who) === 'a@example.com').id;
+      ctx.apiPrefSet('oshi.char', 'shared:' + sid);
+      const out = ctx.apiOshiGet();
+      if (out.kind !== 'shared' || !out.shared.length || !out.shared[0].images.length || !out.images.length) {
+        throw new Error('借りたキャラが空のまま検査されている');
+      }
+      return out;
+    }],
     ['apiCalendarPlan', (ctx, env) => {
       calendarReady(ctx, env);
       const out = ctx.apiCalendarPlan();

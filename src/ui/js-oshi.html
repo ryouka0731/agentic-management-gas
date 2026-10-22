@@ -344,10 +344,25 @@
     return false;
   }
 
-  /** いま使う自分のキャラ (apiOshiGet の mine の1つ)。最初からいるキャラを使っていれば null */
+  /**
+   * いま使う自分のキャラ (apiOshiGet の mine の1つ)。最初からいるキャラを使っていれば null。
+   * ほかの人が公開したキャラを借りているときは、絵の行と 'shared:<番号>' だけの形 (絵は apiOshiImage がその名指しで返す)
+   */
   function oshiActiveMine() {
-    if (!oshiData || oshiData.kind !== 'mine') return null;
+    if (!oshiData) return null;
+    if (oshiData.kind === 'shared') return oshiSharedPicture(oshiData.char, oshiData.images);
+    if (oshiData.kind !== 'mine') return null;
     return oshiMineOf(oshiData.charId);
+  }
+
+  /** 公開されたキャラの絵を引くための形 (oshiImage / oshiImageRow に渡す)。書く道には渡さない */
+  function oshiSharedPicture(char, images) {
+    return { charId: char, images: images || [], shared: true };
+  }
+
+  /** 作った人の呼び方。名前を登録していない人は「ほかの人」 */
+  function oshiOwnerLabel(owner) {
+    return owner ? owner + ' さん' : 'ほかの人';
   }
 
   /** @returns {object|null} 番号の自分のキャラ */
@@ -1295,7 +1310,8 @@
     [
       '使ってよい絵だけを入れてください (自分で描いた・作った絵、使ってよいと許された絵)。',
       '実在の人の顔は、その人の許しがあるときだけにしてください。',
-      '番頭の画面では、あなたにだけ見せます。ただし絵と名前は入れ物 (Drive のフォルダ) の台帳と objects/ に置くので、' +
+      '番頭の画面では、あなたにだけ見せます (「みんなに公開する」をオンにしたキャラは、ほかの人も選べます)。' +
+        'ただし絵と名前は入れ物 (Drive のフォルダ) の台帳と objects/ に置くので、' +
         '入れ物を Drive で共有している人は直に開けます。見られて困る絵は入れないでください。',
     ].forEach(function (t) { care.appendChild(oshiNote(t)); });
     box.appendChild(care);
@@ -1431,6 +1447,13 @@
     now.textContent = 'いま使っているキャラ: ' + (d.name || '名前なし') + (d.kind === 'builtin' ? ' (最初からいるキャラ)' : '') +
       '。設定の「使うキャラ」でも選べます。';
     sec.appendChild(now);
+    // 借りているキャラは直せない (書けるのは作った人だけ)。なつき度は自分のもの
+    if (d.kind === 'shared') {
+      var borrowed = oshiNote(oshiOwnerLabel(d.owner) + 'のキャラを使っています。絵・名前・せりふを直せるのは作った人だけです。' +
+        'なつき度はあなたのもので、プロフィールもあなたのなつき度で分かります。');
+      borrowed.classList.add('oshi-borrowed');
+      sec.appendChild(borrowed);
+    }
     if (!list.length) {
       sec.appendChild(oshiNote('まだ自分のキャラはいません。作ると、表情ごとの絵・名前・口調・せりふを決められます。'));
     } else {
@@ -1445,6 +1468,7 @@
         b.dataset.charId = String(c.charId);
         b.setAttribute('aria-pressed', editing && editing.charId === c.charId ? 'true' : 'false');
         b.textContent = oshiMineName(c) + (d.kind === 'mine' && d.charId === c.charId ? ' ・ 使用中' : '');
+        if (c.shared) b.appendChild(oshiSharedPill());
         b.addEventListener('click', function () {
           oshiEditing = c.charId;
           drawOshiPage(box, d);
@@ -1483,7 +1507,9 @@
     var sec = document.createElement('section');
     sec.className = 'oshi-section oshi-profile';
     sec.dataset.charId = String(c.charId);
-    sec.appendChild(oshiHeading(oshiMineName(c) + ' の名前と口調'));
+    var head = oshiHeading(oshiMineName(c) + ' の名前と口調');
+    if (c.shared) head.appendChild(oshiSharedPill());
+    sec.appendChild(head);
 
     var nameLabel = document.createElement('label');
     nameLabel.className = 'oshi-field';
@@ -1557,7 +1583,58 @@
     });
     actions.appendChild(del);
     sec.appendChild(actions);
+    sec.appendChild(makeOshiShareToggle(box, d, c, sec));
     return sec;
+  }
+
+  /** 「公開中」の札 */
+  function oshiSharedPill() {
+    var pill = makePill('公開中', 'chip chip-accent oshi-shared-pill');
+    pill.title = '同じ入れ物を使う人が、使うキャラとして選べます';
+    return pill;
+  }
+
+  /**
+   * 「みんなに公開する」の切り替え (apiOshiSetShared)。オンにするときだけ確かめる。名前を決めるまでは押せない。
+   * 止めると、使っていた人は最初のキャラに戻る。
+   *
+   * @param {HTMLElement} box 頁
+   * @param {object} d apiOshiGet
+   * @param {object} c 自分のキャラ
+   * @param {HTMLElement} host 確かめる帯を出す所
+   * @returns {HTMLElement}
+   */
+  function makeOshiShareToggle(box, d, c, host) {
+    var wrap = document.createElement('div');
+    wrap.className = 'oshi-share';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn toggle-btn oshi-share-toggle';
+    btn.appendChild(document.createTextNode('みんなに公開する'));
+    setToggle(btn, !!c.shared);
+    btn.disabled = !c.name;
+    var first = ((d.builtins || [])[0] || {}).name || '最初からいるキャラ';
+    function send(on) {
+      btn.disabled = true;
+      call('apiOshiSetShared', [c.charId, on], function (res) {
+        btn.disabled = false;
+        c.shared = !!(res && res.shared);
+        setToggle(btn, c.shared);
+        showSnack(c.shared ? oshiMineName(c) + ' を公開しました' : oshiMineName(c) + ' の公開を止めました。使っていた人は' + first + 'に戻ります',
+          { kind: 'ok' });
+        if (box.isConnected) drawOshiPage(box, d);
+      }, failEnable(btn, on ? '公開できませんでした: ' : '止められませんでした: '));
+    }
+    btn.addEventListener('click', function () {
+      if (c.shared) { send(false); return; }
+      openConfirmStrip(host, '同じ入れ物を使う人が、このキャラを使うキャラとして選べます。絵・名前・せりふ・プロフィールが見えます。' +
+        '作った人としてあなたの名前が出ます', '公開する', function () { send(true); });
+    });
+    wrap.appendChild(btn);
+    wrap.appendChild(oshiNote(c.name
+      ? 'オンにすると、ほかの人の「使うキャラ」に「みんなのキャラ」として並びます。直せるのはあなただけです。止めると、使っていた人は' + first + 'に戻ります。'
+      : '名前を決めると公開できます。'));
+    return wrap;
   }
 
   // ----- キャラ作成キット (AI に作ってもらう・AI の答えを貼る) -----
@@ -2650,10 +2727,15 @@
       ((d && d.mine) || []).forEach(function (c) {
         out.push({ value: 'mine:' + c.charId, name: oshiMineName(c), kind: 'mine', mine: c });
       });
+      // みんなのキャラ (ほかの人が公開したキャラ)。作った人の表示名を添える
+      ((d && d.shared) || []).forEach(function (c) {
+        out.push({ value: c.char, name: c.name, kind: 'shared', owner: c.owner, mine: oshiSharedPicture(c.char, c.images) });
+      });
       // オフのあいだは自分のキャラを取りに行かない。それでも選んであるものは、選んだしるしで出す
       // (出さないと、どれも選ばれていないように見える)
-      if (!d && /^mine:/.test(String(current)) && !out.some(function (o) { return o.value === current; })) {
-        out.push({ value: current, name: '自分のキャラ', kind: 'mine', mine: null });
+      if (!d && /^(mine|shared):/.test(String(current)) && !out.some(function (o) { return o.value === current; })) {
+        var isShared = /^shared:/.test(String(current));
+        out.push({ value: current, name: isShared ? 'みんなのキャラ' : '自分のキャラ', kind: isShared ? 'shared' : 'mine', mine: null });
       }
       return out;
     }
@@ -2720,7 +2802,8 @@
       b.appendChild(name);
       var kind = document.createElement('span');
       kind.className = 'row-meta oshi-choice-kind';
-      kind.textContent = ch.kind === 'builtin' ? '最初からいる' : '自分のキャラ';
+      kind.textContent = ch.kind === 'builtin' ? '最初からいる'
+        : (ch.kind === 'shared' ? 'みんなのキャラ' + (ch.owner ? ' ・ ' + oshiOwnerLabel(ch.owner) : '') : '自分のキャラ');
       b.appendChild(kind);
       b.addEventListener('click', function () {
         if (ch.value === current) return;

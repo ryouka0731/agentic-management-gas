@@ -1,6 +1,8 @@
 /**
  * 推し (Web App API)。**どれもアドレスを受けない。** 開いている本人のぶんだけを読み書きする
- * (ほかの人の推しを読む道・置く道を作らない)。定義は src/core/Oshi.js、置き場は src/core/OshiStore.gs。
+ * (ほかの人の推しを置く道は作らない)。定義は src/core/Oshi.js、置き場は src/core/OshiStore.gs。
+ * **ほかの人のキャラを読む道は、作った人が「みんなに公開する」にしたものだけ** (src/core/OshiShare.gs)。
+ * 読めるのは絵・名前・口調・せりふ・プロフィールで、書けるのは作った人だけ。
  *
  * キャラは2種類ある。最初からいるキャラ (OSHI_BUILTINS。名前・口調・絵は決まっていて変えられない) と、
  * 本人が作る自分のキャラ (OSHI_MINE_MAX 人まで。番号 charId で名指す)。どれを使うかは自分の設定 oshi.char。
@@ -41,7 +43,9 @@ function oshiImagesPlain_(imgs) {
  *
  * - char / kind / builtinKey / charId / name / tone / events / images: いま使うキャラ (自分の設定 oshi.char)
  * - fallback: 自分のキャラを使っているとき、絵の無い表情に出す最初からいるキャラの key (出さないなら空)
- * - builtins: 最初からいるキャラ。mine: 自分のキャラ (頁で直すため、せりふと絵の行・プロフィールの JSON もそれぞれに入れる)
+ * - builtins: 最初からいるキャラ。mine: 自分のキャラ (頁で直すため、せりふと絵の行・プロフィールの JSON・公開しているか もそれぞれに入れる)
+ * - shared: ほかの人がみんなに公開したキャラ (選び方に並べるため。名前・口調・作った人の表示名・絵の行)。
+ *   いま借りているキャラなら kind は 'shared' で、owner に作った人の表示名が入る (直す欄は出さない)
  * - reveal: いま使うキャラのプロフィール。Lv (実績の数) が届いた項目だけ名前と中身を入れる (サーバが決める)
  * - cleared: 実績を全部取ったか。clear: クリアしたときだけ、キャラのお祝いの言葉と動画の id (それまでは null)
  *
@@ -63,25 +67,47 @@ function apiOshiGet() {
       images: oshiImagesPlain_(oshiImageRows_(me, id, imgRows)),
       // 本人が書いたものなので、直す欄にはそのまま出す (動画もリンクで)
       profileJson: plainText(oshiProfileJson_(p.profile)),
+      shared: oshiSharedOn_(p.row),
       profile: p.profile,
     };
   });
+  // ほかの人が公開したキャラ。作った人は表示名だけ (アドレスは返さない)
+  var memberRows = null;
+  var shared = oshiSharedFor_(me, profRows).map(function (sc) {
+    if (!memberRows) memberRows = dbReadAll('members');
+    var p = oshiProfile_(sc.who, sc.charId, profRows);
+    return { char: plainText('shared:' + sc.sid), sid: plainNumber(sc.sid), name: plainText(p.name), tone: plainText(p.tone),
+      owner: plainText(oshiOwnerName_(sc.who, memberRows)),
+      images: oshiImagesPlain_(oshiImageRows_(sc.who, sc.charId, imgRows)),
+      src: p };
+  });
   var active = null;
+  var borrowed = null;
   if (choice.kind === 'mine') {
     for (var i = 0; i < mine.length; i++) if (mine[i].charId === choice.id) active = mine[i];
+  } else if (choice.kind === 'shared') {
+    for (var j = 0; j < shared.length; j++) if (shared[j].sid === choice.id) borrowed = shared[j];
+    if (borrowed) {
+      active = { charId: 0, name: borrowed.name, tone: borrowed.tone, images: borrowed.images, profile: borrowed.src.profile,
+        events: oshiEventsPlain_(borrowed.src.tone, borrowed.src.lines) };
+    }
   }
-  var builtin = active ? null : oshiBuiltinOf(choice.key);
+  // 公開が読む間に止められた (検査のあとで消えた) ときも、既定のキャラに倒す
+  var builtin = active ? null : (oshiBuiltinOf(choice.key) || OSHI_BUILTINS()[0]);
   var profile = active ? active.profile : oshiBuiltinProfileRead_(builtin.key);
   mine.forEach(function (m) { delete m.profile; });
+  shared.forEach(function (m) { delete m.src; });
   // 取れない実績は1回だけ数え、クリアと「クリアで分かる」の Lv の両方に使う
   var off = achUnavailable_(me);
   var cleared = oshiCleared_(me, off);
   var events = active ? active.events : oshiEventsPlain_(builtin.tone, {});
   return {
-    char: plainText(active ? 'mine:' + active.charId : 'builtin:' + builtin.key),
-    kind: plainText(active ? 'mine' : 'builtin'),
+    char: plainText(borrowed ? borrowed.char : (active ? 'mine:' + active.charId : 'builtin:' + builtin.key)),
+    kind: plainText(borrowed ? 'shared' : (active ? 'mine' : 'builtin')),
     builtinKey: plainText(active ? '' : builtin.key),
     charId: plainNumber(active ? active.charId : 0),
+    // 借りているキャラの作った人 (表示名)。借りていなければ空
+    owner: plainText(borrowed ? borrowed.owner : ''),
     fallback: plainText(active ? choice.fallback : ''),
     name: plainText(active ? active.name : builtin.name),
     tone: plainText(active ? active.tone : builtin.tone),
@@ -91,6 +117,7 @@ function apiOshiGet() {
       return { key: plainText(c.key), name: plainText(c.name), tone: plainText(c.tone) };
     }),
     mine: mine,
+    shared: shared,
     mineMax: plainNumber(OSHI_MINE_MAX()),
     styles: OSHI_STYLES().map(function (s) { return { key: plainText(s.key), label: plainText(s.label) }; }),
     tones: OSHI_TONES().map(function (t) { return { key: plainText(t.key), label: plainText(t.label) }; }),
@@ -141,8 +168,10 @@ function apiOshiMood() {
   var choice = oshiChoice_(me);
   var events = null;
   // 自分のキャラが在るかは oshiChoice_ (設定の検査) が見てある。ここでは名前と口調の表だけを読み、絵の表は読まない
-  if (choice.kind === 'mine') {
-    var p = oshiProfile_(me, choice.id, dbReadAll('oshi'));
+  var s = choice.kind === 'shared' ? oshiSharedFind_(choice.id) : null;
+  if (choice.kind === 'mine' || s) {
+    // 借りたキャラ (公開されたもの) は、作った人が書いたせりふ
+    var p = s ? oshiProfile_(s.who, s.charId, dbReadAll('oshi')) : oshiProfile_(me, choice.id, dbReadAll('oshi'));
     events = oshiEventsPlain_(p.tone, p.lines);
   } else {
     var b = oshiBuiltinOf(choice.key) || OSHI_BUILTINS()[0];
@@ -263,12 +292,24 @@ function apiOshiBuiltinProfileSet(key, json) {
 
 /**
  * 自分のキャラの表情の画像1枚 (data URL)。無ければ null。
+ * charId に 'shared:<番号>' を渡すと、ほかの人がみんなに公開したキャラの絵を返す (公開されていなければ null)。
  *
- * @param {number} charId
+ * @param {number|string} charId 自分のキャラの番号か 'shared:<番号>'
  * @param {string} state
  * @returns {{charId: number, state: string, sha: string, dataUrl: string}|null}
  */
 function apiOshiImage(charId, state) {
+  var sc = oshiCharParse(charId);
+  if (sc && sc.kind === 'shared') {
+    var s = oshiSharedFind_(sc.id);
+    if (!s) {
+      if (!oshiStateOf(state)) throw new Error('知らない表情です: ' + state);
+      return null;
+    }
+    var sh = oshiImageData_(s.who, s.charId, state);
+    // 作った人の番号は返さない (画面は中身の指紋と data URL だけを使う)
+    return sh ? { charId: plainNumber(0), state: plainText(sh.state), sha: plainText(sh.sha), dataUrl: plainText(sh.dataUrl) } : null;
+  }
   var got = oshiImageData_(currentEmail_(), oshiCharIdArg_(charId), state);
   return got ? { charId: plainNumber(got.charId), state: plainText(got.state), sha: plainText(got.sha),
     dataUrl: plainText(got.dataUrl) } : null;
@@ -315,6 +356,21 @@ function apiOshiCharDelete(charId) {
   // 番号は二度出さないので残しても害は無いが、「既定に戻す」が残ったままになる
   if (chosen.kind === 'mine' && chosen.id === id) apiPrefSet('oshi.char', null);
   return { charId: plainNumber(id), removed: plainNumber(n) };
+}
+
+/**
+ * 自分のキャラを「みんなに公開する」の入り切り。**本人のキャラだけ。** 名前を決めていないキャラは公開できない。
+ * 公開すると、同じ入れ物を使うほかの人が使うキャラとして選べる (絵・名前・口調・せりふ・プロフィールが見える)。
+ * 止めると、使っていた人は既定のキャラに戻る (oshi.char の検査が通らなくなる)。
+ *
+ * @param {number} charId
+ * @param {boolean} on
+ * @returns {{charId: number, shared: boolean}}
+ */
+function apiOshiSetShared(charId, on) {
+  var id = oshiCharIdArg_(charId);
+  var got = oshiSetShared_(currentEmail_(), id, on === true);
+  return { charId: plainNumber(id), shared: !!got.shared };
 }
 
 /**
