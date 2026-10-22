@@ -793,8 +793,7 @@
 
     attachHint(host,
       '文書の版を残し、確認を経て反映する道具です。通称は「番頭」です');
-
-    fillWorkspace(host);
+    // ワークスペースの名前 (fillWorkspace) は最初の波で取る (js-start の bootHomeWave)。文書のリンクでは取らない
   }
 
   /**
@@ -2177,6 +2176,161 @@
     return box;
   }
 
+  // ===== 開いたときの呼び出しの波 =====
+  //
+  // 開いた直後に api を30本ほど同時に投げていた。1本ごとにサーバの起動代 (0.3〜1秒) と台帳の読み取りがかかり、
+  // ブラウザは同じ相手への同時の接続を6本ほどに絞るので、ホームに要るものまで後ろで待たされていた。
+  // 3つに分ける (docs/dev/ui.md の「開いたときの呼び出しの波」):
+  // - 最初の波: ホームの描画・左の行き先の数・上の段に要るものだけ (js-start の bootHomeWave)
+  // - 要るとき: その画面や欄を開いたときに needOnce で1回だけ取る (取りに行っている最中なら待ち合わせる)
+  // - 急がない: 最初の波の返事がそろってから (bootLater)
+  // **新しい api* を開いた直後に呼ばない。** 要るときに needOnce で取る。
+
+  /**
+   * 最初の波。open のあいだに投げた call() を数え (返事が投げた続きも数える)、返事がそろったら later を走らせる。
+   * armed は js-start が最初の波を投げ終えた印 (投げ終える前に返事がそろっても閉じない)。
+   */
+  var bootWave = { open: true, armed: false, pending: 0, later: [] };
+
+  /** ホームの外側 (左の行き先・上の段) に要るものを取ったか (js-start の bootHomeWave) */
+  var bootHomeWaveDone = false;
+
+  /** 返事がいつまでもそろわなくても、急がないものはこの時間で走らせる (返事の来ない1本に全部を止めさせない) */
+  var BOOT_LATER_MAX_MS = 15000;
+
+  /** @returns {boolean} 最初の波の中で投げたか (数えたか) */
+  function bootWaveCount() {
+    if (!bootWave.open) return false;
+    bootWave.pending += 1;
+    return true;
+  }
+
+  function bootWaveDone() {
+    bootWave.pending -= 1;
+    if (bootWave.armed && bootWave.pending <= 0) bootWaveClose();
+  }
+
+  /** 最初の波を投げ終えた。返事がもうそろっていれば (疑似の返事は同期で返る) ここで閉じる */
+  function bootWaveArm() {
+    bootWave.armed = true;
+    if (bootWave.pending <= 0) bootWaveClose();
+    else window.setTimeout(bootWaveClose, BOOT_LATER_MAX_MS);
+  }
+
+  function bootWaveClose() {
+    if (!bootWave.open) return;
+    bootWave.open = false;
+    var later = bootWave.later;
+    bootWave.later = [];
+    later.forEach(function (fn) {
+      // 1つが落ちても残りは走らせる
+      try { fn(); } catch (e) { if (window.console) console.warn('後回しにしたものを取れませんでした', e); }
+    });
+  }
+
+  /**
+   * 急がないもの。最初の波の返事がそろってから走らせる (そろったあとなら今すぐ)。
+   *
+   * @param {function} fn
+   */
+  function bootLater(fn) {
+    if (bootWave.open) bootWave.later.push(fn);
+    else fn();
+  }
+
+  /** 要るときに1回だけ取るもの。名前 → { state: 'wait' | 'ok', waiters } */
+  var onceLoads = {};
+
+  /**
+   * 要るときに1回だけ取るものの、返事の当て方と取れなかったときの理由。
+   * 当て方は画面全体の変数に入れるだけにする (描き直しは呼ぶ側が needOnce の then で行う)。
+   *
+   * @param {string} name
+   * @returns {?Array} [当て方, 取れなかったときの理由]
+   */
+  function onceSpecOf(name) {
+    var specs = {
+      apiPeopleNames: [function (map) { peopleNames = map || {}; }, 'アドレスの手前で出る'],
+      apiWorkStyleTeam: [function (map) { peopleStyles = map || {}; }, '顔に型の名前が添えられないだけ'],
+      apiTemplateList: [function (list) { templates = list || []; }, '差し込めないだけで書ける'],
+      apiTagList: [function (list) { tags = list || []; }, '選べないだけで手で書ける'],
+      apiKnownPeople: [function (list) { roster = list || []; }, '呼べないだけで書き込みはできる'],
+      apiArchiveKeepDays: [function (days) { archiveKeepDays = Number(days) || 30; }, '既定の30日で表示する'],
+      apiIssuePriorities: [function (list) { if (list && list.length) priorities = list; },
+        '取れなくても同じ並びを持っている'],
+      apiTallyScope: [function (res) { tallyScope = res || { me: '', canSee: [], isManager: false }; },
+        '自分のぶんだけになる'],
+      apiTasksState: [applyTasksState, '使えないだけ'],
+      apiKitStatus: [function (s) {
+        kitOutdated = Boolean(s && s.outdated);
+        // 欄の中身は openMe が返事を待ってから描く。ここは上の段の印だけ
+        if (kitOutdated) drawMeButton();
+      }, '道具の更新の札が出ないだけで、使うのに困らない']
+    };
+    return Object.prototype.hasOwnProperty.call(specs, name) ? specs[name] : null;
+  }
+
+  /**
+   * 名指したものを、まだ取っていなければ取る。全部そろったら (取れなかったものも諦めたら) then を呼ぶ。
+   *
+   * - 取ったものは覚えて二度と取らない。取りに行っている最中なら、その返事を待ち合わせる
+   * - 取れなかったものは覚えない (次に要るときに取り直す)。then は呼ぶ (控えの値で描ける)
+   * - 全部取ってあれば then はその場で呼ぶ (待たない)
+   *
+   * @param {string[]} names onceSpecOf にある名前
+   * @param {function} [then]
+   */
+  function needOnce(names, then) {
+    var left = names.length + 1;
+    function one() {
+      left -= 1;
+      if (left === 0 && then) then();
+    }
+    names.forEach(function (name) {
+      var have = onceLoads[name];
+      if (have && have.state === 'ok') return one();
+      if (have) {
+        have.waiters.push(one);
+        return;
+      }
+      var spec = onceSpecOf(name);
+      var mine = { state: 'wait', waiters: [one] };
+      onceLoads[name] = mine;
+      var quiet = failQuiet(spec[1]);
+      function settle(ok) {
+        if (ok) mine.state = 'ok';
+        else delete onceLoads[name];
+        var waiters = mine.waiters;
+        mine.waiters = [];
+        waiters.forEach(function (fn) { fn(); });
+      }
+      call(name, [], function (res) {
+        try { spec[0](res); } finally { settle(true); }
+      }, function (err) {
+        quiet(err);
+        settle(false);
+      });
+    });
+    one();
+  }
+
+  /** 人の名前と型。名前を出す画面・欄を開くときに待つ */
+  function needPeople(then) {
+    needOnce(['apiPeopleNames', 'apiWorkStyleTeam'], then);
+  }
+
+  /**
+   * やることの一覧・詳しい欄に要るもの。並べるのに要るもの (名前・型・札・優先度) だけを待ち、
+   * 押したとき・打ったときに引くもの (名簿・ひな形・Google ToDo・捨てたものを戻せる日数) は待たずに取りに行く。
+   *
+   * @param {function} then
+   * @param {string[]} [more] ほかに待つもの (作る欄はひな形を待つ)
+   */
+  function needIssues(then, more) {
+    needOnce(['apiKnownPeople', 'apiTemplateList', 'apiTasksState', 'apiArchiveKeepDays']);
+    needOnce(['apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities'].concat(more || []), then);
+  }
+
   // ===== サーバを呼ぶ =====
 
   /**
@@ -2226,48 +2380,58 @@
   function callOnce(name, args, onOk, onFail, draft, again) {
     var failed = onFail || failSnack();
     var ok = onOk || function () {};
+    // 開いた直後の最初の波の中で投げたものなら数える。返事 (成功でも失敗でも) で数を戻す (bootWaveDone)
+    var inBoot = bootWaveCount();
     var run = google.script.run
       .withSuccessHandler(function (res) {
-        if (searchIndexChangedBy(name)) searchIndexStale();
-        // 思いがけない当たり (js-luck)。当たったら、いつものお祝いの代わりに「大当たり！」を出す
-        var lucky = luckAfter(name, args);
-        // 楽しい演出のお祝いも、成功した api の名前だけで決める (表は js-fun の FUN_CHEERS)
-        funCheerAfter(name, args, lucky);
-        // 推しのほめ言葉も同じ形 (表は js-oshi の OSHI_CALL_EVENTS)。飾りが落ちても ok は止めない
-        try { oshiAfter(name, args); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
-        ok(res);
-        // 集中のしかた: そのやることへの手なら「始めた」を確かめに行く (js-focus)。
-        // 本来の返事の扱い (帯など) のあとに置く。先に置くと、確かめた知らせを本来の帯が上書きする
-        focusAfterCall(name, args);
-        // 実績: 済ませた操作のあとに数え直す (表は js-ach の ACH_CALL_EVENTS)。飾りが落ちても ok は止めない
-        try { achAfterCall(name, args); } catch (e) { if (window.console) console.warn('実績を数え直せませんでした', e); }
+        try { okOf(res); } finally { if (inBoot) bootWaveDone(); }
       })
       .withFailureHandler(function (err) {
-        var kind = errorKindOf(err && err.message);
-        // 時間切れはサーバでは数えられない (打ち切られる)。画面の使われ方として数え、毎日の成果の数に入れる
-        if (kind === 'timeout') {
-          try { usageCount('action', 'error:timeout'); } catch (e) { /* 読み込みの途中なら数えない */ }
-        }
-        var reopened = null;
-        // 失敗の扱いの中でさらに call() が失敗しても、外の扱いの型を失わない
-        var outer = callFailure;
-        var retry = kind === 'busy' && !again ? makeRetry(function () {
-          // 押し直すときは、開き直した入力欄を閉じる (残すと同じものをもう一度送れてしまう)。
-          // また失敗すれば、控えから書いたまま開き直す
-          if (reopened && reopened.isConnected) closeSide();
-          callOnce(name, args, onOk, onFail, draft, true);
-        }) : null;
-        callFailure = { kind: kind, retry: retry };
-        try {
-          failed(err);
-        } finally {
-          callFailure = outer;
-        }
-        // 開き直した入力欄から送り直したら、[もう一度] は外す (両方押すと同じものが2つできる)
-        if (draft) reopened = reopenDraft(draft, retry ? retry.disarm : null);
-        // 人が押した操作が断られたときだけ、推しがやさしく「しんぱい」する (叱らない)
-        try { oshiAfterFail(name); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
+        try { failOf(err); } finally { if (inBoot) bootWaveDone(); }
       });
+
+    function okOf(res) {
+      if (searchIndexChangedBy(name)) searchIndexStale();
+      // 思いがけない当たり (js-luck)。当たったら、いつものお祝いの代わりに「大当たり！」を出す
+      var lucky = luckAfter(name, args);
+      // 楽しい演出のお祝いも、成功した api の名前だけで決める (表は js-fun の FUN_CHEERS)
+      funCheerAfter(name, args, lucky);
+      // 推しのほめ言葉も同じ形 (表は js-oshi の OSHI_CALL_EVENTS)。飾りが落ちても ok は止めない
+      try { oshiAfter(name, args); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
+      ok(res);
+      // 集中のしかた: そのやることへの手なら「始めた」を確かめに行く (js-focus)。
+      // 本来の返事の扱い (帯など) のあとに置く。先に置くと、確かめた知らせを本来の帯が上書きする
+      focusAfterCall(name, args);
+      // 実績: 済ませた操作のあとに数え直す (表は js-ach の ACH_CALL_EVENTS)。飾りが落ちても ok は止めない
+      try { achAfterCall(name, args); } catch (e) { if (window.console) console.warn('実績を数え直せませんでした', e); }
+    }
+
+    function failOf(err) {
+      var kind = errorKindOf(err && err.message);
+      // 時間切れはサーバでは数えられない (打ち切られる)。画面の使われ方として数え、毎日の成果の数に入れる
+      if (kind === 'timeout') {
+        try { usageCount('action', 'error:timeout'); } catch (e) { /* 読み込みの途中なら数えない */ }
+      }
+      var reopened = null;
+      // 失敗の扱いの中でさらに call() が失敗しても、外の扱いの型を失わない
+      var outer = callFailure;
+      var retry = kind === 'busy' && !again ? makeRetry(function () {
+        // 押し直すときは、開き直した入力欄を閉じる (残すと同じものをもう一度送れてしまう)。
+        // また失敗すれば、控えから書いたまま開き直す
+        if (reopened && reopened.isConnected) closeSide();
+        callOnce(name, args, onOk, onFail, draft, true);
+      }) : null;
+      callFailure = { kind: kind, retry: retry };
+      try {
+        failed(err);
+      } finally {
+        callFailure = outer;
+      }
+      // 開き直した入力欄から送り直したら、[もう一度] は外す (両方押すと同じものが2つできる)
+      if (draft) reopened = reopenDraft(draft, retry ? retry.disarm : null);
+      // 人が押した操作が断られたときだけ、推しがやさしく「しんぱい」する (叱らない)
+      try { oshiAfterFail(name); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
+    }
 
     run[name].apply(run, args || []);
   }
@@ -3508,7 +3672,33 @@
 
     usageCount('view', name);
 
-    if (Object.prototype.hasOwnProperty.call(TAB_LOADERS, name)) TAB_LOADERS[name](opts);
+    if (Object.prototype.hasOwnProperty.call(TAB_LOADERS, name)) loadTabWhenReady(name, opts);
+  }
+
+  /**
+   * その画面に要るもの (needOnce) を待ってから中身を取る。ホームは何も待たない (最初の波で取る)。
+   * ほかの画面は人の名前を出すので名前と型を待つ。やることは札と優先度も待つ (needIssues)。
+   * 報告は「@」の候補に名簿を使う (待たない)。
+   * 待つあいだに別の画面へ移ったら取らない。取ってあれば待たずにその場で取る。
+   *
+   * @param {string} name
+   * @param {object} [opts]
+   */
+  function loadTabWhenReady(name, opts) {
+    if (name === 'home') {
+      TAB_LOADERS.home(opts);
+      return;
+    }
+    var nav = navCount;
+    var go = function () {
+      if (navCount !== nav) return;
+      TAB_LOADERS[name](opts);
+    };
+    if (name === 'issues') needIssues(go);
+    else {
+      if (name === 'report') needOnce(['apiKnownPeople']);
+      needPeople(go);
+    }
   }
 
   /** 画面の名前と、その面。切り替えるたびに引く (面は読み込みの途中で取るため) */

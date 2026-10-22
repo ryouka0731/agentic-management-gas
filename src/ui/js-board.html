@@ -697,6 +697,16 @@
    * 足し上げ、累計も並べる。
    */
   function loadTally() {
+    // 誰のぶんを見られるか (tallyScope) を待つ。やることの集計を開いたときに1回だけ取る
+    needOnce(['apiTallyScope'], function () {
+      if (issueView !== 'tally') return;
+      // 見え方を切り替えた時点では、まだ届いていなかったかもしれない
+      document.getElementById('tally-who-box').hidden = !tallyScope.isManager;
+      loadTallyNow();
+    });
+  }
+
+  function loadTallyNow() {
     // 既定は月ごと。週は細かすぎ、四半期は粗すぎて傾向が見えにくい
     fillSelect(tallyUnitSel, TALLY_UNITS, 'month');
     fillSelect(tallyBasisSel, TALLY_BASES, 'due');

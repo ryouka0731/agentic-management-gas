@@ -170,3 +170,58 @@ describe('推しにほめてもらう', () => {
     expect(e2e.ctx.apiOshiImage(1, 'praise').dataUrl).toBe(PNG_URL);
   });
 });
+
+describe('自分のキャラをみんなに公開する', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  });
+
+  it('作った人が頁で公開する → ほかの人が設定で選ぶ → 済ませると、そのキャラの絵とせりふでほめる。止めると既定に戻る', async () => {
+    const e2e = mountFullstack();
+    await e2e.settle();
+    e2e.ctx.memberSet('tester@example.com', '', 'テストの持ち主');
+    // 1. 作った人: キャラを作って名前・せりふ・絵を入れる (入れ方は上の通しで見ている)
+    e2e.fake._setUser('tester@example.com');
+    const id = e2e.ctx.apiOshiCharCreate('ルナ', 'cool').charId;
+    e2e.ctx.apiOshiSetLines(id, 'done', ['テストの公開せりふ']);
+    e2e.ctx.apiOshiSetImage(id, 'celebrate', PNG_URL);
+    // 2. 頁の「みんなに公開する」を押し、確かめてから公開する
+    click($('#me-btn'));
+    click(byText('#me-body button', '推し')); await e2e.settle();
+    click($('.oshi-page .oshi-share-toggle'));
+    expect($('.oshi-page .confirm-strip').textContent).toContain('作った人としてあなたの名前が出ます');
+    click(byText('.oshi-page .confirm-strip button', '公開する')); await e2e.settle();
+    expect(e2e.rows('oshi')[0].shared).toBe(true);
+    expect($('.oshi-page .oshi-shared-pill').textContent).toBe('公開中');
+    const char = 'shared:' + e2e.rows('oshi')[0].id;
+
+    // 3. ほかの人: 設定の「使うキャラ」に、作った人の名前つきで並ぶ。選ぶ
+    const other = e2e.as('b@example.com');
+    await other.settle();
+    other.ctx.issueCreate('テストのやること', '', []);
+    go('settings'); await other.settle();
+    const card = $('[data-pref="oshi.char"] .oshi-choice[data-char="' + char + '"]');
+    expect(card.querySelector('.oshi-choice-kind').textContent).toBe('みんなのキャラ ・ テストの持ち主 さん');
+    click(card); await other.settle();
+    expect(card.getAttribute('aria-checked')).toBe('true');
+
+    // 4. 済ませると、作った人の絵とせりふでほめる (なつき度は b のもの)
+    go('issues'); await other.settle();
+    click($('#issue-list [aria-label$="を完了にする"]')); await other.settle();
+    const b = $('#oshi-bubble');
+    expect(b.querySelector('.oshi-name').textContent).toBe('ルナ');
+    expect(b.querySelector('.oshi-line').textContent).toBe('テストの公開せりふ');
+    expect(b.querySelector('img.oshi-img').getAttribute('src')).toBe(PNG_URL);
+    // 借りた人は直せない
+    other.fake._setUser('b@example.com');
+    expect(() => other.ctx.apiOshiSetLines(id, 'done', ['のっとり'])).toThrow('そのキャラは見つかりません');
+
+    // 5. 作った人が止めると、b の画面は既定のキャラ (タク) に戻る
+    e2e.fake._setUser('tester@example.com');
+    e2e.ctx.apiOshiSetShared(id, false);
+    other.fake._setUser('b@example.com');
+    expect(other.ctx.apiOshiGet()).toMatchObject({ kind: 'builtin', name: 'タク' });
+    expect(other.ctx.apiOshiImage(char, 'celebrate')).toBe(null);
+  });
+});

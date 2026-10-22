@@ -203,9 +203,6 @@
   usageWhoSel.addEventListener('change', loadUsage);
   usageCsvBtn.addEventListener('click', saveUsageCsv);
 
-  call('apiTallyScope', [], function (res) {
-    tallyScope = res || { me: '', canSee: [], isManager: false };
-  }, failQuiet('自分のぶんだけになる'));
   issueFilterEl.addEventListener('input', reloadIssueView);
 
   dropRootEl.addEventListener('dragover', function (e) {
@@ -252,17 +249,15 @@
   document.getElementById('tasks-btn').addEventListener('click', function () {
     openTasks(this);
   });
-  loadTasksState();
+  // Google ToDo の入口は、やることを開いたときに確かめる (needIssues)
 
   meBtn.addEventListener('click', function () {
-    var open = mePanel.hidden;
-
-    if (open) drawMe();
-    mePanel.hidden = !open;
-    meBtn.setAttribute('aria-expanded', String(open));
+    if (mePanel.hidden) openMe();
+    else closeMe();
   });
   document.getElementById('me-close').addEventListener('click', closeMe);
-  drawMe();
+  // 欄の中身は開いたときに描く (openMe)
+  drawMeButton();
 
   bellBtn.appendChild(makeIcon('bell'));
   bellBtn.insertBefore(bellBtn.lastChild, bellCount);
@@ -297,8 +292,7 @@
     }
   });
 
-  loadNotices(true);
-  window.setInterval(function () { loadNotices(false); }, 60000);
+  // 知らせを取りはじめるのは js-start (startNotices)。文書のリンクで開いたときは後回しにする
 
   mineBtn.addEventListener('click', function () {
     mineOnly = !mineOnly;
@@ -323,49 +317,12 @@
     else if (diffPane.classList.contains('full')) setDiffFull(false);
   });
 
-  // 実績: 開いたときに1回だけ数え直す (開いた日もここで数える)。設定が届くまで待つ (js-ach)
-  achOpenCheck();
-
-  call('apiWhoAmI', [], function (who) {
-    currentUser = (who || {}).activeUser || '';
-    drawMe();
-  }, failQuiet('判定できなければ従来どおり押せる'));
-
-  call('apiKitStatus', [], function (s) {
-    kitOutdated = Boolean(s && s.outdated);
-    if (kitOutdated) drawMe();
-  }, failQuiet('道具の更新の札が出ないだけで、使うのに困らない'));
-
-  call('apiPeopleNames', [],
-    function (map) { peopleNames = map || {}; },
-    failQuiet('アドレスの手前で出る'));
-
-  call('apiWorkStyleTeam', [],
-    function (map) { peopleStyles = map || {}; },
-    failQuiet('顔に型の名前が添えられないだけ'));
-
-  call('apiTemplateList', [],
-    function (list) { templates = list || []; },
-    failQuiet('差し込めないだけで書ける'));
-
-  call('apiTagList', [],
-    function (list) { tags = list || []; },
-    failQuiet('選べないだけで手で書ける'));
-
-  call('apiKnownPeople', [],
-    function (list) { roster = list || []; },
-    failQuiet('呼べないだけで書き込みはできる'));
-
-  call('apiArchiveKeepDays', [],
-    function (days) { archiveKeepDays = Number(days) || 30; },
-    failQuiet('既定の30日で表示する'));
+  // 実績の数え直し・自分が誰か・道具の更新・人の名前・名簿・ひな形・札・置き場の日数・優先度は、
+  // ここ (開いた直後) では取らない。最初の波 (js-start)・要るとき (needOnce)・急がない (bootLater) に分けた (app.js の
+  // 「開いたときの呼び出しの波」)
 
   makeResizable(resizer, '--sidebar-w', 'sidebarWidth',
     function (e) { return e.clientX; }, { min: 180, max: 560 });
-
-  call('apiIssuePriorities', [], function (list) {
-    if (list && list.length) priorities = list;
-  }, failQuiet('取れなくても同じ並びを持っている'));
 
   // 右端のペインなので、左へ引くほど広がる
   makeResizable(sideResizer, '--side-pane-w', 'sidePaneWidth',
@@ -415,7 +372,9 @@
     var savedView = window.localStorage.getItem('issueView');
     if (savedView && viewBtns[savedView]) issueView = savedView;
   } catch (e) { /* 既定の一覧でよい */ }
-  setIssueView(issueView);
+  // 見え方のボタンだけそろえる。一覧はやることを開いたときに取る (TAB_LOADERS.issues)。
+  // 以前はここで隠れたやることの一覧を取っていた
+  setIssueView(issueView, true);
 
   // 出入りは画面全体で見る。要素ごとに見ると、押した拍子に一覧が
   // 描き直されたときに「離れた」が来ず、出たまま残る

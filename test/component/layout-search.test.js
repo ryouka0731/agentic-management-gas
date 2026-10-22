@@ -203,6 +203,8 @@ describe('サーバを呼ぶところ', () => {
 
     try {
       mount({ apiTagList: new Error('読めません') });
+      // 札の一覧はやることを開いたときに取る (開いた直後には取らない)
+      document.querySelector('.nav-item[data-tab="issues"]').click();
     } finally {
       window.console.warn = warn;
     }

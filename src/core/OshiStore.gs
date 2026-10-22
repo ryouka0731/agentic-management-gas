@@ -616,7 +616,7 @@ function oshiDefaultPictures_(char, style) {
 
 /**
  * 使うキャラの名指しが、その人にとって在るものか。最初からいるキャラは誰にでもあり、
- * 自分のキャラは本人が持っているものだけ (自分の設定 oshi.char の検査。Prefs.gs の prefValid_ が呼ぶ)。
+ * ほかの人のキャラは公開されているものだけ (OshiShare.gs)、自分のキャラは本人が持っているものだけ (自分の設定 oshi.char の検査。Prefs.gs の prefValid_ が呼ぶ)。
  *
  * @param {string} email
  * @param {*} v
@@ -626,6 +626,11 @@ function oshiCharKnownFor_(email, v) {
   var c = oshiCharParse(v);
   if (!c) return false;
   if (c.kind === 'builtin') return true;
+  // ほかの人がみんなに公開したキャラ。公開されていて、本人のものでないときだけ (自分のキャラは mine: で選ぶ)
+  if (c.kind === 'shared') {
+    var s = oshiSharedFind_(c.id);
+    return !!s && s.who !== oshiWho_(email);
+  }
   return oshiMineIds_(email).indexOf(c.id) >= 0;
 }
 
@@ -664,18 +669,21 @@ function oshiSpinnerLines_(email) {
   var name;
   var tone;
   var mine = [];
-  if (c.kind === 'mine') {
-    var p = oshiProfile_(who, c.id);
+  var s = c.kind === 'shared' ? oshiSharedFind_(c.id) : null;
+  if (c.kind === 'mine' || s) {
+    // 借りたキャラ (公開されたもの) は、作った人が書いたせりふ
+    var p = s ? oshiProfile_(s.who, s.charId) : oshiProfile_(who, c.id);
     name = p.name;
     tone = p.tone;
     mine = p.lines.spinner || [];
   } else {
-    var b = oshiBuiltinOf(c.key);
+    // 公開が読む間に止められたときも、既定のキャラに倒す
+    var b = oshiBuiltinOf(c.key) || OSHI_BUILTINS()[0];
     name = b.name;
     tone = b.tone;
   }
   var lines = oshiSpinnerPick(mine.concat(oshiToneLines(tone, 'spinner')));
-  var char = c.kind === 'mine' ? 'mine:' + c.id : 'builtin:' + c.key;
+  var char = c.kind === 'mine' ? 'mine:' + c.id : (s ? 'shared:' + s.sid : 'builtin:' + b.key);
   if (!lines.length) return { on: true, char: char, name: name, lines: [], reason: '使うキャラに、考え中のせりふがありません' };
   return { on: true, char: char, name: name, lines: lines, reason: '' };
 }
