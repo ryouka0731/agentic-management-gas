@@ -117,6 +117,41 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - テストは `test/component/doc-link.test.js` (`mountApp(…, { link: { doc } })` が doGet の印を body に付ける) と
   `test/api/main.test.js` (doGet)。`test/ui-assemble.test.js` と `test/dom.js` は `<?= bodyClass ?>` / `<?= linkDoc ?>` を空で埋める
 
+## 開いたときの呼び出しの波 (最初の波 / 要るとき / 急がない)
+
+2026-10-22 の依頼「番頭全体の性能をもっと上げられない?」。開いた直後に **api を30本同時に投げていた** (やることの一覧・名簿・札・
+ひな形・置き場の日数… を、ホームしか見ていないのに。`apiGameState` は自分の欄を描くたびに取り、3回呼んでいた)。1本ごとにサーバの
+起動代 (0.3〜1秒) と台帳の読み取りがかかり、ブラウザは同じ相手への同時の接続を6本ほどに絞るので、ホームに要るものまで後ろで待たされる。
+3つに分けた (仕組みは `app.js.html` の「開いたときの呼び出しの波」、起動の流れは `js-start`):
+
+| 波 | いつ | 何を |
+|---|---|---|
+| 最初の波 (16本) | 開いてすぐ | 文書の一覧 (`apiListFiles`。やることの絞り込みの文書名・改訂版を作る画面が `allFiles` を引く)・左上の名前 (`apiWorkspace`)・左の行き先 (`apiSettings`)・自分の顔 (`apiWhoAmI`)・ベルの数 (`apiNotifications`)・ホームの中身 (`apiOverview` は左の行き先の数も兼ねる・`apiHomeSummary`・`apiHomeActivity`・`apiProgress` とカードの5本)・設定 (`apiPrefs`)・推し (`apiOshiGet`、設定が届いてから) |
+| 要るとき | その画面・欄を開いたとき | 人の名前と型 (`apiPeopleNames` / `apiWorkStyleTeam`。ホーム以外の画面と自分の欄)・やることの札と優先度 (`apiTagList` / `apiIssuePriorities`)・名簿 / ひな形 / Google ToDo / 置き場の日数 (`apiKnownPeople` / `apiTemplateList` / `apiTasksState` / `apiArchiveKeepDays`。やることを開いたときに待たずに取る)・集計の範囲 (`apiTallyScope`。集計を開いたとき)・やることの一覧 (`apiIssueList`。やることを開いたとき)・ポイントの参加 (`apiGameState`。自分の欄を開いたとき) |
+| 急がない (6本) | 最初の波の返事がそろってから (`bootLater`。そろわなくても15秒で) | 実績の数え直し (`apiAchievementsCheck`。開いた日も数える)・道具の更新の印 (`apiKitStatus`)・人の名前と型と札と優先度の先取り (`needPeople` と `needOnce(['apiTagList', 'apiIssuePriorities'])`) |
+
+- **新しい api* を開いた直後に呼ばない。** 画面や欄を開くところで取る。何度も開くもので中身が変わらないもの (一覧の候補・名前など) は
+  `onceSpecOf` に足して `needOnce(names, then)` で取る。取ったら覚えて二度と取らず、取りに行っている最中なら待ち合わせる。取れなかった
+  ものは覚えず、次に要るときに取り直す (then は呼ぶので、控えの値で描ける)。全部取ってあれば then はその場で呼ぶ (待たない)
+- **画面を初めて開くときの待ちを、急がない波の先取りで消す。** 画面は名前や札を待ってから一覧を取るので、何も取っていないと
+  往復が2段 (名前 → 一覧) になる。ホームが描けたあとに裏で取っておけば、やることを開いたときは一覧の1本だけになる。先取りの最中に
+  開いたら、`needOnce` が同じ返事を待ち合わせる (二度取らない)。文書のリンクで開いたときは使わないので先取りしない
+- **画面を切り替えるときは `loadTabWhenReady` が待つ。** ホームは何も待たない。ほかの画面は名前と型を、やることは札と優先度も待ってから
+  中身を取る (名前の無い一覧を描いてから描き直さない)。待つあいだに別の画面へ移ったら、離れた画面の中身は取らない
+- **ホームから開く欄も待つ。** やることの詳しい欄 (`openIssueDetail`) と作る欄 (`createIssue`。近道の n とカードから開く) は、やることの
+  画面を開いていなくても `needIssues` で札・優先度 (作る欄はひな形も) を取ってから組む。番号だけで開くとき (`openIssueByNumber`) は、
+  取った一覧で `lastIssues` を埋める (親と子の行き先がそこから引く。以前は起動のときに隠れた一覧を取っていたので引けていた)
+- **自分の欄の中身は開いたときに描く** (`openMe` → `drawMe`)。閉じているあいだは上の段のボタン (`drawMeButton`) だけ描く
+- **最初の波は `call()` が数える** (`bootWaveCount` / `bootWaveDone`)。返事が投げた続き (前進 → カードの5本、設定 → 推し) も数える。
+  js-start が投げ終えた印 (`bootWaveArm`) のあと、返事がそろったら急がないものを走らせる。返事の来ない1本に止められないよう、15秒で
+  走らせる (`BOOT_LATER_MAX_MS`)。疑似の返事は同期で返るので、テストでは組み終えた時点で急がないものまで呼ばれている
+- **文書のリンクで開いたとき** (`doc-link`) は、文書に要るもの (文書の一覧・本文・状態・設定) だけを取る。隠れている欄 (つながったやること・
+  リンクをコピー) は取らない。知らせは急がない波で取りはじめる。開けずにふつうの画面へ戻すとき (`leaveDocLink`) に最初の波の残り
+  (`bootHomeWave`) を取る
+- テストは `test/component/boot.test.js` (開いた直後の本数と順番・急がない波の先取り・先取りの途中で開いたときの待ち合わせ・
+  やることを開いたとき・2回開いても1回・文書のリンク)。
+  呼ぶものを足すと、開いた直後の並びの検査で落ちる。足すなら、上の表のどの波かを決めてからテストの並びを直す
+
 ## ホーム (`js-home` / `js-progress`)
 
 - **返事が届くまでは骨組み (スケルトン) を置く** (`homeSkeletonInto(host, title, lines)`。2026-10-22 の依頼)。区画が空のときだけ置き、
@@ -263,12 +298,12 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     設定の画面でリンクを確かめるときも読み込まない
   - src は `prefs.effective.focus.musicParts` (サーバが読み解いた部品) から `focusMusicEmbedUrl_` で組んだものだけ。
     貼られた URL の字は画面にもサーバにも残さない。YouTube は `www.youtube-nocookie.com`
-  - 枠の属性は `allow="autoplay; encrypted-media; fullscreen"`・`referrerpolicy="strict-origin-when-cross-origin"`・
-    `sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"`。
-    再生機は自分の場所のスクリプトと保存 (allow-scripts + allow-same-origin) が要る。YouTube は送り元 (Referer) が無いと
-    再生を断る (error 153) ので `no-referrer` にしない。題名や「YouTube で見る」で開く頁は枠の外で開かせる
-    (`allow-popups-to-escape-sandbox`。付けないと開いた頁も枠の制限を受けて動かない)。`allow-top-navigation` は付けない
-    (番頭の頁を差し替えさせない)
+  - 枠の属性は公式の埋め込みと同じ `allow` (accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture;
+    web-share; fullscreen) と `referrerpolicy="strict-origin-when-cross-origin"`。YouTube は送り元 (Referer) が無いと再生を断る
+    (error 153) ので `no-referrer` にしない。**`sandbox` は付けない**: 付けていたら実機で「再生できません」になった (2026-10-22)。
+    番頭の枠 (HtmlService) 自体が sandbox の中にあり、src は読み解いた id からだけ組むので、枠を重ねて絞る必要は無い。
+    再生できないときの逃げ道として「YouTube で開く」(`focusMusicWatchUrl_` で id から組んだ頁を新しいタブで) を枠の下に置く
+    (`makeWatchLink`。推しのクリアの動画も同じ)
   - 画面の中で作る音とは同時に流さない (`focusSoundPlay` が `focusMusicClose` を呼び、`focusMusicLoad` が `focusSoundStop` を呼ぶ)。
     集中を終える (`focusClear`)・設定でやめる (`focusPrefsChanged`) と枠ごと外す
   - **確かめていないこと**: 番頭は HtmlService の枠 (IFRAME モード、`*.googleusercontent.com`) の中で動き、その枠にも
@@ -332,6 +367,19 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   **動きを減らす設定では付けない** (`.is-moving` を付けず、雨は止めた粒を少しだけ)。開いているあいだに設定が変わっても
   `matchMedia` の change で合わせ直す (`roomOnMotion`。止めた粒は見える位置に置き直す)。見ていないタブでは雨を止め (`visibilitychange`)、顔も替えない
 - 集中しているあいだは隅に残りの輪 (`.room-focus`、`focusRemainingMs` で数える)。**部屋は集中を始めない**
+- **ポモドーロ** (`makeRoomPomodoro`。2026-10-22 の依頼): 作業 → 休憩を繰り返し、`ROOM_POMO_EVERY` (4) 回目の作業のあとは
+  `ROOM_POMO_LONG_MIN` (15) 分の長い休憩。置き場は `.room-body` の格子で、広い画面は右の列の上 (`.room-mixer` の上)、狭い画面は舞台と音の欄のあいだ。
+  - **状態は頁の中の `roomPomo` だけ** (`status` idle / running / paused・`phase` work / rest / long・`round`・`startMs`・`elapsedMs`・
+    `lenMs`・`countedSec`)。残りは開始時刻からの差 (`roomPomoElapsed`) で数え、刻みを数えない。刻み (`roomTick` → `roomPomoTick`) のたびに
+    `roomPomoAdvance` が終わった区間を全部追いかける (背景のタブで刻みが間引かれても、区間を飛ばさない)。区間の長さは始まったときに `lenMs` に決め、
+    途中で長さを変えても次の区間から効く。部屋を閉じると一時停止 (`roomPomoOnClose`)。頁を離れる (`pagehide`) と動いている作業の秒を合計に足す
+  - **作業の秒は二度足さない。** 足した秒を `countedSec` に覚え (`roomPomoCredit`)、一時停止・止める・作業の区間の終わりで差だけ足す
+  - 端末の `localStorage` の鍵は2つ。`roomPomodoro` = `{work, rest}` (分。`roomPomoSettingsClean` が選び方 15/25/50・5/10/15 にない値を既定 25・5 にする)、
+    `roomPomodoroTotal` = `{day: 'YYYY-MM-DD', today: 秒, all: 秒}` (端末の時計の日付。`roomPomoTotalsClean` が日付の違う `today` をゼロにする)。サーバは呼ばない
+  - **合図音は部屋の音を流しているときだけ** (`roomPomoChime`)。流しているあいだの音の仕組み (`roomAudio.ctx`) に正弦波を2つ (`roomPomoChimeNotes`)
+    作り、すぐ下げて止める。大きさは全体の大きさ (`roomMasterGain`) の 0.6 倍。流していないときは `AudioContext` を作らない
+    (押した操作の外では起こせない)。動きを減らす設定でも鳴らす。推しのせりふは既存の場面 `done` (`oshiLine('done')`)。なでた吹き出しが出ていれば重ねない
+  - **集中 (`js-focus`) は始めない。** 隅の残りの輪とは別に動く
 - 試すのは `test/component/room.test.js` (押して確かめる) と `test/room-ui.test.js` (音の形)
 
 - **作業中はときどき様子を変える** (`roomFidget`。12〜25秒ごと。2026-10-22 の依頼「動いてる感」): 向きを変える (絵を左右反転。次に変えるまで残す) /
@@ -416,6 +464,18 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     消すと `apiOshiCharDelete` が既定に戻す。画面の選び方は `makeOshiCharPicker` (設定の一覧で `type === 'char'` の欄だけ
     js-oshi が組む)。最初からいるキャラは設定の `options`、自分のキャラは `apiOshiGet` の `mine` から並べ、ふつうの顔の絵を
     添える (**推しがオンのときだけ絵を取る**)。押したら `apiPrefSet` で書く (書くのはここだけ、のまま)
+  - **みんなに公開する (2026-10-22 の依頼)。** 自分のキャラごとの切り替え `makeOshiShareToggle` (名前と口調の欄の下。`setToggle`)。
+    オンにするときだけ `openConfirmStrip` で確かめ (見えるもの・作った人の名前が出ること)、止めるときは確かめない。名前の無いキャラは
+    押せない。送るのは `apiOshiSetShared(charId, on)` だけ。公開しているキャラには `oshiSharedPill` (`makePill('公開中')`) を
+    見出しと直すキャラのタブに付ける。`apiOshiGet` の `mine[].shared` が印
+  - ほかの人が公開したキャラは `apiOshiGet` の `shared` (`char` = `'shared:<oshi の行の id>'`・`name`・`tone`・`owner`・`images`) から、
+    選び方の自分のキャラのあとに「みんなのキャラ ・ ◯◯ さん」として並べる。`owner` は作った人の members の名前だけ
+    (アドレスは返さない。名前が無ければ空で、画面は「ほかの人」)。借りているときは `kind: 'shared'` と `owner` が届き、`charId` は 0
+  - **借りたキャラの絵は `oshiSharedPicture(char, images)` の形で引く** (`oshiActiveMine` が返す。`charId` が `'shared:<番号>'`
+    なので `oshiImage` はそのまま `apiOshiImage('shared:<番号>', state)` を呼ぶ)。この形は書く道 (`apiOshiSet*` / 消す) に渡さない。
+    推しの頁は「◯◯ さんのキャラを使っています」(`.oshi-borrowed`) と出し、借りたキャラを直す欄は出さない (直す欄は自分のキャラだけ)。
+    絵の無い表情は借りた人の `oshi.fallback`。なつき度・機嫌・プロフィールの開き方は借りた人のもの。試すのは
+    `test/component/oshi-share.test.js`・`test/oshi-share.test.js`・`test/e2e/oshi.test.js` の「みんなに公開する」
   - 自分のキャラの絵が無い表情には `oshi.fallback` (`'builtin:<key>'` / `'none'`、既定はタク) の絵を出す。最初からいるキャラを
     使っているときは、そのキャラの絵だけ。形は `oshi.style` = `chibi` / `normal`、既定は 2頭身
   - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)

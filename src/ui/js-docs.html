@@ -51,14 +51,16 @@
       }
       openLink.href = res.url;
       renderIntoViewer(res.html);
-      loadLinkedIssues(fileId);
+      // 文書のリンク (文書だけの画面) では、つながったやることの欄と「リンクをコピー」は隠れている。取らない
+      var linkOnly = document.body.classList.contains('doc-link');
+      if (!linkOnly) loadLinkedIssues(fileId);
       setDocMode('view');
       refreshStatus();
       docLinkLoaded();
       switchTab('content');
       // switchTab は全画面を抜けるので、そのあとで入る
       if (opts && opts.full) setDocFull(true);
-      prefetchAppUrl();
+      if (!linkOnly) prefetchAppUrl();
     }, function (err) {
       restore();
       leaveDocLink();
@@ -244,6 +246,8 @@
     if (!document.body.classList.contains('doc-link')) return;
     document.body.classList.remove('doc-link');
     docLinkLoaded();
+    // 文書のリンクのあいだ取らずにいた、左の行き先・上の段に要るものを取る
+    bootHomeWave();
     switchTab('home');
   }
 

@@ -805,7 +805,11 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
       return { app, deliver: (res) => deliver(res) };
     }
     // 推しは既定でオンなので、設定が初めて届いたときに推しを取る (一覧の取り直しではない)
-    const callsSince = (app, n) => app.calls.slice(n).map((c) => c.name).filter((x) => x !== 'apiUsageRecord' && x !== 'apiOshiGet' && x !== 'apiAchievementsCheck'); // 実績は設定が届いたときに1回だけ数え直す (描き直しの取り直しではない)
+    // 実績は設定が届いたときに1回だけ数え直す (描き直しの取り直しではない)。
+    // 道具の更新・人の名前と型・札・優先度は急がない波で、最初の波 (ここでは止めていた設定) の返事がそろったときに1回だけ取る
+    const LATER = ['apiUsageRecord', 'apiOshiGet', 'apiAchievementsCheck', 'apiKitStatus',
+      'apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities'];
+    const callsSince = (app, n) => app.calls.slice(n).map((c) => c.name).filter((x) => LATER.indexOf(x) < 0);
 
     it('作業期間の画面は、取り直さずに描き直す', () => {
       const { app, deliver } = late();

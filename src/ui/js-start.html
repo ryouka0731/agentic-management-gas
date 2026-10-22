@@ -136,10 +136,8 @@
   fillBrand();
   applyTerms();
   applyHints();
-  // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
-  loadSettings();
   // 文書の一覧は先に読んでおく。やることの絞り込み (文書名) や改訂版を作る画面は
-  // 文書タブを開かなくても allFiles を引く。以前は最初に文書タブを開いて読んでいた。
+  // 文書タブを開かなくても allFiles を引く。文書のリンクも、この返事で文書を探す。
   // 返事では画面を切り替えない
   loadFiles(function () { settleStartupFiles(true); }, function (err) {
     failInto(docListEl)(err);
@@ -149,12 +147,15 @@
   if (linkDoc) {
     // 文書のリンク (?doc=…&full=1) で開かれた。番頭の画面 (ホーム・左の行き先・上の操作) は出さず、文書だけを出す。
     // サーバ (Main.gs の doGet) が body に doc-link と文書の id を付けているので、最初の描画から周りは隠れている。
-    // ホームは出さない (取りにも行かない)。文書が開けなければ、ふつうの画面に戻して知らせる (openFromLink)
+    // ホームも、左の行き先・上の段に要るもの (bootHomeWave) も取らない。文書が開けずふつうの画面に
+    // 戻すとき (leaveDocLink) に取る。知らせは見えないので急がない
     var linkNav = navCount;
     enterDocLink();
     openFromLink({ doc: linkDoc, full: '1' }, linkNav);
     loadStartPrefs(true, linkNav);
+    bootLater(startNotices);
   } else {
+    bootHomeWave();
     // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
     // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
     switchTab('home');
@@ -170,5 +171,39 @@
     } else {
       loadStartPrefs(false, startupNav);
     }
+  }
+  // 急がないもの。最初の波の返事がそろってから (app.js の bootLater)。
+  // 実績の数え直しは開いた日も数えるので、文書のリンクで開いたときも数える (設定が届くまで待つ。js-ach)。
+  // 道具の更新の印は自分のボタンに出るだけ (自分の欄を開けば、そこで待って取る)。
+  // 人の名前と型・札・優先度は先に取っておく。やることやほかの画面を初めて開いたとき、これらを待ってから一覧を
+  // 取ると往復が2段になる。先取りの最中に開いたら、needOnce が同じ返事を待ち合わせる (二度取らない)。
+  // 文書のリンクでは使わないので取らない
+  bootLater(achOpenCheck);
+  bootLater(function () {
+    if (document.body.classList.contains('doc-link')) return;
+    needOnce(['apiKitStatus']);
+    needPeople();
+    needOnce(['apiTagList', 'apiIssuePriorities']);
+  });
+  bootWaveArm();
+
+  /**
+   * 最初の波のうち、ホームの外側 (左の行き先・上の段) に要るもの。1回だけ。
+   * ホームの中身は loadHome が取る。文書のリンクで開いたときは、ふつうの画面に戻すときに呼ぶ (leaveDocLink)。
+   */
+  function bootHomeWave() {
+    if (bootHomeWaveDone) return;
+    bootHomeWaveDone = true;
+    // 左上のワークスペースの名前
+    fillWorkspace(document.getElementById('brand'));
+    // スクラムがオンなら左に行き先を出す。取れなくてもオフのまま他は使える
+    loadSettings();
+    // 上の段の自分の顔
+    call('apiWhoAmI', [], function (who) {
+      currentUser = (who || {}).activeUser || '';
+      drawMe();
+    }, failQuiet('判定できなければ従来どおり押せる'));
+    // ベルの数
+    startNotices();
   }
 })();

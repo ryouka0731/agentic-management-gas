@@ -8,16 +8,14 @@
    * 拡張サービスを足していない環境で押せるボタンを出しても、押した先で
    * 断られるだけになる。
    */
-  function loadTasksState() {
-    call('apiTasksState', [], function (res) {
-      tasksState = res || { available: false, listId: '', lists: [] };
-      var btn = document.getElementById('tasks-btn');
+  function applyTasksState(res) {
+    tasksState = res || { available: false, listId: '', lists: [] };
+    var btn = document.getElementById('tasks-btn');
 
-      btn.hidden = !tasksState.available;
-      btn.title = tasksState.listId
-        ? '自分の担当を Google ToDo と同期します'
-        : '入れ先の ToDo リストを選びます';
-    }, failQuiet('使えないだけ'));
+    btn.hidden = !tasksState.available;
+    btn.title = tasksState.listId
+      ? '自分の担当を Google ToDo と同期します'
+      : '入れ先の ToDo リストを選びます';
   }
 
   /**
@@ -65,7 +63,8 @@
           tasksState.listId = id;
           showSnack('入れ先を決めました。もう一度押すと同期します',
             { kind: 'ok' });
-          loadTasksState();
+          // 選んだあとの形を取り直す (覚えた返事は古い)
+          call('apiTasksState', [], applyTasksState, failQuiet('使えないだけ'));
         });
       },
       sourceEl
@@ -488,14 +487,10 @@
    * 自分まわりの中身を描く。
    */
   function drawMe() {
-    meBtn.textContent = '';
-    meBtn.appendChild(makeAvatar(currentUser));
-    if (kitOutdated) {
-      var dot = document.createElement('span');
-      dot.className = 'me-dot';
-      meBtn.appendChild(dot);
-    }
-    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
+    drawMeButton();
+    // 欄の中身は開いているときだけ描く (開くときに描く)。閉じた欄のために api (ポイントの参加) を呼ばない。
+    // 以前は起動のときに2回 (はじめと、自分が分かったとき) 描いていて、apiGameState をホームのカードと合わせて3回呼んでいた
+    if (mePanel.hidden) return;
 
     document.getElementById('me-who').textContent =
       personName(currentUser) || 'あなた';
@@ -513,6 +508,37 @@
     actions.className = 'me-actions';
     makeMeActions().forEach(function (el) { actions.appendChild(el); });
     meBody.appendChild(actions);
+  }
+
+  /** 上の段の自分のボタン (顔と、道具の更新の印)。欄が閉じていても見えている */
+  function drawMeButton() {
+    meBtn.textContent = '';
+    meBtn.appendChild(makeAvatar(currentUser));
+    if (kitOutdated) {
+      var dot = document.createElement('span');
+      dot.className = 'me-dot';
+      meBtn.appendChild(dot);
+    }
+    meBtn.setAttribute('aria-label', kitOutdated ? '自分の設定 (道具の更新あり)' : '自分の設定');
+  }
+
+  /**
+   * 自分の欄を開く。待たずにすぐ描く (押しても空の欄が出ない)。名前と道具の更新をまだ取っていなければ
+   * 取り (needOnce)、遅れて届いたら名前を当て直し、道具が古ければ描き直す。描き直すのはそのときだけ
+   * (描くたびにポイントの参加 apiGameState を取るので、毎回は描き直さない)。
+   */
+  function openMe() {
+    mePanel.hidden = false;
+    meBtn.setAttribute('aria-expanded', 'true');
+    var waited = false;
+    needOnce(['apiPeopleNames', 'apiWorkStyleTeam', 'apiKitStatus'], function () {
+      if (!waited || mePanel.hidden) return;
+      document.getElementById('me-who').textContent = personName(currentUser) || 'あなた';
+      if (kitOutdated) drawMe();
+    });
+    // 取ってあれば (返事がその場で届いたなら) ここで描くのが最新。届いていなければ、いまの分で描いて待つ
+    waited = true;
+    drawMe();
   }
 
   // ===== 使われ方の記録 =====
@@ -620,9 +646,76 @@
       'side-edit': '直す (鉛筆)',
       'mine-btn': '自分の担当だけ',
       'tasks-btn': 'Google ToDo と同期',
+      // 2026-10-22: 名前の無い id がそのまま出ていた (me-btn など)。押す物は全部ここに名前を持つ
+      'me-btn': '自分まわりを開く',
+      'me-close': '自分まわりを閉じる',
+      'search-open': '探す (Ctrl+K)',
+      'search-close': '探すを閉じる',
+      'side-close': '右の欄を閉じる',
+      'crumb-back': '文書の一覧へ戻る',
+      'doc-add-btn': '文書を登録する',
+      'doc-full-btn': '文書を全画面で見る',
+      'doc-link-btn': '全画面で開くリンクをコピー',
+      'edit-save-btn': '直した文書を保存',
+      'mode-edit': '文書を直すモードに',
+      'mode-view': '文書を読むモードに',
+      'stash-btn': '直接編集を退避',
+      'diff-expand': '差分を広げる',
+      'md-save': 'Markdown で保存',
+      'view-list': 'やることの一覧を見る',
+      'view-board': '進捗ボードを見る',
+      'view-gantt': '工程表を見る',
+      'view-tally': '集計を見る',
+      'view-trash': '捨てたものを見る',
+      'gantt-today': '工程表を今日へ',
+      'overdue-only': '期限切れだけに絞る',
+      'goal-create-btn': '目標を立てる',
+      'impediment-create-btn': '困りごとを書く',
+      // 期間で進めるの言葉は表し方 (一般 / スクラム) に合わせる (画面にスクラムの言葉を直に書かない。test/terms.test.js)
+      'sprint-create-btn': termFill('{sprint}を作る', termStyleNow()),
+      'sprint-edit-btn': termFill('{sprint}を直す', termStyleNow()),
+      'guide-link': '使い方を開く (?)',
+      'guideline-toggle': 'はじめにの案内をたたむ・広げる',
+      'guideline-hide': 'はじめにの案内を閉じる',
+      'notice-close': '知らせを閉じる',
+      'notice-read-all': '知らせを全部読んだことにする',
+      'notice-desktop': '端末の通知を許す',
+      'report-open-btn': '要望・不具合を未解決だけに絞る',
+      'usage-csv-btn': '使われ方を CSV で保存',
+      'cowork-refresh': '作業雑談部屋のいまの様子を見る',
+      'cache-clear': '覚えを捨てて読み直す',
+      'calendar-mine': '自分の予定を見る',
+      'calendar-team': 'チームの予定を見る',
+      'game-join-toggle': '週の上位に参加する',
+      'game-toggle': 'ポイントとレベルを使う',
+      'outcomes-refresh': '成果の数を読み込み直す',
+      'progress-toggle': '前進の知らせを出す',
+      'scrum-toggle': '期間で進めるのオン・オフ',
+      'style-submit': '診断の結果を見る',
+      'style-again': 'もう一度診断する',
+      'style-copy': '診断の結果を写す',
+      'style-image': '診断の札を画像で保存',
+      'style-share': '診断の型の名前をチームに見せる',
+      'style-forget': '診断の結果を消す',
+      'focus-start': '集中を始める (今から始める)',
+      'report-copy': '日報をコピー',
+      'oshi-choose': '推しを選ぶ',
     };
 
     if (known[target]) return known[target];
+
+    // 決まった形の id (番号や型が付く)
+    if (/^style-use-/.test(target)) return '診断のおすすめを使う';
+    if (/^search-opt-/.test(target)) return '探すの候補を開く';
+    if (/^scrum-text-/.test(target)) return termFill('{feature}の文を直す', termStyleNow());
+
+    // 表に無い id は、画面にその要素があれば、その字 (読み上げの名前か題名か中の字) を使う。無ければ id のまま
+    var el = /^[A-Za-z0-9:_-]{1,60}$/.test(target) ? document.getElementById(target) : null;
+    if (el) {
+      var text = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '';
+      text = text.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+      if (text && text.length <= 40) return text;
+    }
 
     // 使い方の節。場所の名前は英数の id なので、見出しに直す
     var guide = /^guide-(.+)$/.exec(target);
@@ -1257,6 +1350,17 @@
 
   /** 返事を待っている頼みのどれかが、新しい知らせを前に出すものか */
   var noticeLoud = false;
+
+  /** 知らせを取りはじめたか (2回始めると1分ごとの取り直しが2本になる) */
+  var noticesStarted = false;
+
+  /** 知らせを取り、1分ごとに取り直す。1回だけ */
+  function startNotices() {
+    if (noticesStarted) return;
+    noticesStarted = true;
+    loadNotices(true);
+    window.setInterval(function () { loadNotices(false); }, 60000);
+  }
 
   /**
    * 知らせを取ってくる。

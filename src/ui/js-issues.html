@@ -1797,6 +1797,13 @@
   var trashFocus = null;
 
   function loadTrash() {
+    // 何日で片付くか (archiveKeepDays) を待つ。捨てたものを開いたときに1回だけ取る
+    needOnce(['apiArchiveKeepDays'], function () {
+      if (issueView === 'trash') loadTrashNow();
+    });
+  }
+
+  function loadTrashNow() {
     var still = latest('trash');
     showSkeleton(trashListEl, 'list', 3);
 
@@ -1898,7 +1905,16 @@
     loadOverview();
   }
 
+  /**
+   * やることを作る欄を開く。ホームのカードからも開くので、札・優先度・ひな形を取ってから組む (needIssues)。
+   *
+   * @param {HTMLElement} [sourceEl]
+   */
   function createIssue(sourceEl) {
+    needIssues(function () { createIssueNow(sourceEl); }, ['apiTemplateList']);
+  }
+
+  function createIssueNow(sourceEl) {
     var picker = null;
     var linkBox = null;
 
@@ -1986,6 +2002,11 @@
    * @param {HTMLElement} [sourceEl]
    */
   function openIssueDetail(issue, sourceEl) {
+    // ホーム (あなたの番・今日) からも開く。やることの画面を開いていなくても、名前と札を取ってから描く
+    needIssues(function () { openIssueDetailNow(issue, sourceEl); });
+  }
+
+  function openIssueDetailNow(issue, sourceEl) {
     var box = openSideView('やること #' + issue.number, sourceEl, function () {
       openIssueEdit(issue, sideSource);
     });
@@ -2324,6 +2345,9 @@
    */
   function openIssueByNumber(number, sourceEl) {
     call('apiIssueList', [''], function (list) {
+      // 親と子の行き先 (makeRelationChips) は lastIssues から引く。ホームから開いたときは
+      // やることの一覧をまだ取っていない (起動のときに取らなくなった) ので、ここで取ったもので埋める
+      lastIssues = list || [];
       var found = (list || []).filter(function (i) {
         return Number(i.number) === Number(number);
       })[0];
