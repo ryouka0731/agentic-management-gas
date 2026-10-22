@@ -463,6 +463,18 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     消すと `apiOshiCharDelete` が既定に戻す。画面の選び方は `makeOshiCharPicker` (設定の一覧で `type === 'char'` の欄だけ
     js-oshi が組む)。最初からいるキャラは設定の `options`、自分のキャラは `apiOshiGet` の `mine` から並べ、ふつうの顔の絵を
     添える (**推しがオンのときだけ絵を取る**)。押したら `apiPrefSet` で書く (書くのはここだけ、のまま)
+  - **みんなに公開する (2026-10-22 の依頼)。** 自分のキャラごとの切り替え `makeOshiShareToggle` (名前と口調の欄の下。`setToggle`)。
+    オンにするときだけ `openConfirmStrip` で確かめ (見えるもの・作った人の名前が出ること)、止めるときは確かめない。名前の無いキャラは
+    押せない。送るのは `apiOshiSetShared(charId, on)` だけ。公開しているキャラには `oshiSharedPill` (`makePill('公開中')`) を
+    見出しと直すキャラのタブに付ける。`apiOshiGet` の `mine[].shared` が印
+  - ほかの人が公開したキャラは `apiOshiGet` の `shared` (`char` = `'shared:<oshi の行の id>'`・`name`・`tone`・`owner`・`images`) から、
+    選び方の自分のキャラのあとに「みんなのキャラ ・ ◯◯ さん」として並べる。`owner` は作った人の members の名前だけ
+    (アドレスは返さない。名前が無ければ空で、画面は「ほかの人」)。借りているときは `kind: 'shared'` と `owner` が届き、`charId` は 0
+  - **借りたキャラの絵は `oshiSharedPicture(char, images)` の形で引く** (`oshiActiveMine` が返す。`charId` が `'shared:<番号>'`
+    なので `oshiImage` はそのまま `apiOshiImage('shared:<番号>', state)` を呼ぶ)。この形は書く道 (`apiOshiSet*` / 消す) に渡さない。
+    推しの頁は「◯◯ さんのキャラを使っています」(`.oshi-borrowed`) と出し、借りたキャラを直す欄は出さない (直す欄は自分のキャラだけ)。
+    絵の無い表情は借りた人の `oshi.fallback`。なつき度・機嫌・プロフィールの開き方は借りた人のもの。試すのは
+    `test/component/oshi-share.test.js`・`test/oshi-share.test.js`・`test/e2e/oshi.test.js` の「みんなに公開する」
   - 自分のキャラの絵が無い表情には `oshi.fallback` (`'builtin:<key>'` / `'none'`、既定はタク) の絵を出す。最初からいるキャラを
     使っているときは、そのキャラの絵だけ。形は `oshi.style` = `chibi` / `normal`、既定は 2頭身
   - 前の `oshi.useDefault` (最初からいるキャラを使う) は `oshi.char` / `oshi.fallback` に置き換えた (出す前だったので移行は無い)
