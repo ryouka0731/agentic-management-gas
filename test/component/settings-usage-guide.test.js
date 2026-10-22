@@ -157,6 +157,32 @@ describe('使われ方のボード', () => {
     expect(names).toContain('やること・報告の行を開く');
   });
 
+  it('押す物は全部、id のままではなく名前で出る (wiki.html の全ボタン・画面が付ける id・決まった形の id)', async () => {
+    const fs = await import('node:fs');
+    const wiki = fs.readFileSync('src/ui/wiki.html', 'utf8');
+    const ids = [...wiki.matchAll(/<button[^>]*\sid="([^"]+)"/g)].map((m) => m[1]);
+    const js = fs.readdirSync('src/ui').filter((f) => /\.html$/.test(f) && f !== 'wiki.html')
+      .map((f) => fs.readFileSync('src/ui/' + f, 'utf8')).join('\n');
+    const tracks = [...js.matchAll(/dataset\.track = '([a-z-]+)'/g)].map((m) => m[1]);
+    const made = ['cache-clear', 'calendar-mine', 'calendar-team', 'game-join-toggle', 'game-toggle', 'outcomes-refresh',
+      'progress-toggle', 'scrum-toggle', 'style-again', 'style-copy', 'style-forget', 'style-image', 'style-share', 'style-submit',
+      'md-save', 'oshi-choose', 'search-open', 'style-use-planner', 'search-opt-3', 'scrum-text-goal', 'error:timeout'];
+    const targets = [...new Set([...ids, ...tracks, ...made])];
+    expect(targets.length).toBeGreaterThan(40);
+    // 板は上位 15 か所までしか並べないので、15 ずつに分けて開き直す
+    const raw = [];
+    for (let at = 0; at < targets.length; at += 15) {
+      const part = targets.slice(at, at + 15);
+      openBoard({ apiUsageSummary: Object.assign({}, SUMMARY, {
+        byTarget: part.map((t, i) => ({ kind: 'action', target: t, count: 100 - i })),
+      }) });
+      const rows = [...document.querySelectorAll('#usage .usage-name')].map((n) => n.textContent);
+      expect(rows.length).toBeGreaterThanOrEqual(part.length);
+      part.forEach((t) => { if (rows.indexOf(t) >= 0) raw.push(t); });
+    }
+    expect(raw, '名前の無い id').toEqual([]);
+  });
+
   it('操作と画面を分けて並べる', () => {
     openBoard();
     const heads = [...document.querySelectorAll('#usage h3')]
