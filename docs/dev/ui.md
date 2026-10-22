@@ -367,6 +367,19 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   **動きを減らす設定では付けない** (`.is-moving` を付けず、雨は止めた粒を少しだけ)。開いているあいだに設定が変わっても
   `matchMedia` の change で合わせ直す (`roomOnMotion`。止めた粒は見える位置に置き直す)。見ていないタブでは雨を止め (`visibilitychange`)、顔も替えない
 - 集中しているあいだは隅に残りの輪 (`.room-focus`、`focusRemainingMs` で数える)。**部屋は集中を始めない**
+- **ポモドーロ** (`makeRoomPomodoro`。2026-10-22 の依頼): 作業 → 休憩を繰り返し、`ROOM_POMO_EVERY` (4) 回目の作業のあとは
+  `ROOM_POMO_LONG_MIN` (15) 分の長い休憩。置き場は `.room-body` の格子で、広い画面は右の列の上 (`.room-mixer` の上)、狭い画面は舞台と音の欄のあいだ。
+  - **状態は頁の中の `roomPomo` だけ** (`status` idle / running / paused・`phase` work / rest / long・`round`・`startMs`・`elapsedMs`・
+    `lenMs`・`countedSec`)。残りは開始時刻からの差 (`roomPomoElapsed`) で数え、刻みを数えない。刻み (`roomTick` → `roomPomoTick`) のたびに
+    `roomPomoAdvance` が終わった区間を全部追いかける (背景のタブで刻みが間引かれても、区間を飛ばさない)。区間の長さは始まったときに `lenMs` に決め、
+    途中で長さを変えても次の区間から効く。部屋を閉じると一時停止 (`roomPomoOnClose`)。頁を離れる (`pagehide`) と動いている作業の秒を合計に足す
+  - **作業の秒は二度足さない。** 足した秒を `countedSec` に覚え (`roomPomoCredit`)、一時停止・止める・作業の区間の終わりで差だけ足す
+  - 端末の `localStorage` の鍵は2つ。`roomPomodoro` = `{work, rest}` (分。`roomPomoSettingsClean` が選び方 15/25/50・5/10/15 にない値を既定 25・5 にする)、
+    `roomPomodoroTotal` = `{day: 'YYYY-MM-DD', today: 秒, all: 秒}` (端末の時計の日付。`roomPomoTotalsClean` が日付の違う `today` をゼロにする)。サーバは呼ばない
+  - **合図音は部屋の音を流しているときだけ** (`roomPomoChime`)。流しているあいだの音の仕組み (`roomAudio.ctx`) に正弦波を2つ (`roomPomoChimeNotes`)
+    作り、すぐ下げて止める。大きさは全体の大きさ (`roomMasterGain`) の 0.6 倍。流していないときは `AudioContext` を作らない
+    (押した操作の外では起こせない)。動きを減らす設定でも鳴らす。推しのせりふは既存の場面 `done` (`oshiLine('done')`)。なでた吹き出しが出ていれば重ねない
+  - **集中 (`js-focus`) は始めない。** 隅の残りの輪とは別に動く
 - 試すのは `test/component/room.test.js` (押して確かめる) と `test/room-ui.test.js` (音の形)
 
 - **作業中はときどき様子を変える** (`roomFidget`。12〜25秒ごと。2026-10-22 の依頼「動いてる感」): 向きを変える (絵を左右反転。次に変えるまで残す) /
