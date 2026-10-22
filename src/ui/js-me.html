@@ -620,9 +620,75 @@
       'side-edit': '直す (鉛筆)',
       'mine-btn': '自分の担当だけ',
       'tasks-btn': 'Google ToDo と同期',
+      // 2026-10-22: 名前の無い id がそのまま出ていた (me-btn など)。押す物は全部ここに名前を持つ
+      'me-btn': '自分まわりを開く',
+      'me-close': '自分まわりを閉じる',
+      'search-open': '探す (Ctrl+K)',
+      'search-close': '探すを閉じる',
+      'side-close': '右の欄を閉じる',
+      'crumb-back': '文書の一覧へ戻る',
+      'doc-add-btn': '文書を登録する',
+      'doc-full-btn': '文書を全画面で見る',
+      'doc-link-btn': '全画面で開くリンクをコピー',
+      'edit-save-btn': '直した文書を保存',
+      'mode-edit': '文書を直すモードに',
+      'mode-view': '文書を読むモードに',
+      'stash-btn': '直接編集を退避',
+      'diff-expand': '差分を広げる',
+      'md-save': 'Markdown で保存',
+      'view-list': 'やることの一覧を見る',
+      'view-board': '進捗ボードを見る',
+      'view-gantt': '工程表を見る',
+      'view-tally': '集計を見る',
+      'view-trash': '捨てたものを見る',
+      'gantt-today': '工程表を今日へ',
+      'overdue-only': '期限切れだけに絞る',
+      'goal-create-btn': '目標を立てる',
+      'impediment-create-btn': '困りごとを書く',
+      'sprint-create-btn': 'スプリントを作る',
+      'sprint-edit-btn': 'スプリントを直す',
+      'guide-link': '使い方を開く (?)',
+      'guideline-toggle': 'はじめにの案内をたたむ・広げる',
+      'guideline-hide': 'はじめにの案内を閉じる',
+      'notice-close': '知らせを閉じる',
+      'notice-read-all': '知らせを全部読んだことにする',
+      'notice-desktop': '端末の通知を許す',
+      'report-open-btn': '要望・不具合を未解決だけに絞る',
+      'usage-csv-btn': '使われ方を CSV で保存',
+      'cowork-refresh': '作業雑談部屋のいまの様子を見る',
+      'cache-clear': '覚えを捨てて読み直す',
+      'calendar-mine': '自分の予定を見る',
+      'calendar-team': 'チームの予定を見る',
+      'game-join-toggle': '週の上位に参加する',
+      'game-toggle': 'ポイントとレベルを使う',
+      'outcomes-refresh': '成果の数を読み込み直す',
+      'progress-toggle': '前進の知らせを出す',
+      'scrum-toggle': '期間で進めるのオン・オフ',
+      'style-submit': '診断の結果を見る',
+      'style-again': 'もう一度診断する',
+      'style-copy': '診断の結果を写す',
+      'style-image': '診断の札を画像で保存',
+      'style-share': '診断の型の名前をチームに見せる',
+      'style-forget': '診断の結果を消す',
+      'focus-start': '集中を始める (今から始める)',
+      'report-copy': '日報をコピー',
+      'oshi-choose': '推しを選ぶ',
     };
 
     if (known[target]) return known[target];
+
+    // 決まった形の id (番号や型が付く)
+    if (/^style-use-/.test(target)) return '診断のおすすめを使う';
+    if (/^search-opt-/.test(target)) return '探すの候補を開く';
+    if (/^scrum-text-/.test(target)) return 'スクラムの文を直す';
+
+    // 表に無い id は、画面にその要素があれば、その字 (読み上げの名前か題名か中の字) を使う。無ければ id のまま
+    var el = /^[A-Za-z0-9:_-]{1,60}$/.test(target) ? document.getElementById(target) : null;
+    if (el) {
+      var text = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '';
+      text = text.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+      if (text && text.length <= 40) return text;
+    }
 
     // 使い方の節。場所の名前は英数の id なので、見出しに直す
     var guide = /^guide-(.+)$/.exec(target);
