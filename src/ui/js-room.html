@@ -1157,6 +1157,7 @@
     wrap.className = 'room-stage-wrap';
     wrap.appendChild(makeRoomStage());
     body.appendChild(wrap);
+    body.appendChild(makeRoomPomodoro());
     body.appendChild(makeRoomMixer());
     el.appendChild(body);
     document.body.appendChild(el);
@@ -1178,6 +1179,8 @@
     var el = roomEl();
     // 閉じたら音の仕組みも閉じ、描いた音を手放す (開き直したら作り直す)
     roomSoundStop(ROOM_FADE_OUT, true);
+    // ポモドーロは止めずに一時停止にする (開き直すと続きから)
+    roomPomoOnClose();
     if (roomTimer) clearInterval(roomTimer);
     roomTimer = null;
     if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
@@ -1749,6 +1752,7 @@
   function roomTick() {
     var el = roomEl();
     if (!el) return;
+    roomPomoTick();
     var phase = roomPhaseOf(new Date().getHours());
     if (el.dataset.phase !== phase) {
       el.dataset.phase = phase;
@@ -1772,6 +1776,518 @@
     var what = box.querySelector('.room-focus-what');
     var name = '#' + s.issueNumber + ' ' + s.title;
     if (what.textContent !== name) what.textContent = name;
+  }
+
+  // ----- ポモドーロ (部屋の中だけ。集中のしかたとは別に動く) -----
+  //
+  // 作業 → 休憩を繰り返す。4回目の作業のあとの休憩は長い休憩。残りは開始時刻からの差で数える
+  // (背景のタブでは時計が間引かれるので、刻みを数えない)。区切りを過ぎていたら、刻みのたびに追いつく。
+  // 長さ (roomPomodoro) と作業の合計 (roomPomodoroTotal) はこの端末の localStorage にだけ覚える。
+  // サーバは呼ばない。**集中 (js-focus) を始めない。**
+
+  /** 作業の長さの選び方 (分) */
+  function ROOM_POMO_WORK_CHOICES() { return [15, 25, 50]; }
+  /** 休憩の長さの選び方 (分) */
+  function ROOM_POMO_REST_CHOICES() { return [5, 10, 15]; }
+  /** 長い休憩 (分) と、何回の作業ごとに長い休憩にするか */
+  var ROOM_POMO_LONG_MIN = 15;
+  var ROOM_POMO_EVERY = 4;
+  /** 推しのせりふを出しておく長さ (ms) */
+  var ROOM_POMO_SAY_MS = 5000;
+
+  /**
+   * 覚えた長さを確かめる。知らない値は既定 (作業 25 分・休憩 5 分)。
+   *
+   * @param {*} raw
+   * @returns {{work: number, rest: number}}
+   */
+  function roomPomoSettingsClean(raw) {
+    var r = raw && typeof raw === 'object' ? raw : {};
+    var work = Number(r.work);
+    var rest = Number(r.rest);
+    return {
+      work: ROOM_POMO_WORK_CHOICES().indexOf(work) >= 0 ? work : 25,
+      rest: ROOM_POMO_REST_CHOICES().indexOf(rest) >= 0 ? rest : 5,
+    };
+  }
+
+  /**
+   * 端末の時計での日付 (YYYY-MM-DD)。
+   *
+   * @param {Date} d
+   * @returns {string}
+   */
+  function roomPomoDayOf(d) {
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  /**
+   * 覚えた合計を確かめる。日付が今日でなければ、今日をゼロにする。
+   *
+   * @param {*} raw
+   * @param {string} day 今日 (YYYY-MM-DD)
+   * @returns {{day: string, today: number, all: number}}
+   */
+  function roomPomoTotalsClean(raw, day) {
+    var r = raw && typeof raw === 'object' ? raw : {};
+    var sec = function (v) { var n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; };
+    return { day: day, today: r.day === day ? sec(r.today) : 0, all: sec(r.all) };
+  }
+
+  /**
+   * 合計に作業の秒を足す (日付が変わっていたら今日をゼロにしてから)。
+   *
+   * @param {*} raw
+   * @param {number} sec
+   * @param {string} day
+   * @returns {{day: string, today: number, all: number}}
+   */
+  function roomPomoTotalsAdd(raw, sec, day) {
+    var t = roomPomoTotalsClean(raw, day);
+    var n = Math.max(0, Math.floor(Number(sec) || 0));
+    t.today += n;
+    t.all += n;
+    return t;
+  }
+
+  /**
+   * 合計の見せ方。「1時間25分」「12時間」「40分」「0分」。
+   *
+   * @param {number} sec
+   * @returns {string}
+   */
+  function roomPomoDuration(sec) {
+    var s = Math.max(0, Math.floor(Number(sec) || 0));
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    if (h && m) return h + '時間' + m + '分';
+    if (h) return h + '時間';
+    return m + '分';
+  }
+
+  /**
+   * 残りの見せ方 (mm:ss)。端数の秒は切り上げる (始めた瞬間は 25:00)。
+   *
+   * @param {number} ms
+   * @returns {string}
+   */
+  function roomPomoClock(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  /**
+   * 次の区間。作業のあとは休憩 (ROOM_POMO_EVERY 回目ごとに長い休憩)、休憩のあとは次の回の作業。
+   *
+   * @param {string} phase work / rest / long
+   * @param {number} round 何回目か (1 から)
+   * @returns {{phase: string, round: number}}
+   */
+  function roomPomoNext(phase, round) {
+    if (phase === 'work') return { phase: round % ROOM_POMO_EVERY === 0 ? 'long' : 'rest', round: round };
+    return { phase: 'work', round: round + 1 };
+  }
+
+  /**
+   * 区間の長さ (ms)。
+   *
+   * @param {string} phase
+   * @param {{work: number, rest: number}} settings
+   * @returns {number}
+   */
+  function roomPomoPhaseMs(phase, settings) {
+    var min = phase === 'work' ? settings.work : phase === 'long' ? Math.max(ROOM_POMO_LONG_MIN, settings.rest) : settings.rest;
+    return min * 60000;
+  }
+
+  /** @returns {object} 止まっている (始める前の) 状態 */
+  function roomPomoIdle(settings) {
+    return { status: 'idle', phase: 'work', round: 1, startMs: 0, elapsedMs: 0,
+      lenMs: roomPomoPhaseMs('work', settings), countedSec: 0 };
+  }
+
+  /**
+   * いまの区間で進んだ ms (区間の長さを超えない)。動いているあいだは開始時刻からの差、一時停止中は止めた所。
+   *
+   * @param {object} p
+   * @param {number} now
+   * @returns {number}
+   */
+  function roomPomoElapsed(p, now) {
+    var e = p.status === 'running' ? now - p.startMs : p.status === 'paused' ? p.elapsedMs : 0;
+    return Math.max(0, Math.min(p.lenMs, e));
+  }
+
+  /**
+   * 終わった区間を追いかける (見ていないタブで刻みが遅れても、終わった区間はここで全部進む)。p を書き換える。
+   *
+   * @param {object} p
+   * @param {{work: number, rest: number}} settings 次の区間の長さに使う
+   * @param {number} now
+   * @returns {{workedSec: number, ended: Array<string>}} 合計に足す作業の秒と、終わった区間
+   */
+  function roomPomoAdvance(p, settings, now) {
+    var out = { workedSec: 0, ended: [] };
+    var guard = 0;
+    while (p.status === 'running' && now - p.startMs >= p.lenMs && guard++ < 1000) {
+      if (p.phase === 'work') out.workedSec += Math.max(0, Math.floor(p.lenMs / 1000) - p.countedSec);
+      out.ended.push(p.phase);
+      var next = roomPomoNext(p.phase, p.round);
+      p.startMs += p.lenMs;
+      p.phase = next.phase;
+      p.round = next.round;
+      p.lenMs = roomPomoPhaseMs(next.phase, settings);
+      p.countedSec = 0;
+    }
+    return out;
+  }
+
+  /**
+   * 作業の区間なら、まだ合計に足していない秒を数える (足した分は覚えて、二度足さない)。
+   *
+   * @param {object} p
+   * @param {number} now
+   * @returns {number}
+   */
+  function roomPomoCredit(p, now) {
+    if (p.phase !== 'work' || p.status === 'idle') return 0;
+    var sec = Math.max(0, Math.floor(roomPomoElapsed(p, now) / 1000) - p.countedSec);
+    p.countedSec += sec;
+    return sec;
+  }
+
+  /**
+   * 区切りの合図の2音 (Hz・始まりの秒・長さの秒)。作業の終わりは下がる「ピン・ポーン」、休憩の終わりは上がる。
+   *
+   * @param {string} ended 終わった区間
+   * @returns {Array<{freq: number, at: number, dur: number}>}
+   */
+  function roomPomoChimeNotes(ended) {
+    var hi = 1046.5;
+    var lo = 784;
+    var a = ended === 'work' ? hi : lo;
+    var b = ended === 'work' ? lo : hi;
+    return [{ freq: a, at: 0, dur: 0.9 }, { freq: b, at: 0.28, dur: 1.3 }];
+  }
+
+  var roomPomo = null;
+  var roomPomoSettingsNow = null;
+  var roomPomoSayTimer = null;
+
+  /** @returns {{work: number, rest: number}} */
+  function roomPomoSettings() {
+    if (!roomPomoSettingsNow) {
+      try {
+        roomPomoSettingsNow = roomPomoSettingsClean(JSON.parse(window.localStorage.getItem('roomPomodoro') || 'null'));
+      } catch (e) {
+        roomPomoSettingsNow = roomPomoSettingsClean(null);
+      }
+    }
+    return roomPomoSettingsNow;
+  }
+
+  /** @returns {object} いまの状態 (無ければ止まっている状態) */
+  function roomPomoState() {
+    if (!roomPomo) roomPomo = roomPomoIdle(roomPomoSettings());
+    return roomPomo;
+  }
+
+  /** @returns {{day: string, today: number, all: number}} 覚えた合計 (今日でなければ今日はゼロ) */
+  function roomPomoTotals() {
+    var raw = null;
+    try {
+      raw = JSON.parse(window.localStorage.getItem('roomPomodoroTotal') || 'null');
+    } catch (e) { /* 読めなければゼロから */ }
+    return roomPomoTotalsClean(raw, roomPomoDayOf(new Date()));
+  }
+
+  /** 作業の秒を合計に足して覚える */
+  function roomPomoAddTotal(sec) {
+    if (!(sec > 0)) return;
+    var raw = null;
+    try {
+      raw = JSON.parse(window.localStorage.getItem('roomPomodoroTotal') || 'null');
+    } catch (e) { /* 読めなければゼロから */ }
+    try {
+      window.localStorage.setItem('roomPomodoroTotal', JSON.stringify(roomPomoTotalsAdd(raw, sec, roomPomoDayOf(new Date()))));
+    } catch (e) { /* 覚えられなくてもタイマーは動く */ }
+  }
+
+  /** 終わった区間を追いかけて合計に足す。終わった区間を返す */
+  function roomPomoCatchUp(now) {
+    var p = roomPomoState();
+    var r = roomPomoAdvance(p, roomPomoSettings(), now);
+    roomPomoAddTotal(r.workedSec);
+    return r.ended;
+  }
+
+  /** 始める → 一時停止 → 再開 */
+  function roomPomoToggle() {
+    var p = roomPomoState();
+    var now = Date.now();
+    roomPomoNote('');
+    if (p.status === 'idle') {
+      roomPomo = roomPomoIdle(roomPomoSettings());
+      roomPomo.status = 'running';
+      roomPomo.startMs = now;
+    } else if (p.status === 'running') {
+      roomPomoPause(now);
+    } else {
+      p.startMs = now - p.elapsedMs;
+      p.status = 'running';
+    }
+    roomPomoRender();
+  }
+
+  /** 一時停止。そこまでの作業を合計に足す */
+  function roomPomoPause(now) {
+    var p = roomPomoState();
+    if (p.status !== 'running') return;
+    roomPomoCatchUp(now);
+    roomPomoAddTotal(roomPomoCredit(p, now));
+    p.elapsedMs = roomPomoElapsed(p, now);
+    p.status = 'paused';
+  }
+
+  /** 止める。そこまでの作業を合計に足し、1回目の作業の前に戻す */
+  function roomPomoStop() {
+    var p = roomPomoState();
+    var now = Date.now();
+    if (p.status === 'running') roomPomoCatchUp(now);
+    roomPomoAddTotal(roomPomoCredit(p, now));
+    roomPomo = roomPomoIdle(roomPomoSettings());
+    roomPomoNote('');
+    roomPomoRender();
+  }
+
+  /** 欄の知らせ (空なら隠す) */
+  function roomPomoNote(text) {
+    var note = document.querySelector('#room .room-pomo-note');
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = !text;
+  }
+
+  /**
+   * 区切りの合図音。部屋の音を流しているときだけ鳴らす (音の仕組みは押した中でしか起こせないので、流していない人は鳴らさない)。
+   * 動きを減らす設定でも鳴らす (音は動きではない)。
+   *
+   * @param {string} ended
+   * @returns {boolean} 鳴らしたか
+   */
+  function roomPomoChime(ended) {
+    if (!roomSoundPlaying()) return false;
+    var ctx = roomAudio.ctx;
+    try {
+      var peak = roomMasterGain(roomMix().master) * 0.6;
+      var t = ctx.currentTime;
+      roomPomoChimeNotes(ended).forEach(function (n) {
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(n.freq, t + n.at);
+        g.gain.setValueAtTime(0, t + n.at);
+        g.gain.linearRampToValueAtTime(peak, t + n.at + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
+        osc.connect(g);
+        g.connect(ctx.destination);
+        osc.start(t + n.at);
+        osc.stop(t + n.at + n.dur + 0.05);
+        setTimeout(function () { roomDisconnect(osc); roomDisconnect(g); }, (n.at + n.dur + 0.2) * 1000);
+      });
+      return true;
+    } catch (e) {
+      if (window.console) console.warn('区切りの合図を鳴らせませんでした', e);
+      return false;
+    }
+  }
+
+  /** 作業が終わったら、推しが「済ませた」のせりふを言う (なでた吹き出しが出ているときは重ねない) */
+  function roomPomoSay() {
+    if (!oshiOn()) return;
+    oshiLoad(function () {
+      var el = roomEl();
+      var stage = el && el.querySelector('.room-stage');
+      if (!stage || stage.querySelector('.room-oshi-say')) return;
+      var text = oshiLine('done');
+      if (!text) return;
+      var say = document.createElement('p');
+      say.className = 'room-oshi-say room-pomo-say';
+      say.setAttribute('aria-live', 'polite');
+      say.textContent = text;
+      stage.appendChild(say);
+      if (roomPomoSayTimer) clearTimeout(roomPomoSayTimer);
+      roomPomoSayTimer = setTimeout(function () {
+        roomPomoSayTimer = null;
+        say.remove();
+      }, ROOM_POMO_SAY_MS);
+    });
+  }
+
+  /** 刻みごと (roomTick から)。終わった区間を追いかけ、区切りなら合図して知らせる */
+  function roomPomoTick() {
+    var ended = roomPomoCatchUp(Date.now());
+    if (ended.length) {
+      var last = ended[ended.length - 1];
+      roomPomoChime(last);
+      if (last === 'work') {
+        roomPomoNote('作業の時間が終わりました。休憩しましょう');
+        roomPomoSay();
+      } else {
+        roomPomoNote('休憩が終わりました。次の作業を始めています');
+      }
+    }
+    roomPomoRender();
+  }
+
+  /** 部屋を閉じるとき。動いていれば一時停止にする (開き直すと「再開」で続きから) */
+  function roomPomoOnClose() {
+    if (roomPomoSayTimer) clearTimeout(roomPomoSayTimer);
+    roomPomoSayTimer = null;
+    if (roomPomo && roomPomo.status === 'running') roomPomoPause(Date.now());
+  }
+
+  /** 頁を離れるとき。動いている作業の秒を合計に足しておく (状態はこの頁の中だけ) */
+  function roomPomoOnPageHide() {
+    if (!roomPomo || roomPomo.status !== 'running') return;
+    var now = Date.now();
+    roomPomoCatchUp(now);
+    roomPomoAddTotal(roomPomoCredit(roomPomo, now));
+  }
+
+  /** 区間の名前 */
+  function roomPomoPhaseLabel(phase) {
+    return phase === 'work' ? '作業' : phase === 'long' ? '長い休憩' : '休憩';
+  }
+
+  /** 欄を、いまの状態に合わせる */
+  function roomPomoRender() {
+    var box = document.querySelector('#room .room-pomodoro');
+    if (!box) return;
+    var p = roomPomoState();
+    if (p.status === 'idle') p.lenMs = roomPomoPhaseMs('work', roomPomoSettings());
+    var set = function (sel, text) {
+      var n = box.querySelector(sel);
+      if (n && n.textContent !== text) n.textContent = text;
+    };
+    box.dataset.phase = p.phase;
+    box.dataset.status = p.status;
+    set('.room-pomo-phase', roomPomoPhaseLabel(p.phase));
+    set('.room-pomo-time', roomPomoClock(p.lenMs - roomPomoElapsed(p, Date.now())));
+    set('.room-pomo-round', p.round + '回目' + (p.status === 'paused' ? ' ・ 一時停止中' : ''));
+    var main = box.querySelector('.room-pomo-main');
+    if (main) {
+      var label = p.status === 'idle' ? '始める' : p.status === 'running' ? '一時停止' : '再開';
+      if (main.lastChild.textContent !== label) main.lastChild.textContent = label;
+      main.setAttribute('aria-pressed', String(p.status === 'running'));
+    }
+    var stop = box.querySelector('.room-pomo-stop');
+    if (stop) stop.disabled = p.status === 'idle';
+    var t = roomPomoTotals();
+    set('.room-pomo-total', '今日 ' + roomPomoDuration(t.today) + ' ・ 通算 ' + roomPomoDuration(t.all));
+  }
+
+  /**
+   * 長さを選ぶ欄。変えたら端末に覚える。動いている区間の長さは変えず、次の区間から効く。
+   *
+   * @param {string} key work / rest
+   * @param {string} label
+   * @param {Array<number>} choices
+   * @returns {HTMLElement}
+   */
+  function makeRoomPomoLength(key, label, choices) {
+    var wrap = document.createElement('label');
+    wrap.className = 'room-row';
+    var name = document.createElement('span');
+    name.className = 'room-row-name';
+    name.textContent = label;
+    wrap.appendChild(name);
+    var sel = document.createElement('select');
+    sel.className = 'room-pomo-' + key;
+    choices.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = String(m);
+      o.textContent = m + '分';
+      sel.appendChild(o);
+    });
+    sel.value = String(roomPomoSettings()[key]);
+    sel.addEventListener('change', function () {
+      var s = roomPomoSettings();
+      s[key] = Number(sel.value);
+      roomPomoSettingsNow = roomPomoSettingsClean(s);
+      try {
+        window.localStorage.setItem('roomPomodoro', JSON.stringify(roomPomoSettingsNow));
+      } catch (e) { /* 覚えられなくても、この部屋では効く */ }
+      roomPomoRender();
+    });
+    wrap.appendChild(sel);
+    return wrap;
+  }
+
+  /** ポモドーロの欄 (舞台の下・音の欄の上。広い画面では右の列の上) */
+  function makeRoomPomodoro() {
+    var box = document.createElement('section');
+    box.className = 'room-pomodoro';
+    box.setAttribute('aria-label', 'ポモドーロ');
+    var h = document.createElement('h3');
+    h.className = 'room-mixer-head';
+    h.textContent = 'ポモドーロ';
+    box.appendChild(h);
+
+    var face = document.createElement('div');
+    face.className = 'room-pomo-face';
+    var phase = document.createElement('span');
+    phase.className = 'room-pomo-phase';
+    face.appendChild(phase);
+    var time = document.createElement('span');
+    time.className = 'room-pomo-time';
+    time.setAttribute('role', 'timer');
+    face.appendChild(time);
+    box.appendChild(face);
+    var round = document.createElement('p');
+    round.className = 'room-pomo-round';
+    box.appendChild(round);
+
+    var buttons = document.createElement('div');
+    buttons.className = 'room-pomo-buttons';
+    var main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'btn btn-primary room-pomo-main';
+    main.appendChild(document.createTextNode('始める'));
+    main.addEventListener('click', roomPomoToggle);
+    buttons.appendChild(main);
+    var stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'btn room-pomo-stop';
+    stop.textContent = '止める';
+    stop.addEventListener('click', roomPomoStop);
+    buttons.appendChild(stop);
+    box.appendChild(buttons);
+
+    var note = document.createElement('p');
+    note.className = 'room-pomo-note';
+    note.setAttribute('role', 'status');
+    note.hidden = true;
+    box.appendChild(note);
+
+    var lengths = document.createElement('div');
+    lengths.className = 'room-pomo-lengths';
+    lengths.appendChild(makeRoomPomoLength('work', '作業', ROOM_POMO_WORK_CHOICES()));
+    lengths.appendChild(makeRoomPomoLength('rest', '休憩', ROOM_POMO_REST_CHOICES()));
+    box.appendChild(lengths);
+
+    var total = document.createElement('p');
+    total.className = 'room-pomo-total';
+    box.appendChild(total);
+    var hint = document.createElement('p');
+    hint.className = 'row-meta room-note';
+    hint.textContent = ROOM_POMO_EVERY + '回目の作業のあとは' + ROOM_POMO_LONG_MIN + '分の長い休憩。変えた長さは次の区間から効きます。' +
+      '合計はこの端末にだけ覚えます。集中 (今から始める) とは別に動きます';
+    box.appendChild(hint);
+    return box;
   }
 
   // ----- 音の欄 -----
@@ -1967,6 +2483,7 @@
   }, true);
   document.addEventListener('fullscreenchange', roomOnFullscreen);
   document.addEventListener('visibilitychange', roomSyncRain);
+  window.addEventListener('pagehide', roomPomoOnPageHide);
   (function () {
     try {
       var mq = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
