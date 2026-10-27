@@ -5539,12 +5539,21 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-hero-figure img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; pointer-events: none; }
 .oshi-hero-figure { user-select: none; -webkit-user-select: none; }
 .oshi-hero.is-patted .oshi-hero-figure { transform: scale(1.04); }
+/* ときどきの小さな動き (oshiMotionStart)。絵 (中身) だけを動かし、背景の箱は動かさない */
+.oshi-hero-figure > *, .oshi-bubble .oshi-figure > * {
+  transition: translate var(--motion) ease-out, rotate var(--motion) ease-out, scale var(--motion) ease-out;
+}
+.oshi-hero-figure.is-nod > * { translate: 0 4px; }
+.oshi-hero-figure.is-tilt-l > * { rotate: -3deg; }
+.oshi-hero-figure.is-tilt-r > * { rotate: 3deg; }
+.oshi-hero-figure.is-blink > *, .oshi-bubble .oshi-figure.is-blink > * { scale: 1 0.96; }
 .oshi-hero-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
 .oshi-hero-line { margin: 0; color: var(--ink-2); }
 .oshi-hero.is-patted .oshi-hero-line { color: var(--accent); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) {
   .oshi-hero-figure { transition: none; }
   .oshi-hero.is-patted .oshi-hero-figure { transform: none; }
+  .oshi-hero-figure > *, .oshi-bubble .oshi-figure > * { transition: none; translate: none; rotate: none; scale: none; }
 }
 .oshi-care { padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--warn-bg); }
 .oshi-care .row-meta { color: var(--ink); margin: 0; }

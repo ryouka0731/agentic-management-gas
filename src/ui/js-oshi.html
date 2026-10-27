@@ -42,6 +42,8 @@
   var oshiBubbleTimer = null;
   /** 吹き出しを出した回数。遅れて届いた画像が、もう別の吹き出しなら差し込まない */
   var oshiBubbleShown = 0;
+  /** 吹き出しの絵の小さな動き (oshiMotionStart)。出ているあいだだけ */
+  var oshiBubbleMotion = null;
   var oshiBackChecked = false;
   /** 吹き出しが消えたら出す次の場面 (oshiSayNext)。{key, state} */
   var oshiQueued = null;
@@ -994,8 +996,17 @@
     el.querySelector('.oshi-line').textContent = text;
     el.classList.remove('is-out');
     el.hidden = false;
-    oshiFillFigure(el.querySelector('.oshi-figure'), oshiPickState(state), name,
+    var fig = el.querySelector('.oshi-figure');
+    oshiFillFigure(fig, oshiPickState(state), name,
       function () { return seq === oshiBubbleShown && !el.hidden && !!oshiData && oshiData.char === char; });
+    // 小さい絵なので控えめに、まばたきだけ。吹き出しが隠れたら止まる
+    if (!oshiBubbleMotion || oshiBubbleMotion.stopped()) {
+      oshiBubbleMotion = oshiMotionStart(fig, {
+        state: function () { return el.dataset.state || 'idle'; },
+        alive: function () { return !el.hidden; },
+        blinkOnly: true,
+      });
+    }
     // 出た印を付け直す (続けて出たときも、ふわっと出し直す。動きを減らす設定では CSS が止める)
     el.classList.remove('is-in');
     void el.offsetWidth;
@@ -1783,6 +1794,7 @@
 
     var shown = '';
     var smileTimer = null;
+    var motion = null;
     function show(state) {
       shown = state;
       sec.dataset.state = state;
@@ -1793,6 +1805,8 @@
       if (smileTimer) return; // 笑顔のあいだは、なでても変わらない (絵を取り直さない)
       // 実績 (推しの頭をなでた・通算) のための使われ方。笑顔のあいだは数えない
       usageCount('action', 'oshi-pat');
+      // 動きの最中 (まばたきの絵・うなずき) でも、なでた方を出す
+      if (motion) motion.interrupt();
       show('praise');
       sec.classList.add('is-patted');
       caption.textContent = oshiLine('pat') || (name + 'はうれしそうです');
@@ -1812,6 +1826,11 @@
     });
     oshiAttachPat(fig, pat);
     show('idle');
+    // ときどき まばたき・うなずき・傾き (oshiMotionStart)。なでている最中は動かさない
+    motion = oshiMotionStart(fig, {
+      state: function () { return shown; },
+      busy: function () { return !!smileTimer; },
+    });
     return sec;
   }
 
@@ -1844,6 +1863,164 @@
     });
     fig.addEventListener('pointerleave', reset);
     fig.addEventListener('dragstart', function (e) { e.preventDefault(); });
+  }
+
+  // ----- 絵の小さな動き (やること #101「推しの絵に動いている感を出す」) -----
+  //
+  // 推しの頁の顔 (makeOshiHero) と吹き出しの絵に、いまある表情の絵の組み合わせと CSS の小さな動きで「動いている感」を出す。
+  // GIF や新しい絵は持たない。
+  // - 4〜9 秒ごとに1つ: まばたき (近い表情の絵に 150ms だけ切り替えて戻す。絵が無ければ CSS の is-blink だけ) /
+  //   うなずき (is-nod) / 傾き (is-tilt-l / is-tilt-r)。吹き出しは控えめに、まばたきだけ (絵は切り替えず CSS だけ)
+  // - 切り替える絵は、画面が既に覚えている絵 (oshiImgs / oshiDefaultImgs) だけ。**サーバへ取りに行かない** (oshiImageCached)
+  // - なでている最中 (busy) は動かさない。動きの最中になでられたら interrupt() で動きを外し、なでた方を出す
+  // - 動きを減らす設定 (prefers-reduced-motion: reduce) では始めない。画面が隠れているあいだは止め、戻ったら再開。
+  //   要素が外れていたら (isConnected でない) 止め、次の時計を仕掛けない
+  // - 読み込み中の推し (oshiWaitInto) には付けない
+
+  /** 次に動くまでの最短 (ms) */
+  function OSHI_MOTION_MIN_MS() { return 4000; }
+  /** 次に動くまでの幅 (ms)。最短にこれまでのでたらめを足す (4〜9 秒) */
+  function OSHI_MOTION_SPAN_MS() { return 5000; }
+  /** まばたき (絵の切り替え・is-blink) の長さ (ms) */
+  function OSHI_MOTION_BLINK_MS() { return 150; }
+  /** うなずき・傾きの長さ (ms) */
+  function OSHI_MOTION_HOLD_MS() { return 700; }
+
+  /**
+   * まばたきで一瞬だけ見せる、近い表情。ふつうの顔は笑顔 (ほめる) に、ほかは近いものに。無い表情は ふつう へ
+   *
+   * @param {string} state
+   * @returns {string}
+   */
+  function oshiMotionNear(state) {
+    var near = { idle: 'praise', praise: 'celebrate', celebrate: 'praise', cheer: 'praise', surprise: 'celebrate' };
+    return near[state] || 'idle';
+  }
+
+  /** 動きを減らす設定か */
+  function oshiReducedMotion() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 画面が既に覚えている表情の絵 (メモリだけ)。無ければ空。oshiImage と同じ選び方をするが、IndexedDB もサーバも見ない
+   *
+   * @param {string} state
+   * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ
+   * @returns {string} data URL
+   */
+  function oshiImageCached(state, c) {
+    var mine = c || oshiActiveMine();
+    var row = mine ? oshiImageRow(state, mine) : null;
+    if (row) return (oshiImgs && oshiImgs[row.sha]) || '';
+    var key = oshiPictureBuiltin(c);
+    if (!key) return '';
+    return (oshiDefaultImgs && oshiDefaultImgs[key + ':' + oshiStyle() + ':' + state]) || '';
+  }
+
+  /**
+   * 絵の入れ物に小さな動きを付ける。
+   *
+   * opts.state: いま出している表情 / opts.busy: true のあいだは動かさない (なでている最中) /
+   * opts.alive: false なら止める / opts.blinkOnly: まばたきだけ (CSS だけ)
+   *
+   * @param {HTMLElement} fig 絵の入れ物 (oshiFillFigure で埋めるもの)
+   * @param {object} opts
+   * @returns {object} interrupt() / stop() / stopped()
+   */
+  function oshiMotionStart(fig, opts) {
+    var timer = null;
+    var stopped = false;
+    var waiting = false;
+    var classes = ['is-blink', 'is-nod', 'is-tilt-l', 'is-tilt-r'];
+    function clear() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    }
+    function reset() {
+      classes.forEach(function (k) { fig.classList.remove(k); });
+      delete fig.dataset.motion;
+    }
+    function stop() {
+      stopped = true;
+      clear();
+      reset();
+      if (waiting) document.removeEventListener('visibilitychange', onVisible);
+      waiting = false;
+    }
+    function schedule() {
+      clear();
+      if (stopped) return;
+      timer = setTimeout(tick, OSHI_MOTION_MIN_MS() + Math.random() * OSHI_MOTION_SPAN_MS());
+    }
+    function onVisible() {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', onVisible);
+      waiting = false;
+      schedule();
+    }
+    function hold(ms, done) {
+      timer = setTimeout(function () {
+        timer = null;
+        done();
+        schedule();
+      }, ms);
+    }
+    function blink() {
+      var img = opts.blinkOnly ? null : fig.querySelector('img');
+      var pick = img ? oshiPickState(oshiMotionNear(opts.state())) : null;
+      var src = pick ? oshiImageCached(pick) : '';
+      var was = img ? img.getAttribute('src') : '';
+      if (img && src && src !== was) {
+        img.setAttribute('src', src);
+        fig.dataset.motion = 'blink';
+        hold(OSHI_MOTION_BLINK_MS(), function () {
+          delete fig.dataset.motion;
+          // なでて絵を入れ替えた (古い img が外れた・別の絵になった) ときは戻さない
+          if (img.isConnected && img.getAttribute('src') === src) img.setAttribute('src', was);
+        });
+        return;
+      }
+      fig.classList.add('is-blink');
+      hold(OSHI_MOTION_BLINK_MS(), function () { fig.classList.remove('is-blink'); });
+    }
+    function tick() {
+      timer = null;
+      if (stopped) return;
+      if (!fig.isConnected || oshiReducedMotion() || (opts.alive && !opts.alive())) { stop(); return; }
+      if (document.hidden) {
+        if (!waiting) document.addEventListener('visibilitychange', onVisible);
+        waiting = true;
+        return;
+      }
+      if (opts.busy && opts.busy()) { schedule(); return; }
+      var moves = opts.blinkOnly ? ['blink'] : ['blink', 'nod', 'tilt'];
+      var move = moves[Math.min(moves.length - 1, Math.floor(Math.random() * moves.length))];
+      if (move === 'blink') { blink(); return; }
+      var cls = move === 'nod' ? 'is-nod' : (Math.random() < 0.5 ? 'is-tilt-l' : 'is-tilt-r');
+      fig.classList.add(cls);
+      hold(OSHI_MOTION_HOLD_MS(), function () { fig.classList.remove(cls); });
+    }
+    var handle = {
+      /** 動きの最中でも外して、次を仕掛け直す (なでた方を優先する) */
+      interrupt: function () {
+        if (stopped) return;
+        reset();
+        schedule();
+      },
+      stop: stop,
+      stopped: function () { return stopped; },
+    };
+    if (oshiReducedMotion()) {
+      stopped = true;
+      return handle;
+    }
+    schedule();
+    return handle;
   }
 
   /**
