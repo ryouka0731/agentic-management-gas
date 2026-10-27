@@ -53,7 +53,7 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 ## Web アプリの公開範囲
 
-`src/appsscript.json` の `webapp`:
+`src/appsscript.json` の `webapp` は次のとおり。
 
 ```json
 "webapp": {
@@ -76,8 +76,8 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 `ME` ならその抜け道は塞がるが、**切り替える前に次を片付けること。**
 
 - **末尾が `_` でない関数は、すべて画面の `google.script.run` から呼べる。** `ME` では利用者の誰もが、それを持ち主の権限で
-  呼べることになる。エディタ専用の関数 (`debug*` / `setupCommandQueue`) は持ち主以外を断り、`setupRepo` は初期化済みなら断るが、`dbUpdate`
-  などの中の関数は塞いでいない。中の関数を画面から呼べない形に組み替える計画を先に立てる
+  呼べることになる。エディタ専用の関数 (`debug*` / `setupCommandQueue`) は持ち主以外を断り、`setupRepo` は初期化済みなら断る。
+  しかし `dbUpdate` などの中の関数は塞いでいない。中の関数を画面から呼べない形に組み替える計画を先に立てる
 - `executeAs: ME` では `Session.getActiveUser().getEmail()` が空を返す環境がある。そうなると記録の作者と確認した人が
   空になり、自己承認の禁止が誤作動する。**別のアカウントで開き、自分の顔に「利用者を特定できていません」と出ないか確かめる**
 
@@ -95,7 +95,7 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 ## 道具の署名の鍵
 
-手元の道具の自動更新を信頼できるのは、**秘密鍵を持つ人 (= deploy する人)** を信頼する限りにおいてである。
+手元の道具の自動更新を信頼できるかは、**秘密鍵を持つ人 (= deploy する人)** を信頼できるかで決まる。
 
 - 秘密鍵は `$BANTO_SIGNING_KEY` か `~/.config/softbanto/kit-signing-key.pem` にだけ置く。リポジトリにも Drive にも番頭にも置かない
 - 番頭 (`src/KitSigning.gs`) が持つのは署名と、署名した版・中身の指紋だけ。スクリプトを開ける人が中身を書き換えても、署名は合わない
@@ -105,7 +105,7 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 ## エディタで動かす関数
 
-末尾が `_` でない関数のうち、GAS エディタから引数なしで動かすためのもの。`setup*` と `debug*` は、`setupRepo` (初期化済みなら断る) を除いて最初に持ち主かを確かめる (`assertOwner_`)。
+末尾が `_` でない関数のうち、GAS エディタから引数なしで動かすためのもの。`setupRepo` (初期化済みなら断る) を除き、`setup*` と `debug*` は最初に持ち主かを確かめる (`assertOwner_`)。
 
 ### 置くとき
 
@@ -117,8 +117,8 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 ### 確かめる
 
-[実機で確かめる](verification.md) にまとめた: `debugVerifyPhase2` / `debugVerifyPhase3b` / `debugVerifyCommandQueue` /
-`debugVerifySharedDrive` / `debugVerifyScrum` / `debugVerifyCalendar` / `debugMarkdownRoundTrip` / `debugWriteRoundTrip`。
+[実機で確かめる](verification.md) にまとめた (`debugVerifyPhase2` / `debugVerifyPhase3b` / `debugVerifyCommandQueue` /
+`debugVerifySharedDrive` / `debugVerifyScrum` / `debugVerifyCalendar` / `debugMarkdownRoundTrip` / `debugWriteRoundTrip`)。
 
 ### 調べる・直す
 
@@ -160,4 +160,4 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 一度出した番号 (やること・確認依頼など) も覚えていて、表が空になっても戻さない。
 
-本人の UserProperties に置くものもある: 日報の形と自分の形 (`REPORT_KIND:` / `REPORT_CUSTOM:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)、Google ToDo の送り先のリスト (`GOOGLE_TASKS_LIST_ID`)。
+本人の UserProperties に置くものもある。日報の形と自分の形 (`REPORT_KIND:` / `REPORT_CUSTOM:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)、Google ToDo の送り先のリスト (`GOOGLE_TASKS_LIST_ID`)。
