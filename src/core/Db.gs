@@ -66,6 +66,11 @@ function DB_SCHEMA() {
     goal_items: ['id', 'goalId', 'title', 'weight', 'measure', 'target', 'unit', 'actual', 'checked', 'filter', 'order'],
     // 項目とやることの結び付き。「あるか見てから書く」ので鍵の中で足す (goalLink_)
     goal_links: ['id', 'itemId', 'issueNumber'],
+    // お知らせ・1問アンケート・案内 (Announcement.gs)。置けるのは管理者だけ。kind は notice / poll / ad、
+    // options はアンケートの選択肢 (JSON の配列)、startAt / endAt は 'yyyy-MM-dd' (空は限りなし)
+    announcements: ['id', 'kind', 'title', 'body', 'options', 'startAt', 'endAt', 'createdBy', 'createdAt', 'archivedAt'],
+    // 誰がどう片づけたか。answer は '' (読んだ) / 'closed' (閉じた) / 選んだ選択肢。1人1回 (鍵の中で見てから書く)
+    announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
   };
 }
 

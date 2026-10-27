@@ -53,6 +53,9 @@ const EXPECTED = {
     'managerNote', 'selfReview', 'autoScore', 'finalGrade', 'gradedBy', 'gradedAt', 'createdAt', 'updatedAt', 'fyStart'],
   goal_items: ['id', 'goalId', 'title', 'weight', 'measure', 'target', 'unit', 'actual', 'checked', 'filter', 'order'],
   goal_links: ['id', 'itemId', 'issueNumber'],
+  // お知らせ・1問アンケート・案内。答えは1人1回
+  announcements: ['id', 'kind', 'title', 'body', 'options', 'startAt', 'endAt', 'createdBy', 'createdAt', 'archivedAt'],
+  announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
 };
 
 describe('メタDBの列順', () => {

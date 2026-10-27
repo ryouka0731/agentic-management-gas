@@ -4704,6 +4704,25 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
   overflow: hidden;
 }
 .home-block:empty { display: none; }
+/* 管理者が置いたお知らせ (js-announce)。本文は字のまま、改行だけ活かす */
+.announce-inner { display: grid; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+.announce-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.announce-text { margin: 0; font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.announce-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.announce-list { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); }
+.announce-item {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--hairline);
+}
+.announce-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.announce-item-title { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+.announce-counts { margin: 0; padding-left: var(--sp-5); font-size: 13px; color: var(--ink); }
+.announce-period { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 /* 区画の見出しの行。題は左、数や切り替えは右。見出しの形はここだけ */
 .home-head {
   display: flex;
