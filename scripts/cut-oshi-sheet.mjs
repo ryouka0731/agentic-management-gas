@@ -68,7 +68,10 @@ function writeWebpIn_(dir, img, file) {
   const tmp = path.join(dir, 'cell.pam');
   const head = 'P7\nWIDTH ' + img.w + '\nHEIGHT ' + img.h + '\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n';
   fs.writeFileSync(tmp, Buffer.concat([Buffer.from(head, 'latin1'), img.px]));
-  const args = ['-quiet', '-q', '85', '-alpha_q', '100', '-m', '6', '-exact'];
+  // 画面で出す大きさは最大でも 120px 四方 (部屋では幅の 25%) なので、q 75 + 透明の縁は alpha_q 80 で見分けがつかない。
+  // 2026-10-28 に q 85 / alpha_q 100 / -exact から変えて 2.49MB → 1.69MB (-32%)。-exact (透けた画素の色を残す) は
+  // 画面に出ない情報なので外した。変えたら OSHI_DEFAULT_IMAGE_VERSION() を上げる (src/core/Oshi.js)
+  const args = ['-quiet', '-q', '75', '-alpha_q', '80', '-m', '6', '-sharp_yuv'];
   const long = Math.max(img.w, img.h);
   if (long > LONG_MAX) args.push('-resize', String(Math.round(img.w * LONG_MAX / long)), String(Math.round(img.h * LONG_MAX / long)));
   fs.mkdirSync(path.dirname(file), { recursive: true });

@@ -124,7 +124,7 @@ function OSHI_BUILTINS() {
  * @returns {number}
  */
 function OSHI_DEFAULT_IMAGE_VERSION() {
-  return 1;
+  return 2;
 }
 
 /**

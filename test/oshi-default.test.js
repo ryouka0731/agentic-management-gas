@@ -105,7 +105,7 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
       h.update(fs.readFileSync(path.resolve(t.file)));
       h.update('\n');
     }
-    const pinned = { version: 1, sha: 'c4bfe5d58f40483cd048b45effb9de16859c4d080656e7c4609e7e44fe430758' };
+    const pinned = { version: 2, sha: '528f1fcabe25191b61170d5488bbab1151f26e55d0243aef798f1aeb72e2cac8' };
     expect({ version: pure.OSHI_DEFAULT_IMAGE_VERSION(), sha: h.digest('hex') },
       '絵を変えたら OSHI_DEFAULT_IMAGE_VERSION() を上げ、ここの version と sha を書き直す').toEqual(pinned);
   });
