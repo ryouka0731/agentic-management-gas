@@ -779,3 +779,106 @@ function meetingHoursOf_(who, now) {
   }
   return out;
 }
+
+// ===== 今日の予定 (手元の道具が会議の始まりを知らせる。命令 calendarToday、やること #99) =====
+//
+// 置いた人の今日 (東京の暦日) の予定を、始まり・終わり・題名・会議の URL・予定の URL で返す。台帳には書かない。
+// キューは仕掛けた人の権限で回るので、CalendarApp の既定のカレンダーはその人のもの。**置いた人が仕掛けた人なら既定の
+// カレンダー、ほかの人なら、仕掛けた人に共有されて登録 (購読) されているその人のカレンダー (id = アドレス) だけを読む**
+// (無ければ断る)。返事は queue に置かれ、手元が受け取るまで共有している人なら読める (題名と会議の URL を含む)。
+
+/** 会議の URL (Google Meet) の形。後ろの引用符・括弧・句読点は含まない */
+function CALENDAR_MEET_RE_() {
+  return /https:\/\/meet\.google\.com\/(?:lookup\/)?[a-z0-9][a-z0-9-]*/i;
+}
+
+/**
+ * 字の中の Google Meet の URL。無ければ null。
+ *
+ * @param {string} text
+ * @returns {?string}
+ */
+function calendarMeetUrlIn_(text) {
+  var m = CALENDAR_MEET_RE_().exec(String(text || ''));
+  return m ? m[0] : null;
+}
+
+/**
+ * 予定の会議の URL。場所を先に見て、無ければ説明を見る。
+ *
+ * @param {object} ev
+ * @returns {?string}
+ */
+function calendarMeetUrlOf_(ev) {
+  var where = '';
+  var about = '';
+  try { where = String(ev.getLocation() || ''); } catch (e) { where = ''; }
+  try { about = String(ev.getDescription() || ''); } catch (e2) { about = ''; }
+  return calendarMeetUrlIn_(where) || calendarMeetUrlIn_(about);
+}
+
+/**
+ * 予定をカレンダーで開く URL。繰り返しの予定は回ごとの id を CalendarApp から取れないので null。
+ *
+ * @param {object} ev
+ * @param {string} calId
+ * @returns {?string}
+ */
+function calendarEventUrlOf_(ev, calId) {
+  try {
+    if (ev.isRecurringEvent()) return null;
+    var id = String(ev.getId() || '').replace(/@google\.com$/, '');
+    if (!id || !calId) return null;
+    var eid = String(Utilities.base64EncodeWebSafe(id + ' ' + calId)).replace(/=+$/, '');
+    return 'https://calendar.google.com/calendar/event?eid=' + eid;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 置いた人の今日の予定 (東京の暦日に始まるもの)。終日の予定と、断った予定は除く。始まりの順。
+ *
+ * @param {string} who 置いた人のアドレス (commandBy_)
+ * @param {Date} [now]
+ * @returns {{day: string, events: Array<{start: string, end: string, title: string, meetUrl: ?string, eventUrl: ?string}>}}
+ */
+function calendarTodayOf_(who, now) {
+  var me = String(who || '').toLowerCase();
+  var runner = '';
+  try { runner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) { runner = ''; }
+  var cal = null;
+  try {
+    cal = me && me === runner ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(me);
+  } catch (e2) {
+    cal = null;
+  }
+  if (!cal) {
+    throw new Error('あなたの予定を読めません。読めるのは、命令の入れ先を動かしている人のカレンダーと、' +
+      'その人に共有されて登録されているカレンダーだけです');
+  }
+  var nowMs = (now || calendarNow_()).getTime();
+  var day = calendarDayOf(nowMs);
+  var from = calendarDayStart(day);
+  var to = from + 86400000;
+  var no = CalendarApp.GuestStatus && CalendarApp.GuestStatus.NO;
+  var calId = String(cal.getId() || '');
+  var events = [];
+  cal.getEvents(new Date(from), new Date(to)).forEach(function (ev) {
+    if (ev.isAllDayEvent()) return;
+    var start = ev.getStartTime().getTime();
+    if (start < from || start >= to) return;
+    try {
+      if (no && ev.getMyStatus() === no) return;
+    } catch (e3) { /* 分からなければ断っていないものとする */ }
+    events.push({
+      start: plainDate(new Date(start)),
+      end: plainDate(ev.getEndTime()),
+      title: plainText(ev.getTitle()),
+      meetUrl: calendarMeetUrlOf_(ev),
+      eventUrl: calendarEventUrlOf_(ev, calId),
+    });
+  });
+  events.sort(function (a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
+  return { day: day, events: events };
+}

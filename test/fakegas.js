@@ -608,6 +608,8 @@ export function createFakeGas() {
       getId: () => ev.id,
       getTitle: () => ev.title,
       getDescription: () => ev.description,
+      getLocation: () => ev.location || '',
+      isRecurringEvent: () => !!ev.recurring,
       getStartTime: () => new Date(ev.start),
       getEndTime: () => new Date(ev.end),
       isAllDayEvent: () => !!ev.allDay,
@@ -729,13 +731,14 @@ export function createFakeGas() {
       else c._access.delete(email);
     },
     /**
-     * その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title, guests, organizer}。
-     * guests はゲストのアドレス (実機と同じく主催者は入れない)、organizer は主催者 (既定はその人)
+     * その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title, guests, organizer,
+     * location, description, recurring}。guests はゲストのアドレス (実機と同じく主催者は入れない)、organizer は主催者 (既定はその人)
      */
     _calAddBusy: (email, ev) => {
       const c = calDefault(email);
-      const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
-        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay, guests: ev.guests || [],
+      const raw = { id: ev.id || ('ev-' + (++calSeq)), title: ev.title || '会議', start: new Date(ev.start).getTime(),
+        end: new Date(ev.end).getTime(), description: ev.description || '', location: ev.location || '',
+        recurring: !!ev.recurring, tags: {}, allDay: !!ev.allDay, guests: ev.guests || [],
         status: ev.declined ? { [email]: 'NO' } : {}, createdBy: ev.organizer || email, created: Date.now(), updated: Date.now(),
         transparency: ev.free ? 'TRANSPARENT' : 'OPAQUE' };
       c._events.push(raw);

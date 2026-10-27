@@ -18,6 +18,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | `src/core/CommandQueue.gs` (`processCommandQueue` / `setupCommandQueue`) | `docs/dev/command-queue.md` |
 | 裏の定期実行で台帳の覚えを温める (`src/core/CacheWarm.gs` / `src/core/Db.gs` の `dbWarm_`) | `docs/dev/command-queue.md` と `docs/dev/ledger-schema.md` |
 | `kit/` / `scripts/build-kit.mjs` / `scripts/kit-key.mjs` / `scripts/deploy.mjs` の署名 / `src/core/AgentKit.gs` / `src/ui/kit-files.html` / `src/KitSigning.gs` | `docs/dev/kit.md` |
+| `kit-vscode/` (VS Code 拡張。zip には入らない。テストは `node --test kit-vscode/test/*.test.js`) | `docs/dev/kit.md` の「VS Code 拡張」と `docs/dev/command-queue.md` |
 | `src/core/Scrum.gs` / `src/core/ScrumView.js` / `src/core/Terms.js` / `src/api/Scrum.gs` / `src/ui/js-scrum.html` | `docs/dev/scrum.md` |
 | `src/ui/*.html` の JS (`app.js.html` / `js-*.html` / `wiki.html`)・`src/core/Plain.js`・`api*` の返す形 | `docs/dev/ui.md` |
 | `src/ui/app.css.html`・`makePill`・`makeDiagram`・ボタンや一覧の幅 | `docs/dev/design.md` |

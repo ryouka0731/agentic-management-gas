@@ -94,3 +94,21 @@
   済んだら `apiCalendarToday` を取り直して描く (続いている予定・直した予定も出すため)。
   画面の側でも日ごとに1回に絞る (`calendarAutoDay`)。**オフのあいだは何も呼ばない**
 - 返事は `latest('calendar')` で見分ける (ホームを開き直したときの古い返事で描き直さない)
+
+## 今日の予定を手元に渡す (命令 `calendarToday`)
+
+やること #99「時間になったら会議に自動で入る」。GAS の画面からはタブを開く以外にできないので、知らせて開くのは手元の
+VS Code 拡張 (`kit-vscode/`。`docs/dev/kit.md`) の役目で、番頭は今日の予定を渡すだけ。テストは `test/calendar-today.test.js`。
+
+- `calendarTodayOf_(who)`: 東京の暦日に**始まる**予定を始まりの順に `{day, events: [{start, end, title, meetUrl, eventUrl}]}` で返す
+  (始まり・終わりは ISO の字)。終日と、断った (`GuestStatus.NO`) 予定は除く。台帳にもプロパティにも書かない
+- **キューは仕掛けた人の権限で回る** (画面の `executeAs: USER_ACCESSING` とは違う)。CalendarApp の既定のカレンダーは仕掛けた人のもの。
+  置いた人 (`by`) が仕掛けた人 (`Session.getEffectiveUser()`) なら既定のカレンダー、ほかの人なら `getCalendarById(<置いた人のアドレス>)`
+  (仕掛けた人に共有されて登録されているときだけ開ける) を読む。開けなければ断る。**仕掛けた人の予定をほかの人に返さない**
+- 置いた人で決めるので `COMMAND_PERSONAL_OPS()` に入れてある (持ち主と最後に書いた人を見比べる)
+- 会議の URL (`calendarMeetUrlOf_`) は場所を先に、無ければ説明から `https://meet.google.com/(lookup/)?<コード>` を拾う。拡張サービスの
+  Calendar API は使わないので、**Meet の会議情報 (conferenceData) は読めない**。場所か説明に URL が書いてある予定だけ拾える
+- 予定の URL (`calendarEventUrlOf_`) は `https://calendar.google.com/calendar/event?eid=<base64(id から @google.com を除いたもの + ' ' + カレンダーの id)>`。
+  繰り返しの予定は回ごとの id が取れないので null。実機で開くかは確かめていない
+- **返事は台帳に無い中身 (今日の題名と会議の URL) を含む。** 手元が受け取って消すまで `queue/` を共有している人に見える
+  (手引きの `docs/manual/command-queue.md` にも書いた)
