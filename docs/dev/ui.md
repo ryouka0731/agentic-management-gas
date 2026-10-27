@@ -193,9 +193,28 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     使わずに今の設定で取り直す (待っている人はそのまま待つ)。前のキャラで出したり覚えたりしない
   - **消えるタイミング**: 骨組みと同じ (`fillBlock` が区画を空にする)。絵が届く前に骨組みが消えたら差し込まない (`isConnected` を見る)
   - **邪魔にしない**: 骨組みの右に `position: absolute` で重ね、骨組みの高さは変えない (棒は `.has-oshi` のとき右を空ける)。
-    狭い画面 (767px 以下) では絵を出さず一言だけ。ふわっと出す動きは `prefers-reduced-motion` で止める。飾りなので `aria-hidden`
-    (読み上げには「読み込んでいます」だけ)。テストは `test/component/oshi-wait.test.js`。ほかの画面の骨組み (`showSkeleton`) には
+    狭い画面 (767px 以下) では絵を 44px に小さくし、棒を左に寄せて場所を空ける (以前は絵を出さなかったが、下のなでる遊びのために出す)。
+    ふわっと出す動きは `prefers-reduced-motion` で止める。一言と回数は飾りなので `aria-hidden` (読み上げには「読み込んでいます」だけ)。
+    **押せる絵を `aria-hidden` の中に置かないため、隠すのは箱 (`.oshi-wait`) ではなく一言と回数の要素だけ**。
+    テストは `test/component/oshi-wait.test.js`。ほかの画面の骨組み (`showSkeleton`) には
     まだ付けていない (器の形が画面ごとに違い、重ねる場所を決めていない)
+  - **待つあいだ、その推しをなでて遊べる** (`oshiWaitPatAttach` / `oshiWaitPat`。やること #93「推しキャラを使ったミニゲームをロード時間に
+    出す」)。新しい画面も新しい待ち時間も作らず、上の骨組みの推しの絵 (`.oshi-wait-fig`) をそのままボタン (`role="button"`・
+    `tabindex="0"`・`aria-label="推しをなでる"`) にする。決まり:
+    - **操作**: 押す (タップ・クリック・Enter・Space) たびに回数 (`data-pats`) を1つ増やし、絵の下に「N回」を出す。Space は画面を流さない
+      (`preventDefault`)。押しっぱなしの繰り返し (`e.repeat`) は数えない。重ねた箱は `pointer-events: none` のまま、絵だけ `auto`。
+      素早く押すので `touch-action: manipulation` (二度押しで拡大しない)
+    - **弾む**: 押すたびに中身 (`img` / 頭文字の丸) が transform だけで少し弾む (`.is-patted`。260ms で外す)。動きを減らす設定
+      (`oshiReducedMotion`。分からなければ減らす側) では付けない (CSS も止める)
+    - **節目**: 10回ごと (`OSHI_WAIT_PAT_EVERY`) に、場面 `pat` (なでられた) のせりふを順に一言の字 (`.oshi-wait-line`) に出す。
+      せりふは `Oshi.js` の唯一の定義から (口調ごと。自分のせりふも)。**画面に台詞表を持たない**。推しが届く前 (覚えで出したとき) は
+      覚え (`oshiWaitMemo`) の `pat` を使う (`OSHI_WAIT_MEMO_EVENTS` に `pat` を足した)。効果音がオンなら節目だけ `sfxPlay('pat')`
+    - **読み上げ**: `.sr-only` の `aria-live="polite"` (`.oshi-wait-live`) に「N回なでた」、節目は「N回なでた。<一言>」
+    - **消える**: 骨組みと一緒に (`fillBlock` が区画を空にする)。回数は残さない (次に開いたら0回から)。合わせ直しで出し直したときも0回から
+    - **出さない条件**: 骨組みの推しが出ないとき全部 (推しがオフ・覚えも推しも無い・別の人の覚え)。条件を別に持たない
+    - **何にも結び付けない**: `call()` も `usageCount` も呼ばない (実績「推しの頭をなでた」にも数えない)。回数は localStorage にも
+      覚えない。遊ぶために待たせない・待つ理由を作らないため。推しの頁の顔のなでる (`oshiAttachPat`) とは別の仕組み。
+      テストは `test/component/oshi-wait-pat.test.js`
 - **お知らせ・アンケート・案内は、あなたの番の上に1枚だけ** (`#home-announce`。js-announce。やること #94)。急がない波
   (`bootLater(loadAnnouncement)`) で `apiAnnouncementNext` を1回取り、無ければ区画は空のまま (`.home-block:empty` で隠れる)。
   文書のリンクで開いた画面 (`body.doc-link`) では取らない・出さない。本文は他人 (管理者) が書いた字なので `textContent` だけで置き
@@ -440,13 +459,14 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 
 自分の設定 `sound.effects` (既定オフ) でオンにした人だけ。やること #96。
 
-- **鳴らす場面は4つだけ。** 増やす前にここを直す (ボタンを押すたびに鳴るとうるさく、合図の意味が薄れる)
+- **鳴らす場面は5つだけ。** 増やす前にここを直す (ボタンを押すたびに鳴るとうるさく、合図の意味が薄れる)
   | 場面 | 鳴らす所 | 音 (`SFX_NOTES`) |
   |---|---|---|
   | やることを完了にした・確認依頼を反映した | `celebrateProgress` の頭 (前進の知らせを止めた人にも鳴らす) | `done`: 上がる3音 |
   | 操作が断られた | `call()` の失敗の帯 (`failSnack` / `failEnable`)。**`failQuiet` と `failInto` (器に出す) は鳴らさない** | `fail`: 低く短い1音 |
   | 実績を取った | `achCelebrate` (`ach.cheer` を切った人には鳴らさない) | `badge`: 作業部屋の合図の形で上がる2音 |
   | 集中・ポモドーロの終わり | `focusTimeUp` / `roomPomoTick` (部屋の音を流していて部屋の合図が鳴ったときは重ねない) | `end`: 作業部屋の合図の形で下がる2音 |
+  | 待つあいだに推しをなでた節目 (10回ごと。押すたびには鳴らさない) | `oshiWaitPat` (js-oshi) | `pat`: 高く短い2音 |
 - **音源のファイルは持たない。** 正弦波などを数本その場で作る `sfxTones` を、作業部屋の合図 (`roomPomoChime`) と共通で使う (写しを持たない)。
   2音の形は `roomPomoChimeNotes` をそのまま使う。1音の大きさは `SFX_GAIN` (0.1) まで
 - **オフのあいだは `AudioContext` を作らない。** オンでも、開いてから人が押す (`pointerdown` / `click` / `keydown` を document の

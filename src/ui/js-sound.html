@@ -1,7 +1,8 @@
   // ===== 操作の効果音 (自分の設定 sound.effects。既定はオフ) =====
   //
-  // - **鳴らす場面は4つだけ。** 完了・反映 (celebrateProgress) / 断り (call() の失敗の帯。failSnack・failEnable。
-  //   failQuiet と failInto は鳴らさない) / 実績を取った (achCelebrate) / 集中とポモドーロの終わり (focusTimeUp・roomPomoTick)。
+  // - **鳴らす場面は5つだけ。** 完了・反映 (celebrateProgress) / 断り (call() の失敗の帯。failSnack・failEnable。
+  //   failQuiet と failInto は鳴らさない) / 実績を取った (achCelebrate) / 集中とポモドーロの終わり (focusTimeUp・roomPomoTick) /
+  //   待つあいだに推しをなでた節目 (oshiWaitPat。10回ごと)。
   //   ボタンを押しただけでは鳴らさない (うるさい)。場面を足すときは docs/dev/ui.md の決まりを先に直す
   // - **音源のファイルは持たない。** 作業部屋の合図と同じく、正弦波などを数本その場で作る (sfxTones。作業部屋の
   //   roomPomoChime もこれを使う。写しを持たない)。大きさは SFX_GAIN を超えない
@@ -37,6 +38,7 @@
    * - fail (断り): 低く短い1音
    * - badge (実績): 作業部屋の合図の形で上がる2音 (休憩の終わりと同じ)
    * - end (集中・ポモドーロの終わり): 作業部屋の合図の形で下がる2音 (作業の終わりと同じ)
+   * - pat (待つあいだに推しをなでた節目。js-oshi の oshiWaitPat): 高く短い2音 (押すたびではなく10回ごと)
    *
    * @param {string} kind
    * @returns {Array<{freq: number, at: number, dur: number, type?: string}>}
@@ -48,6 +50,7 @@
     if (kind === 'fail') return [{ freq: 196, at: 0, dur: 0.16, type: 'triangle' }];
     if (kind === 'badge') return roomPomoChimeNotes('rest');
     if (kind === 'end') return roomPomoChimeNotes('work');
+    if (kind === 'pat') return [{ freq: 1046.5, at: 0, dur: 0.1 }, { freq: 1318.51, at: 0.06, dur: 0.16 }];
     return [];
   }
 

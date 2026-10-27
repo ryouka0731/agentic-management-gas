@@ -4,8 +4,8 @@ import { prefsFixture, ACH_EMPTY } from '../dom.js';
 import { mount } from './mount.js';
 
 /*
- * 操作の効果音 (js-sound)。自分の設定の sound.effects をオンにした人だけ。鳴らす場面は4つだけ
- * (完了・反映 / 断りの帯 / 実績 / 集中とポモドーロの終わり)。音源のファイルは持たず、画面の中で作る。
+ * 操作の効果音 (js-sound)。自分の設定の sound.effects をオンにした人だけ。鳴らす場面は5つだけ
+ * (完了・反映 / 断りの帯 / 実績 / 集中とポモドーロの終わり / 待つあいだに推しをなでた節目。最後のは oshi-wait-pat.test.js)。音源のファイルは持たず、画面の中で作る。
  * オフのあいだは AudioContext を作らない。人が押す前は鳴らさない。同じ音は1秒のうちに2回鳴らさない。
  */
 
