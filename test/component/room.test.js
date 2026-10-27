@@ -882,6 +882,8 @@ describe('作業部屋', () => {
     });
 
     it('見ていないタブで時計が遅れても、開始時刻から数えて追いつく。4回目の作業のあとは長い休憩', () => {
+      // 75 分進めるので、日をまたがない時刻 (東京の 10 時) に止める。23 時台に走らせると「今日」の合計が切り替わって落ちていた
+      vi.setSystemTime(new Date('2026-10-27T01:00:00Z'));
       openPomo();
       const work = pomo().querySelector('.room-pomo-work');
       work.value = '15';
