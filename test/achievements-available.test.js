@@ -95,7 +95,7 @@ describe('この環境では取れない実績', () => {
     expect(off(ctx)['reviews-1']).toBeTruthy();
   });
 
-  it('1人か・ほかの人がいるかは10分覚え、読めなかったことは短く覚える', () => {
+  it('1人か・ほかの人がいるか・読めなかったかを10分覚える', () => {
     const { ctx, fake } = setup();
     const store = withCache(ctx);
     expect(off(ctx)['reviews-1']).toBeTruthy();
@@ -114,7 +114,8 @@ describe('この環境では取れない実績', () => {
     expect(off(one.ctx)['reviews-1']).toBeUndefined();
     expect(asked).toBe(1);
     expect(s2.get('ACH_PEOPLE:' + ME).v).toBe('unknown');
-    expect(s2.get('ACH_PEOPLE:' + ME).ttl).toBeLessThanOrEqual(120);
+    // 読めなかったときも 10 分。2 分にしていたときは、推しの頁を開くたびに Drive の共有の設定を読み直していた
+    expect(s2.get('ACH_PEOPLE:' + ME).ttl).toBe(600);
   });
 
   it('グループ・ドメイン・リンクで共有していれば、名指しの人が1人でも1人と言わない', () => {

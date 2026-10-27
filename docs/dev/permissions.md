@@ -105,7 +105,7 @@ reviews / issue_comments / issues の担当 / usage) に本人のほかのアド
 何人いるか分からないので `unknown`** (共有ドライブは役割に type が user 以外のもの (group / domain / anyone) があるとき、`driveMembers_` が
 `wide` を立てる。マイドライブは入れ物の `getSharingAccess()` が PRIVATE でないとき。読めなければ unknown。どちらも getEditors や
 admins には出ない)。答えは CacheService `ACH_PEOPLE:<小文字のアドレス>` に
-覚える (1人・ほかの人がいる は10分、読めなかった `unknown` は2分)。**読めないときは1人と言わない。** 取れる実績が増えても、覚えたクリアはそのまま
+覚える (1人・ほかの人がいる・読めなかった `unknown` のどれも10分。unknown を2分にしていたときは、推しの頁を開くたびに Drive の共有の設定を読み直し、本番で 1〜2 秒かかっていた)。**読めないときは1人と言わない。** 取れる実績が増えても、覚えたクリアはそのまま
 (`apiAchievements` の `cleared`。届いたその返事だけ `clearedNow`)。書けるのは管理者だけ (`apiOshiBuiltinProfiles` / `apiOshiBuiltinProfileSet` /
 命令 `oshiProfileSet`。どれも `oshiBuiltinProfileSet_` → `repoAssertAdmin_`)。テストの中身は作り話 (「テストの好物」など) にする。
 自分のキャラのプロフィールは台帳 (`oshi.profile`) にあり、Drive で台帳を開ける人は直に読める (手引きにそう書いた)。

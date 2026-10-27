@@ -163,7 +163,7 @@ run:  {text, bold?, italic?, underline?, strike?, link?}
 鍵は `dbWithLock_` 以外で取らない (`LockService` を直に呼ぶのはそこだけ)。鍵は短く持ち、関係の無い Drive の一覧や
 時間のかかる処理を相乗りさせない。一度出した番号は二度出さず、消すときはぶら下がっているものも全部消す。
 知らせは本処理を巻き戻さない。理由と実際に踏んだ例は `docs/dev/locks-and-numbering.md` にある。
-**台帳の読み取りはキャッシュに置いている** (`dbReadAll`。300秒)。台帳に直に書く所 (`appendRow` / `setValues` / `deleteRow`) を
+**台帳の読み取りはキャッシュに置いている** (`dbReadAll`。30分)。台帳に直に書く所 (`appendRow` / `setValues` / `deleteRow`) を
 足すなら、書いたあとに必ず `dbInvalidate_(表)` を通す。通さないと、ほかの人の画面に古い中身が出る (`docs/dev/ledger-schema.md`)。
 
 ## サーバを呼ぶのは `call()` だけ
