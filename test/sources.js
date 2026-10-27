@@ -59,7 +59,7 @@ export const API_SOURCES = [
   'src/api/Calendar.gs', 'src/api/Achievements.gs', 'src/api/Boot.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
   'src/api/Announcement.gs', 'src/api/Revision.gs',
-  'src/api/Announcement.gs', 'src/api/Recurrence.gs',
+  'src/api/Announcement.gs', 'src/api/Recurrence.gs', 'src/api/Revision.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);
