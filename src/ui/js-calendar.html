@@ -488,11 +488,14 @@
   }
 
   /**
-   * 設定の「予定に入れる」の節に置く欄。「Gemini のメモを取り込む」と、作ったやること。
+   * 設定の「予定に入れる」の節に置く欄。「Gemini のメモを取り込む」と、その隣の自動で取り込むかの切り替え
+   * (自分の設定 calendar.meetingNotes。汎用の欄 makePrefField で組む)、作ったやること。
    *
+   * @param {?object} item apiPrefs の calendar.meetingNotes (無ければ切り替えを置かない)
+   * @param {boolean} editable
    * @returns {HTMLElement}
    */
-  function makeMeetingNotesPanel() {
+  function makeMeetingNotesPanel(item, editable) {
     var box = document.createElement('div');
     box.className = 'settings-field meeting-notes';
     box.id = 'meeting-notes';
@@ -508,6 +511,7 @@
     btn.className = 'btn meeting-notes-import';
     btn.textContent = 'Gemini のメモを取り込む';
     row.appendChild(btn);
+    if (item) row.appendChild(makePrefField(item, editable));
     box.appendChild(row);
     var result = document.createElement('div');
     result.className = 'meeting-notes-result';
@@ -551,9 +555,19 @@
     });
   }
 
-  /** 開いたときに1日1回、裏で取り込む (サーバも1日1回に絞る)。文書のリンクで開いたときはしない */
+  /** 自分の設定「Gemini のメモを 1 日 1 回自動で取り込む」がオンか (既定オン。設定が届く前もオンとして扱い、サーバが見直す) */
+  function meetingNotesAutoOn() {
+    var c = prefs && prefs.effective && prefs.effective.calendar;
+    return !(c && c.meetingNotes === false);
+  }
+
+  /**
+   * 開いたときに1日1回、裏で取り込む (サーバも1日1回に絞る)。自分の設定でオフにしていれば呼ばない。
+   * やることを1つ以上作ったときだけ短い帯で知らせる (0個なら何も出さない)。失敗は静か。文書のリンクで開いたときはしない
+   */
   function meetingNotesAuto() {
     if (document.body.classList.contains('doc-link')) return;
+    if (!meetingNotesAutoOn()) return;
     call('apiMeetingNotesImport', [7, { auto: true }], function (res) {
       if (!res || !res.ok || res.skipped || !(Number(res.created) > 0)) return;
       showSnack('Gemini のメモから ' + Number(res.created) + ' 個のやることを作りました', { kind: 'ok' });

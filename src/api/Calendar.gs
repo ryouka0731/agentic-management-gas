@@ -76,6 +76,7 @@ function apiMeetingHours() {
  * Gemini のメモを取り込む (Web App API)。本人が開ける Gemini のメモ (Drive) から、決まったことをやることにする。
  * 見るのは本人の Drive と本人の既定のカレンダーだけ (本人の権限)。アドレスは受けない。中身は src/core/MeetingNotesImport.gs。
  * 画面を開いたときの自動は {auto: true} で呼び、その日にもう取り込んでいれば何もしない (skipped)。
+ * 自分の設定 calendar.meetingNotes (既定オン) がオフなら、自動のときだけ何もしない (skipped)。
  * Gemini のメモが無い環境 (個人の Gmail など) では何も作らずに found: 0 を返す。
  *
  * @param {number} [days] 何日前から探すか (既定7、上限14)
@@ -85,7 +86,13 @@ function apiMeetingHours() {
  */
 function apiMeetingNotesImport(days, opts) {
   var who = currentEmailLower_();
-  return meetingNotesPlain_(meetingNotesImport_(who, days, { auto: !!(opts && opts.auto === true) }));
+  var auto = !!(opts && opts.auto === true);
+  // 自動は自分の設定 calendar.meetingNotes (既定オン) がオフなら Drive を探さない。手で押したときは設定を見ない
+  if (auto && who && prefValueOf_(prefItem_('calendar.meetingNotes'), who, prefReaderLive_()).value === false) {
+    return meetingNotesPlain_({ ok: true, reason: '', skipped: true, found: 0, notes: 0, created: 0, already: 0,
+      unmatched: 0, items: [] });
+  }
+  return meetingNotesPlain_(meetingNotesImport_(who, days, { auto: auto }));
 }
 
 /**

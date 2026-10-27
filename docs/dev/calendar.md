@@ -123,8 +123,10 @@
   メモ、`already` は取り込み済みのメモと同じ題名の行の合計。Drive を探せないときは断らずに `ok: false`
 - **入口**: 設定の「予定に入れる」の節の「Gemini のメモを取り込む」(`makeMeetingNotesPanel`。予定に入れるがオフでも出す)。
   開いたときの急がない波 (`bootLater(meetingNotesAuto)`) で `{auto: true}`。自動は本人の UserProperties の `MNOTES_AUTO:<アドレス>`
-  (東京の暦日) で1日1回 (探す前に印を付ける。落ちてもその日は探し直さない)。失敗は `failQuiet`、作ったときだけ帯で知らせる。文書の
-  リンクで開いたときはしない
+  (東京の暦日) で1日1回 (探す前に印を付ける。落ちてもその日は探し直さない)。**自分の設定 `calendar.meetingNotes` (既定オン) がオフなら
+  自動は走らない** (画面は呼ばず、サーバも `{auto: true}` なら Drive を探さずに `skipped`)。切り替えはボタンの隣 (`docs/dev/prefs.md`)。
+  自動でやることを1つ以上作ったときだけ短い帯 (「Gemini のメモから N 個のやることを作りました」) で知らせ、0個なら何も出さない。
+  失敗は `failQuiet`。文書のリンクで開いたときはしない
 - **命令 `meetingNotesImport`** (`args.days`) は、キューが仕掛けた人の権限で回り見える Drive と予定がその人のものなので、
   **置いた人が仕掛けた人のときだけ**取り込む (`meetingNotesForQueue_`。`COMMAND_PERSONAL_OPS()` に入れて、持ち主と最後に書いた人も
   見比べる)。ほかの人は画面のボタンを使う

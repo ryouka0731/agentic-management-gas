@@ -36,6 +36,12 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
 細部は `docs/dev/calendar.md`。
 
+「Gemini のメモを 1 日 1 回自動で取り込む」(`calendar.meetingNotes`) は自分の設定で既定オン (見出しは `予定に入れる`)。
+汎用の並びには出さず (`appendPrefSections` が外す)、`js-calendar` の `makeMeetingNotesPanel` が「Gemini のメモを取り込む」の隣に
+`makePrefField` で置く。`effective.calendar.meetingNotes` で画面に渡し、**オフなら画面は開いたときの自動 (`meetingNotesAuto`) を呼ばず、
+サーバも `{auto: true}` のときは Drive を探さない** (`apiMeetingNotesImport` が `prefValueOf_` で見直す)。手で押すボタンは設定を見ない。
+細部は `docs/dev/calendar.md`。
+
 「会議の時間」(`calendar.meetings`) も自分の設定で既定オフ。見出しは別 (`会議の時間`) だが `PREF_CALENDAR_ITEMS_` に置く。
 `effective.calendar.meetings` で画面に渡し、**オフのあいだは画面が `apiMeetingHours` を呼ばず、サーバもカレンダーを開かない**
 (`apiMeetingHours` が `prefValueOf_` で見直す)。オフにしても覚えた数 (キャッシュ) は消さない (数だけで、オフなら返さない)。

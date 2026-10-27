@@ -588,6 +588,8 @@
       if (p.key === 'terms.style' && !scrumOn()) return;
       // 「集中中」を添えるかは、作業雑談部屋を使っていなければ意味が無い
       if (p.key === 'cowork.showFocus' && !coworkOn()) return;
+      // Gemini のメモを自動で取り込むかは、取り込むボタンの隣に置く (js-calendar の makeMeetingNotesPanel)
+      if (p.key === 'calendar.meetingNotes') return;
       // 推しの機嫌は、推しを使っていなければ意味が無い
       if (p.key === 'oshi.mood' && !oshiOn()) return;
       // ひょっこり出るかどうかも、推しを使っていなければ意味が無い
@@ -616,7 +618,8 @@
       if (by[name].some(function (p) { return p.key === 'calendar.plan'; })) {
         sec.appendChild(makeCalendarMinePanel());
         // Gemini のメモの取り込み (予定に入れるがオフでも使える)
-        sec.appendChild(makeMeetingNotesPanel());
+        sec.appendChild(makeMeetingNotesPanel(items.filter(function (p) { return p.key === 'calendar.meetingNotes'; })[0],
+          editable));
       }
       // 作業雑談部屋の節には、部屋の一覧の欄を添える (js-cowork。決めるのは管理者だけ)
       if (by[name].some(function (p) { return p.key === 'cowork.enabled'; })) sec.appendChild(makeCoworkRoomsEditor(editable));

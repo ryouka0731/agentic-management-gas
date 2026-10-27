@@ -276,6 +276,20 @@ describe('Gemini のメモを取り込む', () => {
     expect(env.fake._driveSearches()).toHaveLength(3);
   });
 
+  it('自分の設定で自動を止めると、開いたときは Drive を探さない。ボタン (手で押す) は使える', () => {
+    const env = ready();
+    note(env, '営業の定例 - Gemini によるメモ');
+    asUser(env.fake, MEMBER, () => env.ctx.apiPrefSet('calendar.meetingNotes', false));
+    expect(importAs(env, MEMBER, 7, { auto: true })).toMatchObject({ ok: true, skipped: true, created: 0 });
+    expect(env.fake._driveSearches()).toHaveLength(0);
+    expect(issues(env)).toHaveLength(0);
+    expect(importAs(env)).toMatchObject({ skipped: false, created: 3 });
+    // ほかの人の設定は関わらない
+    note(env, '別の会議 - Gemini によるメモ', STEPS, { owner: OTHER });
+    // (同じ行のやることはもうあるので、作らずに取り込み済みに数える)
+    expect(importAs(env, OTHER, 7, { auto: true })).toMatchObject({ skipped: false, found: 1, notes: 1, created: 0, already: 3 });
+  });
+
   it('探す日数は 1〜14 (既定7)', () => {
     const env = ready();
     importAs(env, MEMBER, 30);

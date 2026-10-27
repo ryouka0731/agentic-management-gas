@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mountApp, DEFAULTS } from '../dom.js';
+import { mountApp, DEFAULTS, prefsFixture } from '../dom.js';
 import { mount } from './mount.js';
 
 /*
@@ -66,6 +66,27 @@ describe('Gemini のメモを取り込む', () => {
     const broken = mount({ apiMeetingNotesImport: new Error('混み合っています') });
     expect(callsOf(broken, 'apiMeetingNotesImport')).toHaveLength(1);
     expect(snack()).not.toContain('混み合っています');
+  });
+
+  it('「Gemini のメモを取り込む」の隣に、自動で取り込むかの切り替えがある (既定オン)。押すと自分の設定に書く', () => {
+    const app = mount();
+    $('.nav-item[data-tab="settings"]').click();
+    const row = $('#meeting-notes .calendar-actions');
+    const field = row.querySelector('[data-pref="calendar.meetingNotes"]');
+    expect(field).not.toBeNull();
+    expect(field.textContent).toContain('Gemini のメモを 1 日 1 回自動で取り込む');
+    // 汎用の並びには二度出さない
+    expect(document.querySelectorAll('[data-pref="calendar.meetingNotes"]')).toHaveLength(1);
+    const toggle = field.querySelector('button, input');
+    toggle.click();
+    const set = callsOf(app, 'apiPrefSet').pop();
+    expect(set.args).toEqual(['calendar.meetingNotes', false]);
+  });
+
+  it('自分の設定でオフなら、開いたときに取り込まない', () => {
+    const app = mount({ apiPrefs: prefsFixture({ values: { 'calendar.meetingNotes': false } }), apiMeetingNotesImport: DONE });
+    expect(callsOf(app, 'apiMeetingNotesImport')).toEqual([]);
+    expect(snack()).not.toContain('Gemini');
   });
 
   it('文書のリンクで開いたときは取り込まない', () => {

@@ -168,6 +168,13 @@ function PREF_CALENDAR_ITEMS_() {
         { value: 'generic', label: '集中 (番頭) とだけ出す' },
       ],
       def: 'task' },
+    // Gemini のメモの取り込み (MeetingNotesImport.gs)。オフなら開いたときの自動だけを止める (ボタンは使える)。
+    // 画面の欄は汎用の並びに出さず、js-calendar の makeMeetingNotesPanel がボタンの隣に置く
+    { key: 'calendar.meetingNotes', scope: 'me', type: 'bool', section: section,
+      label: 'Gemini のメモを 1 日 1 回自動で取り込む',
+      help: '番頭を開いたとき、1日1回、会議の Gemini のメモの「次のステップ」をやることにします。' +
+        'オフでも「Gemini のメモを取り込む」で取り込めます',
+      def: true },
     { key: 'calendar.shared', scope: 'team', type: 'calendar', section: section, label: '予定を入れる共有カレンダー',
       help: '管理者が「共有カレンダーを作る」で作るか、あるカレンダーの ID を貼ります', def: '' },
     // 会議の時間 (自分まわりの欄)。読むのは本人の既定のカレンダーだけで、数だけを出す (meetingHoursOf_)
@@ -720,7 +727,8 @@ function apiPrefs(opts) {
       room: { on: byKey['room.on'] === true },
       sound: { effects: byKey['sound.effects'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
-      calendar: { plan: byKey['calendar.plan'] === true, meetings: byKey['calendar.meetings'] === true },
+      calendar: { plan: byKey['calendar.plan'] === true, meetings: byKey['calendar.meetings'] === true,
+        meetingNotes: byKey['calendar.meetingNotes'] !== false },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },
       cowork: { enabled: byKey['cowork.enabled'] === true, showFocus: byKey['cowork.showFocus'] === true },
