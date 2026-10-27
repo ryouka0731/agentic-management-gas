@@ -568,6 +568,28 @@ describe('やることを捨てる', () => {
     expect(Number(ctx.issueGet(c.number).parent)).toBe(gp.number);
   });
 
+  it('子を何人持つ親を捨てても、台帳 (issues) に書くのは1回 (子ごとに書くと1回 0.3〜0.8 秒かかる)', () => {
+    const { ctx, fake } = setup();
+    const gp = ctx.issueCreate('祖', '', []);
+    const p = ctx.issueCreate('親', '', []);
+    const kids = ['子1', '子2', '子3'].map((t) => ctx.issueCreate(t, '', []));
+    ctx.issueUpdate(p.number, { parent: gp.number });
+    kids.forEach((k) => ctx.issueUpdate(k.number, { parent: p.number }));
+    const before = fake._sheetWrites('issues');
+
+    ctx.issueArchive(p.number);
+
+    // 子3人の付け替え + 本体の archivedAt を1回で
+    expect(fake._sheetWrites('issues') - before).toBe(1);
+    kids.forEach((k) => expect(Number(ctx.issueGet(k.number).parent)).toBe(gp.number));
+    expect(ctx.issueGet(p.number).archivedAt).toBeTruthy();
+
+    // もう捨ててあれば書かない
+    const before2 = fake._sheetWrites('issues');
+    ctx.issueArchive(p.number);
+    expect(fake._sheetWrites('issues') - before2).toBe(0);
+  });
+
   it('親がいない親を捨てると子は根になる', () => {
     const { ctx } = setup();
     const p = ctx.issueCreate('親', '', []);

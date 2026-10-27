@@ -610,6 +610,26 @@ describe('報告から開発者のやることを作る', () => {
     expect(ctx.issueGet(row.issueNumber).state).toBe('open');
   });
 
+  it('やることを消すとき、つながった報告が何件でも、台帳 (inquiries) に書くのは1回', () => {
+    const { ctx, fake } = setup();
+    const rows = ['ひとつめ', 'ふたつめ', 'みっつめ'].map((b) => ctx.inquiryCreate('bug', b));
+    const target = rows[0].issueNumber;
+    // 3件とも同じやることにつなぐ
+    rows.slice(1).forEach((r) => ctx.dbUpdate('inquiries', 'number', r.number, { issueNumber: target }));
+    const before = fake._sheetWrites('inquiries');
+
+    ctx.issuePurge(target);
+
+    expect(fake._sheetWrites('inquiries') - before).toBe(1);
+    rows.forEach((r) => expect(ctx.inquiryGet(r.number).issueNumber).toBe(''));
+
+    // つながった報告が無ければ書かない
+    const other = ctx.issueCreate('報告の無いもの', '', []);
+    const before2 = fake._sheetWrites('inquiries');
+    ctx.issuePurge(other.number);
+    expect(fake._sheetWrites('inquiries') - before2).toBe(0);
+  });
+
   it('やることを作れなくても報告は受け付ける', () => {
     const { ctx } = setup();
     const original = ctx.issueCreate;
