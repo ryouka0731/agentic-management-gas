@@ -58,7 +58,6 @@ export const API_SOURCES = [
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs', 'src/api/Achievements.gs', 'src/api/Boot.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
-  'src/api/Announcement.gs', 'src/api/Revision.gs',
   'src/api/Announcement.gs', 'src/api/Recurrence.gs', 'src/api/Revision.gs',
 ];
 
