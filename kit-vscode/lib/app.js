@@ -3,14 +3,20 @@
  * 拡張の動き。vscode の API は ui (extension.js が作る薄い層) を通してだけ触る。test/ は ui と頼み先を差し替えて動かす。
  *
  * 見張りは1本 (tick)。15 秒ごとに呼ばれ、時刻が来たものだけをする:
- * - 会議: 始まりの1分前に知らせ、autoOpen なら始まりに会議の URL を開く。予定は1日の始まりと 30 分ごとに取り直す
- * - あなたの番: pollMinutes ごとに homeMine を見て、増えたものを知らせる
- * - 推し: 1時間に1回まで oshiSpinner を取り直し、ステータスバーに名前と一言を出す
+ * - 会議: 始まりの1分前に知らせ、autoOpen なら始まりに会議の URL を開く。予定は起動時・1日の始まりと 60 分ごとに取り直す
+ * - あなたの番: pollMinutes (既定 15、最小 5) ごとに homeMine を見て、増えたものを知らせる
+ * - 推し: 4時間に1回まで oshiSpinner を取り直し、ステータスバーに名前と一言を出す
+ *
+ * 命令の回数は番頭のキューの1日の予算 (docs/dev/command-queue.md) を使う。既定で1人1日 約 126 回
+ * (あなたの番 96・予定 24・推し 6。VS Code を一日中開いていたとき)
  */
 const logic = require('./logic');
 
-const MEETINGS_EVERY_MS = 30 * 60 * 1000;
-const OSHI_EVERY_MS = 60 * 60 * 1000;
+const MEETINGS_EVERY_MS = 60 * 60 * 1000;
+const OSHI_EVERY_MS = 4 * 60 * 60 * 1000;
+/** あなたの番を見る間隔 (分)。既定と最小 */
+const TURN_DEFAULT_MIN = 15;
+const TURN_MIN_MIN = 5;
 
 /**
  * @param {object} o
@@ -170,7 +176,7 @@ function createApp(o) {
     runMeetings();
     const t = now();
     const c = cfg();
-    const every = Math.max(1, Number(c.pollMinutes) || 5) * 60 * 1000;
+    const every = Math.max(TURN_MIN_MIN, Number(c.pollMinutes) || TURN_DEFAULT_MIN) * 60 * 1000;
     if (logic.stale(st.lastTurn, t, every)) pollTurn();
     if (logic.stale(st.lastMeet, t, MEETINGS_EVERY_MS) || st.meetDay !== logic.localDay(t)) fetchMeetings();
     if (c.oshi && logic.stale(st.lastOshi, t, OSHI_EVERY_MS)) fetchOshi();
@@ -200,4 +206,4 @@ function createApp(o) {
   return { start, tick, reconfigure, refreshIssues, showIssue, join, dispose, fetchMeetings, fetchOshi, state: st };
 }
 
-module.exports = { createApp, MEETINGS_EVERY_MS, OSHI_EVERY_MS };
+module.exports = { createApp, MEETINGS_EVERY_MS, OSHI_EVERY_MS, TURN_DEFAULT_MIN, TURN_MIN_MIN };

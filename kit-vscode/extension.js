@@ -53,7 +53,7 @@ function settings() {
   return {
     kitDir: c.get('kitDir', ''),
     email: c.get('email', ''),
-    pollMinutes: c.get('pollMinutes', 5),
+    pollMinutes: c.get('pollMinutes', 15),
     autoOpen: c.get('meetings.autoOpen', false),
     oshi: c.get('oshi.show', true),
   };

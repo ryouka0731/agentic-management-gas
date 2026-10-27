@@ -24,7 +24,7 @@ function harness(o) {
     log: (l) => { calls.log.push(l); },
     openSettings: () => { calls.settings++; },
   };
-  const settings = Object.assign({ kitDir: '/kit', email: 'me@example.com', pollMinutes: 5, autoOpen: false, oshi: true }, o.settings || {});
+  const settings = Object.assign({ kitDir: '/kit', email: 'me@example.com', pollMinutes: 15, autoOpen: false, oshi: true }, o.settings || {});
   const app = createApp({
     ui,
     settings: () => settings,
@@ -117,8 +117,8 @@ test('autoOpen なら押さなくても始まりに開く。URL の無い予定�
   assert.deepEqual(h.calls.info.map((c) => c.slice(1)), [['入る'], []]);
 });
 
-test('予定は30分ごとに取り直す。取り直しても、知らせた予定はもう一度知らせない', async () => {
-  const h = harness({ now: T('09:30'), answers: answers() });
+test('予定は60分ごとに取り直す。取り直しても、知らせた予定はもう一度知らせない', async () => {
+  const h = harness({ now: T('09:00'), answers: answers() });
   h.app.start();
   await flush();
   h.setNow(T('09:59'));
@@ -149,15 +149,50 @@ test('あなたの番は pollMinutes ごと。増えたものだけ知らせる'
   assert.deepEqual(h.calls.info.map((c) => c[0]), ['番頭: 確かめてほしい確認依頼 #7 規程']);
 });
 
-test('推しは1時間に1回まで取り直す。オフなら出さない', async () => {
+test('あなたの番の間隔は既定 15 分。5 分より短くはしない (キューの1日の予算)', async () => {
+  const count = (h) => h.sent.filter((s) => s === 'homeMine').length;
+  const def = harness({ now: T('08:00'), answers: answers(), settings: { pollMinutes: undefined } });
+  def.app.start();
+  await flush();
+  def.setNow(T('08:14'));
+  def.app.tick();
+  await flush();
+  assert.equal(count(def), 1);
+  def.setNow(T('08:15'));
+  def.app.tick();
+  await flush();
+  assert.equal(count(def), 2);
+  const fast = harness({ now: T('08:00'), answers: answers(), settings: { pollMinutes: 1 } });
+  fast.app.start();
+  await flush();
+  fast.setNow(T('08:04'));
+  fast.app.tick();
+  await flush();
+  assert.equal(count(fast), 1);
+});
+
+test('既定のままで一日中開いていても、1日の命令は 130 回以下', async () => {
+  const h = harness({ now: T('00:00'), answers: answers(), settings: { pollMinutes: undefined } });
+  h.app.start();
+  await flush();
+  for (let t = T('00:00'); t < T('00:00') + 24 * 3600 * 1000; t += 15000) {
+    h.setNow(t);
+    h.app.tick();
+    await flush();
+  }
+  const n = h.sent.filter((s) => s !== 'issueList').length;
+  assert.ok(n <= 130, '命令 ' + n + ' 回');
+});
+
+test('推しは4時間に1回まで取り直す。オフなら出さない', async () => {
   const h = harness({ now: T('08:00'), answers: answers() });
   h.app.start();
   await flush();
-  h.setNow(T('08:59'));
+  h.setNow(T('11:59'));
   h.app.tick();
   await flush();
   assert.equal(h.sent.filter((s) => s === 'oshiSpinner').length, 1);
-  h.setNow(T('09:00'));
+  h.setNow(T('12:00'));
   h.app.tick();
   await flush();
   assert.equal(h.sent.filter((s) => s === 'oshiSpinner').length, 2);
@@ -173,7 +208,7 @@ test('頼みが失敗しても知らせを出さず、記録に残す。返事�
   const h = harness({ now: T('08:00'), answers: answers({ calendarToday: () => slow, homeMine: new Error('番頭から返事が来ませんでした') }) });
   h.app.start();
   await flush();
-  h.setNow(T('08:40'));
+  h.setNow(T('09:10'));
   h.app.tick();
   await flush();
   assert.equal(h.sent.filter((s) => s === 'calendarToday').length, 1);

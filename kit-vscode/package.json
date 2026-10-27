@@ -58,9 +58,9 @@
         },
         "banto.pollMinutes": {
           "type": "number",
-          "default": 5,
-          "minimum": 1,
-          "description": "あなたの番 (確認依頼・戻ってきたもの・期限) を何分ごとに見るか"
+          "default": 15,
+          "minimum": 5,
+          "description": "あなたの番 (確認依頼・戻ってきたもの・期限) を何分ごとに見るか (5 分より短くはしない。番頭のキューの1日の予算を使うため)"
         },
         "banto.meetings.autoOpen": {
           "type": "boolean",
