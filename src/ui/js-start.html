@@ -186,6 +186,8 @@
     needOnce(['apiTagList', 'apiIssuePriorities']);
   });
   bootWaveArm();
+  // ここまでに投げた軽いものを1本にまとめて送る (app.js の bootBatchFlush)
+  bootBatchFlush();
 
   /**
    * 最初の波のうち、ホームの外側 (左の行き先・上の段) に要るもの。1回だけ。
