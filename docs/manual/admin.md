@@ -177,4 +177,4 @@ Apps Script のエディタからなら `debugCacheClear()` を実行する。�
 
 一度出した番号 (やること・確認依頼など) も覚えていて、表が空になっても戻さない。
 
-本人の UserProperties に置くものもある。日報の形と自分の形 (`REPORT_KIND:` / `REPORT_CUSTOM:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)、Google ToDo の送り先のリスト (`GOOGLE_TASKS_LIST_ID`)。
+本人の UserProperties に置くものもある。日報の形と自分の形と前回写した時刻 (`REPORT_KIND:` / `REPORT_CUSTOM:` / `REPORT_AT:`)、ポイントのいちばん高かったレベル (`GAME_LEVEL_MAX:`)、Google ToDo の送り先のリスト (`GOOGLE_TASKS_LIST_ID`)。

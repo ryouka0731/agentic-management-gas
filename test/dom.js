@@ -255,7 +255,7 @@ const API_NAMES = [
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
-  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiSetReportKind', 'apiSetReportCustom', 'apiSearchIndex',
+  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiReportCopied', 'apiSetReportKind', 'apiSetReportCustom', 'apiSearchIndex',
   'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
   'apiFocusOpen', 'apiFocusStart', 'apiFocusProve', 'apiFocusExtend', 'apiFocusEnd', 'apiFocusMine',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
@@ -591,7 +591,7 @@ export const DEFAULTS = {
     advice: [],
   },
   apiReportParts: {
-    parts: { today: [], tomorrow: [], troubles: [], date: '10/14 (水)', name: '中井' },
+    parts: { today: [], tomorrow: [], troubles: [], done: [], doneText: '', date: '10/14 (水)', name: '中井' },
     templates: [
       { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
       { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
@@ -600,6 +600,7 @@ export const DEFAULTS = {
     kind: 'three',
     custom: '',
   },
+  apiReportCopied: { at: 0 },
   apiSetReportKind: (kind) => ({ kind }),
   // 中身があれば、同じ1回で「自分の形」を選んだことにもなる
   apiSetReportCustom: (text) => ({ custom: text, kind: text ? 'custom' : 'three' }),

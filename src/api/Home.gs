@@ -202,9 +202,23 @@ function reportPartsPlain_(p) {
     troubles: p.troubles.map(function (x) {
       return { number: plainId(x.number), title: plainText(x.title) };
     }),
+    done: p.done.map(function (x) {
+      return { number: plainId(x.number), title: plainText(x.title) };
+    }),
+    doneText: plainText(p.doneText),
     date: plainText(p.date),
     name: plainText(p.name),
   };
+}
+
+/**
+ * 日報を写したことを覚える (Web App API)。本人のぶんだけ。次の日報の「片付けたもの」は
+ * これより後に片付けたものだけになる。
+ *
+ * @returns {{at: number}}
+ */
+function apiReportCopied() {
+  return { at: plainNumber(reportMarkSent_(currentEmail_(), new Date())) };
 }
 
 /**

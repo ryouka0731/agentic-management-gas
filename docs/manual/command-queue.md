@@ -118,7 +118,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | `homeMine` | なし | あなたの番 (待っている確認・戻ってきたもの・期限) |
 | `homeAdvice` | なし | 改善のヒント |
 | `workStyle` | なし | 仕事のスタンス診断の型・ひとこと・強み・気をつけたいこと・軸ごとの手伝い方 (点数は入れない)。診断していなければ `taken: false` と、診断の仕方 |
-| `reportDraft` | `kind` (任意: `three` / `today` / `plain` / `custom`) | 今日の日報の下書きの中身と形 |
+| `reportDraft` | `kind` (任意: `three` / `today` / `plain` / `custom`) | 今日の日報の下書きの中身と形 (前の営業日に片付けたものの節は形の前に付いて届く) |
 | `searchIndex` | なし | 横断検索の一覧 (題名・番号・状態だけ。絞るのは手元) |
 | `oshiPrompt` | `tool` (`chatgpt` / `gemini` / `claude` / `codex`) | 推しのキャラ作成キットの頼み文 (`{tool, label, prompt}`)。読むだけ。中身は番頭の定義の字で、人の字を含まない |
 | `oshiSpinner` | なし | 置いた人がいま使う推しの考え中のせりふ (`{on, char, name, lines, reason}`。`lines` は24字まで・20個まで)。読むだけ。見るのは置いた人の自分の設定で、推しがオフなら `on: false`・空の `lines` と理由。手元の `oshi-spinner` が Claude Code の `spinnerVerbs` に書く |

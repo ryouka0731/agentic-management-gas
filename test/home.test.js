@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { loadGasWith } from './harness.js';
 import { createFakeGas } from './fakegas.js';
 import { APP_SOURCES } from './sources.js';
@@ -341,6 +341,79 @@ describe('日報', () => {
     expect(out.kind).toBe('plain');
     expect(out.custom).toBe('{今日}');
     expect(out.templates).toHaveLength(3);
-    expect(Object.keys(out.parts).sort()).toEqual(['date', 'name', 'today', 'tomorrow', 'troubles']);
+    expect(Object.keys(out.parts).sort()).toEqual(['date', 'done', 'doneText', 'name', 'today', 'tomorrow', 'troubles']);
+  });
+});
+
+describe('日報: 前の営業日に片付けたもの', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  // closedAt は東京の時刻で渡す
+  function closedAt(ctx, title, jst, patch) {
+    const n = ctx.issueCreate(title, '', []).number;
+    ctx.issueClose(n, null);
+    ctx.dbUpdate('issues', 'number', n, Object.assign({ assignee: ME, closedAt: new Date(jst + '+09:00') }, patch || {}));
+    return n;
+  }
+
+  it('昨日に閉じた自分のものを出す。今日閉じたもの・一昨日のもの・ほかの人のものは出さない', () => {
+    const { ctx } = setup();
+    const y1 = closedAt(ctx, '昨日の朝', '2026-10-13T00:10:00');
+    const y2 = closedAt(ctx, '昨日の夜', '2026-10-13T23:50:00');
+    closedAt(ctx, '今日', '2026-10-14T00:05:00');
+    closedAt(ctx, '一昨日', '2026-10-12T23:59:00');
+    closedAt(ctx, 'ほかの人', '2026-10-13T10:00:00', { assignee: 'b@example.com' });
+    const parts = ctx.reportParts_(ME, NOW);
+    expect(parts.done.map((x) => x.number)).toEqual([y1, y2]);
+    expect(parts.doneText).toBe('✅片付けたもの (10/13 (火))\n- #' + y1 + ' 昨日の朝\n- #' + y2 + ' 昨日の夜\n\n');
+  });
+
+  it('月曜は金曜から (週末も入る)。日付は東京で比べる', () => {
+    const { ctx } = setup();
+    const mon = new Date('2026-10-19T09:00:00+09:00');
+    closedAt(ctx, '木曜', '2026-10-15T18:00:00');
+    const fri = closedAt(ctx, '金曜', '2026-10-16T00:30:00'); // UTC ではまだ木曜
+    const sun = closedAt(ctx, '日曜', '2026-10-18T12:00:00');
+    expect(ctx.reportSince_(ME, mon)).toMatchObject({ from: '2026-10-16', to: '2026-10-19' });
+    const parts = ctx.reportParts_(ME, mon);
+    expect(parts.done.map((x) => x.number)).toEqual([fri, sun]);
+    expect(parts.doneText).toMatch(/^✅片付けたもの \(10\/16 \(金\) から\)\n/);
+  });
+
+  it('担当が空なら閉じた人で判断する', () => {
+    const { ctx } = setup();
+    const n = closedAt(ctx, '担当なし', '2026-10-13T10:00:00', { assignee: '' });
+    const other = closedAt(ctx, '担当なし (ほかの人が閉じた)', '2026-10-13T10:00:00', { assignee: '' });
+    ctx.dbAppend('change_log', { action: 'close', target: 'issue:' + other, actor: 'b@example.com' });
+    expect(ctx.reportParts_(ME, NOW).done.map((x) => x.number)).toEqual([n]);
+  });
+
+  it('前回の自分の日報がその日にあれば、それより後に閉じたものだけ', () => {
+    const { ctx } = setup();
+    closedAt(ctx, '日報の前', '2026-10-13T17:00:00');
+    const after = closedAt(ctx, '日報の後', '2026-10-13T19:00:00');
+    ctx.reportMarkSent_(ME, new Date('2026-10-13T18:00:00+09:00'));
+    expect(ctx.reportParts_(ME, NOW).done.map((x) => x.number)).toEqual([after]);
+    // 今日もう一度写しても、今日の分の日報として前の営業日をまるごと見る
+    ctx.reportMarkSent_(ME, new Date('2026-10-14T10:00:00+09:00'));
+    expect(ctx.reportParts_(ME, NOW).done).toHaveLength(2);
+  });
+
+  it('無ければ節ごと出さない', () => {
+    const { ctx } = setup();
+    closedAt(ctx, '今日', '2026-10-14T09:00:00');
+    expect(ctx.reportParts_(ME, NOW).doneText).toBe('');
+  });
+
+  it('画面の API は、いまの時刻で前の営業日を見る。写したことを覚える', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-19T09:00:00+09:00')); // 月曜
+    const fake = createFakeGas();
+    fake.Date = Date; // 疑似GASの中の new Date() も止めた時刻にする
+    const ctx = loadGasWith(fake, ...SOURCES);
+    ctx.repoInit('agentic-management');
+    const fri = closedAt(ctx, '金曜', '2026-10-16T15:00:00');
+    expect(ctx.apiReportParts().parts.done.map((x) => x.number)).toEqual([fri]);
+    expect(ctx.apiReportCopied().at).toBe(new Date('2026-10-19T09:00:00+09:00').getTime());
   });
 });

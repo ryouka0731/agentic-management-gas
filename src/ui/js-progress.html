@@ -479,6 +479,18 @@
   }
 
   /**
+   * 写す日報の字。サーバが作った「✅片付けたもの」の節 (`parts.doneText`。無ければ空) を形の前に
+   * 付けてから当てはめる。手元の道具の `report` も同じ字を形の前に付けて受け取るので、出る字が揃う。
+   *
+   * @param {string} template
+   * @param {object} parts apiReportParts の parts
+   * @returns {string}
+   */
+  function reportDraftText(template, parts) {
+    return reportFill(String((parts && parts.doneText) || '') + template, parts || {});
+  }
+
+  /**
    * いま選んでいる形の本文。自分の形が空なら 3節。
    *
    * @param {{templates: object[], kind: string, custom: string}} report
@@ -594,7 +606,9 @@
     }
 
     copy.addEventListener('click', function () {
-      var text = report ? reportFill(reportTemplateOf(report), report.parts) : todayReportText(items);
+      var text = report ? reportDraftText(reportTemplateOf(report), report.parts) : todayReportText(items);
+      // 写した時刻を覚える。次の日報の「片付けたもの」はこれより後だけになる
+      if (report) call('apiReportCopied', [], null, failQuiet('覚えられなくても、次の日報が前の営業日をまるごと並べるだけ'));
       // 埋め込みの枠では写せないことがある。そのときは選んで写せる欄を出す
       function fallback() {
         var area = card.querySelector('textarea') || document.createElement('textarea');
@@ -653,7 +667,7 @@
     var preview = document.createElement('pre');
     preview.className = 'report-preview';
     function show() {
-      preview.textContent = reportFill(area.value, report.parts);
+      preview.textContent = reportDraftText(area.value, report.parts);
       // 送る前に止める。送ってから断ると、欄はもう閉じていて書いたものが消える
       setFieldMessage(area, area.value.length > 2000
         ? '2000字までです (いま ' + area.value.length + ' 字)' : '', 'error');

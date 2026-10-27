@@ -223,6 +223,14 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   ございました」の帯)。断られたらボタンを戻してカードを残す。**1回開いたら1つ** (片づけても続けて次を出さない。次は次に
   開いたとき)。管理者の節 (`makeAnnouncementSettings`) は設定の画面のチームの設定に、`settings.canEdit` のときだけ置く。
   テストは `test/component/announce.test.js` と通しの `test/e2e/announce.test.js`
+- **日報の「✅片付けたもの」の節** (やること #105「日報に、昨日 (前回の日報より後) に片付けたやることを出す」)。字を作るのはサーバの
+  `reportDoneText_` だけで、`apiReportParts` の `parts.doneText` に入れて渡す (無ければ空で、節ごと出さない)。画面は
+  `reportDraftText` で**形の前に付けてから** `reportFill` に通す。命令キューの `reportDraft` は同じ字を `template` の前に付けて返す
+  (手元の道具の `reportFill` は画面の写しで、焼き直さずには変えられないため)。どちらも同じ字になる。「昨日」の決め方は `reportSince_` だけ:
+  東京の日付で、前の営業日 (月曜・土曜・日曜なら金曜。祝日は見ない) の0時から今日の0時まで、前回の自分の日報 (「日報にコピー」で
+  `apiReportCopied` が覚えた時刻、UserProperties の `REPORT_AT:<アドレス>`) がその間にあればそれより後。誰のものかは `myToday_` と同じ
+  `motivationCredited_` (担当がいれば担当、空なら閉じた人)。台帳に列は足していない。テストは `test/home.test.js` の「日報: 前の営業日に
+  片付けたもの」
 - **幅の広い画面で右に偏らないように**、ホームの中身は `max-width: 1360px` で真ん中に寄せ、1440px 以上では主と従を半々にして
   右のカード (`.home-cards`) を2列に並べる (縦に積み上がらない)。1024〜1439px は 2fr / 1fr のまま
 
