@@ -105,3 +105,30 @@ zip にして配る。**別のリポジトリに切り出さない。** 配る�
 - **口調を足すときに考え中 (`spinner`) を書き忘れても壊れない** (`oshiToneLines` が `OSHI_SPINNER_DEFAULT()` に倒す)。
   `test/oshi.test.js` の「全部の場面を持つ」も考え中だけは見ない
 
+## VS Code 拡張 (`kit-vscode/`)
+
+やること #91 の入れ物のうち、最初の1つ。手引きは `docs/manual/agent-kit.md` の「VS Code 拡張」と `kit-vscode/README.md`。
+
+- **このリポジトリに置く** (kit と同じ理由。別にすると命令の形と版がずれる)。**zip には入れない** (`scripts/build-kit.mjs` の
+  `FILES` に足さない)。なので拡張を直しても `AGENT_KIT_VERSION()` は上げず、`src/ui/kit-files.html` も焼き直さない
+- 素の JavaScript (CommonJS。`kit-vscode/package.json` があるので根の `"type": "module"` は効かない)。依存なし・バンドラなし。
+  `vsce package` で `.vsix` にできる形だが、マーケットプレイスには出さない (`private`)
+- **vscode の API を触るのは `extension.js` だけ** (一覧・知らせ・ステータスバー・設定の薄い層)。動きは `lib/app.js`
+  (15 秒ごとの見張り1本)、vscode に依らない決まりは `lib/logic.js`、入れ先とのやりとりは `lib/queue.js`。テストは
+  `node --test kit-vscode/test/*.test.js` (vitest の対象は `test/` だけなので、混ざらない)。ui と頼み先を差し替えて通す
+- **`agent.mjs` を子プロセスで呼ばず、入れ先に命令を直に置く** (`lib/queue.js`)。agent.mjs が受け付ける操作は OPS / VIEWS に
+  決まっていて `calendarToday` が無く、`mine` は字に整えて囲って出すため。足すには配る中身を変えて版を上げることになる。
+  入れ先の決め方 (`agentkit.json` の `queueDir`、`~/.agentkit.json`、`~/.banto/config.json`) と、置き方・片付け方は agent.mjs と
+  揃える: **結果を受け取ったら命令と結果を両方消す / 返らなければ命令を消す** (残すと二度走る。`docs/dev/command-queue.md`)。
+  id の頭は `vsc-` (手元の道具の `kit-` / `kitup-` と分ける)。いまの場所から上へは設定を探さない (開いたフォルダで入れ先が変わらないように)
+- **返事はデータとして扱う。** 入れ先は共有している人なら書けるので、結果のファイルを先に置かれうる (命令のファイル名は見える)。
+  字は制御文字を落とし (agent.mjs の `CONTROL_CHARS` と同じ)、**開く URL は `https://meet.google.com/<コード>` と
+  `https://calendar.google.com/calendar/event?eid=…` の形だけ** (`logic.meetUrlOf` / `eventUrlOf`)。それ以外は開かない
+- 会議: 始まりの1分前に知らせ、`banto.meetings.autoOpen` なら始まりに開く。**した印は予定ごと** (`notify:<key>` / `open:<key>`、
+  key は始まり + 題名)。押して開いたぶんも印を付ける (自動でもう一度開かない)。始まって5分を過ぎた予定は何もしない
+  (閉じていたあいだの会議を後から開かない)。予定は1日の始まり (手元の暦日が変わったとき) と30分ごとに取り直す
+- 頼みは同じものを重ねない (返事まで1〜2分かかるあいだに次の見張りが来ても送らない)。失敗は知らせに出さず「出力」の「番頭」に残す
+  (5分ごとに帯が出ると邪魔なため)。人が押した「更新」の失敗だけ知らせる
+- 番頭の様子を頼む分だけキューの1日の予算 (`docs/dev/command-queue.md`) を使う。1人あたり1日: あなたの番 288 回 (5分ごと)・
+  予定 48 回・推し 24 回。命令のある回は温めを飛ばすので、使う人が多いなら `banto.pollMinutes` を伸ばしてもらう
+
