@@ -260,8 +260,9 @@ describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot
 
   it('まとめた中の1本が断られても、ほかの返事は届き、断りは1本ずつの失敗の扱いに回る', () => {
     // 動きの一覧 (apiHomeActivity) だけ断られる。同じ口の左上の名前 (apiWorkspace) と設定 (apiSettings) は届く
-    const app = mount({ apiHomeActivity: new Error('動きを読めません') });
-    expect($('#brand').textContent).toBeTruthy();
+    const app = mount({ apiHomeActivity: new Error('動きを読めません'), apiWorkspace: { name: '総務の文書' } });
+    // 同じ口の左上の名前の返事は画面に反映されている
+    expect($('#brand').textContent).toContain('総務の文書');
     expect(batches(app)[0]).toContain('apiHomeActivity');
     expect(batches(app)[0]).toContain('apiSettings');
     expect($('#home-activity').textContent).toContain('動きを読めません');
@@ -279,10 +280,29 @@ describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot
     LATER.forEach((n) => expect(count(app, n), n).toBe(1));
   });
 
-  it('返事の形が合わなければ (数が違う)、1本ずつ取り直す', () => {
+  it('返事の形が合わなければ (数が違う・1つの形が違う)、その分を1本ずつ取り直す', () => {
     const app = mountApp(Object.assign({}, DEFAULTS, { apiBoot: [] }));
-    const direct = app.calls.filter((c) => !c.batched).map((c) => c.name);
-    BATCHED.forEach((n) => expect(direct.filter((x) => x === n).length, n).toBe(1));
+    const bootAt = app.calls.findIndex((c) => c.name === 'apiBoot');
+    expect(bootAt).toBeGreaterThanOrEqual(0);
+    // 口のあとに、口の外で1本ずつ
+    const after = app.calls.slice(bootAt + 1).filter((c) => !c.batched).map((c) => c.name);
+    BATCHED.forEach((n) => expect(after.filter((x) => x === n).length, n).toBe(1));
+
+    // 数は合うが、1つだけ形が違う (ok が真偽でない)。その1本だけ取り直し、ほかはそのまま届く
+    const odd = mountApp(Object.assign({}, DEFAULTS, {
+      apiBoot: (names) => names.map((n) => (n === 'apiWhoAmI' ? { value: DEFAULTS.apiWhoAmI } : { ok: true, value: DEFAULTS[n] })),
+    }));
+    const oddAfter = odd.calls.slice(odd.calls.findIndex((c) => c.name === 'apiBoot') + 1).filter((c) => !c.batched).map((c) => c.name);
+    expect(oddAfter.filter((x) => x === 'apiWhoAmI').length).toBe(1);
+    expect(oddAfter).not.toContain('apiWorkspace');
+    expect(oddAfter).not.toContain('apiSettings');
+  });
+
+  it('まとめた返事の1つの扱いが投げても、残りの返事は配る', () => {
+    // 動きの一覧の返事が描けない形 (扱いが投げる) でも、同じ口の設定と名前は届く
+    const app = mount({ apiHomeActivity: { weeks: 5 }, apiWorkspace: { name: '総務の文書' } });
+    expect($('#brand').textContent).toContain('総務の文書');
+    LATER.forEach((n) => expect(count(app, n), n).toBe(1));
   });
 
   it('最初の波が閉じたあとは、同じ名前でも1本ずつ取る (まとめない)', () => {

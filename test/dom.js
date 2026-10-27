@@ -153,8 +153,10 @@ export function mountApp(responses, options) {
          * 残す (batched: true) ので、名前で数えるテストはそのまま通る。遅らせた返事 (later) が混ざれば、
          * 全部そろってから返す
          */
-        if (name === 'apiBoot' && !(options && options.transport) && !(table.apiBoot instanceof Error)
-          && !Array.isArray(table.apiBoot)) {
+        // 口そのものの返事を差し替えたとき (Error / 配列 / それを返す関数) は、下の表の扱いに任せる
+        const bootOverride = name === 'apiBoot' && typeof table.apiBoot === 'function' ? table.apiBoot(...args) : table.apiBoot;
+        if (name === 'apiBoot' && !(options && options.transport) && !(bootOverride instanceof Error)
+          && !Array.isArray(bootOverride)) {
           const list = args[0] || [];
           const results = new Array(list.length);
           let left = list.length;
