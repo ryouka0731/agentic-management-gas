@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DEFAULTS, prefsFixture } from '../dom.js';
 import { mount } from './mount.js';
 
@@ -607,6 +607,11 @@ describe('エージェンティックスクラム (既定はオフ)', () => {
     });
 
     describe('スプリントの日付の入力', () => {
+      // 今日を sprint002 の終わりの日 (東京の 10/14) に止める。補う始まりの日は「前の終わりの翌日」だが、
+      // 前のスプリントが8日以上前に終わっていれば今日になる (scrumSuggestSprint)。止めないと、
+      // 走らせた日が 10/23 以降のとき始まりが今日に変わり、期待した日付から外れていた
+      beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-14T03:00:00Z') }); });
+      afterEach(() => { vi.useRealTimers(); });
       const S = [
         { name: 'sprint001', goal: '', startDate: '2026-10-01', endDate: '2026-10-07', notes: '' },
         { name: 'sprint002', goal: '', startDate: '2026-10-08', endDate: '2026-10-14', notes: '' },
