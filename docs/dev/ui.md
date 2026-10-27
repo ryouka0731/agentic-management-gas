@@ -828,3 +828,13 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 絞り込み・まとめ方・「自分の担当だけ」は効かないので隠す (捨てたものと同じ)
 - テストは `test/component/recur.test.js`
 
+## 文書の見直しの期日 (`js-docs` の `makeReviewPill` / `renderDocReview`)
+
+- 文書の一覧の札「見直し 11/30 (あと 33 日)」は `apiListFiles` の `reviewDue` / `reviewDaysLeft` / `reviewNoticeDays` から組む。**残り日数はサーバが
+  東京の今日で数える** (画面で数えると、端末の時刻帯で1日ずれる)。期日が無ければ出さない
+- 色は既存のトークンだけ (`.chip-review-late` = `--danger` / `--danger-bg`、`.chip-review-soon` = `--warn` / `--warn-bg`)。色だけに頼らず字にも
+  「過ぎ」「今日」と書く。札の形は `makePill` に任せる (`docs/dev/design.md`)
+- 文書の画面では正式版を読んでいるときだけ `#doc-review-row` を出す (改訂版の版に切り替えたとき・文書だけの画面では隠す)。決める欄は
+  `openInlineForm` で、担当は `attachAssigneePicker`。保存したら `loadFiles` で一覧を取り直して行を描き直す
+- テストは `test/component/file-review.test.js`
+

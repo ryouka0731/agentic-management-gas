@@ -59,7 +59,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 
 | op | args | 内容 |
 |---|---|---|
-| `listFiles` | なし | 登録した文書の一覧 |
+| `listFiles` | なし | 登録した文書の一覧 (見直しの期日 `reviewDue`・担当・何日前・あと何日 `reviewDaysLeft` も入る) |
 | `status` | `fileId` | 記録していない変更があるか |
 | `readMarkdown` | `fileId` | 中身を Markdown で読む (`baseSha` も返る) |
 | `writeMarkdown` | `fileId`, `markdown`, `baseSha` (任意) | Markdown で書き換える。正式版は断る |

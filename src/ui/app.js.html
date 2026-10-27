@@ -4001,6 +4001,9 @@
         meta.appendChild(makePill(
           '改訂中 ' + drafts.length + '件', 'chip chip-accent'));
       }
+      // 見直しの期日 (やること #112)。期日が無ければ出さない
+      var review = makeReviewPill(f);
+      if (review) meta.appendChild(review);
       open.appendChild(meta);
 
       open.addEventListener('click', function () { openDoc(f.fileId, f.path); });

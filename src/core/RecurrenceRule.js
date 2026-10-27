@@ -1,8 +1,8 @@
 /**
- * 繰り返しのやること (毎週◯曜 / 毎月◯日 / 毎年◯月◯日) の暦の計算。
+ * 繰り返しのやること (毎週◯曜 / 毎月◯日 / 毎年◯月◯日) の暦の計算と、文書の見直しの期日の計算。
  *
  * **台帳に触らない。** 日は東京の暦日の字 'YYYY-MM-DD' で受け渡し、ここは数えるだけにする。
- * 起票する側 (Recurrence.gs) と画面の手引き (docs/manual/tasks.md) が同じ決まりを指すため。
+ * 起票する側 (Recurrence.gs / FileReview.gs) と画面の手引き (docs/manual/tasks.md) が同じ決まりを指すため。
  *
  * - 日の足し引きは UTC の 0 時で数える (夏時間が無いので1日はいつも 86400000 ミリ秒)
  * - **月末は末日扱い**: 毎月31日は、30日までの月は30日、2月は28日 (閏年は29日)。毎年2月29日も平年は28日
@@ -22,6 +22,11 @@ function RECURRENCE_LEAD_DEFAULT() {
 /** 何日前・期限までの日数の上限 (これより長いと、前の分を作った直後に次の分が出る) */
 function RECURRENCE_DAYS_MAX() {
   return 90;
+}
+
+/** 文書の見直しを何日前に起票するかの既定 */
+function REVIEW_NOTICE_DEFAULT() {
+  return 30;
 }
 
 /** 曜日の字 (0 = 日曜) */
@@ -212,4 +217,25 @@ function recurrenceRuleText(rule) {
 function recurrenceDayLabel(day) {
   if (!recurrenceDayValid(day)) return '';
   return Number(day.substring(5, 7)) + '月' + Number(day.substring(8, 10)) + '日';
+}
+
+/**
+ * 文書の見直しのやることを今日作るか。
+ *
+ * 期日の N 日前 (noticeDays。空は既定の30) が今日以前で、その期日のぶんをまだ作っていないとき。
+ * **作った期日 (issuedFor) が今の期日と同じなら作らない。** 期日が過ぎても、作ったあとは印で止まる。
+ * 期日を変えれば印と食い違うので、新しい期日のぶんを1つ作る。
+ *
+ * @param {string} due 'YYYY-MM-DD'
+ * @param {*} noticeDays
+ * @param {string} issuedFor
+ * @param {string} today
+ * @returns {boolean}
+ */
+function reviewIssueDue(due, noticeDays, issuedFor, today) {
+  if (!recurrenceDayValid(due)) return false;
+  if (String(issuedFor || '') === due) return false;
+  var n = recurrenceInt_(noticeDays);
+  if (!(n >= 0)) n = REVIEW_NOTICE_DEFAULT();
+  return recurrenceShift(due, -n) <= today;
 }

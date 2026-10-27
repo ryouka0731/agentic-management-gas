@@ -283,7 +283,7 @@ const API_NAMES = [
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
   'apiGoalIssueLinks', 'apiGoalWithdraw',
   'apiAchievements', 'apiAchievementsCheck',
-  'apiRecurrenceList', 'apiRecurrenceCreate', 'apiRecurrenceUpdate', 'apiRecurrenceDelete',
+  'apiRecurrenceList', 'apiRecurrenceCreate', 'apiRecurrenceUpdate', 'apiRecurrenceDelete', 'apiFileReviewSet',
 ];
 
 /**

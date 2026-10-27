@@ -309,7 +309,7 @@ function recurrenceIssueDue_(now) {
 }
 
 /**
- * 1日1回だけ、繰り返しのやること (と文書の見直し) を起票する。processCommandQueue が成果の数のあとに呼ぶ。
+ * 1日1回だけ、繰り返しのやることと文書の見直しのやること (FileReview.gs) を起票する。processCommandQueue が成果の数のあとに呼ぶ。
  *
  * - **片付けとも成果の数とも別の印** (`RECURRENCE_ON` = その日)。outcomesDailyOnce_ と同じ形
  * - 片付けが済んだ日だけ走る (`ARCHIVE_HOUSEKEPT_ON` が今日)。捨てたものを片付けてから作る
@@ -338,6 +338,8 @@ function recurrenceDailyOnce_(now) {
 
   try {
     var busy = recurrenceIssueDue_(at).busy;
+    // 文書の見直しの期日 (FileReview.gs。やること #112) も同じ回で作る。FileReview.gs を読まない構成でも動くように確かめる
+    if (typeof fileReviewIssueDue_ === 'function') busy += fileReviewIssueDue_(at).busy;
     if (!busy) props.setProperty('RECURRENCE_ON', today);
     return true;
   } finally {
