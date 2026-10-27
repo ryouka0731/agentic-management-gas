@@ -71,6 +71,10 @@ function DB_SCHEMA() {
     announcements: ['id', 'kind', 'title', 'body', 'options', 'startAt', 'endAt', 'createdBy', 'createdAt', 'archivedAt'],
     // 誰がどう片づけたか。answer は '' (読んだ) / 'closed' (閉じた) / 選んだ選択肢。1人1回 (鍵の中で見てから書く)
     announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
+    // 取り込んだ Gemini のメモ (MeetingNotesImport.gs)。1つのメモに1行で、二度取り込まないための印 (鍵の中で見てから書く)。
+    // meeting は結び付いた予定の名前 (会議不明なら空)、meetingAt はその始まり、minutes は長さ (分)、
+    // issueNumbers は作ったやることの番号 (カンマ区切り)。列の意味は docs/dev/ledger-schema.md
+    meeting_notes: ['docId', 'title', 'meeting', 'meetingAt', 'minutes', 'importedBy', 'importedAt', 'issueNumbers'],
   };
 }
 

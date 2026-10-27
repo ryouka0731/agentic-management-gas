@@ -108,6 +108,13 @@
       span.textContent = '半期: ' + meetingDayLabel(res.since) + '〜' + meetingDayLabel(res.until) +
         ' (' + (Number(res.count) || 0) + '件。重なりは1つ分)';
       box.appendChild(span);
+      // Gemini のメモを取り込んだ会議 (議事録のある会議) があれば添える
+      if (Number(res.noted) > 0) {
+        var noted = document.createElement('div');
+        noted.className = 'row-meta me-meetings-noted';
+        noted.textContent = 'うち議事録のある会議: ' + Number(res.noted) + '時間 (今半期)';
+        box.appendChild(noted);
+      }
       box.hidden = false;
     }, failQuiet('会議の時間が出なくても自分まわりは使える'));
     return box;
@@ -466,3 +473,90 @@
       if (t) fillCalendarTeam(t);
     }, failQuiet('様子が出なくても、設定の欄そのものは使える'));
   }
+
+  // ===== Gemini のメモの取り込み =====
+  //
+  // 本人が開ける Gemini のメモ (Drive) から、決まったこと (次のステップ) をやることにする。読むのも作るのもサーバ
+  // (MeetingNotesImport.gs)。手で押すのは設定の「予定に入れる」の節の欄、自動は1日1回 (開いたときの急がない波)。
+  // Gemini のメモは Google Workspace の機能なので、個人の Gmail では見つからず、何も起きない。
+
+  /** 取り込みの結果を1行にする */
+  function meetingNotesText(res) {
+    if (!res.found) return 'Gemini のメモは見つかりませんでした (直近の7日。Gemini のメモは Google Workspace の機能です)';
+    return (Number(res.notes) || 0) + ' 件のメモから ' + (Number(res.created) || 0) + ' 個のやることを作りました (' +
+      (Number(res.already) || 0) + ' 件は取り込み済み)';
+  }
+
+  /**
+   * 設定の「予定に入れる」の節に置く欄。「Gemini のメモを取り込む」と、作ったやること。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeMeetingNotesPanel() {
+    var box = document.createElement('div');
+    box.className = 'settings-field meeting-notes';
+    box.id = 'meeting-notes';
+    var help = document.createElement('p');
+    help.className = 'row-meta';
+    help.textContent = '会議の Gemini のメモ (Drive) の「次のステップ」を、1行ずつやることにします。' +
+      '見るのはあなたが開けるメモと、あなたのカレンダーだけです。同じメモは二度取り込みません。1日1回、開いたときにも取り込みます。';
+    box.appendChild(help);
+    var row = document.createElement('div');
+    row.className = 'calendar-actions';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn meeting-notes-import';
+    btn.textContent = 'Gemini のメモを取り込む';
+    row.appendChild(btn);
+    box.appendChild(row);
+    var result = document.createElement('div');
+    result.className = 'meeting-notes-result';
+    box.appendChild(result);
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      call('apiMeetingNotesImport', [7], function (res) {
+        btn.disabled = false;
+        res = res || {};
+        if (!res.ok) {
+          showSnack(res.reason || '取り込めませんでした', { kind: 'ng' });
+          return;
+        }
+        showSnack(meetingNotesText(res), { kind: 'ok' });
+        drawMeetingNotesResult(result, res);
+      }, failEnable(btn, '取り込めませんでした: '));
+    });
+    return box;
+  }
+
+  /**
+   * 作ったやることを並べる (押すと開く)。
+   *
+   * @param {HTMLElement} host
+   * @param {object} res apiMeetingNotesImport の返事
+   */
+  function drawMeetingNotesResult(host, res) {
+    host.textContent = '';
+    var line = document.createElement('p');
+    line.className = 'row-meta';
+    line.textContent = meetingNotesText(res) + (Number(res.unmatched) > 0
+      ? '。予定に結び付かなかったメモが ' + Number(res.unmatched) + ' 件あります (会議の時間は残していません)' : '');
+    host.appendChild(line);
+    (res.items || []).forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn meeting-notes-item';
+      b.textContent = '#' + it.number + ' ' + (it.title || '');
+      b.addEventListener('click', function () { openIssueByNumber(it.number, b); });
+      host.appendChild(b);
+    });
+  }
+
+  /** 開いたときに1日1回、裏で取り込む (サーバも1日1回に絞る)。文書のリンクで開いたときはしない */
+  function meetingNotesAuto() {
+    if (document.body.classList.contains('doc-link')) return;
+    call('apiMeetingNotesImport', [7, { auto: true }], function (res) {
+      if (!res || !res.ok || res.skipped || !(Number(res.created) > 0)) return;
+      showSnack('Gemini のメモから ' + Number(res.created) + ' 個のやることを作りました', { kind: 'ok' });
+    }, failQuiet('Gemini のメモを取り込めなくても、ほかの画面は使える (次の日にもう一度試し、ボタンでも取り込める)'));
+  }
+

@@ -51,7 +51,9 @@ function apiCalendarToday() {
  * 本人の既定のカレンダーだけを読み、数と期間だけを返す (題名・相手は返さない)。アドレスは受けない。
  * オフ・読めないときは null (断らない。画面は欄を出さない)。
  *
- * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number}}
+ * noted は今半期の会議のうち、Gemini のメモを取り込んだ会議 (議事録のある会議) の時間。
+ *
+ * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number, noted: number}}
  */
 function apiMeetingHours() {
   var who = currentEmailLower_();
@@ -66,7 +68,24 @@ function apiMeetingHours() {
     since: plainText(out.since),
     until: plainText(out.until),
     count: plainNumber(out.count),
+    noted: plainNumber(out.noted),
   };
+}
+
+/**
+ * Gemini のメモを取り込む (Web App API)。本人が開ける Gemini のメモ (Drive) から、決まったことをやることにする。
+ * 見るのは本人の Drive と本人の既定のカレンダーだけ (本人の権限)。アドレスは受けない。中身は src/core/MeetingNotesImport.gs。
+ * 画面を開いたときの自動は {auto: true} で呼び、その日にもう取り込んでいれば何もしない (skipped)。
+ * Gemini のメモが無い環境 (個人の Gmail など) では何も作らずに found: 0 を返す。
+ *
+ * @param {number} [days] 何日前から探すか (既定7、上限14)
+ * @param {{auto?: boolean}} [opts]
+ * @returns {{ok: boolean, reason: string, skipped: boolean, found: number, notes: number, created: number,
+ *   already: number, unmatched: number, items: object[]}}
+ */
+function apiMeetingNotesImport(days, opts) {
+  var who = currentEmailLower_();
+  return meetingNotesPlain_(meetingNotesImport_(who, days, { auto: !!(opts && opts.auto === true) }));
 }
 
 /**

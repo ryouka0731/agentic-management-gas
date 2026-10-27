@@ -151,6 +151,12 @@ CacheService (`ACH_NEG:<アドレス>:<日>`) から読んで数えない (そ�
 共有している人に見える (手引きにそう書き、`calendar.title` で「集中」だけにできる)。共有の相手を足す頁の URL は管理者にだけ返す。
 細部は `docs/dev/calendar.md`。
 
+**Gemini のメモの取り込み (`apiMeetingNotesImport` / `src/core/MeetingNotesImport.gs`) は本人の Drive と予定だけを見る。** アドレスを受けず、
+本人の権限で開けるメモ (本人のものと共有されたもの) と本人の既定のカレンダーだけを読む。作るやることの担当は名前の当たった人か本人。
+手元からの命令 `meetingNotesImport` は**置いた人がキューを仕掛けた人のときだけ**走る (キューは仕掛けた人の権限で回るので、ほかの人の命令で
+仕掛けた人のメモを取り込まない)。取り込んだ記録 (`meeting_notes`) は台帳にあり、Drive で台帳を開ける人は直に読める (メモの題名と会議名が残る)。
+細部は `docs/dev/calendar.md`。
+
 **成果の数 (`apiOutcomes`) は管理者だけ** (`repoAssertAdmin_`)。チーム全体の日ごとの数 (`outcomes_daily`) を週ごとに
 足して返し、名前もアドレスも入れない。**記録した人が `OUTCOMES_MIN_PEOPLE()` (3) 人に届かない週は数を全部 null にする**
 (1人の分が合計からの引き算で見えるため。`gameTeam_` と同じ守り)。週の人数は日ごとの人数の最大で比べる (同じ人を何日も

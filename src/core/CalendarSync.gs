@@ -732,8 +732,8 @@ function meetingCacheKey_(who, nowMs) {
  *
  * @param {string} who 小文字のアドレス
  * @param {Date} [now]
- * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number}}
- *   時間 (小数1桁)。since / until は東京の暦日 ('YYYY-MM-DD')。count は半期の会議の数
+ * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number, noted: number}}
+ *   時間 (小数1桁)。since / until は東京の暦日 ('YYYY-MM-DD')。count は半期の会議の数。noted は半期の議事録のある会議の時間
  */
 function meetingHoursOf_(who, now) {
   var nowMs = (now || calendarNow_()).getTime();
@@ -750,10 +750,14 @@ function meetingHoursOf_(who, now) {
   var list = [];
   // 週の始まりが半期の始まりより前のこともある (4/1 が木曜なら週は 3/29 から)。早いほうから読む
   var from = Math.min(p.week, p.half);
+  // 議事録のある会議 (Gemini のメモを取り込んだ会議)。MeetingNotesImport.gs を読まない構成でも動くように確かめる
+  var noted = typeof meetingNotesNotedKeys_ === 'function' ? meetingNotesNotedKeys_() : {};
   try {
     CalendarApp.getDefaultCalendar().getEvents(new Date(from), new Date(nowMs)).forEach(function (ev) {
       if (!meetingCounts_(ev, who)) return;
-      list.push({ start: ev.getStartTime().getTime(), end: ev.getEndTime().getTime() });
+      var start = ev.getStartTime().getTime();
+      list.push({ start: start, end: ev.getEndTime().getTime(),
+        noted: typeof meetingNotesEventKey_ === 'function' && !!noted[meetingNotesEventKey_(String(ev.getTitle() || ''), start)] });
     });
   } catch (e) {
     // 読めなければ欄を出さない (覚えない。次に開いたときにもう一度読む)
@@ -768,6 +772,8 @@ function meetingHoursOf_(who, now) {
     until: calendarDayOf(nowMs),
     // 半期の会議の数 (週のために前の半期から読んだぶんは入れない)
     count: list.filter(function (b) { return b.end > p.half; }).length,
+    // 今半期のうち、議事録のある会議の時間
+    noted: meetingHoursOfMinutes(meetingMinutesIn(list.filter(function (b) { return b.noted; }), p.half, nowMs)),
   };
   if (cache) {
     try {

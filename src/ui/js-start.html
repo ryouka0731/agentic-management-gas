@@ -184,6 +184,8 @@
   bootLater(achOpenCheck);
   // 管理者が置いたお知らせ・アンケート・案内 (js-announce)。ホームの上に1つだけ。文書のリンクでは取らない (中で見る)
   bootLater(loadAnnouncement);
+  // Gemini のメモの取り込み (js-calendar)。1日1回 (サーバが覚える)。文書のリンクでは取らない (中で見る)
+  bootLater(meetingNotesAuto);
   bootLater(function () {
     if (document.body.classList.contains('doc-link')) return;
     needOnce(['apiKitStatus']);

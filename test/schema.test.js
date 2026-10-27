@@ -56,6 +56,8 @@ const EXPECTED = {
   // お知らせ・1問アンケート・案内。答えは1人1回
   announcements: ['id', 'kind', 'title', 'body', 'options', 'startAt', 'endAt', 'createdBy', 'createdAt', 'archivedAt'],
   announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
+  // 取り込んだ Gemini のメモ。1つのメモに1行 (二度取り込まない)
+  meeting_notes: ['docId', 'title', 'meeting', 'meetingAt', 'minutes', 'importedBy', 'importedAt', 'issueNumbers'],
 };
 
 describe('メタDBの列順', () => {

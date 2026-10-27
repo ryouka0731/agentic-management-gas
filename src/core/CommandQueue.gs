@@ -140,6 +140,13 @@ function COMMAND_OPS() {
     workStyle: function (a, by) {
       return workStyleKitPlain_(commandBy_(by));
     },
+    /*
+     * Gemini のメモを取り込む (やること #97)。キューは仕掛けた人の権限で回るので、見える Drive と予定はその人のもの。
+     * **置いた人が仕掛けた人のときだけ**取り込む (meetingNotesForQueue_)。ほかの人は画面のボタンを使う
+     */
+    meetingNotesImport: function (a, by) {
+      return meetingNotesPlain_(meetingNotesForQueue_(commandBy_(by), a.days));
+    },
     // 題名・番号・状態だけ (人の名前もアドレスも入らない)。絞るのは手元
     searchIndex: function () { return apiSearchIndex(); },
     // キャラ作成キットの頼み文 (読むだけ。中身は Oshi.js の定義で、人の字を含まない)。手元の oshi-prompt が出す
@@ -228,7 +235,7 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner', 'calendarToday'].concat(COMMAND_ADMIN_OPS());
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner', 'calendarToday', 'meetingNotesImport'].concat(COMMAND_ADMIN_OPS());
 }
 
 /**

@@ -276,6 +276,7 @@ const API_NAMES = [
   'apiOshiSetCharProfile', 'apiOshiBuiltinProfiles', 'apiOshiBuiltinProfileSet', 'apiOshiCharKitPrompt', 'apiOshiCharImport', 'apiOshiMood',
   'apiOshiSetShared',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared', 'apiMeetingHours',
+  'apiMeetingNotesImport',
   'apiOutcomes', 'apiCacheClear',
   'apiAnnouncementNext', 'apiAnnouncementReply', 'apiAnnouncementList', 'apiAnnouncementCreate', 'apiAnnouncementArchive',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
@@ -563,6 +564,8 @@ export const DEFAULTS = {
   apiCacheClear: { cleared: true },
   // お知らせ (js-announce)。既定は何も出さない
   apiAnnouncementNext: null,
+  // Gemini のメモの取り込み (開いたときの自動)。既定は「その日はもう取り込んだ」
+  apiMeetingNotesImport: { ok: true, reason: '', skipped: true, found: 0, notes: 0, created: 0, already: 0, unmatched: 0, items: [] },
   apiAnnouncementList: { items: [] },
   apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),

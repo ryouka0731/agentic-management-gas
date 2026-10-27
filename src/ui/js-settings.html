@@ -613,7 +613,11 @@
         else sec.appendChild(makePrefField(p, editable));
       });
       // 予定に入れるの節には、様子と「予定を組み直す」を添える (js-calendar)
-      if (by[name].some(function (p) { return p.key === 'calendar.plan'; })) sec.appendChild(makeCalendarMinePanel());
+      if (by[name].some(function (p) { return p.key === 'calendar.plan'; })) {
+        sec.appendChild(makeCalendarMinePanel());
+        // Gemini のメモの取り込み (予定に入れるがオフでも使える)
+        sec.appendChild(makeMeetingNotesPanel());
+      }
       // 作業雑談部屋の節には、部屋の一覧の欄を添える (js-cowork。決めるのは管理者だけ)
       if (by[name].some(function (p) { return p.key === 'cowork.enabled'; })) sec.appendChild(makeCoworkRoomsEditor(editable));
       host.appendChild(sec);
