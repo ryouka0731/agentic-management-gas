@@ -136,9 +136,16 @@
     if (cb) oshiWaiters.push(cb);
     if (oshiLoading) return;
     oshiLoading = true;
+    // 取りに行っている最中にキャラ・機嫌の設定が変わったら (oshiLoadStale)、届いた返事は前の設定のもの
+    var still = latestSoFar('oshiLoad');
     var quiet = failQuiet('推しが出なくても使える');
     call('apiOshiGet', [], function (d) {
       oshiLoading = false;
+      // 頼んだあとに設定が変わった: この返事は前の設定のもの。待っている人はそのまま、今の設定で取り直す
+      if (!still()) {
+        oshiLoad();
+        return;
+      }
       oshiData = d || null;
       var again = oshiRevealAgain;
       oshiRevealAgain = false;
@@ -150,9 +157,18 @@
       oshiWarmImages();
     }, function (err) {
       oshiLoading = false;
+      if (!still()) {
+        oshiLoad();
+        return;
+      }
       oshiWaiters.length = 0;
       quiet(err);
     });
+  }
+
+  /** 取りに行っている最中の返事を古いものにする (設定が変わった・取り直す) */
+  function oshiLoadStale() {
+    latest('oshiLoad');
   }
 
   /** 推しを読み込んでから、絵を裏で取り始めるまでの間 (ms)。最初の画面の呼び出しと重ねない */
@@ -185,6 +201,7 @@
   /** 取り直す (名前・口調・画像を変えたあと) */
   function oshiReload(cb) {
     oshiData = null;
+    oshiLoadStale();
     oshiLoad(cb);
   }
 
@@ -195,7 +212,10 @@
     // 機嫌 (oshi.mood) を切り替えたときも取り直す (apiOshiGet の mood はオンのときだけ入る)
     var seen = oshiOn() ? String(prefs.effective.oshi.char) + '|' + String(prefs.effective.oshi.fallback) + '|' +
       String(prefs.effective.oshi.mood === true) : '';
-    if (oshiDefaultSeen !== null && seen !== oshiDefaultSeen) oshiData = null;
+    if (oshiDefaultSeen !== null && seen !== oshiDefaultSeen) {
+      oshiData = null;
+      oshiLoadStale();
+    }
     oshiDefaultSeen = seen;
     // 読み込みのあいだの推し: オフにしたら外して前回の覚えも消す。オンなら、届いている推しで出し直す
     oshiWaitRefresh();
@@ -1075,11 +1095,13 @@
   //
   // 返事を待つあいだの骨組み (ホームのあなたの番。js-home の homeSkeletonInto) に、使っている推しの絵と一言を添えて
   // 待ち時間を退屈にしない。骨組みが消えれば (fillBlock が区画を空にする) 一緒に消える。
-  // - 出すのは推しがオンのときだけ。設定が届く前は、前回の推しの覚え (localStorage。キャラ・名前・せりふ・絵の鍵) で出す。
-  //   覚えが無ければ出さない (何も待たない)。設定と推しが届いたら、まだ骨組みが出ていればそこで出す (oshiWaitRefresh)
+  // - 出すのは推しがオンのときだけ。設定が届く前は、前回の推しの覚え (localStorage。誰の覚えか・キャラ・名前・せりふ・絵の鍵) で出す。
+  //   **覚えは本人 (currentUser。apiWhoAmI) と合うときだけ使う** (同じブラウザで別の人が開いたとき、前の人の名前とせりふを出さない)。
+  //   本人がまだ分からない・覚えが無いときは出さない (何も待たない)。合わない覚えは消す
+  // - 設定・本人・推しが届いたら、まだ骨組みが出ていればそこで出す・合わせる (oshiWaitRefresh)。キャラが変われば出し直す
   // - 一言は いまのあいさつ (朝・昼・夜) と 待っているとき (考え中 spinner) の場面のせりふからでたらめに選ぶ。せりふの写しは持たない
-  // - 絵は oshiImage の道 (メモリ → IndexedDB → サーバ)。覚えで出すとき (推しが届く前) はメモリと IndexedDB だけを見て
-  //   サーバへは行かない (最初の波に呼び出しを足さない)。届く前に骨組みが消えたら差し込まない
+  // - 絵はまずメモリと IndexedDB だけを見る。無ければ、最初の波が閉じてから (bootLater) oshiImage の道でサーバから取る
+  //   (最初の波に呼び出しを足さない)。届く前に骨組みが消えた・絵を出し直した (世代が変わった) ときは差し込まない
   // - 骨組みの寸法は変えない (CSS で骨組みの右に重ねる)。狭い画面では絵を出さず一言だけ
 
   /** 前回の推しの覚えを置く localStorage の鍵 */
@@ -1111,13 +1133,19 @@
     return list[Math.min(list.length - 1, Math.floor(Math.random() * list.length))];
   }
 
+  /** @returns {string} いま開いている本人 (apiWhoAmI)。まだ分からなければ空 */
+  function oshiWaitWho() {
+    return typeof currentUser === 'string' ? currentUser : '';
+  }
+
   /**
-   * 覚えに入れる絵の鍵。自分のキャラ・公開されたキャラは中身の指紋、最初からいるキャラは キャラ・形・表情・絵の版。
+   * 絵の鍵。自分のキャラ・公開されたキャラは中身の指紋、最初からいるキャラは キャラ・形・表情・絵の版。
    *
    * @param {string} state oshiPickState を通した表情
    * @returns {object|null}
    */
   function oshiWaitPicture(state) {
+    if (!state) return null;
     var mine = oshiActiveMine();
     var row = mine ? oshiImageRow(state, mine) : null;
     if (row && row.sha) return { sha: String(row.sha) };
@@ -1126,10 +1154,19 @@
     return { builtin: key, style: oshiStyle(), state: state, v: oshiDefaultVersion() };
   }
 
-  /** いま使う推しを覚える (apiOshiGet が届いたとき)。オフ・せりふが無いときは消す */
+  /** @returns {string} 絵の鍵を1つの字に (同じ絵かを比べる) */
+  function oshiWaitPicKey(pic) {
+    if (!pic) return '';
+    if (pic.sha) return 's:' + pic.sha;
+    return 'd:' + pic.builtin + ':' + pic.style + ':' + pic.state + ':' + pic.v;
+  }
+
+  /** いま使う推しを覚える (apiOshiGet が届いたとき)。オフ・せりふが無いときは消す。本人が分からなければ覚えない */
   function oshiWaitMemoSave() {
     try {
       if (!oshiOn() || !oshiData) { oshiWaitMemoClear(); return; }
+      var who = oshiWaitWho();
+      if (!who) return;
       var scenes = {};
       var any = false;
       OSHI_WAIT_MEMO_EVENTS().forEach(function (k) {
@@ -1137,12 +1174,12 @@
         var lines = oshiWaitLinesOf(k).slice(0, OSHI_WAIT_LINES_MAX());
         if (!ev || !lines.length) return;
         var st = oshiPickState(ev.state) || '';
-        scenes[k] = { lines: lines, state: st, pic: st ? oshiWaitPicture(st) : null };
+        scenes[k] = { lines: lines, state: st, pic: oshiWaitPicture(st) };
         any = true;
       });
       if (!any) { oshiWaitMemoClear(); return; }
       window.localStorage.setItem(OSHI_WAIT_MEMO_KEY(), JSON.stringify({
-        char: String(oshiData.char || ''), name: String(oshiData.name || '推し'), scenes: scenes }));
+        who: who, char: String(oshiData.char || ''), name: String(oshiData.name || '推し'), scenes: scenes }));
     } catch (e) { /* 覚えられなくても、届いてからは出る */ }
   }
 
@@ -1150,13 +1187,24 @@
     try { window.localStorage.removeItem(OSHI_WAIT_MEMO_KEY()); } catch (e) { /* 消せなくても、設定が届けば外れる */ }
   }
 
-  /** @returns {object|null} 前回の推しの覚え。形が合わなければ null */
+  /**
+   * 前回の推しの覚え。形が合わない・本人がまだ分からない・別の人の覚えなら null (別の人の覚えは消す)。
+   *
+   * @returns {object|null}
+   */
   function oshiWaitMemoRead() {
+    var m = null;
     try {
-      var m = JSON.parse(window.localStorage.getItem(OSHI_WAIT_MEMO_KEY()) || 'null');
-      if (!m || typeof m !== 'object' || !m.scenes || typeof m.scenes !== 'object') return null;
-      return m;
-    } catch (e) { return null; }
+      m = JSON.parse(window.localStorage.getItem(OSHI_WAIT_MEMO_KEY()) || 'null');
+    } catch (e) { m = null; }
+    if (!m || typeof m !== 'object' || !m.scenes || typeof m.scenes !== 'object') return null;
+    var who = oshiWaitWho();
+    if (!who) return null;
+    if (typeof m.who !== 'string' || m.who !== who) {
+      oshiWaitMemoClear();
+      return null;
+    }
+    return m;
   }
 
   /** @returns {string[]} 覚えの場面のせりふ (字でないもの・空は捨てる) */
@@ -1170,7 +1218,7 @@
    * オフ・何も無いときは null (出さない)。
    *
    * @param {Date} now
-   * @returns {object|null} {live, char, name, event, text, state, pic}
+   * @returns {object|null} {live, who, char, name, event, text, state, pic}
    */
   function oshiWaitPick(now) {
     var keys = oshiWaitEvents(now);
@@ -1180,8 +1228,9 @@
       if (!live.length) return null;
       var key = oshiWaitAny(live);
       var ev = oshiEventOf(key);
-      return { live: true, char: String(oshiData.char || ''), name: oshiData.name || '推し', event: key,
-        text: oshiWaitAny(oshiWaitLinesOf(key)), state: oshiPickState(ev.state), pic: null };
+      var st = oshiPickState(ev.state) || '';
+      return { live: true, who: oshiWaitWho(), char: String(oshiData.char || ''), name: oshiData.name || '推し', event: key,
+        text: oshiWaitAny(oshiWaitLinesOf(key)), state: st, pic: oshiWaitPicture(st) };
     }
     var memo = oshiWaitMemoRead();
     if (!memo) return null;
@@ -1191,7 +1240,7 @@
     if (!got.length) return null;
     var mk = oshiWaitAny(got);
     var sc = memo.scenes[mk];
-    return { live: false, char: String(memo.char || ''), name: String(memo.name || '推し'), event: mk,
+    return { live: false, who: memo.who, char: String(memo.char || ''), name: String(memo.name || '推し'), event: mk,
       text: oshiWaitAny(oshiWaitMemoLines(sc)), state: typeof sc.state === 'string' ? sc.state : '',
       pic: sc.pic && typeof sc.pic === 'object' ? sc.pic : null };
   }
@@ -1210,6 +1259,7 @@
     el.className = 'oshi-wait';
     // 読み上げには骨組みの「読み込んでいます」だけを届ける (飾りの一言で待ちの知らせを埋めない)
     el.setAttribute('aria-hidden', 'true');
+    el.dataset.who = pick.who || '';
     el.dataset.char = pick.char;
     el.dataset.event = pick.event;
     el.dataset.from = pick.live ? 'live' : 'memo';
@@ -1222,88 +1272,115 @@
     el.appendChild(fig);
     box.classList.add('has-oshi');
     box.appendChild(el);
-    var still = function () { return el.isConnected && box.contains(el); };
+    oshiWaitFigure(el, pick.name, pick.state, pick.pic, pick.live);
+  }
+
+  /**
+   * 絵を出す (出し直す)。まず名前の頭文字の丸、メモリか IndexedDB にあればその絵。無ければ、届いた推しで出すときだけ
+   * 最初の波が閉じてから oshiImage の道で取る。出し直すたびに世代を進め、古い世代の絵は差し込まない。
+   *
+   * @param {HTMLElement} el .oshi-wait
+   * @param {string} name
+   * @param {string} state 出す表情 (oshiPickState を通したもの)
+   * @param {object|null} pic oshiWaitPicture
+   * @param {boolean} live 届いた推しで出すか (覚えで出すときはサーバへ行かない)
+   */
+  function oshiWaitFigure(el, name, state, pic, live) {
+    var fig = el.querySelector('.oshi-wait-fig');
+    if (!fig) return;
+    // 絵を出し直した回数 (世代)。遅れて届いた古い世代の絵が、新しい絵を上書きしない (still が見る)
+    var gen = String((Number(el.dataset.gen) || 0) + 1);
+    el.dataset.gen = gen;
+    el.dataset.pic = oshiWaitPicKey(pic);
+    var still = function () { return el.isConnected && el.dataset.gen === gen; };
+    fig.textContent = '';
+    var face = document.createElement('span');
+    face.className = 'oshi-avatar';
+    face.textContent = (name || '推').slice(0, 1);
+    fig.appendChild(face);
+    if (!state || !pic) return;
     try {
-      if (pick.live) oshiFillFigure(fig, pick.state, pick.name, still);
-      else oshiWaitMemoFigure(fig, pick, still);
+      oshiWaitLocalImage(pic, function (url) {
+        if (!still()) return;
+        if (url) {
+          fig.textContent = '';
+          var img = document.createElement('img');
+          img.className = 'oshi-img';
+          img.alt = '';
+          img.src = url;
+          fig.appendChild(img);
+          return;
+        }
+        if (!live) return;
+        bootLater(function () {
+          if (still()) oshiFillFigure(fig, state, name, still);
+        });
+      });
     } catch (e) {
       if (window.console) console.warn('待つあいだの推しの絵を出せませんでした', e);
     }
   }
 
   /**
-   * 覚えで出すときの絵。メモリの覚えか IndexedDB にあるときだけ出す (サーバへは行かない。推しが届けば oshiWaitRefresh が取る)。
+   * 手元 (メモリ → IndexedDB) にある絵。無ければ cb('')。サーバへは行かない。
+   * 最初からいるキャラの絵は、版が分かっていて同じときだけ使う (配り直して絵が変わったかを見分けられないものは使わない)。
    *
-   * @param {HTMLElement} fig
-   * @param {object} pick oshiWaitPick
-   * @param {function(): boolean} still
+   * @param {object} pic oshiWaitPicture
+   * @param {function(string)} cb
    */
-  function oshiWaitMemoFigure(fig, pick, still) {
-    fig.textContent = '';
-    var face = document.createElement('span');
-    face.className = 'oshi-avatar';
-    face.textContent = (pick.name || '推').slice(0, 1);
-    fig.appendChild(face);
-    var pic = pick.pic;
-    if (!pic || !pick.state) return;
-    var put = function (url) {
-      if (!url || !still()) return;
-      fig.textContent = '';
-      var img = document.createElement('img');
-      img.className = 'oshi-img';
-      img.alt = '';
-      img.src = url;
-      fig.appendChild(img);
-    };
+  function oshiWaitLocalImage(pic, cb) {
     if (pic.sha) {
       var sha = String(pic.sha);
-      if (oshiImgs && oshiImgs[sha]) { put(oshiImgs[sha]); return; }
-      oshiIdbGet(oshiIdbMineKey(sha), function (rec) { put(rec && rec.dataUrl); });
+      if (oshiImgs && oshiImgs[sha]) { cb(oshiImgs[sha]); return; }
+      oshiIdbGet(oshiIdbMineKey(sha), function (rec) { cb((rec && rec.dataUrl) || ''); });
       return;
     }
-    if (!pic.builtin) return;
+    if (!pic.builtin || typeof pic.v !== 'number') { cb(''); return; }
     var mk = pic.builtin + ':' + pic.style + ':' + pic.state;
-    if (oshiDefaultImgs && oshiDefaultImgs[mk]) { put(oshiDefaultImgs[mk]); return; }
-    // 版が分からない覚えの絵は使わない (配り直して絵が変わったかを見分けられない)
-    if (typeof pic.v !== 'number') return;
+    // メモリの絵はいまの版のもの。覚えの版と同じときだけ使う
+    if (oshiDefaultImgs && oshiDefaultImgs[mk] && oshiDefaultVersion() === pic.v) { cb(oshiDefaultImgs[mk]); return; }
     oshiIdbGet(oshiIdbDefaultKey(pic.builtin, pic.style, pic.state), function (rec) {
-      if (rec && rec.dataUrl && rec.v === pic.v) put(rec.dataUrl);
+      cb(rec && rec.dataUrl && rec.v === pic.v ? rec.dataUrl : '');
     });
   }
 
+  /** 骨組みの推しを外す */
+  function oshiWaitRemove(box) {
+    var cur = box.querySelector('.oshi-wait');
+    if (cur) cur.remove();
+    box.classList.remove('has-oshi');
+  }
+
   /**
-   * 設定・推しが届いた / 変わったとき、出ている骨組みの推しを合わせる。オフなら外す。覚えで出したものは、
-   * 同じキャラなら一言を残して絵だけ (まだ出ていなければ) 取り直し、別のキャラなら出し直す。まだ出ていなければ出す。
+   * 設定・本人・推しが届いた / 変わったとき、出ている骨組みの推しを合わせる。
+   * - オフなら外す。別の人の覚えで出したものは外す
+   * - 推しを取り直している最中 (oshiData が空) は、届いた推しで出したものを外す (前のキャラを残さない)。覚えはそのまま
+   * - 届いた推しとキャラが違えば出し直す。同じキャラなら一言は残し、出すべき絵が変わっていれば絵だけ出し直す
+   * - まだ出ていなければ出す
    */
   function oshiWaitRefresh() {
     var boxes = document.querySelectorAll('[data-oshi-wait]');
+    var who = oshiWaitWho();
     for (var i = 0; i < boxes.length; i++) {
       var box = boxes[i];
+      if (!oshiOn() && prefs) { oshiWaitRemove(box); continue; }
       var cur = box.querySelector('.oshi-wait');
-      if (!oshiOn()) {
-        if (cur) cur.remove();
-        box.classList.remove('has-oshi');
+      if (cur && who && cur.dataset.who !== who) { oshiWaitRemove(box); cur = null; }
+      if (!oshiData) {
+        if (cur && cur.dataset.from === 'live') { oshiWaitRemove(box); cur = null; }
+        if (!cur) oshiWaitInto(box);
         continue;
       }
-      if (!oshiData || (cur && cur.dataset.from === 'live')) continue;
-      if (cur && cur.dataset.char === String(oshiData.char || '')) {
-        cur.dataset.from = 'live';
-        if (!cur.querySelector('.oshi-img')) oshiWaitRefill(cur);
-        continue;
+      if (cur && cur.dataset.char !== String(oshiData.char || '')) { oshiWaitRemove(box); cur = null; }
+      if (!cur) { oshiWaitInto(box); continue; }
+      cur.dataset.from = 'live';
+      var ev = oshiEventOf(cur.dataset.event);
+      var st = oshiPickState(ev ? ev.state : 'idle') || '';
+      var pic = oshiWaitPicture(st);
+      if (cur.dataset.pic !== oshiWaitPicKey(pic) || !cur.querySelector('.oshi-img')) {
+        oshiWaitFigure(cur, oshiData.name || '推し', st, pic, true);
       }
-      if (cur) cur.remove();
-      box.classList.remove('has-oshi');
-      oshiWaitInto(box);
     }
-  }
-
-  /** 覚えで出した推しの絵を、届いた推しで取り直す (一言はそのまま) */
-  function oshiWaitRefill(el) {
-    var ev = oshiEventOf(el.dataset.event);
-    var fig = el.querySelector('.oshi-wait-fig');
-    if (!fig) return;
-    oshiFillFigure(fig, oshiPickState(ev ? ev.state : 'idle'), (oshiData && oshiData.name) || '推し',
-      function () { return el.isConnected; });
   }
 
   // ----- 機嫌 (自分の設定 oshi.mood。既定はオフ) -----
