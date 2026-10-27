@@ -105,7 +105,10 @@ function makeQueue(queueDir, opts) {
   function place(op, args) {
     if (!fs.existsSync(queueDir)) throw new Error('命令の入れ先がありません: ' + queueDir);
     const id = 'vsc-' + now() + '-' + Math.random().toString(36).slice(2, 8).replace(/[^a-z0-9]/g, '0');
-    fs.writeFileSync(files(id).cmd, JSON.stringify({ op, args: args || {} }, null, 2));
+    // 書きかけを拾われないよう、別名で書いてから名前を変える (Drive の同期は書き終える前に送ることがある)
+    const tmp = files(id).cmd + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ op, args: args || {} }, null, 2));
+    fs.renameSync(tmp, files(id).cmd);
     pending.add(id);
     return id;
   }
