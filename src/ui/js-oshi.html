@@ -375,6 +375,9 @@
   /**
    * 表情の絵を取る。取ってあれば同期で渡す。
    *
+   * 探す順は メモリの覚え (oshiImgs) → ブラウザの覚え (IndexedDB。鍵は中身の指紋なので版は要らない) → サーバ。
+   * ブラウザの覚えが使えない環境では、今までどおりその場でサーバから取る (oshiIdbGet が null を渡す)。
+   *
    * @param {string} state
    * @param {function(string)} cb data URL
    * @param {object} [c] 自分のキャラ。省くと、いま使うキャラ
@@ -392,15 +395,35 @@
       cb(oshiImgs[row.sha]);
       return;
     }
-    call('apiOshiImage', [mine.charId, state], function (res) {
-      if (!res || !res.dataUrl) return;
-      oshiImgs[res.sha] = res.dataUrl;
-      cb(res.dataUrl);
-    }, failQuiet('絵が出なくても、名前とせりふは出る'));
+    var sha = row.sha;
+    oshiIdbGet(oshiIdbMineKey(sha), function (rec) {
+      if (rec && rec.dataUrl) {
+        oshiImgs[sha] = rec.dataUrl;
+        cb(rec.dataUrl);
+        return;
+      }
+      call('apiOshiImage', [mine.charId, state], function (res) {
+        if (!res || !res.dataUrl) return;
+        oshiRememberMine(res.sha, res.dataUrl);
+        cb(res.dataUrl);
+      }, failQuiet('絵が出なくても、名前とせりふは出る'));
+    });
+  }
+
+  /** 自分のキャラ・公開されたキャラの絵を、メモリとブラウザの両方に覚える (中身の指紋が鍵) */
+  function oshiRememberMine(sha, dataUrl) {
+    if (!sha || !dataUrl) return;
+    if (!oshiImgs) oshiImgs = {};
+    oshiImgs[sha] = dataUrl;
+    oshiIdbPut(oshiIdbMineKey(sha), { dataUrl: dataUrl });
   }
 
   /**
    * 最初からいるキャラの絵を取る。取ってあれば同期で渡す。取りに行っている最中なら、届いたときに渡す。
+   *
+   * 探す順は メモリの覚え (oshiDefaultImgs) → ブラウザの覚え (IndexedDB) → サーバ。ブラウザの覚えは絵の版
+   * (apiOshiGet の defaultImageVersion) が同じものだけ使い、違えば消して取り直す。版がまだ分からない
+   * (apiOshiGet が届く前) ときはブラウザの覚えを見ない。読んでいるあいだも oshiDefaultWaiting で待ち合わせる。
    *
    * @param {string} char taku / itsuki / tsujippi / ikkun / ryoka / satomi (OSHI_BUILTINS の key)
    * @param {string} style
@@ -426,25 +449,257 @@
       return;
     }
     oshiDefaultWaiting[key] = [cb];
-    var quiet = failQuiet('絵が出なくても、名前とせりふは出る');
-    call('apiOshiDefaultImage', [char, style, state], function (res) {
+    var hand = function (url) {
       var waiting = oshiDefaultWaiting[key] || [];
       delete oshiDefaultWaiting[key];
+      oshiDefaultImgs[key] = url;
+      // 届くまでに設定を変えていたら、古い形の絵は差し込まない (別のキャラかは、差し込む側の still が見る)
+      if (!oshiOn() || oshiStyle() !== style) return;
+      waiting.forEach(function (fn) { fn(url, state); });
+    };
+    var version = oshiDefaultVersion();
+    if (version === null) {
+      oshiDefaultFetch(char, style, state, key, hand);
+      return;
+    }
+    var idbKey = oshiIdbDefaultKey(char, style, state);
+    oshiIdbGet(idbKey, function (rec) {
+      if (rec && rec.dataUrl && rec.v === version) {
+        hand(rec.dataUrl);
+        return;
+      }
+      // 前の版の絵 (配り直して絵が変わった)。使わずに消し、取り直す
+      if (rec) oshiIdbDelete(idbKey);
+      oshiDefaultFetch(char, style, state, key, hand);
+    });
+  }
+
+  /** いま分かっている最初からいるキャラの絵の版 (apiOshiGet の defaultImageVersion)。まだなら null */
+  function oshiDefaultVersion() {
+    var v = oshiData && oshiData.defaultImageVersion;
+    return typeof v === 'number' ? v : null;
+  }
+
+  /** oshiDefaultImage のサーバから取るところ。届いた絵はブラウザにも版を添えて置く */
+  function oshiDefaultFetch(char, style, state, key, hand) {
+    var quiet = failQuiet('絵が出なくても、名前とせりふは出る');
+    call('apiOshiDefaultImage', [char, style, state], function (res) {
       if (!res || !res.dataUrl) {
+        var waiting = oshiDefaultWaiting[key] || [];
+        delete oshiDefaultWaiting[key];
         // 最初からいるキャラに絵の無い表情 (むっ)。代わりの表情があれば、その絵を渡す
         var fb = oshiStateFallback(state);
         oshiDefaultMissing[key] = fb || true;
         if (fb) waiting.forEach(function (fn) { oshiDefaultImage(char, style, fb, fn); });
         return;
       }
-      oshiDefaultImgs[key] = res.dataUrl;
-      // 届くまでに設定を変えていたら、古い形の絵は差し込まない (別のキャラかは、差し込む側の still が見る)
-      if (!oshiOn() || oshiStyle() !== style) return;
-      waiting.forEach(function (fn) { fn(res.dataUrl, state); });
+      var v = typeof res.version === 'number' ? res.version : oshiDefaultVersion();
+      if (v !== null) oshiIdbPut(oshiIdbDefaultKey(char, style, state), { dataUrl: res.dataUrl, v: v });
+      hand(res.dataUrl);
     }, function (err) {
       delete oshiDefaultWaiting[key];
       quiet(err);
     });
+  }
+
+  // ----- 絵のブラウザの覚え (IndexedDB) -----
+  //
+  // 絵は1枚 400〜500KB の data URL で、画面を開くたびにサーバから取り直していた。ブラウザの IndexedDB に置き、
+  // 同じ絵なら取りに行かない。localStorage は 5MB ほどで足りないので使わない。
+  // - 鍵: 自分のキャラ・公開されたキャラは 's:(中身の指紋)'、最初からいるキャラは 'd:(キャラ):(形):(表情)' (版は中身に v で持つ)
+  // - 店は2つ。絵 (pics: 鍵 → {dataUrl, v?}) と、最後に使った時刻 (meta: 鍵 → {used, v?})。使うたびに書くのは小さい meta だけ
+  // - 置く数が OSHI_IDB_MAX を超えたら、最後に使ったのが古い順に消す。前の版の最初からいるキャラの絵も、そのとき消す
+  // - 無い・開けない・書けない・返事が来ない環境 (プライベート窓・容量不足・iframe で拒まれる) では、黙って覚えずに
+  //   サーバから取る。**ここで絵が出なくなる・画面が止まることは無いようにする** (どこも try で包み、待つのは OSHI_IDB_WAIT_MS まで)
+
+  /** IndexedDB の名前と版 (店の形を変えたら版を上げ、onupgradeneeded で作り直す) */
+  var OSHI_IDB_NAME = 'softbanto-oshi-images';
+  var OSHI_IDB_SCHEMA = 1;
+  /** 置いておく絵の数の上限。1枚 500KB として 30MB ほど */
+  var OSHI_IDB_MAX = 60;
+  /** 開く・読むのを待つ長さ (ms)。返事が来ない環境で絵を止めない */
+  var OSHI_IDB_WAIT_MS = 1500;
+  /** 開いた DB。null はまだ、false は使えない */
+  var oshiIdbDb = null;
+  /** 開いている最中に待っている cb */
+  var oshiIdbOpening = [];
+
+  function oshiIdbMineKey(sha) { return 's:' + sha; }
+  function oshiIdbDefaultKey(char, style, state) { return 'd:' + char + ':' + style + ':' + state; }
+
+  /** IDB の失敗の知らせを window の error に上げない (拒まれるのは想定のうち) */
+  function oshiIdbHush(ev) {
+    try { if (ev && ev.preventDefault) ev.preventDefault(); } catch (e) { /* 止められなくても害は無い */ }
+  }
+
+  /**
+   * DB を開く。使えなければ cb(null)。IndexedDB が無い環境ではその場で (同期で) 呼ぶ。
+   *
+   * @param {function((IDBDatabase|null))} cb
+   */
+  function oshiIdbOpen(cb) {
+    if (oshiIdbDb === false) { cb(null); return; }
+    if (oshiIdbDb) { cb(oshiIdbDb); return; }
+    oshiIdbOpening.push(cb);
+    if (oshiIdbOpening.length > 1) return;
+    var settled = false;
+    var timer = null;
+    var done = function (db) {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      oshiIdbDb = db || false;
+      var list = oshiIdbOpening;
+      oshiIdbOpening = [];
+      list.forEach(function (fn) { fn(db || null); });
+    };
+    var idb = null;
+    try { idb = window.indexedDB || null; } catch (e) { idb = null; }
+    if (!idb) { done(null); return; }
+    try {
+      var req = idb.open(OSHI_IDB_NAME, OSHI_IDB_SCHEMA);
+      timer = setTimeout(function () { done(null); }, OSHI_IDB_WAIT_MS);
+      req.onupgradeneeded = function () {
+        try {
+          var db = req.result;
+          if (!db.objectStoreNames.contains('pics')) db.createObjectStore('pics');
+          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        } catch (e) { /* 作れなければ、あとの読み書きが失敗してサーバから取る */ }
+      };
+      req.onsuccess = function () {
+        var db = null;
+        try { db = req.result; } catch (e) { db = null; }
+        // 別のタブが版を上げたら閉じる (閉じないと相手の作り直しが止まる)。次からはサーバから取る
+        if (db) {
+          try {
+            db.onversionchange = function () {
+              try { db.close(); } catch (e) { /* 閉じられなくても害は無い */ }
+              oshiIdbDb = false;
+            };
+          } catch (e) { /* 無くても動く */ }
+        }
+        done(db);
+      };
+      req.onerror = function (ev) {
+        oshiIdbHush(ev);
+        done(null);
+      };
+      req.onblocked = function () { done(null); };
+    } catch (e) {
+      done(null);
+    }
+  }
+
+  /**
+   * 1つ読む。無い・読めない・待っても返事が来ないときは cb(null)。cb は必ず1回だけ呼ぶ。
+   * 読めたら最後に使った時刻を書く (消す順に使う)。
+   *
+   * @param {string} key
+   * @param {function((object|null))} cb
+   */
+  function oshiIdbGet(key, cb) {
+    var settled = false;
+    var finish = function (v) {
+      if (settled) return;
+      settled = true;
+      cb(v);
+    };
+    oshiIdbOpen(function (db) {
+      if (!db) { finish(null); return; }
+      var timer = setTimeout(function () { finish(null); }, OSHI_IDB_WAIT_MS);
+      var end = function (v) { clearTimeout(timer); finish(v); };
+      try {
+        var tx = db.transaction(['pics', 'meta'], 'readwrite');
+        var req = tx.objectStore('pics').get(key);
+        req.onsuccess = function () {
+          var v = null;
+          try { v = req.result || null; } catch (e) { v = null; }
+          if (v) {
+            try { tx.objectStore('meta').put({ used: Date.now(), v: v.v }, key); } catch (e) { /* 時刻を書けなくても絵は使える */ }
+          }
+          end(v);
+        };
+        req.onerror = function (ev) {
+          oshiIdbHush(ev);
+          end(null);
+        };
+      } catch (e) {
+        end(null);
+      }
+    });
+  }
+
+  /**
+   * 1つ置く (届くのを待たない)。置けたら数を見て、上限を超えていれば古い順に消す。
+   * 置けなかった (容量不足など) ときは、半分まで減らしておく (次に置けるように)。
+   *
+   * @param {string} key
+   * @param {{dataUrl: string, v: (number|undefined)}} value
+   */
+  function oshiIdbPut(key, value) {
+    oshiIdbOpen(function (db) {
+      if (!db) return;
+      try {
+        var tx = db.transaction(['pics', 'meta'], 'readwrite');
+        tx.oncomplete = function () { oshiIdbTrim(db, OSHI_IDB_MAX); };
+        tx.onabort = function () { oshiIdbTrim(db, Math.floor(OSHI_IDB_MAX / 2)); };
+        tx.onerror = oshiIdbHush;
+        tx.objectStore('pics').put(value, key);
+        tx.objectStore('meta').put({ used: Date.now(), v: value.v }, key);
+      } catch (e) { /* 覚えられなくても、絵はもう出ている */ }
+    });
+  }
+
+  /** 1つ消す (前の版の絵など)。消せなくても害は無い (いつか古い順に消える) */
+  function oshiIdbDelete(key) {
+    oshiIdbOpen(function (db) {
+      if (!db) return;
+      try {
+        var tx = db.transaction(['pics', 'meta'], 'readwrite');
+        tx.onerror = oshiIdbHush;
+        tx.objectStore('pics').delete(key);
+        tx.objectStore('meta').delete(key);
+      } catch (e) { /* 消せなくても害は無い */ }
+    });
+  }
+
+  /**
+   * 置く数を max までに減らす。前の版の最初からいるキャラの絵 (meta の v が今の版と違う) は数に関係なく消し、
+   * 残りは最後に使ったのが古い順に消す。
+   *
+   * @param {IDBDatabase} db
+   * @param {number} max
+   */
+  function oshiIdbTrim(db, max) {
+    var version = oshiDefaultVersion();
+    try {
+      var tx = db.transaction(['pics', 'meta'], 'readwrite');
+      tx.onerror = oshiIdbHush;
+      var meta = tx.objectStore('meta');
+      var keysReq = meta.getAllKeys();
+      keysReq.onsuccess = function () {
+        var keys = keysReq.result || [];
+        var valsReq = meta.getAll();
+        valsReq.onsuccess = function () {
+          var vals = valsReq.result || [];
+          var drop = [];
+          var keep = [];
+          keys.forEach(function (k, i) {
+            var m = vals[i] || {};
+            var old = String(k).indexOf('d:') === 0 && version !== null && m.v !== version;
+            (old ? drop : keep).push({ key: k, used: m.used || 0 });
+          });
+          keep.sort(function (a, b) { return a.used - b.used; });
+          if (keep.length > max) drop = drop.concat(keep.slice(0, keep.length - max));
+          try {
+            drop.forEach(function (r) {
+              tx.objectStore('pics').delete(r.key);
+              meta.delete(r.key);
+            });
+          } catch (e) { /* 減らせなくても、次に置くときにまた試す */ }
+        };
+      };
+    } catch (e) { /* 減らせなくても、次に置くときにまた試す */ }
   }
 
   /**
@@ -2199,7 +2454,7 @@
         }
         status.textContent = '「' + label + '」を入れています… (' + (i + 1) + ' / ' + jobs.length + ')';
         call('apiOshiSetImage', [c.charId, job.state, url], function (res) {
-          oshiImgs[res.sha] = url;
+          oshiRememberMine(res.sha, url);
           var imgs = (c.images || []).filter(function (r) { return r.state !== job.state; });
           imgs.push({ state: res.state, sha: res.sha, mime: res.mime, updatedAt: '' });
           oshiSetMineImages(d, c, imgs);
@@ -2365,7 +2620,7 @@
       var fail = function (why) { showSnack(why, { kind: 'ng' }); };
       oshiReadFile(file, d.limits, function (read) { oshiMaybeGreen(read, d.limits, function (dataUrl) {
         call('apiOshiSetImage', [c.charId, s.key, dataUrl], function (res) {
-          oshiImgs[res.sha] = dataUrl;
+          oshiRememberMine(res.sha, dataUrl);
           var list = (c.images || []).filter(function (r) { return r.state !== s.key; });
           list.push({ state: res.state, sha: res.sha, mime: res.mime, updatedAt: '' });
           oshiSetMineImages(d, c, list);
