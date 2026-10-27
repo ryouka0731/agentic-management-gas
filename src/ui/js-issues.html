@@ -328,12 +328,13 @@
     ganttEl.hidden = view !== 'gantt';
     tallyEl.hidden = view !== 'tally';
     trashListEl.hidden = view !== 'trash';
+    recurListEl.hidden = view !== 'recur';
 
-    // 捨てたものと集計は、絞り込みや束ね方の対象外
-    var plain = view === 'trash' || view === 'tally';
+    // 捨てたもの・集計・繰り返しは、絞り込みや束ね方の対象外
+    var plain = view === 'trash' || view === 'tally' || view === 'recur';
     issueFilterEl.parentNode.hidden = plain;
     issueGroupSel.parentNode.hidden = plain;
-    mineBtn.hidden = view === 'trash';
+    mineBtn.hidden = view === 'trash' || view === 'recur';
     // 集計と捨てたものには絞りが効かないので出さない
     overdueOnlyBtn.hidden = !overdueOnly || plain;
 
@@ -358,6 +359,7 @@
   function reloadIssueView() {
     if (issueView === 'tally') loadTally();
     else if (issueView === 'trash') loadTrash();
+    else if (issueView === 'recur') loadRecur();
     else if (issueView === 'board') loadBoard();
     else if (issueView === 'gantt') loadGantt();
     else loadIssues();

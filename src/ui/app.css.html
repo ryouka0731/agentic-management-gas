@@ -2710,6 +2710,16 @@ button.gantt-name:hover { color: var(--accent); }
 .chip-pri-high { background: var(--danger-bg); color: var(--danger); }
 .chip-pri-low { background: var(--bg-3); color: var(--ink-2); }
 
+/* 文書の見直しの期日 (js-docs)。過ぎたものは危ない色、何日前に入ったものは注意の色。字にも「過ぎ」と書く */
+.chip-review-late { background: var(--danger-bg); color: var(--danger); }
+.chip-review-soon { background: var(--warn-bg); color: var(--warn); }
+.doc-review-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+
+/* 繰り返しのやること (js-recur)。上の案内と「作る」を1行に並べ、狭い画面では折り返す */
+.recur-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.recur-bar p { flex: 1 1 240px; margin: 0; }
+.recur-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+
 /* =====================================================================
  * 進め方の案内
  *

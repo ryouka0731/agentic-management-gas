@@ -244,6 +244,9 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
     // 成果の数も1日1回の別の印で走る (Outcomes.gs)。済んだことにしておく
     ctx.PropertiesService.getScriptProperties().setProperty('OUTCOMES_ON',
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    // 繰り返しのやることの起票も1日1回の別の印 (Recurrence.gs)。済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('RECURRENCE_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     const seen = watchLocks(ctx);
     ctx.processCommandQueue();
     expect(seen.top).toBe(0);
@@ -256,6 +259,9 @@ describe('鍵を長く持たない (画面からの登録を「混み合って�
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     // 成果の数も1日1回の別の印で走る (Outcomes.gs)。済んだことにしておく
     ctx.PropertiesService.getScriptProperties().setProperty('OUTCOMES_ON',
+      ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
+    // 繰り返しのやることの起票も1日1回の別の印 (Recurrence.gs)。済んだことにしておく
+    ctx.PropertiesService.getScriptProperties().setProperty('RECURRENCE_ON',
       ctx.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd'));
     enqueue(ctx, 'a', { op: 'listFiles', args: {} });
     enqueue(ctx, 'b', { op: 'listFiles', args: {} });

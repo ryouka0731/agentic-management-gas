@@ -1,0 +1,192 @@
+  // ===== 繰り返しのやること (やること #110。src/core/Recurrence.gs) =====
+  //
+  // やることの頁の見え方「繰り返し」。勤怠の締め・給与の計算・社会保険の手続きのように暦で決まる仕事を周期で登録すると、
+  // 1日1回の回 (命令キューのトリガー) が対象日の何日前かに1つだけやることを作る。作れるのは誰でも、直す・止める・消すのは
+  // 作った人と管理者 (サーバが canEdit で返す。押せないボタンには理由を添える)。
+
+  var recurListEl = document.getElementById('recur-list');
+
+  /** 周期の種類 (サーバの RECURRENCE_KINDS と同じ並び) */
+  var RECUR_KINDS = [['monthly', '毎月'], ['weekly', '毎週'], ['yearly', '毎年']];
+  var RECUR_WEEKDAYS = [['1', '月曜'], ['2', '火曜'], ['3', '水曜'], ['4', '木曜'], ['5', '金曜'],
+    ['6', '土曜'], ['0', '日曜']];
+
+  /** 'YYYY-MM-DD' → '11月30日' */
+  function recurDayLabel(day) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    return m ? Number(m[2]) + '月' + Number(m[3]) + '日' : '';
+  }
+
+  function loadRecur() {
+    var still = latest('recur');
+    showSkeleton(recurListEl, 'list', 2);
+    call('apiRecurrenceList', [], function (list) {
+      if (!still()) return;
+      renderRecur(list || []);
+    }, function (err) {
+      if (!still()) return;
+      failInto(recurListEl)(err);
+    });
+  }
+
+  function renderRecur(rows) {
+    recurListEl.textContent = '';
+    issueCountEl.textContent = rows.length + '件';
+
+    var bar = document.createElement('div');
+    bar.className = 'recur-bar';
+    var lead = document.createElement('p');
+    lead.className = 'row-meta';
+    lead.textContent = '毎月の締めや年に一度の手続きを登録すると、対象日の何日前かに1日1回の回がやることを1つだけ作ります。' +
+      '前の分が終わっていなくても作り、本文に前の番号を添えます。';
+    bar.appendChild(lead);
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn-primary';
+    add.appendChild(makeIcon('plus'));
+    add.appendChild(document.createTextNode('繰り返しを作る'));
+    add.addEventListener('click', function () { openRecurForm(null, add); });
+    bar.appendChild(add);
+    recurListEl.appendChild(bar);
+
+    if (!rows.length) {
+      recurListEl.appendChild(makeBlankState(
+        '繰り返しのやることはまだありません',
+        '「繰り返しを作る」から、毎週◯曜・毎月◯日・毎年◯月◯日の仕事を登録できます。'
+      ));
+      return;
+    }
+    rows.forEach(function (r) { recurListEl.appendChild(makeRecurRow(r)); });
+  }
+
+  function makeRecurRow(r) {
+    var row = document.createElement('div');
+    row.className = 'row-item recur-item';
+    row.dataset.id = r.id;
+
+    var main = document.createElement('div');
+    main.className = 'row-main';
+    var title = document.createElement('div');
+    title.className = 'row-title';
+    title.textContent = r.title;
+    main.appendChild(title);
+
+    var meta = document.createElement('div');
+    meta.className = 'row-meta recur-meta';
+    meta.appendChild(makePill(r.ruleText || '周期を直してください', 'chip chip-accent'));
+    if (!r.active) meta.appendChild(makePill('止めています', 'chip'));
+    var when = [];
+    if (r.active && r.nextOn) {
+      when.push('次は ' + recurDayLabel(r.nextOn) + ' の分 (' + recurDayLabel(r.issueOn) + ' に作ります)');
+    }
+    if (r.lastIssueNumber) when.push('前回 #' + r.lastIssueNumber);
+    if (r.assignee) when.push('担当 ' + String(r.assignee).split(',').map(personName).join('・'));
+    if (when.length) {
+      var t = document.createElement('span');
+      t.textContent = when.join(' · ');
+      meta.appendChild(t);
+    }
+    main.appendChild(meta);
+    row.appendChild(main);
+
+    var edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'btn';
+    edit.appendChild(makeIcon('pencil'));
+    edit.appendChild(document.createTextNode('直す'));
+    var stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'btn';
+    stop.textContent = r.active ? '止める' : '動かす';
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-danger';
+    del.appendChild(makeIcon('trash'));
+    del.setAttribute('aria-label', '「' + r.title + '」の繰り返しを消す');
+
+    if (!r.canEdit) {
+      [edit, stop, del].forEach(function (b) {
+        b.disabled = true;
+        attachHint(b, '直す・止める・消すのは、作った人と管理者だけです');
+      });
+    } else {
+      edit.addEventListener('click', function () { openRecurForm(r, edit); });
+      stop.addEventListener('click', function () {
+        stop.disabled = true;
+        call('apiRecurrenceUpdate', [r.id, { active: !r.active }], function () {
+          showSnack(r.active ? '「' + r.title + '」を止めました' : '「' + r.title + '」を動かしました', { kind: 'ok' });
+          loadRecur();
+        }, failEnable(stop, r.active ? '止められませんでした: ' : '動かせませんでした: '));
+      });
+      del.addEventListener('click', function () {
+        openConfirmStrip(recurListEl,
+          '「' + r.title + '」の繰り返しを消します。これまでに作ったやることは残ります。',
+          '消す',
+          function () {
+            call('apiRecurrenceDelete', [r.id], function () {
+              showSnack('「' + r.title + '」の繰り返しを消しました', { kind: 'ok' });
+              loadRecur();
+            }, failSnack('消せませんでした: '));
+          });
+      });
+    }
+    row.appendChild(edit);
+    row.appendChild(stop);
+    row.appendChild(del);
+    return row;
+  }
+
+  /**
+   * 作る・直す欄。周期の種類に合わない欄 (毎週の「日」など) は隠す。
+   *
+   * @param {object|null} r 直すときは一覧の1件
+   * @param {HTMLElement} [sourceEl]
+   */
+  function openRecurForm(r, sourceEl) {
+    var people = null;
+    var form = openInlineForm(
+      r ? '繰り返しを直す' : '繰り返しを作る',
+      [
+        { name: 'title', label: 'やること (例: 勤怠の締め)', required: true, value: r ? r.title : '' },
+        { name: 'kind', label: '繰り返し方', choices: RECUR_KINDS, value: r ? r.kind : 'monthly' },
+        { name: 'weekday', label: '曜日', choices: RECUR_WEEKDAYS,
+          value: r && r.weekday !== '' ? String(r.weekday) : '1' },
+        { name: 'month', label: '月 (1〜12)', type: 'number', value: r && r.month !== '' ? r.month : '' },
+        { name: 'day', label: '日 (1〜31)', type: 'number', value: r && r.day !== '' ? r.day : '',
+          note: '31 にすると、30日までの月は30日、2月は28日 (閏年は29日) になります' },
+        { name: 'leadDays', label: '何日前に作るか', type: 'number', value: r ? r.leadDays : 3 },
+        { name: 'dueDays', label: '期限 (対象日から何日あと。0 なら対象日)', type: 'number', value: r ? r.dueDays : 0 },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)', value: r ? r.assignee : '' },
+        { name: 'body', label: '補足 (作るやることの本文に入ります)', multiline: true, value: r ? r.body : '' },
+      ],
+      r ? '保存' : '作る',
+      function (v) {
+        var fields = {
+          title: v.title, kind: v.kind, weekday: v.weekday, month: v.month, day: v.day,
+          leadDays: v.leadDays, dueDays: v.dueDays, body: v.body,
+          assignee: people ? people.value() : v.assignee,
+        };
+        var name = r ? 'apiRecurrenceUpdate' : 'apiRecurrenceCreate';
+        var args = r ? [r.id, fields] : [fields];
+        call(name, args, function () {
+          showSnack(r ? '繰り返しを直しました' : '繰り返しを作りました', { kind: 'ok' });
+          if (issueView === 'recur') loadRecur();
+        }, failSnack(r ? '直せませんでした: ' : '作れませんでした: '));
+      },
+      sourceEl
+    );
+
+    var kindSel = form.querySelector('[name="kind"]');
+    function field(n) { return form.querySelector('[name="' + n + '"]').parentNode; }
+    function sync() {
+      var k = kindSel.value;
+      field('weekday').hidden = k !== 'weekly';
+      field('month').hidden = k !== 'yearly';
+      field('day').hidden = k === 'weekly';
+    }
+    kindSel.addEventListener('change', sync);
+    sync();
+    people = attachAssigneePicker(form.querySelector('[name="assignee"]'));
+    return form;
+  }
+

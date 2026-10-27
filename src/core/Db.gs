@@ -12,7 +12,10 @@ function DB_SCHEMA() {
   // dueDate を createdAt の前に入れて実際に壊した (作成日時が空になり、
   // 工程表が全行を読み飛ばした)。順序は test/schema.test.js で固定している
   return {
-    files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha'],
+    // 末尾の4つは文書の見直しの期日 (FileReview.gs)。reviewDue は 'YYYY-MM-DD'、reviewNoticeDays は何日前に作るか (空は30)、
+    // reviewIssuedFor は作った期日 (**二度作らない印**)。列の意味は docs/dev/ledger-schema.md
+    files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha',
+      'reviewDue', 'reviewAssignee', 'reviewNoticeDays', 'reviewIssuedFor'],
     commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
     pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles', 'staleReviewId'],
@@ -75,6 +78,11 @@ function DB_SCHEMA() {
     // meeting は結び付いた予定の名前 (会議不明なら空)、meetingAt はその始まり、minutes は長さ (分)、
     // issueNumbers は作ったやることの番号 (カンマ区切り)。列の意味は docs/dev/ledger-schema.md
     meeting_notes: ['docId', 'title', 'meeting', 'meetingAt', 'minutes', 'importedBy', 'importedAt', 'issueNumbers'],
+    // 繰り返しのやること (Recurrence.gs)。kind は weekly / monthly / yearly、weekday は 0 (日) 〜 6、day は日 (31 は月末)、
+    // month は毎年の月。lastIssuedFor は最後に起票した対象日 ('YYYY-MM-DD')。**二度作らない印**で、鍵の中で見てから書く。
+    // 列の意味は docs/dev/ledger-schema.md
+    recurrences: ['id', 'title', 'body', 'assignee', 'kind', 'weekday', 'day', 'month', 'dueDays', 'leadDays',
+      'active', 'lastIssuedFor', 'lastIssueNumber', 'createdBy', 'createdAt'],
   };
 }
 

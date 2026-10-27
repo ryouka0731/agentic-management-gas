@@ -54,6 +54,7 @@
       // 文書のリンク (文書だけの画面) では、つながったやることの欄と「リンクをコピー」は隠れている。取らない
       var linkOnly = document.body.classList.contains('doc-link');
       if (!linkOnly) loadLinkedIssues(fileId);
+      renderDocReview(linkOnly);
       setDocMode('view');
       refreshStatus();
       docLinkLoaded();
@@ -463,6 +464,103 @@
       });
       linkedIssuesEl.hidden = false;
     }, failQuiet('知らせなくてよい'));
+  }
+
+  // ===== 見直しの期日 (やること #112。src/core/FileReview.gs) =====
+  //
+  // 定期に見直す文書 (就業規則・規程・契約) に「次の見直し」の期日と担当を持たせる。期日の N 日前 (既定30日) に、
+  // 1日1回の回が「◯◯ の見直し」のやることを1つだけ作る。期日・残り日数はサーバが返す (apiListFiles の review*)。
+
+  var docReviewRow = document.getElementById('doc-review-row');
+
+  /** 'YYYY-MM-DD' → '11/30' */
+  function reviewShortDay(day) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    return m ? Number(m[2]) + '/' + Number(m[3]) : '';
+  }
+
+  /** 残り日数の字。過ぎていれば「◯日過ぎ」 */
+  function reviewLeftText(left) {
+    var n = Number(left);
+    if (n === 0) return '今日';
+    return n > 0 ? 'あと ' + n + ' 日' : (-n) + ' 日過ぎ';
+  }
+
+  /**
+   * 文書の一覧の「見直し 11/30 (あと 33 日)」の札。期日が無ければ null。
+   * 過ぎていれば危ない色、何日前に入っていれば注意の色 (色だけに頼らず、字にも「過ぎ」と書く)。
+   *
+   * @param {object} f apiListFiles の1件
+   * @returns {HTMLElement|null}
+   */
+  function makeReviewPill(f) {
+    if (!f || !f.reviewDue) return null;
+    var left = Number(f.reviewDaysLeft);
+    var kind = 'chip';
+    if (left < 0) kind = 'chip chip-review-late';
+    else if (left <= Number(f.reviewNoticeDays)) kind = 'chip chip-review-soon';
+    return makePill('見直し ' + reviewShortDay(f.reviewDue) + ' (' + reviewLeftText(left) + ')', kind, 'clock');
+  }
+
+  /**
+   * 開いた文書の見直しの期日の行。正式版の文書を読んでいるときだけ出す。
+   *
+   * @param {boolean} [hide] 文書だけの画面 (リンクから開いた) では出さない
+   */
+  function renderDocReview(hide) {
+    docReviewRow.textContent = '';
+    var f = allFiles.filter(function (x) { return x.fileId === current.docFileId; })[0];
+    if (hide || !f || current.fileId !== current.docFileId) {
+      docReviewRow.hidden = true;
+      return;
+    }
+    var text = document.createElement('span');
+    text.className = 'row-meta';
+    if (f.reviewDue) {
+      var pill = makeReviewPill(f);
+      docReviewRow.appendChild(pill);
+      var bits = ['見直しの期日 ' + f.reviewDue];
+      if (f.reviewAssignee) bits.push('担当 ' + String(f.reviewAssignee).split(',').map(personName).join('・'));
+      bits.push(f.reviewNoticeDays + '日前にやることを作ります');
+      text.textContent = bits.join(' · ');
+    } else {
+      text.textContent = '見直しの期日はまだありません。決めると、近づいたときにやることを自動で作ります。';
+    }
+    docReviewRow.appendChild(text);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.appendChild(makeIcon('clock'));
+    btn.appendChild(document.createTextNode(f.reviewDue ? '見直しの期日を直す' : '見直しの期日を決める'));
+    btn.addEventListener('click', function () { openDocReviewForm(f, btn); });
+    docReviewRow.appendChild(btn);
+    docReviewRow.hidden = false;
+  }
+
+  function openDocReviewForm(f, sourceEl) {
+    var people = null;
+    var form = openInlineForm(
+      '見直しの期日',
+      [
+        { name: 'due', label: '次の見直しの期日 (空にすると外します)', type: 'date', value: f.reviewDue || '' },
+        { name: 'assignee', label: '担当者 (「@」で選びます。何人でも)', value: f.reviewAssignee || '' },
+        { name: 'noticeDays', label: '何日前にやることを作るか', type: 'number', value: f.reviewNoticeDays },
+      ],
+      '保存',
+      function (v) {
+        var fileId = f.fileId;
+        call('apiFileReviewSet', [fileId, v.due, people ? people.value() : v.assignee, v.noticeDays], function () {
+          showSnack(v.due ? '見直しの期日を決めました' : '見直しの期日を外しました', { kind: 'ok' });
+          loadFiles(function () {
+            if (current.docFileId === fileId) renderDocReview(false);
+          });
+        }, failSnack('決められませんでした: '));
+      },
+      sourceEl
+    );
+    people = attachAssigneePicker(form.querySelector('[name="assignee"]'));
+    return form;
   }
 
   // ===== 改訂の履歴 =====

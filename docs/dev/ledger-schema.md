@@ -62,6 +62,21 @@
 やることを `issuePurge` で消しても番号の並びは直さない (番号は二度出さないので、ほかのやることを指すことはない)。
 開いた直後には読まない表なので `CACHE_WARM_TABLES_()` には入れない。
 
+`files` の末尾の4つ (`reviewDue` / `reviewAssignee` / `reviewNoticeDays` / `reviewIssuedFor`) は文書の見直しの期日 (`src/core/FileReview.gs`。やること #112)。
+`reviewDue` は次の見直しの期日 (`'YYYY-MM-DD'` の字。Sheets が Date にしていても `plainDay` で読む)、`reviewAssignee` は担当 (カンマ区切りのアドレス)、
+`reviewNoticeDays` は期日の何日前にやることを作るか (**空は既定の 30**)、`reviewIssuedFor` は作った期日 (**二度作らない印**)。**足す前の行は空のままで、
+期日なしとして読む** (埋め直さない)。付けるのは正式版の行だけ (改訂版の行は空のまま)。外す (`apiUnregisterFile`) と行ごと消えるので一緒に消える。
+期日を変えても印は残し、印と期日が食い違うことで新しい期日のぶんを作る。
+
+`recurrences` (繰り返しのやること。`src/core/Recurrence.gs`、暦の計算は `src/core/RecurrenceRule.js`) は `id` を `dbAppendNumbered` で振る
+表の通し番号にしている。`kind` は `weekly` / `monthly` / `yearly`、`weekday` は 0 (日曜)〜6 (毎週のときだけ)、`day` は 1〜31 (毎月・毎年。
+**31 は月末として読む**)、`month` は 1〜12 (毎年のときだけ)。使わない欄は空にする (周期の種類を変えたら消す。残すと読み違える)。
+`dueDays` は期限が対象日の何日あとか (空は 0)、`leadDays` は何日前に作るか (空は既定の 3)。`active` は true / 空 (止めた)。
+`lastIssuedFor` は最後に起票した対象日 (`'YYYY-MM-DD'` の字。**二度作らない印**。鍵の中で見てから書く。`docs/dev/locks-and-numbering.md`)、
+`lastIssueNumber` はそのやることの番号 (次の分の本文の「前回: #番号」)。やることを `issuePurge` で消しても番号は直さない (番号は二度出さないので、
+ほかのやることを指すことはない。本文には「前回: #番号」が残るだけ)。`createdBy` は小文字のアドレス。開いた直後には読まない表なので
+`CACHE_WARM_TABLES_()` には入れない。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

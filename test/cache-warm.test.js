@@ -14,9 +14,10 @@ function setup() {
   const fake = createFakeGas();
   const ctx = loadGasWith(fake, ...APP_SOURCES);
   ctx.repoInit('agentic-management');
-  // 1日1回の片付けと成果の数も同じ回で台帳を読むので、温めの読み取りだけを数えるために止める
+  // 1日1回の片付け・成果の数・繰り返しの起票も同じ回で台帳を読むので、温めの読み取りだけを数えるために止める
   ctx.housekeepArchiveDaily_ = () => {};
   ctx.outcomesDailyOnce_ = () => {};
+  ctx.recurrenceDailyOnce_ = () => {};
   return { ctx, fake };
 }
 

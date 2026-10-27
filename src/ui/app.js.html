@@ -147,6 +147,7 @@
     gantt: document.getElementById('view-gantt'),
     tally: document.getElementById('view-tally'),
     trash: document.getElementById('view-trash'),
+    recur: document.getElementById('view-recur'),
   };
 
   // ===== 状態 =====
@@ -366,6 +367,7 @@
     'seg:board': '進み具合の列で並べます。掴んで動かすと進み具合が変わります',
     'seg:gantt': '時系列の棒で並べます。棒を掴むと期間を変えられます',
     'seg:trash': '捨てたやることの置き場です。期限までなら戻せます',
+    'seg:recur': '毎月の締めのように暦で決まるやることを登録し、1日1回の回で自動で作ります',
     'seg:tally': 'チーム全体の合計と、自分の内訳を区切りごとに足し上げます',
     'tally:unit': 'どのくらいの幅で区切って足すかです。四半期・半期・年度は4月始まりの年度で切ります',
     'tally:basis': 'どの日でその区切りに入れるかです。期限なら「いつまでに何人日ぶん抱えているか」、完了日なら「いつ何人日ぶん消化したか」になります',
@@ -3999,6 +4001,9 @@
         meta.appendChild(makePill(
           '改訂中 ' + drafts.length + '件', 'chip chip-accent'));
       }
+      // 見直しの期日 (やること #112)。期日が無ければ出さない
+      var review = makeReviewPill(f);
+      if (review) meta.appendChild(review);
       open.appendChild(meta);
 
       open.addEventListener('click', function () { openDoc(f.fileId, f.path); });

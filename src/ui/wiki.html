@@ -239,6 +239,7 @@
 
       <div class="panel panel-col" id="panel-content" hidden>
         <div class="linked-issues" id="linked-issues" hidden></div>
+        <div class="doc-review-row" id="doc-review-row" hidden></div>
 
         <div class="doc-modes">
           <div class="segmented" role="group" aria-label="表示のしかた">
@@ -323,6 +324,7 @@
             <button class="seg" id="view-board" aria-pressed="false">ボード</button>
             <button class="seg" id="view-gantt" aria-pressed="false">工程表</button>
             <button class="seg" id="view-tally" aria-pressed="false">集計</button>
+            <button class="seg" id="view-recur" aria-pressed="false">繰り返し</button>
             <button class="seg" id="view-trash" aria-pressed="false">捨てたもの</button>
           </div>
 
@@ -386,6 +388,7 @@
         <div class="gantt-scroll" id="gantt" hidden></div>
         <div class="list-area" id="tally" hidden></div>
         <div class="list-area" id="trash-list" hidden></div>
+        <div class="list-area" id="recur-list" hidden></div>
       </div>
 
       <div class="panel panel-col" id="panel-settings" hidden>
@@ -547,6 +550,7 @@
   <?!= include('ui/js-docs') ?>
   <?!= include('ui/js-pulls') ?>
   <?!= include('ui/js-issues') ?>
+  <?!= include('ui/js-recur') ?>
   <?!= include('ui/js-board') ?>
   <?!= include('ui/js-progress') ?>
   <?!= include('ui/js-guide') ?>
