@@ -130,6 +130,8 @@ function apiOshiGet() {
     kitTools: OSHI_CHARKIT_TOOLS().map(function (t) { return { key: plainText(t.key), label: plainText(t.label) }; }),
     sheet: { rows: plainNumber(oshiSheetGrid(OSHI_STATES().length).rows), cols: plainNumber(oshiSheetGrid(OSHI_STATES().length).cols) },
     luckyOneIn: plainNumber(OSHI_LUCKY_ONE_IN()),
+    // 最初からいるキャラの絵の版。画面がブラウザに覚えた絵を使ってよいかを、取りに行く前に見る
+    defaultImageVersion: plainNumber(OSHI_DEFAULT_IMAGE_VERSION()),
     growth: {
       index: plainNumber(g.index), key: plainText(g.key), label: plainText(g.label),
       meter: plainNumber(g.meter), toNext: plainNumber(g.toNext), level: plainNumber(g.level),
@@ -317,16 +319,18 @@ function apiOshiImage(charId, state) {
 
 /**
  * 最初からいるキャラクターの絵1枚 (data URL)。**最初のページには入れず、要るときに1枚ずつ渡す**
- * (1人の2つの形で 1MB 近くある)。画面がその場で覚える。
+ * (1人の2つの形で 1MB 近くある)。画面がその場で覚え、ブラウザ (IndexedDB) にも版を添えて置く (js-oshi の oshiDefaultImage)。
  *
  * @param {string} char taku / itsuki / tsujippi / ikkun / ryoka / satomi (OSHI_BUILTINS の key)
  * @param {string} style chibi / normal
  * @param {string} state 表情
- * @returns {{char: string, style: string, state: string, dataUrl: string}|null}
+ * @returns {{char: string, style: string, state: string, dataUrl: string, version: number}|null}
  */
 function apiOshiDefaultImage(char, style, state) {
   var url = oshiDefaultImage_(char, style, state);
-  return url ? { char: plainText(char), style: plainText(style), state: plainText(state), dataUrl: plainText(url) } : null;
+  // version は絵の版。画面はこれを鍵に含めてブラウザに覚える (配り直して絵が変わったら、古い絵を使わない)
+  return url ? { char: plainText(char), style: plainText(style), state: plainText(state), dataUrl: plainText(url),
+    version: plainNumber(OSHI_DEFAULT_IMAGE_VERSION()) } : null;
 }
 
 /**
