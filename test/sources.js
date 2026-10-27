@@ -31,7 +31,7 @@ export const ISSUE_SOURCES = [
 export const CORE_SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/ObjectStore.gs', 'src/core/Normalize.js', 'src/core/Markdown.js',
-  'src/core/Graph.js', 'src/core/Diff.js', 'src/core/Merge.js', 'src/core/Commit.gs',
+  'src/core/Graph.js', 'src/core/Diff.js', 'src/core/DiffSummary.js', 'src/core/Merge.js', 'src/core/Commit.gs',
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/render/DocRenderer.gs',
   'src/render/LiveCache.gs', 'src/render/SheetRenderer.gs', 'src/render/SheetWriter.gs',
   'src/core/PullRequest.gs', 'src/core/PullPatch.gs', 'src/core/Outbox.gs',
@@ -47,6 +47,7 @@ export const CORE_SOURCES = [
   'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/OshiShare.gs', 'src/core/OshiMood.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs', 'src/core/MeetingNotes.js', 'src/core/MeetingNotesImport.gs',
   'src/core/CoworkLink.js', 'src/core/Cowork.gs', 'src/core/Announcement.gs',
+  'src/core/Revision.gs', 'src/render/RevisionWriter.gs',
   'src/core/RecurrenceRule.js', 'src/core/Recurrence.gs', 'src/core/FileReview.gs',
 ];
 
@@ -57,7 +58,7 @@ export const API_SOURCES = [
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs', 'src/api/Achievements.gs', 'src/api/Boot.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
-  'src/api/Announcement.gs', 'src/api/Recurrence.gs',
+  'src/api/Announcement.gs', 'src/api/Recurrence.gs', 'src/api/Revision.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);

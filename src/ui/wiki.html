@@ -149,6 +149,7 @@
       <div class="tabs" id="tabs" hidden>
         <button class="tab" data-tab="content" aria-current="true">本文</button>
         <button class="tab" data-tab="history">改訂の履歴</button>
+        <button class="tab" data-tab="revisions">改訂履歴の表</button>
         <button class="tab" data-tab="drafts">この文書の改訂版</button>
       </div>
 
@@ -283,6 +284,15 @@
             <div class="diff-view" id="diff-view"></div>
           </div>
         </div>
+      </div>
+
+      <!-- 反映ごとの日付・反映した人・確認依頼・理由 (やること #111)。書き出しは管理者だけ -->
+      <div class="panel panel-col" id="panel-revisions" hidden>
+        <div class="panel-actions">
+          <button id="revision-export-btn" class="btn">文書に改訂履歴の表を書く</button>
+          <span class="row-meta" id="revision-export-note"></span>
+        </div>
+        <div class="list-area" id="revision-list"></div>
       </div>
 
       <div class="panel panel-col" id="panel-drafts" hidden>

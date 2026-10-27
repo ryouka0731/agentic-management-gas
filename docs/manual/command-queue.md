@@ -74,8 +74,8 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 |---|---|---|
 | `branchCreate` | `name`, `fileId` | 改訂版を作る |
 | `prCreate` | `title`, `body`, `sourceBranch`, `mainFileId`, `targetBranch` (任意、既定 `main`) | 確認依頼を出す。`mainFileId` は1つでも配列でもよい |
-| `prPreview` | `number` | 反映の下見 (食い違いの一覧と `previewSha`) |
-| `prMerge` | `number`, `choices` (任意), `previewSha` (任意) | 反映する。承認が要る。`choices` は食い違いごとの `ours` / `theirs` / `both` |
+| `prPreview` | `number` | 反映の下見 (食い違いの一覧と `previewSha`、変わった箇所の箇条書き `summary`) |
+| `prMerge` | `number`, `choices` (任意), `previewSha` (任意), `reason` (任意) | 反映する。承認が要る。`choices` は食い違いごとの `ours` / `theirs` / `both`。`reason` は反映の理由 (200字まで。省くと確認依頼の本文の1行目) |
 | `prList` | なし | 確認依頼の一覧 (読むだけ) |
 | `patchAdd` | `number`, `path`, `text` | コードの差分を証跡として添える (反映も承認もしない) |
 | `patchRemove` | `number`, `id` | 添えた差分を外す |

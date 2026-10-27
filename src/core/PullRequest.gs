@@ -97,7 +97,7 @@ function prCreate(title, body, sourceBranch, mainFileId, targetBranch) {
     projectMoveIfExists_(opened[k], 'In Review');
   }
 
-  notifyPrCreated(row);
+  notifyPrCreated(row, prChangeSummary_(row.number));
   return row;
 }
 
@@ -359,8 +359,8 @@ function prPreviewMerge(number, wantFileId) {
   var theirsHtml = branchHead ? (objectGet(branchHead.blobSha) || '') : '';
 
   // 起点が空白の扱いを改める前の形でも、空白だけの違いを変更と読まない
-  var result = merge3Html(
-    prUpgradeBaseSpacing_(baseHtml, oursHtml, theirsHtml), oursHtml, theirsHtml);
+  var upgradedBase = prUpgradeBaseSpacing_(baseHtml, oursHtml, theirsHtml);
+  var result = merge3Html(upgradedBase, oursHtml, theirsHtml);
 
   var problems = [];
   if (result.clean) {
@@ -382,7 +382,32 @@ function prPreviewMerge(number, wantFileId) {
     intoFileId: intoFileId,
     targetBranch: into,
     oursHtml: oursHtml,
+    // この改訂版が起点から何を変えたか (変わった箇所の要約に使う)。反映先の側の
+    // 変更は入れない。見比べの結果 (lines) は食い違いがあると確定しないため
+    changeOps: diffHtml(upgradedBase, theirsHtml),
   };
+}
+
+/**
+ * 確認依頼の「変わった箇所」の箇条書き (src/core/DiffSummary.js)。
+ *
+ * 知らせのメールに添えるためのもの。**作れなくても本処理は止めない** (知らせと同じ扱い)。
+ *
+ * @param {number} number
+ * @returns {string[]}
+ */
+function prChangeSummary_(number) {
+  try {
+    var all = prPreviewAll(number);
+    var list = [];
+    for (var i = 0; i < all.files.length; i++) {
+      list.push({ path: all.files[i].path, ops: all.files[i].changeOps || [] });
+    }
+    return diffSummaryFiles(list);
+  } catch (e) {
+    Logger.log('変わった箇所をまとめられませんでした: ' + e.message);
+    return [];
+  }
 }
 
 /**
@@ -848,11 +873,15 @@ function prPreviewAll(number) {
  *
  * @param {number} number
  * @param {string[]} choices コンフリクトへの選択 ('ours'|'theirs'|'both')
+ * @param {string} [previewSha]
+ * @param {string} [reason] 反映の理由 (200字まで。空なら本文の1行目。src/core/Revision.gs)
  * @returns {object} マージコミット行
  */
-function prMerge(number, choices, previewSha) {
+function prMerge(number, choices, previewSha, reason) {
   return dbWithLock_(60000, function () {
         var pr = prGet(number);
+        // 理由の長さは何も書き戻さないうちに確かめる
+        var why = prMergeReason_(pr, reason);
         prMergeAssertOpen_(pr, number, previewSha);
         prMergeAssertApproved_(number);
 
@@ -894,9 +923,12 @@ function prMerge(number, choices, previewSha) {
         var plan = prMergePlan_(pr, number, targets, into, choiceMap);
         var mergeCommit = prMergeWriteAll_(pr, number, into, plan);
 
+        // 反映した人と理由は、文書の改訂履歴に出す (revisionHistory)
         dbUpdate('pulls', 'number', number, {
           state: 'merged',
           mergedAt: new Date(),
+          mergedBy: currentEmail_(),
+          mergeReason: why,
         });
         dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
 
@@ -1289,10 +1321,13 @@ function prSetReviewers(number, emails) {
   var before = prReviewers(pr);
   dbUpdate('pulls', 'number', number, { reviewers: list.join(',') });
 
-  // 新しく頼んだ人にだけ知らせる。既に頼んである人に再送しない
+  // 新しく頼んだ人にだけ知らせる。既に頼んである人に再送しない。
+  // 変わった箇所の要約は、頼む人がいるときだけ1回作る (見比べは重い)
+  var summary = null;
   for (var j = 0; j < list.length; j++) {
     if (before.indexOf(list[j]) >= 0) continue;
-    notifyPrReviewRequested(prGet(number), list[j]);
+    if (summary === null) summary = prChangeSummary_(number);
+    notifyPrReviewRequested(prGet(number), list[j], summary);
   }
   return prGet(number);
 }

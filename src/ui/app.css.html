@@ -872,6 +872,61 @@ body {
   margin-bottom: 6px;
 }
 
+/* 確認依頼の先頭の「変わった箇所」(やること 109 番)。差分の行を読まない人が先に読む */
+.pr-summary {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  box-shadow: var(--hairline);
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+}
+.pr-summary-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: var(--sp-1);
+}
+.pr-summary-list {
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-size: 13px;
+  color: var(--ink);
+}
+.pr-summary-list li + li {
+  margin-top: 2px;
+}
+
+/* 改訂履歴の表の一覧の理由の行 */
+.revision-reason {
+  font-size: 12px;
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+/* 反映の理由の欄 (やること 111 番)。反映のボタンの前に置く */
+.pr-reason {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.pr-reason input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  box-shadow: var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
 
 /* =====================================================================
  * デザインシステム — 相互作用・モーション・レスポンシブ

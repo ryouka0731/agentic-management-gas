@@ -134,6 +134,28 @@ describe('apiPrPreview / apiPrCommits', () => {
     expect(out.ops.some((o) => /第2条/.test(JSON.stringify(o)))).toBe(true);
   });
 
+  it('変わった箇所の要約を、全体と文書ごとに返す (やること #109)', () => {
+    const env = prEnv({ html: '<p>第1条 始業は午前9時30分</p>\n<p>第2条</p>\n' });
+    const out = expectScreenSafe(env.ctx.apiPrPreview(1));
+    expect([...out.summary]).toEqual(['第1条: 変更 (第1条 → 第1条 始業は午前9時30分)', '第2条: 追加']);
+    expect([...out.files[0].summary]).toEqual([...out.summary]);
+  });
+
+  it('要約は改訂版が変えたところだけで、反映先が先に進めたところは入れない', () => {
+    const env = prEnv();
+    const { ctx, fake, fileId } = env;
+    // 正式版が別の所を先に直した (改訂版はまだ知らない)
+    fake._docs.set(fileId, '<p>第0条 前文</p>\n<p>第1条</p>\n');
+    ctx.commitFile(fileId, 'main', '前文', null);
+    expect([...ctx.apiPrPreview(1).summary]).toEqual(['第2条: 追加']);
+  });
+
+  it('命令キューの下見 (prPreview) にも要約が付く', () => {
+    const env = prEnv();
+    const out = env.ctx.COMMAND_OPS().prPreview({ number: 1 });
+    expect([...out.summary]).toEqual(['第2条: 追加']);
+  });
+
   it('改訂版の記録を新しい順で返す', () => {
     const env = prEnv();
     const out = expectScreenSafe(env.ctx.apiPrCommits(1));
@@ -277,6 +299,34 @@ describe('apiPrSetReviewers', () => {
     expect(fake._sentMails().some((m) => m.to === 'c@example.com')).toBe(true);
     expect([...ctx.apiPrList()[0].reviewers]).toEqual(['a@example.com', 'c@example.com']);
     expect([...ctx.apiPrSetReviewers(1)]).toEqual([]);
+  });
+
+  it('頼んだ人へのメールの本文の先頭に変わった箇所を置き、件名は変えない (やること #109)', () => {
+    const env = prEnv();
+    const { ctx, fake } = env;
+    ctx.apiPrSetReviewers(1, ['a@example.com']);
+    const mail = fake._sentMails().filter((m) => m.to === 'a@example.com').pop();
+    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 の確認を頼まれました');
+    expect(mail.body.split('\n').slice(0, 3)).toEqual(['変わった箇所', '・第2条: 追加', '']);
+    expect(mail.body).toContain('第2条の追加');
+  });
+
+  it('出したときのメールにも同じ箇条書きを置く', () => {
+    const env = prEnv();
+    const mail = env.fake._sentMails().find((m) => /が出されました$/.test(m.subject));
+    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 が出されました');
+    expect(mail.body.indexOf('変わった箇所\n・第2条: 追加\n\n')).toBe(0);
+  });
+
+  it('要約が作れなくても依頼は出せ、メールは今までの本文で届く', () => {
+    const env = makeEnv();
+    const { ctx, fake, fileId } = env;
+    ctx.diffSummaryFiles = () => { throw new Error('boom'); };
+    withPr(env);
+    const mail = fake._sentMails().find((m) => /が出されました$/.test(m.subject));
+    expect(mail.body.indexOf('第2条の追加')).toBe(0);
+    expect(String(ctx.dbFindOne('pulls', 'number', 1).state)).toBe('open');
+    expect(fileId).toBeTruthy();
   });
 
   it('メールアドレスでない・反映済みは断り、宛先を変えない', () => {

@@ -18,7 +18,7 @@ function DB_SCHEMA() {
       'reviewDue', 'reviewAssignee', 'reviewNoticeDays', 'reviewIssuedFor'],
     commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
     branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
-    pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles', 'staleReviewId'],
+    pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles', 'staleReviewId', 'mergedBy', 'mergeReason'],
     reviews: ['prNumber', 'reviewer', 'state', 'body', 'at', 'id', 'editedAt'],
     task_links: ['issueNumber', 'user', 'taskId', 'listId', 'syncedAt'],
     issue_comments: ['id', 'issueNumber', 'body', 'by', 'at', 'editedAt'],

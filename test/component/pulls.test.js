@@ -811,6 +811,30 @@ describe('確認依頼の、うまくいかないとき・変わった形', () =
   };
   const snack = () => document.getElementById('snackbar').textContent;
 
+  it('変わった箇所を、差分より上に箇条書きで出す (やること #109)', () => {
+    open({
+      apiPrPreview: Object.assign({}, DEFAULTS.apiPrPreview, {
+        summary: ['第3条: 変更 (午前9時 → 午前9時30分)', '表 別表1: 2 行追加', '<b>字のまま</b>: 追加'],
+      }),
+    });
+    const card = document.querySelector('#pr-detail .pr-summary');
+    expect(card.querySelector('.pr-summary-head').textContent).toBe('変わった箇所');
+    const items = [...card.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual(['第3条: 変更 (午前9時 → 午前9時30分)', '表 別表1: 2 行追加', '<b>字のまま</b>: 追加']);
+    // 字は字のまま置く (他人が書いた文書の字なので、タグとして読まない)
+    expect(card.querySelector('b')).toBeNull();
+    // 差分のタブ・操作より上
+    const tabs = document.querySelector('#pr-detail .pr-tabs');
+    expect(card.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const actions = document.querySelector('#pr-detail .pr-actions');
+    expect(card.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('変わった箇所が無ければ札を出さない', () => {
+    open({ apiPrPreview: Object.assign({}, DEFAULTS.apiPrPreview, { summary: [] }) });
+    expect(document.querySelector('#pr-detail .pr-summary')).toBeNull();
+  });
+
   it('1件も無ければ、どこから出すのかを言う', () => {
     open({ apiPrList: [] });
     expect(document.getElementById('pr-list').textContent).toContain('確認依頼はありません');
@@ -868,7 +892,7 @@ describe('確認依頼の、うまくいかないとき・変わった形', () =
 
     btn('に反映する').click();
     [...document.querySelectorAll('.confirm-strip .btn')].find((b) => b.textContent === '反映する').click();
-    expect(app.calls.filter((c) => c.name === 'apiPrMerge').pop().args).toEqual([1, ['both'], 'P1']);
+    expect(app.calls.filter((c) => c.name === 'apiPrMerge').pop().args).toEqual([1, ['both'], 'P1', '']);
   });
 
   it('反映に失敗したら、理由を出して押し直せるようにする', () => {

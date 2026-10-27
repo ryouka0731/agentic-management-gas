@@ -248,7 +248,7 @@ const API_NAMES = [
   'apiBoot', 'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
   'apiCommitDiff', 'apiCommitHistory', 'apiBranchList', 'apiBranchCreate',
   'apiBranchDelete', 'apiBranchAddFile', 'apiBranchAddable', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
-  'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiOutboxList', 'apiOutboxVerbs', 'apiOutboxAdd', 'apiIssueList', 'apiIssueCreate',
+  'apiPrMerge', 'apiRevisionHistory', 'apiRevisionExport', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiOutboxList', 'apiOutboxVerbs', 'apiOutboxAdd', 'apiIssueList', 'apiIssueCreate',
   'apiIssueUpdate', 'apiIssueClose', 'apiIssueCreateBranch', 'apiIssuesForFile',
   'apiProjectBoard', 'apiProjectMove', 'apiGetMarkdown', 'apiSaveMarkdown',
   'apiSettings', 'apiPrefs', 'apiPrefSet', 'apiSetScrumEnabled', 'apiSetScrumText', 'apiSprintList', 'apiSprintCreate',
@@ -544,6 +544,8 @@ export const DEFAULTS = {
   apiPrPreview: {
     clean: true, problems: [], conflicts: [], approvals: 0, ops: [],
     patchCount: 0,
+    // 変わった箇所の箇条書き (src/core/DiffSummary.js)。既定は無し
+    summary: [],
     // 変更セットは文書ごとの中身も持つ
     files: [{
       fileId: 'DOC1', path: '就業規則.doc', type: 'doc',
@@ -556,6 +558,10 @@ export const DEFAULTS = {
   apiOutboxVerbs: [['diff', '差分を出して添える'],
     ['merge', '承認されたので取り込む'], ['review', '中身を読んで意見をもらう']],
   apiPrCommits: [],
+  // 文書の改訂履歴の表 (やること #111)
+  apiRevisionHistory: {
+    fileId: 'DOC1', path: '就業規則.doc', type: 'doc', canExport: true, exportBlocked: '', items: [],
+  },
   apiIssuesForFile: [],
   apiKnownPeople: ['me@example.com', 'other@example.com'],
   // 決めたあとの帯は返事の name を読む。null だと TypeError が出ていた

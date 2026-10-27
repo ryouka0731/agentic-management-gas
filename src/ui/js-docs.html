@@ -739,6 +739,94 @@
     }, failInto(historyList));
   }
 
+  // ===== 改訂履歴の表 (やること #111) =====
+
+  /**
+   * 正式版に反映した日・反映した人・確認依頼の題名・理由を、新しい順に並べる。
+   * 書き出せるか (管理者で、Docs か Sheets) はサーバが決める。
+   */
+  function loadRevisions() {
+    if (!current.fileId) return;
+    var list = document.getElementById('revision-list');
+    var btn = document.getElementById('revision-export-btn');
+    var note = document.getElementById('revision-export-note');
+    var asked = current.fileId;
+    var still = latest('revisions');
+
+    showSkeleton(list, 'list', 3);
+    btn.disabled = true;
+
+    call('apiRevisionHistory', [asked], function (res) {
+      if (!still() || current.fileId !== asked) return;
+      var data = res || { items: [] };
+      var items = data.items || [];
+      list.textContent = '';
+
+      btn.disabled = !data.canExport;
+      btn.title = data.canExport ? '' : (data.exportBlocked || '');
+      note.textContent = data.canExport
+        ? (data.type === 'sheet'
+          ? '「改訂履歴」のシートを作るか、書き直します。正式版の記録として残ります'
+          : '本文の末尾に「改訂履歴」の見出しと表を足します (前に書いた表は置き換えます)。正式版の記録として残ります')
+        : (data.exportBlocked || '');
+
+      if (!items.length) {
+        list.appendChild(makeBlankState(
+          'まだ反映された確認依頼がありません',
+          '確認依頼を正式版に反映すると、日付・反映した人・理由がここに並びます。'
+        ));
+        return;
+      }
+
+      items.forEach(function (one) {
+        var row = document.createElement('div');
+        row.className = 'row-item revision-row';
+
+        var title = document.createElement('div');
+        title.className = 'row-title';
+        title.textContent = '#' + one.number + ' ' + one.title;
+        row.appendChild(title);
+
+        var meta = document.createElement('div');
+        meta.className = 'row-meta';
+        var day = one.mergedAt ? new Date(one.mergedAt).toLocaleDateString('ja-JP') : '';
+        meta.textContent = [day, one.mergedByName || personName(one.mergedBy) || '—'].join(' · ');
+        row.appendChild(meta);
+
+        var why = document.createElement('div');
+        why.className = 'revision-reason';
+        why.textContent = one.reason ? '理由: ' + one.reason : '理由: (書かれていません)';
+        row.appendChild(why);
+
+        list.appendChild(row);
+      });
+    }, still.only(failInto(list)));
+  }
+
+  /** 「文書に改訂履歴の表を書く」。正式版の文書を書き換えるので、帯で確かめてから */
+  function exportRevisions() {
+    var btn = document.getElementById('revision-export-btn');
+    var asked = current.fileId;
+    if (!asked) return;
+
+    openConfirmStrip(
+      panelRevisions,
+      OFFICIAL + 'の文書に改訂履歴の表を書き、そのまま' + OFFICIAL + 'の記録として残します。' +
+      '確認依頼は通りません。',
+      '書く',
+      function () {
+        btn.disabled = true;
+        call('apiRevisionExport', [asked], function (res) {
+          showSnack(res && res.changed
+            ? '改訂履歴の表を書きました (' + res.rows + '件)'
+            : '改訂履歴の表は最新です', { kind: 'ok' });
+          loadRevisions();
+          refreshStatus();
+        }, failEnable(btn, '書けませんでした: '));
+      }
+    );
+  }
+
   // ===== この文書の改訂版 =====
 
   function loadDrafts() {

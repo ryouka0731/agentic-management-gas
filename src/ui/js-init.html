@@ -51,6 +51,7 @@
     setDocFull(false);
   });
   draftCreateBtn.addEventListener('click', createDraft);
+  document.getElementById('revision-export-btn').addEventListener('click', exportRevisions);
   branchCreateBtn.addEventListener('click', function () {
     if (current.docFileId) {
       switchTab('drafts');
@@ -67,7 +68,7 @@
    */
   function applyHints() {
     var byTab = {
-      content: 'tab:content', history: 'tab:history', drafts: 'tab:drafts',
+      content: 'tab:content', history: 'tab:history', revisions: 'tab:revisions', drafts: 'tab:drafts',
     };
     var byNav = {
       docs: 'nav:docs', issues: 'nav:issues', branches: 'nav:branches',

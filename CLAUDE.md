@@ -13,7 +13,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 |---|---|
 | 番号を振る・鍵を取るところ (`src/core/Db.gs` の `dbAppendNumbered` / `dbWithLock_` / `dbUpdate` / `dbDelete`、`src/core/Issue.gs` の `issuePurge`、`src/core/Project.gs`、`src/core/Notifier.gs` の `noticeAdd`) | `docs/dev/locks-and-numbering.md` |
 | 台帳の列 (`DB_SCHEMA()`)・`priority` / `ISSUE_PRIORITIES()`・`src/core/Usage.gs` (`usageRecord`)・台帳の読み取りのキャッシュ (`src/core/Db.gs` の `dbReadAll` / `dbInvalidate_`) と台帳に直に書く所 | `docs/dev/ledger-schema.md` |
-| `src/core/PullRequest.gs` / `src/core/Branch.gs` / `src/core/Commit.gs` / `src/core/Merge.js` / `src/api/Pr.gs` / `src/api/Commit.gs` (確認依頼・反映・反映先・main の保護) | `docs/dev/changeset-and-merge.md` |
+| `src/core/PullRequest.gs` / `src/core/Branch.gs` / `src/core/Commit.gs` / `src/core/Merge.js` / `src/core/DiffSummary.js` (変わった箇所の要約) / `src/core/Revision.gs` / `src/render/RevisionWriter.gs` / `src/api/Revision.gs` (反映の理由・改訂履歴の表) / `src/api/Pr.gs` / `src/api/Commit.gs` (確認依頼・反映・反映先・main の保護) | `docs/dev/changeset-and-merge.md` |
 | `src/core/PullPatch.gs` / `src/core/Outbox.gs` / `src/api/Outbox.gs` | `docs/dev/outbox-and-patches.md` |
 | `src/core/CommandQueue.gs` (`processCommandQueue` / `setupCommandQueue`) | `docs/dev/command-queue.md` |
 | 裏の定期実行で台帳の覚えを温める (`src/core/CacheWarm.gs` / `src/core/Db.gs` の `dbWarm_`) | `docs/dev/command-queue.md` と `docs/dev/ledger-schema.md` |

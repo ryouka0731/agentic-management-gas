@@ -45,7 +45,7 @@ describe('COMMAND_OPS: 省いた引数の既定', () => {
     expect(calls).toEqual([
       ['apiSaveMarkdown', 'F', 'm', ''], ['apiCommit', 'F', 'x', null],
       ['apiIssueCreate', 't', 'b', []], ['apiPrCreate', 't', 'b', 's', 'F', 'main'],
-      ['apiOutboxTake', 5], ['apiOutboxDone', 1, ''], ['apiOutboxFail', 2, ''], ['apiPrMerge', 3, [], ''],
+      ['apiOutboxTake', 5], ['apiOutboxDone', 1, ''], ['apiOutboxFail', 2, ''], ['apiPrMerge', 3, [], '', ''],
       ['apiIssueList', ''], ['apiCommitDiff', '', 'T'], ['apiIssueUpdate', 4, {}],
       ['apiProjectMove', 5, '作業中', 0], ['apiSprintCreate', {}], ['apiSprintUpdate', 'S', {}],
       ['apiScrumView', ''], ['apiImpedimentCreate', {}], ['apiImpedimentUpdate', 6, {}],
@@ -55,7 +55,7 @@ describe('COMMAND_OPS: 省いた引数の既定', () => {
     ops.work({ limit: 2 });
     ops.workDone({ id: 1, result: 'ok' });
     ops.workFail({ id: 2, reason: 'ng' });
-    ops.prMerge({ number: 3, choices: { F: ['ours'] }, previewSha: 'P' });
+    ops.prMerge({ number: 3, choices: { F: ['ours'] }, previewSha: 'P', reason: 'R' });
     ops.issueList({ state: 'closed' });
     ops.commitDiff({ fromSha: 'A', toSha: 'B' });
     ops.boardMove({ number: 5, column: '完了', order: 7 });
@@ -63,7 +63,7 @@ describe('COMMAND_OPS: 省いた引数の既定', () => {
     ops.commit({ fileId: 'F', message: 'x', expectedHeadSha: 'H' });
     expect(calls).toEqual([
       ['apiOutboxTake', 2], ['apiOutboxDone', 1, 'ok'], ['apiOutboxFail', 2, 'ng'],
-      ['apiPrMerge', 3, { F: ['ours'] }, 'P'], ['apiIssueList', 'closed'], ['apiCommitDiff', 'A', 'B'],
+      ['apiPrMerge', 3, { F: ['ours'] }, 'P', 'R'], ['apiIssueList', 'closed'], ['apiCommitDiff', 'A', 'B'],
       ['apiProjectMove', 5, '完了', 7], ['apiPrCreate', 't', 'b', 's', 'F', '改訂'], ['apiCommit', 'F', 'x', 'H'],
     ]);
   });

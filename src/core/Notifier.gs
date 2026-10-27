@@ -168,15 +168,34 @@ function noticeMarkRead(ids) {
 }
 
 /**
+ * 変わった箇所の箇条書きを、知らせの本文の先頭に置く形にする (やること #109)。
+ *
+ * 上長は差分の行を読まない。メールを開いた時点で何が変わったのかが分かるようにする。
+ * 箇条書きは PullRequest.gs の prChangeSummary_ が作る (ここでは差分を読まない。
+ * 知らせだけを読むテストに差分の道具を足させないため)。
+ *
+ * @param {string[]} [lines]
+ * @returns {string} 無ければ空
+ */
+function notifySummaryText_(lines) {
+  var list = lines || [];
+  if (!list.length) return '';
+  var out = ['変わった箇所'];
+  for (var i = 0; i < list.length; i++) out.push('・' + list[i]);
+  return out.join('\n') + '\n\n';
+}
+
+/**
  * PR作成を通知する。
  *
  * @param {object} pr pulls 行
+ * @param {string[]} [summary] 変わった箇所の箇条書き
  */
-function notifyPrCreated(pr) {
+function notifyPrCreated(pr, summary) {
   notify(
     pr.author,
     notifySubject_('確認依頼', pr.number, 'が出されました'),
-    pr.title + '\n\n「確認依頼」から中身を見てください。',
+    notifySummaryText_(summary) + pr.title + '\n\n「確認依頼」から中身を見てください。',
     'review'
   );
 }
@@ -230,15 +249,17 @@ function notifyPrClosed(pr, reason) {
  *
  * @param {object} pr pulls 行
  * @param {string} to
+ * @param {string[]} [summary] 変わった箇所の箇条書き (本文の先頭に置く。件名は変えない)
  */
-function notifyPrReviewRequested(pr, to) {
+function notifyPrReviewRequested(pr, to, summary) {
   noticeAdd(to, 'review',
     '確認依頼 #' + pr.number + ' の確認を頼まれました', pr.title, 'pull:' + pr.number);
 
   notify(
     to,
     notifySubject_('確認依頼', pr.number, 'の確認を頼まれました'),
-    pr.title + '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。',
+    notifySummaryText_(summary) + pr.title +
+      '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。',
     'review'
   );
 }
