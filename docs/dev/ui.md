@@ -481,8 +481,13 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   (`blinkOnly`。絵は切り替えない。隠れたら止まる)。読み込み中の推し (`oshiWaitInto`) と作業部屋 (`roomFidget` が別にある) には付けない。
   - なでている最中 (笑顔の4秒) は動かさない (`busy`)。動きの最中になでられたら `interrupt()` で動きを外し、なでた方を出す
     (まばたきの絵を戻す時計は、絵が入れ替わっていれば戻さない)
-  - `prefers-reduced-motion: reduce` では始めない (CSS も動きを消す)。`document.hidden` のあいだは止め、`visibilitychange` で再開。
-    **要素が外れたら (isConnected でない) 止め、次の時計を仕掛けない** (頁を閉じても時計を残さない)
+  - `prefers-reduced-motion: reduce` では動かさない (CSS も動きを消す)。**途中で変わったら追う** (`change` を聞く。オンになったら
+    まばたきの途中でもすぐ絵を戻して止め、オフに戻したら始め直す。聞き手は `stop()` で外す)。**`matchMedia` が無い・投げる環境では
+    減らす側に倒し、何も始めない** (`oshiReducedMotion`)。`document.hidden` のあいだは止め、`visibilitychange` で再開
+  - **時計を仕掛ける前に毎回、要素がつながっているか (isConnected) と `alive` を見て、だめなら `stop()`** (動きを戻す時計の後・
+    画面が戻ったとき も同じ)。吹き出しを隠す `oshiHide` は `oshiBubbleMotion.stop()` を呼ぶ。外れた・隠れたあとに時計も聞き手も残さない
+  - 始めたときのキャラ (`oshiMotionWho`。`oshiData.char` と絵の形) を控え、まばたきのときに今のキャラと違えば絵は切り替えず CSS だけ。
+    頁を開いたまま選び直すと、描き直すまでの前の顔に新しいキャラの絵が一瞬出ていた (レビューの指摘)
   - 動かすのは入れ物の中身 (`img` / 頭文字の丸) だけ。背景の箱は動かさない。テストは `test/component/oshi-motion.test.js` (偽の時計)
 - **絵は要るときに取るが、読み込んでから少し待って、いま使うキャラの絵を全部の表情ぶん裏で取っておく** (`oshiWarmImages`。
   `apiOshiGet` が届いて 1.5 秒後から 150ms ずつ)。そのままだと場面が来た瞬間 (済ませた・実績を取った) に、せりふの後から

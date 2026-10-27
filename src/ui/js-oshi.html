@@ -1027,6 +1027,9 @@
   function oshiHide(now) {
     if (oshiBubbleTimer) window.clearTimeout(oshiBubbleTimer);
     oshiBubbleTimer = null;
+    // 吹き出しの絵の動きも止める (時計を残さない。次に出すときに始め直す)
+    if (oshiBubbleMotion) oshiBubbleMotion.stop();
+    oshiBubbleMotion = null;
     var el = document.getElementById('oshi-bubble');
     if (!el || el.hidden) return;
     if (now) {
@@ -1897,13 +1900,28 @@
     return near[state] || 'idle';
   }
 
-  /** 動きを減らす設定か */
-  function oshiReducedMotion() {
+  /**
+   * 動きを減らす設定を聞く口 (MediaQueryList)。matchMedia が無い・投げる環境では null
+   *
+   * @returns {object|null}
+   */
+  function oshiMotionQuery() {
     try {
-      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      return (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')) || null;
     } catch (e) {
-      return false;
+      return null;
     }
+  }
+
+  /** 動きを減らす設定か。**分からないとき (matchMedia が無い・投げる) は減らす側に倒す** (絵を切り替えない) */
+  function oshiReducedMotion() {
+    var mq = oshiMotionQuery();
+    return !mq || !!mq.matches;
+  }
+
+  /** いま使うキャラの印 (キャラと絵の形)。動きを始めたときと変わっていたら、絵は切り替えない */
+  function oshiMotionWho() {
+    return oshiData ? String(oshiData.char) + '|' + oshiStyle() : '';
   }
 
   /**
@@ -1928,6 +1946,9 @@
    * opts.state: いま出している表情 / opts.busy: true のあいだは動かさない (なでている最中) /
    * opts.alive: false なら止める / opts.blinkOnly: まばたきだけ (CSS だけ)
    *
+   * 時計を仕掛ける前に、毎回 入れ物がつながっているか・alive かを見て、だめなら stop() する (時計も聞き手も残さない)。
+   * 動きを減らす設定が途中でオンになったら止めて (まばたき中なら絵を戻す)、オフに戻ったら始め直す。
+   *
    * @param {HTMLElement} fig 絵の入れ物 (oshiFillFigure で埋めるもの)
    * @param {object} opts
    * @returns {object} interrupt() / stop() / stopped()
@@ -1936,7 +1957,29 @@
     var timer = null;
     var stopped = false;
     var waiting = false;
+    /** まばたきで切り替えた絵を戻す手立て (切り替えていないあいだは null) */
+    var undo = null;
+    /** 始めたときのキャラ。この入れ物はこのキャラの絵を出している */
+    var who = oshiMotionWho();
+    var mq = oshiMotionQuery();
     var classes = ['is-blink', 'is-nod', 'is-tilt-l', 'is-tilt-r'];
+    var handle = {
+      /** 動きの最中でも外して、次を仕掛け直す (なでた方を優先する。切り替えた絵は戻さない。なでた絵が入る) */
+      interrupt: function () {
+        if (stopped) return;
+        undo = null;
+        clear();
+        reset();
+        schedule();
+      },
+      stop: stop,
+      stopped: function () { return stopped; },
+    };
+    // 分からない環境では、何も始めない
+    if (!mq) {
+      stopped = true;
+      return handle;
+    }
     function clear() {
       if (timer) clearTimeout(timer);
       timer = null;
@@ -1945,16 +1988,34 @@
       classes.forEach(function (k) { fig.classList.remove(k); });
       delete fig.dataset.motion;
     }
-    function stop() {
-      stopped = true;
+    /** 動きの途中なら、すぐ元に戻す (切り替えた絵も戻す) */
+    function settle() {
       clear();
+      if (undo) undo();
+      undo = null;
       reset();
+    }
+    function alive() {
+      return fig.isConnected && (!opts.alive || opts.alive());
+    }
+    function stop() {
+      if (stopped) return;
+      stopped = true;
+      settle();
       if (waiting) document.removeEventListener('visibilitychange', onVisible);
       waiting = false;
+      if (mq.removeEventListener) mq.removeEventListener('change', onPref);
+      else if (mq.removeListener) mq.removeListener(onPref);
     }
-    function schedule() {
+    /**
+     * 次を仕掛ける。仕掛けてよいか (つながっている・alive・減らす設定でない) を先に見る。
+     * first は始めるとき。入れ物は組み立て中でまだ頁に付いていないので、つながりは最初の tick で見る
+     */
+    function schedule(first) {
       clear();
       if (stopped) return;
+      if (!first && !alive()) { stop(); return; }
+      if (mq.matches) return; // 減らす設定のあいだは待つ (onPref が始め直す)
       timer = setTimeout(tick, OSHI_MOTION_MIN_MS() + Math.random() * OSHI_MOTION_SPAN_MS());
     }
     function onVisible() {
@@ -1962,6 +2023,11 @@
       document.removeEventListener('visibilitychange', onVisible);
       waiting = false;
       schedule();
+    }
+    function onPref() {
+      if (stopped) return;
+      if (mq.matches) settle();
+      else schedule();
     }
     function hold(ms, done) {
       timer = setTimeout(function () {
@@ -1972,16 +2038,23 @@
     }
     function blink() {
       var img = opts.blinkOnly ? null : fig.querySelector('img');
-      var pick = img ? oshiPickState(oshiMotionNear(opts.state())) : null;
+      // 始めたときと別のキャラになっていたら (頁を開いたまま選び直した)、いまのキャラの絵を差し込まない
+      var same = who === oshiMotionWho();
+      var pick = img && same ? oshiPickState(oshiMotionNear(opts.state())) : null;
       var src = pick ? oshiImageCached(pick) : '';
       var was = img ? img.getAttribute('src') : '';
       if (img && src && src !== was) {
         img.setAttribute('src', src);
         fig.dataset.motion = 'blink';
-        hold(OSHI_MOTION_BLINK_MS(), function () {
+        undo = function () {
           delete fig.dataset.motion;
           // なでて絵を入れ替えた (古い img が外れた・別の絵になった) ときは戻さない
           if (img.isConnected && img.getAttribute('src') === src) img.setAttribute('src', was);
+        };
+        hold(OSHI_MOTION_BLINK_MS(), function () {
+          var fn = undo;
+          undo = null;
+          if (fn) fn();
         });
         return;
       }
@@ -1991,7 +2064,8 @@
     function tick() {
       timer = null;
       if (stopped) return;
-      if (!fig.isConnected || oshiReducedMotion() || (opts.alive && !opts.alive())) { stop(); return; }
+      if (!alive()) { stop(); return; }
+      if (mq.matches) return;
       if (document.hidden) {
         if (!waiting) document.addEventListener('visibilitychange', onVisible);
         waiting = true;
@@ -2005,21 +2079,9 @@
       fig.classList.add(cls);
       hold(OSHI_MOTION_HOLD_MS(), function () { fig.classList.remove(cls); });
     }
-    var handle = {
-      /** 動きの最中でも外して、次を仕掛け直す (なでた方を優先する) */
-      interrupt: function () {
-        if (stopped) return;
-        reset();
-        schedule();
-      },
-      stop: stop,
-      stopped: function () { return stopped; },
-    };
-    if (oshiReducedMotion()) {
-      stopped = true;
-      return handle;
-    }
-    schedule();
+    if (mq.addEventListener) mq.addEventListener('change', onPref);
+    else if (mq.addListener) mq.addListener(onPref);
+    schedule(true);
     return handle;
   }
 
