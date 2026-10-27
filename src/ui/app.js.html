@@ -2238,6 +2238,94 @@
     else fn();
   }
 
+  /**
+   * 開いた直後の、台帳を読むだけの軽い api はまとめて1本 (apiBoot) で取る。
+   *
+   * 1本ごとにサーバの起動代 (0.3〜1秒) がかかり、ブラウザは同時の接続を6本ほどに絞る。本番で1つの実行の中で
+   * 順に呼ぶと、ここに挙げたものは合わせて2秒ほど (2026-10-27)。Drive を読む重いもの (文書の一覧・ホームの要約・
+   * 前進の中身・推し) は入れない。まとめると直列になり、並べて取るより遅くなる。ほかの呼び出しが待つもの (前進 → カードの5本、
+   * 設定 (apiPrefs) → 推し) も入れない。まとめの返事を待つぶん、続きが遅れる。
+   *
+   * **サーバの `BOOT_BATCH_NAMES` (Boot.gs) と同じ並び** (test/component/boot.test.js が揃っていることを見る)。
+   * 同じ区切りの中 (同期に投げたもの) をまとめ、js-start が投げ終えたとき (bootBatchFlush) と、返事の扱いの終わり
+   * (返事が投げた続き。前進 → カードの3本) に送る。どちらも通らないときのために setTimeout 0 でも送る。
+   * 最初の波が閉じたあとは1本ずつ (まとめない)。
+   */
+  var BOOT_BATCH_NAMES = [
+    'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity',
+    'apiMyMilestones', 'apiGameState', 'apiGameTop',
+  ];
+  /** hold: js-start が投げ終えるまでは、返事の扱いの終わりでも送らない (投げ終えたときに1本にまとめる) */
+  var bootBatch = { items: [], timer: null, hold: true, depth: 0 };
+
+  /**
+   * まとめて取るものなら預かる。
+   *
+   * @param {string} name
+   * @param {Array} args
+   * @param {function} ok 返事の扱い (callOnce の okOf。最初の波の数を戻すところまで含む)
+   * @param {function} ng 失敗の扱い
+   * @returns {boolean} 預かったか (false なら呼び出し側が1本で投げる)
+   */
+  function bootBatchTake(name, args, ok, ng) {
+    if (!bootWave.open || (args && args.length) || BOOT_BATCH_NAMES.indexOf(name) < 0) return false;
+    bootBatch.items.push({ name: name, ok: ok, ng: ng });
+    if (!bootBatch.timer) bootBatch.timer = window.setTimeout(bootBatchFlush, 0);
+    return true;
+  }
+
+  /** 預かったものを送る。1本だけならそのまま投げる (まとめる得が無い)。送ったあとに預かったものがあれば続けて送る */
+  function bootBatchFlush() {
+    bootBatch.hold = false;
+    if (bootBatch.timer) { window.clearTimeout(bootBatch.timer); bootBatch.timer = null; }
+    while (bootBatch.items.length) {
+      var items = bootBatch.items;
+      bootBatch.items = [];
+      if (items.length === 1) bootBatchOne(items[0]);
+      else bootBatchSend(items);
+    }
+  }
+
+  /** 返事の扱いに入る (入れ子の深さを数える。疑似の返事は同期で返るので、扱いの中で扱いが走る) */
+  function bootBatchEnter() {
+    bootBatch.depth += 1;
+  }
+
+  /** 返事の扱いの終わり。いちばん外の扱いが終わったら、扱いが投げた続きをまとめて送る (js-start が投げ終える前なら、投げ終えたときに) */
+  function bootBatchLeave() {
+    bootBatch.depth -= 1;
+    if (bootBatch.depth <= 0 && !bootBatch.hold) bootBatchFlush();
+  }
+
+  function bootBatchOne(item) {
+    google.script.run.withSuccessHandler(item.ok).withFailureHandler(item.ng)[item.name]();
+  }
+
+  function bootBatchSend(items) {
+    var names = items.map(function (it) { return it.name; });
+    google.script.run
+      .withSuccessHandler(function (res) {
+        var list = res && res.length === items.length ? res : null;
+        for (var i = 0; i < items.length; i++) {
+          var r = list ? list[i] : null;
+          // 1つの扱いが投げても、残りの返事は配る (配らないと最初の波の数が戻らず、急がないものが15秒待つ)
+          try {
+            if (r && r.ok === true) items[i].ok(r.value === undefined ? null : r.value);
+            else if (r && r.ok === false) items[i].ng(new Error(r.error || 'まとめて取れませんでした'));
+            // 返事の形が合わない (古い画面と新しいサーバなど) ものは、1本ずつ取り直す
+            else bootBatchOne(items[i]);
+          } catch (e) {
+            if (window.console) console.warn('開いた直後の返事を扱えませんでした: ' + items[i].name, e);
+          }
+        }
+      })
+      .withFailureHandler(function () {
+        // まとめて取る口そのものが落ちたら、1本ずつ取り直す (まとめる前と同じ動きに戻る)
+        items.forEach(bootBatchOne);
+      })
+      .apiBoot(names);
+  }
+
   /** 要るときに1回だけ取るもの。名前 → { state: 'wait' | 'ok', waiters } */
   var onceLoads = {};
 
@@ -2382,12 +2470,15 @@
     var ok = onOk || function () {};
     // 開いた直後の最初の波の中で投げたものなら数える。返事 (成功でも失敗でも) で数を戻す (bootWaveDone)
     var inBoot = bootWaveCount();
+    // 返事の扱いが投げた続き (前進 → カードの5本) は、扱いの終わりでまとめて送る (bootBatchFlush)
     var run = google.script.run
       .withSuccessHandler(function (res) {
-        try { okOf(res); } finally { if (inBoot) bootWaveDone(); }
+        bootBatchEnter();
+        try { okOf(res); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
       })
       .withFailureHandler(function (err) {
-        try { failOf(err); } finally { if (inBoot) bootWaveDone(); }
+        bootBatchEnter();
+        try { failOf(err); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
       });
 
     function okOf(res) {
@@ -2433,6 +2524,14 @@
       try { oshiAfterFail(name); } catch (e) { if (window.console) console.warn('推しを出せませんでした', e); }
     }
 
+    // 開いた直後の軽いものはまとめて取る (bootBatchTake)。預かられなければ1本で投げる
+    if (!again && bootBatchTake(name, args, function (res) {
+      bootBatchEnter();
+      try { okOf(res); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
+    }, function (err) {
+      bootBatchEnter();
+      try { failOf(err); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
+    })) return;
     run[name].apply(run, args || []);
   }
 

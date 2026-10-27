@@ -147,6 +147,44 @@ export function mountApp(responses, options) {
       runner[name] = function (...args) {
         calls.push({ name, args });
 
+        /*
+         * 開いた直後の軽い api をまとめて取る口 (app.js の bootBatchSend → Boot.gs の apiBoot)。
+         * 表の返事を1つずつ引いて、実物と同じ形 ({ok, value} / {ok, error}) で返す。中の1本ずつも calls に
+         * 残す (batched: true) ので、名前で数えるテストはそのまま通る。遅らせた返事 (later) が混ざれば、
+         * 全部そろってから返す
+         */
+        // 口そのものの返事を差し替えたとき (Error / 配列 / それを返す関数) は、下の表の扱いに任せる
+        const bootOverride = name === 'apiBoot' && typeof table.apiBoot === 'function' ? table.apiBoot(...args) : table.apiBoot;
+        if (name === 'apiBoot' && !(options && options.transport) && !(bootOverride instanceof Error)
+          && !Array.isArray(bootOverride)) {
+          const list = args[0] || [];
+          const results = new Array(list.length);
+          let left = list.length;
+          const settle = () => {
+            left -= 1;
+            if (left === 0 && onSuccess) onSuccess(structuredClone(results));
+          };
+          list.forEach((n, i) => {
+            calls.push({ name: n, args: [], batched: true });
+            let v = table[n];
+            if (typeof v === 'function') v = v();
+            if (v instanceof Error) { results[i] = { ok: false, error: v.message }; settle(); return; }
+            if (v && typeof v.later === 'function') {
+              v.later((val) => { results[i] = { ok: true, value: val === undefined ? null : val }; settle(); },
+                (err) => { results[i] = { ok: false, error: err && err.message }; settle(); });
+              return;
+            }
+            results[i] = { ok: true, value: v === undefined ? null : v };
+            settle();
+          });
+          if (!list.length && onSuccess) onSuccess([]);
+          return;
+        }
+        if (name === 'apiBoot') {
+          // 本物のサーバへつなぐとき・口そのものの返事を差し替えたときも、中の1本ずつを calls に残す
+          (args[0] || []).forEach((n) => calls.push({ name: n, args: [], batched: true }));
+        }
+
         if (options && options.transport) {
           options.transport(name, args, onSuccess, onFailure);
           return;
@@ -199,7 +237,7 @@ export function mountApp(responses, options) {
 
 /** 画面が呼びうる API。表に無くても呼べるようにしておく */
 const API_NAMES = [
-  'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
+  'apiBoot', 'apiListFiles', 'apiGetFileHtml', 'apiFileStatus', 'apiCommit', 'apiCommitGraph',
   'apiCommitDiff', 'apiCommitHistory', 'apiBranchList', 'apiBranchCreate',
   'apiBranchDelete', 'apiBranchAddFile', 'apiBranchAddable', 'apiPrList', 'apiPrClose', 'apiPrCreate', 'apiPrPreview', 'apiPrReview',
   'apiPrMerge', 'apiPrReviews', 'apiPrCommits', 'apiPrPatches', 'apiPrPatchAdd', 'apiOutboxList', 'apiOutboxVerbs', 'apiOutboxAdd', 'apiIssueList', 'apiIssueCreate',
