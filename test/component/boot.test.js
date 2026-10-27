@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mountApp, DEFAULTS } from '../dom.js';
+import { mountApp, DEFAULTS, takeUncaught } from '../dom.js';
 import { mount } from './mount.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,18 +19,20 @@ const $ = (sel) => document.querySelector(sel);
 
 /** 最初の波: ホームの描画・左の行き先の数・上の段に要るもの */
 const FIRST_WAVE = [
-  // 1本ずつ投げるもの (Drive を読む重いもの・引数のあるもの・ほかの呼び出しが待つもの) と、
-  // まとめて1本 (apiBoot) で取る軽いもの。まとめる口は js-start が投げ終えたとき (bootBatchFlush) に送る。
-  // 疑似の返事は同期で返るので、前進の返事が投げた続き (カードの軽い3本) も投げ終える前の口に相乗りする
-  // (実物では前進の返事が届いたときに別の1本になる。下の「前進の返事を待つあいだ」)
-  'apiListFiles', 'apiNotifications', 'apiOverview', 'apiProgress', 'apiMyToday', 'apiReportParts',
-  'apiHomeSummary', 'apiPrefs', 'apiOshiGet',
-  'apiBoot', 'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiMyMilestones', 'apiGameState', 'apiGameTop', 'apiHomeActivity',
+  // 1本ずつ投げるもの (Drive を読む重いもの・引数のあるもの・ほかの呼び出しが待つもの・動きの一覧) と、
+  // まとめて1本 (apiBoot) で取る軽いもの。左の行き先・上の段のまとめは、ホームの重いものより先に送る
+  // (bootHomeWave の直後の bootBatchFlush)。疑似の返事は同期で返るので、前進の返事が投げた続き (カードの軽い3本) は
+  // 前進の返事の扱いの終わりに送られ、ホームの要約より前に並ぶ (実物では前進の返事が届いたときになる)
+  'apiListFiles', 'apiNotifications',
+  'apiBoot', 'apiWorkspace', 'apiSettings', 'apiWhoAmI',
+  'apiOverview', 'apiProgress', 'apiMyToday', 'apiReportParts',
+  'apiBoot', 'apiMyMilestones', 'apiGameState', 'apiGameTop',
+  'apiHomeSummary', 'apiHomeActivity', 'apiPrefs', 'apiOshiGet',
 ];
 
 /** まとめて取る軽いもの (app.js の BOOT_BATCH_NAMES と Boot.gs の BOOT_BATCH_NAMES) */
 const BATCHED = [
-  'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity',
+  'apiWorkspace', 'apiSettings', 'apiWhoAmI',
   'apiMyMilestones', 'apiGameState', 'apiGameTop',
 ];
 /** まとめの口に渡した名前の並び (回ごと) */
@@ -235,17 +237,19 @@ describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot
   it('開いたときに投げた軽いものを1本にまとめ、前進の返事を待つあいだは、返事が投げた続きを次の1本にまとめる。重いものは1本ずつ', () => {
     const progress = hold(DEFAULTS.apiProgress);
     const app = mount({ apiProgress: progress.response });
-    expect(batches(app)).toEqual([['apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity']]);
+    // 左の行き先・上の段の3本は、ホームの重いものより先に1本で
+    expect(batches(app)).toEqual([['apiWorkspace', 'apiSettings', 'apiWhoAmI']]);
+    expect(names(app).indexOf('apiBoot')).toBeLessThan(names(app).indexOf('apiOverview'));
     progress.deliver();
     expect(batches(app)).toEqual([
-      ['apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity'],
+      ['apiWorkspace', 'apiSettings', 'apiWhoAmI'],
       ['apiMyMilestones', 'apiGameState', 'apiGameTop'],
     ]);
     // まとめた中の1本ずつは、口の外で投げていない。重いものと、ほかが待つもの (前進・設定) は1本ずつ
     const direct = app.calls.filter((c) => !c.batched).map((c) => c.name);
     BATCHED.forEach((n) => expect(direct, n).not.toContain(n));
-    ['apiListFiles', 'apiOverview', 'apiHomeSummary', 'apiProgress', 'apiPrefs', 'apiMyToday', 'apiReportParts', 'apiOshiGet']
-      .forEach((n) => expect(direct, n).toContain(n));
+    ['apiListFiles', 'apiOverview', 'apiHomeSummary', 'apiProgress', 'apiPrefs', 'apiMyToday', 'apiReportParts', 'apiOshiGet',
+      'apiHomeActivity'].forEach((n) => expect(direct, n).toContain(n));
   });
 
   it('画面とサーバの「まとめて取るもの」の並びが揃っている', () => {
@@ -260,12 +264,11 @@ describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot
 
   it('まとめた中の1本が断られても、ほかの返事は届き、断りは1本ずつの失敗の扱いに回る', () => {
     // 動きの一覧 (apiHomeActivity) だけ断られる。同じ口の左上の名前 (apiWorkspace) と設定 (apiSettings) は届く
-    const app = mount({ apiHomeActivity: new Error('動きを読めません'), apiWorkspace: { name: '総務の文書' } });
-    // 同じ口の左上の名前の返事は画面に反映されている
+    // 自分の顔 (apiWhoAmI) だけ断られる。同じ口の左上の名前 (apiWorkspace) と設定 (apiSettings) は届く
+    const app = mount({ apiWhoAmI: new Error('判定できません'), apiWorkspace: { name: '総務の文書' } });
     expect($('#brand').textContent).toContain('総務の文書');
-    expect(batches(app)[0]).toContain('apiHomeActivity');
+    expect(batches(app)[0]).toContain('apiWhoAmI');
     expect(batches(app)[0]).toContain('apiSettings');
-    expect($('#home-activity').textContent).toContain('動きを読めません');
     // 急がないものも走る (失敗も返事として数える)
     LATER.forEach((n) => expect(count(app, n), n).toBe(1));
   });
@@ -298,11 +301,34 @@ describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot
     expect(oddAfter).not.toContain('apiSettings');
   });
 
-  it('まとめた返事の1つの扱いが投げても、残りの返事は配る', () => {
-    // 動きの一覧の返事が描けない形 (扱いが投げる) でも、同じ口の設定と名前は届く
-    const app = mount({ apiHomeActivity: { weeks: 5 }, apiWorkspace: { name: '総務の文書' } });
-    expect($('#brand').textContent).toContain('総務の文書');
+  it('まとめた返事の1つの扱いが投げても、残りの返事は配り、投げたものは握りつぶさずに表に出す', () => {
+    // カードの返事が描けない形 (扱いが投げる) でも、同じ口の残りは届き、急がないものも走る
+    const progress = hold(DEFAULTS.apiProgress);
+    // カードは5本の返事がそろって描く。最後に届くのはまとめの口なので、描けない返事 (今日の一覧が字。日報の形が無いと
+    // 今日の一覧をそのまま並べる) はその扱いの中で投げる
+    const app = mount({ apiProgress: progress.response, apiMyToday: 'こわれた', apiReportParts: null });
+    progress.deliver();
+    expect(batches(app)[1]).toEqual(['apiMyMilestones', 'apiGameState', 'apiGameTop']);
+    expect(count(app, 'apiGameTop')).toBe(1);
     LATER.forEach((n) => expect(count(app, n), n).toBe(1));
+    // 投げたものは受け止められなかった例外として表に出る (握りつぶすと壊れた扱いに気づけない)
+    const errs = takeUncaught();
+    expect(errs.length).toBe(1);
+  });
+
+  it('口は、知らない名前・同じ名前の重なり・多すぎる並びを断る (サーバ)', async () => {
+    const { loadGasWith } = await import('../harness.js');
+    const { createFakeGas } = await import('../fakegas.js');
+    const { APP_SOURCES } = await import('../sources.js');
+    const fake = createFakeGas();
+    const ctx = loadGasWith(fake, ...APP_SOURCES);
+    ctx.repoInit('agentic-management');
+    const res = ctx.apiBoot(['apiWhoAmI', 'apiIssueList']);
+    expect(res[0].ok).toBe(true);
+    expect(res[1].ok).toBe(false);
+    expect(res[1].error).toContain('まとめて取れないものです');
+    expect(() => ctx.apiBoot(['apiWhoAmI', 'apiWhoAmI'])).toThrow(/まとめて取れないものです/);
+    expect(() => ctx.apiBoot(new Array(20).fill('apiWhoAmI'))).toThrow(/まとめて取れないものです/);
   });
 
   it('最初の波が閉じたあとは、同じ名前でも1本ずつ取る (まとめない)', () => {

@@ -156,6 +156,9 @@
     bootLater(startNotices);
   } else {
     bootHomeWave();
+    // 左の行き先・上の段に要る軽いものを、ホームの重いもの (文書の一覧の次) より先に1本で送る。あとに回すと、
+    // 同時の接続 (6本ほど) を重いものが埋めたあとに並び、左上の名前と顔が前より遅くなる
+    bootBatchFlush();
     // 返事を待たずにホームを出す (loadHome が各区画を自分で取りに行く)。
     // 返事を待ってから切り替えると、そのあいだに左で移った先が押した直後にホームへ戻される
     switchTab('home');
@@ -186,7 +189,7 @@
     needOnce(['apiTagList', 'apiIssuePriorities']);
   });
   bootWaveArm();
-  // ここまでに投げた軽いものを1本にまとめて送る (app.js の bootBatchFlush)
+  // ここまでに投げた軽いもの (ホームの動きの一覧など) をまとめて送る (app.js の bootBatchFlush)
   bootBatchFlush();
 
   /**
