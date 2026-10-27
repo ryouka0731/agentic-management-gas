@@ -615,7 +615,10 @@ export function createFakeGas() {
       getDateCreated: () => new Date(ev.created),
       // 実機と同じく、印を付けても変わる (作った直後なので作った時刻とほぼ同じ)
       getLastUpdated: () => new Date(ev.updated),
-      getGuestList: () => (ev.guests || []).map((g) => ({ getEmail: () => g })),
+      // 実機と同じく、主催者は includeOwner (true) のときだけ入れる
+      getGuestList: (includeOwner) => (ev.guests || [])
+        .concat(includeOwner && ev.createdBy && (ev.guests || []).indexOf(ev.createdBy) < 0 ? [ev.createdBy] : [])
+        .map((g) => ({ getEmail: () => g })),
       getGuestByEmail: (e) => ((ev.guests || []).indexOf(e) >= 0 ? { getEmail: () => e } : null),
       getTransparency: () => ev.transparency || 'OPAQUE',
       getTag: (k) => (Object.prototype.hasOwnProperty.call(ev.tags, k) ? ev.tags[k] : null),
@@ -723,12 +726,15 @@ export function createFakeGas() {
       if (role) c._access.set(email, role);
       else c._access.delete(email);
     },
-    /** その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title} */
+    /**
+     * その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title, guests, organizer}。
+     * guests はゲストのアドレス (実機と同じく主催者は入れない)、organizer は主催者 (既定はその人)
+     */
     _calAddBusy: (email, ev) => {
       const c = calDefault(email);
       const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
-        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay,
-        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: email, created: Date.now(), updated: Date.now(),
+        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay, guests: ev.guests || [],
+        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: ev.organizer || email, created: Date.now(), updated: Date.now(),
         transparency: ev.free ? 'TRANSPARENT' : 'OPAQUE' };
       c._events.push(raw);
       return raw;

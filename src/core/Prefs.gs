@@ -170,6 +170,12 @@ function PREF_CALENDAR_ITEMS_() {
       def: 'task' },
     { key: 'calendar.shared', scope: 'team', type: 'calendar', section: section, label: '予定を入れる共有カレンダー',
       help: '管理者が「共有カレンダーを作る」で作るか、あるカレンダーの ID を貼ります', def: '' },
+    // 会議の時間 (自分まわりの欄)。読むのは本人の既定のカレンダーだけで、数だけを出す (meetingHoursOf_)
+    { key: 'calendar.meetings', scope: 'me', type: 'bool', section: '会議の時間', label: '会議の時間を出す',
+      help: 'あなたのカレンダーから、相手のいる会議 (断ったもの・終日の予定を除く) の時間を足して、' +
+        '今週・今月・今半期のぶんを自分まわりの欄に出します。重なった時間は1つ分だけ数えます。' +
+        '数はあなたにだけ見え、会議の名前や相手はどこにも残しません',
+      def: false },
   ];
 }
 
@@ -688,7 +694,7 @@ function apiPrefs(opts) {
         style: plainText(byKey['oshi.style']), mood: byKey['oshi.mood'] === true },
       room: { on: byKey['room.on'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
-      calendar: { plan: byKey['calendar.plan'] === true },
+      calendar: { plan: byKey['calendar.plan'] === true, meetings: byKey['calendar.meetings'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,
       goals: { enabled: byKey['goals.enabled'] === true },
       cowork: { enabled: byKey['cowork.enabled'] === true, showFocus: byKey['cowork.showFocus'] === true },

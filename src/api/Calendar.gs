@@ -47,6 +47,29 @@ function apiCalendarToday() {
 }
 
 /**
+ * 会議の時間 (Web App API)。自分まわりの欄を開いたときに、自分の設定 calendar.meetings がオンの人だけが呼ぶ。
+ * 本人の既定のカレンダーだけを読み、数と期間だけを返す (題名・相手は返さない)。アドレスは受けない。
+ * オフ・読めないときは null (断らない。画面は欄を出さない)。
+ *
+ * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number}}
+ */
+function apiMeetingHours() {
+  var who = currentEmailLower_();
+  if (!who) return null;
+  if (prefValueOf_(prefItem_('calendar.meetings'), who, prefReaderLive_()).value !== true) return null;
+  var out = meetingHoursOf_(who);
+  if (!out) return null;
+  return {
+    week: plainNumber(out.week),
+    month: plainNumber(out.month),
+    half: plainNumber(out.half),
+    since: plainText(out.since),
+    until: plainText(out.until),
+    count: plainNumber(out.count),
+  };
+}
+
+/**
  * 予定に入れる様子 (Web App API)。設定の画面の小さな欄が読む。
  *
  * canWrite は持ち主か、最後に組んだときに書けたか (実機の CalendarApp には「書けるか」を尋ねる口が無い)。

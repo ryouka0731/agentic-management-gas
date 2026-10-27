@@ -671,3 +671,87 @@ function calendarTodayFor_(who, now) {
   blocks.sort(function (a, b) { return a.start - b.start; });
   return { ok: true, reason: '', blocks: blocks.map(function (b) { return calendarPlainBlock_(b, titles); }) };
 }
+
+// ===== 会議の時間 (自分まわりの欄) =====
+//
+// 本人の既定のカレンダーだけを読み、会議の時間を数だけ返す。題名・相手・時刻は返さず、どこにも書かない。
+// 半期ぶんの予定を読むので重い。CacheService に本人ごと・東京の暦日ごとに MEETING_CACHE_SEC_() 覚える
+// (中身は数だけ。日が変われば期間も変わるので、鍵に暦日を入れて取り直す)。
+
+/** 会議の時間を覚えておく秒 */
+function MEETING_CACHE_SEC_() {
+  return 1800;
+}
+
+/**
+ * 会議として数える予定か。参加者が本人を含めて2人以上・本人が断っていない・終日でない。
+ * 「空き」(透過) の予定も、相手がいて断っていなければ会議として数える (埋まっている時間の calendarCountsAsBusy_ とは別)。
+ *
+ * @param {object} ev
+ * @param {string} who 小文字のアドレス
+ * @returns {boolean}
+ */
+function meetingCounts_(ev, who) {
+  if (ev.isAllDayEvent()) return false;
+  var no = CalendarApp.GuestStatus && CalendarApp.GuestStatus.NO;
+  try {
+    if (no && ev.getMyStatus() === no) return false;
+  } catch (e) { /* 分からなければ断っていないものとする */ }
+  var people = {};
+  people[who] = true;
+  // true で主催者も入れる (実機の getGuestList() は主催者を入れない)
+  (ev.getGuestList(true) || []).forEach(function (g) {
+    var mail = String((g && g.getEmail && g.getEmail()) || '').toLowerCase();
+    if (mail) people[mail] = true;
+  });
+  return Object.keys(people).length >= 2;
+}
+
+/**
+ * 本人の会議の時間 (今週・今月・今半期の、今までのぶん)。読めない (権限が無い・エラー) ときは null。
+ *
+ * @param {string} who 小文字のアドレス
+ * @param {Date} [now]
+ * @returns {?{week: number, month: number, half: number, since: string, until: string, count: number}}
+ *   時間 (小数1桁)。since / until は東京の暦日 ('YYYY-MM-DD')。count は半期の会議の数
+ */
+function meetingHoursOf_(who, now) {
+  var nowMs = (now || calendarNow_()).getTime();
+  var key = 'MEETING:' + calendarDayOf(nowMs) + ':' + who;
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {
+    cache = null;
+  }
+  var p = meetingPeriodsOf(nowMs);
+  var list = [];
+  try {
+    CalendarApp.getDefaultCalendar().getEvents(new Date(p.half), new Date(nowMs)).forEach(function (ev) {
+      if (!meetingCounts_(ev, who)) return;
+      list.push({ start: ev.getStartTime().getTime(), end: ev.getEndTime().getTime() });
+    });
+  } catch (e) {
+    // 読めなければ欄を出さない (覚えない。次に開いたときにもう一度読む)
+    Logger.log('会議の時間を読めませんでした: ' + e.message);
+    return null;
+  }
+  var out = {
+    week: meetingHoursOfMinutes(meetingMinutesIn(list, p.week, nowMs)),
+    month: meetingHoursOfMinutes(meetingMinutesIn(list, p.month, nowMs)),
+    half: meetingHoursOfMinutes(meetingMinutesIn(list, p.half, nowMs)),
+    since: calendarDayOf(p.half),
+    until: calendarDayOf(nowMs),
+    count: list.length,
+  };
+  if (cache) {
+    try {
+      cache.put(key, JSON.stringify(out), MEETING_CACHE_SEC_());
+    } catch (e) {
+      Logger.log('会議の時間を覚えられませんでした: ' + e.message);
+    }
+  }
+  return out;
+}

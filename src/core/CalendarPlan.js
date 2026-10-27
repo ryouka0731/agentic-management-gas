@@ -250,3 +250,56 @@ function calendarPlanBlocks(input) {
   blocks.sort(function (a, b) { return a.start - b.start || a.issueNumber - b.issueNumber; });
   return { blocks: blocks, late: late, unplaced: unplaced, capped: capped, end: slots.end };
 }
+
+// ===== 会議の時間 (自分まわりの欄。カレンダーを読むのは CalendarSync.gs の meetingHoursOf_) =====
+
+/**
+ * 会議の時間を数える期間の始まり。どれも東京の暦日の0時。終わりは今 (済んだぶんだけ数える)。
+ * 週は月曜から、月は1日から、半期は4月1日 (4〜9月) か10月1日 (10〜3月) から。
+ *
+ * @param {number} nowMs
+ * @returns {{now: number, week: number, month: number, half: number}} ミリ秒
+ */
+function meetingPeriodsOf(nowMs) {
+  var day = calendarDayOf(nowMs);
+  var y = Number(day.substring(0, 4));
+  var m = Number(day.substring(5, 7));
+  var today = calendarDayStart(day);
+  // 東京の曜日 (0 = 日曜)。月曜を週の始まりにする
+  var wd = new Date(today + CAL_TZ_OFFSET_MIN() * 60000).getUTCDay();
+  var week = today - ((wd + 6) % 7) * 86400000;
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  var month = calendarDayStart(y + '-' + pad(m) + '-01');
+  // 1〜3月は前の年の10月から
+  var half = m >= 4 && m <= 9 ? calendarDayStart(y + '-04-01')
+    : calendarDayStart((m <= 3 ? y - 1 : y) + '-10-01');
+  return { now: nowMs, week: week, month: month, half: half };
+}
+
+/**
+ * 会議の時間 (分) を期間で切って足す。重なった時間は1つ分だけ数える (calendarMerge で潰してから足す)。
+ *
+ * @param {Array<{start: number, end: number}>} list
+ * @param {number} from
+ * @param {number} to
+ * @returns {number} 分
+ */
+function meetingMinutesIn(list, from, to) {
+  var total = 0;
+  calendarMerge(list).forEach(function (b) {
+    var s = Math.max(b.start, from);
+    var e = Math.min(b.end, to);
+    if (e > s) total += (e - s) / 60000;
+  });
+  return total;
+}
+
+/**
+ * 分を時間にする (小数1桁に四捨五入)。
+ *
+ * @param {number} min
+ * @returns {number}
+ */
+function meetingHoursOfMinutes(min) {
+  return Math.round((Number(min) || 0) / 6) / 10;
+}

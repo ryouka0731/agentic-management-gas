@@ -36,6 +36,10 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
 細部は `docs/dev/calendar.md`。
 
+「会議の時間」(`calendar.meetings`) も自分の設定で既定オフ。見出しは別 (`会議の時間`) だが `PREF_CALENDAR_ITEMS_` に置く。
+`effective.calendar.meetings` で画面に渡し、**オフのあいだは画面が `apiMeetingHours` を呼ばず、サーバもカレンダーを開かない**
+(`apiMeetingHours` が `prefValueOf_` で見直す)。オフにしても覚えた数 (キャッシュ) は消さない (数だけで、オフなら返さない)。
+
 「自分の曲」(`focus.music` = `off` / `own`、`focus.musicUrl`) は自分の設定。`focus.musicUrl` は型 `music` で、
 **`apiPrefSet` は URL の字で受け、`focusMusicParse_` (`src/core/FocusMusic.js`) で読み解いた部品
 (`{kind:'youtube', video}` / `{kind:'youtube', list}` / `{kind:'soundcloud', path}`) だけを書く。** 貼った字は残さない。

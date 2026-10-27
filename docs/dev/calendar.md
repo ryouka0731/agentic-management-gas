@@ -59,6 +59,25 @@
   辿り方も書いてある。管理者にだけ返す
 - `apiCalendarStatus` は登録 (購読) しに行かない (`calendarOpenShared_(false)`)。開くたびに登録を試さないため。登録は組み直すとき
 
+## 会議の時間 (自分まわりの欄)
+
+やること #100。自分の設定 `calendar.meetings` (既定オフ) の人に、本人の既定のカレンダーの会議の時間を今週・今月・今半期で出す。
+
+- **期間の切り方と足し方はピュア** (`CalendarPlan.js` の `meetingPeriodsOf` / `meetingMinutesIn` / `meetingHoursOfMinutes`)。
+  始まりは東京の暦日の0時 (週は月曜、月は1日、半期は 4/1 か 10/1。1〜3月は前の年の 10/1)、**終わりは今** (済んだぶんだけ。
+  これからの会議は入れない)。重なりは `calendarMerge` で潰してから期間で切って足す (同じ時間の会議が2つなら1つ分)
+- **会議の決まり** (`meetingCounts_`): 終日でない・`getMyStatus()` が `NO` でない・参加者が本人を含めて2人以上。参加者は
+  `getGuestList(true)` (主催者も入れる。実機の `getGuestList()` は主催者を入れないので、人から呼ばれた会議が「ゲストは自分だけ」に
+  見える) と本人を小文字のアドレスで合わせて数える。「空き」(透過) は見ない (埋まっている時間の `calendarCountsAsBusy_` とは別)
+- **読むのは本人の既定のカレンダーだけ** (`meetingHoursOf_`)。共有カレンダー・ほかの人のカレンダーは読まない。返すのは
+  `{week, month, half, since, until, count}` (時間は小数1桁、since / until は東京の暦日、count は半期の会議の数) だけで、
+  題名・相手・時刻は返さず、台帳にもスクリプトプロパティにも書かない
+- 半期ぶんを読むので重い。スクリプトのキャッシュに `MEETING:<東京の暦日>:<小文字のアドレス>` で `MEETING_CACHE_SEC_()` (1800秒) 覚える
+  (中身は数だけ。暦日を鍵に入れて、日が変われば期間ごと取り直す)。**読めない (権限・エラー) ときは覚えず null** を返し、断らない
+- 口は `apiMeetingHours` (アドレスを受けない)。設定がオフなら**カレンダーを開かずに** null。画面 (`js-calendar` の
+  `makeMeetingHoursBox`、置くのは `js-me` の `drawMe`) は**自分まわりの欄を開いたときだけ**呼び (開いた直後には呼ばない)、
+  オフなら呼ばない。null なら欄を隠したまま。テストは `test/meeting-hours.test.js` と `test/component/meeting-hours.test.js`
+
 ## 画面
 
 - 自分の設定の「予定に入れる」の節の下に、様子・「予定を組み直す」・最後に組んだ時刻・「カレンダーで開く」
