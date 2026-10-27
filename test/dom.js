@@ -541,6 +541,8 @@ export const DEFAULTS = {
   apiPrPreview: {
     clean: true, problems: [], conflicts: [], approvals: 0, ops: [],
     patchCount: 0,
+    // 変わった箇所の箇条書き (src/core/DiffSummary.js)。既定は無し
+    summary: [],
     // 変更セットは文書ごとの中身も持つ
     files: [{
       fileId: 'DOC1', path: '就業規則.doc', type: 'doc',

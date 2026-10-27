@@ -69,9 +69,12 @@ function apiPrCreate(title, body, sourceBranch, mainFileId, targetBranch) {
 function apiPrPreview(number) {
   var all = prPreviewAll(number);
   var files = [];
+  var changes = [];
 
   for (var i = 0; i < all.files.length; i++) {
     var one = all.files[i];
+    var changeOps = one.changeOps || [];
+    changes.push({ path: one.path, ops: changeOps });
 
     files.push({
       fileId: plainText(one.mainFileId),
@@ -81,6 +84,8 @@ function apiPrPreview(number) {
       problems: one.problems,
       conflicts: one.conflicts,
       ops: diffHtml(one.oursHtml, linesToHtml_(one.lines)),
+      // この文書の変わった箇所 (人の言葉の箇条書き。src/core/DiffSummary.js)
+      summary: diffSummarize(changeOps),
     });
   }
 
@@ -110,6 +115,8 @@ function apiPrPreview(number) {
     patchCount: prPatchRows(number).length,
     // 反映のときに添えてもらう。見比べたあとで進んでいないかを見分ける
     previewSha: prPreviewFingerprint(number),
+    // 変わった箇所の箇条書き (最大 8 本 + 「ほか N か所」)。画面の先頭と手元の下見に出す
+    summary: diffSummaryFiles(changes),
   };
 }
 

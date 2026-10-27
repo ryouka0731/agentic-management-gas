@@ -31,7 +31,7 @@ export const ISSUE_SOURCES = [
 export const CORE_SOURCES = [
   'src/core/Hash.js', 'src/core/HashGas.gs', 'src/core/Db.gs', 'src/core/CurrentUser.gs', 'src/core/Repo.gs',
   'src/core/ObjectStore.gs', 'src/core/Normalize.js', 'src/core/Markdown.js',
-  'src/core/Graph.js', 'src/core/Diff.js', 'src/core/Merge.js', 'src/core/Commit.gs',
+  'src/core/Graph.js', 'src/core/Diff.js', 'src/core/DiffSummary.js', 'src/core/Merge.js', 'src/core/Commit.gs',
   'src/core/Branch.gs', 'src/render/HtmlWriter.gs', 'src/render/DocRenderer.gs',
   'src/render/LiveCache.gs', 'src/render/SheetRenderer.gs', 'src/render/SheetWriter.gs',
   'src/core/PullRequest.gs', 'src/core/PullPatch.gs', 'src/core/Outbox.gs',

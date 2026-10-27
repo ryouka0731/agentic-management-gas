@@ -814,3 +814,10 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 取り直す返事は `latest('cowork')` を通す (入る・出るも頼み直しとして数え、前に頼んだ様子・合図の返事を捨てる)。サーバに残った印から入っている部屋を
   戻すのは、その画面で最初に様子が届いたときだけ (出たあとに届いた古い返事で入り直さない。`test/component/cowork.test.js` の「遅れて届く返事」)
 - 試すのは `test/component/cowork.test.js`・`test/e2e/cowork.test.js` (返事は本物のサーバ。キャッシュと時計は `test/cowork-cache.js`)
+
+## 確認依頼の「変わった箇所」(`js-pulls` の `makePrSummary`)
+
+`apiPrPreview` の `summary` (サーバの `src/core/DiffSummary.js` が作る箇条書き) を、確認依頼の頭 (題名・確認する人の下、
+断りの帯・食い違い・操作・タブより上) に `.pr-summary` の札として置く。**字は `textContent` で li に置く** (他人が書いた文書の字が
+入る)。空なら札ごと出さない。画面では作り直さない (読み方はサーバの1か所だけ。写しを持つと食い違う)。
+試すのは `test/component/pulls.test.js` の「変わった箇所を、差分より上に箇条書きで出す」。
