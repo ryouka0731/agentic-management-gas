@@ -122,6 +122,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | `searchIndex` | なし | 横断検索の一覧 (題名・番号・状態だけ。絞るのは手元) |
 | `oshiPrompt` | `tool` (`chatgpt` / `gemini` / `claude` / `codex`) | 推しのキャラ作成キットの頼み文 (`{tool, label, prompt}`)。読むだけ。中身は番頭の定義の字で、人の字を含まない |
 | `oshiSpinner` | なし | 置いた人がいま使う推しの考え中のせりふ (`{on, char, name, lines, reason}`。`lines` は24字まで・20個まで)。読むだけ。見るのは置いた人の自分の設定で、推しがオフなら `on: false`・空の `lines` と理由。手元の `oshi-spinner` が Claude Code の `spinnerVerbs` に書く |
+| `calendarToday` | なし | 置いた人の今日 (東京の暦日) に始まる予定 (`{day, events: [{start, end, title, meetUrl, eventUrl}]}`。始まりの順。終日と断った予定は除く)。読むだけ。`meetUrl` は場所か説明にある `https://meet.google.com/…` (無ければ null)、`eventUrl` はカレンダーで開く URL (繰り返しの予定は null)。読めるのは、キューを仕掛けた人の既定のカレンダーと、その人に共有されて登録されている置いた人のカレンダーだけ (無ければ断る)。VS Code の拡張 (`kit-vscode/`) が会議の始まりを知らせるのに使う |
 
 ### 管理者だけ
 
@@ -150,7 +151,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 
 命令ファイルを置いた人を `by` として読む (マイドライブではファイルの持ち主、共有ドライブでは最後に書いた人)。
 
-- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft` / `workStyle` / `oshiSpinner`、`COMMAND_PERSONAL_OPS()`) は、置いた人から見た様子を返す。**
+- **自分の様子を見る命令 (`homeMine` / `homeAdvice` / `reportDraft` / `workStyle` / `oshiSpinner` / `calendarToday`、`COMMAND_PERSONAL_OPS()`) は、置いた人から見た様子を返す。**
   置いた人が分からなければ「命令を置いた人が分かりません」で断る。マイドライブで命令ファイルの持ち主が移されて
   最後に書いた人と食い違うときも断る
 - **管理者だけの命令 (`oshiProfileSet`、`COMMAND_ADMIN_OPS()`) は、置いた人が管理者のときだけ走る。** 置いた人は上と同じく
@@ -159,6 +160,8 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
   書き換える (プロフィールの中身を、共有している人に残さない)。手元に残した命令ファイルは自分で消す
 - **`by` は誰の見え方を返すかを決めるだけで、権限の仕組みではない (管理者だけの命令を除く)。** 結果は `queue/` に置かれ、共有している人なら
   誰でも読める (中身は台帳を読める人に見えているものと同じ)
+- **`calendarToday` の返事だけは台帳に無い中身 (今日の予定の題名と会議の URL) を含む。** 手元が受け取ってすぐ消すまでのあいだ、
+  `queue/` を共有している人 (同期している人の手元にも) に見える。人に見せたくない予定があるなら使わない
 - これらの命令は画面の `api*` を呼ばない。トリガーは持ち主の権限で走るので、呼ぶと持ち主のぶんが返るため
 - `reportDraft` で本人が選んだ形 (自分の形を含む) を使えるのは、キューを仕掛けた人だけ (形はその人の UserProperties にある)。
   ほかの人はチームの既定の形になる。`kind` を渡せばその形になる

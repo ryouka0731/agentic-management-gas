@@ -29,6 +29,10 @@
   走らせたあと、処理済み (`queue-done/`) に移した命令ファイルの中身を `{id, op}` に書き換える (プロフィールの中身を共有している人に
   残さない。名前は二度実行しない印なので残す)。マイドライブでは命令ファイルの持ち主を移せるので、
   持ち主だけで決めると、管理者に持ち主を移したファイルで管理者になりすませる。断るのは `repoAssertAdmin_(what, by)`
+- **命令を置くのは手元の道具 (`agent.mjs`) だけではない。** VS Code 拡張 (`kit-vscode/lib/queue.js`) も同じ形 (`<id>.cmd.json` →
+  `<id>.result.json`、id の頭は `vsc-`) で直に置く。命令を足したら `COMMAND_OPS()` と `docs/manual/command-queue.md` の表を揃える
+  (`test/docs.test.js` が見ている)。予定を読む `calendarToday` は仕掛けた人の権限でカレンダーを開くので、読める範囲は
+  `docs/dev/calendar.md` の「今日の予定を手元に渡す」
 
 ## キューのついでに台帳の覚えを温める
 

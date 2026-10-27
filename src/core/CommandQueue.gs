@@ -158,6 +158,14 @@ function COMMAND_OPS() {
      * **置いた人が管理者でなければ断る** (by で決める、ただ1つの命令。置いた人は持ち主と最後に書いた人が
      * 同じときだけ決まる。COMMAND_ADMIN_OPS)。返事には中身を入れない (結果は queue に置かれ、共有している人が読める)
      */
+    /*
+     * 置いた人の今日の予定 (読むだけ。#99)。手元の VS Code の拡張 (kit-vscode/) が会議の始まりを知らせ、会議の URL を開く。
+     * 読めるのは仕掛けた人のカレンダーか、その人に共有されて登録されているカレンダーだけ (calendarTodayOf_)。
+     * 返事には題名と会議の URL が入り、手元が受け取るまで queue に置かれる
+     */
+    calendarToday: function (a, by) {
+      return calendarTodayOf_(commandBy_(by));
+    },
     oshiProfileSet: function (a, by) {
       var got = oshiBuiltinProfileSet_(commandBy_(by), String(a.key || ''), a.profile === undefined ? null : a.profile);
       return { key: got.key, items: got.items, clearLine: got.clearLine, clearVideo: got.clearVideo };
@@ -217,7 +225,7 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner'].concat(COMMAND_ADMIN_OPS());
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner', 'calendarToday'].concat(COMMAND_ADMIN_OPS());
 }
 
 /**
