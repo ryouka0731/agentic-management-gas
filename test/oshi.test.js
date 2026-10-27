@@ -952,7 +952,7 @@ describe('推しは既定でオン、選ぶのは自分の設定', () => {
 
   it('推しの設定はどれも自分の設定で、チームの設定には出ず、管理者が書いても本人のぶんにしか効かない', () => {
     const { ctx, fake } = setup();
-    const keys = ['oshi.on', 'oshi.home', 'oshi.char', 'oshi.fallback', 'oshi.style'];
+    const keys = ['oshi.on', 'oshi.home', 'oshi.char', 'oshi.fallback', 'oshi.style', 'oshi.peek'];
     for (const k of keys) expect(ctx.PREFS_SCHEMA().find((p) => p.key === k).scope, k).toBe('me');
     // 持ち主 (= 管理者) が選んでも、書くのは自分の覚え (MYPREF:) だけ
     ctx.apiPrefSet('oshi.char', 'builtin:itsuki');
@@ -963,6 +963,23 @@ describe('推しは既定でオン、選ぶのは自分の設定', () => {
     fake._setUser('b@example.com');
     expect(ctx.apiPrefs().effective.oshi.char).toBe('builtin:taku');
     expect(ctx.apiOshiGet().name).toBe('タク');
+  });
+
+  it('ひょっこり (peek) のねぎらいは、どの口調にも3つずつあり、当たりには変わらない。設定 oshi.peek は既定でオン', () => {
+    const ev = pure.OSHI_EVENTS().find((e) => e.key === 'peek');
+    expect(ev).toMatchObject({ label: 'ひょっこり (ねぎらい)', state: 'praise' });
+    expect(ev.praise).toBeFalsy();
+    for (const t of pure.OSHI_TONES()) {
+      const l = pure.OSHI_LINES()[t.key].peek;
+      expect(l, t.key).toHaveLength(3);
+      expect(new Set(l).size, t.key).toBe(3);
+      for (const x of l) expect(x.length, t.key + ': ' + x).toBeLessThanOrEqual(60);
+    }
+    const { ctx } = setup();
+    expect(ctx.PREFS_SCHEMA().find((p) => p.key === 'oshi.peek')).toMatchObject({ scope: 'me', type: 'bool', section: '推し', def: true });
+    expect(ctx.apiPrefs().effective.oshi.peek).toBe(true);
+    ctx.apiPrefSet('oshi.peek', false);
+    expect(ctx.apiPrefs().effective.oshi.peek).toBe(false);
   });
 
   it('選んでもらったときのせりふ (chosen) は、どの口調にもあり、表情は出すときにでたらめに選ぶ', () => {

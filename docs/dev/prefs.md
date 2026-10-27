@@ -60,3 +60,7 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 推しの機嫌 (`oshi.mood`) は自分の設定で既定オフ。`effective.oshi.mood` で画面に渡し、設定の一覧では推しがオンのときだけ出す
 (`appendPrefSections` が `oshiOn()` で外す)。境目の数 (`OSHI_MOOD_RULES()`) は設定の項目にしない (変えられると「むっ」の重さが
 人によって違って見え、手引きの表も書けない)。「動きなし」の日数だけはチームの設定 `stale.steps` の最初の段を使う (`staleSteps_()`)。
+
+推しのひょっこり (`oshi.peek`) は自分の設定で既定オン。`effective.oshi.peek` で画面に渡し、`oshi.mood` と同じく推しがオンのときだけ
+設定の一覧に出す。回数の上限 (開いて10分後から・30分に1回・1日4回) は設定の項目にせず画面 (js-oshi) が持つ。サーバは何もしない。
+**オフのあいだは画面が時計を仕掛けない** (`docs/dev/ui.md` の推しの節)。

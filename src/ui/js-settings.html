@@ -587,6 +587,8 @@
       if (p.key === 'cowork.showFocus' && !coworkOn()) return;
       // 推しの機嫌は、推しを使っていなければ意味が無い
       if (p.key === 'oshi.mood' && !oshiOn()) return;
+      // ひょっこり出るかどうかも、推しを使っていなければ意味が無い
+      if (p.key === 'oshi.peek' && !oshiOn()) return;
       var key = String(p.section || '');
       if (!by[key]) { by[key] = []; order.push(key); }
       by[key].push(p);
