@@ -52,6 +52,85 @@
     return new Date(Date.now() + 9 * 3600000).toISOString().substring(0, 10);
   }
 
+  // ===== 会議の時間 (自分まわりの欄) =====
+  //
+  // 自分の設定 calendar.meetings (既定はオフ) をオンにした人の、自分まわりの欄を開いたときだけ apiMeetingHours を呼ぶ
+  // (開いた直後には呼ばない)。サーバが本人の既定のカレンダーから数だけを返す。null (読めない) なら欄を出さない。
+
+  /** 「会議の時間を出す」がオンか (設定が届くまではオフ) */
+  function meetingHoursOn() {
+    var c = prefs && prefs.effective && prefs.effective.calendar;
+    return !!(c && c.meetings === true);
+  }
+
+  /** 'YYYY-MM-DD' を 'YYYY/M/D' にする */
+  function meetingDayLabel(day) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    return m ? m[1] + '/' + Number(m[2]) + '/' + Number(m[3]) : '';
+  }
+
+  /**
+   * 会議の時間の欄。オフなら null。返事が届くまで (と、読めなかったとき) は隠したまま。
+   *
+   * @returns {?HTMLElement}
+   */
+  function makeMeetingHoursBox() {
+    if (!meetingHoursOn()) return null;
+    var box = document.createElement('section');
+    box.className = 'me-meetings';
+    box.setAttribute('aria-label', '会議の時間');
+    box.hidden = true;
+    var still = latest('meetingHours');
+    call('apiMeetingHours', [], function (res) {
+      if (!still() || !meetingHoursOn() || !res) return;
+      var head = document.createElement('div');
+      head.className = 'me-meetings-head';
+      head.textContent = '会議の時間';
+      box.appendChild(head);
+      var nums = document.createElement('div');
+      nums.className = 'me-meetings-nums';
+      [['今週', res.week], ['今月', res.month], ['今半期', res.half]].forEach(function (pair) {
+        var cell = document.createElement('div');
+        cell.className = 'me-meetings-cell';
+        var label = document.createElement('span');
+        label.className = 'row-meta';
+        label.textContent = pair[0];
+        var value = document.createElement('span');
+        value.className = 'me-meetings-value';
+        value.textContent = String(Number(pair[1]) || 0) + '時間';
+        cell.appendChild(label);
+        cell.appendChild(value);
+        nums.appendChild(cell);
+      });
+      box.appendChild(nums);
+      var span = document.createElement('div');
+      span.className = 'row-meta';
+      span.textContent = '半期: ' + meetingDayLabel(res.since) + '〜' + meetingDayLabel(res.until) +
+        ' (' + (Number(res.count) || 0) + '件。重なりは1つ分)';
+      box.appendChild(span);
+      box.hidden = false;
+    }, failQuiet('会議の時間が出なくても自分まわりは使える'));
+    return box;
+  }
+
+  /**
+   * 設定が届いた・変わった。自分まわりの欄が開いていれば、会議の欄だけを当て直す (欄の全体は描き直さない。
+   * 描くたびにポイントの参加 apiGameState を取るため)。設定より先に欄を開くと、オンの人にも欄が出なかった。
+   * 出してある欄はそのまま (取り直さない)。
+   */
+  function meetingHoursPrefsChanged() {
+    if (mePanel.hidden) return;
+    var old = meBody.querySelector('.me-meetings');
+    if (!meetingHoursOn()) {
+      if (old) old.parentNode.removeChild(old);
+      return;
+    }
+    if (old && !old.hidden) return;
+    var box = makeMeetingHoursBox();
+    if (old) meBody.replaceChild(box, old);
+    else meBody.appendChild(box);
+  }
+
   /** ISO の時刻が東京の今日か */
   function calendarIsToday(iso) {
     var ms = Date.parse(String(iso || ''));
@@ -178,6 +257,7 @@
       loadHomeCalendar();
     }
     if (document.getElementById('calendar-mine')) refreshCalendarStatus();
+    meetingHoursPrefsChanged();
   }
 
   // ===== 設定の画面 =====

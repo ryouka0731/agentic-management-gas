@@ -508,6 +508,10 @@
     actions.className = 'me-actions';
     makeMeActions().forEach(function (el) { actions.appendChild(el); });
     meBody.appendChild(actions);
+
+    // 会議の時間 (自分の設定でオンにした人だけ。欄を描くときに取る)
+    var meetings = makeMeetingHoursBox();
+    if (meetings) meBody.appendChild(meetings);
   }
 
   /** 上の段の自分のボタン (顔と、道具の更新の印)。欄が閉じていても見えている */

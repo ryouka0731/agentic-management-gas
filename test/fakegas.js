@@ -587,7 +587,7 @@ export function createFakeGas() {
    */
   const calendars = new Map();
   let calSeq = 0;
-  const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0 };
+  const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0, getDefaultCalendar: 0 };
   // 予定を作るときに投げさせる (n 件目で)。{at, message} か null
   let calCreateFail = null;
   // 予定を消すときに投げさせる (predicate(ev) が true のもの)
@@ -611,11 +611,16 @@ export function createFakeGas() {
       getStartTime: () => new Date(ev.start),
       getEndTime: () => new Date(ev.end),
       isAllDayEvent: () => !!ev.allDay,
+      // 作った人 (実機は作った人のアドレスの並び)
+      getCreators: () => (ev.createdBy ? [ev.createdBy] : []),
       getMyStatus: () => (ev.status && ev.status[activeUser]) || 'OWNER',
       getDateCreated: () => new Date(ev.created),
       // 実機と同じく、印を付けても変わる (作った直後なので作った時刻とほぼ同じ)
       getLastUpdated: () => new Date(ev.updated),
-      getGuestList: () => (ev.guests || []).map((g) => ({ getEmail: () => g })),
+      // 実機と同じく、主催者は includeOwner (true) のときだけ入れる
+      getGuestList: (includeOwner) => (ev.guests || [])
+        .concat(includeOwner && ev.createdBy && (ev.guests || []).indexOf(ev.createdBy) < 0 ? [ev.createdBy] : [])
+        .map((g) => ({ getEmail: () => g })),
       getGuestByEmail: (e) => ((ev.guests || []).indexOf(e) >= 0 ? { getEmail: () => e } : null),
       getTransparency: () => ev.transparency || 'OPAQUE',
       getTag: (k) => (Object.prototype.hasOwnProperty.call(ev.tags, k) ? ev.tags[k] : null),
@@ -676,7 +681,7 @@ export function createFakeGas() {
       c._subscribed.add(activeUser);
       return calView(c);
     },
-    getDefaultCalendar: () => calView(calDefault(activeUser)),
+    getDefaultCalendar: () => { calCalls.getDefaultCalendar++; return calView(calDefault(activeUser)); },
   };
 
   const kitFiles = new Map();
@@ -723,12 +728,15 @@ export function createFakeGas() {
       if (role) c._access.set(email, role);
       else c._access.delete(email);
     },
-    /** その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title} */
+    /**
+     * その人の既定のカレンダーに予定を足す (ほかの会議など)。{start, end, allDay, declined, title, guests, organizer}。
+     * guests はゲストのアドレス (実機と同じく主催者は入れない)、organizer は主催者 (既定はその人)
+     */
     _calAddBusy: (email, ev) => {
       const c = calDefault(email);
       const raw = { id: 'ev-' + (++calSeq), title: ev.title || '会議', start: new Date(ev.start).getTime(),
-        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay,
-        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: email, created: Date.now(), updated: Date.now(),
+        end: new Date(ev.end).getTime(), description: '', tags: {}, allDay: !!ev.allDay, guests: ev.guests || [],
+        status: ev.declined ? { [email]: 'NO' } : {}, createdBy: ev.organizer || email, created: Date.now(), updated: Date.now(),
         transparency: ev.free ? 'TRANSPARENT' : 'OPAQUE' };
       c._events.push(raw);
       return raw;
