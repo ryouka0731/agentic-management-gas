@@ -126,21 +126,24 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 
 | 波 | いつ | 何を |
 |---|---|---|
-| 最初の波 (16本。うち軽い7本は `apiBoot` に**まとめて**送る) | 開いてすぐ | 文書の一覧 (`apiListFiles`。やることの絞り込みの文書名・改訂版を作る画面が `allFiles` を引く)・左上の名前 (`apiWorkspace`)・左の行き先 (`apiSettings`)・自分の顔 (`apiWhoAmI`)・ベルの数 (`apiNotifications`)・ホームの中身 (`apiOverview` は左の行き先の数も兼ねる・`apiHomeSummary`・`apiHomeActivity`・`apiProgress` とカードの5本)・設定 (`apiPrefs`)・推し (`apiOshiGet`、設定が届いてから) |
+| 最初の波 (16本。うち軽い6本は `apiBoot` に**まとめて**送る) | 開いてすぐ | 文書の一覧 (`apiListFiles`。やることの絞り込みの文書名・改訂版を作る画面が `allFiles` を引く)・左上の名前 (`apiWorkspace`)・左の行き先 (`apiSettings`)・自分の顔 (`apiWhoAmI`)・ベルの数 (`apiNotifications`)・ホームの中身 (`apiOverview` は左の行き先の数も兼ねる・`apiHomeSummary`・`apiHomeActivity`・`apiProgress` とカードの5本)・設定 (`apiPrefs`)・推し (`apiOshiGet`、設定が届いてから) |
 | 要るとき | その画面・欄を開いたとき | 人の名前と型 (`apiPeopleNames` / `apiWorkStyleTeam`。ホーム以外の画面と自分の欄)・やることの札と優先度 (`apiTagList` / `apiIssuePriorities`)・名簿 / ひな形 / Google ToDo / 置き場の日数 (`apiKnownPeople` / `apiTemplateList` / `apiTasksState` / `apiArchiveKeepDays`。やることを開いたときに待たずに取る)・集計の範囲 (`apiTallyScope`。集計を開いたとき)・やることの一覧 (`apiIssueList`。やることを開いたとき)・ポイントの参加 (`apiGameState`。自分の欄を開いたとき) |
 | 急がない (6本) | 最初の波の返事がそろってから (`bootLater`。そろわなくても15秒で) | 実績の数え直し (`apiAchievementsCheck`。開いた日も数える)・道具の更新の印 (`apiKitStatus`)・人の名前と型と札と優先度の先取り (`needPeople` と `needOnce(['apiTagList', 'apiIssuePriorities'])`) |
 
 - **最初の波のうち、台帳を読むだけの軽いものは1本 (`apiBoot`) にまとめて送る** (`BOOT_BATCH_NAMES`。画面 `app.js.html` と
   サーバ `src/api/Boot.gs` に同じ並びがあり、`test/component/boot.test.js` が揃っていることを見る)。1本ごとにサーバの起動代
   (0.3〜1秒) がかかり、同時の接続は6本ほどなので、軽いものが重いものの後ろで待たされていた (2026-10-27)。`call()` は最初の波の
-  あいだだけ、この名前で引数なしのものを預かり (`bootBatchTake`)、js-start が投げ終えたとき (`bootBatchFlush`) と、いちばん外の
-  返事の扱いが終わったとき (前進の返事 → カードの軽い3本) にまとめて送る。サーバは1つずつ `{ok, value}` / `{ok, error}` で返し、
-  画面は1本ずつの扱い (成功・失敗・最初の波の数) に戻す。口そのものが落ちたときと返事の形が合わないときは1本ずつ取り直す。
+  あいだだけ、この名前で引数なしのものを預かり (`bootBatchTake`)、**左の行き先・上の段の3本は `bootHomeWave` の直後に** (ホームの
+  重いものより先に送る。あとに回すと重いものが接続を埋めたあとに並び、左上の名前と顔が前より遅くなる)、カードの軽い3本は
+  前進の返事の扱いが終わったとき (いちばん外の扱いの終わり) にまとめて送る。サーバは1つずつ `{ok, value}` / `{ok, error}` で返し、
+  画面は1本ずつの扱い (成功・失敗・最初の波の数) に戻す。1つの扱いが投げても残りを配り、配り終えてから投げ直す (握りつぶすと
+  壊れた扱いに気づけない。`test/dom.js` は実物と同じく、扱いが投げたものを呼んだ側に戻さず受け止められなかった例外として控える)。
+  口そのものが落ちたときと返事の形が合わないときは1本ずつ取り直す。サーバは知らない名前・同じ名前の重なり・多すぎる並びを断る。
   **入れないもの**: Drive を読む重いもの (`apiListFiles` / `apiOverview` / `apiHomeSummary` / `apiOshiGet` / `apiReportParts` /
   `apiMyToday`。まとめると直列になり、本番で1つの実行で順に呼ぶと 14 秒)・引数のあるもの (`apiNotifications`)・ほかの呼び出しが
-  待つもの (`apiProgress` → カードの5本、`apiPrefs` → 推し。まとめの返事を待つぶん続きが遅れる)。最初の波が閉じたあとは
-  同じ名前でもまとめない。テストの疑似の返事は同期で返るので、前進の返事が投げた続きも投げ終える前の口に相乗りする
-  (`test/dom.js` は `apiBoot` を1本ずつに開いて表から引き、中の1本ずつも `calls` に `batched: true` で残す)
+  待つもの (`apiProgress` → カードの5本、`apiPrefs` → 推し。まとめの返事を待つぶん続きが遅れる)・1本だけ残るもの
+  (`apiHomeActivity`)。最初の波が閉じたあとは同じ名前でもまとめない。テストの疑似の返事は同期で返るので、順番は実物と
+  少し違う (`test/dom.js` は `apiBoot` を1本ずつに開いて表から引き、中の1本ずつも `calls` に `batched: true` で残す)
 - **新しい api* を開いた直後に呼ばない。** 画面や欄を開くところで取る。何度も開くもので中身が変わらないもの (一覧の候補・名前など) は
   `onceSpecOf` に足して `needOnce(names, then)` で取る。取ったら覚えて二度と取らず、取りに行っている最中なら待ち合わせる。取れなかった
   ものは覚えず、次に要るときに取り直す (then は呼ぶので、控えの値で描ける)。全部取ってあれば then はその場で呼ぶ (待たない)

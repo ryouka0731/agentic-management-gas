@@ -14,7 +14,7 @@
  */
 function BOOT_BATCH_NAMES() {
   return [
-    'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity',
+    'apiWorkspace', 'apiSettings', 'apiWhoAmI',
     'apiMyMilestones', 'apiGameState', 'apiGameTop',
   ];
 }
@@ -31,6 +31,13 @@ function apiBoot(names) {
   var root = typeof globalThis !== 'undefined' ? globalThis : this;
   var out = [];
   var list = names || [];
+  // 画面は決まった名前を1回ずつしか送らない。数が多い・同じ名前が2つあるものは断る (1回の実行で何度も Drive を読ませない)
+  if (list.length > allowed.length) throw new Error('まとめて取れないものです: ' + list.length + '本');
+  var seen = {};
+  for (var d = 0; d < list.length; d++) {
+    if (seen[String(list[d])]) throw new Error('まとめて取れないものです: ' + list[d] + ' が2つ');
+    seen[String(list[d])] = true;
+  }
   for (var i = 0; i < list.length; i++) {
     var name = String(list[i]);
     if (allowed.indexOf(name) < 0 || typeof root[name] !== 'function') {
