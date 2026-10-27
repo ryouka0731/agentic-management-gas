@@ -301,6 +301,14 @@ function PREF_GROUPS_() {
           '自分まわりの欄と、集中しているあいだの窓から開きます。押したときにだけ鳴り、イヤホンで聞く前提です',
         def: false }];
     },
+    sound: function () {
+      // 画面の操作の効果音。既定はオフ (オフのあいだは画面が音の仕組みを作らない)。音は画面の中で作り、
+      // 鳴らすのは 完了・反映 / 断り / 実績 / 集中とポモドーロの終わり の4つだけ (js-sound)
+      return [{ key: 'sound.effects', scope: 'me', type: 'bool', section: '音', label: '操作の効果音',
+        help: 'やることを完了にした・正式版に反映した・操作が断られた・実績を取った・集中やポモドーロの時間が終わった、の' +
+          'ときだけ短い音を鳴らします。ボタンを押しただけでは鳴りません。ブラウザの決まりで、開いてから一度どこかを押すまでは鳴りません',
+        def: false }];
+    },
     calendar: function () {
       return PREF_CALENDAR_ITEMS_();
     },
@@ -409,7 +417,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
+  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'sound', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -693,6 +701,7 @@ function apiPrefs(opts) {
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
         style: plainText(byKey['oshi.style']), mood: byKey['oshi.mood'] === true },
       room: { on: byKey['room.on'] === true },
+      sound: { effects: byKey['sound.effects'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },
       calendar: { plan: byKey['calendar.plan'] === true, meetings: byKey['calendar.meetings'] === true },
       usageOn: byKey['usage.enabled'] !== false && byKey['usage.self'] !== false,

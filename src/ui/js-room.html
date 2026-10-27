@@ -2086,24 +2086,9 @@
    */
   function roomPomoChime(ended) {
     if (!roomSoundPlaying()) return false;
-    var ctx = roomAudio.ctx;
     try {
-      var peak = roomMasterGain(roomMix().master) * 0.6;
-      var t = ctx.currentTime;
-      roomPomoChimeNotes(ended).forEach(function (n) {
-        var osc = ctx.createOscillator();
-        var g = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(n.freq, t + n.at);
-        g.gain.setValueAtTime(0, t + n.at);
-        g.gain.linearRampToValueAtTime(peak, t + n.at + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
-        osc.connect(g);
-        g.connect(ctx.destination);
-        osc.start(t + n.at);
-        osc.stop(t + n.at + n.dur + 0.05);
-        setTimeout(function () { roomDisconnect(osc); roomDisconnect(g); }, (n.at + n.dur + 0.2) * 1000);
-      });
+      // 鳴らし方は効果音と同じもの (js-sound の sfxTones)
+      sfxTones(roomAudio.ctx, roomPomoChimeNotes(ended), roomMasterGain(roomMix().master) * 0.6);
       return true;
     } catch (e) {
       if (window.console) console.warn('区切りの合図を鳴らせませんでした', e);
@@ -2138,7 +2123,8 @@
     var ended = roomPomoCatchUp(Date.now());
     if (ended.length) {
       var last = ended[ended.length - 1];
-      roomPomoChime(last);
+      // 部屋の音を流していれば部屋の合図、流していなければ (効果音がオンの人だけ) 効果音で知らせる。2つ重ねない
+      if (!roomPomoChime(last)) sfxPlay('end');
       if (last === 'work') {
         roomPomoNote('作業の時間が終わりました。休憩しましょう');
         roomPomoSay();

@@ -1,0 +1,138 @@
+  // ===== 操作の効果音 (自分の設定 sound.effects。既定はオフ) =====
+  //
+  // - **鳴らす場面は4つだけ。** 完了・反映 (celebrateProgress) / 断り (call() の失敗の帯。failSnack・failEnable。
+  //   failQuiet と failInto は鳴らさない) / 実績を取った (achCelebrate) / 集中とポモドーロの終わり (focusTimeUp・roomPomoTick)。
+  //   ボタンを押しただけでは鳴らさない (うるさい)。場面を足すときは docs/dev/ui.md の決まりを先に直す
+  // - **音源のファイルは持たない。** 作業部屋の合図と同じく、正弦波などを数本その場で作る (sfxTones。作業部屋の
+  //   roomPomoChime もこれを使う。写しを持たない)。大きさは SFX_GAIN を超えない
+  // - **オフのあいだは AudioContext を作らない。** オンでも、開いてから人が一度押す (キーを打つ) までは作らない。
+  //   ブラウザの自動再生の決まりで、押した中で作らないと鳴らないため、最初の押した聞き手 (sfxWake) で作る
+  // - 同じ音は SFX_GAP_MS (1秒) のうちに2回鳴らさない (続けて完了にしたとき・断りが続いたとき)
+  // - 鳴らせなくても (AudioContext が無い・投げる) 操作は止めない。全部 try で包む
+
+  /** 1つの音の大きさの上限 (0〜1) */
+  var SFX_GAIN = 0.1;
+  /** 同じ音を鳴らさない間 (ミリ秒) */
+  var SFX_GAP_MS = 1000;
+
+  /** 作った音の仕組み (オンで、押したあとにだけ作る) */
+  var sfxCtx = null;
+  /** 作れなかった (無い・投げた)。二度と作りに行かない */
+  var sfxBroken = false;
+  /** 開いてから人が押したか */
+  var sfxGestured = false;
+  /** 音ごとの最後に鳴らした時刻 */
+  var sfxLastAt = {};
+
+  /** @returns {boolean} 効果音がオンか。設定が届くまではオフ */
+  function soundEffectsOn() {
+    var s = prefs && prefs.effective && prefs.effective.sound;
+    return !!(s && s.effects === true);
+  }
+
+  /**
+   * 場面ごとの音 (Hz・始まりの秒・長さの秒・波の形)。**唯一の表。**
+   *
+   * - done (完了・反映): 上がる3音 (ド・ミ・ソ)
+   * - fail (断り): 低く短い1音
+   * - badge (実績): 作業部屋の合図の形で上がる2音 (休憩の終わりと同じ)
+   * - end (集中・ポモドーロの終わり): 作業部屋の合図の形で下がる2音 (作業の終わりと同じ)
+   *
+   * @param {string} kind
+   * @returns {Array<{freq: number, at: number, dur: number, type?: string}>}
+   */
+  function SFX_NOTES(kind) {
+    if (kind === 'done') {
+      return [{ freq: 523.25, at: 0, dur: 0.18 }, { freq: 659.25, at: 0.09, dur: 0.18 }, { freq: 783.99, at: 0.18, dur: 0.4 }];
+    }
+    if (kind === 'fail') return [{ freq: 196, at: 0, dur: 0.16, type: 'triangle' }];
+    if (kind === 'badge') return roomPomoChimeNotes('rest');
+    if (kind === 'end') return roomPomoChimeNotes('work');
+    return [];
+  }
+
+  /**
+   * 音を数本鳴らす (作業部屋の合図と効果音の共通)。すぐ下げて止め、鳴り終わったら外す。投げることがある (呼ぶ側で包む)。
+   *
+   * @param {AudioContext} ctx
+   * @param {Array<{freq: number, at: number, dur: number, type?: string}>} notes
+   * @param {number} peak いちばん大きいところ
+   */
+  function sfxTones(ctx, notes, peak) {
+    var t = ctx.currentTime;
+    notes.forEach(function (n) {
+      var osc = ctx.createOscillator();
+      var g = ctx.createGain();
+      osc.type = n.type || 'sine';
+      osc.frequency.setValueAtTime(n.freq, t + n.at);
+      g.gain.setValueAtTime(0, t + n.at);
+      g.gain.linearRampToValueAtTime(peak, t + n.at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start(t + n.at);
+      osc.stop(t + n.at + n.dur + 0.05);
+      setTimeout(function () { roomDisconnect(osc); roomDisconnect(g); }, (n.at + n.dur + 0.2) * 1000);
+    });
+  }
+
+  /**
+   * 音の仕組みを用意する (オンで、押したあとだけ)。休んでいれば起こす。
+   *
+   * @returns {AudioContext|null}
+   */
+  function sfxContext() {
+    if (sfxBroken || !sfxGestured || !soundEffectsOn()) return null;
+    try {
+      if (!sfxCtx) {
+        var C = focusAudioClass();
+        if (!C) {
+          sfxBroken = true;
+          return null;
+        }
+        sfxCtx = new C();
+      }
+      if (sfxCtx.state === 'suspended' && typeof sfxCtx.resume === 'function') {
+        var p = sfxCtx.resume();
+        if (p && typeof p.catch === 'function') p.catch(function () { /* 起こせなければ次の押したときに */ });
+      }
+      return sfxCtx;
+    } catch (e) {
+      sfxBroken = true;
+      if (window.console) console.warn('効果音の仕組みを作れませんでした', e);
+      return null;
+    }
+  }
+
+  /** 人が押した (キーを打った)。オンなら、この中で音の仕組みを作る・起こす (押した中でないと鳴らないため) */
+  function sfxWake() {
+    sfxGestured = true;
+    sfxContext();
+  }
+
+  /**
+   * 効果音を鳴らす。オフ・押す前・同じ音を1秒のうちに鳴らした・鳴らせない、のときは鳴らさない。投げない。
+   *
+   * @param {string} kind SFX_NOTES の場面
+   * @returns {boolean} 鳴らしたか
+   */
+  function sfxPlay(kind) {
+    try {
+      var ctx = sfxContext();
+      if (!ctx) return false;
+      var now = Date.now();
+      if (sfxLastAt[kind] && now - sfxLastAt[kind] < SFX_GAP_MS) return false;
+      var notes = SFX_NOTES(kind);
+      if (!notes.length) return false;
+      sfxLastAt[kind] = now;
+      sfxTones(ctx, notes, SFX_GAIN);
+      return true;
+    } catch (e) {
+      if (window.console) console.warn('効果音を鳴らせませんでした', e);
+      return false;
+    }
+  }
+
+  document.addEventListener('pointerdown', sfxWake, true);
+  document.addEventListener('click', sfxWake, true);
+  document.addEventListener('keydown', sfxWake, true);

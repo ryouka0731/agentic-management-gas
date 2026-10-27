@@ -2639,6 +2639,8 @@
   function failSnack(prefix) {
     return function (err) {
       var f = failShown(err);
+      // 断りの帯を出すときだけ、効果音がオンの人に低い音 (js-sound)
+      sfxPlay('fail');
       var bar = showSnack(String(prefix || '') + f.text, failSnackOpts(f, null));
       if (f.retry) f.retry.bar = bar;
     };
@@ -2738,6 +2740,7 @@
     return function (err) {
       btn.disabled = false;
       var f = failShown(err);
+      sfxPlay('fail');
       // 押し直すあいだは、元の操作と同じく押せなくする (また失敗すればここで戻る)
       var bar = showSnack(String(prefix || '') + f.text, failSnackOpts(f, function () { btn.disabled = true; }));
       if (f.retry) {

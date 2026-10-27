@@ -538,3 +538,13 @@ describe('作業部屋 (room.on)', () => {
     expect(ctx.apiPrefs().effective.room).toEqual({ on: true });
   });
 });
+
+describe('操作の効果音 (sound.effects)', () => {
+  it('自分の設定で、既定はオフ。見出しは「音」。オンにした人の effective にだけ出る', () => {
+    const { ctx } = setup();
+    expect(item(ctx, 'sound.effects')).toMatchObject({ scope: 'me', type: 'bool', section: '音', def: false });
+    expect(ctx.apiPrefs().effective.sound).toEqual({ effects: false });
+    ctx.apiPrefSet('sound.effects', true);
+    expect(ctx.apiPrefs().effective.sound).toEqual({ effects: true });
+  });
+});
