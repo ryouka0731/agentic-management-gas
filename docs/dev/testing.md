@@ -66,7 +66,7 @@ peer の検査そのものを止める。**入れたあと `npm ls vitest @vites
 **環境を変えたあとにその覚えだけを捨てる**か (`cache.remove(鍵)` / `fake._cacheClear()`)、キャッシュの無い環境を試すなら
 `ctx.CacheService = undefined` にする。**シートを直に書き換えて「人がいじった」を真似るテストは、そのあと
 `ctx.dbInvalidate_(表)` を呼ぶ** (呼ばないと、実機と同じく 30分古いまま読む)。テストが自分の CacheService に差し替えて
-鍵を数えるときは、台帳の覚え (`DB:` / `DBV:` で始まる鍵) を除いて数える (`test/cowork-cache.js` の `keys()`)。
+鍵を数えるときは、台帳の覚え (`DB:` / `DBV:` / 温めの印 `DBW:` で始まる鍵) を除いて数える (`test/cowork-cache.js` の `keys()`)。
 
 `test/e2e-journey.test.js` は**何も仕込まずに**人がたどる順序で通す。
 仕込みで隠れる状態を見つけるためのものなので、`setup()` を使わないこと。

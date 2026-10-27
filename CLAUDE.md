@@ -16,6 +16,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | `src/core/PullRequest.gs` / `src/core/Branch.gs` / `src/core/Commit.gs` / `src/core/Merge.js` / `src/api/Pr.gs` / `src/api/Commit.gs` (確認依頼・反映・反映先・main の保護) | `docs/dev/changeset-and-merge.md` |
 | `src/core/PullPatch.gs` / `src/core/Outbox.gs` / `src/api/Outbox.gs` | `docs/dev/outbox-and-patches.md` |
 | `src/core/CommandQueue.gs` (`processCommandQueue` / `setupCommandQueue`) | `docs/dev/command-queue.md` |
+| 裏の定期実行で台帳の覚えを温める (`src/core/CacheWarm.gs` / `src/core/Db.gs` の `dbWarm_`) | `docs/dev/command-queue.md` と `docs/dev/ledger-schema.md` |
 | `kit/` / `scripts/build-kit.mjs` / `scripts/kit-key.mjs` / `scripts/deploy.mjs` の署名 / `src/core/AgentKit.gs` / `src/ui/kit-files.html` / `src/KitSigning.gs` | `docs/dev/kit.md` |
 | `src/core/Scrum.gs` / `src/core/ScrumView.js` / `src/core/Terms.js` / `src/api/Scrum.gs` / `src/ui/js-scrum.html` | `docs/dev/scrum.md` |
 | `src/ui/*.html` の JS (`app.js.html` / `js-*.html` / `wiki.html`)・`src/core/Plain.js`・`api*` の返す形 | `docs/dev/ui.md` |

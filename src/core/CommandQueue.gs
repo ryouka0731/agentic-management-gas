@@ -560,6 +560,7 @@ function processCommandQueue() {
    * 鍵の中で守る。重なった2回の起動が同じ命令を数えても、後から鍵を取った
    * ほうは処理済みと見て走らせない。
    */
+  var startedAt = Date.now();
   var queue = commandQueueFolder_();
   var done = commandDoneFolder_();
 
@@ -608,6 +609,17 @@ function processCommandQueue() {
   } catch (e3) {
     Logger.log('成果の数を数えられませんでした: ' + e3.message);
   }
+
+  // 台帳の読み取りの覚えを温める (CacheWarm.gs)。**命令があった回は温めない** (キューの返事を先にする。手元は
+  // 結果を待っている)。1日1回の片付けなどで長くなった回も飛ばす。温めは投げない
+  var warmed = 0;
+  var warmMs = 0;
+  if (!targets.length && Date.now() - startedAt < CACHE_WARM_SKIP_AFTER_MS_()) {
+    var warmFrom = Date.now();
+    warmed = cacheWarmTick_();
+    warmMs = Date.now() - warmFrom;
+  }
+  queueCostNote_({ ms: Date.now() - startedAt, warmMs: warmMs, warmed: warmed, ran: ran });
 
   if (ran < targets.length) return ran + '件処理しました (残りは他の処理が実行中のため次の回に)';
   return ran + '件処理しました';
