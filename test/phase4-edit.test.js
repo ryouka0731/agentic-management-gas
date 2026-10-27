@@ -890,6 +890,7 @@ describe('画面に渡せる形か', () => {
     ['apiPrReviews', (ctx, env) => ctx.apiPrReviews(env.pr.number)],
     ['apiPrCommits', (ctx, env) => ctx.apiPrCommits(env.pr.number)],
     ['apiPrPreview', (ctx, env) => ctx.apiPrPreview(env.pr.number)],
+    ['apiRevisionHistory', (ctx, env) => ctx.apiRevisionHistory(env.fileId)],
     ['apiWorkspace', (ctx) => ctx.apiWorkspace()],
     // 台帳の日は Date で返る。そのまま返すと画面に null が届く
     ['apiUsageSummary', (ctx) => {

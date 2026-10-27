@@ -873,11 +873,15 @@ function prPreviewAll(number) {
  *
  * @param {number} number
  * @param {string[]} choices コンフリクトへの選択 ('ours'|'theirs'|'both')
+ * @param {string} [previewSha]
+ * @param {string} [reason] 反映の理由 (200字まで。空なら本文の1行目。src/core/Revision.gs)
  * @returns {object} マージコミット行
  */
-function prMerge(number, choices, previewSha) {
+function prMerge(number, choices, previewSha, reason) {
   return dbWithLock_(60000, function () {
         var pr = prGet(number);
+        // 理由の長さは何も書き戻さないうちに確かめる
+        var why = prMergeReason_(pr, reason);
         prMergeAssertOpen_(pr, number, previewSha);
         prMergeAssertApproved_(number);
 
@@ -919,9 +923,12 @@ function prMerge(number, choices, previewSha) {
         var plan = prMergePlan_(pr, number, targets, into, choiceMap);
         var mergeCommit = prMergeWriteAll_(pr, number, into, plan);
 
+        // 反映した人と理由は、文書の改訂履歴に出す (revisionHistory)
         dbUpdate('pulls', 'number', number, {
           state: 'merged',
           mergedAt: new Date(),
+          mergedBy: currentEmail_(),
+          mergeReason: why,
         });
         dbUpdate('branches', 'name', pr.sourceBranch, { state: 'merged' });
 

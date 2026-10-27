@@ -892,7 +892,7 @@ describe('確認依頼の、うまくいかないとき・変わった形', () =
 
     btn('に反映する').click();
     [...document.querySelectorAll('.confirm-strip .btn')].find((b) => b.textContent === '反映する').click();
-    expect(app.calls.filter((c) => c.name === 'apiPrMerge').pop().args).toEqual([1, ['both'], 'P1']);
+    expect(app.calls.filter((c) => c.name === 'apiPrMerge').pop().args).toEqual([1, ['both'], 'P1', '']);
   });
 
   it('反映に失敗したら、理由を出して押し直せるようにする', () => {

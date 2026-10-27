@@ -71,7 +71,7 @@ function COMMAND_OPS() {
     workDone: function (a) { return apiOutboxDone(a.id, a.result || ''); },
     workFail: function (a) { return apiOutboxFail(a.id, a.reason || ''); },
     prMerge: function (a) {
-      return apiPrMerge(a.number, a.choices || [], a.previewSha || '');
+      return apiPrMerge(a.number, a.choices || [], a.previewSha || '', a.reason || '');
     },
 
     // 読むだけのものは足しても危なくない。手元から様子を見るために要る

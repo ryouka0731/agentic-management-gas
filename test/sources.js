@@ -47,6 +47,7 @@ export const CORE_SOURCES = [
   'src/core/Oshi.js', 'src/core/OshiStore.gs', 'src/core/OshiShare.gs', 'src/core/OshiMood.gs', 'src/core/Achievements.js', 'src/core/AchievementsStore.gs', 'src/core/GoalScore.js', 'src/core/Goal.gs',
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs', 'src/core/MeetingNotes.js', 'src/core/MeetingNotesImport.gs',
   'src/core/CoworkLink.js', 'src/core/Cowork.gs', 'src/core/Announcement.gs',
+  'src/core/Revision.gs', 'src/render/RevisionWriter.gs',
 ];
 
 export const API_SOURCES = [
@@ -56,7 +57,7 @@ export const API_SOURCES = [
   'src/api/Settings.gs', 'src/api/Scrum.gs', 'src/api/Focus.gs', 'src/api/WorkStyle.gs', 'src/api/Oshi.gs',
   'src/api/Calendar.gs', 'src/api/Achievements.gs', 'src/api/Boot.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
-  'src/api/Announcement.gs',
+  'src/api/Announcement.gs', 'src/api/Revision.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);

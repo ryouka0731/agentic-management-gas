@@ -457,6 +457,30 @@
     return box;
   }
 
+  /**
+   * 反映の理由の1行の欄 (やること #111)。文書の改訂履歴に残る。
+   *
+   * @param {string} [fallback] 既定値 (確認依頼の本文の1行目)
+   * @returns {{el: HTMLElement, input: HTMLInputElement}}
+   */
+  function makeMergeReason(fallback) {
+    var label = document.createElement('label');
+    label.className = 'pr-reason';
+
+    var name = document.createElement('span');
+    name.className = 'pr-reason-name';
+    name.textContent = '反映の理由';
+    label.appendChild(name);
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 200;
+    input.value = fallback || '';
+    input.placeholder = '改訂履歴に残ります (空なら本文の1行目)';
+    label.appendChild(input);
+    return { el: label, input: input };
+  }
+
   function showPrDetail(pr) {
     // 続けて押したとき、前の依頼の返事で後の依頼の中身を上書きしない
     var still = latest('prDetail');
@@ -541,6 +565,9 @@
           mergeBtn.textContent = '承認を記録する';
         }
 
+        // 反映の理由。既定は確認依頼の本文の1行目 (サーバが決める)。空のまま押してもその既定値で残る
+        var reasonBox = makeMergeReason(preview.defaultReason);
+
         mergeBtn.addEventListener('click', function () {
           var says = docCount
             ? OFFICIAL + 'の文書をこの内容で書き換えます。取り消せません。'
@@ -559,7 +586,8 @@
             function () {
               mergeBtn.disabled = true;
               // 見比べたときの指紋を添える。進んでいたら断られる
-              call('apiPrMerge', [pr.number, getChoices(), preview.previewSha || ''], function () {
+              call('apiPrMerge', [pr.number, getChoices(), preview.previewSha || '',
+                reasonBox.input.value.replace(/^\s+|\s+$/g, '')], function () {
                 celebrateProgress('merge', '#' + pr.number + ' を' + OFFICIAL + 'に反映しました');
                 loadPulls();
                 loadOverview();
@@ -602,6 +630,7 @@
 
         actions.appendChild(approveBtn);
         actions.appendChild(offBtn);
+        actions.appendChild(reasonBox.el);
         actions.appendChild(mergeBtn);
         prDetail.appendChild(actions);
       }

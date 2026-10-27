@@ -821,3 +821,14 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 断りの帯・食い違い・操作・タブより上) に `.pr-summary` の札として置く。**字は `textContent` で li に置く** (他人が書いた文書の字が
 入る)。空なら札ごと出さない。画面では作り直さない (読み方はサーバの1か所だけ。写しを持つと食い違う)。
 試すのは `test/component/pulls.test.js` の「変わった箇所を、差分より上に箇条書きで出す」。
+
+## 反映の理由と改訂履歴の表 (`js-pulls` の `makeMergeReason` / `js-docs` の `loadRevisions`)
+
+- 確認依頼の操作の並び (`.pr-actions`) の、反映のボタンの前に「反映の理由」の1行の欄 (`.pr-reason`、200字) を置く。値は
+  `apiPrPreview` の `defaultReason` (本文の1行目) を入れておき、押したら前後の空白を落として `apiPrMerge` の4つ目に渡す。
+  空で送ればサーバが既定値で残す (画面で既定値を決めない)
+- 文書の頁のタブに「改訂履歴の表」(`revisions`。`DOC_TABS` / `TAB_LOADERS` / `tabPanels` / `TAB_ICONS` / `HINTS` の `tab:revisions` /
+  `js-init` の `byTab` / `js-me` の名前に足した)。`apiRevisionHistory(current.fileId)` の返事 (新しい順) をそのまま並べ、字は textContent
+- 「文書に改訂履歴の表を書く」は `canExport` が false なら押せなくし、`exportBlocked` を title と横の字に出す (管理者でない・Slides)。
+  押すと帯 (`openConfirmStrip`) で「確認依頼は通りません」と確かめてから `apiRevisionExport`。済んだら一覧と記録の状態を取り直す
+- 試すのは `test/component/revisions.test.js`

@@ -117,6 +117,8 @@ function apiPrPreview(number) {
     previewSha: prPreviewFingerprint(number),
     // 変わった箇所の箇条書き (最大 8 本 + 「ほか N か所」)。画面の先頭と手元の下見に出す
     summary: diffSummaryFiles(changes),
+    // 反映の理由の既定値 (確認依頼の本文の1行目)。画面は反映の前の欄に入れておく
+    defaultReason: plainText(prDefaultReason_(prGet(number))),
   };
 }
 
@@ -253,10 +255,12 @@ function apiPrClose(number) {
  *
  * @param {number} number
  * @param {string[]} choices
+ * @param {string} [previewSha]
+ * @param {string} [reason] 反映の理由 (200字まで。空なら確認依頼の本文の1行目)
  * @returns {object}
  */
-function apiPrMerge(number, choices, previewSha) {
-  var row = prMerge(number, choices, previewSha || '');
+function apiPrMerge(number, choices, previewSha, reason) {
+  var row = prMerge(number, choices, previewSha || '', reason);
   return { sha: row.sha, message: row.message };
 }
 

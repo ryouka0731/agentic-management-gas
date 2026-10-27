@@ -60,6 +60,7 @@
   var panelContent = document.getElementById('panel-content');
   var panelHistory = document.getElementById('panel-history');
   var panelDrafts = document.getElementById('panel-drafts');
+  var panelRevisions = document.getElementById('panel-revisions');
   var panelBranches = document.getElementById('panel-branches');
   var panelPulls = document.getElementById('panel-pulls');
   var panelIssues = document.getElementById('panel-issues');
@@ -329,6 +330,7 @@
     // 画面の切り替え
     'tab:content': '文書のいまの中身です。「直す」に切り替えると書き換えられます',
     'tab:history': 'この文書がこれまでどう変わってきたかの並びです。押すとその時の差分が出ます',
+    'tab:revisions': '正式版に反映した日・人・確認依頼・理由の並びです。文書に表として書き出せます',
     'tab:drafts': 'この文書を直している途中の版の一覧です',
     'nav:docs': '管理している文書の一覧です。ここから中身・履歴・改訂版に入ります',
     'nav:issues': '誰が何をやるかの一覧です。文書に紐づけてもよいし、紐づけなくてもかまいません',
@@ -700,6 +702,7 @@
     docs: 'file-text',
     content: 'file-text',
     history: 'git-commit',
+    revisions: 'columns',
     drafts: 'git-branch',
     branches: 'git-branch',
     pulls: 'clipboard-check',
@@ -3758,7 +3761,7 @@
 
   // ===== 画面の切り替え =====
 
-  var DOC_TABS = { content: 1, history: 1, drafts: 1 };
+  var DOC_TABS = { content: 1, history: 1, revisions: 1, drafts: 1 };
 
   /*
    * 開いたときに取り直すもの。画面の名前から引く (載っていない画面は取り直さない)。
@@ -3769,6 +3772,7 @@
     home: function () { loadHome(); },
     docs: function () { loadDocs(); },
     history: function () { loadHistory(); },
+    revisions: function () { loadRevisions(); },
     drafts: function () { loadDrafts(); },
     branches: function () { loadBranches(); },
     pulls: function (opts) { loadPulls(opts && opts.pr); },
@@ -3849,7 +3853,7 @@
   function tabPanels() {
     return {
       home: panelHome, docs: panelDocs, content: panelContent, history: panelHistory,
-      drafts: panelDrafts, branches: panelBranches, pulls: panelPulls, issues: panelIssues,
+      revisions: panelRevisions, drafts: panelDrafts, branches: panelBranches, pulls: panelPulls, issues: panelIssues,
       help: panelHelp, report: panelReport, usage: panelUsage, settings: panelSettings,
       sprint: panelSprint, impediments: panelImpediments, goals: panelGoals, cowork: panelCowork
     };
