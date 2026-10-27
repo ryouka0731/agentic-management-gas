@@ -224,10 +224,13 @@ function focusStart_(me, number, minutes, firstStep, openedAt, now) {
   var columnAtStart = card && card.column ? String(card.column) : 'none';
 
   return dbWithLock_(30000, function () {
+    // 終えていないものはまとめて1回で締める (1つずつ dbUpdate すると、そのたびに表を丸ごと読む)
     var mine = focusRowsOf_(me);
+    var patches = [];
     for (var i = 0; i < mine.length; i++) {
-      if (!mine[i].endedAt) dbUpdate('focus_sessions', 'id', mine[i].id, { endedAt: now, result: 'left' });
+      if (!mine[i].endedAt) patches.push({ value: mine[i].id, patch: { endedAt: now, result: 'left' } });
     }
+    dbUpdateMany('focus_sessions', 'id', patches);
     return dbAppendNumbered('focus_sessions', 'id', {
       issueNumber: Number(number),
       who: me,

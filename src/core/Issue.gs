@@ -462,17 +462,29 @@ function issueReopen(number) {
  * @returns {object} 捨てた後の行
  */
 function issueArchive(number) {
-  var row = issueGet(number);
-  if (row.archivedAt) return row;
+  /*
+   * **読んで決めて書くので、鍵の中で行う。** 子の付け替えと本体の archivedAt は同じ表なので、
+   * `dbUpdateMany` で1回で書く。子の数だけ `dbUpdate` すると、そのたびに表を丸ごと読んで1行書く
+   * (本番で1回 0.3〜0.8 秒。docs/dev/locks-and-numbering.md)
+   */
+  var done = dbWithLock_(30000, function () {
+    var row = issueGet(number);
+    if (row.archivedAt) return { row: row, changed: false };
 
-  var all = dbReadAll('issues');
-  for (var i = 0; i < all.length; i++) {
-    if (String(all[i].parent) !== String(number)) continue;
-    dbUpdate('issues', 'number', all[i].number, { parent: row.parent || '' });
-  }
+    var patches = [];
+    var all = dbReadAll('issues');
+    for (var i = 0; i < all.length; i++) {
+      if (String(all[i].parent) !== String(number)) continue;
+      patches.push({ value: all[i].number, patch: { parent: row.parent || '' } });
+    }
+    patches.push({ value: number, patch: { archivedAt: new Date(), updatedAt: new Date() } });
+    dbUpdateMany('issues', 'number', patches);
+    return { row: row, changed: true };
+  });
+  if (!done.changed) return done.row;
 
-  dbUpdate('issues', 'number', number, { archivedAt: new Date(), updatedAt: new Date() });
-  issueMoodForget_(row);
+  // 推しの機嫌の覚えを消すのは鍵の外で (issuePurge と同じ)
+  issueMoodForget_(done.row);
   return issueGet(number);
 }
 
@@ -557,10 +569,13 @@ function issuePurge(number) {
 function issueUnlinkInquiries_(number) {
   var rows = dbReadAll('inquiries');
 
+  // 1件ずつ dbUpdate すると、そのたびに表を丸ごと読んで1行書く。まとめて1回で書く (無ければ書かない)
+  var patches = [];
   for (var i = 0; i < rows.length; i++) {
     if (Number(rows[i].issueNumber) !== Number(number)) continue;
-    dbUpdate('inquiries', 'number', rows[i].number, { issueNumber: '' });
+    patches.push({ value: rows[i].number, patch: { issueNumber: '' } });
   }
+  dbUpdateMany('inquiries', 'number', patches);
 }
 
 /**

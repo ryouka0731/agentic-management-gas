@@ -61,6 +61,7 @@ Web アプリと1分ごとのトリガーが同じ表に書くので、鍵なし
 押すと「完了しています」で断られた (2026-10-22)。鍵を長く持つので、そのあいだほかの人の書き換えも「混み合っています」になる。
 `dbUpdateMany` は表を1回読み、直す行の最初から最後までを1回の `setValues` で書く。`test/fakegas.js` の `_sheetWrites(表)` が
 書いた回数を数えるので、何行も直すところを足したら「書くのは1回」をテストで固定する (`test/phase3-issues.test.js` の「列を移すとき」)。
+同じ形に寄せた所: やることを捨てる `issueArchive` (子の `parent` の付け替えと本体の `archivedAt`。鍵の中で読んで決めて1回)・消したやることの報告のつながりを外す `issueUnlinkInquiries_`・始めるときに終えていない自分の集中を締める `focusStart_` (それぞれ `test/phase3-issues.test.js` / `test/inquiry.test.js` / `test/focus.test.js` に「書くのは1回」)。
 
 **鍵を取ったら、同じ実行の中の読み取りの覚えを捨てる** (`dbWithLock_` が `DB_MEMO_` を空にする)。台帳の読み取りは
 覚えるようになった (`docs/dev/ledger-schema.md` の「台帳の読み取りはキャッシュに置く」)。鍵を取る前に読んだ覚えのまま
