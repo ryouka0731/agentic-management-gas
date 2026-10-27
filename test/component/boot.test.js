@@ -2,6 +2,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mountApp, DEFAULTS } from '../dom.js';
 import { mount } from './mount.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /*
  * 開いたときの呼び出しの波 (docs/dev/ui.md)。
@@ -17,10 +19,22 @@ const $ = (sel) => document.querySelector(sel);
 
 /** 最初の波: ホームの描画・左の行き先の数・上の段に要るもの */
 const FIRST_WAVE = [
-  'apiListFiles', 'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiNotifications',
-  'apiOverview', 'apiProgress', 'apiMyMilestones', 'apiMyToday', 'apiGameState', 'apiGameTop', 'apiReportParts',
-  'apiHomeSummary', 'apiHomeActivity', 'apiPrefs', 'apiOshiGet',
+  // 1本ずつ投げるもの (Drive を読む重いもの・引数のあるもの・ほかの呼び出しが待つもの) と、
+  // まとめて1本 (apiBoot) で取る軽いもの。まとめる口は js-start が投げ終えたとき (bootBatchFlush) に送る。
+  // 疑似の返事は同期で返るので、前進の返事が投げた続き (カードの軽い3本) も投げ終える前の口に相乗りする
+  // (実物では前進の返事が届いたときに別の1本になる。下の「前進の返事を待つあいだ」)
+  'apiListFiles', 'apiNotifications', 'apiOverview', 'apiProgress', 'apiMyToday', 'apiReportParts',
+  'apiHomeSummary', 'apiPrefs', 'apiOshiGet',
+  'apiBoot', 'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiMyMilestones', 'apiGameState', 'apiGameTop', 'apiHomeActivity',
 ];
+
+/** まとめて取る軽いもの (app.js の BOOT_BATCH_NAMES と Boot.gs の BOOT_BATCH_NAMES) */
+const BATCHED = [
+  'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity',
+  'apiMyMilestones', 'apiGameState', 'apiGameTop',
+];
+/** まとめの口に渡した名前の並び (回ごと) */
+const batches = (app) => app.calls.filter((c) => c.name === 'apiBoot').map((c) => c.args[0]);
 
 /** 急がないもの: 最初の波の返事がそろってから。名前・型・札・優先度は、画面を初めて開くときに待たないよう先に取る */
 const PREFETCH = ['apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities'];
@@ -212,5 +226,92 @@ describe('要るときに1回だけ取る', () => {
     expect($('#side-title').textContent).toBe('やること #7');
     // 以前は起動のときに隠れた一覧を取っていたので、親と子を引けていた。取らなくなっても引ける
     expect($('#side-body .rel-chip').textContent).toContain('6');
+  });
+});
+
+describe('開いた直後の軽いものは、まとめて1本で取る (apiBoot)', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('開いたときに投げた軽いものを1本にまとめ、前進の返事を待つあいだは、返事が投げた続きを次の1本にまとめる。重いものは1本ずつ', () => {
+    const progress = hold(DEFAULTS.apiProgress);
+    const app = mount({ apiProgress: progress.response });
+    expect(batches(app)).toEqual([['apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity']]);
+    progress.deliver();
+    expect(batches(app)).toEqual([
+      ['apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity'],
+      ['apiMyMilestones', 'apiGameState', 'apiGameTop'],
+    ]);
+    // まとめた中の1本ずつは、口の外で投げていない。重いものと、ほかが待つもの (前進・設定) は1本ずつ
+    const direct = app.calls.filter((c) => !c.batched).map((c) => c.name);
+    BATCHED.forEach((n) => expect(direct, n).not.toContain(n));
+    ['apiListFiles', 'apiOverview', 'apiHomeSummary', 'apiProgress', 'apiPrefs', 'apiMyToday', 'apiReportParts', 'apiOshiGet']
+      .forEach((n) => expect(direct, n).toContain(n));
+  });
+
+  it('画面とサーバの「まとめて取るもの」の並びが揃っている', () => {
+    const read = (f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
+    const listOf = (text) => {
+      const m = /BOOT_BATCH_NAMES(?:\(\) \{\s*return| =) \[([\s\S]*?)\]/.exec(text);
+      return [...m[1].matchAll(/'(api\w+)'/g)].map((x) => x[1]);
+    };
+    expect(listOf(read('src/ui/app.js.html'))).toEqual(listOf(read('src/api/Boot.gs')));
+    expect(listOf(read('src/api/Boot.gs'))).toEqual(BATCHED);
+  });
+
+  it('まとめた中の1本が断られても、ほかの返事は届き、断りは1本ずつの失敗の扱いに回る', () => {
+    // 動きの一覧 (apiHomeActivity) だけ断られる。同じ口の左上の名前 (apiWorkspace) と設定 (apiSettings) は届く
+    const app = mount({ apiHomeActivity: new Error('動きを読めません'), apiWorkspace: { name: '総務の文書' } });
+    // 同じ口の左上の名前の返事は画面に反映されている
+    expect($('#brand').textContent).toContain('総務の文書');
+    expect(batches(app)[0]).toContain('apiHomeActivity');
+    expect(batches(app)[0]).toContain('apiSettings');
+    expect($('#home-activity').textContent).toContain('動きを読めません');
+    // 急がないものも走る (失敗も返事として数える)
+    LATER.forEach((n) => expect(count(app, n), n).toBe(1));
+  });
+
+  it('まとめの口そのものが落ちたら、1本ずつ取り直す (まとめる前と同じ動きに戻る)', () => {
+    const app = mountApp(Object.assign({}, DEFAULTS, { apiBoot: new Error('まとめて取れませんでした') }));
+    expect(count(app, 'apiBoot')).toBeGreaterThanOrEqual(1);
+    // 取り直しは口の外で1本ずつ
+    const direct = app.calls.filter((c) => !c.batched).map((c) => c.name);
+    BATCHED.forEach((n) => expect(count({ calls: app.calls.filter((c) => !c.batched) }, n), n).toBe(1));
+    expect(direct).toContain('apiPrefs');
+    LATER.forEach((n) => expect(count(app, n), n).toBe(1));
+  });
+
+  it('返事の形が合わなければ (数が違う・1つの形が違う)、その分を1本ずつ取り直す', () => {
+    const app = mountApp(Object.assign({}, DEFAULTS, { apiBoot: [] }));
+    const bootAt = app.calls.findIndex((c) => c.name === 'apiBoot');
+    expect(bootAt).toBeGreaterThanOrEqual(0);
+    // 口のあとに、口の外で1本ずつ
+    const after = app.calls.slice(bootAt + 1).filter((c) => !c.batched).map((c) => c.name);
+    BATCHED.forEach((n) => expect(after.filter((x) => x === n).length, n).toBe(1));
+
+    // 数は合うが、1つだけ形が違う (ok が真偽でない)。その1本だけ取り直し、ほかはそのまま届く
+    const odd = mountApp(Object.assign({}, DEFAULTS, {
+      apiBoot: (names) => names.map((n) => (n === 'apiWhoAmI' ? { value: DEFAULTS.apiWhoAmI } : { ok: true, value: DEFAULTS[n] })),
+    }));
+    const oddAfter = odd.calls.slice(odd.calls.findIndex((c) => c.name === 'apiBoot') + 1).filter((c) => !c.batched).map((c) => c.name);
+    expect(oddAfter.filter((x) => x === 'apiWhoAmI').length).toBe(1);
+    expect(oddAfter).not.toContain('apiWorkspace');
+    expect(oddAfter).not.toContain('apiSettings');
+  });
+
+  it('まとめた返事の1つの扱いが投げても、残りの返事は配る', () => {
+    // 動きの一覧の返事が描けない形 (扱いが投げる) でも、同じ口の設定と名前は届く
+    const app = mount({ apiHomeActivity: { weeks: 5 }, apiWorkspace: { name: '総務の文書' } });
+    expect($('#brand').textContent).toContain('総務の文書');
+    LATER.forEach((n) => expect(count(app, n), n).toBe(1));
+  });
+
+  it('最初の波が閉じたあとは、同じ名前でも1本ずつ取る (まとめない)', () => {
+    const app = mount();
+    const before = app.calls.length;
+    // 設定の画面を開くとチームの設定 (apiSettings) を取り直す
+    $('.nav-item[data-tab="settings"]').click();
+    const after = app.calls.slice(before);
+    expect(after.some((c) => c.name === 'apiBoot')).toBe(false);
+    expect(after.some((c) => c.name === 'apiSettings' && !c.batched)).toBe(true);
   });
 });
