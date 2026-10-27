@@ -482,6 +482,8 @@
     if (settings.canEdit && settings.queue) team.appendChild(makeQueueSettings());
     // 成果の数は管理者だけが見る (apiOutcomes も管理者でなければ断る)
     if (settings.canEdit) team.appendChild(makeOutcomesSettings());
+    // お知らせ・アンケート・案内を置くのも管理者だけ (apiAnnouncement* も管理者でなければ断る。js-announce)
+    if (settings.canEdit) team.appendChild(makeAnnouncementSettings());
     // 最初からいるキャラのプロフィールも管理者だけ (中身はスクリプトの設定にだけ置く。js-oshi)
     if (settings.canEdit) team.appendChild(makeOshiBuiltinProfileSettings());
     // 台帳の読み取りの覚えを捨てる (apiCacheClear も管理者でなければ断る)

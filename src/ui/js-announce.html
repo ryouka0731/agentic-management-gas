@@ -1,0 +1,314 @@
+  // ===== お知らせ・1問アンケート・案内 (やること #94) =====
+  //
+  // 管理者が置いたものを、ホームのあなたの番の上に1枚だけ出す (src/core/Announcement.gs)。
+  // 本人が「読んだ」「答えた」「閉じる」をすれば次の機会にはもう出ない (サーバが印を持つ)。
+  // - 取るのは急がない波 (js-start の bootLater)。開いた直後の最初の波には足さない (docs/dev/ui.md)
+  // - 文書のリンクで開いた画面 (body.doc-link) では取らない・出さない
+  // - 本文は他人が書いた字。textContent だけで置き、Markdown にしない (改行だけ活かす)
+  // - 1回開いたら1つ。片づけても次のものは次に開いたときに出す (続けて何枚も出さない)
+
+  var homeAnnounceEl = document.getElementById('home-announce');
+
+  /** 種類の見出し。サーバの ANNOUNCEMENT_KINDS と同じ並び */
+  function ANNOUNCE_KINDS() {
+    return [
+      { value: 'notice', label: 'お知らせ' },
+      { value: 'poll', label: 'アンケート' },
+      { value: 'ad', label: '案内' },
+    ];
+  }
+
+  function announceKindLabel(kind) {
+    var hit = ANNOUNCE_KINDS().filter(function (k) { return k.value === kind; })[0];
+    return hit ? hit.label : 'お知らせ';
+  }
+
+  /** ホームのお知らせを取る。文書のリンクで開いたときは取らない */
+  function loadAnnouncement() {
+    if (!homeAnnounceEl || document.body.classList.contains('doc-link')) return;
+    call('apiAnnouncementNext', [], function (a) {
+      if (document.body.classList.contains('doc-link')) return;
+      renderAnnouncement(a || null);
+    }, failQuiet('お知らせが取れなくても、ホームはそのまま使える'));
+  }
+
+  /**
+   * お知らせのカードを描く。null なら何も出さない (区画は :empty で隠れる)。
+   *
+   * @param {{id: number, kind: string, title: string, body: string, options: string[]}|null} a
+   */
+  function renderAnnouncement(a) {
+    homeAnnounceEl.textContent = '';
+    if (!a || !a.id) return;
+
+    var card = document.createElement('div');
+    card.className = 'announce-card';
+    card.setAttribute('data-announce', String(a.id));
+
+    var buttons = [];
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn announce-close';
+    close.textContent = '閉じる';
+    close.setAttribute('aria-label', 'このお知らせを閉じる (次からは出ません)');
+    buttons.push(close);
+
+    var head = homeHead(announceKindLabel(a.kind), [close]);
+    card.appendChild(head);
+
+    var inner = document.createElement('div');
+    inner.className = 'announce-inner';
+    var title = document.createElement('h3');
+    title.className = 'announce-title';
+    title.textContent = a.title || '';
+    inner.appendChild(title);
+    if (a.body) {
+      var body = document.createElement('p');
+      body.className = 'announce-text';
+      body.textContent = a.body;
+      inner.appendChild(body);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'announce-actions';
+    if (a.kind === 'poll') {
+      (a.options || []).forEach(function (o) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn announce-option';
+        b.textContent = o;
+        b.addEventListener('click', function () { announceReply(a, o, buttons); });
+        buttons.push(b);
+        actions.appendChild(b);
+      });
+    } else {
+      var read = document.createElement('button');
+      read.type = 'button';
+      read.className = 'btn btn-primary announce-read';
+      read.textContent = '読んだ';
+      read.addEventListener('click', function () { announceReply(a, '', buttons); });
+      buttons.push(read);
+      actions.appendChild(read);
+    }
+    inner.appendChild(actions);
+    card.appendChild(inner);
+
+    close.addEventListener('click', function () { announceReply(a, 'closed', buttons); });
+    homeAnnounceEl.appendChild(card);
+  }
+
+  /**
+   * 読んだ・答えた・閉じたを送る。押しているあいだはどのボタンも押せなくし、届いたらカードを外す。
+   *
+   * @param {{id: number}} a
+   * @param {string} answer '' / 'closed' / 選んだ選択肢
+   * @param {HTMLButtonElement[]} buttons
+   */
+  function announceReply(a, answer, buttons) {
+    buttons.forEach(function (b) { b.disabled = true; });
+    call('apiAnnouncementReply', [a.id, answer], function () {
+      var card = homeAnnounceEl.querySelector('[data-announce="' + String(a.id) + '"]');
+      if (card) homeAnnounceEl.textContent = '';
+      if (answer !== 'closed') showSnack('ありがとうございました', { kind: 'ok' });
+    }, function (err) {
+      // 戻さないと二度と押せない
+      buttons.forEach(function (b) { b.disabled = false; });
+      failSnack('お知らせに答えられませんでした: ')(err);
+    });
+  }
+
+  // ===== 設定の画面: お知らせの節 (管理者だけ) =====
+
+  /**
+   * お知らせを置く欄と、置いたものの一覧 (答えの数)。管理者にだけ出す (apiAnnouncement* も管理者でなければ断る)。
+   * 一覧に出すのは選択肢ごとの数だけで、誰が何と答えたかはサーバが返さない。
+   *
+   * @returns {HTMLElement}
+   */
+  function makeAnnouncementSettings() {
+    var box = document.createElement('section');
+    box.className = 'settings-section';
+    box.id = 'announce-settings';
+
+    var head = document.createElement('h2');
+    head.className = 'view-title';
+    head.appendChild(document.createTextNode('お知らせ '));
+    head.appendChild(makePill('管理者だけ', 'chip'));
+    box.appendChild(head);
+
+    var about = document.createElement('p');
+    about.textContent = '全員のホームの上に1つずつ出します (古いものから)。読んだ・答えた・閉じた人には、次からは出ません。' +
+      'アンケートの答えは選択肢ごとの数だけを出します (誰が何と答えたかは、ここには出しません)。' +
+      '本文は字のまま出します (改行は活きます。太字やリンクにはなりません)。';
+    box.appendChild(about);
+
+    var form = document.createElement('div');
+    form.className = 'inline-form announce-form';
+
+    function field(text, el) {
+      var label = document.createElement('label');
+      label.appendChild(document.createTextNode(text));
+      label.appendChild(el);
+      form.appendChild(label);
+      return label;
+    }
+
+    var kind = document.createElement('select');
+    kind.id = 'announce-kind';
+    ANNOUNCE_KINDS().forEach(function (k) {
+      var o = document.createElement('option');
+      o.value = k.value;
+      o.textContent = k.label;
+      kind.appendChild(o);
+    });
+    field('種類', kind);
+
+    var title = document.createElement('input');
+    title.type = 'text';
+    title.id = 'announce-title';
+    title.maxLength = 80;
+    title.placeholder = '例: 健康診断の日程';
+    field('題名', title);
+
+    var body = document.createElement('textarea');
+    body.id = 'announce-body';
+    body.maxLength = 2000;
+    field('本文 (字のまま。改行できます)', body);
+
+    var options = document.createElement('textarea');
+    options.id = 'announce-options';
+    options.placeholder = '1行に1つ (2〜10個)';
+    var optionsLabel = field('選択肢 (アンケートのとき)', options);
+
+    var period = document.createElement('div');
+    period.className = 'announce-period';
+    var start = document.createElement('input');
+    start.type = 'date';
+    start.id = 'announce-start';
+    var end = document.createElement('input');
+    end.type = 'date';
+    end.id = 'announce-end';
+    var startLabel = document.createElement('label');
+    startLabel.appendChild(document.createTextNode('出しはじめる日 (空ならすぐ)'));
+    startLabel.appendChild(start);
+    var endLabel = document.createElement('label');
+    endLabel.appendChild(document.createTextNode('出すのをやめる日 (空なら終えるまで)'));
+    endLabel.appendChild(end);
+    period.appendChild(startLabel);
+    period.appendChild(endLabel);
+    form.appendChild(period);
+
+    function syncKind() { optionsLabel.hidden = kind.value !== 'poll'; }
+    kind.addEventListener('change', syncKind);
+    syncKind();
+
+    var bar = document.createElement('div');
+    bar.className = 'inline-form-actions';
+    var create = document.createElement('button');
+    create.type = 'button';
+    create.id = 'announce-create';
+    create.className = 'btn btn-primary';
+    create.textContent = '置く';
+    bar.appendChild(create);
+    form.appendChild(bar);
+    box.appendChild(form);
+
+    var list = document.createElement('div');
+    list.id = 'announce-list';
+    list.className = 'announce-list';
+    box.appendChild(list);
+
+    create.addEventListener('click', function () {
+      create.disabled = true;
+      call('apiAnnouncementCreate', [{
+        kind: kind.value, title: title.value, body: body.value,
+        options: kind.value === 'poll' ? options.value : '', startAt: start.value, endAt: end.value,
+      }], function (res) {
+        create.disabled = false;
+        title.value = '';
+        body.value = '';
+        options.value = '';
+        start.value = '';
+        end.value = '';
+        renderAnnouncementList(list, res);
+        showSnack('置きました。次に開いたときから、全員のホームに出ます', { kind: 'ok' });
+      }, failEnable(create, '置けませんでした: '));
+    });
+
+    loadAnnouncementList(list);
+    return box;
+  }
+
+  /** 一覧を取って描く。続けて頼んだら、最後に頼んだぶんの返事だけを描く */
+  function loadAnnouncementList(list) {
+    showSkeleton(list, 'list', 2);
+    var still = latest('announce-list');
+    call('apiAnnouncementList', [], still.only(function (res) {
+      renderAnnouncementList(list, res);
+    }), still.only(failInto(list)));
+  }
+
+  /**
+   * 置いたものの一覧 (新しい順)。数は選択肢ごと・読んだ・閉じた。
+   *
+   * @param {HTMLElement} list
+   * @param {{items: object[]}} res
+   */
+  function renderAnnouncementList(list, res) {
+    list.textContent = '';
+    var items = (res && res.items) || [];
+    if (!items.length) {
+      list.appendChild(makeBlankState('まだ置いていません', 'ここで置いたお知らせ・アンケート・案内と、答えの数が並びます。'));
+      return;
+    }
+    items.forEach(function (a) {
+      var item = document.createElement('div');
+      item.className = 'announce-item';
+      item.setAttribute('data-announce-item', String(a.id));
+
+      var top = document.createElement('div');
+      top.className = 'announce-item-head';
+      top.appendChild(makePill(announceKindLabel(a.kind), 'chip'));
+      top.appendChild(makePill(a.archived ? '終えた' : a.active ? '出している' : '期間の外', 'state'));
+      var t = document.createElement('strong');
+      t.className = 'announce-item-title';
+      t.textContent = a.title || '';
+      top.appendChild(t);
+      item.appendChild(top);
+
+      var meta = document.createElement('p');
+      meta.className = 'row-meta';
+      var when = (a.startAt || '今すぐ') + ' 〜 ' + (a.endAt || '終えるまで');
+      meta.textContent = '期間: ' + when + '・片づけた人 ' + (a.total || 0) + '人 (読んだ ' + (a.read || 0) +
+        '・閉じた ' + (a.closed || 0) + ')';
+      item.appendChild(meta);
+
+      if (a.kind === 'poll') {
+        var counts = document.createElement('ul');
+        counts.className = 'announce-counts';
+        (a.counts || []).forEach(function (c) {
+          var li = document.createElement('li');
+          li.textContent = c.option + ': ' + c.count + '人';
+          counts.appendChild(li);
+        });
+        item.appendChild(counts);
+      }
+
+      if (!a.archived) {
+        var stop = document.createElement('button');
+        stop.type = 'button';
+        stop.className = 'btn announce-archive';
+        stop.textContent = '終える';
+        stop.setAttribute('aria-label', '「' + (a.title || '') + '」を終える (もう誰にも出しません)');
+        stop.addEventListener('click', function () {
+          stop.disabled = true;
+          call('apiAnnouncementArchive', [a.id], function (next) {
+            renderAnnouncementList(list, next);
+            showSnack('終えました。答えの数は残ります', { kind: 'ok' });
+          }, failEnable(stop, '終えられませんでした: '));
+        });
+        item.appendChild(stop);
+      }
+      list.appendChild(item);
+    });
+  }

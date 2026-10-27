@@ -176,6 +176,13 @@ CacheService (`ACH_NEG:<アドレス>:<日>`) から読んで数えない (そ�
 戻す (承認し直し)。今の値・できた印・やることのつなぎは承認し直しが要らない。評価済み (`closed`) は誰も直せない。
 台帳 (`goals` / `goal_items` / `goal_links`) は入れ物の中にあり、Drive で台帳を開ける人は直に読める (手引きにもそう書いた)。
 
+**お知らせ・1問アンケート・案内 (`src/core/Announcement.gs` / `src/api/Announcement.gs`) を置く・終える・答えの数を見るのは管理者だけ**
+(`apiAnnouncementCreate` / `apiAnnouncementArchive` / `apiAnnouncementList`。どれも `repoAssertAdmin_`)。**誰が何と答えたかは返さない。**
+一覧は選択肢ごとの数・読んだ数・閉じた数だけで、置いた人のアドレスも入れない。本人に出す `apiAnnouncementNext` と答える
+`apiAnnouncementReply` はアドレスを受けず、開いている本人として動く。台帳 (`announcement_replies`) には誰が答えたかが残るので、
+Drive で台帳を開ける人は直に読める (手引き `docs/manual/admin.md` にもそう書いた)。少ない人数のアンケートでは数から答えた人が
+分かることがある (人数で隠す守りは入れていない。管理者が置くものなので、置く人がそれを知って使う)。
+
 **作業雑談部屋 (`src/core/Cowork.gs` / `src/core/CoworkLink.js` / `src/api/Cowork.gs`) は、入った人の名前だけをチームに見せる。**
 既定はオフ (`cowork.enabled`)。オフのあいだは部屋もいる人も返さない (`coworkAssertEnabled_`)。見せるのは「入る」を押した人の表示名
 (`coworkDisplayName_`。アドレスの大文字小文字は見ない。無ければ「名前未設定」で、アドレスの一部も出さない) と入った時刻・「集中中」(本人が `cowork.showFocus` をオンにしたときだけ) で、**アドレスは返さない**。入口は

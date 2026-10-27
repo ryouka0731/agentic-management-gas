@@ -47,6 +47,14 @@
 `goal_links` は項目とやることの結び付きで、「あるか見てから書く」ので鍵の中で足す (`goalLink_`)。目標を消すと項目と結び付きも消し、
 やることを `issuePurge` で消すと結び付きも消す。目標の保存 (`goalSave_`) は目標・項目・結び付きを1つの鍵の中で書く。
 
+`announcements` / `announcement_replies` (お知らせ・1問アンケート・案内。`src/core/Announcement.gs`) は、どちらも `id` を
+`dbAppendNumbered` で振る表ごとの通し番号にしている。`announcements.kind` は `notice` / `poll` / `ad`、`options` はアンケートの
+選択肢の JSON の配列 (手で `a|b` と書いたものも読む。`announcementOptionsOf_`)、`startAt` / `endAt` は東京の `yyyy-MM-dd`
+の字 (空は限りなし。Sheets が Date にしていても `plainDay` で日として読む)、`archivedAt` は終えた時刻 (空なら終えていない)。
+`announcement_replies.who` は小文字のアドレス、`answer` は `''` (読んだ) / `'closed'` (閉じた) / 選んだ選択肢の字。
+**1人1つのお知らせに1行だけ。** 「答えがあるか見てから書く」を1つの鍵の中で行い (`announcementReply_`)、2回目は書かずに
+前の答えを返す。表の中身の誰が答えたかは画面に返さない (`docs/dev/permissions.md`)。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

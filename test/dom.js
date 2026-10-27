@@ -277,6 +277,7 @@ const API_NAMES = [
   'apiOshiSetShared',
   'apiCalendarPlan', 'apiCalendarToday', 'apiCalendarStatus', 'apiCalendarCreateShared', 'apiCalendarSetShared', 'apiMeetingHours',
   'apiOutcomes', 'apiCacheClear',
+  'apiAnnouncementNext', 'apiAnnouncementReply', 'apiAnnouncementList', 'apiAnnouncementCreate', 'apiAnnouncementArchive',
   'apiGoalState', 'apiGoalMine', 'apiGoalSave', 'apiGoalDelete', 'apiGoalSubmit', 'apiGoalDecide', 'apiGoalLink',
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
   'apiGoalIssueLinks', 'apiGoalWithdraw',
@@ -556,6 +557,9 @@ export const DEFAULTS = {
   // 成果の数 (管理者だけ)。まだ数えていない形。数のある形は test/component/outcomes.test.js が渡す
   apiOutcomes: { weeks: [], since: '', minPeople: 3 },
   apiCacheClear: { cleared: true },
+  // お知らせ (js-announce)。既定は何も出さない
+  apiAnnouncementNext: null,
+  apiAnnouncementList: { items: [] },
   apiSettings: { scrumEnabled: false, gameEnabled: false, canEdit: true, queue: null, productGoal: '', definitionOfDone: '', glossary: {} },
   apiPrefs: prefsFixture(),
   // 書いた値を返す (null で既定に戻す)

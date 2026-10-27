@@ -182,6 +182,8 @@
   // 取ると往復が2段になる。先取りの最中に開いたら、needOnce が同じ返事を待ち合わせる (二度取らない)。
   // 文書のリンクでは使わないので取らない
   bootLater(achOpenCheck);
+  // 管理者が置いたお知らせ・アンケート・案内 (js-announce)。ホームの上に1つだけ。文書のリンクでは取らない (中で見る)
+  bootLater(loadAnnouncement);
   bootLater(function () {
     if (document.body.classList.contains('doc-link')) return;
     needOnce(['apiKitStatus']);

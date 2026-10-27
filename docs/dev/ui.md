@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-room` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` / `js-cowork` / `js-sound` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-room` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` / `js-cowork` / `js-sound` / `js-announce` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -128,7 +128,7 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 |---|---|---|
 | 最初の波 (16本。うち軽い6本は `apiBoot` に**まとめて**送る) | 開いてすぐ | 文書の一覧 (`apiListFiles`。やることの絞り込みの文書名・改訂版を作る画面が `allFiles` を引く)・左上の名前 (`apiWorkspace`)・左の行き先 (`apiSettings`)・自分の顔 (`apiWhoAmI`)・ベルの数 (`apiNotifications`)・ホームの中身 (`apiOverview` は左の行き先の数も兼ねる・`apiHomeSummary`・`apiHomeActivity`・`apiProgress` とカードの5本)・設定 (`apiPrefs`)・推し (`apiOshiGet`、設定が届いてから) |
 | 要るとき | その画面・欄を開いたとき | 人の名前と型 (`apiPeopleNames` / `apiWorkStyleTeam`。ホーム以外の画面と自分の欄)・やることの札と優先度 (`apiTagList` / `apiIssuePriorities`)・名簿 / ひな形 / Google ToDo / 置き場の日数 (`apiKnownPeople` / `apiTemplateList` / `apiTasksState` / `apiArchiveKeepDays`。やることを開いたときに待たずに取る)・集計の範囲 (`apiTallyScope`。集計を開いたとき)・やることの一覧 (`apiIssueList`。やることを開いたとき)・ポイントの参加 (`apiGameState`。自分の欄を開いたとき) |
-| 急がない (6本) | 最初の波の返事がそろってから (`bootLater`。そろわなくても15秒で) | 実績の数え直し (`apiAchievementsCheck`。開いた日も数える)・道具の更新の印 (`apiKitStatus`)・人の名前と型と札と優先度の先取り (`needPeople` と `needOnce(['apiTagList', 'apiIssuePriorities'])`) |
+| 急がない (7本) | 最初の波の返事がそろってから (`bootLater`。そろわなくても15秒で) | 実績の数え直し (`apiAchievementsCheck`。開いた日も数える)・お知らせ (`apiAnnouncementNext`。ホームの上の1枚。文書のリンクでは取らない)・道具の更新の印 (`apiKitStatus`)・人の名前と型と札と優先度の先取り (`needPeople` と `needOnce(['apiTagList', 'apiIssuePriorities'])`) |
 
 - **最初の波のうち、台帳を読むだけの軽いものは1本 (`apiBoot`) にまとめて送る** (`BOOT_BATCH_NAMES`。画面 `app.js.html` と
   サーバ `src/api/Boot.gs` に同じ並びがあり、`test/component/boot.test.js` が揃っていることを見る)。1本ごとにサーバの起動代
@@ -196,6 +196,14 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
     狭い画面 (767px 以下) では絵を出さず一言だけ。ふわっと出す動きは `prefers-reduced-motion` で止める。飾りなので `aria-hidden`
     (読み上げには「読み込んでいます」だけ)。テストは `test/component/oshi-wait.test.js`。ほかの画面の骨組み (`showSkeleton`) には
     まだ付けていない (器の形が画面ごとに違い、重ねる場所を決めていない)
+- **お知らせ・アンケート・案内は、あなたの番の上に1枚だけ** (`#home-announce`。js-announce。やること #94)。急がない波
+  (`bootLater(loadAnnouncement)`) で `apiAnnouncementNext` を1回取り、無ければ区画は空のまま (`.home-block:empty` で隠れる)。
+  文書のリンクで開いた画面 (`body.doc-link`) では取らない・出さない。本文は他人 (管理者) が書いた字なので `textContent` だけで置き
+  (Markdown にしない。改行は `white-space: pre-wrap` で活かす)、選択肢も字のままボタンにする。押すとどのボタンも押せなくして
+  `apiAnnouncementReply` (読んだ `''` / 閉じた `'closed'` / 選択肢) を送り、届いたらカードを外す (答えたときだけ「ありがとう
+  ございました」の帯)。断られたらボタンを戻してカードを残す。**1回開いたら1つ** (片づけても続けて次を出さない。次は次に
+  開いたとき)。管理者の節 (`makeAnnouncementSettings`) は設定の画面のチームの設定に、`settings.canEdit` のときだけ置く。
+  テストは `test/component/announce.test.js` と通しの `test/e2e/announce.test.js`
 - **幅の広い画面で右に偏らないように**、ホームの中身は `max-width: 1360px` で真ん中に寄せ、1440px 以上では主と従を半々にして
   右のカード (`.home-cards`) を2列に並べる (縦に積み上がらない)。1024〜1439px は 2fr / 1fr のまま
 

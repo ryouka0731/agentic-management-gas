@@ -908,6 +908,27 @@ describe('画面に渡せる形か', () => {
       if (!out.weeks.some((w) => !w.hidden)) throw new Error('成果の数が空のまま検査されている');
       return out;
     }],
+    // お知らせ・アンケート (管理者が置く)。答えたあとの一覧と、まだ片づけていない人に出す1つを検査する
+    ['apiAnnouncementCreate', (ctx) => ctx.apiAnnouncementCreate({ kind: 'poll', title: '日', body: '', options: 'a|b' })],
+    ['apiAnnouncementNext', (ctx) => {
+      ctx.apiAnnouncementCreate({ kind: 'notice', title: 'お知らせ', body: '本文' });
+      const out = ctx.apiAnnouncementNext();
+      if (!out) throw new Error('お知らせが空のまま検査されている');
+      return out;
+    }],
+    ['apiAnnouncementReply', (ctx) => {
+      ctx.apiAnnouncementCreate({ kind: 'poll', title: '日', body: '', options: 'a|b' });
+      return ctx.apiAnnouncementReply(1, 'a');
+    }],
+    ['apiAnnouncementList', (ctx) => {
+      ctx.apiAnnouncementCreate({ kind: 'poll', title: '日', body: '', options: 'a|b' });
+      ctx.apiAnnouncementReply(1, 'b');
+      return ctx.apiAnnouncementList();
+    }],
+    ['apiAnnouncementArchive', (ctx) => {
+      ctx.apiAnnouncementCreate({ kind: 'notice', title: 'お知らせ', body: '' });
+      return ctx.apiAnnouncementArchive(1);
+    }],
     // 作業雑談部屋。いる印はキャッシュにだけある (疑似GAS には無いので足す)。入った人がいる形を検査する
     ['apiCoworkRooms', (ctx, env) => coworkReady(ctx, env, (id) => { ctx.apiCoworkEnter(id); return ctx.apiCoworkRooms(); }, true)],
     ['apiCoworkEnter', (ctx, env) => coworkReady(ctx, env, (id) => ctx.apiCoworkEnter(id), true)],

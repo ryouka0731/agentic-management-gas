@@ -40,7 +40,7 @@ const batches = (app) => app.calls.filter((c) => c.name === 'apiBoot').map((c) =
 
 /** 急がないもの: 最初の波の返事がそろってから。名前・型・札・優先度は、画面を初めて開くときに待たないよう先に取る */
 const PREFETCH = ['apiPeopleNames', 'apiWorkStyleTeam', 'apiTagList', 'apiIssuePriorities'];
-const LATER = ['apiAchievementsCheck', 'apiKitStatus'].concat(PREFETCH);
+const LATER = ['apiAchievementsCheck', 'apiAnnouncementNext', 'apiKitStatus'].concat(PREFETCH);
 
 /** 開いた直後には取らないもの (要るときに取る) */
 const ON_DEMAND = [
@@ -107,7 +107,7 @@ describe('開いた直後に呼ぶもの', () => {
 
   it('文書のリンクで開いたときは、名前・型・札・優先度を先取りしない', () => {
     const app = mountApp(Object.assign({}, DEFAULTS), { link: { doc: 'DOC1' } });
-    PREFETCH.concat(['apiKitStatus']).forEach((n) => expect(names(app), n).not.toContain(n));
+    PREFETCH.concat(['apiKitStatus', 'apiAnnouncementNext']).forEach((n) => expect(names(app), n).not.toContain(n));
   });
 
   it('先取りの返事を待っているあいだにやることを開いても、二度取らずに待ち合わせる', () => {
