@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { loadGas } from './harness.js';
 import { buildOshiDefaultSource, oshiDefaultMap, oshiDefaultTargets, oshiDefaultOut, OSHI_DEFAULT_MAX_BYTES } from '../scripts/build-oshi-default.mjs';
@@ -90,6 +91,23 @@ describe('最初からいるキャラの絵 (焼いたもの)', () => {
       expect(text).not.toContain('oshi-default/');
       expect(text).not.toContain('data:image/webp;base64,');
     }
+  });
+
+  /*
+   * 画面は最初からいるキャラの絵をブラウザ (IndexedDB) に覚え、鍵に絵の版 (OSHI_DEFAULT_IMAGE_VERSION) を含める。
+   * 絵だけ差し替えて版を上げ忘れると、前に開いた人の画面には古い絵が残り続ける。焼いた絵の中身の指紋と版の組を
+   * ここで固定する。落ちたら src/core/Oshi.js の OSHI_DEFAULT_IMAGE_VERSION() を1つ上げ、下の2つを書き直す。
+   */
+  it('焼いた絵を変えたら、絵の版 (OSHI_DEFAULT_IMAGE_VERSION) も上げてある', () => {
+    const h = crypto.createHash('sha256');
+    for (const t of oshiDefaultTargets().slice().sort((a, b) => (a.file < b.file ? -1 : 1))) {
+      h.update(path.basename(t.file) + '\n');
+      h.update(fs.readFileSync(path.resolve(t.file)));
+      h.update('\n');
+    }
+    const pinned = { version: 1, sha: 'c4bfe5d58f40483cd048b45effb9de16859c4d080656e7c4609e7e44fe430758' };
+    expect({ version: pure.OSHI_DEFAULT_IMAGE_VERSION(), sha: h.digest('hex') },
+      '絵を変えたら OSHI_DEFAULT_IMAGE_VERSION() を上げ、ここの version と sha を書き直す').toEqual(pinned);
   });
 
   it('deploy は送る前に焼き直す', () => {
