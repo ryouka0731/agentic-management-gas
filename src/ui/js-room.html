@@ -1093,8 +1093,12 @@
 
   var roomTimer = null;
   var roomGlanceTimer = null;
-  /** 頭をなでられて笑顔でいるあいだの時計 (null なら作業中の顔) */
+  /** 頭をなでられて笑顔でいる (顔・体を押されて反応している) あいだの時計 (null なら作業中の顔) */
   var roomPatTimer = null;
+  /** 反応のあいだ頭の上に出している一言 (.room-oshi-say) */
+  var roomPatSay = null;
+  /** 押した・なでたときのせりふを決めるもの (oshiTouchSayer。続けて押した回数を覚える) */
+  var roomTouchSay = null;
   /** ときどき様子を変える時計 (roomFidget) */
   var roomFidgetTimer = null;
   var roomReturnTo = null;
@@ -1401,8 +1405,9 @@
     var fig = document.createElement('div');
     fig.className = 'room-oshi';
     stage.appendChild(fig);
-    // 推しの頁と同じく、頭を左右になでると笑顔になってひとこと言う (oshiAttachPat。オフの人影はなでても何も起きない)
-    oshiAttachPat(fig, roomPat);
+    // 推しの頁と同じく、頭を左右になでると笑顔になってひとこと言う。頭・顔・体を押しても場所ごとに反応する
+    // (oshiAttachPat。オフの人影はなでても押しても何も起きない)
+    oshiAttachPat(fig, roomPat, function (key, x, y) { roomTouch(key, x, y, true); });
 
     stage.appendChild(makeRoomFocusCorner());
     return stage;
@@ -1416,18 +1421,38 @@
    * @param {number} y
    */
   function roomPat(x, y) {
+    roomTouch('pat', x, y, false);
+  }
+
+  /**
+   * 推しをなでた・押した。場面 (頭 pat・顔 poke・体 tickle) の表情にし、そのせりふを頭の上に出す。
+   * しばらくで作業中の顔に戻る。反応のあいだは表情を変えず、押したときだけせりふを差し替える。
+   * 使われ方 (実績「推しの頭をなでた」) に数えるのは pat だけ。
+   *
+   * @param {string} key 場面
+   * @param {number} x
+   * @param {number} y
+   * @param {boolean} tapped 押した (なでたのではない)
+   */
+  function roomTouch(key, x, y, tapped) {
     var el = roomEl();
     var fig = roomFigure();
-    if (!el || !fig || !oshiOn() || roomPatTimer) return;
-    // 実績 (推しの頭をなでた・通算) のための使われ方。笑顔のあいだの往復は数えない (上で返している)
-    usageCount('action', 'oshi-pat');
+    if (!el || !fig || !oshiOn()) return;
+    if (!roomTouchSay) roomTouchSay = oshiTouchSayer();
+    if (roomPatTimer) {
+      if (tapped && roomPatSay && roomPatSay.isConnected) roomPatSay.textContent = roomTouchSay(key, true) || roomPatSay.textContent;
+      return;
+    }
+    // 実績 (推しの頭をなでた・通算) のための使われ方。なでた (頭を押した) ときだけ。反応のあいだは数えない (上で返している)
+    if (key === 'pat') usageCount('action', 'oshi-pat');
     if (roomGlanceTimer) clearTimeout(roomGlanceTimer);
     roomGlanceTimer = null;
-    roomFillCharacter('praise');
+    roomFillCharacter(oshiTouchState(key));
     var say = document.createElement('p');
     say.className = 'room-oshi-say';
     say.setAttribute('aria-live', 'polite');
-    say.textContent = oshiLine('pat') || '';
+    say.textContent = roomTouchSay(key, tapped) || '';
+    roomPatSay = say;
     var stage = el.querySelector('.room-stage');
     // 絵の高さはキャラごとに違うので、吹き出しは絵の実際の箱から頭の右上に置く (重ねない)。箱が測れない (jsdom) ときは CSS の既定
     var fr = fig.getBoundingClientRect();
@@ -1438,9 +1463,10 @@
       say.style.bottom = pct(Math.max(5, Math.min(85, (sr.bottom - fr.top) / sr.height * 100 - 6))) + '%';
     }
     stage.appendChild(say);
-    if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
+    if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, OSHI_TOUCH_GLYPHS()[key]);
     roomPatTimer = setTimeout(function () {
       roomPatTimer = null;
+      roomPatSay = null;
       say.remove();
       if (!roomEl()) return;
       roomFillCharacter('work');

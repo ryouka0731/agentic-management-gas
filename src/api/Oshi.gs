@@ -21,6 +21,8 @@ function oshiEventsPlain_(tone, mine) {
       randomState: !!e.randomState, mood: !!e.mood,
       // 考え中 (spinner) は画面の吹き出しには出さず、自分のせりふの欄で直すだけ。字数の上限は場面ごと
       spinner: !!e.spinner, lineMax: plainNumber(oshiLineMaxOf(e.key)),
+      // 絵を押した・なでた場面 (なでられた・つつかれた・くすぐられた)。続けて押されたときの一言 (口調ごとに1本) を添える
+      touch: !!e.touch, much: e.touch ? plainText(oshiTouchMuchLine(tone)) : '',
       lines: oshiToneLines(tone, e.key).map(plainText),
       mine: ((mine || {})[e.key] || []).map(plainText) };
   });

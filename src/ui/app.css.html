@@ -5590,7 +5590,7 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-mood-reasons { margin: 0; padding-left: var(--sp-4); color: var(--ink-2); }
 .oshi-mood-reasons li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .oshi-h { margin: 0; font-size: 15px; }
-/* 推しの頁の顔。頭 (上半分) を左右になでると笑顔になる (makeOshiHero) */
+/* 推しの頁の顔。頭 (上半分) を左右になでると笑顔になる。頭・顔・体を押しても反応する (makeOshiHero) */
 .oshi-hero { align-items: center; text-align: center; }
 .oshi-hero-figure {
   width: 220px; height: 220px; max-width: 100%; display: flex; align-items: center; justify-content: center;
@@ -5611,6 +5611,8 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-hero-figure.is-tilt-r > * { rotate: 3deg; }
 .oshi-hero-figure.is-blink > *, .oshi-bubble .oshi-figure.is-blink > * { scale: 1 0.96; }
 .oshi-hero-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
+/* 指を動かせない人のための「なでる」「つつく」「くすぐる」。同じ見た目で並べ、狭い画面では折り返す */
+.oshi-hero-btns { display: flex; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
 .oshi-hero-line { margin: 0; color: var(--ink-2); }
 .oshi-hero.is-patted .oshi-hero-line { color: var(--accent); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) {

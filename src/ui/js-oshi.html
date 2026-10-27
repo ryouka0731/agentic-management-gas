@@ -2142,18 +2142,110 @@
     });
   }
 
-  /** なでたあと、笑顔でいる時間 (ms) */
+  /** なでたあと・押したあと、表情を変えておく時間 (ms) */
   function OSHI_PAT_SMILE_MS() { return 4000; }
   /** なでたと数える、頭の上での往復 (指の向きが変わった回数) */
   function OSHI_PAT_TURNS() { return 2; }
-  /** 絵のこの高さ (上からの割合) までを「頭」とみなす */
+  /** 絵のこの高さ (上からの割合) までを、なでるときの「頭」とみなす */
   function OSHI_PAT_HEAD() { return 0.5; }
+  /** 押したとき、絵のこの高さ (上からの割合) までを「頭」とみなす (場面 pat) */
+  function OSHI_TOUCH_HEAD() { return 0.35; }
+  /** 押したとき、頭の下からこの高さまでを「顔」(場面 poke)。その下は「体」(場面 tickle) */
+  function OSHI_TOUCH_FACE() { return 0.65; }
+  /** 押したと数える、押してから離すまでの指の動きの上限 (px)。これより動いたら、なでた・スクロールした */
+  function OSHI_TAP_SLOP() { return 10; }
+  /** なでたと数えたあと、この間 (ms) の click は押したと数えない (なでた指を離したときの click を二重に数えない) */
+  function OSHI_TAP_AFTER_PAT_MS() { return 300; }
+  /** 同じ場所をこの間 (ms) に続けて押したら、続けて押したと数える */
+  function OSHI_TOUCH_STREAK_MS() { return 1500; }
+  /** 同じ場所をこの回数続けて押したら、「くすぐったい」系の一言 (場面の much) にする */
+  function OSHI_TOUCH_STREAK() { return 3; }
 
   /**
-   * 推しの頁の顔。いま使うキャラの絵を大きく出す。頭 (絵の上半分) を左右になでると笑顔 (ほめる) になり、
-   * 「なでられた」のせりふを絵の下に言う (吹き出しは使わない。頁を見ている人の目の前で言う)。
-   * 指 (ポインタ) を動かせない人は「なでる」を押す。しばらくするとふつうの顔に戻る。
-   * 絵を取らない人 (オフ) には出さない。絵が無いキャラは名前の頭文字の丸のまま、せりふだけ言う。
+   * 押した場面ごとの粒 (funBurst に混ぜる絵)。減らす設定では funBurst が出さない
+   *
+   * @returns {Object<string, string[]>}
+   */
+  function OSHI_TOUCH_GLYPHS() {
+    return { pat: ['💗', '♪'], poke: ['❗', '💦'], tickle: ['✨', '🎶'] };
+  }
+
+  /**
+   * 絵のどこを押したか。上から 頭 (pat)・顔 (poke)・体 (tickle)。
+   *
+   * @param {HTMLElement} fig
+   * @param {number} clientY
+   * @returns {string} 場面
+   */
+  function oshiTouchZone(fig, clientY) {
+    var r = fig.getBoundingClientRect();
+    if (!r.height || typeof clientY !== 'number') return 'poke';
+    var at = (clientY - r.top) / r.height;
+    if (at < OSHI_TOUCH_HEAD()) return 'pat';
+    if (at < OSHI_TOUCH_FACE()) return 'poke';
+    return 'tickle';
+  }
+
+  /**
+   * 押した場面の表情。場面の表 (Oshi.js の OSHI_EVENTS) が先で、届いていなければ控え
+   *
+   * @param {string} key
+   * @returns {string}
+   */
+  function oshiTouchState(key) {
+    var ev = oshiEventOf(key);
+    if (ev && ev.state) return ev.state;
+    return { pat: 'praise', poke: 'surprise', tickle: 'celebrate' }[key] || 'praise';
+  }
+
+  /**
+   * その場面のせりふを、でたらめに1つ (自分のせりふも混ぜる)。直前と同じ字は、ほかがあれば選ばない。
+   * 順に回す oshiLine とは別 (押すたびに違って見えるように)。
+   *
+   * @param {string} key
+   * @param {string} [avoid] 直前に言った字
+   * @returns {string}
+   */
+  function oshiLinePick(key, avoid) {
+    var ev = oshiEventOf(key);
+    if (!ev) return '';
+    var list = (ev.mine || []).concat(ev.lines || []);
+    var rest = list.filter(function (s) { return s !== avoid; });
+    if (!rest.length) rest = list;
+    if (!rest.length) return '';
+    return rest[Math.min(rest.length - 1, Math.floor(Math.random() * rest.length))];
+  }
+
+  /**
+   * 押した・なでた反応のせりふを決めるもの (推しの頁の顔と作業部屋で1つずつ持つ)。同じ場所を短い間に続けて
+   * OSHI_TOUCH_STREAK 回押したら、口調ごとの「くすぐったい」系の一言 (場面の much)。それ以外は でたらめに選ぶ。
+   *
+   * @returns {function(string, boolean): string} (場面, 押したか)。なでた (押していない) ときは続けて数えない
+   */
+  function oshiTouchSayer() {
+    var lastKey = '';
+    var lastAt = 0;
+    var streak = 0;
+    var said = '';
+    return function (key, tapped) {
+      var now = Date.now();
+      if (tapped && key === lastKey && now - lastAt <= OSHI_TOUCH_STREAK_MS()) streak++;
+      else streak = tapped ? 1 : 0;
+      lastKey = tapped ? key : '';
+      lastAt = now;
+      var ev = oshiEventOf(key);
+      var text = streak >= OSHI_TOUCH_STREAK() && ev && ev.much ? ev.much : oshiLinePick(key, said);
+      said = text;
+      return text;
+    };
+  }
+
+  /**
+   * 推しの頁の顔。いま使うキャラの絵を大きく出す。頭 (絵の上半分) を左右になでるか頭を押すと笑顔 (ほめる)、
+   * 顔を押すと「つつかれた」(びっくり)、体を押すと「くすぐられた」(おいわい) になり、場面のせりふを絵の下に言う
+   * (吹き出しは使わない。頁を見ている人の目の前で言う)。指 (ポインタ) を動かせない人は「なでる」「つつく」「くすぐる」を押す。
+   * しばらくするとふつうの顔に戻る。絵を取らない人 (オフ) には出さない。絵が無いキャラは名前の頭文字の丸のまま、せりふだけ言う。
+   * 使われ方 (実績「推しの頭をなでた」) に数えるのは、なでた (pat) だけ。つつく・くすぐるは何にも結び付けない。
    *
    * @param {object} d apiOshiGet
    * @returns {HTMLElement|null}
@@ -2161,7 +2253,7 @@
   function makeOshiHero(d) {
     if (!oshiOn()) return null;
     var name = d.name || '推し';
-    var idleText = name + ' ・ 頭を左右になでると喜びます';
+    var idleText = name + ' ・ 頭を左右になでると喜びます。顔や体を押しても反応します';
     var sec = document.createElement('section');
     sec.className = 'oshi-section oshi-hero';
     sec.dataset.state = 'idle';
@@ -2177,48 +2269,69 @@
     caption.setAttribute('aria-live', 'polite');
     caption.textContent = idleText;
     row.appendChild(caption);
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn oshi-pat';
-    btn.textContent = 'なでる';
-    row.appendChild(btn);
+    var btns = document.createElement('div');
+    btns.className = 'oshi-hero-btns';
+    function addBtn(cls, label, key, at) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn ' + cls;
+      b.textContent = label;
+      b.addEventListener('click', function () {
+        var r = fig.getBoundingClientRect();
+        react(key, r.left + r.width / 2, r.top + r.height * at, true);
+      });
+      btns.appendChild(b);
+    }
+    addBtn('oshi-pat', 'なでる', 'pat', 0.2);
+    addBtn('oshi-poke', 'つつく', 'poke', 0.5);
+    addBtn('oshi-tickle', 'くすぐる', 'tickle', 0.8);
+    row.appendChild(btns);
     sec.appendChild(row);
 
     var shown = '';
     var smileTimer = null;
     var motion = null;
+    var say = oshiTouchSayer();
     function show(state) {
       shown = state;
       sec.dataset.state = state;
       // 頁に付く前 (組み立て中) にも絵を取るので、つながっているかは見ない。まだ同じ表情を出しているかだけ
       oshiFillFigure(fig, oshiPickState(state), name, function () { return shown === state; });
     }
-    function pat(x, y) {
-      if (smileTimer) return; // 笑顔のあいだは、なでても変わらない (絵を取り直さない)
-      // 実績 (推しの頭をなでた・通算) のための使われ方。笑顔のあいだは数えない
-      usageCount('action', 'oshi-pat');
-      // 動きの最中 (まばたきの絵・うなずき) でも、なでた方を出す
+    /**
+     * @param {string} key 場面 (pat / poke / tickle)
+     * @param {number} x
+     * @param {number} y
+     * @param {boolean} tapped 押した (なでたのではない)
+     */
+    function react(key, x, y, tapped) {
+      if (smileTimer) {
+        // 反応のあいだは表情を取り直さず、数えもしない。なでた往復は何も変えない。押したら、せりふだけ差し替える
+        if (tapped) caption.textContent = say(key, true) || caption.textContent;
+        return;
+      }
+      // 実績 (推しの頭をなでた・通算) のための使われ方。なでた (頭を押した) ときだけ。反応のあいだは数えない
+      if (key === 'pat') usageCount('action', 'oshi-pat');
+      // 動きの最中 (まばたきの絵・うなずき) でも、押した方を出す
       if (motion) motion.interrupt();
-      show('praise');
+      show(oshiTouchState(key));
       sec.classList.add('is-patted');
-      caption.textContent = oshiLine('pat') || (name + 'はうれしそうです');
+      sec.dataset.touch = key;
+      caption.textContent = say(key, tapped) || (name + 'はうれしそうです');
       // 楽しい演出の粒。減らす設定の端末では funBurst が出さない
-      if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, ['💗', '♪']);
+      if (typeof funBurst === 'function' && typeof x === 'number') funBurst(x, y, 10, OSHI_TOUCH_GLYPHS()[key]);
       smileTimer = setTimeout(function () {
         smileTimer = null;
         sec.classList.remove('is-patted');
+        delete sec.dataset.touch;
         if (!sec.isConnected) return;
         show('idle');
         caption.textContent = idleText;
       }, OSHI_PAT_SMILE_MS());
     }
-    btn.addEventListener('click', function () {
-      var r = fig.getBoundingClientRect();
-      pat(r.left + r.width / 2, r.top + r.height * 0.3);
-    });
-    oshiAttachPat(fig, pat);
+    oshiAttachPat(fig, function (x, y) { react('pat', x, y, false); }, function (key, x, y) { react(key, x, y, true); });
     show('idle');
-    // ときどき まばたき・うなずき・傾き (oshiMotionStart)。なでている最中は動かさない
+    // ときどき まばたき・うなずき・傾き (oshiMotionStart)。反応している最中は動かさない
     motion = oshiMotionStart(fig, {
       state: function () { return shown; },
       busy: function () { return !!smileTimer; },
@@ -2227,19 +2340,31 @@
   }
 
   /**
-   * 絵の入れ物に「なでる」を付ける (推しの頁の顔と作業部屋で共用)。頭 (上半分) で指が左右に往復 (向きが2回変わる)
-   * したら onPat(x, y) を呼ぶ。頭から外れたら数え直す。絵の上で指を動かすとブラウザが画像のドラッグ&ドロップを
-   * 始めてしまう (なでられない) ので、ドラッグは止める。
+   * 絵の入れ物に「なでる」「押す」を付ける (推しの頁の顔と作業部屋で共用)。頭 (上半分) で指が左右に往復 (向きが2回変わる)
+   * したら onPat(x, y) を呼ぶ。頭から外れたら数え直す。指をほとんど動かさずに押して離したら (click)、押した場所の場面で
+   * onTap(場面, x, y) を呼ぶ (oshiTouchZone。頭・顔・体)。**なでた直後の click は押したと数えない** (なでた指を離すと、
+   * マウスでは click が続いて出る)。押してから OSHI_TAP_SLOP より動いた click も数えない。絵の上で指を動かすと
+   * ブラウザが画像のドラッグ&ドロップを始めてしまう (なでられない) ので、ドラッグは止める。
    *
    * @param {HTMLElement} fig
    * @param {function(number, number)} onPat
+   * @param {function(string, number, number)} [onTap]
    */
-  function oshiAttachPat(fig, onPat) {
+  function oshiAttachPat(fig, onPat, onTap) {
     var lastX = null;
     var dir = 0;
     var turns = 0;
+    var patAt = 0;
+    var down = null;
+    var moved = 0;
     function reset() { lastX = null; dir = 0; turns = 0; }
+    fig.addEventListener('pointerdown', function (e) {
+      down = { x: e.clientX, y: e.clientY };
+      moved = 0;
+    });
+    fig.addEventListener('pointercancel', function () { down = null; moved = OSHI_TAP_SLOP() + 1; });
     fig.addEventListener('pointermove', function (e) {
+      if (down) moved = Math.max(moved, Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y));
       var r = fig.getBoundingClientRect();
       if (!r.height || e.clientY > r.top + r.height * OSHI_PAT_HEAD()) { reset(); return; }
       if (lastX !== null) {
@@ -2248,13 +2373,26 @@
           var now = dx > 0 ? 1 : -1;
           if (dir && now !== dir) turns++;
           dir = now;
-          if (turns >= OSHI_PAT_TURNS()) { turns = 0; onPat(e.clientX, e.clientY); }
+          if (turns >= OSHI_PAT_TURNS()) {
+            turns = 0;
+            patAt = Date.now();
+            onPat(e.clientX, e.clientY);
+          }
         }
       }
       lastX = e.clientX;
     });
     fig.addEventListener('pointerleave', reset);
     fig.addEventListener('dragstart', function (e) { e.preventDefault(); });
+    if (!onTap) return;
+    fig.addEventListener('click', function (e) {
+      var far = moved > OSHI_TAP_SLOP();
+      down = null;
+      moved = 0;
+      if (far) return;
+      if (patAt && Date.now() - patAt < OSHI_TAP_AFTER_PAT_MS()) return;
+      onTap(oshiTouchZone(fig, e.clientY), e.clientX, e.clientY);
+    });
   }
 
   // ----- 絵の小さな動き (やること #101「推しの絵に動いている感を出す」) -----
