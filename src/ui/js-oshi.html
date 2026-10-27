@@ -221,6 +221,8 @@
     oshiDefaultSeen = seen;
     // 読み込みのあいだの推し: オフにしたら外して前回の覚えも消す。オンなら、届いている推しで出し直す
     oshiWaitRefresh();
+    // ひょっこり (oshi.peek): オフなら時計も外す。オンなら、まだ仕掛けていなければ開いて10分後に仕掛ける
+    oshiPeekArm();
     if (!oshiOn()) {
       oshiWaitMemoClear();
       oshiQueued = null;
@@ -1043,6 +1045,287 @@
       if (seq !== oshiBubbleShown) return;
       el.hidden = true;
       oshiSayQueued();
+    }, 400);
+  }
+
+  // ----- ひょっこり (やること #102。自分の設定 oshi.peek、既定はオン) -----
+  //
+  // 何も操作していないときに、右下から推しがひょっこり出て、1つだけ伝えて引っ込む。伝えるものの優先順は
+  // (1) 未読の知らせの数 (中身は言わない。押すとベルを開く) (2) 改善のヒント (ホームが持っている advice。押すとホームへ)
+  // (3) ねぎらい (場面 peek のせりふ)。**新しい api は呼ばない** (知らせの数とヒントは画面が既に持っているもの、絵は
+  // 既に覚えている絵だけ)。うるさくしないよう、開いて10分後から、30分に1回・1日4回まで (覚えは本人ごとに localStorage)。
+  // 集中中・作業部屋・文書のリンクの画面・画面が隠れている・入力中・吹き出しが出ているあいだは出さず、少し待って見直す。
+  //
+  // 状態の var は初期値を書かない (oshiPrefsChanged は読み込みの途中で呼ばれうる。後から `= null` が走ると時計を見失う)
+
+  /** 開いてから初めて出すまで (ms) */
+  function OSHI_PEEK_FIRST_MS() { return 10 * 60000; }
+  /** 出してから次に出せるまで (ms) */
+  function OSHI_PEEK_GAP_MS() { return 30 * 60000; }
+  /** 1日に出す回数の上限 (東京の暦日) */
+  function OSHI_PEEK_DAY_MAX() { return 4; }
+  /** 出しておく長さ (ms) */
+  function OSHI_PEEK_SHOW_MS() { return 8000; }
+  /** 出せない (集中中・入力中 など) ときに、見直すまでの間 (ms) */
+  function OSHI_PEEK_RETRY_MS() { return 60000; }
+  /** 本人ごとの覚え (localStorage)。{who, day, count, last, tips} */
+  function OSHI_PEEK_MEMO_KEY() { return 'oshiPeekMemo'; }
+
+  /** 開いた時刻 (ms)。初めて仕掛けるときに決める */
+  var oshiPeekOpenedAt;
+  /** 次に出すかを見る時計 */
+  var oshiPeekTimer;
+  /** 出したものを引っ込める時計 */
+  var oshiPeekHideTimer;
+
+  /** ひょっこり出してよい設定か (推しがオンで、oshi.peek を切っていない) */
+  function oshiPeekOn() {
+    return oshiOn() && prefs.effective.oshi.peek !== false;
+  }
+
+  /** 時計を仕掛ける (設定が届いた・変わった)。オフなら外して、出ているものも引っ込める */
+  function oshiPeekArm() {
+    if (!oshiPeekOn()) {
+      if (oshiPeekTimer) clearTimeout(oshiPeekTimer);
+      oshiPeekTimer = null;
+      oshiPeekHide(true);
+      return;
+    }
+    if (!oshiPeekOpenedAt) oshiPeekOpenedAt = Date.now();
+    if (oshiPeekTimer) return;
+    oshiPeekLater(Math.max(0, oshiPeekOpenedAt + OSHI_PEEK_FIRST_MS() - Date.now()));
+  }
+
+  /** @param {number} ms */
+  function oshiPeekLater(ms) {
+    if (oshiPeekTimer) clearTimeout(oshiPeekTimer);
+    oshiPeekTimer = setTimeout(oshiPeekTick, Math.max(1000, ms));
+  }
+
+  /**
+   * いま出すと邪魔になるか。集中中・作業部屋が開いている・文書のリンクの画面・画面が隠れている・入力中・
+   * 吹き出しやひょっこりが既に出ている。どれかなら次の機会に回す。
+   *
+   * @returns {boolean}
+   */
+  function oshiPeekBlocked() {
+    if (document.hidden) return true;
+    if (document.body.classList.contains('doc-link')) return true;
+    if (typeof focusSession !== 'undefined' && focusSession) return true;
+    // 集中の置き場 (始める前の欄も) は右下に出る。重ねない
+    if (document.querySelector('.focus-dock')) return true;
+    var room = document.getElementById('room');
+    if (room && !room.hidden) return true;
+    var a = document.activeElement;
+    if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return true;
+    var bubble = document.getElementById('oshi-bubble');
+    if (bubble && !bubble.hidden) return true;
+    var peek = document.getElementById('oshi-peek');
+    if (peek && !peek.hidden) return true;
+    return false;
+  }
+
+  /**
+   * 本人の覚え。別のアカウントの覚え・読めない覚えは使わない (空から数える)。日が変われば回数と言ったヒントを数え直す。
+   *
+   * @param {string} who
+   * @param {number} now
+   * @returns {{who: string, day: string, count: number, last: number, tips: string[]}}
+   */
+  function oshiPeekMemoRead(who, now) {
+    var today = oshiDay(new Date(now));
+    var m = null;
+    try {
+      m = JSON.parse(window.localStorage.getItem(OSHI_PEEK_MEMO_KEY()) || 'null');
+    } catch (e) {
+      m = null;
+    }
+    if (!m || typeof m !== 'object' || m.who !== who) m = { who: who, day: today, count: 0, last: 0, tips: [] };
+    var last = Number(m.last) || 0;
+    // 先の時刻 (端末の時計を戻した) は覚えていないことにする
+    if (last > now) last = 0;
+    if (m.day !== today) return { who: who, day: today, count: 0, last: last, tips: [] };
+    return {
+      who: who, day: today, count: Number(m.count) || 0, last: last,
+      tips: Array.isArray(m.tips) ? m.tips.filter(function (t) { return typeof t === 'string'; }) : [],
+    };
+  }
+
+  /** @param {object} m */
+  function oshiPeekMemoSave(m) {
+    try {
+      window.localStorage.setItem(OSHI_PEEK_MEMO_KEY(), JSON.stringify(m));
+    } catch (e) { /* 覚えられなくても、この画面の時計で間は空く */ }
+  }
+
+  /** 東京の次の0時まで (ms) */
+  function oshiPeekUntilTomorrow(now) {
+    var day = 86400000;
+    return day - ((now + 9 * 3600000) % day);
+  }
+
+  /**
+   * 何を伝えるか。知らせ → ヒント (今週隠したもの・今日もう言ったものは除く) → ねぎらい。無ければ null。
+   *
+   * @param {object} memo
+   * @returns {{kind: string, text: string, state: string, tip?: string}|null}
+   */
+  function oshiPeekPick(memo) {
+    var unread = typeof noticeUnread === 'number' ? noticeUnread : 0;
+    if (unread > 0) return { kind: 'notice', text: '知らせが ' + unread + ' 件あるよ', state: 'cheer' };
+    var advice = typeof adviceLast !== 'undefined' && Array.isArray(adviceLast) ? adviceLast : [];
+    var cardOn = typeof homeCardOn !== 'function' || homeCardOn('advice');
+    if (cardOn && advice.length) {
+      var week = adviceWeek(new Date());
+      var hidden = adviceHiddenRead();
+      var tip = advice.filter(function (a) {
+        return a && a.id && a.title && hidden[a.id] !== week && memo.tips.indexOf(String(a.id)) < 0;
+      })[0];
+      if (tip) return { kind: 'tip', text: 'ひとつヒント: ' + tip.title, state: 'idle', tip: String(tip.id) };
+    }
+    var ev = oshiEventOf('peek');
+    var line = ev ? oshiLine('peek') : '';
+    if (line) return { kind: 'praise', text: line, state: ev.state || 'praise' };
+    return null;
+  }
+
+  /** 時計が来た。出せるなら1つ出し、次を仕掛ける */
+  function oshiPeekTick() {
+    oshiPeekTimer = null;
+    if (!oshiPeekOn()) return;
+    var who = oshiWaitWho();
+    // 本人が分からない・推しが届いていない (届かなくても取りに行かない)・邪魔になるときは、少し待って見直す
+    if (!who || !oshiData || oshiPeekBlocked()) {
+      oshiPeekLater(OSHI_PEEK_RETRY_MS());
+      return;
+    }
+    var now = Date.now();
+    var memo = oshiPeekMemoRead(who, now);
+    if (memo.count >= OSHI_PEEK_DAY_MAX()) {
+      oshiPeekLater(oshiPeekUntilTomorrow(now));
+      return;
+    }
+    if (memo.last && now - memo.last < OSHI_PEEK_GAP_MS()) {
+      oshiPeekLater(memo.last + OSHI_PEEK_GAP_MS() - now);
+      return;
+    }
+    var pick = oshiPeekPick(memo);
+    if (pick) {
+      oshiPeekShow(pick);
+      memo.count += 1;
+      memo.last = now;
+      if (pick.tip) memo.tips.push(pick.tip);
+      oshiPeekMemoSave(memo);
+    }
+    oshiPeekLater(OSHI_PEEK_GAP_MS());
+  }
+
+  /** 読み上げの口。隠さずに置いておく (隠れた器の中の字は読み上げられない) */
+  function oshiPeekSayEl() {
+    var say = document.getElementById('oshi-peek-say');
+    if (say) return say;
+    say = document.createElement('p');
+    say.id = 'oshi-peek-say';
+    say.className = 'sr-only';
+    say.setAttribute('role', 'status');
+    say.setAttribute('aria-live', 'polite');
+    document.body.appendChild(say);
+    return say;
+  }
+
+  /**
+   * 右下に出す。絵は覚えている絵だけ (無ければ頭文字の丸)。押すと引っ込み、知らせならベルを開き、ヒントならホームへ。
+   *
+   * @param {{kind: string, text: string, state: string}} pick
+   */
+  function oshiPeekShow(pick) {
+    var el = document.getElementById('oshi-peek');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'oshi-peek';
+      el.className = 'oshi-peek';
+      el.hidden = true;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'oshi-peek-btn';
+      var fig = document.createElement('span');
+      fig.className = 'oshi-peek-fig';
+      fig.setAttribute('aria-hidden', 'true');
+      btn.appendChild(fig);
+      var speech = document.createElement('span');
+      speech.className = 'oshi-peek-speech';
+      var nm = document.createElement('span');
+      nm.className = 'oshi-name';
+      speech.appendChild(nm);
+      var line = document.createElement('span');
+      line.className = 'oshi-peek-line';
+      speech.appendChild(line);
+      btn.appendChild(speech);
+      btn.addEventListener('click', function () {
+        var kind = el.dataset.kind;
+        oshiPeekHide(true);
+        if (kind === 'notice' && noticePanel.hidden) bellBtn.click();
+        if (kind === 'tip') {
+          switchTab('home');
+          if (homeAdviceEl && homeAdviceEl.scrollIntoView) homeAdviceEl.scrollIntoView({ block: 'nearest' });
+        }
+      });
+      el.appendChild(btn);
+      document.body.appendChild(el);
+    }
+    var name = (oshiData && oshiData.name) || '推し';
+    el.dataset.kind = pick.kind;
+    el.querySelector('.oshi-name').textContent = name;
+    el.querySelector('.oshi-peek-line').textContent = pick.text;
+    var f = el.querySelector('.oshi-peek-fig');
+    f.textContent = '';
+    var src = oshiImageCached(oshiPickState(pick.state));
+    if (src) {
+      var img = document.createElement('img');
+      img.className = 'oshi-img';
+      img.alt = '';
+      img.src = src;
+      f.appendChild(img);
+    } else {
+      var face = document.createElement('span');
+      face.className = 'oshi-avatar';
+      face.textContent = name.slice(0, 1);
+      f.appendChild(face);
+    }
+    el.classList.remove('is-in', 'is-out');
+    el.hidden = false;
+    // 右下からスッと出す (動きを減らす設定では CSS が動きを止める)
+    void el.offsetWidth;
+    el.classList.add('is-in');
+    // 読み上げは一言だけ
+    oshiPeekSayEl().textContent = pick.text;
+    if (oshiPeekHideTimer) clearTimeout(oshiPeekHideTimer);
+    oshiPeekHideTimer = setTimeout(function () { oshiPeekHide(false); }, OSHI_PEEK_SHOW_MS());
+  }
+
+  /**
+   * 引っ込める。now でなければ下へ引いてから隠す。
+   *
+   * @param {boolean} now
+   */
+  function oshiPeekHide(now) {
+    if (oshiPeekHideTimer) clearTimeout(oshiPeekHideTimer);
+    oshiPeekHideTimer = null;
+    var el = document.getElementById('oshi-peek');
+    if (!el || el.hidden) return;
+    var say = document.getElementById('oshi-peek-say');
+    if (say) say.textContent = '';
+    if (now) {
+      el.hidden = true;
+      el.classList.remove('is-in', 'is-out');
+      return;
+    }
+    el.classList.remove('is-in');
+    el.classList.add('is-out');
+    oshiPeekHideTimer = setTimeout(function () {
+      oshiPeekHideTimer = null;
+      el.hidden = true;
+      el.classList.remove('is-out');
     }, 400);
   }
 

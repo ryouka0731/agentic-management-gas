@@ -352,6 +352,13 @@ function PREF_GROUPS_() {
           help: 'やることが滞ると、推しがしょんぼりしたり、むっとしたりします。変わるのは表情とせりふだけで、Lv・実績・ポイントは' +
             '減りません。知らせは出さず、あなたにだけ見えます。済ませればすぐに機嫌が直ります',
           def: false },
+        // 何も操作していないときに、右下にひょっこり出て1つだけ伝える (js-oshi の oshiPeekTick)。既定はオン。
+        // 回数の上限 (開いて10分後から、30分に1回・1日4回まで) は画面が決め、設定の項目にしない
+        { key: 'oshi.peek', scope: 'me', type: 'bool', section: '推し',
+          label: 'ときどき画面の端に顔を出す',
+          help: '推しがオンのとき、何も操作していないあいだに右下からひょっこり出て、知らせの数・改善のヒント・ねぎらいを' +
+            '1つだけ伝えます。30分に1回・1日4回までで、集中しているときや入力しているときは出ません',
+          def: true },
       ];
     },
     ach: function () {
@@ -699,7 +706,7 @@ function apiPrefs(opts) {
         musicParts: focusMusicPlainParts_(prefValueOf_(prefItem_('focus.musicUrl'), me, read).value) },
       oshi: { on: byKey['oshi.on'] === true, home: byKey['oshi.home'] !== false,
         char: plainText(byKey['oshi.char']), fallback: plainText(byKey['oshi.fallback']),
-        style: plainText(byKey['oshi.style']), mood: byKey['oshi.mood'] === true },
+        style: plainText(byKey['oshi.style']), mood: byKey['oshi.mood'] === true, peek: byKey['oshi.peek'] !== false },
       room: { on: byKey['room.on'] === true },
       sound: { effects: byKey['sound.effects'] === true },
       ach: { on: byKey['ach.on'] !== false, cheer: byKey['ach.cheer'] !== false },

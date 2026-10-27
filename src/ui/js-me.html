@@ -1358,6 +1358,8 @@
 
   /** 知らせを取りはじめたか (2回始めると1分ごとの取り直しが2本になる) */
   var noticesStarted = false;
+  /** 最後に届いた未読の知らせの数 (apiNotifications の unread)。ベルの数と同じ */
+  var noticeUnread = 0;
 
   /** 知らせを取り、1分ごとに取り直す。1回だけ */
   function startNotices() {
@@ -1385,6 +1387,8 @@
       var data = res || { items: [], unread: 0 };
       renderNotices(data.items);
 
+      // 推しがひょっこり出るとき (js-oshi の oshiPeekPick) に、取り直さずにこの数を使う
+      noticeUnread = Number(data.unread) || 0;
       bellCount.textContent = data.unread;
       bellCount.hidden = !data.unread;
       bellBtn.title = data.unread

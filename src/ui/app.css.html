@@ -5502,6 +5502,32 @@ body.focus-mode .mobile-nav { display: none !important; }
 .oshi-bubble.is-in { opacity: 1; transform: none; }
 .oshi-bubble.is-out { opacity: 0; transform: translateY(8px); }
 .oshi-bubble .oshi-close { position: absolute; top: var(--sp-1); right: var(--sp-1); }
+/* ひょっこり (oshiPeekShow)。右下から小さく出て、8秒で引っ込む。左下の吹き出しとは別の器。押せば引っ込む */
+.oshi-peek {
+  position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 389;
+  max-width: min(320px, calc(100vw - 2 * var(--sp-4)));
+  opacity: 0; transform: translateY(24px);
+  transition: opacity var(--motion) ease-out, transform var(--motion) ease-out;
+}
+.oshi-peek.is-in { opacity: 1; transform: none; }
+.oshi-peek.is-out { opacity: 0; transform: translateY(24px); }
+.oshi-peek-btn {
+  display: flex; align-items: flex-end; gap: var(--sp-2); text-align: left; cursor: pointer;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-2);
+  background: var(--surface-raised); color: var(--ink);
+  border-radius: var(--radius); box-shadow: var(--hairline), var(--elev-2);
+}
+.oshi-peek-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oshi-peek-fig { flex: none; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; }
+.oshi-peek-fig .oshi-avatar { width: 44px; height: 44px; font-size: 18px; }
+.oshi-peek-speech { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.oshi-peek-line {
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--radius);
+  background: var(--accent-bg); color: var(--ink); font-size: 13px; line-height: 1.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oshi-peek, .oshi-peek.is-out { transition: none; transform: none; }
+}
 .oshi-figure { flex: none; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
 .oshi-img { width: 100%; height: 100%; object-fit: contain; }
 .oshi-avatar {
