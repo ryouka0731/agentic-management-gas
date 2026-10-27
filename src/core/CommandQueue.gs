@@ -181,9 +181,12 @@ function COMMAND_OPS() {
         var hit = list.filter(function (t) { return t.key === kind; })[0];
         template = (hit || list[0]).body;
       }
+      var parts = reportPartsPlain_(reportParts_(me, new Date()));
+      // 「✅片付けたもの」の節は形の前に付けて渡す。手元の道具の当てはめ (reportFill) は画面の写しで
+      // 変えられないので、節も形の字として届ける (画面も同じ字を形の前に付ける)
       return {
-        parts: reportPartsPlain_(reportParts_(me, new Date())),
-        template: plainText(template),
+        parts: parts,
+        template: plainText(parts.doneText + template),
         kind: plainText(kind),
       };
     },

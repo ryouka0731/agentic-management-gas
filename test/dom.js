@@ -255,7 +255,7 @@ const API_NAMES = [
   'apiSprintUpdate', 'apiScrumView', 'apiImpedimentList', 'apiImpedimentCreate',
   'apiImpedimentUpdate', 'apiImpedimentResolve', 'apiImpedimentReopen',
   'apiImpedimentComments', 'apiImpedimentComment', 'apiHistory',
-  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiSetReportKind', 'apiSetReportCustom', 'apiSearchIndex',
+  'apiProgress', 'apiSetTeamGoal', 'apiMyMilestones', 'apiCloseFeedback', 'apiMyToday', 'apiHomeActivity', 'apiHomeSummary', 'apiReportParts', 'apiReportCopied', 'apiSetReportKind', 'apiSetReportCustom', 'apiSearchIndex',
   'apiGameState', 'apiGameTop', 'apiGameJoin', 'apiSetGameEnabled', 'apiGameLevelSeen',
   'apiFocusOpen', 'apiFocusStart', 'apiFocusProve', 'apiFocusExtend', 'apiFocusEnd', 'apiFocusMine',
   'apiStashMainDrift', 'apiWhoAmI', 'apiOverview', 'apiDirtyFiles', 'apiCommitMany',
@@ -296,6 +296,9 @@ export function prefsFixture(over) {
     { key: 'terms.style', scope: 'me', type: 'enum', section: '表示', label: '言葉の表し方', help: '',
       options: [{ value: 'plain', label: '一般の言葉' }, { value: 'scrum', label: 'スクラムの言葉 (エンジニア向け)' }],
       def: 'plain' },
+    { key: 'nav.logo', scope: 'me', type: 'enum', section: '表示', label: 'ロゴを押したときに開く画面', help: '',
+      options: [{ value: 'home', label: 'ホーム' }, { value: 'issues', label: 'やること' }, { value: 'pulls', label: '確認依頼' }],
+      def: 'home' },
     { key: 'home.cards.turn', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'あなたの番', help: '', def: true },
     { key: 'home.cards.advice', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '改善のヒント', help: '', def: true },
     { key: 'home.cards.activity', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '草 (アクティビティ)', help: '', def: true },
@@ -371,6 +374,7 @@ export function prefsFixture(over) {
     effective: {
       startTab: v('start.tab'),
       termStyle: v('terms.style'),
+      logoTab: v('nav.logo'),
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team', 'ach']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),
@@ -591,7 +595,7 @@ export const DEFAULTS = {
     advice: [],
   },
   apiReportParts: {
-    parts: { today: [], tomorrow: [], troubles: [], date: '10/14 (水)', name: '中井' },
+    parts: { today: [], tomorrow: [], troubles: [], done: [], doneText: '', date: '10/14 (水)', name: '中井' },
     templates: [
       { key: 'three', name: '3節', body: '✅今日やったこと\n{今日}\n\n📅明日やること\n{明日}\n\n⛔️困っていること\n{困りごと}' },
       { key: 'today', name: '今日だけ', body: '✅今日\n{今日}' },
@@ -600,6 +604,7 @@ export const DEFAULTS = {
     kind: 'three',
     custom: '',
   },
+  apiReportCopied: { at: 0 },
   apiSetReportKind: (kind) => ({ kind }),
   // 中身があれば、同じ1回で「自分の形」を選んだことにもなる
   apiSetReportCustom: (text) => ({ custom: text, kind: text ? 'custom' : 'three' }),

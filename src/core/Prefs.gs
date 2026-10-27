@@ -256,6 +256,15 @@ function PREF_GROUPS_() {
           .map(function (t) { return { value: t.value, label: t.label }; }),
         def: 'home' }];
     },
+    nav: function () {
+      // 選べる画面は「最初に出す画面」と同じ並び (PREF_START_TABS_)。字を写さない
+      var scrum = scrumEnabled();
+      return [{ key: 'nav.logo', scope: 'me', type: 'enum', section: '表示',
+        label: 'ロゴを押したときに開く画面', help: '左上の SoftBanto の印と名前を押すと、この画面に移ります',
+        options: PREF_START_TABS_().filter(function (t) { return scrum || !t.scrum; })
+          .map(function (t) { return { value: t.value, label: t.label }; }),
+        def: 'home' }];
+    },
     terms: function () {
       // 言葉そのものは TERMS() (Terms.js) が唯一の定義。ここは表し方の選び方だけを持つ
       return [{ key: 'terms.style', scope: 'me', type: 'enum', section: '表示',
@@ -424,7 +433,7 @@ function PREF_GROUPS_() {
 function PREFS_SCHEMA() {
   var groups = PREF_GROUPS_();
   var out = [];
-  ['start', 'terms', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'sound', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
+  ['start', 'terms', 'nav', 'home', 'fun', 'luck', 'oshi', 'ach', 'focus', 'room', 'sound', 'calendar', 'style', 'notify', 'usage', 'advice', 'stale', 'report', 'goals', 'cowork'].forEach(function (g) {
     out = out.concat(groups[g]());
   });
   return out;
@@ -697,6 +706,7 @@ function apiPrefs(opts) {
     effective: {
       startTab: plainText(byKey['start.tab']),
       termStyle: plainText(byKey['terms.style']),
+      logoTab: plainText(byKey['nav.logo']),
       homeCards: cards,
       fun: fun,
       luck: { on: byKey['luck.on'] === true, reward: byKey['luck.reward'] === true },

@@ -316,6 +316,25 @@ describe('前進を見せる (意欲づけ)', () => {
     expect(heads).toEqual(['今日片づけたもの', '最近の実績', 'チームの前進']);
   });
 
+  it('前の営業日に片付けたものの節を先頭に付けて写し、写したことを覚える。無ければ節を出さない', async () => {
+    const copied = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true,
+      value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } });
+    const app = mount({ apiReportParts: { ...DEFAULTS.apiReportParts, kind: 'today', parts: { ...DEFAULTS.apiReportParts.parts,
+      done: [{ number: 5, title: '金曜の分' }], doneText: '✅片付けたもの (10/16 (金) から)\n- #5 金曜の分\n\n' } } });
+    const card = document.querySelector('#home-cards .my-today');
+    Array.from(card.querySelectorAll('button')).find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied.pop()).toBe('✅片付けたもの (10/16 (金) から)\n- #5 金曜の分\n\n✅今日\n- 特になし');
+    expect(app.calls.some((c) => c.name === 'apiReportCopied')).toBe(true);
+
+    mount({ apiReportParts: { ...DEFAULTS.apiReportParts, kind: 'today' } });
+    Array.from(document.querySelector('#home-cards .my-today').querySelectorAll('button'))
+      .find((b) => b.textContent === '日報にコピー').click();
+    await Promise.resolve();
+    expect(copied.pop()).toBe('✅今日\n- 特になし');
+  });
+
   it('今日まだ何も無いときは「これから」と書く', () => {
     mount();
     const card = document.querySelector('#home-cards .my-today');

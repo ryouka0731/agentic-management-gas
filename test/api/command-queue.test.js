@@ -199,6 +199,18 @@ describe('自分の様子を見る命令 (homeMine / homeAdvice / reportDraft)',
       .toBe(ctx.REPORT_TEMPLATES()[0].body);
   });
 
+  it('日報の下書き: 前の営業日に片付けたものの節を形の前に付けて渡す (画面と同じ字)', () => {
+    const { ctx } = makeEnv({ file: false });
+    const n = ctx.apiIssueCreate('昨日片付けた', '', [], '', { assignee: OTHER }).number;
+    ctx.issueClose(n, null);
+    ctx.dbUpdate('issues', 'number', n, { closedAt: new Date(Date.now() - 24 * 3600 * 1000 * 1) });
+    const parts = ctx.reportParts_(OTHER, new Date());
+    const draft = ctx.runCommand_({ op: 'reportDraft', args: { kind: 'plain' } }, OTHER);
+    // 前の営業日が昨日でない曜日 (月曜・日曜) でも、節の字と形の前に付く字は同じ
+    expect(draft.template).toBe(parts.doneText + '{今日}');
+    expect(draft.parts.doneText).toBe(parts.doneText);
+  });
+
   it('キューを通すと、命令ファイルの持ち主が置いた人になる', () => {
     const { ctx } = makeEnv({ file: false });
     const n = ctx.apiIssueCreate('ほかの人の期限', '', [], '', { assignee: OTHER }).number;

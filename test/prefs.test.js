@@ -92,6 +92,24 @@ describe('一覧', () => {
     ctx.scrumSetEnabled_(true);
     expect(item(ctx, 'start.tab').options.map((o) => o.value)).toContain('sprint');
   });
+
+  it('ロゴを押したときに開く画面 (nav.logo): 自分の設定で既定はホーム。選べる画面は最初の画面と同じ並び', () => {
+    const { ctx } = setup();
+    const logo = item(ctx, 'nav.logo');
+    expect(logo).toMatchObject({ scope: 'me', type: 'enum', def: 'home', section: '表示' });
+    expect(logo.options).toEqual(item(ctx, 'start.tab').options);
+    expect(ctx.apiPrefs().effective.logoTab).toBe('home');
+    ctx.apiPrefSet('nav.logo', 'issues');
+    expect(ctx.apiPrefs().effective.logoTab).toBe('issues');
+    expect(() => ctx.apiPrefSet('nav.logo', 'nowhere')).toThrow();
+    // スクラムの画面は、オンのときだけ選べる。オフに戻せば既定 (ホーム) に倒れる
+    expect(() => ctx.apiPrefSet('nav.logo', 'sprint')).toThrow();
+    ctx.scrumSetEnabled_(true);
+    ctx.apiPrefSet('nav.logo', 'sprint');
+    expect(ctx.prefGet_('nav.logo', ME)).toBe('sprint');
+    ctx.scrumSetEnabled_(false);
+    expect(ctx.prefGet_('nav.logo', ME)).toBe('home');
+  });
 });
 
 describe('検査', () => {

@@ -780,12 +780,113 @@ function reportParts_(email, now) {
   }
 
   var day = motivationDay_(now);
-  var dow = '日月火水木金土'.charAt(new Date(day + 'T00:00:00Z').getUTCDay());
+  var done = reportDone_(me, now);
   return {
     today: myToday_(me, now),
     tomorrow: next.slice(0, 10),
     troubles: troubles,
-    date: Number(day.substring(5, 7)) + '/' + Number(day.substring(8, 10)) + ' (' + dow + ')',
+    done: done.items,
+    doneText: reportDoneText_(done),
+    date: reportDayLabel_(day),
     name: memberNames([me])[me] || me,
   };
+}
+
+/**
+ * 'YYYY-MM-DD' を「10/14 (水)」の形にする。
+ *
+ * @param {string} day
+ * @returns {string}
+ */
+function reportDayLabel_(day) {
+  var dow = '日月火水木金土'.charAt(new Date(day + 'T00:00:00Z').getUTCDay());
+  return Number(day.substring(5, 7)) + '/' + Number(day.substring(8, 10)) + ' (' + dow + ')';
+}
+
+/**
+ * 日報の「片付けたもの」が見る間。**「昨日」の決め方はここだけに置く。** 日付は東京で比べる。
+ *
+ * - 前の営業日 (月曜・土曜・日曜なら金曜) の0時から、今日の0時まで。週末に片付けたものも入る
+ * - 前回の自分の日報 (写した時刻 `reportLastAt_`) がその間にあれば、それより後だけ
+ *   (前回の日報の「✅今日」に入れたものを二度書かない)
+ * - 祝日は数えない (祝日を持つ台帳が無い)
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {{from: string, to: string, after: number}} from 以上 to 未満の日。after はミリ秒 (0 は無し)
+ */
+function reportSince_(email, now) {
+  var today = motivationDay_(now);
+  var dow = new Date(today + 'T00:00:00Z').getUTCDay();
+  var from = homeAddDay_(today, dow === 1 ? -3 : dow === 0 ? -2 : -1);
+  var last = reportLastAt_(email);
+  var lastDay = last ? motivationDay_(new Date(last)) : '';
+  return { from: from, to: today, after: lastDay && lastDay >= from && lastDay < today ? last : 0 };
+}
+
+/**
+ * 前回の自分の日報 (画面で写した時刻)。鍵にアドレスを入れる (reportKind_ と同じ理由)。
+ *
+ * @param {string} email
+ * @returns {number} ミリ秒。無ければ 0
+ */
+function reportLastAt_(email) {
+  var v = Number(PropertiesService.getUserProperties().getProperty('REPORT_AT:' + email) || 0);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * 日報を写した時刻を覚える。次の日報の「片付けたもの」はこれより後だけになる。
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {number}
+ */
+function reportMarkSent_(email, now) {
+  var t = now.getTime();
+  PropertiesService.getUserProperties().setProperty('REPORT_AT:' + email, String(t));
+  return t;
+}
+
+/**
+ * 前の営業日に片付けたやること (reportSince_ の間)。本人のぶんだけ。
+ * 担当がいれば担当、空なら閉じた人で決める (myToday_ と同じ motivationCredited_)。
+ *
+ * @param {string} email
+ * @param {Date} now
+ * @returns {{items: Array<{number: number, title: string}>, from: string, to: string}}
+ */
+function reportDone_(email, now) {
+  var me = String(email || '');
+  var span = reportSince_(me, now);
+  var items = [];
+  if (!me) return { items: items, from: span.from, to: span.to };
+  var closers = motivationClosers_();
+  var issues = dbReadAll('issues');
+  for (var i = 0; i < issues.length; i++) {
+    var row = issues[i];
+    if (String(row.state) !== 'closed') continue;
+    var day = motivationDay_(row.closedAt);
+    if (!day || day < span.from || day >= span.to) continue;
+    if (span.after && new Date(row.closedAt).getTime() <= span.after) continue;
+    if (motivationCredited_(row, closers).indexOf(me) < 0) continue;
+    items.push({ number: Number(row.number), title: String(row.title || '') });
+  }
+  items.sort(function (a, b) { return a.number - b.number; });
+  return { items: items, from: span.from, to: span.to };
+}
+
+/**
+ * 日報の先頭に置く「✅片付けたもの」の節。**下書きの字はここだけで作る** (画面も手元の道具も
+ * これを形の前に付けてから当てはめる)。片付けたものが無ければ空 (節ごと出さない)。
+ *
+ * @param {{items: object[], from: string, to: string}} done reportDone_
+ * @returns {string}
+ */
+function reportDoneText_(done) {
+  if (!done.items.length) return '';
+  var label = reportDayLabel_(done.from) + (homeAddDay_(done.from, 1) < done.to ? ' から' : '');
+  return ['✅片付けたもの (' + label + ')'].concat(done.items.map(function (x) {
+    return '- #' + x.number + ' ' + x.title;
+  })).join('\n') + '\n\n';
 }

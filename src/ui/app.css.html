@@ -4070,6 +4070,15 @@ button.gantt-name { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
   min-width: 0;
 }
 
+/* 印と名前は押せる (nav.logo の画面へ)。行の形はそのまま、指の形と押せる範囲だけ足す */
+.brand-home {
+  align-self: flex-start;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.brand-home:hover .brand-name { text-decoration: underline; }
+
 .brand-mark {
   flex: 0 0 auto;
   width: 26px;
