@@ -114,6 +114,20 @@ function OSHI_BUILTINS() {
 }
 
 /**
+ * 最初からいるキャラの絵の版。**絵 (assets/oshi-default/) を差し替えたら1つ上げる。**
+ *
+ * 画面はこの絵をブラウザ (IndexedDB) に覚え、2回目からは取りに行かない (js-oshi の oshiDefaultImage)。覚える鍵に
+ * この版を含めるので、上げると古い絵は使われずに取り直され、見つけたものから消える。上げ忘れると、配り直しても
+ * 前に開いた人の画面には古い絵が残る。test/oshi-default.test.js が絵の中身の指紋とこの版の組を固定していて、
+ * 絵だけ変えると落ちる (落ちたら、ここを上げてテストの指紋を書き直す)。
+ *
+ * @returns {number}
+ */
+function OSHI_DEFAULT_IMAGE_VERSION() {
+  return 1;
+}
+
+/**
  * @param {string} key
  * @returns {{key: string, name: string, tone: string}|null}
  */

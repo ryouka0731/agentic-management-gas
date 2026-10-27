@@ -690,7 +690,11 @@ describe('最初からいるキャラ', () => {
     expect(ctx.apiOshiDefaultImage('itsuki', 'chibi', 'praise').dataUrl).toBe(before);
     expect(JSON.stringify(ctx.apiOshiGet())).not.toContain('data:image/webp');
     const v = ctx.apiOshiDefaultImage('taku', 'normal', 'grow3');
-    expect(Object.values(v).every((x) => typeof x === 'string')).toBe(true);
+    // 絵の版 (version) だけが数。画面はこれを鍵に含めてブラウザに覚える
+    const { version, ...rest } = v;
+    expect(Object.values(rest).every((x) => typeof x === 'string')).toBe(true);
+    expect(version).toBe(ctx.OSHI_DEFAULT_IMAGE_VERSION());
+    expect(ctx.apiOshiGet().defaultImageVersion).toBe(ctx.OSHI_DEFAULT_IMAGE_VERSION());
   });
 });
 
