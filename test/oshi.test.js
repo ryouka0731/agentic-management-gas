@@ -61,8 +61,35 @@ describe('定義 (Oshi.js)', () => {
     for (const e of pure.OSHI_EVENTS()) expect(states.has(e.state), e.key).toBe(true);
   });
 
+  it('絵を押した場面 (なでられた・つつかれた・くすぐられた) は全口調に3〜4本あり、続けて押されたときの一言は口調ごとに1本', () => {
+    const touch = pure.OSHI_EVENTS().filter((e) => e.touch);
+    expect(touch.map((e) => [e.key, e.label, e.state])).toEqual([
+      ['pat', 'なでられた', 'praise'], ['poke', 'つつかれた', 'surprise'], ['tickle', 'くすぐられた', 'celebrate']]);
+    const lines = pure.OSHI_LINES();
+    const much = pure.OSHI_TOUCH_MUCH_LINES();
+    expect(Object.keys(much).sort()).toEqual(pure.OSHI_TONES().map((t) => t.key).sort());
+    for (const t of pure.OSHI_TONES()) {
+      for (const e of touch) {
+        expect(lines[t.key][e.key].length, t.key + '.' + e.key).toBeGreaterThanOrEqual(3);
+        expect(lines[t.key][e.key].length, t.key + '.' + e.key).toBeLessThanOrEqual(4);
+        // でたらめに選んで直前と違う字にするので、同じ字を並べない
+        expect(new Set(lines[t.key][e.key]).size, t.key + '.' + e.key).toBe(lines[t.key][e.key].length);
+      }
+      expect(typeof much[t.key]).toBe('string');
+      expect(much[t.key], t.key).toContain('くすぐった');
+      expect(Array.from(much[t.key]).length, t.key).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      expect(pure.oshiTouchMuchLine(t.key)).toBe(much[t.key]);
+    }
+    expect(pure.oshiTouchMuchLine('nobody')).toBe(much.polite);
+    expect(pure.oshiTouchMuchLine('__proto__')).toBe(much.polite);
+    // 口調の決まりは一言にも効く
+    expect(much.gothic).toContain('のだ');
+    expect(much.sharp).not.toMatch(/です|ます|！/);
+    expect(much.fluffy).toContain('〜');
+  });
+
   it('キャラクターは叱らない (責める・急かす言葉を持たない)', () => {
-    const all = JSON.stringify(pure.OSHI_LINES());
+    const all = JSON.stringify(pure.OSHI_LINES()) + JSON.stringify(pure.OSHI_TOUCH_MUCH_LINES());
     for (const bad of ['ダメ', 'だめ', 'なぜ', 'まだ終わって', '遅い！', 'サボ', '怒', '連続', '毎日']) {
       expect(all.includes(bad), bad).toBe(false);
     }
