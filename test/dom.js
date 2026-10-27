@@ -296,6 +296,9 @@ export function prefsFixture(over) {
     { key: 'terms.style', scope: 'me', type: 'enum', section: '表示', label: '言葉の表し方', help: '',
       options: [{ value: 'plain', label: '一般の言葉' }, { value: 'scrum', label: 'スクラムの言葉 (エンジニア向け)' }],
       def: 'plain' },
+    { key: 'nav.logo', scope: 'me', type: 'enum', section: '表示', label: 'ロゴを押したときに開く画面', help: '',
+      options: [{ value: 'home', label: 'ホーム' }, { value: 'issues', label: 'やること' }, { value: 'pulls', label: '確認依頼' }],
+      def: 'home' },
     { key: 'home.cards.turn', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: 'あなたの番', help: '', def: true },
     { key: 'home.cards.advice', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '改善のヒント', help: '', def: true },
     { key: 'home.cards.activity', scope: 'me', type: 'bool', section: 'ホームに出すもの', label: '草 (アクティビティ)', help: '', def: true },
@@ -371,6 +374,7 @@ export function prefsFixture(over) {
     effective: {
       startTab: v('start.tab'),
       termStyle: v('terms.style'),
+      logoTab: v('nav.logo'),
       homeCards: ['turn', 'advice', 'activity', 'game', 'recent', 'team', 'ach']
         .reduce((o, k) => Object.assign(o, { [k]: v('home.cards.' + k) }), {}),
       fun: ['combo', 'words', 'cheer'].reduce((o, k) => Object.assign(o, { [k]: v('fun.' + k) === true }), {}),

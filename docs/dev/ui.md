@@ -234,6 +234,16 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **幅の広い画面で右に偏らないように**、ホームの中身は `max-width: 1360px` で真ん中に寄せ、1440px 以上では主と従を半々にして
   右のカード (`.home-cards`) を2列に並べる (縦に積み上がらない)。1024〜1439px は 2fr / 1fr のまま
 
+## 左上のロゴ (`fillBrand`)
+
+- **印と名前の行 (`.brand-home`) は押せる** (やること #106「番頭のロゴを押したら、あらかじめ設定した頁に飛ぶ」)。`role="link"`・
+  `tabindex="0"` の span で、押す・Enter・Space で `switchTab(brandTarget())`。Space は `preventDefault` (画面を流さない)、
+  押しっぱなしの繰り返し (`e.repeat`) では移り直さない。button にしないのは、jsdom がキーで click を起こさずテストで示せないのと、
+  キーの手当てと本物の button の click が二重に走るのを避けるため。居場所のリンク (`.brand-place`) は入れ子にしない (行の外に置く)
+- **行き先は自分の設定 `nav.logo`** (`prefs.effective.logoTab`。既定・届く前はホーム)。左の行き先に無い・`[hidden]` の中の画面は
+  ホームに倒す。`aria-label` は「SoftBanto (そふと番頭): ◯◯へ」で、◯◯は左の行き先の `.nav-label` の字から取る (画面の名前を写さない。
+  言葉の表し方にも従う)。設定が届いたとき (`applyPrefs` → `brandPrefsChanged`) に付け直す。テストは `test/component/brand.test.js`
+
 ## 画面の落とし穴
 
 (元は「落とし穴」の項目)

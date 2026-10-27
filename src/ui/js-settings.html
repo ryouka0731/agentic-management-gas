@@ -221,6 +221,7 @@
     var styleBefore = termStyleNow();
     prefs = res || prefs;
     if (termStyleNow() !== styleBefore) refreshTerms();
+    brandPrefsChanged();
     applyHomeCards();
     if (!prefUsageOn()) usageBuffer = {};
     funPrefsChanged();

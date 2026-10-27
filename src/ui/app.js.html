@@ -766,9 +766,20 @@
 
     // 印と名前は横に並べ、何をする道具かは下に一行で置く。名前の横に
     // 足すと、260px の帯では名前が潰れる
+    // 印と名前は押せる。自分の設定 nav.logo の画面 (既定はホーム) へ移る (やること #106)。
+    // 中の居場所のリンク (brand-place) を入れ子にしないため、押せるのはこの行だけ
     var row = document.createElement('span');
-    row.className = 'brand-row';
+    row.className = 'brand-row brand-home';
+    row.setAttribute('role', 'link');
+    row.tabIndex = 0;
     row.appendChild(makeLogo());
+    row.addEventListener('click', function () { switchTab(brandTarget()); });
+    row.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      // Space で画面を流さない。押しっぱなしの繰り返しでは移り直さない
+      e.preventDefault();
+      if (!e.repeat) switchTab(brandTarget());
+    });
 
     var words = document.createElement('span');
     words.className = 'brand-words';
@@ -785,6 +796,7 @@
 
     row.appendChild(words);
     host.appendChild(row);
+    brandPrefsChanged();
 
     var tag = document.createElement('span');
     tag.className = 'brand-tag';
@@ -794,6 +806,27 @@
     attachHint(host,
       '文書の版を残し、確認を経て反映する道具です。通称は「番頭」です');
     // ワークスペースの名前 (fillWorkspace) は最初の波で取る (js-start の bootHomeWave)。文書のリンクでは取らない
+  }
+
+  /**
+   * ロゴを押したときに開く画面。自分の設定 nav.logo (`effective.logoTab`) で、届く前と、
+   * 左の行き先に無い・隠れている画面 (スクラムがオフなど) はホーム。
+   *
+   * @returns {string}
+   */
+  function brandTarget() {
+    var tab = String((prefs && prefs.effective && prefs.effective.logoTab) || 'home');
+    var nav = document.querySelector('.nav-item[data-tab="' + tab + '"]');
+    return nav && !nav.closest('[hidden]') ? tab : 'home';
+  }
+
+  /** ロゴの読み上げの字を、いまの行き先に合わせる。名前は左の行き先の字から取る (写さない) */
+  function brandPrefsChanged() {
+    var row = document.querySelector('#brand .brand-home');
+    if (!row) return;
+    var tab = brandTarget();
+    var label = document.querySelector('.nav-item[data-tab="' + tab + '"] .nav-label');
+    row.setAttribute('aria-label', 'SoftBanto (そふと番頭): ' + ((label && label.textContent) || 'ホーム') + 'へ');
   }
 
   /**
