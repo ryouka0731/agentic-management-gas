@@ -153,7 +153,15 @@ export function mountApp(responses, options) {
          * 残す (batched: true) ので、名前で数えるテストはそのまま通る。遅らせた返事 (later) が混ざれば、
          * 全部そろってから返す
          */
-        // 口そのものの返事を差し替えたとき (Error / 配列 / それを返す関数) は、下の表の扱いに任せる
+        /*
+         * 返事の扱いが投げたものは、実物と同じく呼んだ側には戻さず (実物は返事が非同期に届く)、受け止められなかった
+         * 例外として控える (mount.js が afterEach で落とす)。画面の中の状態は投げる手前まで進んでいる
+         */
+        const deliver = (fn, v) => {
+          if (!fn) return;
+          try { fn(v); } catch (e) { uncaught.push(e); }
+        };
+        // 口そのものの返事を差し替えたとき (Error / 配列 / それを返す関数) は、下の表の扱いに任せる。関数は1回だけ呼ぶ
         const bootOverride = name === 'apiBoot' && typeof table.apiBoot === 'function' ? table.apiBoot(...args) : table.apiBoot;
         if (name === 'apiBoot' && !(options && options.transport) && !(bootOverride instanceof Error)
           && !Array.isArray(bootOverride)) {
@@ -162,7 +170,7 @@ export function mountApp(responses, options) {
           let left = list.length;
           const settle = () => {
             left -= 1;
-            if (left === 0 && onSuccess) onSuccess(structuredClone(results));
+            if (left === 0) deliver(onSuccess, structuredClone(results));
           };
           list.forEach((n, i) => {
             calls.push({ name: n, args: [], batched: true });
@@ -177,7 +185,7 @@ export function mountApp(responses, options) {
             results[i] = { ok: true, value: v === undefined ? null : v };
             settle();
           });
-          if (!list.length && onSuccess) onSuccess([]);
+          if (!list.length) deliver(onSuccess, []);
           return;
         }
         if (name === 'apiBoot') {
@@ -190,24 +198,24 @@ export function mountApp(responses, options) {
           return;
         }
 
-        let value = table[name];
+        let value = name === 'apiBoot' ? bootOverride : table[name];
         if (typeof value === 'function') value = value(...args);
 
         if (value instanceof Error) {
-          if (onFailure) onFailure(value);
+          deliver(onFailure, value);
           return;
         }
         // 返事を遅らせる。{ later: (ok, ng) => ... } を返すと、ハンドラを
         // 受け取って好きな時に返せる。返事が届く順を入れ替えるのに使う
         if (value && typeof value.later === 'function') {
           // 遅らせた返事も同じく写しを渡す (下の即時の返事と同じ理由)
-          const ok = onSuccess ? (v) => onSuccess(v === undefined ? null : structuredClone(v)) : () => {};
-          value.later(ok, onFailure || (() => {}));
+          const ok = (v) => deliver(onSuccess, v === undefined ? null : structuredClone(v));
+          value.later(ok, (e) => deliver(onFailure, e));
           return;
         }
         // 実物は返事を運ぶときに写しを作る。同じ物を渡すと、画面が返事に書き込んだ
         // 分 (名前を決めたときの peopleNames など) が DEFAULTS に残り、後のテストに漏れる
-        if (onSuccess) onSuccess(value === undefined ? null : structuredClone(value));
+        deliver(onSuccess, value === undefined ? null : structuredClone(value));
       };
     });
     return runner;

@@ -2239,7 +2239,8 @@
   }
 
   /**
-   * 開いた直後の、台帳を読むだけの軽い api はまとめて1本 (apiBoot) で取る。
+   * 開いた直後の、台帳を読むだけの軽い api はまとめて1本 (apiBoot) で取る (左の行き先・上の段の3本と、前進の返事のあとの
+   * カードの3本。ホームの動きの一覧は1本だけ残るので入れない)。
    *
    * 1本ごとにサーバの起動代 (0.3〜1秒) がかかり、ブラウザは同時の接続を6本ほどに絞る。本番で1つの実行の中で
    * 順に呼ぶと、ここに挙げたものは合わせて2秒ほど (2026-10-27)。Drive を読む重いもの (文書の一覧・ホームの要約・
@@ -2252,7 +2253,7 @@
    * 最初の波が閉じたあとは1本ずつ (まとめない)。
    */
   var BOOT_BATCH_NAMES = [
-    'apiWorkspace', 'apiSettings', 'apiWhoAmI', 'apiHomeActivity',
+    'apiWorkspace', 'apiSettings', 'apiWhoAmI',
     'apiMyMilestones', 'apiGameState', 'apiGameTop',
   ];
   /** hold: js-start が投げ終えるまでは、返事の扱いの終わりでも送らない (投げ終えたときに1本にまとめる) */
@@ -2306,22 +2307,35 @@
     google.script.run
       .withSuccessHandler(function (res) {
         var list = res && res.length === items.length ? res : null;
-        for (var i = 0; i < items.length; i++) {
-          var r = list ? list[i] : null;
-          // 1つの扱いが投げても、残りの返事は配る (配らないと最初の波の数が戻らず、急がないものが15秒待つ)
-          try {
-            if (r && r.ok === true) items[i].ok(r.value === undefined ? null : r.value);
-            else if (r && r.ok === false) items[i].ng(new Error(r.error || 'まとめて取れませんでした'));
-            // 返事の形が合わない (古い画面と新しいサーバなど) ものは、1本ずつ取り直す
-            else bootBatchOne(items[i]);
-          } catch (e) {
-            if (window.console) console.warn('開いた直後の返事を扱えませんでした: ' + items[i].name, e);
+        var first = null;
+        // 配っているあいだは1つの扱いとして数える (扱いが投げた続きを、配り終えてから1本にまとめる)
+        bootBatchEnter();
+        try {
+          for (var i = 0; i < items.length; i++) {
+            var r = list ? list[i] : null;
+            if (r && (r.ok === true || r.ok === false)) {
+              // 1つの扱いが投げても、残りの返事は配る (配らないと最初の波の数が戻らず、急がないものが15秒待つ)。
+              // 握りつぶさず、配り終えてから投げ直す (壊れた扱いに気づけるように)
+              try {
+                if (r.ok === true) items[i].ok(r.value === undefined ? null : r.value);
+                else items[i].ng(new Error(r.error || 'まとめて取れませんでした'));
+              } catch (e) {
+                if (!first) first = e;
+              }
+            } else {
+              // 返事の形が合わない (古い画面と新しいサーバなど) ものは、1本ずつ取り直す
+              bootBatchOne(items[i]);
+            }
           }
+        } finally {
+          bootBatchLeave();
         }
+        if (first) throw first;
       })
       .withFailureHandler(function () {
         // まとめて取る口そのものが落ちたら、1本ずつ取り直す (まとめる前と同じ動きに戻る)
-        items.forEach(bootBatchOne);
+        bootBatchEnter();
+        try { items.forEach(bootBatchOne); } finally { bootBatchLeave(); }
       })
       .apiBoot(names);
   }
@@ -2470,16 +2484,16 @@
     var ok = onOk || function () {};
     // 開いた直後の最初の波の中で投げたものなら数える。返事 (成功でも失敗でも) で数を戻す (bootWaveDone)
     var inBoot = bootWaveCount();
-    // 返事の扱いが投げた続き (前進 → カードの5本) は、扱いの終わりでまとめて送る (bootBatchFlush)
-    var run = google.script.run
-      .withSuccessHandler(function (res) {
-        bootBatchEnter();
-        try { okOf(res); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
-      })
-      .withFailureHandler(function (err) {
-        bootBatchEnter();
-        try { failOf(err); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
-      });
+    // 返事の扱い。扱いが投げた続き (前進 → カードの3本) は、扱いの終わりでまとめて送る (bootBatchLeave)。
+    // まとめて取るときも1本で投げるときも同じもの (2つに写すと、片方だけ直して食い違う)
+    var onRes = function (res) {
+      bootBatchEnter();
+      try { okOf(res); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
+    };
+    var onErr = function (err) {
+      bootBatchEnter();
+      try { failOf(err); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
+    };
 
     function okOf(res) {
       if (searchIndexChangedBy(name)) searchIndexStale();
@@ -2525,13 +2539,8 @@
     }
 
     // 開いた直後の軽いものはまとめて取る (bootBatchTake)。預かられなければ1本で投げる
-    if (!again && bootBatchTake(name, args, function (res) {
-      bootBatchEnter();
-      try { okOf(res); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
-    }, function (err) {
-      bootBatchEnter();
-      try { failOf(err); } finally { if (inBoot) bootWaveDone(); bootBatchLeave(); }
-    })) return;
+    if (!again && bootBatchTake(name, args, onRes, onErr)) return;
+    var run = google.script.run.withSuccessHandler(onRes).withFailureHandler(onErr);
     run[name].apply(run, args || []);
   }
 
