@@ -207,6 +207,8 @@
     call('apiWhoAmI', [], function (who) {
       currentUser = (who || {}).activeUser || '';
       drawMe();
+      // 待つあいだの推しは、前回の覚えが本人のものと分かってから出す (js-oshi の oshiWaitRefresh)
+      oshiWaitRefresh();
     }, failQuiet('判定できなければ従来どおり押せる'));
     // ベルの数
     startNotices();

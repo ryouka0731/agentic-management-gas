@@ -21,7 +21,12 @@
     homeLine = { turn: null, today: null };
     renderHomeLine();
     // 返事が届くまでの骨組み (スケルトン)。空のときだけ置く (開き直したときは、前の中身を新しい返事が来るまで残す)
-    homeSkeletonInto(homeTurnEl, 'あなたの番', 3);
+    // あなたの番の骨組みには、待つあいだ推しの絵と一言を添える (oshiWaitInto。推しがオンのときだけ。js-oshi)
+    var turnSkel = homeSkeletonInto(homeTurnEl, 'あなたの番', 3);
+    if (turnSkel) {
+      turnSkel.setAttribute('data-oshi-wait', '');
+      oshiWaitInto(turnSkel);
+    }
     homeSkeletonInto(homeActivityEl, 'アクティビティ', 4);
     homeSkeletonInto(homeRecentEl, '最近の動き', 3);
     loadOverview();
@@ -241,9 +246,10 @@
    * @param {HTMLElement} host 区画
    * @param {string} title 見出し
    * @param {number} lines 棒の数
+   * @returns {HTMLElement|null} 置いた骨組み。置かなかった (区画が空でない) ときは null
    */
   function homeSkeletonInto(host, title, lines) {
-    if (!host || host.childNodes.length) return;
+    if (!host || host.childNodes.length) return null;
     var box = document.createElement('div');
     box.className = 'home-skel';
     box.appendChild(homeHead(title));
@@ -262,6 +268,7 @@
     box.appendChild(bars);
     host.setAttribute('aria-busy', 'true');
     host.appendChild(box);
+    return box;
   }
 
   /**
