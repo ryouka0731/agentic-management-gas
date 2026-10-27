@@ -26,7 +26,7 @@ clasp create-script --type standalone --title "SoftBanto" --rootDir src
 clasp push --force
 ```
 
-clasp 3.x の注意点:
+clasp 3.x には次の注意点がある。
 
 - `--type webapp` は `Invalid container file type` で失敗する。`standalone` で作り、Web アプリにするのは
   `src/appsscript.json` の `webapp` とデプロイで行う
@@ -127,7 +127,7 @@ npm run deploy -- "何を変えたか"
 
 ## 共有ドライブに置くとき
 
-入れ物は共有ドライブにも置ける。マイドライブとの違い:
+入れ物は共有ドライブにも置ける。マイドライブとの違いは次のとおり。
 
 - **持ち主が無いので**、共有ドライブの「管理者」(`organizer`) 全員を持ち主として扱う。管理者 (= 番頭の
   管理者) は `organizer` / `fileOrganizer` / `writer` の役割の人
