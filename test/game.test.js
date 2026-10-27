@@ -19,12 +19,15 @@ function setup() {
 const NOW = new Date('2026-10-14T03:00:00Z'); // 水曜。今週は 10/12 (月) から
 const TODAY = new Date('2026-10-14T02:00:00Z');
 
+// 作った日は、閉じた日の前の日にそろえる (待った日数は1日)。closedAt に new Date() を渡すテストで
+// 作った日を固定の 10/13 にしておくと、走らせた日が 10/27 以降のとき「長く止まっていた +2」が付き、
+// 数えるポイントが走らせた日で変わっていた
 function closed(ctx, title, patch) {
   const i = ctx.issueCreate(title, '', []);
   ctx.issueClose(i.number, null);
-  ctx.dbUpdate('issues', 'number', i.number, Object.assign({
-    createdAt: new Date('2026-10-13T01:00:00Z'), closedAt: TODAY,
-  }, patch || {}));
+  const fields = Object.assign({ closedAt: TODAY }, patch || {});
+  if (!('createdAt' in fields)) fields.createdAt = new Date(fields.closedAt.getTime() - 86400000);
+  ctx.dbUpdate('issues', 'number', i.number, fields);
   return i.number;
 }
 
