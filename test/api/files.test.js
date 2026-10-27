@@ -9,7 +9,7 @@ import { makeEnv, withPr, expectScreenSafe, expectRefused, snapshotDb, asUser, O
  */
 
 describe('apiListFiles', () => {
-  it('道のり順に {fileId, path, type} を返し、Drive で消された文書は出さない', () => {
+  it('道のり順に {fileId, path, type} と見直しの欄を返し、Drive で消された文書は出さない', () => {
     const { ctx, fake, config, fileId } = makeEnv();
     const sheet = ctx.SpreadsheetApp.create('名簿');
     fake.DriveApp.getFileById(sheet.getId()).moveTo(fake.DriveApp.getFolderById(config.mainId));
@@ -17,7 +17,8 @@ describe('apiListFiles', () => {
 
     const out = expectScreenSafe(ctx.apiListFiles());
     expect(out.map((f) => f.path)).toEqual(['A名簿.sheet', '就業規則.doc']);
-    expect(out[1]).toEqual({ fileId, path: '就業規則.doc', type: 'doc' });
+    expect(out[1]).toEqual({ fileId, path: '就業規則.doc', type: 'doc', reviewDue: '', reviewAssignee: '',
+      reviewNoticeDays: 30, reviewIssuedFor: '', reviewDaysLeft: '' });
 
     fake.DriveApp.getFileById(fileId).setTrashed(true);
     // Drive にあるかの覚え (FILES_PRESENT_CACHE_SEC) が切れてから消える (docs/dev/user-paths.md)

@@ -832,3 +832,26 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - 「文書に改訂履歴の表を書く」は `canExport` が false なら押せなくし、`exportBlocked` を title と横の字に出す (管理者でない・Slides)。
   押すと帯 (`openConfirmStrip`) で「確認依頼は通りません」と確かめてから `apiRevisionExport`。済んだら一覧と記録の状態を取り直す
 - 試すのは `test/component/revisions.test.js`
+## 繰り返し (`js-recur`)
+
+やることの頁の見え方の1つ (`viewBtns.recur` / `#recur-list`)。一覧・作る・直す・止める・消すだけで、作るやることそのものは1日1回の回が作る
+(`src/core/Recurrence.gs`。画面からは起票しない)。
+
+- 返事は `apiRecurrenceList` の形 (`ruleText` / `nextOn` / `issueOn` / `canEdit`)。**周期の字・次の対象日はサーバが決める** (暦の計算は
+  `src/core/RecurrenceRule.js` にだけ置き、画面に写さない。写すと月末の丸めが片方だけずれる)。画面は `'YYYY-MM-DD'` を「10月31日」にするだけ
+- 押せるかはサーバの `canEdit` で決める (作った人と管理者)。押せないボタンは `disabled` にして理由を添える
+- 作る・直す欄は `openInlineForm` で組み、周期の種類に合わない欄 (毎週の「日」、毎月の「曜日」「月」) は `hidden` で隠す。担当は
+  `attachAssigneePicker` (やることと同じ「@」で選ぶ形)
+- 絞り込み・まとめ方・「自分の担当だけ」は効かないので隠す (捨てたものと同じ)
+- テストは `test/component/recur.test.js`
+
+## 文書の見直しの期日 (`js-docs` の `makeReviewPill` / `renderDocReview`)
+
+- 文書の一覧の札「見直し 11/30 (あと 33 日)」は `apiListFiles` の `reviewDue` / `reviewDaysLeft` / `reviewNoticeDays` から組む。**残り日数はサーバが
+  東京の今日で数える** (画面で数えると、端末の時刻帯で1日ずれる)。期日が無ければ出さない
+- 色は既存のトークンだけ (`.chip-review-late` = `--danger` / `--danger-bg`、`.chip-review-soon` = `--warn` / `--warn-bg`)。色だけに頼らず字にも
+  「過ぎ」「今日」と書く。札の形は `makePill` に任せる (`docs/dev/design.md`)
+- 文書の画面では正式版を読んでいるときだけ `#doc-review-row` を出す (改訂版の版に切り替えたとき・文書だけの画面では隠す)。決める欄は
+  `openInlineForm` で、担当は `attachAssigneePicker`。保存したら `loadFiles` で一覧を取り直して行を描き直す
+- テストは `test/component/file-review.test.js`
+

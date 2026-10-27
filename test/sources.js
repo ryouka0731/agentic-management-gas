@@ -48,6 +48,7 @@ export const CORE_SOURCES = [
   'src/core/CalendarPlan.js', 'src/core/CalendarSync.gs', 'src/core/MeetingNotes.js', 'src/core/MeetingNotesImport.gs',
   'src/core/CoworkLink.js', 'src/core/Cowork.gs', 'src/core/Announcement.gs',
   'src/core/Revision.gs', 'src/render/RevisionWriter.gs',
+  'src/core/RecurrenceRule.js', 'src/core/Recurrence.gs', 'src/core/FileReview.gs',
 ];
 
 export const API_SOURCES = [
@@ -58,6 +59,7 @@ export const API_SOURCES = [
   'src/api/Calendar.gs', 'src/api/Achievements.gs', 'src/api/Boot.gs',
   'src/api/Outcomes.gs', 'src/api/Goals.gs', 'src/api/Reward.gs', 'src/api/Cowork.gs',
   'src/api/Announcement.gs', 'src/api/Revision.gs',
+  'src/api/Announcement.gs', 'src/api/Recurrence.gs',
 ];
 
 export const APP_SOURCES = CORE_SOURCES.concat(API_SOURCES);

@@ -13,7 +13,8 @@ const gas = loadGas('src/core/Db.gs');
  * 列を増やすときは、この表の**末尾に足す**こと。
  */
 const EXPECTED = {
-  files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha'],
+  files: ['fileId', 'path', 'type', 'registeredAt', 'registeredBy', 'baseSha',
+    'reviewDue', 'reviewAssignee', 'reviewNoticeDays', 'reviewIssuedFor'],
   commits: ['sha', 'parentSha', 'branch', 'fileId', 'blobSha', 'author', 'message', 'timestamp'],
   branches: ['name', 'headSha', 'baseSha', 'state', 'workingFolderId', 'createdBy', 'createdAt'],
   pulls: ['number', 'title', 'body', 'sourceBranch', 'targetBranch', 'state', 'author', 'createdAt', 'mergedAt', 'reviewers', 'targetFiles', 'staleReviewId', 'mergedBy', 'mergeReason'],
@@ -58,6 +59,8 @@ const EXPECTED = {
   announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
   // 取り込んだ Gemini のメモ。1つのメモに1行 (二度取り込まない)
   meeting_notes: ['docId', 'title', 'meeting', 'meetingAt', 'minutes', 'importedBy', 'importedAt', 'issueNumbers'],
+  recurrences: ['id', 'title', 'body', 'assignee', 'kind', 'weekday', 'day', 'month', 'dueDays', 'leadDays',
+    'active', 'lastIssuedFor', 'lastIssueNumber', 'createdBy', 'createdAt'],
 };
 
 describe('メタDBの列順', () => {

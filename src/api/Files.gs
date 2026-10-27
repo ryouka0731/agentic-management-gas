@@ -5,17 +5,23 @@
 /**
  * 管理対象ファイルの一覧を返す (Web App API)。
  *
- * @returns {object[]} {fileId, path, type} の配列
+ * @returns {object[]} {fileId, path, type, reviewDue, reviewAssignee, reviewNoticeDays, reviewIssuedFor,
+ *   reviewDaysLeft} の配列
  */
 function apiListFiles() {
   var rows = filesVisibleInWiki();
+  var today = recurrenceTodayOf(Date.now());
   var out = [];
   for (var i = 0; i < rows.length; i++) {
-    out.push({
+    var one = {
       fileId: plainText(rows[i].fileId),
       path: plainText(rows[i].path),
       type: plainText(rows[i].type),
-    });
+    };
+    // 見直しの期日 (やること #112)。期日・担当・何日前・あと何日 (過ぎていれば負)。期日が無ければ空
+    var review = fileReviewPlain_(rows[i], today);
+    for (var k in review) one[k] = review[k];
+    out.push(one);
   }
   out.sort(function (a, b) { return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0); });
   return out;
@@ -131,6 +137,21 @@ function apiRegisterFiles(fileIds) {
  */
 function apiUnregisterFile(fileId) {
   return repoUnregisterFile(fileId);
+}
+
+/**
+ * 文書の見直しの期日・担当・何日前を決める (Web App API。やること #112)。期日を空にすると外す。
+ *
+ * 文書の登録・外すと同じく、持ち主だけに絞らない (台帳の欄を直すだけで、文書そのものは触らない)。
+ *
+ * @param {string} fileId 正式版の文書
+ * @param {string} due 'YYYY-MM-DD' か ''
+ * @param {string} assignee 担当 (カンマ区切りのアドレス)
+ * @param {*} noticeDays 何日前に作るか (空は既定の30)
+ * @returns {object}
+ */
+function apiFileReviewSet(fileId, due, assignee, noticeDays) {
+  return fileReviewSet_(fileId, due, assignee, noticeDays);
 }
 
 /**

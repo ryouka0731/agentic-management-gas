@@ -31,6 +31,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | テストの依存 (`package.json` / `package-lock.json`)・カバレッジ・`test/harness.js` / `test/setup.js` / `test/dom.js` / `test/component/` | `docs/dev/testing.md` |
 | `debug*` (実機検証の入口) を足す・直す | `docs/dev/verification.md` |
 | やることを予定に入れる (`src/core/CalendarPlan.js` / `src/core/CalendarSync.gs` / `src/api/Calendar.gs` / `src/ui/js-calendar.html`) | `docs/dev/calendar.md` |
+| 繰り返しのやること (`src/core/RecurrenceRule.js` / `src/core/Recurrence.gs` / `src/api/Recurrence.gs` / `src/ui/js-recur.html`)・文書の見直しの期日 (`src/core/FileReview.gs` / `apiFileReviewSet`)・1日1回の回 (`recurrenceDailyOnce_`) | `docs/dev/locks-and-numbering.md` と `docs/dev/ledger-schema.md` と `docs/dev/command-queue.md` (権限は `docs/dev/permissions.md`、画面は `docs/dev/ui.md`) |
 | Gemini のメモの取り込み (`src/core/MeetingNotes.js` / `src/core/MeetingNotesImport.gs` / `apiMeetingNotesImport`・台帳 `meeting_notes`・命令 `meetingNotesImport`) | `docs/dev/calendar.md` と `docs/dev/ledger-schema.md` と `docs/dev/locks-and-numbering.md` |
 
 ## 名前
