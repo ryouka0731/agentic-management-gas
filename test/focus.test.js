@@ -79,6 +79,26 @@ describe('始める', () => {
     expect(rows[1].endedAt).toBeFalsy();
   });
 
+  it('終えていない前の記録がいくつあっても、締めるのは1回 (focus_sessions への書きは 締め1回 + 足す1回)', () => {
+    const { ctx, fake } = setup();
+    const n = issue(ctx);
+    // 開いたままの集中を2つ作る (始めるたびに前を締めるので、2つ目は台帳に直に足す)
+    ctx.apiFocusStart(n, 25, '', '');
+    ctx.dbAppendNumbered('focus_sessions', 'id', {
+      issueNumber: n, who: ME, plannedMinutes: 25, startedAt: new Date(), firstStep: '', provedAt: '',
+      endedAt: '', result: '', openedAt: '', extendedMinutes: 0, proofKind: '', columnAtStart: 'none',
+    });
+    expect(ctx.dbReadAll('focus_sessions').filter((r) => !r.endedAt).length).toBe(2);
+    const before = fake._sheetWrites('focus_sessions');
+
+    ctx.apiFocusStart(n, 25, '', '');
+
+    expect(fake._sheetWrites('focus_sessions') - before).toBe(2);
+    const rows = ctx.dbReadAll('focus_sessions');
+    expect(rows.slice(0, 2).map((r) => r.result)).toEqual(['left', 'left']);
+    expect(rows[2].endedAt).toBeFalsy();
+  });
+
   it('開いた時刻が先・1時間より前・読めないときは、空 (分からない) にする', () => {
     const { ctx } = setup();
     const n = issue(ctx);
