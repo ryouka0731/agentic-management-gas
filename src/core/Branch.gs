@@ -434,17 +434,77 @@ function filesVisibleInWiki() {
   return out;
 }
 
+/** Drive にあるかの覚えを CacheService に置く長さ (秒)。この間は、Drive で消した・戻した文書が一覧に映らない */
+function FILES_PRESENT_CACHE_SEC() {
+  return 120;
+}
+
 /**
- * Drive にまだある (ゴミ箱に入っておらず、消されてもいない) 文書を返す。
+ * 台帳の行のうち、Drive に (ゴミ箱の外に) ある文書の id を返す。
  *
- * 文書ごとに問い合わせると、文書の数だけ待つ。正式版のフォルダと各改訂版の
- * フォルダを1回ずつ読み、そこに見当たらないものだけを1つずつ確かめる
- * (フォルダの外へ移しただけの文書を、消えたと取り違えないため)。
+ * フォルダごとに1回だけ読み、見当たらないものだけ1つずつ確かめる (文書ごとに問い合わせると、文書の数だけ待つ)。
+ * それでも本番で1回 1 秒かかり、開いた直後に3回走っていた (2026-10-27)。同じ実行の中では覚えを返し、ほかの実行とも
+ * CacheService で共有する (`FILES_PRESENT_CACHE_SEC`)。鍵に files と branches の版 (`dbReadAll` のキャッシュの版) を
+ * 含めるので、登録・外す・改訂版の出し入れで台帳が変わればすぐ新しくなる。Drive の側だけで消した・戻したものは、
+ * 置いた長さまで古いまま見える (docs/dev/user-paths.md)。鍵の中で files / branches を書いた直後は覚えを見ない。
  *
- * @param {object[]} rows files 行
+ * @param {object[]} rows files の行
  * @returns {Object<string, boolean>} fileId → true
  */
 function filesPresentInDrive_(rows) {
+  var ids = [];
+  for (var i = 0; i < rows.length; i++) ids.push(String(rows[i].fileId));
+  ids.sort();
+  var dirty = dbTableDirty_('files') || dbTableDirty_('branches');
+  var cache = dirty ? null : dbCache_();
+  var key = null;
+  if (cache) {
+    try {
+      var vf = cache.get(dbVerKey_('files'));
+      var vb = cache.get(dbVerKey_('branches'));
+      if (vf && vb) {
+        var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, ids.join(','), Utilities.Charset.UTF_8);
+        key = 'FP:' + vf + ':' + vb + ':' + bytesToHex(digest);
+      }
+    } catch (e) {
+      key = null;
+    }
+  }
+  // 同じ実行の中の覚え。開いた直後に3回 (文書の一覧・前進の中身・ホームの要約) 読んでいた
+  var memoKey = key || ('ids:' + ids.join(','));
+  var memo = dbRunMemo_().filesPresent;
+  if (!dirty && memo && memo.key === memoKey) return filesPresentMap_(memo.ids);
+
+  var found = key ? filesPresentCacheGet_(cache, key) : null;
+  if (!found) {
+    found = filesPresentRead_(rows);
+    if (key) {
+      try { cache.put(key, JSON.stringify(found), FILES_PRESENT_CACHE_SEC()); } catch (e2) { /* 置けなくても読めている */ }
+    }
+  }
+  if (!dirty) dbRunMemo_().filesPresent = { key: memoKey, ids: found };
+  return filesPresentMap_(found);
+}
+
+function filesPresentCacheGet_(cache, key) {
+  try {
+    var hit = cache.get(key);
+    if (!hit) return null;
+    var list = JSON.parse(hit);
+    return Array.isArray(list) ? list : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function filesPresentMap_(ids) {
+  var present = {};
+  for (var i = 0; i < ids.length; i++) present[String(ids[i])] = true;
+  return present;
+}
+
+/** Drive を実際に読む。filesPresentInDrive_ の中身 (覚えが無いとき) */
+function filesPresentRead_(rows) {
   var present = {};
   var folders = [repoConfig().mainId];
   var branches = dbReadAll('branches');
@@ -466,14 +526,15 @@ function filesPresentInDrive_(rows) {
     }
   }
 
+  var out = [];
   for (var r = 0; r < rows.length; r++) {
     var id = String(rows[r].fileId);
-    if (present[id]) continue;
+    if (present[id]) { out.push(id); continue; }
     try {
-      if (!DriveApp.getFileById(id).isTrashed()) present[id] = true;
+      if (!DriveApp.getFileById(id).isTrashed()) out.push(id);
     } catch (e2) {
       // 完全に消されている
     }
   }
-  return present;
+  return out;
 }

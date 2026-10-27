@@ -157,7 +157,9 @@ function achSolo_(who) {
   }
   var got = achSoloRead_(who);
   try {
-    if (cache) cache.put(key, got, got === 'unknown' ? 120 : 600);
+    // 分からない (リンクやドメインで共有している) ときも 600 秒置く。以前は 120 秒で、そのたびに Drive の共有の設定を
+    // 読み直していた (本番で 1〜2 秒。推しの頁を開くたびに当たっていた。2026-10-27)
+    if (cache) cache.put(key, got, 600);
   } catch (e2) {
     // 覚えられなければ、次も問い合わせるだけ
   }
