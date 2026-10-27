@@ -2308,10 +2308,15 @@
         var list = res && res.length === items.length ? res : null;
         for (var i = 0; i < items.length; i++) {
           var r = list ? list[i] : null;
-          if (r && r.ok) items[i].ok(r.value === undefined ? null : r.value);
-          else if (r) items[i].ng(new Error(r.error || 'まとめて取れませんでした'));
-          // 返事の形が合わない (古い画面と新しいサーバなど) ものは、1本ずつ取り直す
-          else bootBatchOne(items[i]);
+          // 1つの扱いが投げても、残りの返事は配る (配らないと最初の波の数が戻らず、急がないものが15秒待つ)
+          try {
+            if (r && r.ok === true) items[i].ok(r.value === undefined ? null : r.value);
+            else if (r && r.ok === false) items[i].ng(new Error(r.error || 'まとめて取れませんでした'));
+            // 返事の形が合わない (古い画面と新しいサーバなど) ものは、1本ずつ取り直す
+            else bootBatchOne(items[i]);
+          } catch (e) {
+            if (window.console) console.warn('開いた直後の返事を扱えませんでした: ' + items[i].name, e);
+          }
         }
       })
       .withFailureHandler(function () {
