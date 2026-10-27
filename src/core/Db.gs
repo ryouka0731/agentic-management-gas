@@ -167,6 +167,38 @@ function dbReadAll(table) {
 }
 
 /**
+ * 表をシートから読み直し、今の版の名でキャッシュに置き直す (期限を延ばす)。裏の定期実行が呼ぶ (CacheWarm.gs)。
+ *
+ * dbReadAll はキャッシュにあればそれを返し、期限を延ばさない。CacheService には期限だけを延ばす口が無いので、
+ * 置き直すしかない。**キャッシュの中身を置き直すのではなく、シートから読む。** キャッシュの中身を置き直し続けると、
+ * 人が台帳のシートを直にいじったぶんがいつまでも見えなくなる (今は 30分で見える)。
+ *
+ * **版は置き直さない。** 読んでいるあいだにほかの実行が書いて版を変えると、前の版に戻してしまい、書く前の中身が
+ * 新しい版として当たる。版が無いときだけ、dbReadAll と同じく新しい版を作ってから読む。読んでいるあいだに版が
+ * 変われば、置いたものは古い版の名になるだけで誰にも当たらない。
+ *
+ * @param {string} table
+ * @returns {boolean} 置き直したか (キャッシュが使えない・この実行の中で書いた表なら false)
+ */
+function dbWarm_(table) {
+  var cols = DB_SCHEMA()[table];
+  if (!cols) throw new Error('未定義のテーブルです: ' + table);
+  // この実行の中で書いて、まだ版を変えていない表は置かない (書く前の版の名で書いたあとの中身を置くことになる)
+  if (dbTableDirty_(table)) return false;
+  var cache = dbCache_();
+  if (!cache) return false;
+  var ver = cache.get(dbVerKey_(table));
+  if (!ver) {
+    ver = dbNewVer_();
+    cache.put(dbVerKey_(table), ver, DB_CACHE_VER_SEC());
+  }
+  var rows = dbReadSheet_(table, cols);
+  dbCacheWrite_(cache, table, ver, cols, rows);
+  DB_MEMO_[table] = rows;
+  return true;
+}
+
+/**
  * 台帳 (シート) から読む。dbReadAll の覚えが無いときの本体。
  *
  * @param {string} table

@@ -112,7 +112,13 @@
   (`dbUpdateLocked_` / `dbDeleteLocked_` はシートを読む。`dbNextNumber_` は `dbReadAll` だが、鍵を取ったときに同じ実行の中の
   覚えを捨て、キャッシュも書いた実行が鍵の中で版を変えている。**直にいじった行だけは 30分のあいだ番号の数えに入らないことが
   あるが、出した番号はスクリプトプロパティにも覚えているので重ならない**)
-- テストは `test/db-cache.test.js`。疑似GASの CacheService と読み取りの数え口は `docs/dev/testing.md`
+- **裏で温める** (`dbWarm_`。1分ごとのキューのついでに `src/core/CacheWarm.gs` が呼ぶ)。本体 (`DB:<表>:<版>`、1800 秒) が
+  切れる前に、温めた印 `DBW:<表>` (1500 秒) が切れた表をシートから読み直して今の版の名で置き直す (1回に3表まで)。キャッシュの
+  中身を置き直すのではなくシートから読むので、直にいじったぶんが見えるまでの 30分は変わらない。版は置き直さない。どの表を温めるか・
+  印と本体の長さの関係・1日の予算は `docs/dev/command-queue.md` の「キューのついでに台帳の覚えを温める」。**表を足したら、開いた
+  直後に読む表かを見て `CACHE_WARM_TABLES_()` に入れるか決める**。テストが自分の CacheService の鍵を数えるときは、`DBW:` も
+  台帳の覚えとして除く (`test/cowork-cache.js` の `keys()`)
+- テストは `test/db-cache.test.js` と `test/cache-warm.test.js`。疑似GASの CacheService と読み取りの数え口は `docs/dev/testing.md`
 
 ## 数える表は、丸ごと読んで丸ごと書き戻す
 

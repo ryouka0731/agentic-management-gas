@@ -25,9 +25,9 @@ function imageBlob(bytes, mime) {
   return make('img');
 }
 
-/** 台帳の読み取りの覚え (Db.gs の DB:<表>:<版> / DBV:<表>) を除いた鍵 */
+/** 台帳の読み取りの覚え (Db.gs の DB:<表>:<版> / DBV:<表>、温めの印 DBW:<表>) を除いた鍵 */
 function liveKeys(store) {
-  return [...store.keys()].filter((k) => !/^DBV?:/.test(k));
+  return [...store.keys()].filter((k) => !/^DB[VW]?:/.test(k));
 }
 
 function withCache(fake) {
