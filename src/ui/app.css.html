@@ -2710,6 +2710,11 @@ button.gantt-name:hover { color: var(--accent); }
 .chip-pri-high { background: var(--danger-bg); color: var(--danger); }
 .chip-pri-low { background: var(--bg-3); color: var(--ink-2); }
 
+/* 繰り返しのやること (js-recur)。上の案内と「作る」を1行に並べ、狭い画面では折り返す */
+.recur-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.recur-bar p { flex: 1 1 240px; margin: 0; }
+.recur-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+
 /* =====================================================================
  * 進め方の案内
  *

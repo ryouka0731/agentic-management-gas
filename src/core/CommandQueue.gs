@@ -117,6 +117,16 @@ function COMMAND_OPS() {
     impedimentResolve: function (a) { return apiImpedimentResolve(a.number, a.resolution); },
     impedimentComment: function (a) { return apiImpedimentComment(a.number, a.body); },
     history: function (a) { return apiHistory(a.target); },
+    /*
+     * 繰り返しのやること (#110)。作った人は置いた人 (`by`)。直す・止めるのは作った人と管理者で、それも置いた人で
+     * 決めるので COMMAND_PERSONAL_OPS に入れる (持ち主と最後に書いた人を見比べる)。一覧は誰が置いても同じ
+     */
+    recurrenceList: function (a, by) { return recurrenceList_(String(by || '')); },
+    recurrenceCreate: function (a, by) { return recurrenceCreate_(a.fields || {}, commandBy_(by)); },
+    recurrenceUpdate: function (a, by) {
+      var who = commandBy_(by);
+      return recurrenceUpdate_(a.id, a.patch || {}, who);
+    },
 
     /*
      * 手元から自分の様子を見る (#13)。`by` (命令ファイルを置いた人) から見た様子を返す。
@@ -235,7 +245,8 @@ function COMMAND_OPS() {
  * @returns {string[]}
  */
 function COMMAND_PERSONAL_OPS() {
-  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner', 'calendarToday', 'meetingNotesImport'].concat(COMMAND_ADMIN_OPS());
+  return ['homeMine', 'homeAdvice', 'reportDraft', 'workStyle', 'oshiSpinner', 'calendarToday', 'meetingNotesImport',
+    'recurrenceCreate', 'recurrenceUpdate'].concat(COMMAND_ADMIN_OPS());
 }
 
 /**
@@ -626,6 +637,12 @@ function processCommandQueue() {
     if (typeof outcomesDailyOnce_ === 'function') outcomesDailyOnce_(new Date());
   } catch (e3) {
     Logger.log('成果の数を数えられませんでした: ' + e3.message);
+  }
+  // 繰り返しのやることの起票も1日1回。**別の印で受け持つ** (Recurrence.gs の recurrenceDailyOnce_)。片付けが済んだ日だけ走る
+  try {
+    if (typeof recurrenceDailyOnce_ === 'function') recurrenceDailyOnce_(new Date());
+  } catch (e4) {
+    Logger.log('繰り返しのやることを作れませんでした: ' + e4.message);
   }
 
   // 台帳の読み取りの覚えを温める (CacheWarm.gs)。**命令があった回は温めない** (キューの返事を先にする。手元は

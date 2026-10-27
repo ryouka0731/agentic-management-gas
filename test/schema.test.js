@@ -58,6 +58,8 @@ const EXPECTED = {
   announcement_replies: ['id', 'announcementId', 'who', 'answer', 'at'],
   // 取り込んだ Gemini のメモ。1つのメモに1行 (二度取り込まない)
   meeting_notes: ['docId', 'title', 'meeting', 'meetingAt', 'minutes', 'importedBy', 'importedAt', 'issueNumbers'],
+  recurrences: ['id', 'title', 'body', 'assignee', 'kind', 'weekday', 'day', 'month', 'dueDays', 'leadDays',
+    'active', 'lastIssuedFor', 'lastIssueNumber', 'createdBy', 'createdAt'],
 };
 
 describe('メタDBの列順', () => {

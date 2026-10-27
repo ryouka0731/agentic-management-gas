@@ -157,6 +157,13 @@ CacheService (`ACH_NEG:<アドレス>:<日>`) から読んで数えない (そ�
 仕掛けた人のメモを取り込まない)。取り込んだ記録 (`meeting_notes`) は台帳にあり、Drive で台帳を開ける人は直に読める (メモの題名と会議名が残る)。
 細部は `docs/dev/calendar.md`。
 
+**繰り返しのやること (`src/api/Recurrence.gs` / `src/core/Recurrence.gs`) は、作るのは誰でも、直す・止める・消すのは作った人と管理者だけ**
+(`recurrenceAssertCanEdit_`。作った人は `createdBy` を大文字小文字を見ずに比べ、違えば `repoAssertAdmin_`)。一覧は誰にでも全部返し、
+押せるかは `canEdit` で返す (画面は押せないボタンに理由を添える)。手元からの命令 `recurrenceCreate` / `recurrenceUpdate` は**置いた人**で
+決めるので `COMMAND_PERSONAL_OPS()` に入れてある (持ち主と最後に書いた人を見比べる。キューは持ち主の権限で回るので、`currentEmail_()`
+で決めると誰の命令でも管理者として通る)。1日1回の回が作るやることは、トリガーを仕掛けた人の名で変更の履歴に残る
+(「自分が作ったもの」には足さない。`issueCreate` の `extra.auto`)。
+
 **成果の数 (`apiOutcomes`) は管理者だけ** (`repoAssertAdmin_`)。チーム全体の日ごとの数 (`outcomes_daily`) を週ごとに
 足して返し、名前もアドレスも入れない。**記録した人が `OUTCOMES_MIN_PEOPLE()` (3) 人に届かない週は数を全部 null にする**
 (1人の分が合計からの引き算で見えるため。`gameTeam_` と同じ守り)。週の人数は日ごとの人数の最大で比べる (同じ人を何日も

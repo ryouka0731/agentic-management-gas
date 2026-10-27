@@ -283,6 +283,7 @@ const API_NAMES = [
   'apiGoalUnlink', 'apiGoalProgressInput', 'apiGoalReview', 'apiGoalGrade', 'apiGoalTeam', 'apiGoalReport',
   'apiGoalIssueLinks', 'apiGoalWithdraw',
   'apiAchievements', 'apiAchievementsCheck',
+  'apiRecurrenceList', 'apiRecurrenceCreate', 'apiRecurrenceUpdate', 'apiRecurrenceDelete',
 ];
 
 /**
@@ -452,6 +453,8 @@ export const DEFAULTS = {
   apiWhoAmI: { activeUser: 'me@example.com', effectiveUser: 'me@example.com', sameUser: true },
   apiArchiveKeepDays: 30,
   apiIssueArchivedList: [],
+  // 繰り返しのやること (js-recur)。既定は何も無い
+  apiRecurrenceList: [],
   apiInquiryList: [],
   // 送ったあとの帯は返事の number を読む。null だと TypeError が出ていた
   apiInquiryCreate: { number: 1, kind: 'bug', body: '' },

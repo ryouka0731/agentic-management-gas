@@ -65,9 +65,12 @@ function issuePriorityRank_(row) {
  * @param {string[]} linkedFileIds 紐づく文書のfileId。文書に紐づかない
  *   やることもあるため、空でよい
  * @param {string} [labels] タグ (カンマ区切り)
+ * @param {{assignee?: string, dueDate?: string, auto?: boolean}} [extra] 作るときに一緒に入れる担当と期限。
+ *   auto は1日1回の回が自動で作ったもの (繰り返し・文書の見直し)。トリガーは仕掛けた人の名で回るので、
+ *   「自分が作ったもの」(改善のヒント) にその人のぶんとして足さない
  * @returns {object} 作成された issues 行
  */
-function issueCreate(title, body, linkedFileIds, labels) {
+function issueCreate(title, body, linkedFileIds, labels, extra) {
   if (!/^[\s\S]{1,200}$/.test(String(title || ''))) {
     throw new Error('タイトルを入力してください');
   }
@@ -79,15 +82,18 @@ function issueCreate(title, body, linkedFileIds, labels) {
     }
   }
 
+  var more = extra || {};
+  var assignee = more.assignee ? issueAssigneeClean(more.assignee) : '';
+
   var row = {
     title: title,
     body: body || '',
     state: 'open',
-    assignee: '',
+    assignee: assignee,
     labels: tagsOf(labels).join(','),
     linkedFileIds: ids.join(','),
     linkedPr: '',
-    dueDate: '',
+    dueDate: more.dueDate ? String(more.dueDate) : '',
     startDate: '',
     parent: '',
     estimate: '',
@@ -103,7 +109,7 @@ function issueCreate(title, body, linkedFileIds, labels) {
   dbAppendNumbered('issues', 'number', row);
   issueHistory_(row.number, 'create', []);
   // 改善のヒントが覚えている「自分が作ったもの」に足す (Home.gs を読まない構成でも動くように)
-  if (typeof adviceNoteMade_ === 'function') adviceNoteMade_(currentEmail_(), row.number);
+  if (!more.auto && typeof adviceNoteMade_ === 'function') adviceNoteMade_(currentEmail_(), row.number);
   return row;
 }
 

@@ -93,6 +93,9 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | `issueCreateBranch` | `number`, `fileId` | やることから改訂版を作る |
 | `boardMove` | `number`, `column`, `order` (任意、既定 0 = 先頭) | 進捗ボードの列を動かす (`Backlog` / `In Progress` / `In Review` / `Done`) |
 | `history` | `target` (`issue:N` / `impediment:N` / `sprint:名前`) | 欄の変更の履歴 |
+| `recurrenceList` | なし | 繰り返しのやることの一覧 (周期・次の対象日・作る日・前回の番号) |
+| `recurrenceCreate` | `fields` (`title`, `kind` (`weekly` / `monthly` / `yearly`), `weekday` (0 = 日曜〜6) / `day` (1〜31。31 は月末) / `month`, `leadDays` (何日前に作るか。既定 3), `dueDays` (期限は対象日の何日あと。既定 0), `assignee`, `body`) | 繰り返しを作る。作った人は**置いた人** |
+| `recurrenceUpdate` | `id`, `patch` (上と同じ欄と `active`) | 繰り返しを直す・止める (`active: false`)。**置いた人が作った人か管理者のときだけ** |
 
 ### 期間で進める (スクラム。既定オフ)
 
