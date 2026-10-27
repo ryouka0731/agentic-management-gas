@@ -4644,6 +4644,27 @@ textarea::placeholder { color: var(--ink-2); opacity: 1; }
 .home-skel-line:nth-child(4) { width: 86%; }
 @keyframes home-skel { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .home-skel-line { animation: none; } }
+/* 待つあいだの推し (js-oshi の oshiWaitInto)。骨組みの右に重ねて置き、骨組みの寸法 (高さ) は変えない
+   (届いて中身に置き換わっても画面が跳ねない)。棒は左に寄せて重ならないようにする。狭い画面では絵を出さず一言だけ */
+.home-skel { position: relative; }
+.home-skel.has-oshi .home-skel-lines { padding-right: 46%; }
+.oshi-wait {
+  position: absolute; top: 44px; right: var(--sp-3); bottom: var(--sp-2); width: 42%;
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2);
+  pointer-events: none; animation: oshi-wait-in var(--motion) ease-out;
+}
+.oshi-wait .oshi-figure { width: 56px; height: 56px; }
+.oshi-wait .oshi-avatar { width: 40px; height: 40px; font-size: 16px; }
+.oshi-wait .oshi-line {
+  min-width: 0; font-size: 12px; line-height: 1.4; padding: var(--sp-1) var(--sp-2);
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
+@keyframes oshi-wait-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .oshi-wait { animation: none; } }
+@media (max-width: 767px) {
+  .oshi-wait .oshi-figure { display: none; }
+  .oshi-wait .oshi-line { -webkit-line-clamp: 2; }
+}
 .home-main,
 .home-side,
 .home-cards { display: grid; gap: var(--sp-4); align-content: start; min-width: 0; }
