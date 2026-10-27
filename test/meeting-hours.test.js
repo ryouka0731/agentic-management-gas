@@ -72,6 +72,8 @@ describe('会議として数えるもの', () => {
     meeting(env, '2026-10-27', '14:00', '15:00', { guests: [] });
     // 断った
     meeting(env, '2026-10-27', '15:00', '16:00', { declined: true });
+    // 取り込んだ・写した予定で、本人がゲストにも作った人にも居ない (相手だけが居る)
+    meeting(env, '2026-10-27', '16:00', '17:00', { guests: ['c@example.com'], organizer: OTHER });
     // 終日
     env.fake._calAddBusy(MEMBER, { start: tokyo('2026-10-27'), end: tokyo('2026-10-28'), allDay: true, guests: [OTHER] });
     const out = hoursAs(env);
@@ -100,6 +102,15 @@ describe('会議として数えるもの', () => {
     meeting(env, '2026-10-28', '09:00', '10:00');
     const out = hoursAs(env);
     expect([out.week, out.month, out.half, out.count]).toEqual([1, 3.5, 3.5, 3]);
+  });
+
+  it('週が前の半期から始まる (4/1 が木曜) ときも、週の合計は月曜から数える', () => {
+    const env = ready(tokyo('2027-04-01', '12:00'));
+    // 2027-03-29 (月) の会議は今週に入るが、今半期には入らない
+    meeting(env, '2027-03-29', '10:00', '11:00');
+    meeting(env, '2027-04-01', '09:00', '09:30');
+    const out = hoursAs(env);
+    expect([out.week, out.month, out.half, out.count]).toEqual([1.5, 0.5, 0.5, 1]);
   });
 
   it('半期の境 (3/31→4/1) をまたぐ会議は、4/1 からのぶんだけ数える', () => {
@@ -144,7 +155,32 @@ describe('覚えと、読めないとき', () => {
     const env = ready(NOW, false);
     meeting(env, '2026-10-27', '09:00', '10:00');
     const reads = env.fake._calCalls.getEvents;
+    const opens = env.fake._calCalls.getDefaultCalendar;
     expect(hoursAs(env)).toBe(null);
     expect(env.fake._calCalls.getEvents).toBe(reads);
+    expect(env.fake._calCalls.getDefaultCalendar).toBe(opens);
+  });
+
+  it('覚えの鍵はアドレスを指紋にする (長いアドレスでも鍵の上限を超えない)', () => {
+    const env = ready(NOW);
+    const key = env.ctx.meetingCacheKey_('a'.repeat(300) + '@example.com', NOW.getTime());
+    expect(key.length).toBeLessThan(250);
+    expect(key).not.toContain('example.com');
+    expect(key).not.toBe(env.ctx.meetingCacheKey_(MEMBER, NOW.getTime()));
+  });
+
+  it('別の実行が先に覚えていれば上書きしない', () => {
+    const env = ready(NOW);
+    meeting(env, '2026-10-27', '09:00', '10:00');
+    const key = env.ctx.meetingCacheKey_(MEMBER, NOW.getTime());
+    const cache = env.ctx.CacheService.getScriptCache();
+    const realGet = cache.get;
+    // 1回目の get (覚えを見る) は空、2回目 (書く前) には別の実行の覚えがある
+    let n = 0;
+    const newer = JSON.stringify({ week: 9, month: 9, half: 9, since: '2026-10-01', until: '2026-10-27', count: 9 });
+    cache.get = (k) => (k === key ? (++n === 1 ? null : newer) : realGet.call(cache, k));
+    asUser(env.fake, MEMBER, () => env.ctx.meetingHoursOf_(MEMBER));
+    cache.get = realGet;
+    expect(cache.get(key)).toBe(null);
   });
 });

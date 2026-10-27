@@ -66,17 +66,24 @@
 - **期間の切り方と足し方はピュア** (`CalendarPlan.js` の `meetingPeriodsOf` / `meetingMinutesIn` / `meetingHoursOfMinutes`)。
   始まりは東京の暦日の0時 (週は月曜、月は1日、半期は 4/1 か 10/1。1〜3月は前の年の 10/1)、**終わりは今** (済んだぶんだけ。
   これからの会議は入れない)。重なりは `calendarMerge` で潰してから期間で切って足す (同じ時間の会議が2つなら1つ分)
-- **会議の決まり** (`meetingCounts_`): 終日でない・`getMyStatus()` が `NO` でない・参加者が本人を含めて2人以上。参加者は
-  `getGuestList(true)` (主催者も入れる。実機の `getGuestList()` は主催者を入れないので、人から呼ばれた会議が「ゲストは自分だけ」に
-  見える) と本人を小文字のアドレスで合わせて数える。「空き」(透過) は見ない (埋まっている時間の `calendarCountsAsBusy_` とは別)
+- **会議の決まり** (`meetingCounts_`): 終日でない・`getMyStatus()` が `NO` でない・**本人が予定に居る**・参加者が本人を含めて2人以上。
+  参加者は `getGuestList(true)` (主催者も入れる。実機の `getGuestList()` は主催者を入れないので、人から呼ばれた会議が「ゲストは自分だけ」に
+  見える) を小文字のアドレスで数える。本人はそこに居るか、作った人 (`getCreators()`) のときだけ数える (取り込んだ・写した予定で
+  相手だけが居るものを会議にしない。以前は本人を無条件に足していた)。「空き」(透過) は見ない (埋まっている時間の `calendarCountsAsBusy_` とは別)
 - **読むのは本人の既定のカレンダーだけ** (`meetingHoursOf_`)。共有カレンダー・ほかの人のカレンダーは読まない。返すのは
   `{week, month, half, since, until, count}` (時間は小数1桁、since / until は東京の暦日、count は半期の会議の数) だけで、
   題名・相手・時刻は返さず、台帳にもスクリプトプロパティにも書かない
-- 半期ぶんを読むので重い。スクリプトのキャッシュに `MEETING:<東京の暦日>:<小文字のアドレス>` で `MEETING_CACHE_SEC_()` (1800秒) 覚える
-  (中身は数だけ。暦日を鍵に入れて、日が変われば期間ごと取り直す)。**読めない (権限・エラー) ときは覚えず null** を返し、断らない
+- **読み始めは週と半期の早いほう** (`Math.min(p.week, p.half)`)。4/1 が木曜なら週は 3/29 から始まり、半期から読むと週の合計が
+  足りなくなる。半期の数 (`count`) には、半期の始まりより前に終わった会議を入れない
+- 半期ぶんを読むので重い。スクリプトのキャッシュに `MEETING:<東京の暦日>:<アドレスの SHA-256 の16進>` (`meetingCacheKey_`) で
+  `MEETING_CACHE_SEC_()` (1800秒) 覚える (中身は数だけ。暦日を鍵に入れて、日が変われば期間ごと取り直す。アドレスを指紋にするのは、
+  長いアドレスで鍵の上限 250 字を超えると覚えが効かなくなるため)。**書く前にもう一度見て、別の実行が先に覚えていれば上書きしない**
+  (同じ人の2つの実行が並んだとき、後から終わった古い読みで戻さない。台帳の鍵 `dbWithLock_` には相乗りしない)。
+  **読めない (権限・エラー) ときは覚えず null** を返し、断らない
 - 口は `apiMeetingHours` (アドレスを受けない)。設定がオフなら**カレンダーを開かずに** null。画面 (`js-calendar` の
   `makeMeetingHoursBox`、置くのは `js-me` の `drawMe`) は**自分まわりの欄を開いたときだけ**呼び (開いた直後には呼ばない)、
-  オフなら呼ばない。null なら欄を隠したまま。テストは `test/meeting-hours.test.js` と `test/component/meeting-hours.test.js`
+  オフなら呼ばない。null なら欄を隠したまま。設定が届く前に欄を開いたときは、届いたとき (`calendarPrefsChanged` →
+  `meetingHoursPrefsChanged`) に会議の欄だけを足す (欄の全体は描き直さない。描くたびに `apiGameState` を取るため)。テストは `test/meeting-hours.test.js` と `test/component/meeting-hours.test.js`
 
 ## 画面
 

@@ -44,6 +44,23 @@ describe('会議の時間', () => {
     expect(box.textContent).toContain('31件');
   });
 
+  it('設定が届く前に欄を開いても、届いたら会議の欄だけを出す (欄の全体は描き直さない)', () => {
+    let deliver = null;
+    const app = mount({
+      apiPrefs: () => ({ later: (ok) => { deliver = () => ok(prefsFixture({ values: { 'calendar.meetings': true } })); } }),
+      apiMeetingHours: HOURS,
+    });
+    q('#me-btn').click();
+    expect(callsOf(app, 'apiMeetingHours')).toEqual([]);
+    const games = callsOf(app, 'apiGameState').length;
+    deliver();
+    expect(callsOf(app, 'apiMeetingHours')).toHaveLength(1);
+    expect(document.querySelectorAll('.me-meetings')).toHaveLength(1);
+    expect(q('.me-meetings').hidden).toBe(false);
+    expect(q('.me-meetings').textContent).toContain('今半期40.5時間');
+    expect(callsOf(app, 'apiGameState')).toHaveLength(games);
+  });
+
   it('読めない (null) なら欄を出さない', () => {
     const app = mountMeetings(true, null);
     q('#me-btn').click();

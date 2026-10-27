@@ -113,6 +113,24 @@
     return box;
   }
 
+  /**
+   * 設定が届いた・変わった。自分まわりの欄が開いていれば、会議の欄だけを当て直す (欄の全体は描き直さない。
+   * 描くたびにポイントの参加 apiGameState を取るため)。設定より先に欄を開くと、オンの人にも欄が出なかった。
+   * 出してある欄はそのまま (取り直さない)。
+   */
+  function meetingHoursPrefsChanged() {
+    if (mePanel.hidden) return;
+    var old = meBody.querySelector('.me-meetings');
+    if (!meetingHoursOn()) {
+      if (old) old.parentNode.removeChild(old);
+      return;
+    }
+    if (old && !old.hidden) return;
+    var box = makeMeetingHoursBox();
+    if (old) meBody.replaceChild(box, old);
+    else meBody.appendChild(box);
+  }
+
   /** ISO の時刻が東京の今日か */
   function calendarIsToday(iso) {
     var ms = Date.parse(String(iso || ''));
@@ -239,6 +257,7 @@
       loadHomeCalendar();
     }
     if (document.getElementById('calendar-mine')) refreshCalendarStatus();
+    meetingHoursPrefsChanged();
   }
 
   // ===== 設定の画面 =====

@@ -587,7 +587,7 @@ export function createFakeGas() {
    */
   const calendars = new Map();
   let calSeq = 0;
-  const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0 };
+  const calCalls = { createEvent: 0, deleteEvent: 0, getEvents: 0, getDefaultCalendar: 0 };
   // 予定を作るときに投げさせる (n 件目で)。{at, message} か null
   let calCreateFail = null;
   // 予定を消すときに投げさせる (predicate(ev) が true のもの)
@@ -611,6 +611,8 @@ export function createFakeGas() {
       getStartTime: () => new Date(ev.start),
       getEndTime: () => new Date(ev.end),
       isAllDayEvent: () => !!ev.allDay,
+      // 作った人 (実機は作った人のアドレスの並び)
+      getCreators: () => (ev.createdBy ? [ev.createdBy] : []),
       getMyStatus: () => (ev.status && ev.status[activeUser]) || 'OWNER',
       getDateCreated: () => new Date(ev.created),
       // 実機と同じく、印を付けても変わる (作った直後なので作った時刻とほぼ同じ)
@@ -679,7 +681,7 @@ export function createFakeGas() {
       c._subscribed.add(activeUser);
       return calView(c);
     },
-    getDefaultCalendar: () => calView(calDefault(activeUser)),
+    getDefaultCalendar: () => { calCalls.getDefaultCalendar++; return calView(calDefault(activeUser)); },
   };
 
   const kitFiles = new Map();
