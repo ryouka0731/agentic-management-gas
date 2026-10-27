@@ -697,6 +697,15 @@ describe('画面に渡せる形か', () => {
       if (!out.lastPlanned || !out.settingsUrl) throw new Error('様子が空のまま検査されている');
       return out;
     }],
+    // Gemini のメモの取り込み。メモを1つ置いて、作ったやることの並びまで検査する
+    ['apiMeetingNotesImport', (ctx, env) => {
+      env.fake.DocumentApp = env.fake._documentApp;
+      const id = env.fake._createDoc('定例 - Gemini によるメモ', '', env.fake.DriveApp.getRootFolder().getId());
+      env.fake._setDocParas(id, [{ text: '次のステップ', heading: 'HEADING2' }, { text: '資料を送る', list: true }]);
+      const out = ctx.apiMeetingNotesImport(7);
+      if (!out.items.length) throw new Error('取り込んだやることが空のまま検査されている');
+      return out;
+    }],
     ['apiCalendarCreateShared', (ctx) => ctx.apiCalendarCreateShared()],
     ['apiCalendarSetShared', (ctx) => ctx.apiCalendarSetShared('')],
     ['apiIssueList', (ctx) => ctx.apiIssueList('')],

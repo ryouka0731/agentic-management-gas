@@ -1,7 +1,8 @@
 # やることを予定に入れる (カレンダー)
 
 `CLAUDE.md` から分けた。下に挙げた場所を触る前に読むこと (`CLAUDE.md` の「触る場所と、先に読むファイル」)。
-対象: `src/core/CalendarPlan.js` / `src/core/CalendarSync.gs` / `src/api/Calendar.gs` / `src/ui/js-calendar.html`。手引きは
+対象: `src/core/CalendarPlan.js` / `src/core/CalendarSync.gs` / `src/core/MeetingNotes.js` / `src/core/MeetingNotesImport.gs` /
+`src/api/Calendar.gs` / `src/ui/js-calendar.html`。手引きは
 `docs/manual/calendar.md`。
 
 ## 分け方
@@ -84,6 +85,54 @@
   `makeMeetingHoursBox`、置くのは `js-me` の `drawMe`) は**自分まわりの欄を開いたときだけ**呼び (開いた直後には呼ばない)、
   オフなら呼ばない。null なら欄を隠したまま。設定が届く前に欄を開いたときは、届いたとき (`calendarPrefsChanged` →
   `meetingHoursPrefsChanged`) に会議の欄だけを足す (欄の全体は描き直さない。描くたびに `apiGameState` を取るため)。テストは `test/meeting-hours.test.js` と `test/component/meeting-hours.test.js`
+
+## Gemini のメモの取り込み
+
+やること #97。会議の Gemini のメモ (Drive に置かれる Google ドキュメント) から、決まったこと (次のステップ) をやることにする。
+読み方 (ピュア) は `src/core/MeetingNotes.js`、探す・開く・作るのは `src/core/MeetingNotesImport.gs`、口は `apiMeetingNotesImport(days, opts)`
+(`src/api/Calendar.gs`) と命令 `meetingNotesImport`。テストは `test/meeting-notes.test.js` と `test/component/meeting-notes.test.js`。
+
+- **外の API は使わない。** 標準の DriveApp (`searchFiles`)・DocumentApp (`openById(id).getBody()`)・CalendarApp (既定のカレンダー) だけ。
+  どれも**開いている本人の権限**で見る (本人が開けるメモ = 本人のものと共有されたもの、と本人の既定のカレンダー)
+- **探し方**: 直近 `days` 日 (既定7・上限14。`MEETING_NOTES_DAYS_()`) に更新された Google ドキュメントのうち、題名に `Gemini` を含むものを
+  Drive で探し (`modifiedDate >` と `title contains 'Gemini'`)、題名の印で絞る (`meetingNoteIsGemini`)。1回に読むのは
+  `MEETING_NOTES_MAX_DOCS_()` (20) 件まで。**Gemini のメモは Workspace の機能**なので、個人の Gmail では1つも見つからず何も起きない
+- 題名の印 (`MEETING_NOTE_TITLE_MARKS()`。Workspace の言語の設定で変わる): `Notes by Gemini` / `Gemini によるメモ` / `Gemini のメモ` /
+  `Gemini メモ` / `Notas de Gemini` / `Notizen von Gemini` / `Notes de Gemini`
+- 見出しの印 (`MEETING_NOTE_STEP_HEADS()`): `Suggested next steps` / `Next steps` / `Action items` / `推奨される次のステップ` /
+  `次のステップ` / `アクション アイテム` / `アクションアイテム` / `次にやること`。節を閉じる見出し (`MEETING_NOTE_OTHER_HEADS()`):
+  `Summary` / `Details` / `Transcript` / `まとめ` / `概要` / `詳細` / `文字起こし`。**印を足すのは MeetingNotes.js の表だけ**で、ここも直す
+- 字の比べ方は `meetingNoteNorm` (NFKC・小文字・空白と記号を落とす) だけを通す
+- **結び付け** (`meetingNoteMatchEvent`): 本人の既定のカレンダーの、探す日数 + 1日ぶんの終日でない予定から、題名に予定の名前
+  (2字以上) が入っていて、題名の日 (`2026/10/27` の形。`meetingNoteDayOf`) に始まった予定 (題名に日が無ければ、メモを作った時刻が
+  始まりの2時間前〜終わりの24時間後に入る予定) のうち、メモの時刻に終わりがいちばん近いもの。**結び付かなければ会議不明**
+  (やることは作るが、`meeting_notes` の会議名・始まり・長さは空)
+- **読み取り** (`meetingNoteSteps`): 見出しの印の段落の次から、見出しの書式の段落か閉じる印までの段落を1行ずつ。箇条書きを拾ったあとに
+  箇条書きでない段落が来たらそこで閉じる (節の終わりの添え書きを拾わない)。「Gemini」を含む行 (Gemini 自身の添え書き) と同じ行は
+  拾わない。1つのメモから `MEETING_NOTE_MAX_STEPS()` (20) 行まで。題名は `MEETING_NOTE_TITLE_MAX()` (120) 字で切り、元の行は本文に入れる
+- **担当** (`meetingNoteAssigneeNames` → `meetingNoteAssigneeOf`): 「@名前」「名前:」「[名前]」「名前さんが / は」「Name will」から
+  候補を拾い、台帳の members の名前 (空白を見ない) に当てる。同じ名前の人が1人か、名前が候補で始まる人が1人のときだけ当てる。
+  当たらなければ取り込んだ本人
+- やることの本文: 会議名・日時 (東京)・長さ・メモの URL・元の行。作り方は画面と同じ (作る → ボードの未着手 → 担当)
+- **二度取り込まない**: 台帳 `meeting_notes` (文書の id ごとに1行)。先に覚えから見て取り込み済みのメモは開かず、
+  **鍵 (`dbWithLock_`) の中で「あるか見てから書く」**(`meetingNotesClaim_`) で印の行を足してから、鍵の外でやることを作り、
+  作り終えたら番号を書き足す (何件も作るので、鍵を長く持たない)。途中で落ちても同じメモからは二度作らない (作れなかった行は残らない)。
+  ほかの人が取り込んだメモも取り込み済み。**開けないメモは印を付けずに飛ばす** (開けるようになれば次に取り込む)
+- 既にあるやること (捨てたもの・済んだものも) と題名が同じ (`meetingNoteNorm` で比べる) 行は作らず、取り込み済みに数える
+- 返事は `{ok, reason, skipped, found, notes, created, already, unmatched, items}`。`found` は見つけたメモ、`notes` はこの回に取り込んだ
+  メモ、`already` は取り込み済みのメモと同じ題名の行の合計。Drive を探せないときは断らずに `ok: false`
+- **入口**: 設定の「予定に入れる」の節の「Gemini のメモを取り込む」(`makeMeetingNotesPanel`。予定に入れるがオフでも出す)。
+  開いたときの急がない波 (`bootLater(meetingNotesAuto)`) で `{auto: true}`。自動は本人の UserProperties の `MNOTES_AUTO:<アドレス>`
+  (東京の暦日) で1日1回 (探す前に印を付ける。落ちてもその日は探し直さない)。**自分の設定 `calendar.meetingNotes` (既定オン) がオフなら
+  自動は走らない** (画面は呼ばず、サーバも `{auto: true}` なら Drive を探さずに `skipped`)。切り替えはボタンの隣 (`docs/dev/prefs.md`)。
+  自動でやることを1つ以上作ったときだけ短い帯 (「Gemini のメモから N 個のやることを作りました」) で知らせ、0個なら何も出さない。
+  失敗は `failQuiet`。文書のリンクで開いたときはしない
+- **命令 `meetingNotesImport`** (`args.days`) は、キューが仕掛けた人の権限で回り見える Drive と予定がその人のものなので、
+  **置いた人が仕掛けた人のときだけ**取り込む (`meetingNotesForQueue_`。`COMMAND_PERSONAL_OPS()` に入れて、持ち主と最後に書いた人も
+  見比べる)。ほかの人は画面のボタンを使う
+- **会議の時間**: 結び付いた会議は `meeting_notes` に名前・始まり・長さ (分) が残る。会議の時間の欄 (`apiMeetingHours`) の `noted` は、
+  今半期の会議のうち `meeting_notes` に同じ名前と始まりがある会議 (議事録のある会議) の時間 (`meetingNotesNotedKeys_`)。
+  取り込んだら本人の会議の時間の覚え (`meetingCacheKey_`) を捨てる
 
 ## 画面
 

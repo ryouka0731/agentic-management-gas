@@ -55,6 +55,13 @@
 **1人1つのお知らせに1行だけ。** 「答えがあるか見てから書く」を1つの鍵の中で行い (`announcementReply_`)、2回目は書かずに
 前の答えを返す。表の中身の誰が答えたかは画面に返さない (`docs/dev/permissions.md`)。
 
+`meeting_notes` (Gemini のメモの取り込み。`src/core/MeetingNotesImport.gs`) は**1つのメモ (`docId`) に1行**で、二度取り込まないための印。
+番号の列は持たず `docId` で引く。「あるか見てから書く」を鍵の中で行う (`meetingNotesClaim_`)。`meeting` は結び付いた予定の名前、`meetingAt` は
+その始まり (Date)、`minutes` は長さ (分)。会議不明なら3つとも空。`importedBy` は取り込んだ人の小文字のアドレス、`importedAt` は時刻 (Date)、
+`issueNumbers` は作ったやることの番号のカンマ区切り (先に空で足し、作り終えてから書き足す。作れなかったときは空のまま)。
+やることを `issuePurge` で消しても番号の並びは直さない (番号は二度出さないので、ほかのやることを指すことはない)。
+開いた直後には読まない表なので `CACHE_WARM_TABLES_()` には入れない。
+
 `priority` は**空欄を「ふつう」として読む**形にした (`issuePriority`)。埋め直さ
 ないのは、空と「ふつう」を区別する意味が無く、書き戻すと更新の跡 (`updatedAt`)
 が全件動いてしまうため。`reviews.id` のように名指しに使う列とは事情が違う。

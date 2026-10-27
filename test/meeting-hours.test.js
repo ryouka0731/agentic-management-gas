@@ -77,7 +77,7 @@ describe('会議として数えるもの', () => {
     // 終日
     env.fake._calAddBusy(MEMBER, { start: tokyo('2026-10-27'), end: tokyo('2026-10-28'), allDay: true, guests: [OTHER] });
     const out = hoursAs(env);
-    expect(out).toEqual({ week: 1.5, month: 1.5, half: 1.5, since: '2026-10-01', until: '2026-10-27', count: 2 });
+    expect(out).toEqual({ week: 1.5, month: 1.5, half: 1.5, since: '2026-10-01', until: '2026-10-27', count: 2, noted: 0 });
     // 数と期間だけ。題名も相手も返さない
     expect(JSON.stringify(out)).not.toContain('会議');
     expect(JSON.stringify(out)).not.toContain(OTHER);

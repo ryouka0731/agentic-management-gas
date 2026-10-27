@@ -31,6 +31,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | テストの依存 (`package.json` / `package-lock.json`)・カバレッジ・`test/harness.js` / `test/setup.js` / `test/dom.js` / `test/component/` | `docs/dev/testing.md` |
 | `debug*` (実機検証の入口) を足す・直す | `docs/dev/verification.md` |
 | やることを予定に入れる (`src/core/CalendarPlan.js` / `src/core/CalendarSync.gs` / `src/api/Calendar.gs` / `src/ui/js-calendar.html`) | `docs/dev/calendar.md` |
+| Gemini のメモの取り込み (`src/core/MeetingNotes.js` / `src/core/MeetingNotesImport.gs` / `apiMeetingNotesImport`・台帳 `meeting_notes`・命令 `meetingNotesImport`) | `docs/dev/calendar.md` と `docs/dev/ledger-schema.md` と `docs/dev/locks-and-numbering.md` |
 
 ## 名前
 

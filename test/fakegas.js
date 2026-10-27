@@ -63,6 +63,10 @@ export function createFakeGas() {
       // これを鍵にするキャッシュが当たったり外れたりする
       _updated: new Date(),
       getLastUpdated: () => f._updated,
+      _created: new Date(),
+      getDateCreated: () => f._created,
+      // 持ち主のほかに見られる人 (Drive の検索 searchFiles が見る)
+      _viewers: [],
       setTrashed: (v) => {
         if (trashDenied || (trashPredicate && trashPredicate(f))) throw new Error('Insufficient permissions for this file');
         f._trashed = v !== false;
@@ -190,6 +194,61 @@ export function createFakeGas() {
       const f = files.get(id);
       if (!f) throw new Error('ファイルが見つかりません: ' + id);
       return f;
+    },
+    /*
+     * Drive の検索 (実機の Drive v2 の書き方)。読むのは、ここで使う形だけ: mimeType = '…'・trashed = false・
+     * modifiedDate > '…'・title contains '…' (大文字小文字を見ない)。見つけるのは開いている人が持つか、見られるファイルだけ。
+     * 渡された問い合わせは _driveSearches() に残る
+     */
+    searchFiles: (q) => {
+      driveSearches.push(String(q));
+      if (searchFail) throw new Error(searchFail);
+      const text = String(q);
+      const mime = /mimeType = '([^']*)'/.exec(text);
+      const since = /modifiedDate > '([^']*)'/.exec(text);
+      const words = [...text.matchAll(/title contains '([^']*)'/g)].map((m) => m[1].toLowerCase());
+      const hits = [...files.values()].filter((f) => {
+        if (/trashed = false/.test(text) && f._trashed) return false;
+        if (mime && f._mime !== mime[1]) return false;
+        if (since && !(f._updated.getTime() > Date.parse(since[1]))) return false;
+        if (words.some((w) => String(f._name).toLowerCase().indexOf(w) < 0)) return false;
+        return f._owner === activeUser || f._viewers.indexOf(activeUser) >= 0;
+      });
+      let i = 0;
+      return { hasNext: () => i < hits.length, next: () => hits[i++] };
+    },
+  };
+  const driveSearches = [];
+  let searchFail = '';
+
+  /*
+   * Google ドキュメントの本文 (DocumentApp) を、段落の並びだけ模す。番頭の書き戻し (HtmlWriter) と描画 (DocRenderer) は
+   * ここでは使わない (fileId → 正規化HTML の写像のまま)。Gemini のメモを読む MeetingNotesImport.gs のために、
+   * openById(id).getBody() の getNumChildren / getChild(i) / getType / asParagraph / asListItem / getText / getHeading だけを持つ。
+   * 既定ではグローバルに置かない (fake.DocumentApp = fake._documentApp で置く)。置くと、DocumentApp の有無で動きの
+   * 変わるところが変わるため
+   */
+  const docParas = new Map(); // fileId -> [{text, heading, list}]
+  const documentApp = {
+    ElementType: { PARAGRAPH: 'PARAGRAPH', LIST_ITEM: 'LIST_ITEM', TABLE: 'TABLE' },
+    ParagraphHeading: { NORMAL: 'NORMAL', HEADING1: 'HEADING1', HEADING2: 'HEADING2', HEADING3: 'HEADING3' },
+    openById: (id) => {
+      const f = files.get(id);
+      if (!f || (f._owner !== activeUser && f._viewers.indexOf(activeUser) < 0)) {
+        throw new Error('Document is missing (perhaps it was deleted, or you don\'t have read access?)');
+      }
+      const paras = docParas.get(id) || [];
+      const el = (p) => {
+        const node = {
+          getType: () => (p.table ? 'TABLE' : p.list ? 'LIST_ITEM' : 'PARAGRAPH'),
+          getText: () => String(p.text || ''),
+          getHeading: () => (p.heading ? String(p.heading) : 'NORMAL'),
+        };
+        node.asParagraph = () => node;
+        node.asListItem = () => node;
+        return node;
+      };
+      return { getBody: () => ({ getNumChildren: () => paras.length, getChild: (i) => el(paras[i]) }) };
     },
   };
 
@@ -766,6 +825,14 @@ export function createFakeGas() {
     _calFailCreate: (at, message) => { calCreateFail = at ? { at, message } : null; },
     _calFailDelete: (predicate) => { calDeleteFail = predicate || null; },
     _calCalls: calCalls,
+    /** Google ドキュメントの本文の疑似 (fake.DocumentApp = fake._documentApp で置く) */
+    _documentApp: documentApp,
+    /** 本文の段落を決める。[{text, heading: 'HEADING2' など, list: true, table: true}] */
+    _setDocParas: (id, paras) => { docParas.set(id, paras); },
+    /** Drive の検索に渡された問い合わせ */
+    _driveSearches: () => driveSearches,
+    /** Drive の検索を投げさせる (字を渡す)。'' で戻す */
+    _failSearch: (message) => { searchFail = String(message || ''); },
     _makeTasks: makeTasks,
     _makeDrive: makeDrive,
     DriveApp,

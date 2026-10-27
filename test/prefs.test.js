@@ -110,6 +110,17 @@ describe('一覧', () => {
     ctx.scrumSetEnabled_(false);
     expect(ctx.prefGet_('nav.logo', ME)).toBe('home');
   });
+
+  it('Gemini のメモを自動で取り込む (calendar.meetingNotes): 自分の設定で既定はオン。effective で画面に渡す', () => {
+    const { ctx } = setup();
+    expect(item(ctx, 'calendar.meetingNotes')).toMatchObject({ scope: 'me', type: 'bool', def: true, section: '予定に入れる' });
+    expect(ctx.apiPrefs().effective.calendar.meetingNotes).toBe(true);
+    ctx.apiPrefSet('calendar.meetingNotes', false);
+    expect(ctx.apiPrefs().effective.calendar.meetingNotes).toBe(false);
+    expect(ctx.prefGet_('calendar.meetingNotes', ME)).toBe(false);
+    ctx.apiPrefSet('calendar.meetingNotes', null);
+    expect(ctx.apiPrefs().effective.calendar.meetingNotes).toBe(true);
+  });
 });
 
 describe('検査', () => {
