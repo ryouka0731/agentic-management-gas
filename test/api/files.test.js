@@ -20,6 +20,8 @@ describe('apiListFiles', () => {
     expect(out[1]).toEqual({ fileId, path: '就業規則.doc', type: 'doc' });
 
     fake.DriveApp.getFileById(fileId).setTrashed(true);
+    // Drive にあるかの覚え (FILES_PRESENT_CACHE_SEC) が切れてから消える (docs/dev/user-paths.md)
+    fake._cacheAdvance(ctx.FILES_PRESENT_CACHE_SEC() + 1);
     expect(ctx.apiListFiles().map((f) => f.path)).toEqual(['A名簿.sheet']);
   });
 

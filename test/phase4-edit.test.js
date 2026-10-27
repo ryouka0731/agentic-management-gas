@@ -1666,6 +1666,8 @@ describe('Drive で消された文書は一覧に出さない', () => {
     expect(ctx.apiBranchList().map((b) => b.name)).toContain('改訂');
 
     fake.DriveApp.getFileById(fileId).setTrashed(true);
+    // Drive にあるかの覚え (FILES_PRESENT_CACHE_SEC) が切れてから
+    fake._cacheAdvance(ctx.FILES_PRESENT_CACHE_SEC() + 1);
 
     expect(ctx.apiBranchList().map((b) => b.name)).not.toContain('改訂');
     // 正式版は消えない
@@ -1681,6 +1683,7 @@ describe('Drive で消された文書は一覧に出さない', () => {
     ctx.branchAddFile('改訂', other);
 
     fake.DriveApp.getFileById(fileId).setTrashed(true);
+    fake._cacheAdvance(ctx.FILES_PRESENT_CACHE_SEC() + 1);
 
     expect(ctx.apiBranchList().map((b) => b.name)).toContain('改訂');
     expect(paths(ctx)).toContain('branches/改訂/賃金規程.doc');

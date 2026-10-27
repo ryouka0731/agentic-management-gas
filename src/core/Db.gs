@@ -114,7 +114,7 @@ function dbSheet_(table) {
  *
  * 1回の読み取りが実機で 160〜800ms かかり、画面を開くと約30本の api* が同じ表を何度も読んでいた。
  * - **同じ実行の中の覚え** (`DB_MEMO_`)。1回の api* の中で同じ表を2度読まない
- * - **CacheService** (`DB:<表>:<版>`、300秒)。版は `DBV:<表>` に置き、**書くたびに `dbInvalidate_` が変える**
+ * - **CacheService** (`DB:<表>:<版>`、30分)。版は `DBV:<表>` に置き、**書くたびに `dbInvalidate_` が変える**
  *
  * 返すのはいつも写し (行のオブジェクトを作り直したもの)。呼び出し側が行に書き込んでも、覚えは変わらない。
  * キャッシュが読めない・壊れているときは台帳を読む (キャッシュで止めない)。
@@ -204,9 +204,13 @@ var DB_MEMO_ = {};
  */
 var DB_DIRTY_ = {};
 
-/** 台帳のキャッシュの長さ (秒)。人がシートを直にいじったときは、これだけ古いまま見える */
+/**
+ * 台帳のキャッシュの長さ (秒)。人がシートを直にいじったときは、これだけ古いまま見える (管理者は設定の「覚えを捨てる」で
+ * すぐ新しくできる)。以前は 300 秒だったが、5分放置して開き直すと全部の表をシートから読み直し (1表 0.5 秒ほど)、
+ * 開いた直後の api が軒並み遅かった (2026-10-27)。書いた側は必ず版を変えるので、長くしても自分たちの書き込みは遅れない
+ */
 function DB_CACHE_SEC() {
-  return 300;
+  return 1800;
 }
 
 /** 版の鍵の長さ (秒)。CacheService の上限 (6時間) */
@@ -396,6 +400,11 @@ function dbCacheWrite_(cache, table, ver, cols, rows) {
  *
  * @param {string} table
  */
+/** この実行の中で書いて、まだ版を変えていない表か (鍵の中)。台帳の外の覚え (Drive にあるか、など) も、このときは見ない */
+function dbTableDirty_(table) {
+  return Object.prototype.hasOwnProperty.call(DB_DIRTY_, table);
+}
+
 function dbInvalidate_(table) {
   delete DB_MEMO_[table];
   DB_DIRTY_[table] = true;
@@ -418,7 +427,7 @@ function dbInvalidateAll_() {
  * 書いた表の版を変える。
  *
  * **先に書いた中身を台帳へ送り切る (`SpreadsheetApp.flush`)。** Apps Script はシートへの書き込みをため込むので、
- * 送る前に版を変えると、ほかの実行が新しい版の名で書く前の中身を読んでキャッシュに置き、300秒古いまま見える。
+ * 送る前に版を変えると、ほかの実行が新しい版の名で書く前の中身を読んでキャッシュに置き、30分古いまま見える。
  * 版を置けなかったときは版の鍵を消す (読む側が新しい版を作り、台帳を読み直す)。
  */
 function dbFlushInvalidate_() {
@@ -445,7 +454,7 @@ function dbFlushInvalidate_() {
 }
 
 /**
- * 版の鍵を1つ置き直す。置けなければ消す。**どちらもできなければ、古い版のまま 300 秒残りうる**
+ * 版の鍵を1つ置き直す。置けなければ消す。**どちらもできなければ、古い版のまま 30分残りうる**
  * (キャッシュそのものが使えないときで、そのときは読む側も台帳を読む)。
  */
 function dbVerReplace_(cache, key, ver) {
@@ -539,6 +548,17 @@ function dbRunBegin_() {
   dbWroteThisRun_ = false;
   DB_MEMO_ = {};
   DB_DIRTY_ = {};
+  DB_RUN_MEMO_ = {};
+}
+
+/**
+ * 同じ実行の中だけの覚え (台帳の外のもの。Drive にあるか、など)。実機は呼び出しごとにグローバルを読み直すので
+ * 自然に消える。テストは dbRunBegin_ で消す。鍵を取っても消さない (使う側が、書いた表の dbTableDirty_ を見て避ける)
+ */
+var DB_RUN_MEMO_ = {};
+
+function dbRunMemo_() {
+  return DB_RUN_MEMO_;
 }
 
 /** 鍵が取れなかったときの断り。**この字のときだけ**画面は [もう一度] を出す (ErrorKind.js の busy) */
