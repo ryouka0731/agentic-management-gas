@@ -42,7 +42,7 @@
 画面の JS は1つの `(function () { … })()` で、場所ごとのファイルに分けてある
 (`src/ui/app.js.html` が開いて共通の状態と道具を持ち、`js-home` / `js-docs` / `js-pulls` /
 `js-issues` / `js-board` / `js-progress` / `js-guide` / `js-reports` / `js-me` / `js-style` / `js-calendar` /
-`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-room` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
+`js-init` / `js-settings` / `js-scrum` / `js-fun` / `js-focus` / `js-room` / `js-oshi` / `js-ach` / `js-goals` / `js-luck` / `js-cowork` / `js-sound` と続き、`js-start` が閉じる)。`wiki.html` の `<script>` の中に
 include を並べてつなぐので、**スコープは1つのまま**で、関数は別のファイルからそのまま呼べる。
 
 - **並びは読み込んだときに走る文の順そのもの。** `var` の初期化や聞き手の取り付けは
@@ -427,6 +427,25 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
 - **部屋の推しも頭をなでられる** (`oshiAttachPat(fig, roomPat)`。推しの頁の顔と同じ仕組み。2026-10-22 の依頼)。なでると
   `roomFillCharacter('praise')` にして「なでられた」のせりふを頭の上 (`.room-oshi-say`) に出し、4秒で `work` に戻して
   手を止める時計 (`roomScheduleGlance`) を仕掛け直す。笑顔のあいだは何度なでても変わらない。オフの人影はなでても何も起きない
+
+## 操作の効果音 (`js-sound`)
+
+自分の設定 `sound.effects` (既定オフ) でオンにした人だけ。やること #96。
+
+- **鳴らす場面は4つだけ。** 増やす前にここを直す (ボタンを押すたびに鳴るとうるさく、合図の意味が薄れる)
+  | 場面 | 鳴らす所 | 音 (`SFX_NOTES`) |
+  |---|---|---|
+  | やることを完了にした・確認依頼を反映した | `celebrateProgress` の頭 (前進の知らせを止めた人にも鳴らす) | `done`: 上がる3音 |
+  | 操作が断られた | `call()` の失敗の帯 (`failSnack` / `failEnable`)。**`failQuiet` と `failInto` (器に出す) は鳴らさない** | `fail`: 低く短い1音 |
+  | 実績を取った | `achCelebrate` (`ach.cheer` を切った人には鳴らさない) | `badge`: 作業部屋の合図の形で上がる2音 |
+  | 集中・ポモドーロの終わり | `focusTimeUp` / `roomPomoTick` (部屋の音を流していて部屋の合図が鳴ったときは重ねない) | `end`: 作業部屋の合図の形で下がる2音 |
+- **音源のファイルは持たない。** 正弦波などを数本その場で作る `sfxTones` を、作業部屋の合図 (`roomPomoChime`) と共通で使う (写しを持たない)。
+  2音の形は `roomPomoChimeNotes` をそのまま使う。1音の大きさは `SFX_GAIN` (0.1) まで
+- **オフのあいだは `AudioContext` を作らない。** オンでも、開いてから人が押す (`pointerdown` / `click` / `keydown` を document の
+  捕まえる段で聞く `sfxWake`) までは作らない。ブラウザの自動再生の決まりで、押した中で作らないと鳴らないため
+- **同じ音は `SFX_GAP_MS` (1秒) のうちに2回鳴らさない** (`sfxLastAt`)。続けて完了にした・断りが続いたとき
+- **鳴らせなくても操作は止めない。** `sfxPlay` は投げない。`AudioContext` が無い・作ると投げる環境では `sfxBroken` にして二度と作りに行かない
+- 試すのは `test/component/sound.test.js` (押して確かめる)
 
 ## 仕事のスタンス診断 (`js-style`)
 

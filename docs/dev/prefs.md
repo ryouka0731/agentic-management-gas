@@ -53,6 +53,10 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 書くのは `apiCoworkSetRooms` (管理者だけ) だけにしてある。画面の欄は `js-cowork` の `makeCoworkRoomsEditor` が `cowork.enabled` の節に添える。
 `Prefs.gs` は `CoworkLink.js` を呼ばない (`Prefs.gs` を読むテストの SOURCES を増やさないため)。
 
+操作の効果音 (`sound.effects`) は自分の設定で既定オフ (見出しは `音`)。`effective.sound.effects` で画面に渡し、画面 (`js-sound`) が
+`soundEffectsOn()` で見る。サーバは何もしない (音は画面の中で作る)。**オフのあいだは画面が `AudioContext` を作らない。** 鳴らす場面と決まりは
+`docs/dev/ui.md` の「操作の効果音」。
+
 推しの機嫌 (`oshi.mood`) は自分の設定で既定オフ。`effective.oshi.mood` で画面に渡し、設定の一覧では推しがオンのときだけ出す
 (`appendPrefSections` が `oshiOn()` で外す)。境目の数 (`OSHI_MOOD_RULES()`) は設定の項目にしない (変えられると「むっ」の重さが
 人によって違って見え、手引きの表も書けない)。「動きなし」の日数だけはチームの設定 `stale.steps` の最初の段を使う (`staleSteps_()`)。

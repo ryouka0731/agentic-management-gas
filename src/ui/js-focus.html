@@ -1405,6 +1405,8 @@
     var s = focusSession;
     var box = document.querySelector('#focus-dock .focus-timeup');
     if (!box || !s) return;
+    // 効果音がオンの人だけ、終わりの音 (js-sound)
+    sfxPlay('end');
     focusSoundWasOn = focusSoundPlaying();
     if (focusSoundWasOn) focusSoundStop(3);
     box.textContent = '';

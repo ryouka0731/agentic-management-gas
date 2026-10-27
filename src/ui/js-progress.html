@@ -33,6 +33,8 @@
    * @param {number} [number] 完了にしたやること。あれば apiCloseFeedback で添えを求める
    */
   function celebrateProgress(kind, text, number) {
+    // 効果音がオンの人だけ、完了・反映の音 (js-sound)。前進の知らせを止めた人にも鳴らす (音は別の設定)
+    sfxPlay('done');
     if (!progressNotesOn()) {
       showSnack(text, { kind: 'ok' });
       reloadHomeIfShown();

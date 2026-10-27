@@ -231,6 +231,8 @@
    */
   function achCelebrate(res, opened) {
     if (!achCheerOn()) return;
+    // 効果音がオンの人だけ、実績の音 (js-sound)
+    sfxPlay('badge');
     var got = res.newly;
     var first = got[0];
     var text = got.length === 1
