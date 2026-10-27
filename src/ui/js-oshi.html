@@ -1405,8 +1405,8 @@
   function OSHI_WAIT_MEMO_KEY() { return 'oshiWaitMemo'; }
   /** 覚えておくせりふの数 (場面ごと) */
   function OSHI_WAIT_LINES_MAX() { return 12; }
-  /** 覚えに入れる場面 (どの時刻に開いても選べるよう、あいさつは3つとも) */
-  function OSHI_WAIT_MEMO_EVENTS() { return ['morning', 'day', 'night', 'spinner']; }
+  /** 覚えに入れる場面 (どの時刻に開いても選べるよう、あいさつは3つとも。pat は待つあいだになでたときの一言 oshiWaitPatLine) */
+  function OSHI_WAIT_MEMO_EVENTS() { return ['morning', 'day', 'night', 'spinner', 'pat']; }
 
   /**
    * 骨組みに出す場面。いまのあいさつと、待っているとき (考え中)。
@@ -1554,22 +1554,128 @@
     if (!pick || !pick.text) return;
     var el = document.createElement('div');
     el.className = 'oshi-wait';
-    // 読み上げには骨組みの「読み込んでいます」だけを届ける (飾りの一言で待ちの知らせを埋めない)
-    el.setAttribute('aria-hidden', 'true');
     el.dataset.who = pick.who || '';
     el.dataset.char = pick.char;
     el.dataset.event = pick.event;
     el.dataset.from = pick.live ? 'live' : 'memo';
     var line = document.createElement('p');
     line.className = 'oshi-line oshi-wait-line';
+    // 読み上げには骨組みの「読み込んでいます」だけを届ける (飾りの一言で待ちの知らせを埋めない)。
+    // 押せる絵 (なでる) は aria-hidden の中に置けないので、隠すのは一言と回数だけにする
+    line.setAttribute('aria-hidden', 'true');
     line.textContent = pick.text;
     el.appendChild(line);
+    var pat = document.createElement('div');
+    pat.className = 'oshi-wait-pat';
     var fig = document.createElement('div');
     fig.className = 'oshi-figure oshi-wait-fig';
-    el.appendChild(fig);
+    pat.appendChild(fig);
+    var count = document.createElement('span');
+    count.className = 'oshi-wait-count';
+    count.setAttribute('aria-hidden', 'true');
+    count.hidden = true;
+    pat.appendChild(count);
+    el.appendChild(pat);
+    var said = document.createElement('span');
+    said.className = 'sr-only oshi-wait-live';
+    said.setAttribute('aria-live', 'polite');
+    el.appendChild(said);
     box.classList.add('has-oshi');
     box.appendChild(el);
     oshiWaitFigure(el, pick.name, pick.state, pick.pic, pick.live);
+    oshiWaitPatAttach(el);
+  }
+
+  // ----- 待つあいだに推しをなでる (やること #93「推しキャラを使ったミニゲームをロード時間に出す」) -----
+  //
+  // - 骨組みの推し (oshiWaitInto) の絵を押す (タップ・Enter・Space) たびに回数を数え、絵が少し弾む
+  //   (transform だけ。動きを減らす設定では弾ませない)。OSHI_WAIT_PAT_EVERY 回ごとに場面 pat (なでられた) のせりふを一言
+  //   (せりふは Oshi.js の唯一の定義から。推しが届く前は覚え oshiWaitMemo の pat)。効果音がオンなら節目だけ sfxPlay('pat')
+  // - **実績・ポイント・サーバ呼び出しに一切結び付けない。** call() も usageCount も呼ばない。回数はその場限りで、どこにも覚えない
+  //   (遊ぶために待たせない・待つ理由を作らない)
+  // - 骨組みと一緒に消える (fillBlock が区画を空にする)。新しい待ち時間も画面も作らない。出さない条件は oshiWaitInto と同じ
+
+  /** 一言を言う節目 (回) */
+  function OSHI_WAIT_PAT_EVERY() { return 10; }
+  /** 弾む動きを外すまで (ミリ秒。CSS の oshi-wait-pat の長さより少し長く) */
+  function OSHI_WAIT_PAT_BOUNCE_MS() { return 260; }
+
+  /**
+   * 骨組みの推しの絵を、なでられるボタンにする。
+   *
+   * @param {HTMLElement} el .oshi-wait
+   */
+  function oshiWaitPatAttach(el) {
+    var fig = el.querySelector('.oshi-wait-fig');
+    if (!fig) return;
+    fig.setAttribute('role', 'button');
+    fig.setAttribute('tabindex', '0');
+    fig.setAttribute('aria-label', '推しをなでる');
+    fig.addEventListener('click', function () { oshiWaitPat(el); });
+    fig.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      // 押しっぱなしの繰り返しは数えない (連打の遊びなので、押した回数だけ)
+      if (e.repeat) return;
+      oshiWaitPat(el);
+    });
+  }
+
+  /**
+   * 1回なでた。回数を増やし、弾ませ、節目なら一言。
+   *
+   * @param {HTMLElement} el .oshi-wait
+   */
+  function oshiWaitPat(el) {
+    if (!el.isConnected) return;
+    var n = (Number(el.dataset.pats) || 0) + 1;
+    el.dataset.pats = String(n);
+    var count = el.querySelector('.oshi-wait-count');
+    if (count) {
+      count.hidden = false;
+      count.textContent = n + '回';
+    }
+    var text = '';
+    if (n % OSHI_WAIT_PAT_EVERY() === 0) {
+      text = oshiWaitPatLine(el, n / OSHI_WAIT_PAT_EVERY() - 1);
+      var line = el.querySelector('.oshi-wait-line');
+      if (text && line) line.textContent = text;
+      sfxPlay('pat');
+    }
+    var said = el.querySelector('.oshi-wait-live');
+    if (said) said.textContent = n + '回なでた' + (text ? '。' + text : '');
+    oshiWaitPatBounce(el.querySelector('.oshi-wait-fig'));
+  }
+
+  /**
+   * 節目の一言。場面 pat のせりふを順に (同じ節目が続けて同じ字にならないよう)。届いた推しで出したなら推しの、覚えで出したなら覚えの。
+   *
+   * @param {HTMLElement} el .oshi-wait
+   * @param {number} i 何度目の節目か (0 から)
+   * @returns {string} 無ければ空
+   */
+  function oshiWaitPatLine(el, i) {
+    var list = [];
+    if (el.dataset.from === 'live' && oshiData) {
+      list = oshiWaitLinesOf('pat');
+    } else {
+      var memo = oshiWaitMemoRead();
+      if (memo && memo.scenes) list = oshiWaitMemoLines(memo.scenes.pat);
+    }
+    return list.length ? list[i % list.length] : '';
+  }
+
+  /** 絵を少し弾ませる (CSS の is-patted)。動きを減らす設定では何もしない。続けて押したら頭から弾み直す */
+  function oshiWaitPatBounce(fig) {
+    if (!fig || oshiReducedMotion()) return;
+    fig.classList.remove('is-patted');
+    void fig.offsetWidth;
+    fig.classList.add('is-patted');
+    if (fig._patTimer) clearTimeout(fig._patTimer);
+    fig._patTimer = setTimeout(function () {
+      fig._patTimer = null;
+      fig.classList.remove('is-patted');
+    }, OSHI_WAIT_PAT_BOUNCE_MS());
   }
 
   /**

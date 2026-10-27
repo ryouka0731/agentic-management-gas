@@ -115,8 +115,8 @@ describe('待つあいだの推し', () => {
     expect(waitLines()).toContain(el.querySelector('.oshi-wait-line').textContent);
     // 絵が届くまでは名前の頭文字
     expect(el.querySelector('.oshi-wait-fig .oshi-avatar').textContent).toBe('タ');
-    // 飾りなので読ませない (読み上げには骨組みの「読み込んでいます」だけ)
-    expect(el.getAttribute('aria-hidden')).toBe('true');
+    // 一言は飾りなので読ませない (読み上げには骨組みの「読み込んでいます」だけ)。絵はなでられるボタン (oshi-wait-pat.test.js)
+    expect(el.querySelector('.oshi-wait-line').getAttribute('aria-hidden')).toBe('true');
     // 骨組みの棒の数はそのまま
     expect(turn().querySelectorAll('.home-skel-line').length).toBe(3);
 
