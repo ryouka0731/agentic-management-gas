@@ -44,7 +44,7 @@ describe('COMMAND_OPS: 省いた引数の既定', () => {
     for (const [op, a] of empty) ops[op](a);
     expect(calls).toEqual([
       ['apiSaveMarkdown', 'F', 'm', ''], ['apiCommit', 'F', 'x', null],
-      ['apiIssueCreate', 't', 'b', []], ['apiPrCreate', 't', 'b', 's', 'F', 'main'],
+      ['apiIssueCreate', 't', 'b', [], '', {}], ['apiPrCreate', 't', 'b', 's', 'F', 'main'],
       ['apiOutboxTake', 5], ['apiOutboxDone', 1, ''], ['apiOutboxFail', 2, ''], ['apiPrMerge', 3, [], '', ''],
       ['apiIssueList', ''], ['apiCommitDiff', '', 'T'], ['apiIssueUpdate', 4, {}],
       ['apiProjectMove', 5, '作業中', 0], ['apiSprintCreate', {}], ['apiSprintUpdate', 'S', {}],
