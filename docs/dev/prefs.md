@@ -36,6 +36,10 @@ UserProperties は読めない (`KIT_PRINT:` と同じ事情)。持ち主はエ�
 **`calendar.plan` を true 以外に書くと、`apiPrefSet` がこれから先の番頭の予定を消す** (`calendarClearMine_`。失敗しても設定は戻さない)。
 細部は `docs/dev/calendar.md`。
 
+「予定の前に知らせる」(`calendar.remind`) は自分の設定で既定は切 (`'0'`。ほかに `'5'` / `'10'` / `'30'` 分前。`calendar.block` と同じく字で持つ)。
+汎用の欄にそのまま出る。読むのは `calendarSettingsOf_` だけで、番頭が予定を作るときに popup の通知を付ける。画面は何もしない。
+細部は `docs/dev/calendar.md` の「予定の前に知らせる」。
+
 「Gemini のメモを 1 日 1 回自動で取り込む」(`calendar.meetingNotes`) は自分の設定で既定オン (見出しは `予定に入れる`)。
 汎用の並びには出さず (`appendPrefSections` が外す)、`js-calendar` の `makeMeetingNotesPanel` が「Gemini のメモを取り込む」の隣に
 `makePrefField` で置く。`effective.calendar.meetingNotes` で画面に渡し、**オフなら画面は開いたときの自動 (`meetingNotesAuto`) を呼ばず、

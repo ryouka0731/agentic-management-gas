@@ -46,6 +46,25 @@
   `CAL_PLANNED:<小文字のアドレス>` (`{day, at, ok, running}`) に覚え、ホームの自動の組み直しは1日1回。**組めた日 (`ok`) だけ**
   数える (`calendarPlannedOn_`。組めなかった日は次に開いたときにもう一度試す)。`running` の印を付け外しする間だけ鍵を取る
 
+## 予定の前に知らせる (`calendar.remind`)
+
+やること #108 (知らせの設計 `docs/superpowers/specs/2026-11-06-notifications-design.md` の §2)。番頭が入れた予定に、始まる前の通知を付ける。
+**画面を閉じていてもスマホに届く道はこれだけ** (GAS の web アプリは manifest も Service Worker も置けず、Push は使えない)。
+
+- 自分の設定 `calendar.remind` (enum。`'0'` = 切 / `'5'` / `'10'` / `'30'` 分前。値は `calendar.block` と同じく字で持ち、
+  `calendarSettingsOf_` が `remindMin` (数) にする)。**既定は切**
+- 付けるのは `calendarPlanClaimed_` で `createEvent` → 印 (`setTag`) の直後の `calendarRemind_`。`removeAllReminders()` のあと
+  `addPopupReminder(分)`。組み直しで作り直す予定も同じ道を通る (別に書かない)。設定を変えても、既にある予定は次に組み直すまで変わらない
+- **popup にする理由**: CalendarApp の通知はメール (`addEmailReminder`) と popup の2つで、popup はスマホと PC の Google カレンダーの
+  通知としてそのまま届く。メールは既存の知らせのメールと重なり、1日に何件も来る
+- **切が既定の理由**: 切のときは何も呼ばない。予定はカレンダーの既定の通知 (人がカレンダーの設定で決めたもの) のまま。
+  番頭が勝手に通知を消したり足したりすると、オンにしただけで鳴り方が変わってしまう。付けると決めた人のぶんだけ、カレンダーの既定を外して置き換える
+- **外のサービスは使わない** (UrlFetchApp・Chat の webhook・独自の Push は使わない)。標準の CalendarApp だけ
+- **付けられなくても予定は残す。** `calendarRemind_` が自分の try で受け、console に残すだけ。予定は入ったので「見るだけ」でも
+  「混み合っています」でもなく、組めたとして返す (入れたぶんを消して戻すと、通知のために予定そのものが入らなくなる)
+- テストは `test/calendar-sync.test.js` の「予定の前に知らせる」。疑似GAS の予定は `getPopupReminders` / `removeAllReminders` /
+  `addPopupReminder` を持ち、生の中身の `popups` (付けていなければ無い = 既定のまま) で見る。`fake._calFailReminder(字)` で投げさせる
+
 ## 共有カレンダー
 
 - チームの設定 `calendar.shared` (型 `calendar`。値は ID、`''` は決まっていない)。画面の汎用の欄には出さず、

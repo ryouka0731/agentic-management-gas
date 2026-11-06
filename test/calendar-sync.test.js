@@ -84,6 +84,48 @@ describe('組む', () => {
   });
 });
 
+describe('予定の前に知らせる (calendar.remind)', () => {
+  it('10 分前にすると、作った予定のどれにも popup の 10 分が1つだけ付く', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, '規程の改定', { plannedHours: 0.25 });
+    asUser(env.fake, MEMBER, () => env.ctx.apiPrefSet('calendar.remind', '10'));
+    expect(planAs(env, MEMBER).ok).toBe(true);
+    const evs = mineOf(env, MEMBER);
+    expect(evs.length).toBeGreaterThan(0);
+    for (const e of evs) expect(e.popups).toEqual([10]);
+  });
+
+  it('切 (既定) なら通知に触らない (カレンダーの既定の通知のまま)', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, '規程の改定', {});
+    planAs(env, MEMBER);
+    const evs = mineOf(env, MEMBER);
+    expect(evs).toHaveLength(1);
+    expect(evs[0].popups).toBeUndefined();
+  });
+
+  it('組み直して作り直した予定にも付く', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, '規程の改定', {});
+    planAs(env, MEMBER);
+    asUser(env.fake, MEMBER, () => env.ctx.apiPrefSet('calendar.remind', '30'));
+    planAs(env, MEMBER, tokyo('2026-10-19', '08:30'));
+    const evs = mineOf(env, MEMBER);
+    expect(evs).toHaveLength(1);
+    expect(evs[0].popups).toEqual([30]);
+  });
+
+  it('通知を付けられなくても、予定は残して組めたとする', () => {
+    const env = ready();
+    task(env.ctx, MEMBER, '規程の改定', {});
+    asUser(env.fake, MEMBER, () => env.ctx.apiPrefSet('calendar.remind', '5'));
+    env.fake._calFailReminder('Action not allowed');
+    const out = planAs(env, MEMBER);
+    expect(out.ok).toBe(true);
+    expect(mineOf(env, MEMBER)).toHaveLength(1);
+  });
+});
+
 describe('ほかの予定と重ねない', () => {
   it('本人の既定のカレンダーの会議を避ける。終日と断った予定は避けない', () => {
     const env = ready();

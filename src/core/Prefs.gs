@@ -168,6 +168,14 @@ function PREF_CALENDAR_ITEMS_() {
         { value: 'generic', label: '集中 (番頭) とだけ出す' },
       ],
       def: 'task' },
+    // 番頭が入れた予定に付ける通知 (CalendarSync.gs の calendarPlanClaimed_)。切 ('0') ならカレンダー側の既定の通知のまま
+    { key: 'calendar.remind', scope: 'me', type: 'enum', section: section, label: '予定の前に知らせる',
+      help: '番頭が入れた予定に、始まる前の通知を付けます。スマホの Google カレンダーの通知として届きます。' +
+        '切のときは、カレンダーの既定の通知のままです',
+      options: [{ value: '0', label: '切' }].concat(['5', '10', '30'].map(function (m) {
+        return { value: m, label: m + ' 分前' };
+      })),
+      def: '0' },
     // Gemini のメモの取り込み (MeetingNotesImport.gs)。オフなら開いたときの自動だけを止める (ボタンは使える)。
     // 画面の欄は汎用の並びに出さず、js-calendar の makeMeetingNotesPanel がボタンの隣に置く
     { key: 'calendar.meetingNotes', scope: 'me', type: 'bool', section: section,

@@ -139,7 +139,7 @@ function calendarLooksDenied_(e) {
  *
  * @param {string} who 小文字のアドレス
  * @returns {{plan: boolean, hours: {start: string, end: string}, weekend: boolean, blockMin: number,
- *   days: number, title: string}}
+ *   days: number, title: string, remindMin: number}}
  */
 function calendarSettingsOf_(who) {
   var read = prefReaderLive_();
@@ -152,6 +152,7 @@ function calendarSettingsOf_(who) {
     blockMin: Number(get('calendar.block')) || 45,
     days: Number(get('calendar.days')) || 5,
     title: String(get('calendar.title')),
+    remindMin: Number(get('calendar.remind')) || 0,
   };
 }
 
@@ -582,6 +583,7 @@ function calendarPlanClaimed_(who, at, set, cal) {
       ev.setTag(tag.kind, tag.kindValue);
       ev.setTag(tag.who, who);
       ev.setTag(tag.issue, String(b.issueNumber));
+      calendarRemind_(ev, set.remindMin);
     });
   } catch (e) {
     // 1件目から権限で断られたときだけ「見るだけ」。途中で断られた・回数の上限などは混み合っているとする
@@ -614,6 +616,24 @@ function calendarPlanClaimed_(who, at, set, cal) {
     }),
     capped: !!plan.capped,
   };
+}
+
+/**
+ * 番頭が入れた予定に、始まる前の通知 (popup) を付ける (calendar.remind)。0 なら何も呼ばない (カレンダーの既定の通知のまま)。
+ * スマホの Google カレンダーに届く唯一の道で、外のサービスは使わない。付けられなくても予定は残す
+ * (予定は入ったので「見るだけ」でも「混み合っています」でもない。console にだけ残す)。
+ *
+ * @param {object} ev CalendarEvent
+ * @param {number} min 何分前か
+ */
+function calendarRemind_(ev, min) {
+  if (!(min > 0)) return;
+  try {
+    ev.removeAllReminders();
+    ev.addPopupReminder(min);
+  } catch (e) {
+    console.warn('予定に通知を付けられませんでした: ' + (e && e.message));
+  }
 }
 
 /**
