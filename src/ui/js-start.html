@@ -197,6 +197,21 @@
   bootBatchFlush();
 
   /**
+   * 文書のリンクの頁からふつうの画面に出るとき (leaveDocLink / openAppFromDocLink) に、リンクのあいだ取らずにいたものを取る。
+   * 左の行き先・上の段 (bootHomeWave) と、急がない波で飛ばしたもの (お知らせ・Gemini のメモ・道具の印・名前と札の先取り)。
+   * doc-link を外してから呼ぶ (お知らせと Gemini のメモは doc-link のあいだは取らない)。
+   */
+  function bootAfterDocLink() {
+    bootHomeWave();
+    bootBatchFlush();
+    loadAnnouncement();
+    meetingNotesAuto();
+    needOnce(['apiKitStatus']);
+    needPeople();
+    needOnce(['apiTagList', 'apiIssuePriorities']);
+  }
+
+  /**
    * 最初の波のうち、ホームの外側 (左の行き先・上の段) に要るもの。1回だけ。
    * ホームの中身は loadHome が取る。文書のリンクで開いたときは、ふつうの画面に戻すときに呼ぶ (leaveDocLink)。
    */

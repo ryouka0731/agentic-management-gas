@@ -1523,10 +1523,11 @@ body.doc-full .linked-issues,
 body.doc-full .doc-link-row,
 body.doc-full .mobile-nav,
 body.doc-full .nav-scrim,
-body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn),
+body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn):not(#doc-link-open),
 body.doc-full .crumbs > :not(h1) { display: none !important; }
-/* 文書のリンク (?doc=…&full=1) で開かれたとき。番頭の画面を出さず文書だけ。全画面を閉じても周りは出さず、
-   全画面のボタンも出さない (戻る先が無い)。サーバが最初の描画から body に付ける (Main.gs の doGet) */
+/* 文書のリンク (?doc=…) で開かれたとき。番頭の画面を出さず文書だけ (ふつうの 1 枚の web ページ)。全画面を閉じても周りは
+   出さず、全画面のボタンも出さない。右端の小さな「番頭で開く」(#doc-link-open) だけが番頭の画面への入口。
+   サーバが最初の描画から body に付ける (Main.gs の doGet) */
 body.doc-link .sidebar,
 body.doc-link .resizer,
 body.doc-link .side-panel,
@@ -1538,9 +1539,11 @@ body.doc-link .mobile-nav,
 body.doc-link .nav-scrim,
 body.doc-link #panel-home,
 body.doc-link #doc-full-btn,
-body.doc-link .toolbar > :not(.crumbs),
+body.doc-link .toolbar > :not(.crumbs):not(#doc-link-open),
 body.doc-link .crumbs > :not(h1) { display: none !important; }
 body.doc-link .toolbar { padding: var(--sp-1) var(--sp-4); }
+/* 間を空ける .spacer も隠れるので「番頭で開く」を右へ寄せる (目立たせない: 薄い字・枠なし・小さめ) */
+body.doc-link #doc-link-open { margin-left: auto; font-size: 12px; }
 .link-loading { margin: 0; padding: var(--sp-4); }
 
 body.doc-full .toolbar { padding: var(--sp-1) var(--sp-4); }

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { mountApp, DEFAULTS } from '../dom.js';
+import { ROOT } from '../ui-source.js';
 
 /*
  * 文書のリンク (?doc=…&full=1) で開かれたとき。番頭の画面 (ホーム・左の行き先・上の操作) を出さず、文書だけを出す。
@@ -48,6 +51,46 @@ describe('文書のリンクで開かれたとき', () => {
     mountLink('DOC1', { apiListFiles: new Error('取れません') });
     expect(document.body.classList.contains('doc-link')).toBe(false);
     expect(document.getElementById('panel-home').hidden).toBe(false);
+  });
+
+  /*
+   * やること #116: 共有したリンクを開いた人には、ふつうの 1 枚の web ページに見える。番頭の画面への入口は
+   * 右端の小さな「番頭で開く」だけ。押すと、その文書を開いたまま左の行き先・上の操作が出る (ホームには移らない)
+   */
+  it('「番頭で開く」だけが出ていて、押すとその文書を開いたまま番頭の画面が出る', () => {
+    const app = mountLink('DOC1');
+    const open = document.getElementById('doc-link-open');
+    expect(open.hidden).toBe(false);
+    expect(document.getElementById('doc-full-btn').hidden).toBe(false);
+    // 周りに要るものはまだ取っていない
+    expect(names(app)).not.toContain('apiWhoAmI');
+
+    open.click();
+
+    expect(document.body.classList.contains('doc-link')).toBe(false);
+    expect(document.body.classList.contains('doc-full')).toBe(false);
+    expect(open.hidden).toBe(true);
+    expect(document.getElementById('panel-content').hidden).toBe(false);
+    expect(document.getElementById('panel-home').hidden).toBe(true);
+    // 左の行き先・上の段と、急がない波で飛ばしていたものを取る
+    ['apiWhoAmI', 'apiWorkspace', 'apiSettings', 'apiPeopleNames', 'apiTagList'].forEach((n) => {
+      expect(names(app), n).toContain(n);
+    });
+    // 二度押しても何も起きない
+    open.click();
+    expect(app.calls.filter((c) => c.name === 'apiWhoAmI')).toHaveLength(1);
+  });
+
+  it('「番頭で開く」は全画面の隠す決まり (doc-full / doc-link) の両方から外してある', () => {
+    // jsdom は CSS の display を見ないので、字で確かめる。片方だけ外すと本物のブラウザでは出ない (実際に踏んだ)
+    const css = fs.readFileSync(path.join(ROOT, 'src/ui/app.css.html'), 'utf8');
+    expect(css).toContain('body.doc-full .toolbar > :not(.crumbs):not(#doc-full-btn):not(#doc-link-open)');
+    expect(css).toContain('body.doc-link .toolbar > :not(.crumbs):not(#doc-link-open)');
+  });
+
+  it('ふつうに開いたときは「番頭で開く」は出ない', () => {
+    mountApp(Object.assign({}, DEFAULTS));
+    expect(document.getElementById('doc-link-open').hidden).toBe(true);
   });
 
   it('ふつうに開いたときは今までどおりホームを出し、印は付かない', () => {

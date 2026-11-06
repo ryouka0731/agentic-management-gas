@@ -42,18 +42,18 @@ describe('doGet / include', () => {
     }
   });
 
-  it('文書のリンク (?doc=…&full=1) で開かれたら、最初の描画から周りを隠す印と文書の id を body に付ける', () => {
+  it('文書のリンク (?doc=…) で開かれたら、最初の描画から周りを隠す印と文書の id を body に付ける', () => {
     const { ctx } = makeEnv({ file: false });
     const id = '1AbC_dEf-0123456789';
     let seen = stubTemplate(ctx);
     ctx.doGet({ parameter: { doc: id, full: '1' } });
     expect(seen.template.bodyClass).toBe('doc-link doc-full');
     expect(seen.template.linkDoc).toBe(id);
-    // full=1 でなければ、ホームを出してから開く古い形 (印は付けない)
+    // 古い形 (?doc=… だけ) でも同じ (やること #116。共有したリンクはどれも文書だけの 1 枚の頁)
     seen = stubTemplate(ctx);
     ctx.doGet({ parameter: { doc: id } });
-    expect(seen.template.bodyClass).toBe('');
-    expect(seen.template.linkDoc).toBe('');
+    expect(seen.template.bodyClass).toBe('doc-link doc-full');
+    expect(seen.template.linkDoc).toBe(id);
     // Drive の id の字でないものは付けない (body の属性に外から来た字を入れない)
     for (const bad of ['', 'short', '"><script>', 'x'.repeat(201), '../../etc']) {
       seen = stubTemplate(ctx);
