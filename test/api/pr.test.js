@@ -306,15 +306,15 @@ describe('apiPrSetReviewers', () => {
     const { ctx, fake } = env;
     ctx.apiPrSetReviewers(1, ['a@example.com']);
     const mail = fake._sentMails().filter((m) => m.to === 'a@example.com').pop();
-    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 の確認を頼まれました');
+    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 があなたを待っています');
     expect(mail.body.split('\n').slice(0, 3)).toEqual(['変わった箇所', '・第2条: 追加', '']);
     expect(mail.body).toContain('第2条の追加');
   });
 
   it('出したときのメールにも同じ箇条書きを置く', () => {
     const env = prEnv();
-    const mail = env.fake._sentMails().find((m) => /が出されました$/.test(m.subject));
-    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 が出されました');
+    const mail = env.fake._sentMails().find((m) => /を出しました$/.test(m.subject));
+    expect(mail.subject).toBe('[SoftBanto] 確認依頼 #1 を出しました');
     expect(mail.body.indexOf('変わった箇所\n・第2条: 追加\n\n')).toBe(0);
   });
 
@@ -323,7 +323,7 @@ describe('apiPrSetReviewers', () => {
     const { ctx, fake, fileId } = env;
     ctx.diffSummaryFiles = () => { throw new Error('boom'); };
     withPr(env);
-    const mail = fake._sentMails().find((m) => /が出されました$/.test(m.subject));
+    const mail = fake._sentMails().find((m) => /を出しました$/.test(m.subject));
     expect(mail.body.indexOf('第2条の追加')).toBe(0);
     expect(String(ctx.dbFindOne('pulls', 'number', 1).state)).toBe('open');
     expect(fileId).toBeTruthy();

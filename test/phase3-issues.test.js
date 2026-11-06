@@ -404,7 +404,7 @@ describe('通知', () => {
     ctx.notifyPrMerged({ number: 3, title: '改訂', author: 'a@example.com' });
 
     const mails = fake._sentMails();
-    expect(mails[0].subject).toContain('反映されました');
+    expect(mails[0].subject).toContain('が正式版に入りました');
     expect(mails[0].subject).not.toContain('マージ');
   });
 

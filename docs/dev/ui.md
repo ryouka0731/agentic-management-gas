@@ -365,7 +365,8 @@ include を並べてつなぐので、**スコープは1つのまま**で、関�
   そのときはふつうの完了のお祝い (CLEAR!) を出さない (`focusClosesSession` を `funCheerAfter` が見る。SUPER COMPLETE!! と重ねない)。
   集中の画面は右のペインを隠すので、記録と技の図鑑を開くときは集中の画面を戻す (`openFocusRecord`)
 - **残りは時刻の差で数える** (`focusRemainingMs`)。背景のタブでは時計が間引かれるので、刻みを数えない。タブの題名にも
-  残りを出し (`focusTitleOf`)、終えたら元に戻す
+  残りを出し (`focusTitleOf(titleBase, 残り)`)、終えたら未読の知らせの数付きの名前に戻す (`titleWithBadge()`)。**元の名前は
+  `app.js` の `titleBase` から取り、`document.title` を控えない** (控えると知らせの数が焼き込まれる。`docs/dev/notifications.md`)
 - **音は押した聞き手の中でだけ作る** (`focusSoundPlay`)。番頭は別の場所の枠の中で動くので、押した中で作らないと鳴らない。
   読み込みや表示では作らない。1小節 (ノイズは4秒) を `AudioBuffer` に描き、`loop` で繰り返す (拍を時計で打たない)。
   音の形は画面に依らない関数 (`focusRenderBar` / `focusRenderNoise` / `focusKickFreq` …) にしてあり、

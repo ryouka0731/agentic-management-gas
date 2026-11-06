@@ -1009,6 +1009,23 @@ describe('推しは既定でオン、選ぶのは自分の設定', () => {
     expect(ctx.apiPrefs().effective.oshi.peek).toBe(false);
   });
 
+  it('知らせが届いた (notice) の一言は、どの口調にも3つずつあり、当たりには変わらない。中身や数は言わない (やること #108)', () => {
+    const ev = pure.OSHI_EVENTS().find((e) => e.key === 'notice');
+    expect(ev).toMatchObject({ label: '知らせが届いた', state: 'cheer' });
+    expect(ev.praise).toBeFalsy();
+    for (const t of pure.OSHI_TONES()) {
+      const l = pure.OSHI_LINES()[t.key].notice;
+      expect(l, t.key).toHaveLength(3);
+      expect(new Set(l).size, t.key).toBe(3);
+      for (const x of l) {
+        expect(x, t.key).toMatch(/知らせ/);
+        // 数は帯とベルが出す。推しは「N 件」と言わない (古い数を言わないため)
+        expect(x, t.key).not.toMatch(/\d|件/);
+        expect(Array.from(x).length, t.key + ': ' + x).toBeLessThanOrEqual(pure.OSHI_TEXT_LIMITS().lineMax);
+      }
+    }
+  });
+
   it('選んでもらったときのせりふ (chosen) は、どの口調にもあり、表情は出すときにでたらめに選ぶ', () => {
     const ev = pure.OSHI_EVENTS().find((e) => e.key === 'chosen');
     expect(ev).toMatchObject({ label: '選んでもらった', randomState: true });

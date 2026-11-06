@@ -861,8 +861,6 @@
 
   var focusSession = null;
   var focusTimer = null;
-  /** 集中する前のタブの題名。null なら控えていない */
-  var focusBaseTitle = null;
   var focusMarksShown = 0;
   var focusTimeUpShown = false;
   var focusSoundWasOn = false;
@@ -1204,7 +1202,6 @@
     };
     focusMarksShown = 0;
     focusTimeUpShown = false;
-    if (focusBaseTitle === null) focusBaseTitle = document.title;
     focusDrawRun();
     if (focusTimer) clearInterval(focusTimer);
     focusTimer = setInterval(focusTick, 1000);
@@ -1372,7 +1369,8 @@
     var live = document.querySelector('#focus-dock .focus-live');
     var say = left > 0 ? '残り' + minutes + '分' : '時間です';
     if (live && live.textContent !== say) live.textContent = say;
-    document.title = focusTitleOf(focusBaseTitle, left);
+    // 元の名前は app.js の titleBase (数を付ける前)。document.title から取ると、知らせの数が焼き込まれる
+    document.title = focusTitleOf(titleBase, left);
 
     var marks = focusRemindMarks(now - s.startMs, focusRemindEvery());
     if (left > 0 && marks > focusMarksShown) {
@@ -1461,8 +1459,8 @@
     focusTimer = null;
     focusSoundStop(2);
     focusMusicClose();
-    if (focusBaseTitle !== null) document.title = focusBaseTitle;
-    focusBaseTitle = null;
+    // 集中のあいだに届いた知らせの数も付けて戻す (app.js の setTitleBadge)
+    document.title = titleWithBadge();
     focusSetMode(false);
     focusDockRemove();
   }

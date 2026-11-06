@@ -1396,6 +1396,8 @@
       bellBtn.title = data.unread
         ? '知らせが' + data.unread + '件あります' : '知らせ';
       bellBtn.setAttribute('aria-label', bellBtn.title);
+      // 裏のタブでも気づけるよう、タブの名前にも数を付ける (app.js。0 件なら付けない)
+      setTitleBadge(noticeUnread);
 
       // 前に見た番号より新しく、まだ読んでいないものだけを前に出す
       var fresh = data.items.filter(function (n) {
@@ -1410,6 +1412,10 @@
 
       showSnack(fresh[0].title, { kind: 'ok' });
       fresh.forEach(popDesktop);
+      // 推しが「知らせが届いていますよ」と言う (場面 notice。推しがオフなら何もしない)。出ている吹き出しは
+      // 上書きせず、消えてから言う (oshiSayNext)。集中しているあいだは邪魔をしないので言わない。
+      // 中身は言わない。メールには入れない (docs/dev/notifications.md)
+      if (!focusSession) oshiSayNext('notice');
     }, failQuiet('知らせが出ないだけ'));
   }
 
