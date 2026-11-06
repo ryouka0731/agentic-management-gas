@@ -231,6 +231,8 @@
   /** リンクで開かれたときの画面に入る。周りを隠し (doc-link)、ホームも出さず、文書が届くまで短い字を出す */
   function enterDocLink() {
     document.body.classList.add('doc-link', 'doc-full');
+    // 番頭の画面への入口は小さく 1 つだけ (やること #116。読む人にはふつうの 1 枚の頁に見える)
+    docLinkOpenBtn.hidden = false;
     var panels = tabPanels();
     for (var key in panels) panels[key].hidden = true;
     var main = document.querySelector('.main');
@@ -246,10 +248,24 @@
   function leaveDocLink() {
     if (!document.body.classList.contains('doc-link')) return;
     document.body.classList.remove('doc-link');
+    docLinkOpenBtn.hidden = true;
     docLinkLoaded();
     // 文書のリンクのあいだ取らずにいた、左の行き先・上の段に要るものを取る
-    bootHomeWave();
+    bootAfterDocLink();
     switchTab('home');
+  }
+
+  /**
+   * 「番頭で開く」。文書のリンクの頁から、その文書を開いたまま番頭の画面 (左の行き先・上の操作) を出す。
+   * 全画面も閉じる (閉じないと、周りを出したのに本文だけが広がったままになる)。
+   */
+  function openAppFromDocLink() {
+    if (!document.body.classList.contains('doc-link')) return;
+    document.body.classList.remove('doc-link');
+    docLinkOpenBtn.hidden = true;
+    docLinkLoaded();
+    setDocFull(false);
+    bootAfterDocLink();
   }
 
   /** 文書が届いた (か、諦めた)。「開いています…」を消す */

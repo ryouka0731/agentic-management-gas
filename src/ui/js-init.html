@@ -41,6 +41,7 @@
     setDocFull(!document.body.classList.contains('doc-full'));
   });
   docLinkBtn.addEventListener('click', copyDocLink);
+  docLinkOpenBtn.addEventListener('click', openAppFromDocLink);
   // 本文の iframe は sandbox (allow-scripts 無し) なので、その中の Esc は聞けない。
   // 入ったときに閉じるボタンへ置き、ボタンは常に見えている
   document.addEventListener('keydown', function (e) {
