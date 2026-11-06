@@ -651,6 +651,8 @@ export function createFakeGas() {
   let calCreateFail = null;
   // 予定を消すときに投げさせる (predicate(ev) が true のもの)
   let calDeleteFail = null;
+  // 通知を付けるときに投げさせる (断りの字か null)
+  let calReminderFail = null;
 
   function calRaw(id, name, owner) {
     const c = { _id: id, _name: name, _owner: owner, _access: new Map([[owner, 'owner']]),
@@ -686,6 +688,22 @@ export function createFakeGas() {
       getTransparency: () => ev.transparency || 'OPAQUE',
       getTag: (k) => (Object.prototype.hasOwnProperty.call(ev.tags, k) ? ev.tags[k] : null),
       setTag: (k, v) => { if (!calCanWrite(c)) calDeny(); ev.tags[k] = String(v); ev.updated = Date.now(); return view; },
+      // 通知 (popup)。実機と同じく、作ったばかりの予定はカレンダーの既定の通知を持つ (ここでは null = 既定のまま)
+      getPopupReminders: () => (ev.popups ? ev.popups.slice() : []),
+      removeAllReminders: () => {
+        if (!calCanWrite(c)) calDeny();
+        if (calReminderFail) throw new Error(calReminderFail);
+        ev.popups = [];
+        ev.updated = Date.now();
+        return view;
+      },
+      addPopupReminder: (min) => {
+        if (!calCanWrite(c)) calDeny();
+        if (calReminderFail) throw new Error(calReminderFail);
+        ev.popups = (ev.popups || []).concat([Number(min)]);
+        ev.updated = Date.now();
+        return view;
+      },
       deleteEvent: () => {
         if (!calCanWrite(c)) calDeny();
         if (calDeleteFail && calDeleteFail(ev)) throw new Error('Service invoked too many times');
@@ -824,6 +842,7 @@ export function createFakeGas() {
     },
     _calFailCreate: (at, message) => { calCreateFail = at ? { at, message } : null; },
     _calFailDelete: (predicate) => { calDeleteFail = predicate || null; },
+    _calFailReminder: (message) => { calReminderFail = message || null; },
     _calCalls: calCalls,
     /** Google ドキュメントの本文の疑似 (fake.DocumentApp = fake._documentApp で置く) */
     _documentApp: documentApp,

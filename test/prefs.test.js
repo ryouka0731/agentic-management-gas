@@ -121,6 +121,23 @@ describe('一覧', () => {
     ctx.apiPrefSet('calendar.meetingNotes', null);
     expect(ctx.apiPrefs().effective.calendar.meetingNotes).toBe(true);
   });
+
+  it('予定の前に知らせる (calendar.remind): 自分の設定で既定は切。切 / 5 / 10 / 30 分前を選べ、一覧に出る', () => {
+    const { ctx } = setup();
+    expect(item(ctx, 'calendar.remind')).toMatchObject({ scope: 'me', type: 'enum', def: '0', section: '予定に入れる',
+      label: '予定の前に知らせる' });
+    expect(item(ctx, 'calendar.remind').help).toContain('スマホの Google カレンダーの通知として届きます');
+    expect(item(ctx, 'calendar.remind').options).toEqual([
+      { value: '0', label: '切' }, { value: '5', label: '5 分前' }, { value: '10', label: '10 分前' },
+      { value: '30', label: '30 分前' },
+    ]);
+    const listed = ctx.apiPrefs().items.filter((p) => p.key === 'calendar.remind')[0];
+    expect(listed).toMatchObject({ scope: 'me', value: '0' });
+    ctx.apiPrefSet('calendar.remind', '10');
+    expect(ctx.prefGet_('calendar.remind', ME)).toBe('10');
+    expect(() => ctx.apiPrefSet('calendar.remind', '15')).toThrow();
+    expect(ctx.prefGet_('calendar.remind', ME)).toBe('10');
+  });
 });
 
 describe('検査', () => {
