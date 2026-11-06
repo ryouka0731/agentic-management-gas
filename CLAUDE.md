@@ -26,6 +26,7 @@ Google Apps Script プロジェクト。設計は `docs/superpowers/specs/` を�
 | お知らせ・アンケート・案内 (`src/core/Announcement.gs` / `src/api/Announcement.gs` / `src/ui/js-announce.html`) | `docs/dev/permissions.md` と `docs/dev/ledger-schema.md` (画面は `docs/dev/ui.md`) |
 | 目標 (`src/core/Goal.gs` / `src/core/GoalScore.js` / `src/api/Goals.gs` / `src/ui/js-goals.html`) | `docs/dev/permissions.md` と `docs/dev/ledger-schema.md` (画面は `docs/dev/ui.md`) |
 | `src/core/Prefs.gs` (`PREFS_SCHEMA()`)・`notify` の kind・`src/api/Settings.gs` | `docs/dev/prefs.md` |
+| 知らせの言い方 (`src/core/Notifier.gs` の `notify*` / `noticeAdd` の見出し・本文)・`js-me` の知らせ (`loadNotices`)・タブの名前の数 (`app.js` の `titleBase` / `setTitleBadge`)・推しの場面 `notice` | `docs/dev/notifications.md` (kind は `docs/dev/prefs.md`、`noticeAdd` の番号は `docs/dev/locks-and-numbering.md`) |
 | 登録・外す・取り下げ・消えた文書の扱い (`src/api/Files.gs` / `prClose` / `filesVisibleInWiki` / `prWithdrawOrphans`) | `docs/dev/user-paths.md` |
 | `src/render/` の書き戻し・`src/core/Markdown.js`・台帳への書き方 (`dbCell_`)・Drive のファイルを動かすところ・工数の数え方・並び順 | `docs/dev/pitfalls.md` |
 | テストの依存 (`package.json` / `package-lock.json`)・カバレッジ・`test/harness.js` / `test/setup.js` / `test/dom.js` / `test/component/` | `docs/dev/testing.md` |

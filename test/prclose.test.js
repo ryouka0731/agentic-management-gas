@@ -164,11 +164,11 @@ describe('確認依頼を取り下げる', () => {
     const sent = fake._sentMails().slice(before);
     expect(sent.map((m) => m.to)).toContain('reviewer@example.com');
     expect(sent.map((m) => m.subject).join('\n'))
-      .toContain('取り下げられました');
+      .toContain('は要らなくなりました');
 
     const notices = ctx.dbReadAll('notifications')
       .filter((n) => String(n.to) === 'reviewer@example.com');
-    expect(notices.map((n) => n.title).join('\n')).toContain('取り下げられました');
+    expect(notices.map((n) => n.title).join('\n')).toContain('は要らなくなりました (改訂版は残っています)');
   });
 });
 

@@ -90,6 +90,31 @@
   var mePanel = document.getElementById('me-panel');
   var meBody = document.getElementById('me-body');
   var seenNoticeId = 0;
+
+  /*
+   * タブの名前。**元の名前はここ1か所で持つ** (docs/dev/notifications.md)。
+   * 未読の知らせの数 (js-me の loadNotices) と集中の残り時間 (js-focus) が、どちらもここから組む。
+   * document.title から読み直すと、前に付けた数や残り時間が元の名前に焼き込まれる。
+   */
+  var titleBase = 'SoftBanto';
+  var titleUnread = 0;
+
+  /** @returns {string} 数付きのタブの名前。0 件なら数を付けない */
+  function titleWithBadge() {
+    return titleUnread > 0 ? '(' + titleUnread + ') ' + titleBase : titleBase;
+  }
+
+  /**
+   * タブの名前に未読の数を付ける (`(2) SoftBanto`)。裏のタブでも気づけるように。
+   * 集中しているあいだは集中の残り時間が名前を描くので、数だけ覚えて終わったときに戻す (js-focus の focusClear)。
+   *
+   * @param {number} n 未読の数
+   */
+  function setTitleBadge(n) {
+    titleUnread = Math.max(0, Math.floor(Number(n) || 0));
+    if (focusSession) return;
+    document.title = titleWithBadge();
+  }
   // 手元の道具が古いか (apiKitStatus)。顔の点と道具のボタンの札に使う
   var kitOutdated = false;
 

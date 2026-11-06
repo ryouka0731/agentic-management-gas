@@ -55,7 +55,7 @@ describe('報告を出して、返事をもらい、解決にする', () => {
     click(byText('#report-detail .pr-actions .btn', '解決した')); await e2e.settle();
     expect(e2e.rows('inquiries')[0].state).toBe('done');
     // 返信をもらった職員にも知らせが届いている
-    expect(e2e.fake._sentMails().some((m) => m.to === STAFF && /返信/.test(m.subject))).toBe(true);
+    expect(e2e.fake._sentMails().some((m) => m.to === STAFF && / に返事が来ました$/.test(m.subject))).toBe(true);
     expect($('#count-reports').textContent).toBe('0');
     expect($('#report-list').textContent).not.toContain('工程表の棒が伸びない');
     // 「未解決だけ」を外すと、済んだものとして出る

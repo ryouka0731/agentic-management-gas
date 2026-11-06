@@ -42,6 +42,8 @@ describe('サービス名', () => {
     // 左上が一瞬空になるほうが損である
     expect(APP)
       .toContain("name.textContent = '" + NAME + "';");
+    // タブの名前の元 (未読の数と集中の残り時間はここから組む。docs/dev/notifications.md)
+    expect(APP).toContain("var titleBase = '" + NAME + "';");
   });
 
   it('通知メールの件名は1か所で組む', () => {

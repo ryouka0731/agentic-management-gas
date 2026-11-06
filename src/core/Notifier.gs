@@ -167,6 +167,32 @@ function noticeMarkRead(ids) {
   });
 }
 
+/*
+ * ===== 言い方の決まり (docs/dev/notifications.md) =====
+ *
+ * - 「何が起きたか」ではなく「あなたに何が来たか」で書く。責める言葉 (期限切れ・滞っている・未対応) を見出しにしない
+ * - **メールの本文の最後は必ず「次にすること: …」の1行** (notifyBody_ が付ける)。無いときは「次にすること: ありません」
+ * - 件名の形 `[SoftBanto] 何の #番号 どうなったか` は notifySubject_ だけで組み、「どうなったか」だけを言い換える
+ * - 画面の知らせ (noticeAdd) は開く先があるので、本文に次にすることを書かない
+ * - 推しの一言はメールに入れない (本人の画面にだけ出す)
+ */
+
+/**
+ * メールの本文を組む。中身のあとに、必ず「次にすること: …」の1行で終える。
+ *
+ * 次にすることをメールごとに書くと、書き忘れた1通だけが「で、どうすれば？」になる。
+ * 末尾の1行はここでだけ付ける (test/notifier-wording.test.js が全部の知らせで見ている)。
+ *
+ * @param {string} text 中身 (空でもよい)
+ * @param {string} [next] 次にすること。省けば「ありません」
+ * @returns {string}
+ */
+function notifyBody_(text, next) {
+  var head = String(text || '').replace(/\s+$/, '');
+  var tail = '次にすること: ' + (next || 'ありません');
+  return head ? head + '\n\n' + tail : tail;
+}
+
 /**
  * 変わった箇所の箇条書きを、知らせの本文の先頭に置く形にする (やること #109)。
  *
@@ -186,7 +212,7 @@ function notifySummaryText_(lines) {
 }
 
 /**
- * PR作成を通知する。
+ * 確認依頼を出したことを、出した本人に知らせる。
  *
  * @param {object} pr pulls 行
  * @param {string[]} [summary] 変わった箇所の箇条書き
@@ -194,22 +220,23 @@ function notifySummaryText_(lines) {
 function notifyPrCreated(pr, summary) {
   notify(
     pr.author,
-    notifySubject_('確認依頼', pr.number, 'が出されました'),
-    notifySummaryText_(summary) + pr.title + '\n\n「確認依頼」から中身を見てください。',
+    notifySubject_('確認依頼', pr.number, 'を出しました'),
+    notifyBody_(notifySummaryText_(summary) + pr.title,
+      '確認する人の返事を待ってください。返事が来たら、またお知らせします'),
     'review'
   );
 }
 
 /**
- * PRマージを通知する。
+ * 確認依頼が反映されたことを、出した本人に知らせる。
  *
  * @param {object} pr pulls 行
  */
 function notifyPrMerged(pr) {
   notify(
     pr.author,
-    notifySubject_('確認依頼', pr.number, 'が反映されました'),
-    pr.title + '\n\n正式版の文書が書き換わりました。',
+    notifySubject_('確認依頼', pr.number, 'が正式版に入りました'),
+    notifyBody_(pr.title + '\n\n正式版の文書が書き換わりました。'),
     'result'
   );
 }
@@ -232,13 +259,13 @@ function notifyPrClosed(pr, reason) {
     if (!to) continue;
 
     noticeAdd(to, 'review',
-      '確認依頼 #' + pr.number + ' は取り下げられました', pr.title + why,
+      '確認依頼 #' + pr.number + ' は要らなくなりました (改訂版は残っています)', pr.title + why,
       'pull:' + pr.number);
 
     notify(
       to,
-      notifySubject_('確認依頼', pr.number, 'は取り下げられました'),
-      pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。' + why,
+      notifySubject_('確認依頼', pr.number, 'は要らなくなりました'),
+      notifyBody_(pr.title + '\n\n確認は要らなくなりました。改訂版そのものは残っています。' + why),
       'result'
     );
   }
@@ -253,13 +280,13 @@ function notifyPrClosed(pr, reason) {
  */
 function notifyPrReviewRequested(pr, to, summary) {
   noticeAdd(to, 'review',
-    '確認依頼 #' + pr.number + ' の確認を頼まれました', pr.title, 'pull:' + pr.number);
+    '確認依頼 #' + pr.number + ' があなたを待っています', pr.title, 'pull:' + pr.number);
 
   notify(
     to,
-    notifySubject_('確認依頼', pr.number, 'の確認を頼まれました'),
-    notifySummaryText_(summary) + pr.title +
-      '\n\n確認依頼のタブから中身を見て、承認するか直してほしいかを返してください。',
+    notifySubject_('確認依頼', pr.number, 'があなたを待っています'),
+    notifyBody_(notifySummaryText_(summary) + pr.title,
+      '「確認依頼」で中身を見て、「承認」か「直してほしい」を返してください'),
     'review'
   );
 }
@@ -280,8 +307,9 @@ function notifyInquiry(row) {
     notify(
       owners[i],
       notifySubject_('報告', row.number, 'が届きました'),
-      INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
-      row.body + '\n\n' + (row.context || ''),
+      notifyBody_(INQUIRY_KINDS()[row.kind] + ' / ' + row.by + '\n\n' +
+        row.body + (row.context ? '\n\n' + row.context : ''),
+        '「報告」#' + row.number + ' を開いて、返事を書いてください'),
       'inquiry'
     );
   }
@@ -303,13 +331,13 @@ function notifyInquiryReply(inquiry, reply, talkers) {
 
     notify(
       talkers[i],
-      notifySubject_('報告', inquiry.number, 'に返信がありました'),
-      (inquiry.title || inquiry.body) + '\n\n' +
-      reply.by + ':\n' + reply.body,
+      notifySubject_('報告', inquiry.number, 'に返事が来ました'),
+      notifyBody_((inquiry.title || inquiry.body) + '\n\n' + reply.by + ':\n' + reply.body,
+        '「報告」#' + inquiry.number + ' を開いて、続きを書いてください'),
       'inquiry'
     );
     noticeAdd(talkers[i], 'reply',
-      reply.by + ' が #' + inquiry.number + ' に返信しました',
+      '報告 #' + inquiry.number + ' に ' + reply.by + ' から返事が来ました',
       reply.body, 'report:' + inquiry.number);
   }
 }
@@ -328,12 +356,12 @@ function notifyInquiryMention(inquiry, post, people) {
     notify(
       people[i],
       notifySubject_('報告', inquiry.number, 'であなたが呼ばれました'),
-      (inquiry.title || inquiry.body) + '\n\n' +
-      post.by + ':\n' + post.body,
+      notifyBody_((inquiry.title || inquiry.body) + '\n\n' + post.by + ':\n' + post.body,
+        '「報告」#' + inquiry.number + ' を開いて、返事を書いてください'),
       'mention'
     );
     noticeAdd(people[i], 'mention',
-      post.by + ' があなたを呼びました',
+      '報告 #' + inquiry.number + ' で ' + post.by + ' があなたを呼んでいます',
       post.body, 'report:' + inquiry.number);
   }
 }
@@ -347,13 +375,14 @@ function notifyInquiryMention(inquiry, post, people) {
  */
 function notifyPrMention(pr, review, to) {
   noticeAdd(to, 'mention',
-    review.reviewer + ' があなたを呼びました',
+    '確認依頼 #' + pr.number + ' で ' + review.reviewer + ' があなたを呼んでいます',
     review.body, 'pull:' + pr.number);
 
   notify(
     to,
     notifySubject_('確認依頼', pr.number, 'であなたが呼ばれました'),
-    pr.title + '\n\n' + review.reviewer + ':\n' + review.body,
+    notifyBody_(pr.title + '\n\n' + review.reviewer + ':\n' + review.body,
+      '「確認依頼」#' + pr.number + ' を開いて、返事を書いてください'),
     'mention'
   );
 }
@@ -368,13 +397,14 @@ function notifyPrMention(pr, review, to) {
 function notifyIssueComment(issue, row, people) {
   for (var i = 0; i < (people || []).length; i++) {
     noticeAdd(people[i], 'reply',
-      row.by + ' が #' + issue.number + ' に書き込みました',
+      'やること #' + issue.number + ' に ' + row.by + ' から返事が来ました',
       row.body, 'issue:' + issue.number);
 
     notify(
       people[i],
-      notifySubject_('やること', issue.number, 'に書き込みがありました'),
-      issue.title + '\n\n' + row.by + ':\n' + row.body,
+      notifySubject_('やること', issue.number, 'に返事が来ました'),
+      notifyBody_(issue.title + '\n\n' + row.by + ':\n' + row.body,
+        '「やること」#' + issue.number + ' を開いて、続きを書いてください'),
       'comment'
     );
   }
@@ -390,13 +420,14 @@ function notifyIssueComment(issue, row, people) {
 function notifyIssueCommentMention(issue, row, people) {
   for (var i = 0; i < (people || []).length; i++) {
     noticeAdd(people[i], 'mention',
-      row.by + ' があなたを呼びました',
+      'やること #' + issue.number + ' で ' + row.by + ' があなたを呼んでいます',
       row.body, 'issue:' + issue.number);
 
     notify(
       people[i],
       notifySubject_('やること', issue.number, 'であなたが呼ばれました'),
-      issue.title + '\n\n' + row.by + ':\n' + row.body,
+      notifyBody_(issue.title + '\n\n' + row.by + ':\n' + row.body,
+        '「やること」#' + issue.number + ' を開いて、返事を書いてください'),
       'mention'
     );
   }
@@ -414,13 +445,14 @@ function notifyIssueCommentMention(issue, row, people) {
  * @param {boolean} changed 承認のあとに直したか
  */
 function notifyGoalSubmitted_(goal, to, name, changed) {
-  var what = changed ? 'の直したところの承認を頼まれました' : 'の承認を頼まれました';
+  var what = changed ? 'の直したところの承認があなたを待っています' : 'の承認があなたを待っています';
   for (var i = 0; i < (to || []).length; i++) {
-    noticeAdd(to[i], 'goal', name + ' さんの目標 #' + goal.id + what, goal.title, 'goal:' + goal.id);
+    noticeAdd(to[i], 'goal', name + ' さんの目標 #' + goal.id + ' ' + what, goal.title, 'goal:' + goal.id);
     notify(
       to[i],
       notifySubject_('目標', goal.id, what),
-      name + ' さんの目標: ' + goal.title + '\n\n「目標」の「承認を待つもの」から中身を見て、承認するか差し戻してください。',
+      notifyBody_(name + ' さんの目標: ' + goal.title,
+        '「目標」の「承認を待つもの」で中身を見て、「承認する」か「差し戻す」を押してください'),
       'goal'
     );
   }
@@ -429,14 +461,18 @@ function notifyGoalSubmitted_(goal, to, name, changed) {
 /**
  * 目標が承認された・差し戻されたことを本人に知らせる。
  *
+ * 差し戻しは責める言い方にしない。「直してほしいところが返ってきた」と書き、次の一歩を添える。
+ *
  * @param {object} goal goals 行
  * @param {string} decision 'approve' | 'return'
  */
 function notifyGoalDecided_(goal, decision) {
-  var happened = decision === 'approve' ? 'が承認されました' : 'が差し戻されました';
+  var ok = decision === 'approve';
+  var happened = ok ? 'が承認されました' : 'に直してほしいところが返ってきました';
   var note = goal.managerNote ? '\n\n上長のひとこと:\n' + goal.managerNote : '';
-  noticeAdd(goal.who, 'goal', '目標 #' + goal.id + happened, goal.title + note, 'goal:' + goal.id);
-  notify(goal.who, notifySubject_('目標', goal.id, happened), goal.title + note, 'goal');
+  var next = ok ? '' : '「目標」で上長のひとことを見て、直してから承認を頼み直してください';
+  noticeAdd(goal.who, 'goal', 'あなたの目標 #' + goal.id + ' ' + happened, goal.title + note, 'goal:' + goal.id);
+  notify(goal.who, notifySubject_('目標', goal.id, happened), notifyBody_(goal.title + note, next), 'goal');
 }
 
 /**
@@ -446,8 +482,8 @@ function notifyGoalDecided_(goal, decision) {
  */
 function notifyGoalGraded_(goal) {
   var body = goal.title + '\n\n評価: ' + goal.finalGrade + '\n上長のひとこと:\n' + goal.managerNote;
-  noticeAdd(goal.who, 'goal', '目標 #' + goal.id + ' に評価が付きました', body, 'goal:' + goal.id);
-  notify(goal.who, notifySubject_('目標', goal.id, 'に評価が付きました'), body, 'goal');
+  noticeAdd(goal.who, 'goal', 'あなたの目標 #' + goal.id + ' に評価が付きました', body, 'goal:' + goal.id);
+  notify(goal.who, notifySubject_('目標', goal.id, 'に評価が付きました'), notifyBody_(body), 'goal');
 }
 
 /**
@@ -459,8 +495,9 @@ function notifyGoalGraded_(goal) {
  */
 function notifyGoalWithdrawn_(goal, to, name) {
   for (var i = 0; i < (to || []).length; i++) {
-    noticeAdd(to[i], 'goal', name + ' さんが目標 #' + goal.id + ' の承認の頼みを取り下げました', goal.title, 'goal:' + goal.id);
-    notify(to[i], notifySubject_('目標', goal.id, 'の承認の頼みが取り下げられました'),
-      name + ' さんの目標: ' + goal.title + '\n\n承認は要らなくなりました。本人が直して頼み直すと、また届きます。', 'goal');
+    noticeAdd(to[i], 'goal', name + ' さんの目標 #' + goal.id + ' の承認は要らなくなりました', goal.title, 'goal:' + goal.id);
+    notify(to[i], notifySubject_('目標', goal.id, 'の承認は要らなくなりました'),
+      notifyBody_(name + ' さんの目標: ' + goal.title +
+        '\n\n本人が承認の頼みを取り下げました。直して頼み直すと、また届きます。'), 'goal');
   }
 }

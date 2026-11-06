@@ -186,7 +186,7 @@ describe('承認の流れ', () => {
     expect(env.ctx.goalGet_(goal.id).status).toBe('submitted');
     const mails = env.fake._sentMails().filter((m) => m.to === BOSS);
     expect(mails).toHaveLength(1);
-    expect(mails[0].subject).toBe('[SoftBanto] 目標 #' + goal.id + ' の承認を頼まれました');
+    expect(mails[0].subject).toBe('[SoftBanto] 目標 #' + goal.id + ' の承認があなたを待っています');
     expect(env.ctx.noticeList(BOSS).map((n) => n.kind)).toEqual(['goal']);
     const team = asUser(env.fake, BOSS, () => expectScreenSafe(env.ctx.apiGoalTeam('')));
     expect(team.pending.map((g) => g.id)).toEqual([goal.id]);
@@ -218,7 +218,7 @@ describe('承認の流れ', () => {
     });
     const back = env.ctx.goalGet_(goal.id);
     expect(back.status).toBe('returned');
-    expect(env.fake._sentMails().some((m) => m.to === MEMBER && /差し戻されました/.test(m.subject))).toBe(true);
+    expect(env.fake._sentMails().some((m) => m.to === MEMBER && /に直してほしいところが返ってきました/.test(m.subject))).toBe(true);
     asUser(env.fake, MEMBER, () => {
       env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: goal.title,
         items: [{ title: '問い合わせを減らす', measure: 'number', target: 150 }] });
@@ -242,7 +242,7 @@ describe('承認の流れ', () => {
     expect(edited.changedAfterApproval).toBe(true);
     const mails = env.fake._sentMails().filter((m) => m.to === BOSS);
     expect(mails).toHaveLength(before + 1);
-    expect(mails[mails.length - 1].subject).toMatch(/直したところの承認を頼まれました/);
+    expect(mails[mails.length - 1].subject).toMatch(/の直したところの承認があなたを待っています/);
     // 頼んでいるあいだは直せない
     asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalSave({ id: goal.id, kind: 'okr', title: 'x', items: [] }),
       /承認を待っているあいだは直せません/));
@@ -274,7 +274,7 @@ describe('承認の流れ', () => {
     const env = on();
     const goal = asUser(env.fake, OTHER, () => env.ctx.apiGoalSave({ kind: 'kpi', title: 'K', items: [{ title: 'a', measure: 'check' }] }));
     asUser(env.fake, OTHER, () => env.ctx.apiGoalSubmit(goal.id));
-    expect(env.fake._sentMails().some((m) => m.to === OWNER && /承認を頼まれました/.test(m.subject))).toBe(true);
+    expect(env.fake._sentMails().some((m) => m.to === OWNER && /の承認があなたを待っています/.test(m.subject))).toBe(true);
     const own = asUser(env.fake, OWNER, () => env.ctx.apiGoalSave({ kind: 'kpi', title: 'K', items: [{ title: 'a', measure: 'check' }] }));
     asUser(env.fake, OWNER, () => expectRefused(() => env.ctx.apiGoalSubmit(own.id), /上長を登録してください/));
   });
@@ -614,7 +614,7 @@ describe('確認の指摘 (c614b18 のあと)', () => {
     asUser(env.fake, BOSS, () => expectRefused(() => env.ctx.apiGoalWithdraw(goal.id), /本人だけ/));
     const out = asUser(env.fake, MEMBER, () => expectScreenSafe(env.ctx.apiGoalWithdraw(goal.id)));
     expect(out.status).toBe('draft');
-    expect(env.fake._sentMails().some((m) => m.to === BOSS && /取り下げ/.test(m.subject))).toBe(true);
+    expect(env.fake._sentMails().some((m) => m.to === BOSS && /の承認は要らなくなりました$/.test(m.subject))).toBe(true);
     asUser(env.fake, MEMBER, () => expectRefused(() => env.ctx.apiGoalWithdraw(goal.id), /承認を待っている目標だけ/));
   });
 
