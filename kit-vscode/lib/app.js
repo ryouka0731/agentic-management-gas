@@ -4,7 +4,8 @@
  *
  * 見張りは1本 (tick)。15 秒ごとに呼ばれ、時刻が来たものだけをする:
  * - 会議: 始まりの1分前に知らせ、autoOpen なら始まりに会議の URL を開く。予定は起動時・1日の始まりと 60 分ごとに取り直す
- * - あなたの番: pollMinutes (既定 15、最小 5) ごとに homeMine を見て、増えたものを知らせる
+ * - あなたの番: pollMinutes (既定 15、最小 5) ごとに homeMine を見て、増えたものを知らせる。
+ *   同じ返事の未読の知らせ (notices) も、新しく届いたものを先に知らせる
  * - 推し: 4時間に1回まで oshiSpinner を取り直し、ステータスバーに名前と一言を出す
  *
  * 命令の回数は番頭のキューの1日の予算 (docs/dev/command-queue.md) を使う。既定で1人1日 約 126 回
@@ -31,7 +32,7 @@ function createApp(o) {
   const now = o.now || Date.now;
   const st = {
     queue: null, reason: '', warned: false,
-    seen: null, lastTurn: NaN,
+    seen: null, seenNotices: null, lastTurn: NaN,
     meetings: [], done: new Set(), lastMeet: NaN, meetDay: '',
     lastOshi: NaN,
     busy: new Set(),
@@ -106,10 +107,13 @@ function createApp(o) {
     st.lastTurn = now();
     return once('turn', async () => {
       try {
-        const items = logic.turnItemsOf(await ask('homeMine'));
-        const news = logic.turnNews(st.seen, items);
+        const mine = await ask('homeMine');
+        // 未読の知らせも同じ返事に入っている (命令を増やすとキューの1日の予算を食う)。知らせを先に出す
+        const notes = logic.noticeNews(st.seenNotices, mine && mine.notices);
+        st.seenNotices = notes.seen;
+        const news = logic.turnNews(st.seen, logic.turnItemsOf(mine));
         st.seen = news.seen;
-        for (const m of news.messages) ui.info(m);
+        for (const m of notes.messages.concat(news.messages)) ui.info(m);
       } catch (e) {
         ui.log('あなたの番を見られませんでした: ' + e.message);
       }
@@ -193,6 +197,7 @@ function createApp(o) {
   function reconfigure() {
     st.warned = false;
     st.seen = null;
+    st.seenNotices = null;
     st.lastTurn = NaN;
     st.lastMeet = NaN;
     st.lastOshi = NaN;

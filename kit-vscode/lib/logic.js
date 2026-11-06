@@ -186,6 +186,39 @@ function turnNews(seen, items) {
   return { messages: fresh.map((i) => '番頭: ' + i.text), seen: next };
 }
 
+/** 知らせを1回に出す数。超えた分は「ほか N 件」の1本にまとめる */
+const NOTICES_AT_ONCE = 3;
+
+/**
+ * homeMine の返事の notices (未読の知らせ。新しい順に最大10件) から、新しく届いたものを知らせの字にする。
+ * 新しいとは「前に見たどの id より大きい」こと (id は振り直さないので、読まれて消えた知らせや、10件の外から
+ * 戻ってきた古い知らせを新しいと数えない)。
+ * はじめて見たとき (seen が null) は、見た印だけ付けて出さない (前からある未読で驚かせない。未読はベルにある)。
+ * notices が無い返事 (古い番頭) は何もしない (印も変えない)。
+ *
+ * @param {?Set<number>} seen
+ * @param {*} notices
+ * @returns {{messages: string[], seen: ?Set<number>}}
+ */
+function noticeNews(seen, notices) {
+  if (!Array.isArray(notices)) return { messages: [], seen };
+  const items = [];
+  for (const n of notices) {
+    if (!n || typeof n !== 'object') continue;
+    const id = Number(n.id);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    items.push({ id, title: oneLine(n.title, 80) || '新しい知らせがあります' });
+  }
+  const before = seen ? Math.max(0, ...seen) : 0;
+  const next = new Set(items.map((i) => i.id));
+  if (before) next.add(before);
+  if (seen === null) return { messages: [], seen: next };
+  const fresh = items.filter((i) => i.id > before).sort((a, b) => b.id - a.id);
+  const messages = fresh.slice(0, NOTICES_AT_ONCE).map((i) => '番頭: ' + i.title);
+  if (fresh.length > NOTICES_AT_ONCE) messages.push('番頭: ほか ' + (fresh.length - NOTICES_AT_ONCE) + ' 件の知らせがあります');
+  return { messages, seen: next };
+}
+
 /**
  * issueList の返事から、自分の担当の open なやることを取り出す。
  * me が空なら担当で絞らない (open なものを全部)。
@@ -244,5 +277,5 @@ function localDay(ms) {
 
 module.exports = {
   clean, oneLine, readResult, meetUrlOf, eventUrlOf, meetingsOf, dueActions, nextActionAt, meetingMessage,
-  turnItemsOf, turnNews, myIssues, oshiStatus, stale, localDay, NOTIFY_BEFORE_MS, LATE_MS,
+  turnItemsOf, turnNews, noticeNews, myIssues, oshiStatus, stale, localDay, NOTIFY_BEFORE_MS, LATE_MS,
 };

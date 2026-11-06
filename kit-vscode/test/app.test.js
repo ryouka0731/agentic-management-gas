@@ -149,6 +149,26 @@ test('あなたの番は pollMinutes ごと。増えたものだけ知らせる'
   assert.deepEqual(h.calls.info.map((c) => c[0]), ['番頭: 確かめてほしい確認依頼 #7 規程']);
 });
 
+test('未読の知らせも同じ homeMine の返事から出す。はじめからある未読は出さず、知らせはあなたの番より先', async () => {
+  const note = (id, title) => ({ id, kind: 'reply', title, body: '', link: '', at: '' });
+  let mine = { reviews: [], returned: [], due: [], notices: [note(3, '前からの知らせ')] };
+  const h = harness({ now: T('08:00'), answers: answers({ homeMine: () => mine }), settings: { pollMinutes: 5 } });
+  h.app.start();
+  await flush();
+  assert.equal(h.calls.info.length, 0);
+  mine = { reviews: [{ number: 7, title: '規程' }], returned: [], due: [], notices: [note(4, 'やること #5 に返事が来ました'), note(3, '前からの知らせ')] };
+  h.setNow(T('08:05'));
+  h.app.tick();
+  await flush();
+  assert.deepEqual(h.calls.info.map((c) => c[0]), ['番頭: やること #5 に返事が来ました', '番頭: 確かめてほしい確認依頼 #7 規程']);
+  // 命令は増やさない
+  assert.deepEqual([...new Set(h.sent)].sort(), ['calendarToday', 'homeMine', 'issueList', 'oshiSpinner']);
+  h.setNow(T('08:10'));
+  h.app.tick();
+  await flush();
+  assert.equal(h.calls.info.length, 2);
+});
+
 test('あなたの番の間隔は既定 15 分。5 分より短くはしない (キューの1日の予算)', async () => {
   const count = (h) => h.sent.filter((s) => s === 'homeMine').length;
   const def = harness({ now: T('08:00'), answers: answers(), settings: { pollMinutes: undefined } });
