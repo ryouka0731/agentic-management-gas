@@ -153,6 +153,35 @@ function homeTurnPlain_(turn) {
 }
 
 /**
+ * その人あての未読の知らせを、新しい順に最大 10 件、渡せる形にする。キューの homeMine が使う
+ * (VS Code 拡張が知らせに出す。画面はベルがあるので使わない)。
+ *
+ * 知らせを読めなくても、あなたの番は返す (知らせは本処理を巻き戻さない、と同じ考え)。
+ *
+ * @param {string} email
+ * @returns {Array<{id: number, kind: string, title: string, body: string, link: string, at: string}>}
+ */
+function homeUnreadNoticesPlain_(email) {
+  var rows;
+  try {
+    // 読んだものも混ざるので、件数で切るのは未読に絞ってから
+    rows = noticeList(email, Infinity);
+  } catch (e) {
+    Logger.log('知らせを読めませんでした: ' + e.message);
+    return [];
+  }
+  var out = [];
+  for (var i = 0; i < rows.length && out.length < 10; i++) {
+    if (rows[i].readAt) continue;
+    out.push({
+      id: plainId(rows[i].id), kind: plainText(rows[i].kind), title: plainText(rows[i].title),
+      body: plainText(rows[i].body), link: plainText(rows[i].link), at: plainDate(rows[i].at),
+    });
+  }
+  return out;
+}
+
+/**
  * 改善のヒントを渡せる形にする。apiHomeSummary とキューの homeAdvice が使う。
  *
  * @param {object[]} advice homeAdvice_

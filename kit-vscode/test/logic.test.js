@@ -97,6 +97,32 @@ test('あなたの番: はじめはまとめて1つ、次からは増えたも�
   assert.equal(logic.turnNews(logic.turnNews(null, logic.turnItemsOf(r1)).seen, logic.turnItemsOf(moved)).messages.length, 1);
 });
 
+test('知らせ: はじめは印だけ付けて出さない。次からは前に見た id より新しいものだけ、3 件まで', () => {
+  const n = (id, title) => ({ id, kind: 'reply', title, body: '', link: '', at: '2026-11-06T00:00:00.000Z' });
+  const first = logic.noticeNews(null, [n(5, '前から'), n(4, 'もっと前')]);
+  assert.deepEqual(first.messages, []);
+  const same = logic.noticeNews(first.seen, [n(5, '前から'), n(4, 'もっと前')]);
+  assert.deepEqual(same.messages, []);
+  // 新しい順に出す。制御文字は落とす
+  const two = logic.noticeNews(same.seen, [n(7, '返事が来ました\u0007'), n(6, '確認依頼 #12 があなたを待っています'), n(5, '前から')]);
+  assert.deepEqual(two.messages, ['番頭: 返事が来ました', '番頭: 確認依頼 #12 があなたを待っています']);
+  // 読まれて消えたもの・10件の外から戻ってきた古いものは新しくない
+  assert.deepEqual(logic.noticeNews(two.seen, [n(3, '古い未読')]).messages, []);
+  const gone = logic.noticeNews(two.seen, []);
+  assert.deepEqual(logic.noticeNews(gone.seen, [n(6, 'また見えた')]).messages, []);
+  // 4 件以上は 3 件と「ほか N 件」
+  const many = logic.noticeNews(two.seen, [12, 11, 10, 9, 8].map((id) => n(id, 't' + id)));
+  assert.deepEqual(many.messages, ['番頭: t12', '番頭: t11', '番頭: t10', '番頭: ほか 2 件の知らせがあります']);
+  // 返事に notices が無い (古い番頭) ときは何もしない。はじめての印も付けない
+  assert.deepEqual(logic.noticeNews(null, undefined), { messages: [], seen: null });
+  assert.equal(logic.noticeNews(two.seen, undefined).seen, two.seen);
+  // はじめが空でも、次に届いたものは出す
+  assert.deepEqual(logic.noticeNews(logic.noticeNews(null, []).seen, [n(1, '届いた')]).messages, ['番頭: 届いた']);
+  // 形の違うものは数えない
+  assert.deepEqual(logic.noticeNews(new Set(), [null, { id: 'x', title: 'a' }, { id: -1, title: 'b' }, n(2, '')]).messages,
+    ['番頭: 新しい知らせがあります']);
+});
+
 test('やることの一覧: open で自分が担当のものだけ。期限の早い順、期限なしは後ろ', () => {
   const rows = [
     { number: 1, title: 'a', state: 'open', assignees: ['Me@Example.com'], dueDate: '' },

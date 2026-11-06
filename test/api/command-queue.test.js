@@ -171,6 +171,24 @@ describe('自分の様子を見る命令 (homeMine / homeAdvice / reportDraft)',
     expect(Array.isArray(ctx.runCommand_({ op: 'homeAdvice' }, OTHER))).toBe(true);
   });
 
+  it('homeMine は置いた人あての未読の知らせを新しい順に最大 10 件入れる (読んだもの・ほかの人あては入れない)', () => {
+    const { ctx } = makeEnv({ file: false });
+    for (let i = 1; i <= 11; i++) ctx.noticeAdd(OTHER, 'reply', '知らせ ' + i, '本文 ' + i, '#issue/' + i);
+    // 読んだものがいちばん新しい (件数で先に切ると、未読が 9 件しか入らない)
+    const read = ctx.noticeAdd(OTHER, 'review', '読んだ知らせ', '', '#pr/1');
+    ctx.noticeAdd(OWNER, 'mention', '持ち主あて', '', '');
+    ctx.dbUpdate('notifications', 'id', read.id, { readAt: new Date() });
+
+    const notices = ctx.runCommand_({ op: 'homeMine' }, OTHER).notices;
+    expect(notices.map((n) => n.title)).toEqual(
+      ['知らせ 11', '知らせ 10', '知らせ 9', '知らせ 8', '知らせ 7', '知らせ 6', '知らせ 5', '知らせ 4', '知らせ 3', '知らせ 2']);
+    expect(notices[0]).toMatchObject({ kind: 'reply', body: '本文 11', link: '#issue/11' });
+    expect(Object.keys(notices[0]).sort()).toEqual(['at', 'body', 'id', 'kind', 'link', 'title']);
+    expect(typeof notices[0].id).toBe('number');
+    expect(notices[0].at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(ctx.runCommand_({ op: 'homeMine' }, OWNER).notices.map((n) => n.title)).toEqual(['持ち主あて']);
+  });
+
   it('置いた人が分からなければ断る', () => {
     const { ctx } = makeEnv({ file: false });
     for (const op of ['homeMine', 'homeAdvice', 'reportDraft']) {

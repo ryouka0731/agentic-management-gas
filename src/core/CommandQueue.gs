@@ -143,7 +143,11 @@ function COMMAND_OPS() {
      * 命令も断る (commandPersonOf_)
      */
     homeMine: function (a, by) {
-      return homeTurnPlain_(homeMyTurn_(commandBy_(by), new Date()));
+      var who = commandBy_(by);
+      var out = homeTurnPlain_(homeMyTurn_(who, new Date()));
+      // 未読の知らせも同じ返事に入れる (VS Code 拡張が出す)。命令を増やすと1日の予算を食う
+      out.notices = homeUnreadNoticesPlain_(who);
+      return out;
     },
     homeAdvice: function (a, by) {
       return homeAdvicePlain_(homeAdvice_(commandBy_(by), new Date()));
