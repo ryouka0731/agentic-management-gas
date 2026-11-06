@@ -88,7 +88,7 @@ zip の名前には版と中身の指紋が入る。中身が変われば、版�
 | 道具の命令 | op | 内容 |
 |---|---|---|
 | `issues [open\|closed]` | `issueList` | 一覧 |
-| `issue <題名> [本文] [fileId]` | `issueCreate` | 作る |
+| `issue <題名> [本文] [fileId]` | `issueCreate` | 作る。担当者は命令を置いた本人 |
 | `issue-update <番号> <JSON>` | `issueUpdate` | 欄を直す |
 | `issue-say <番号> <本文>` | `issueComment` | やりとりを書く |
 | `issue-close <番号>` | `issueClose` | 完了にする |

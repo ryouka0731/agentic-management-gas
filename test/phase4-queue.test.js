@@ -181,6 +181,42 @@ describe('同じ命令を二度実行しない', () => {
     expect(left.filter((n) => n === 'cmd-dup.cmd.json')).toEqual([]);
   });
 
+  /*
+   * 手元から作ったやることは担当者が空のまま残っていた。トリガーは持ち主の権限で走るので、
+   * 画面と違って作った本人が入らない。命令を置いた人を担当者に入れる。
+   */
+  it('作ったやることの担当者は命令を置いた人', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-who');
+    ctx.processCommandQueue();
+
+    const made = ctx.issueList('');
+    expect(made).toHaveLength(1);
+    expect(made[0].assignee).toBe('tester@example.com');
+    expect(readResult(ctx, 'cmd-who').result.assignee).toBe('tester@example.com');
+  });
+
+  it('担当者を渡せばそちらを入れる', () => {
+    const { ctx } = setup();
+    enqueue(ctx, 'cmd-other', {
+      op: 'issueCreate', args: { title: '頼むもの', body: '', assignee: 'aoki@example.com' },
+    });
+    ctx.processCommandQueue();
+
+    expect(ctx.issueList('')[0].assignee).toBe('aoki@example.com');
+  });
+
+  it('置いた人が分からなければ担当者は空のまま', () => {
+    const { ctx } = setup();
+    makeIssue(ctx, 'cmd-nobody');
+    // 共有ドライブの命令は持ち主を持たず、Drive の拡張サービスが無ければ置いた人が分からない
+    ctx.commandQueueFolder_().getFilesByName('cmd-nobody.cmd.json').next()._setOwner('');
+    ctx.processCommandQueue();
+
+    expect(readResult(ctx, 'cmd-nobody').ok).toBe(true);
+    expect(ctx.issueList('')[0].assignee).toBe('');
+  });
+
   it('番号が違うものは別の命令として実行する', () => {
     const { ctx } = setup();
     makeIssue(ctx, 'cmd-a');

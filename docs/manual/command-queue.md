@@ -86,7 +86,7 @@ GAS エディタで **`setupCommandQueue()`** を一度だけ実行する ([置�
 | op | args | 内容 |
 |---|---|---|
 | `issueList` | `state` (任意: `open` / `closed` / 空で全件) | やることの一覧 |
-| `issueCreate` | `title`, `body`, `linkedFileIds` (任意) | やることを作る |
+| `issueCreate` | `title`, `body`, `linkedFileIds` (任意), `assignee` (任意) | やることを作る。担当者は省くと**置いた人** (置いた人が分からなければ空) |
 | `issueUpdate` | `number`, `patch` | 欄を直す。直せる欄は title / body / assignee / labels / linkedFileIds / dueDate / startDate / parent / estimate / plannedHours / actualHours / priority / sprint / points / acceptance |
 | `issueClose` | `number` | 完了にする |
 | `issueComment` | `number`, `body` | やりとりを書く |

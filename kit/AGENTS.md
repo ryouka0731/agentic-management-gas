@@ -59,7 +59,7 @@ node agent.mjs pr "第3条の改訂" "根拠は…" 見直し <mainFileId>
 ### やることを作って進める
 
 ```sh
-node agent.mjs issue "通勤手当の見直し" "4月から改定"
+node agent.mjs issue "通勤手当の見直し" "4月から改定"   # 担当者は自分 (命令を置いた本人) になる
 node agent.mjs issue-update 12 '{"assignee":"aoki@example.com","dueDate":"2026-10-31"}'
 node agent.mjs issue-say 12 "根拠の通達を確認しました"
 node agent.mjs issue-close 12

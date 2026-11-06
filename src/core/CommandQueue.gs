@@ -34,8 +34,13 @@ function COMMAND_OPS() {
     },
     stashMainDrift: function (a) { return apiStashMainDrift(a.fileId); },
     branchCreate: function (a) { return apiBranchCreate(a.name, a.fileId); },
-    issueCreate: function (a) {
-      return apiIssueCreate(a.title, a.body, a.linkedFileIds || []);
+    /*
+     * やることを作る。担当者は、渡されなければ**置いた人** (`by`)。手元から作ったやることが担当者の空いたまま
+     * 残っていた (トリガーは持ち主の権限で走るので、画面と違って本人が入らない)。置いた人が分からないとき
+     * (共有ドライブで Drive の拡張サービスが無い) は空のまま。権限の判断ではないので COMMAND_PERSONAL_OPS には入れない
+     */
+    issueCreate: function (a, by) {
+      return apiIssueCreate(a.title, a.body, a.linkedFileIds || [], '', commandIssueExtra_(a, by));
     },
     issueCreateBranch: function (a) {
       return apiIssueCreateBranch(a.number, a.fileId);
@@ -286,6 +291,21 @@ function commandPersonOf_(file, by, strict) {
     return '';
   }
   return who;
+}
+
+/**
+ * 命令で作るやることに一緒に入れる欄。担当者は args.assignee があればそれ、無ければ置いた人。
+ *
+ * 置いた人が空 (分からない) なら担当者も入れない。入れないときは空の object を返す
+ * (apiIssueCreate は欄が1つも無ければ作るだけで直さない)。
+ *
+ * @param {object} a 命令の args
+ * @param {string} by 命令を置いた人 (commandOwner_)。分からなければ空
+ * @returns {{assignee?: string}}
+ */
+function commandIssueExtra_(a, by) {
+  var who = String((a && a.assignee) || by || '');
+  return who ? { assignee: who } : {};
 }
 
 /**

@@ -14,7 +14,7 @@
  * @returns {string}
  */
 function AGENT_KIT_VERSION() {
-  return '1.14.0';
+  return '1.14.1';
 }
 
 /** 同じ実行の中で読んだ配る中身 (読めたあとだけ持つ) */
